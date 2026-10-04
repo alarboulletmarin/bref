@@ -171,6 +171,9 @@ struct Shell {
     path: Option<PathBuf>,
     /// Le nom du fichier suit le titre (première ligne) de la note.
     synced: bool,
+    /// Nom de la note quand elle a été chargée ; `None` pour une nouvelle note.
+    /// Si son titre change, les liens vers ce nom suivent quand on la quitte.
+    origin: Option<String>,
     /// La note affichée n'est qu'un aperçu : elle ne compte comme ouverte que
     /// lorsqu'on y entre (focus ou frappe).
     preview: bool,
@@ -204,7 +207,7 @@ impl Shell {
         })
         .detach();
         cx.on_app_quit(|this, cx| {
-            this.flush(cx);
+            this.leave(cx);
             async {}
         })
         .detach();
@@ -232,6 +235,7 @@ impl Shell {
             recent: Vec::new(),
             path: None,
             synced: true,
+            origin: None,
             preview: false,
             new_dir: None,
             dirty: false,
@@ -260,7 +264,7 @@ impl Shell {
     }
 
     fn set_vault(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        self.flush(cx);
+        self.leave(cx);
         self.vault = Some(root.clone());
         self.notes.clear();
         self.dirs.clear();
@@ -363,11 +367,12 @@ impl Shell {
 
     /// Charge la note dans l'éditeur ; faux si le fichier est illisible.
     fn load_note(&mut self, path: &Path, cx: &mut Context<Self>) -> bool {
-        self.flush(cx);
+        self.leave(cx);
         cx.notify();
         match fs::read_to_string(path) {
             Ok(text) => {
                 self.synced = vault::stem(path) == vault::title_of(&text);
+                self.origin = Some(vault::stem(path));
                 self.path = Some(path.to_path_buf());
                 self.error = None;
                 self.editor.update(cx, |e, cx| e.load(text, 0, cx));
@@ -420,8 +425,9 @@ impl Shell {
     }
 
     fn new_note(&mut self, text: String, cx: &mut Context<Self>) {
-        self.flush(cx);
+        self.leave(cx);
         self.path = None;
+        self.origin = None;
         self.synced = true;
         self.preview = false;
         self.new_dir = None;
@@ -430,6 +436,52 @@ impl Shell {
         self.editor.update(cx, |e, cx| e.load(text, cursor, cx));
         self.flush(cx);
         cx.notify();
+    }
+
+    /// Avant de quitter la note affichée : elle est enregistrée et, si son titre
+    /// l'a renommée, les liens vers son ancien nom suivent. Attendre ce moment
+    /// évite de réécrire les liens à chaque titre intermédiaire pendant la frappe.
+    fn leave(&mut self, cx: &mut Context<Self>) {
+        self.flush(cx);
+        if let (Some(old), Some(path)) = (self.origin.take(), &self.path) {
+            let new = vault::stem(path);
+            self.relink(&old, &new, cx);
+        }
+    }
+
+    /// Les `[[liens]]` vers `old` visent désormais `new` dans toutes les notes ;
+    /// vrai si la note affichée a été réécrite. Sans effet si une autre note
+    /// s'appelle encore `old` : les liens sont peut-être pour elle.
+    // ponytail: réécriture synchrone, limitée aux notes que l'index dit liées à
+    // `old` ; passer en tâche de fond si une note est liée depuis des centaines d'autres.
+    fn relink(&mut self, old: &str, new: &str, cx: &mut Context<Self>) -> bool {
+        let key = old.to_lowercase();
+        if key == new.to_lowercase() || self.notes.iter().any(|n| n.name.to_lowercase() == key) {
+            return false;
+        }
+        let mut open_rewritten = false;
+        for note in self.notes.iter_mut().filter(|n| n.links.contains(&key)) {
+            let rewritten = fs::read_to_string(&note.path)
+                .ok()
+                .and_then(|text| markdown::relink(&text, old, new))
+                .filter(|text| vault::write(&note.path, text).is_ok());
+            if let Some(text) = rewritten {
+                (note.tags, note.links) = markdown::index(&text);
+                open_rewritten |= Some(&note.path) == self.path.as_ref();
+                self.graph_stale = true;
+            }
+        }
+        self.refresh_graph(cx);
+        open_rewritten
+    }
+
+    /// Relit depuis le disque la note affichée, réécrite en dehors de l'éditeur.
+    fn reload(&mut self, cx: &mut Context<Self>) {
+        if let Some(path) = self.path.clone() {
+            let preview = self.preview;
+            self.load_note(&path, cx);
+            self.preview = preview;
+        }
     }
 
     /// Écrit la note sur disque si elle a changé.
@@ -1298,15 +1350,35 @@ mod tests {
         let renamed = fs::read_to_string(root.join("Tests.md")).unwrap();
         assert!(renamed.starts_with("# Tests\n1. un") && !root.join("Test.md").exists());
         assert!(shell.read_with(cx, |s, _| s.recent.contains(&root.join("Tests.md"))));
+        // Les liens suivent, dans le fichier comme dans la note affichée.
+        assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[Tests]]");
+        assert!(fs::read_to_string(root.join("Courses.md")).unwrap().ends_with("[[Tests]]"));
+
+        // Changer le titre renomme aussi la note : les liens ne suivent qu'une fois la
+        // note quittée, pas à chaque titre intermédiaire.
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("tests");
+        cx.simulate_keystrokes("enter end");
+        for letter in ["X", "Y"] {
+            cx.simulate_input(letter);
+            cx.executor().advance_clock(Duration::from_millis(500));
+            cx.run_until_parked();
+        }
+        assert!(root.join("TestsXY.md").is_file() && !root.join("TestsX.md").exists());
+        assert!(fs::read_to_string(root.join("Courses.md")).unwrap().ends_with("[[Tests]]"));
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("cou");
+        cx.simulate_keystrokes("enter secondary-e");
+        assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[TestsXY]]");
 
         // Glisser-déposer : une note, puis un dossier entier, rangés dans un autre dossier.
         shell.update(cx, |s, cx| {
-            s.move_into(&root.join("Tests.md"), &archives, cx);
+            s.move_into(&root.join("TestsXY.md"), &archives, cx);
             s.move_into(&root.join("Projets"), &archives, cx);
             // Un dossier ne se range pas dans lui-même.
             s.move_into(&archives, &archives.join("Projets"), cx);
         });
-        assert!(archives.join("Tests.md").is_file() && archives.join("Projets/Plan.md").is_file());
+        assert!(archives.join("TestsXY.md").is_file() && archives.join("Projets/Plan.md").is_file());
         assert!(shell.read_with(cx, |s, _| {
             s.dirs.contains(&archives.join("Projets"))
                 && s.recent.contains(&archives.join("Projets/Plan.md"))
@@ -1318,7 +1390,7 @@ mod tests {
         shell.update(cx, |s, _| s.nav.sel = Some(archives.clone()));
         cx.simulate_keystrokes("delete");
         assert!(root.join(".trash/Archives 2026/Projets/Plan.md").is_file() && !archives.exists());
-        assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[Test]]");
+        assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[TestsXY]]");
         shell.update(cx, |s, _| s.nav.sel = Some(root.join("Courses.md")));
         cx.simulate_keystrokes("delete");
         assert!(root.join(".trash/Courses.md").is_file());

@@ -196,7 +196,7 @@ A previewed note only counts as opened, and moves to the top of the recent list,
 - **New note from the tree**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line.
 - **Right click** on a line for its menu: open, new note here, new folder, copy the `[[link]]`, rename, move to the trash. A right click below the last line acts on the vault itself.
 - **Drag and drop**: in the tree, drag a note or a folder onto a folder to move it there, or below the last line to move it to the top of the vault. Nothing is ever overwritten: if the name is taken, the move is refused.
-- **Renaming** a note whose first line is its name rewrites that line too, so both stay in step. `[[links]]` to the old name are not updated.
+- **Renaming** a note whose first line is its name rewrites that line too, so both stay in step. The `[[links]]` to it in the other notes follow, see [Notes and vault](#notes-and-vault).
 - **The trash** is the hidden folder `.trash` at the top of the vault: deleting moves the note or the folder there, and never destroys anything. Empty it, or take a note back, with your file manager.
 
 encre reopens with the panel as you left it.
@@ -227,6 +227,7 @@ Tables, images and footnotes are kept as you typed them, without special renderi
 - A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
 - A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) is never renamed.
 - `[[Groceries]]` finds the note by file name, in any subfolder, ignoring case.
+- When a note is renamed, from the tree or by changing its first line, the `[[links]]` to its old name are rewritten in every note, keeping their `|alias` and `#heading`. After a change of title, this happens when you leave the note, not at each keystroke. If another note still carries the old name, the links are left alone: they may be meant for it.
 - The vault and the notes you opened, most recent first, are remembered in a small text file (and the navigation panel in a file named `layout` next to it):
 
   | System | File |
@@ -259,7 +260,7 @@ Tables, images and footnotes are kept as you typed them, without special renderi
 
 **I edited a note in another program while it was open in encre.** encre does not watch files: it keeps its own version and writes it back on the next edit. Switch to another note and back to reload it from disk.
 
-**Limits.** The name field of a new folder or a rename only edits at its end: type, or erase with Backspace. Renaming a note does not update the `[[links]]` pointing to it. No full-text search: the palette matches note names and tags.
+**Limits.** The name field of a new folder or a rename only edits at its end: type, or erase with Backspace. Links written as plain text inside a code block are not followed when a note is renamed. No full-text search: the palette matches note names and tags.
 
 ## How it works
 

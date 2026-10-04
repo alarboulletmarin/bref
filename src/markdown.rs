@@ -211,6 +211,34 @@ pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
     (tags, wikis)
 }
 
+/// Le texte où les wikiliens vers `old` visent `new` (alias et ancre conservés,
+/// blocs de code laissés tels quels) ; `None` si aucun lien ne change.
+pub fn relink(text: &str, old: &str, new: &str) -> Option<String> {
+    let old = old.to_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut in_code = false;
+    for line in text.split_inclusive('\n') {
+        let mut done = 0;
+        if is_fence(line) {
+            in_code = !in_code;
+        } else if !in_code {
+            for (range, link) in links(line) {
+                if matches!(link, Link::Wiki(target) if target.to_lowercase() == old) {
+                    // `[[cible|alias]]` ou `[[cible#ancre]]` : seule la cible change.
+                    let inner = &line[range.start + 2..range.end - 2];
+                    let rest = inner.find(['|', '#']).map_or("", |i| &inner[i..]);
+                    out.push_str(&line[done..range.start + 2]);
+                    out.push_str(new);
+                    out.push_str(rest);
+                    done = range.end - 2;
+                }
+            }
+        }
+        out.push_str(&line[done..]);
+    }
+    (out != text).then_some(out)
+}
+
 #[derive(PartialEq, Debug)]
 pub enum Enter {
     /// Texte à insérer au curseur.
@@ -332,6 +360,14 @@ mod tests {
         let (tags, wikis) = index("#A\n```\n#b [[z]]\n```\n#a #c [[X]] [[x|alias]] [[Y]]");
         assert_eq!(tags, vec!["a", "c"]);
         assert_eq!(wikis, vec!["x", "y"]);
+    }
+
+    #[test]
+    fn relinks_renamed_notes() {
+        let text = "[[Test]] et [[test|alias]], [[ Test#titre]]\n```\n[[Test]]\n```\n[[Testé]] [[Test]]";
+        let want = "[[Essai]] et [[Essai|alias]], [[Essai#titre]]\n```\n[[Test]]\n```\n[[Testé]] [[Essai]]";
+        assert_eq!(relink(text, "Test", "Essai").as_deref(), Some(want));
+        assert_eq!(relink(text, "Autre", "Essai"), None);
     }
 
     #[test]

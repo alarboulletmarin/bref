@@ -176,6 +176,13 @@ pub fn title_of(content: &str) -> String {
         .unwrap_or_else(|| tr("Untitled", "Sans titre").to_string())
 }
 
+/// Écriture atomique : un crash ne laisse jamais une note tronquée.
+pub fn write(path: &Path, content: &str) -> io::Result<()> {
+    let tmp = path.with_file_name(format!(".{}.tmp", stem(path)));
+    fs::write(&tmp, content)?;
+    fs::rename(&tmp, path)
+}
+
 /// Enregistre la note et renvoie son chemin ; une nouvelle note est créée dans
 /// `dir`. Si `synced` (le nom du fichier
 /// suivait déjà le titre), le fichier est renommé quand le titre change, sauf
@@ -201,10 +208,7 @@ pub fn save(
             .find(|p| !p.exists())
             .unwrap(),
     };
-    // Écriture atomique : un crash ne laisse jamais une note tronquée.
-    let tmp = target.with_file_name(format!(".{}.tmp", stem(&target)));
-    fs::write(&tmp, content)?;
-    fs::rename(&tmp, &target)?;
+    write(&target, content)?;
     if let Some(old) = current
         && old != target
     {

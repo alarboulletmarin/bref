@@ -501,8 +501,13 @@ impl Shell {
                         vault::rename_note(&path, &name)
                     };
                     match renamed {
-                        // Le titre d'une note renommée a pu changer : on la relit.
-                        Ok(to) => this.relocate(&path, &to, !is_dir, cx),
+                        Ok(to) => {
+                            // Le titre d'une note renommée a pu changer : on la relit.
+                            this.relocate(&path, &to, !is_dir, cx);
+                            if !is_dir && this.relink(&current, &name, cx) {
+                                this.reload(cx);
+                            }
+                        }
                         Err(e) => this.fail(tr("Not renamed", "Renommage impossible"), e),
                     }
                 });
@@ -582,12 +587,8 @@ impl Shell {
         self.nav.open = self.nav.open.iter().map(shift).collect();
         self.new_dir = self.new_dir.as_ref().map(shift);
         self.path = self.path.as_ref().map(shift);
-        if reload
-            && let Some(path) = self.path.clone().filter(|p| p == to)
-        {
-            let preview = self.preview;
-            self.load_note(&path, cx);
-            self.preview = preview;
+        if reload && self.path.as_deref() == Some(to) {
+            self.reload(cx);
         }
         self.nav.reveal(to);
         self.files_changed(cx);
