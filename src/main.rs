@@ -525,8 +525,8 @@ impl Render for Shell {
             self.title = title;
         }
 
-        // GNOME/Wayland ne dessine aucune décoration : l'app fournit alors barre de
-        // titre, coins arrondis et ombre. Ailleurs (KDE, X11…), le système s'en charge.
+        // Sous Linux l'app fournit barre de titre, coins arrondis et ombre ; sous
+        // macOS et Windows, gpui annonce `Server` et le système s'en charge.
         let tiling = match window.window_decorations() {
             Decorations::Client { tiling } => Some(tiling),
             Decorations::Server => None,
@@ -899,9 +899,11 @@ fn main() {
                 }),
                 // Doit correspondre au nom du fichier .desktop pour que le bureau associe l'icône.
                 app_id: Some("dev.andrea.Encre".into()),
-                // On demande les décorations du système ; s'il n'en fournit pas
-                // (GNOME/Wayland), `Shell::render` dessine les siennes.
-                window_decorations: Some(WindowDecorations::Server),
+                // Comme Zed : sous Linux l'app dessine sa barre de titre. Demander
+                // `Server` ne marche pas sous GNOME/Wayland, qui n'en fournit pas
+                // alors que gpui 0.2 se croit quand même décoré. macOS et Windows
+                // ignorent la demande et gardent leur barre native.
+                window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Transparent,
                 window_min_size: Some(size(px(360.), px(240.))),
                 ..Default::default()

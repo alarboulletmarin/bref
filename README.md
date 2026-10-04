@@ -200,10 +200,10 @@ Tables, images and footnotes are kept as you typed them, without special renderi
 | System | Status |
 |---|---|
 | Linux, GNOME on Wayland | first-class: this is what encre is built and used on (Arch Linux) |
-| Linux, other desktops, Wayland or X11 | should work; the desktop draws the title bar where it offers one. Not tested |
+| Linux, other desktops, Wayland or X11 | should work, with the same built-in title bar. Not tested |
 | macOS, Windows | built and tested by CI on every commit; not used day to day by the author |
 
-- **Linux** needs a working Vulkan driver (Mesa or the vendor one). On GNOME under Wayland, which draws no title bar for applications, encre draws its own; elsewhere it uses the system one.
+- **Linux** needs a working Vulkan driver (Mesa or the vendor one). encre draws its own title bar, as Zed does: GNOME under Wayland draws none for applications. On macOS and Windows the system title bar is used.
 - **Language**: French if the system language is French, English otherwise. On Windows it is always English for now.
 - **Fonts**: encre picks Inter, Noto Sans, Segoe UI or Helvetica Neue, whichever is installed, and JetBrains Mono, Menlo or Consolas for code.
 
@@ -228,7 +228,7 @@ Tables, images and footnotes are kept as you typed them, without special renderi
 - **Vault** (`src/vault.rs`): the note list and its tags are indexed off the UI thread when the vault opens, then kept up to date on each save.
 - **Palette**: substring matches first, ranked by position, then subsequence matches; ties keep the most recently edited note first.
 - **Startup**: the last note is read before the first frame, so the window appears with its content. Icons are embedded in the binary.
-- **Window**: encre asks the system for a title bar and draws its own, with shadow and resize edges, only when the compositor provides none.
+- **Window**: on Linux encre draws its own title bar, shadow and resize edges (client-side decorations); on macOS and Windows the system does.
 
 ## Development
 
