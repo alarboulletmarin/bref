@@ -1,10 +1,10 @@
-# encre
+# Bref
 
 A fast, minimal note-taking app. Notes are plain Markdown files in a folder you choose, styled as you type. Written in Rust with [GPUI](https://www.gpui.rs), the GPU-accelerated UI framework behind Zed.
 
-![encre, light and dark](docs/screenshots/encre.png)
+![Bref, light and dark](docs/screenshots/bref.png)
 
-[Features](#features) · [Install](#install) · [First run](#first-run) · [Using encre](#using-encre) · [Navigation](#navigation) · [Markdown](#markdown) · [Notes and vault](#notes-and-vault) · [Compatibility](#compatibility) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works) · [Development](#development)
+[Features](#features) · [Install](#install) · [First run](#first-run) · [Using Bref](#using-bref) · [Navigation](#navigation) · [Markdown](#markdown) · [Notes and vault](#notes-and-vault) · [Compatibility](#compatibility) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works) · [Development](#development)
 
 ## Features
 
@@ -30,22 +30,22 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 | macOS | [macOS](#macos) |
 | Windows | [Windows](#windows) |
 
-On Arch there is a prebuilt package; everywhere else encre is compiled on your machine, which takes a few minutes the first time. Compiling needs a recent stable Rust: install it with [rustup](https://rustup.rs) if `rustc --version` shows less than 1.88.
+On Arch there is a prebuilt package; everywhere else Bref is compiled on your machine, which takes a few minutes the first time. Compiling needs a recent stable Rust: install it with [rustup](https://rustup.rs) if `rustc --version` shows less than 1.88.
 
 ### Arch Linux
 
-Every release ships a ready-to-install package (no compiler needed), which pacman then tracks as `encre`. The package is not signed, so download it first: given a URL, pacman looks for a `.sig` file and warns when there is none.
+Every release ships a ready-to-install package (no compiler needed), which pacman then tracks as `bref`. The package is not signed, so download it first: given a URL, pacman looks for a `.sig` file and warns when there is none.
 
 ```bash
-curl -LO https://github.com/alarboulletmarin/encre/releases/latest/download/encre-x86_64.pkg.tar.zst
-sudo pacman -U ./encre-x86_64.pkg.tar.zst
+curl -LO https://github.com/alarboulletmarin/bref/releases/latest/download/bref-x86_64.pkg.tar.zst
+sudo pacman -U ./bref-x86_64.pkg.tar.zst
 ```
 
-To follow `main` instead, build the development package from a checkout (needs `cargo` and `git`, it conflicts with `encre`):
+To follow `main` instead, build the development package from a checkout (needs `cargo` and `git`, it conflicts with `bref`):
 
 ```bash
-git clone https://github.com/alarboulletmarin/encre.git
-cd encre/aur/encre-git
+git clone https://github.com/alarboulletmarin/bref.git
+cd bref/aur/bref-git
 makepkg -si
 ```
 
@@ -65,8 +65,8 @@ Or build the latest tagged release yourself with `makepkg -si` from the reposito
 3. Build and install:
 
    ```bash
-   git clone https://github.com/alarboulletmarin/encre.git
-   cd encre
+   git clone https://github.com/alarboulletmarin/bref.git
+   cd bref
    make
    sudo make install
    ```
@@ -89,50 +89,58 @@ make                    # cargo build --release --locked
 sudo make install       # PREFIX=/usr/local by default, PREFIX=/usr for a system-wide install
 ```
 
-`make install` adds the `encre` command, an entry in your application menu and its icon. `sudo make uninstall` removes them.
+`make install` adds the `bref` command, an entry in your application menu and its icon. `sudo make uninstall` removes them.
 
 ### macOS
 
 Needs Xcode (the full app, for the Metal shader compiler) and Rust.
 
 ```bash
-git clone https://github.com/alarboulletmarin/encre.git
-cd encre
+git clone https://github.com/alarboulletmarin/bref.git
+cd bref
 cargo install --path . --locked
 ```
 
-This installs the `encre` command in `~/.cargo/bin`. There is no `.app` bundle yet: start it from a terminal.
+This installs the `bref` command in `~/.cargo/bin`. There is no `.app` bundle yet: start it from a terminal.
 
 ### Windows
 
 Needs the Visual Studio C++ build tools with the Windows SDK, and Rust (MSVC toolchain).
 
 ```powershell
-git clone https://github.com/alarboulletmarin/encre.git
-cd encre
+git clone https://github.com/alarboulletmarin/bref.git
+cd bref
 cargo install --path . --locked
 ```
 
-This installs `encre.exe` in `%USERPROFILE%\.cargo\bin`. There is no installer yet.
+This installs `bref.exe` in `%USERPROFILE%\.cargo\bin`. There is no installer yet.
 
 ### Upgrading
 
 | Installed with | Upgrade |
 |---|---|
 | Arch, prebuilt package | run the two commands above again |
-| Arch, `encre-git` | `git pull`, then `makepkg -si` in `aur/encre-git` |
+| Arch, `bref-git` | `git pull`, then `makepkg -si` in `aur/bref-git` |
 | `make install` | `git pull`, then `make` and `sudo make install` |
 | `cargo install` | `git pull`, then `cargo install --path . --locked` |
 
+Bref was called encre until 0.1.4. Your notes are untouched, and the settings saved under the old name are still read: they are written under the new one the next time they change.
+
+| Installed encre with | Before upgrading |
+|---|---|
+| Arch, either package | nothing: the `bref` packages replace `encre` and `encre-git` |
+| `make install` | `sudo make uninstall` in the old checkout, before `git pull` |
+| `cargo install` | `cargo uninstall encre` |
+
 ## First run
 
-encre asks for a **vault**: the folder that holds your notes. Pick an existing folder, or create a new one from the file dialog. That is the only setup.
+Bref asks for a **vault**: the folder that holds your notes. Pick an existing folder, or create a new one from the file dialog. That is the only setup.
 
 The choice is remembered, along with the last note you had open. Change vault at any time with `Ctrl + O`.
 
-On Linux, give it a keyboard shortcut if you want it one key away: bind the command `encre` in your desktop settings (GNOME: Settings → Keyboard → Custom Shortcuts).
+On Linux, give it a keyboard shortcut if you want it one key away: bind the command `bref` in your desktop settings (GNOME: Settings → Keyboard → Custom Shortcuts).
 
-## Using encre
+## Using Bref
 
 Start typing: the first line is the title of the note, and the name of its file.
 
@@ -203,7 +211,7 @@ A previewed note only counts as opened, and moves to the top of the recent list,
 - **Renaming** a note whose first line is its name rewrites that line too, so both stay in step. The `[[links]]` to it in the other notes follow, see [Notes and vault](#notes-and-vault).
 - **The trash** is the hidden folder `.trash` at the top of the vault: deleting moves the note or the folder there, and never destroys anything. Empty it, or take a note back, with your file manager.
 
-encre reopens with the panel as you left it.
+Bref reopens with the panel as you left it.
 
 ## Appearance
 
@@ -215,7 +223,7 @@ These choices are kept in a file named `settings`, next to the [config file](#no
 
 ## Markdown
 
-What you type is what is saved. encre only changes how it looks.
+What you type is what is saved. Bref only changes how it looks.
 
 | Type | You get |
 |---|---|
@@ -251,25 +259,25 @@ Tables and footnotes are kept as you typed them, without special rendering. So a
 
   | System | File |
   |---|---|
-  | Linux | `~/.config/encre/config` |
-  | macOS | `~/Library/Application Support/encre/config` |
-  | Windows | `%APPDATA%\encre\config` |
+  | Linux | `~/.config/bref/config` |
+  | macOS | `~/Library/Application Support/bref/config` |
+  | Windows | `%APPDATA%\bref\config` |
 
 ## Compatibility
 
 | System | Status |
 |---|---|
-| Linux, GNOME on Wayland | first-class: this is what encre is built and used on (Arch Linux) |
+| Linux, GNOME on Wayland | first-class: this is what Bref is built and used on (Arch Linux) |
 | Linux, other desktops, Wayland or X11 | should work, with the same built-in title bar. Not tested |
 | macOS, Windows | built and tested by CI on every commit; not used day to day by the author |
 
-- **Linux** needs a working Vulkan driver (Mesa or the vendor one). encre draws its own title bar, as Zed does: GNOME under Wayland draws none for applications. On macOS and Windows the system title bar is used.
+- **Linux** needs a working Vulkan driver (Mesa or the vendor one). Bref draws its own title bar, as Zed does: GNOME under Wayland draws none for applications. On macOS and Windows the system title bar is used.
 - **Language**: French if the system language is French, English otherwise. On Windows it is always English for now.
-- **Fonts**: encre picks Inter, Noto Sans, Segoe UI or Helvetica Neue, whichever is installed, and JetBrains Mono, Menlo or Consolas for code.
+- **Fonts**: Bref picks Inter, Noto Sans, Segoe UI or Helvetica Neue, whichever is installed, and JetBrains Mono, Menlo or Consolas for code.
 
 ## Troubleshooting
 
-**The window takes two seconds to open (Linux).** Another Vulkan driver is slow to load. encre already skips the NVIDIA one when the machine has no NVIDIA card. To check what remains, run `VK_LOADER_DEBUG=driver encre` in a terminal.
+**The window takes two seconds to open (Linux).** Another Vulkan driver is slow to load. Bref already skips the NVIDIA one when the machine has no NVIDIA card. To check what remains, run `VK_LOADER_DEBUG=driver Bref` in a terminal.
 
 **The window does not open, with an error about a surface or an adapter.** No usable Vulkan driver: install the one for your GPU (`vulkan-intel`, `vulkan-radeon`, `nvidia-utils`… on Arch; `mesa-vulkan-drivers` on Ubuntu).
 
@@ -277,7 +285,7 @@ Tables and footnotes are kept as you typed them, without special rendering. So a
 
 **A note was not renamed after I changed its title.** Either another note already has that name, or the file name did not match the first line to begin with and that line is not a `# ` title you just added or changed, see [Notes and vault](#notes-and-vault).
 
-**I changed the vault from another program while encre was open.** encre looks at the vault every two seconds: notes and folders added, renamed or removed elsewhere show up in the tree, the palette and the graph, and the note on display is read again when its file changes. If you were typing in that note at that moment, your version is kept and written back.
+**I changed the vault from another program while Bref was open.** Bref looks at the vault every two seconds: notes and folders added, renamed or removed elsewhere show up in the tree, the palette and the graph, and the note on display is read again when its file changes. If you were typing in that note at that moment, your version is kept and written back.
 
 **Limits.** The name field of a new folder or a rename only edits at its end: type, or erase with Backspace. Links written as plain text inside a code block are not followed when a note is renamed. No full-text search: the palette matches note names and tags.
 
@@ -290,7 +298,7 @@ Tables and footnotes are kept as you typed them, without special rendering. So a
 - **Navigation** (`src/nav.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. 
 - **Graph** (`src/graph.rs`): a force-directed layout computed off the UI thread when the links change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
 - **Startup**: the last note is read before the first frame, so the window appears with its content. Icons are embedded in the binary.
-- **Window**: on Linux encre draws its own title bar, shadow and resize edges (client-side decorations); on macOS and Windows the system does.
+- **Window**: on Linux Bref draws its own title bar, shadow and resize edges (client-side decorations); on macOS and Windows the system does.
 
 ## Development
 

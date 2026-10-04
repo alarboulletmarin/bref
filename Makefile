@@ -6,16 +6,16 @@ all:
 	cargo build --release --locked
 
 install:
-	install -Dm755 target/release/encre $(DESTDIR)$(PREFIX)/bin/encre
-	install -Dm644 dev.andrea.Encre.desktop $(DESTDIR)$(PREFIX)/share/applications/dev.andrea.Encre.desktop
-	install -Dm644 dev.andrea.Encre.svg $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/dev.andrea.Encre.svg
-	install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/licenses/encre/LICENSE
+	install -Dm755 target/release/bref $(DESTDIR)$(PREFIX)/bin/bref
+	install -Dm644 dev.andrea.Bref.desktop $(DESTDIR)$(PREFIX)/share/applications/dev.andrea.Bref.desktop
+	install -Dm644 dev.andrea.Bref.svg $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/dev.andrea.Bref.svg
+	install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/licenses/bref/LICENSE
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/encre \
-	  $(DESTDIR)$(PREFIX)/share/applications/dev.andrea.Encre.desktop \
-	  $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/dev.andrea.Encre.svg
-	rm -rf $(DESTDIR)$(PREFIX)/share/licenses/encre
+	rm -f $(DESTDIR)$(PREFIX)/bin/bref \
+	  $(DESTDIR)$(PREFIX)/share/applications/dev.andrea.Bref.desktop \
+	  $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/dev.andrea.Bref.svg
+	rm -rf $(DESTDIR)$(PREFIX)/share/licenses/bref
 
 test:
 	cargo test --locked

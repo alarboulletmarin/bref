@@ -1,11 +1,11 @@
 [package]
-name = "encre"
+name = "bref"
 version = "0.1.4"
 edition = "2024"
 rust-version = "1.88"
 description = "Fast, minimal Markdown note-taking app"
 license = "MIT"
-repository = "https://github.com/alarboulletmarin/encre"
+repository = "https://github.com/alarboulletmarin/bref"
 
 [dependencies]
 gpui = "0.2.2"

@@ -212,10 +212,10 @@ pub struct Theme {
 }
 
 /// Thèmes proposés : (nom, [fond, texte, discret, accent, fond du code, panneau, bordure]).
-/// Les deux premiers sont ceux d'Encre, sombre et clair, qui suivent le système.
+/// Les deux premiers sont ceux de Bref, sombre et clair, qui suivent le système.
 const THEMES: &[(&str, [u32; 7])] = &[
-    ("Encre Dark", [0x1b1a19, 0xe4e0da, 0x77716a, 0xe0926b, 0x262423, 0x242221, 0x3a3735]),
-    ("Encre Light", [0xfbfaf8, 0x26231f, 0xa8a29a, 0xb4532a, 0xf1eeea, 0xffffff, 0xe2ddd6]),
+    ("Bref Dark", [0x1b1a19, 0xe4e0da, 0x77716a, 0xe0926b, 0x262423, 0x242221, 0x3a3735]),
+    ("Bref Light", [0xfbfaf8, 0x26231f, 0xa8a29a, 0xb4532a, 0xf1eeea, 0xffffff, 0xe2ddd6]),
     ("Dracula", [0x282a36, 0xf8f8f2, 0x6272a4, 0xbd93f9, 0x21222c, 0x343746, 0x44475a]),
     ("One Dark", [0x282c34, 0xabb2bf, 0x5c6370, 0x61afef, 0x21252b, 0x2c313a, 0x3e4451]),
     ("Gruvbox Dark", [0x282828, 0xebdbb2, 0x928374, 0xfabd2f, 0x32302f, 0x3c3836, 0x504945]),
@@ -230,7 +230,7 @@ const THEMES: &[(&str, [u32; 7])] = &[
 ];
 
 impl Theme {
-    /// Le thème choisi ; à défaut, celui d'Encre accordé à l'apparence du système.
+    /// Le thème choisi ; à défaut, celui de Bref accordé à l'apparence du système.
     fn of(prefs: &Prefs, appearance: WindowAppearance) -> Self {
         let dark = matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark);
         let system = &THEMES[if dark { 0 } else { 1 }];
@@ -1043,7 +1043,7 @@ impl Render for Shell {
         let title = match (&self.path, &self.vault) {
             (Some(p), _) => vault::stem(p),
             (None, Some(_)) => tr("New note", "Nouvelle note").to_string(),
-            (None, None) => "encre".to_string(),
+            (None, None) => "Bref".to_string(),
         };
         if title != self.title {
             window.set_window_title(&title);
@@ -1135,7 +1135,7 @@ impl Render for Shell {
                     div()
                         .text_size(px(26.))
                         .font_weight(gpui::FontWeight::BOLD)
-                        .child("encre"),
+                        .child("Bref"),
                 )
                 .child(
                     div()
@@ -1462,11 +1462,11 @@ fn main() {
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
-                    title: Some("encre".into()),
+                    title: Some("Bref".into()),
                     ..Default::default()
                 }),
                 // Doit correspondre au nom du fichier .desktop pour que le bureau associe l'icône.
-                app_id: Some("dev.andrea.Encre".into()),
+                app_id: Some("dev.andrea.Bref".into()),
                 // Comme Zed : sous Linux l'app dessine sa barre de titre. Demander
                 // `Server` ne marche pas sous GNOME/Wayland, qui n'en fournit pas
                 // alors que gpui 0.2 se croit quand même décoré. macOS et Windows
@@ -1492,7 +1492,7 @@ mod tests {
     /// Parcours complet au clavier : saisie, listes, enregistrement, palette, wikilien.
     #[gpui::test]
     fn end_to_end(cx: &mut TestAppContext) {
-        let root = std::env::temp_dir().join(format!("encre-e2e-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("bref-e2e-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("Courses.md"), "# Courses\n\n- lait #maison\n").unwrap();
         fs::create_dir(root.join("Projets")).unwrap();
@@ -1501,6 +1501,14 @@ mod tests {
         for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
             unsafe { std::env::set_var(key, root.join(".config")) };
         }
+        // Ce qu'une version nommée « encre » a laissé est relu tant que rien n'existe sous le nouveau nom.
+        let old = vault::config_dir().join("encre");
+        fs::create_dir_all(&old).unwrap();
+        fs::write(old.join("config"), format!("{}\n", root.display())).unwrap();
+        fs::write(old.join("layout"), "graph split 260 0").unwrap();
+        assert_eq!(vault::load_config().0, Some(root.clone()));
+        assert_eq!(vault::load_layout(), "graph split 260 0");
+        fs::remove_dir_all(&old).unwrap();
 
         cx.update(bind_keys);
         cx.update(init_fonts);
@@ -1589,7 +1597,7 @@ mod tests {
         cx.simulate_keystrokes("escape");
         assert_eq!(look(cx), system);
         cx.simulate_keystrokes("secondary-k secondary-t down down enter");
-        assert_eq!(look(cx), ("Encre Light".to_string(), Hsla::from(rgb(0xfbfaf8))));
+        assert_eq!(look(cx), ("Bref Light".to_string(), Hsla::from(rgb(0xfbfaf8))));
         // Police du code, depuis la palette ; taille du texte au clavier.
         cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("police du");
@@ -1599,7 +1607,7 @@ mod tests {
         assert_eq!(mono(), ".SystemUIFont");
         cx.simulate_keystrokes("secondary-= secondary-= secondary--");
         assert_eq!(shell.read_with(cx, |s, _| s.theme.size), 17.);
-        assert_eq!(vault::load_settings(), "theme=Encre Light\nfont=\nmono=.SystemUIFont\nsize=17\n");
+        assert_eq!(vault::load_settings(), "theme=Bref Light\nfont=\nmono=.SystemUIFont\nsize=17\n");
         cx.simulate_keystrokes("secondary-0");
         assert_eq!(shell.read_with(cx, |s, _| s.theme.size), 16.);
         cx.simulate_input("!");

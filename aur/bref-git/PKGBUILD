@@ -1,21 +1,23 @@
 # Maintainer: Andrea Larboullet Marin <a.larboulletmarin@gmail.com>
 # Tracks the main branch: every `makepkg -si` builds the latest commit.
-pkgname=encre-git
-_name=encre
+pkgname=bref-git
+_name=bref
 pkgver=0.1.0.r0.g0000000
 pkgrel=1
 pkgdesc="Fast, minimal Markdown note-taking app (development version)"
 arch=('x86_64' 'aarch64')
-url="https://github.com/alarboulletmarin/encre"
+url="https://github.com/alarboulletmarin/bref"
 license=('MIT')
 depends=('libxcb' 'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'vulkan-icd-loader')
 makedepends=('cargo' 'git' 'fontconfig' 'freetype2')
 optdepends=('vulkan-driver: a Vulkan driver for your GPU is required to open the window')
 # The binary is stripped at build time: a -debug package would be empty, and its
-# file would clash between encre and encre-git.
+# file would clash between bref and bref-git.
 options=('!debug')
-provides=('encre')
-conflicts=('encre')
+provides=('bref')
+# The app was called encre until 0.1.4.
+conflicts=('bref' 'encre' 'encre-git')
+replaces=('encre-git')
 source=("git+$url.git")
 sha256sums=('SKIP')
 

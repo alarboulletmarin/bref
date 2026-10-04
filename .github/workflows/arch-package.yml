@@ -24,7 +24,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp encre-[0-9]*-x86_64.pkg.tar.zst encre-x86_64.pkg.tar.zst
+          cp bref-[0-9]*-x86_64.pkg.tar.zst bref-x86_64.pkg.tar.zst
           gh release upload "${{ github.event.release.tag_name }}" \
-            encre-[0-9]*-x86_64.pkg.tar.zst encre-x86_64.pkg.tar.zst \
+            bref-[0-9]*-x86_64.pkg.tar.zst bref-x86_64.pkg.tar.zst \
             --clobber --repo "${{ github.repository }}"

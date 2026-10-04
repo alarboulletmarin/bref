@@ -20,7 +20,7 @@ pub struct Note {
 }
 
 /// Dossier de configuration de l'utilisateur, selon la plateforme.
-fn config_dir() -> PathBuf {
+pub fn config_dir() -> PathBuf {
     let var = |key: &str| env::var_os(key).map(PathBuf::from);
     let dir = if cfg!(windows) {
         var("APPDATA")
@@ -33,13 +33,14 @@ fn config_dir() -> PathBuf {
 }
 
 fn config_path() -> PathBuf {
-    config_dir().join("encre/config")
+    config_dir().join("bref/config")
 }
 
 /// (coffre, notes ouvertes de la plus récente à la plus ancienne) : une ligne chacun.
 pub fn load_config() -> (Option<PathBuf>, Vec<PathBuf>) {
-    // Repli sur la config de l'ancien nom de l'app ; elle n'est jamais réécrite.
+    // Repli sur la config des anciens noms de l'app ; elle n'est jamais réécrite.
     let text = fs::read_to_string(config_path())
+        .or_else(|_| fs::read_to_string(config_dir().join("encre/config")))
         .or_else(|_| fs::read_to_string(config_dir().join("onenote/config")))
         .unwrap_or_default();
     let mut lines = text.lines().filter(|l| !l.is_empty()).map(PathBuf::from);
@@ -57,16 +58,19 @@ pub fn save_config(vault: &Path, recent: &[PathBuf]) {
         .map_or(Ok(()), fs::create_dir_all)
         .and_then(|_| fs::write(&path, text));
     if let Err(e) = result {
-        eprintln!("encre: {} ({}): {e}", tr("config not saved", "config non enregistrée"), path.display());
+        eprintln!("bref: {} ({}): {e}", tr("config not saved", "config non enregistrée"), path.display());
     }
 }
 
 fn load_file(name: &str) -> String {
-    fs::read_to_string(config_dir().join("encre").join(name)).unwrap_or_default()
+    // Même repli que pour la config : les réglages laissés sous l'ancien nom sont relus.
+    fs::read_to_string(config_dir().join("bref").join(name))
+        .or_else(|_| fs::read_to_string(config_dir().join("encre").join(name)))
+        .unwrap_or_default()
 }
 
 fn save_file(name: &str, text: &str) {
-    let path = config_dir().join("encre").join(name);
+    let path = config_dir().join("bref").join(name);
     // Simple confort : si l'écriture échoue, l'app rouvrira avec ses réglages d'origine.
     let _ = path.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(path, text));
 }
@@ -312,7 +316,7 @@ mod tests {
 
     #[test]
     fn saves_and_renames() {
-        let root = env::temp_dir().join(format!("encre-test-{}", std::process::id()));
+        let root = env::temp_dir().join(format!("bref-test-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let a = save(&root, None, true, "# A\n").unwrap();
         assert_eq!(a, root.join("A.md"));

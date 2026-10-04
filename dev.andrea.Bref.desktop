@@ -1,15 +1,15 @@
 [Desktop Entry]
 Type=Application
-Name=Encre
+Name=Bref
 GenericName=Notes
 GenericName[fr]=Notes
 Comment=Fast, minimal Markdown notes
 Comment[fr]=Prise de notes Markdown, rapide et minimaliste
-Exec=encre
-Icon=dev.andrea.Encre
+Exec=bref
+Icon=dev.andrea.Bref
 Terminal=false
 Categories=Office;TextEditor;
 Keywords=notes;markdown;writing;
 Keywords[fr]=notes;markdown;écriture;
 StartupNotify=true
-StartupWMClass=dev.andrea.Encre
+StartupWMClass=dev.andrea.Bref

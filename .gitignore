@@ -6,6 +6,7 @@
 
 # makepkg: build tree, downloaded sources, packages, logs
 /pkg/
+/src/bref-*
 /src/encre-*
 /*.tar.gz
 /*.pkg.tar.*
@@ -13,9 +14,7 @@
 /*.log
 
 # makepkg builds of aur/*
-/aur/*/src/
-/aur/*/pkg/
-/aur/*/encre/
+/aur/*/*/
 /aur/*/*.pkg.tar.*
 
 # Claude Code local caches

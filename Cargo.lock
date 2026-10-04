@@ -618,6 +618,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bref"
+version = "0.1.4"
+dependencies = [
+ "gpui",
+ "latex-rust",
+ "mermaid-rs-renderer",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "bstr"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1372,16 +1382,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "encre"
-version = "0.1.4"
-dependencies = [
- "gpui",
- "latex-rust",
- "mermaid-rs-renderer",
- "unicode-segmentation",
 ]
 
 [[package]]

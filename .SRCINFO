@@ -1,8 +1,8 @@
-pkgbase = encre
+pkgbase = bref
 	pkgdesc = Fast, minimal Markdown note-taking app
 	pkgver = 0.1.4
 	pkgrel = 1
-	url = https://github.com/alarboulletmarin/encre
+	url = https://github.com/alarboulletmarin/bref
 	arch = x86_64
 	arch = aarch64
 	license = MIT
@@ -15,8 +15,10 @@ pkgbase = encre
 	depends = wayland
 	depends = vulkan-icd-loader
 	optdepends = vulkan-driver: a Vulkan driver for your GPU is required to open the window
+	conflicts = encre
+	replaces = encre
 	options = !debug
-	source = encre-0.1.4.tar.gz::https://github.com/alarboulletmarin/encre/archive/refs/tags/v0.1.4.tar.gz
+	source = bref-0.1.4.tar.gz::https://github.com/alarboulletmarin/bref/archive/refs/tags/v0.1.4.tar.gz
 	sha256sums = 0d0edda4c5c89b1b8b9d6e7f9df8a7c28bfe88922e28497bc644f3854c78f02a
 
-pkgname = encre
+pkgname = bref

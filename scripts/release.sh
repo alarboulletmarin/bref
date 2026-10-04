@@ -13,9 +13,9 @@ die() { echo "release: $*" >&2; exit 1; }
 ver=${1:?usage: scripts/release.sh X.Y.Z [notes-file]}
 [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must look like 1.2.3"
 [ "$(git branch --show-current)" = main ] || die "not on main"
-# makepkg rewrites pkgver in aur/encre-git/PKGBUILD at every build of the -git
+# makepkg rewrites pkgver in aur/bref-git/PKGBUILD at every build of the -git
 # package: that file may differ, and it is never staged by this script.
-git diff --quiet -- . ':!aur/encre-git/PKGBUILD' && git diff --cached --quiet || die "uncommitted changes"
+git diff --quiet -- . ':!aur/bref-git/PKGBUILD' && git diff --cached --quiet || die "uncommitted changes"
 git fetch -q origin
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "main differs from origin/main"
 git rev-parse -q --verify "refs/tags/v$ver" >/dev/null && die "tag v$ver already exists"
@@ -29,24 +29,24 @@ else
     { echo "## Changes"; echo
       git log "$prev..HEAD" --no-merges --pretty='- %s' | grep -vE '^- (chore|build)(\(.*\))?: ' || true
       echo; echo "## Install and upgrade"; echo
-      echo "See the [README](https://github.com/alarboulletmarin/encre#install). On Arch, download \`encre-x86_64.pkg.tar.zst\` from the assets below, then \`sudo pacman -U ./encre-x86_64.pkg.tar.zst\`."
+      echo "See the [README](https://github.com/alarboulletmarin/bref#install). On Arch, download \`bref-x86_64.pkg.tar.zst\` from the assets below, then \`sudo pacman -U ./bref-x86_64.pkg.tar.zst\`."
     } >"$notes"
 fi
 
 sed -i "0,/^version = .*/s//version = \"$ver\"/" Cargo.toml
 sed -i "s/^pkgver=.*/pkgver=$ver/" PKGBUILD
-cargo update -p encre --offline -q
+cargo update -p bref --offline -q
 cargo test --locked -q
 
 git add Cargo.toml Cargo.lock PKGBUILD
 # Nothing to commit when the files already carry this version (first release).
 git diff --cached --quiet || git commit -q -m "chore: release $ver"
-git tag -a "v$ver" -m "encre $ver"
+git tag -a "v$ver" -m "Bref $ver"
 git push origin main "v$ver"
-gh release create "v$ver" --title "encre $ver" --notes-file "$notes"
+gh release create "v$ver" --title "Bref $ver" --notes-file "$notes"
 
 # The tarball GitHub serves for the tag is what the PKGBUILD downloads: hash that one.
-url="https://github.com/alarboulletmarin/encre/archive/refs/tags/v$ver.tar.gz"
+url="https://github.com/alarboulletmarin/bref/archive/refs/tags/v$ver.tar.gz"
 sha=
 for _ in 1 2 3 4 5; do
     sha=$(curl -fsL "$url" | sha256sum | cut -d' ' -f1) && [ -n "$sha" ] && break
