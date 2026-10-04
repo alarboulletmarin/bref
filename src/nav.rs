@@ -1,5 +1,5 @@
 //! Navigation : un rail d'icônes toujours visible, et un panneau (arbre du
-//! coffre ou notes récentes) qui partage la fenêtre avec la note.
+//! coffre, notes récentes ou graphe) qui partage la fenêtre avec la note.
 
 use std::{
     collections::HashSet,
@@ -17,7 +17,7 @@ use crate::{
     vault::{self, Note},
 };
 
-actions!(nav, [ShowTree, ShowRecent, ToggleFull, Prev, Next, Fold, Unfold, Open, Close]);
+actions!(nav, [ShowTree, ShowRecent, ShowGraph, ToggleFull, Prev, Next, Fold, Unfold, Open, Close]);
 
 const RAIL: Pixels = px(40.);
 const ROW: Pixels = px(26.);
@@ -27,6 +27,7 @@ const LIST_W: Pixels = px(260.);
 pub enum Mode {
     Tree,
     Recent,
+    Graph,
 }
 
 /// Place du panneau : replié sur son rail, à côté de la note, ou seul.
@@ -51,6 +52,8 @@ pub struct Nav {
     pub mode: Mode,
     pub panel: Panel,
     list_w: Pixels,
+    /// Largeur du graphe ; zéro : la moitié de la fenêtre.
+    graph_w: Pixels,
     pub dragging: bool,
     /// Ligne sélectionnée (note ou dossier).
     pub sel: Option<PathBuf>,
@@ -75,6 +78,7 @@ impl Nav {
             focus,
             mode: match words.next() {
                 Some("recent") => Mode::Recent,
+                Some("graph") => Mode::Graph,
                 _ => Mode::Tree,
             },
             panel: match words.next() {
@@ -83,6 +87,7 @@ impl Nav {
                 _ => Panel::Rail,
             },
             list_w: words.next().and_then(|w| w.parse().ok()).map_or(LIST_W, px),
+            graph_w: words.next().and_then(|w| w.parse().ok()).map_or(px(0.), px),
             dragging: false,
             sel: None,
             open: HashSet::new(),
@@ -98,13 +103,15 @@ impl Nav {
         let mode = match self.mode {
             Mode::Tree => "tree",
             Mode::Recent => "recent",
+            Mode::Graph => "graph",
         };
         let panel = match self.panel {
             Panel::Rail => "rail",
             Panel::Split => "split",
             Panel::Full => "full",
         };
-        vault::save_layout(&format!("{mode} {panel} {}\n", f32::from(self.list_w)));
+        let (list, graph) = (f32::from(self.list_w), f32::from(self.graph_w));
+        vault::save_layout(&format!("{mode} {panel} {list} {graph}\n"));
     }
 
     /// Sélectionne la note et déplie les dossiers qui y mènent.
@@ -112,6 +119,14 @@ impl Nav {
         self.sel = Some(path.to_path_buf());
         self.open.extend(path.ancestors().skip(1).map(Path::to_path_buf));
         self.reveal = true;
+    }
+
+    /// Largeur du panneau à côté de la note, dans le mode affiché.
+    fn width(&mut self) -> &mut Pixels {
+        match self.mode {
+            Mode::Graph => &mut self.graph_w,
+            _ => &mut self.list_w,
+        }
     }
 
     /// Dossier où créer une note depuis l'arbre : celui de la sélection.
@@ -219,8 +234,26 @@ impl Shell {
             }
             self.nav.reveal = true;
             window.focus(&self.nav.focus);
+            self.refresh_graph(cx);
         }
         self.settle_nav(window, cx);
+    }
+
+    /// Met le graphe à jour s'il est affiché et que les notes ou leurs liens ont changé.
+    pub fn refresh_graph(&mut self, cx: &mut Context<Self>) {
+        if self.graph_stale && self.nav.panel != Panel::Rail && self.nav.mode == Mode::Graph {
+            self.graph_stale = false;
+            self.graph.update(cx, |graph, cx| graph.set_notes(&self.notes, cx));
+        }
+    }
+
+    /// Un nœud du graphe est sélectionné : aperçu de la note si elle a la place.
+    pub fn select_from_graph(&mut self, path: &Path, cx: &mut Context<Self>) {
+        if self.nav.panel == Panel::Split {
+            self.preview_note(path, cx);
+        }
+        self.nav.sel = Some(path.to_path_buf());
+        cx.notify();
     }
 
     pub fn toggle_full(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -254,7 +287,7 @@ impl Shell {
         } else if x > room - px(140.) {
             Panel::Full
         } else {
-            self.nav.list_w = x;
+            *self.nav.width() = x;
             Panel::Split
         };
         cx.notify();
@@ -266,6 +299,7 @@ impl Shell {
         };
         match self.nav.mode {
             Mode::Tree => tree_rows(root, &self.notes, &self.nav.open),
+            Mode::Graph => Vec::new(),
             Mode::Recent => self
                 .by_recency()
                 .into_iter()
@@ -449,6 +483,8 @@ impl Shell {
         let (mode, panel) = (self.nav.mode, self.nav.panel);
         let unfolded = panel != Panel::Rail;
         self.nav.rows = if unfolded { self.nav_rows() } else { Vec::new() };
+        let (current, selected) = (self.path.clone(), self.nav.sel.clone());
+        self.graph.update(cx, |graph, _| graph.sync(t, current.as_deref(), selected.as_deref()));
         if std::mem::take(&mut self.nav.reveal)
             && let Some(ix) = self.selected_row()
         {
@@ -471,6 +507,7 @@ impl Shell {
             .when(!unfolded, |d| d.border_r_1().border_color(t.border))
             .child(mode_button("nav-tree", "tree.svg", Mode::Tree))
             .child(mode_button("nav-recent", "clock.svg", Mode::Recent))
+            .child(mode_button("nav-graph", "graph.svg", Mode::Graph))
             .child(div().w(px(16.)).h(px(1.)).my_1().bg(t.border))
             .child(
                 button("nav-search", "search.svg", false, t)
@@ -494,6 +531,7 @@ impl Shell {
         let full = panel == Panel::Full;
         let title = match (mode, &self.vault) {
             (Mode::Tree, Some(root)) => vault::stem(root),
+            (Mode::Graph, _) => tr("Graph", "Graphe").to_string(),
             _ => tr("Recent", "Récents").to_string(),
         };
         let header = div()
@@ -504,6 +542,11 @@ impl Shell {
             .flex()
             .items_center()
             .child(div().flex_1().truncate().text_size(px(12.)).text_color(t.dim).child(title))
+            .when(mode == Mode::Graph, |d| {
+                d.child(button("nav-center", "target.svg", false, t).on_click(cx.listener(
+                    |this, _, _, cx| this.graph.update(cx, |graph, cx| graph.recenter(cx)),
+                )))
+            })
             .when(mode == Mode::Tree, |d| {
                 d.child(button("nav-fold", "fold.svg", false, t).on_click(cx.listener(
                     |this, _, _, cx| {
@@ -521,7 +564,10 @@ impl Shell {
             .flex_1()
             .min_h_0();
         let room = self.nav.total - RAIL;
-        let width = self.nav.list_w.min(room - px(200.)).max(px(120.));
+        let width = match *self.nav.width() {
+            w if w == px(0.) => room / 2.,
+            w => w.min(room - px(200.)).max(px(120.)),
+        };
         let content = div()
             .h_full()
             .min_w_0()
@@ -547,7 +593,10 @@ impl Shell {
                 this.settle_nav(window, cx);
             }))
             .child(header)
-            .child(list);
+            .map(|d| match mode {
+                Mode::Graph => d.child(div().flex_1().min_h_0().child(self.graph.clone())),
+                _ => d.child(list),
+            });
         // Poignée de 5 px autour d'un trait de 1 px ; double-clic : largeur d'origine.
         let divider = div()
             .id("nav-divider")
@@ -562,7 +611,7 @@ impl Shell {
                 MouseButton::Left,
                 cx.listener(|this, e: &MouseDownEvent, window, cx| {
                     if e.click_count >= 2 {
-                        this.nav.list_w = LIST_W;
+                        *this.nav.width() = if this.nav.mode == Mode::Graph { px(0.) } else { LIST_W };
                         this.nav.panel = Panel::Split;
                         this.settle_nav(window, cx);
                     } else {

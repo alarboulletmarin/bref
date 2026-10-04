@@ -2,6 +2,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod editor;
+mod graph;
 mod markdown;
 mod nav;
 mod palette;
@@ -24,6 +25,7 @@ use gpui::{
 };
 
 use editor::{Editor, EditorEvent};
+use graph::{Graph, GraphEvent};
 use markdown::Link;
 use nav::{Mode, Nav, Panel};
 use palette::{Entry, Palette, PaletteEvent};
@@ -85,6 +87,10 @@ impl AssetSource for Assets {
             }
             "chevron-right.svg" => r#"<path d="M6.5 4.5L10 8L6.5 11.5"/>"#,
             "chevron-down.svg" => r#"<path d="M4.5 6.5L8 10L11.5 6.5"/>"#,
+            "graph.svg" => {
+                r#"<circle cx="4" cy="11.5" r="1.7"/><circle cx="11.5" cy="4.5" r="1.7"/><circle cx="12" cy="12" r="1.3"/><path d="M5.3 10.3L10.2 5.7M11.6 6.2L11.9 10.7"/>"#
+            }
+            "target.svg" => r#"<circle cx="8" cy="8" r="2"/><path d="M8 2.5V5M8 11V13.5M2.5 8H5M11 8H13.5"/>"#,
             "fold.svg" => r#"<path d="M4.5 3.5L8 6.5L11.5 3.5M4.5 12.5L8 9.5L11.5 12.5"/>"#,
             "expand.svg" => r#"<path d="M9.5 3.5H12.5V6.5M6.5 12.5H3.5V9.5M12.5 3.5L9 7M3.5 12.5L7 9"/>"#,
             "shrink.svg" => r#"<path d="M12.5 6.5H9.5V3.5M3.5 9.5H6.5V12.5M9.5 6.5L13 3M6.5 9.5L3 13"/>"#,
@@ -146,6 +152,9 @@ struct Shell {
     focus: FocusHandle,
     editor: Entity<Editor>,
     nav: Nav,
+    graph: Entity<Graph>,
+    /// Les notes ou leurs liens ont changé depuis le dernier calcul du graphe.
+    graph_stale: bool,
     palette: Option<Entity<Palette>>,
     vault: Option<PathBuf>,
     notes: Vec<Note>,
@@ -193,10 +202,21 @@ impl Shell {
         })
         .detach();
 
+        let nav = Nav::new(cx.focus_handle());
+        // Le graphe partage le focus du panneau : les mêmes touches y naviguent.
+        let graph = cx.new(|_| Graph::new(nav.focus.clone(), theme));
+        cx.subscribe_in(&graph, window, |this, _, event, window, cx| match event {
+            GraphEvent::Select(path) => this.select_from_graph(path, cx),
+            GraphEvent::Open(path) => this.open_from_nav(path, window, cx),
+        })
+        .detach();
+
         let mut this = Self {
             focus: cx.focus_handle(),
             editor,
-            nav: Nav::new(cx.focus_handle()),
+            nav,
+            graph,
+            graph_stale: true,
             palette: None,
             vault: None,
             notes: Vec::new(),
@@ -249,6 +269,8 @@ impl Shell {
                 if this.vault.as_ref() == Some(&root) {
                     this.notes = notes;
                     this.push_names(cx);
+                    this.graph_stale = true;
+                    this.refresh_graph(cx);
                     cx.notify();
                 }
             })
@@ -419,9 +441,14 @@ impl Shell {
             Ok(path) => {
                 self.dirty = false;
                 self.error = None;
+                let (tags, links) = markdown::index(&content);
+                // Le graphe ne change que si la note est nouvelle, renommée ou liée autrement.
+                let known = self.notes.iter().find(|n| Some(&n.path) == self.path.as_ref());
+                if known.is_none_or(|n| n.path != path || n.links != links) {
+                    self.graph_stale = true;
+                }
                 self.notes
                     .retain(|n| Some(&n.path) != self.path.as_ref() && n.path != path);
-                let (tags, links) = markdown::index(&content);
                 self.notes.insert(
                     0,
                     Note {
@@ -439,6 +466,7 @@ impl Shell {
                     self.path = Some(path);
                     self.push_names(cx);
                 }
+                self.refresh_graph(cx);
             }
             Err(e) => {
                 self.error = Some(format!("{} : {e}", tr("Note not saved", "Note non enregistrée")))
@@ -799,6 +827,9 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &nav::ShowRecent, window, cx| {
                 this.show_nav(Mode::Recent, false, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &nav::ShowGraph, window, cx| {
+                this.show_nav(Mode::Graph, false, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &nav::ToggleFull, window, cx| this.toggle_full(window, cx)))
             // Séparateur du panneau : il suit le pointeur tant que le bouton est tenu.
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
@@ -906,7 +937,9 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-q", Quit, None),
         KeyBinding::new("secondary-e", nav::ShowTree, Some("Shell")),
         KeyBinding::new("secondary-r", nav::ShowRecent, Some("Shell")),
+        KeyBinding::new("secondary-g", nav::ShowGraph, Some("Shell")),
         KeyBinding::new("secondary-m", nav::ToggleFull, Some("Shell")),
+        KeyBinding::new("tab", graph::Cycle, n),
         KeyBinding::new("up", nav::Prev, n),
         KeyBinding::new("down", nav::Next, n),
         KeyBinding::new("left", nav::Fold, n),
@@ -1173,7 +1206,7 @@ mod tests {
             cx.simulate_mouse_up(at(to), MouseButton::Left, gpui::Modifiers::none());
         };
         drag(cx, 302., 450.);
-        assert_eq!(vault::load_layout(), "tree split 410\n");
+        assert_eq!(vault::load_layout(), "tree split 410 0\n");
         drag(cx, 452., 60.);
         assert_eq!(shell.read_with(cx, |s, _| s.nav.panel), Panel::Rail);
 
@@ -1185,7 +1218,33 @@ mod tests {
         assert_eq!(text(cx), "# Sous");
         // Redemander le mode affiché : d'abord le focus, puis le repli sur le rail.
         cx.simulate_keystrokes("secondary-r secondary-r");
-        assert_eq!(vault::load_layout(), "recent rail 410\n");
+        assert_eq!(vault::load_layout(), "recent rail 410 0\n");
+
+        // Graphe : une arête par wikilien résolu. Tab parcourt les notes liées à la
+        // note ouverte, en aperçu ; Entrée ouvre celle qui est sélectionnée.
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("cou");
+        cx.simulate_keystrokes("enter secondary-g");
+        cx.run_until_parked();
+        assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (Mode::Graph, Panel::Split));
+        assert_eq!(shell.read_with(cx, |s, cx| s.graph.read(cx).size()), (5, 2));
+        let mut linked = Vec::new();
+        for _ in 0..2 {
+            cx.simulate_keystrokes("tab");
+            linked.push(shell.read_with(cx, |s, _| vault::stem(s.path.as_ref().unwrap())));
+            assert!(shell.read_with(cx, |s, _| s.preview && s.recent[0] == root.join("Courses.md")));
+        }
+        linked.sort();
+        assert_eq!(linked, ["Plan", "Test"]);
+        cx.simulate_keystrokes("enter");
+        assert!(shell.read_with(cx, |s, _| !s.preview && s.recent[0] == *s.path.as_ref().unwrap()));
+        assert!(cx.update(|window, cx| shell.read(cx).editor.focus_handle(cx).is_focused(window)));
+        // Plein écran : la sélection ne déplace plus la note ; Entrée lui rend sa place.
+        cx.simulate_keystrokes("secondary-g secondary-m tab");
+        let open = shell.read_with(cx, |s, _| s.path.clone());
+        assert!(shell.read_with(cx, |s, _| s.nav.panel == Panel::Full && s.nav.sel != s.path));
+        cx.simulate_keystrokes("enter");
+        assert!(shell.read_with(cx, |s, _| s.nav.panel == Panel::Split && s.path != open));
 
         fs::remove_dir_all(&root).unwrap();
     }
