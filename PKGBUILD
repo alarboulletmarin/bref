@@ -9,6 +9,9 @@ license=('MIT')
 depends=('libxcb' 'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'vulkan-icd-loader')
 makedepends=('cargo' 'fontconfig' 'freetype2')
 optdepends=('vulkan-driver: a Vulkan driver for your GPU is required to open the window')
+# The binary is stripped at build time: a -debug package would be empty, and its
+# file would clash between encre and encre-git.
+options=('!debug')
 # Pinned by scripts/release.sh once the release tarball exists.
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('5cf449bdd46e43315ad0b658040b66d3e39be28f2cfe6b321643947feb015bd4')
