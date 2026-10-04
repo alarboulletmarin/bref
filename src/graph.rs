@@ -1,5 +1,6 @@
 //! Graphe du coffre : un nœud par note, une arête par `[[lien]]` vers une note
-//! existante. On s'y déplace à la souris (glisser, molette) ou au clavier.
+//! existante. On s'y déplace à la souris (glisser, molette) ou au clavier, et
+//! un nœud se déplace en le tirant : ses voisins suivent.
 
 use std::{
     collections::HashMap,
@@ -7,9 +8,10 @@ use std::{
 };
 
 use gpui::{
-    App, BorderStyle, Bounds, ContentMask, Context, EventEmitter, FocusHandle, Focusable, Hsla,
-    MouseButton, MouseDownEvent, MouseMoveEvent, PathBuilder, Pixels, Point, ScrollWheelEvent,
-    SharedString, TextRun, Window, actions, canvas, div, font, point, prelude::*, px, quad, size,
+    App, BorderStyle, Bounds, ContentMask, Context, CursorStyle, EventEmitter, FocusHandle,
+    Focusable, Hsla, MouseButton, MouseDownEvent, MouseMoveEvent, PathBuilder, Pixels, Point,
+    ScrollWheelEvent, SharedString, TextRun, Window, actions, canvas, div, font, point, prelude::*,
+    px, quad, size,
 };
 
 use crate::{
@@ -23,6 +25,8 @@ actions!(graph, [Cycle]);
 
 /// Pixels par unité de disposition en deçà desquels les noms sont masqués.
 const LABEL_ZOOM: f32 = 30.;
+/// Frames pendant lesquelles les nœuds entraînés finissent de se poser après un glisser.
+const SETTLE: u32 = 60;
 
 pub enum GraphEvent {
     /// Un nœud est sélectionné : la note peut s'afficher en aperçu.
@@ -103,6 +107,24 @@ pub fn layout(seed: &[Option<(f32, f32)>], edges: &[(usize, usize)]) -> Vec<(f32
     pos
 }
 
+/// Un pas du glisser : le déplacement du nœud tenu se propage le long des liens.
+/// Chaque nœud lié suit la moyenne des déplacements de ses voisins et revient
+/// un peu vers sa place `rest` ; plus on s'éloigne du nœud tenu, moins ça bouge.
+// ponytail: pas de répulsion pendant le glisser, un nœud entraîné peut en
+// recouvrir un autre ; relancer `layout` au lâcher si cela gêne.
+fn follow(pos: &mut [(f32, f32)], rest: &[(f32, f32)], near: &[Vec<usize>], held: usize) {
+    let shift: Vec<(f32, f32)> = pos.iter().zip(rest).map(|(p, r)| (p.0 - r.0, p.1 - r.1)).collect();
+    for (i, links) in near.iter().enumerate() {
+        if i == held || links.is_empty() {
+            continue;
+        }
+        let n = links.len() as f32;
+        let mean = links.iter().fold((0., 0.), |a, &j| (a.0 + shift[j].0 / n, a.1 + shift[j].1 / n));
+        let ease = |own: f32, mean: f32| own + 0.12 * (mean - own) - 0.012 * own;
+        pos[i] = (rest[i].0 + ease(shift[i].0, mean.0), rest[i].1 + ease(shift[i].1, mean.1));
+    }
+}
+
 pub struct Graph {
     focus: FocusHandle,
     theme: Theme,
@@ -122,6 +144,14 @@ pub struct Graph {
     current: Option<usize>,
     /// Dernière position du pointeur pendant un glisser du fond.
     grab: Option<Point<Pixels>>,
+    /// Nœud tenu à la souris.
+    drag: Option<usize>,
+    /// Glisser en cours ou qui se pose : (nœud tiré, frames restantes), et la
+    /// place des nœuds avant qu'il commence.
+    pull: Option<(usize, u32)>,
+    rest: Vec<(f32, f32)>,
+    /// Cadrage (décalage, zoom) vers lequel la vue glisse.
+    aim: Option<((f32, f32), f32)>,
     /// Parcours des voisins avec Tab : (nœud de départ, rang du voisin).
     cycle: Option<(usize, usize)>,
     bounds: Bounds<Pixels>,
@@ -152,6 +182,10 @@ impl Graph {
             selected: None,
             current: None,
             grab: None,
+            drag: None,
+            pull: None,
+            rest: Vec::new(),
+            aim: None,
             cycle: None,
             bounds: Bounds::default(),
         }
@@ -174,7 +208,7 @@ impl Graph {
         }
         self.pos = seed.iter().enumerate().map(|(i, s)| s.unwrap_or_else(|| spiral(i))).collect();
         self.nodes = notes.iter().map(|n| (n.path.clone(), n.name.clone().into())).collect();
-        (self.hover, self.cycle) = (None, None);
+        (self.hover, self.cycle, self.drag, self.pull) = (None, None, None, None);
         self.generation += 1;
         let (generation, edges) = (self.generation, self.edges.clone());
         cx.spawn(async move |this, cx| {
@@ -205,9 +239,16 @@ impl Graph {
         (self.nodes.len(), self.edges.len())
     }
 
+    /// La vue glisse jusqu'à cadrer tout le graphe.
     pub fn recenter(&mut self, cx: &mut Context<Self>) {
-        self.fit = true;
+        self.aim = self.framing();
         cx.notify();
+    }
+
+    /// Position à l'écran du nœud de cette note.
+    #[cfg(test)]
+    pub fn spot(&self, path: &Path) -> Point<Pixels> {
+        self.screen(self.nodes.iter().position(|(p, _)| p == path).unwrap())
     }
 
     fn screen(&self, i: usize) -> Point<Pixels> {
@@ -219,13 +260,15 @@ impl Graph {
     }
 
     fn radius(&self, i: usize) -> f32 {
-        (3. + 1.5 * (self.near[i].len() as f32).sqrt()) * (self.zoom / 40.).clamp(0.6, 1.5)
+        let grown = if self.hover == Some(i) || self.drag == Some(i) { 1.5 } else { 0. };
+        (3. + 1.5 * (self.near[i].len() as f32).sqrt()) * (self.zoom / 40.).clamp(0.6, 1.5) + grown
     }
 
-    fn fit_to_bounds(&mut self) {
+    /// Décalage et zoom qui montrent tout le graphe.
+    fn framing(&self) -> Option<((f32, f32), f32)> {
         let (w, h) = (f32::from(self.bounds.size.width), f32::from(self.bounds.size.height));
         if self.pos.is_empty() || w <= 0. || h <= 0. {
-            return;
+            return None;
         }
         let (mut min, mut max) = ((f32::MAX, f32::MAX), (f32::MIN, f32::MIN));
         for p in &self.pos {
@@ -233,9 +276,28 @@ impl Graph {
             max = (max.0.max(p.0), max.1.max(p.1));
         }
         // Une unité de marge de chaque côté, pour les noms.
-        self.zoom = (w / (max.0 - min.0 + 2.)).min(h / (max.1 - min.1 + 2.)).clamp(6., 80.);
-        self.pan = (-(min.0 + max.0) / 2. * self.zoom, -(min.1 + max.1) / 2. * self.zoom);
-        self.fit = false;
+        let zoom = (w / (max.0 - min.0 + 2.)).min(h / (max.1 - min.1 + 2.)).clamp(6., 80.);
+        Some(((-(min.0 + max.0) / 2. * zoom, -(min.1 + max.1) / 2. * zoom), zoom))
+    }
+
+    /// Avance les animations d'une frame : glissement de la vue, nœuds entraînés.
+    fn animate(&mut self, window: &mut Window) {
+        if let Some((pan, zoom)) = self.aim {
+            let toward = |from: f32, to: f32| from + (to - from) * 0.2;
+            self.pan = (toward(self.pan.0, pan.0), toward(self.pan.1, pan.1));
+            self.zoom = toward(self.zoom, zoom);
+            if (self.zoom - zoom).abs() < 0.05 && (self.pan.0 - pan.0).hypot(self.pan.1 - pan.1) < 0.5 {
+                (self.pan, self.zoom, self.aim) = (pan, zoom, None);
+            }
+        }
+        if let Some((held, left)) = self.pull {
+            follow(&mut self.pos, &self.rest, &self.near, held);
+            let left = if self.drag.is_some() { SETTLE } else { left - 1 };
+            self.pull = (left > 0).then_some((held, left));
+        }
+        if self.aim.is_some() || self.pull.is_some() {
+            window.request_animation_frame();
+        }
     }
 
     fn node_at(&self, at: Point<Pixels>) -> Option<usize> {
@@ -303,10 +365,13 @@ impl Graph {
     }
 
     fn mouse_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        self.cycle = None;
+        (self.cycle, self.aim) = (None, None);
         match self.node_at(e.position) {
             Some(i) if e.click_count >= 2 => cx.emit(GraphEvent::Open(self.nodes[i].0.clone())),
-            Some(i) => self.select(i, cx),
+            Some(i) => {
+                (self.drag, self.pull) = (Some(i), None);
+                self.select(i, cx)
+            }
             None => self.grab = Some(e.position),
         }
     }
@@ -320,7 +385,23 @@ impl Graph {
             self.grab = Some(e.position);
             return cx.notify();
         }
-        self.grab = None;
+        // Le nœud tenu suit le pointeur ; ses voisins sont entraînés à chaque frame.
+        if let Some(i) = self.drag
+            && e.pressed_button == Some(MouseButton::Left)
+        {
+            let c = self.bounds.center();
+            let at = (
+                (f32::from(e.position.x - c.x) - self.pan.0) / self.zoom,
+                (f32::from(e.position.y - c.y) - self.pan.1) / self.zoom,
+            );
+            if self.pull.is_none() {
+                self.rest = self.pos.clone();
+                self.pull = Some((i, SETTLE));
+            }
+            self.pos[i] = at;
+            return cx.notify();
+        }
+        (self.grab, self.drag) = (None, None);
         let hover = self.node_at(e.position);
         if hover != self.hover {
             self.hover = hover;
@@ -335,15 +416,18 @@ impl Graph {
         let (mx, my) = (f32::from(e.position.x - c.x), f32::from(e.position.y - c.y));
         let k = zoom / self.zoom;
         self.pan = (mx - (mx - self.pan.0) * k, my - (my - self.pan.1) * k);
-        self.zoom = zoom;
+        (self.zoom, self.aim) = (zoom, None);
         cx.notify();
     }
 
     fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         self.bounds = bounds;
-        if self.fit {
-            self.fit_to_bounds();
+        if self.fit
+            && let Some((pan, zoom)) = self.framing()
+        {
+            (self.pan, self.zoom, self.fit) = (pan, zoom, false);
         }
+        self.animate(window);
         let t = self.theme;
         let focus = self.hover.or(self.selected);
         let lit = |i: usize| focus.is_none_or(|f| f == i || self.near[f].contains(&i));
@@ -425,6 +509,7 @@ impl Render for Graph {
             .size_full()
             .track_focus(&self.focus)
             .when(self.hover.is_some(), |d| d.cursor_pointer())
+            .when(self.drag.is_some(), |d| d.cursor(CursorStyle::ClosedHand))
             .on_action(cx.listener(|this, _: &Prev, _, cx| this.step(0., -1., cx)))
             .on_action(cx.listener(|this, _: &Next, _, cx| this.step(0., 1., cx)))
             .on_action(cx.listener(|this, _: &Fold, _, cx| this.step(-1., 0., cx)))
@@ -437,6 +522,13 @@ impl Render for Graph {
             }))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    (this.grab, this.drag) = (None, None);
+                    cx.notify();
+                }),
+            )
             .on_scroll_wheel(cx.listener(Self::scroll))
             .child(drawing)
     }
@@ -474,5 +566,21 @@ mod tests {
         // Aucun nœud ne se superpose à un autre, et le résultat est reproductible.
         assert!((0..6).all(|i| (i + 1..6).all(|j| dist(&pos, i, j) > 0.3)));
         assert_eq!(pos, layout(&[None; 6], &[(0, 1), (1, 2)]));
+    }
+
+    #[test]
+    fn dragged_node_pulls_its_neighbours() {
+        // Chaîne 0-1-2, et 3 sans lien. Le nœud 0 est tiré de 5 unités vers la droite.
+        let rest = [(0., 0.), (1., 0.), (2., 0.), (0., 2.)];
+        let near = [vec![1], vec![0, 2], vec![1], vec![]];
+        let mut pos = rest;
+        pos[0] = (5., 0.);
+        for _ in 0..SETTLE {
+            follow(&mut pos, &rest, &near, 0);
+        }
+        let moved = |i: usize| pos[i].0 - rest[i].0;
+        // Il reste sous le pointeur ; ses voisins suivent, de moins en moins loin.
+        assert_eq!((pos[0], pos[3]), ((5., 0.), rest[3]));
+        assert!(moved(1) > 3. && moved(1) < 5. && moved(2) > 2. && moved(2) < moved(1));
     }
 }
