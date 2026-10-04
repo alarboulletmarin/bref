@@ -173,9 +173,9 @@ impl AssetSource for Assets {
             "theme.svg" => {
                 r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="black"/>"#
             }
-            // La goutte de l'icône de l'app, pleine.
+            // Les deux fiches de l'icône de l'app, pleines ; celle du dessous est estompée.
             "logo.svg" => {
-                r#"<path d="M8 2.5C8 2.5 4.5 6.75 4.5 9.25A3.5 3.5 0 0 0 11.5 9.25C11.5 6.75 8 2.5 8 2.5Z" fill="black" stroke="none"/>"#
+                r#"<rect x="1.8" y="1.8" width="6.2" height="7.6" rx="1.4" transform="rotate(-7 5 5.5)" fill="black" stroke="none"/><rect x="8.3" y="6.6" width="6.2" height="7.6" rx="1.4" transform="rotate(7 11.4 10.4)" fill="black" stroke="none" opacity=".55"/>"#
             }
             _ => return Ok(None),
         };
@@ -190,7 +190,7 @@ impl AssetSource for Assets {
     }
 }
 
-/// Le logo de l'app, discret : la goutte, à la couleur d'accent.
+/// Le logo de l'app, discret : les deux fiches, à la couleur d'accent.
 pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
