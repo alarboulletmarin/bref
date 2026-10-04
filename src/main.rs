@@ -134,6 +134,8 @@ struct Shell {
     palette: Option<Entity<Palette>>,
     vault: Option<PathBuf>,
     notes: Vec<Note>,
+    /// Notes ouvertes, de la plus récente à la plus ancienne.
+    recent: Vec<PathBuf>,
     /// Fichier de la note ouverte ; `None` tant qu'une nouvelle note n'est pas enregistrée.
     path: Option<PathBuf>,
     /// Le nom du fichier suit le titre (première ligne) de la note.
@@ -152,7 +154,7 @@ struct Shell {
 impl Shell {
     fn new(
         vault: Option<PathBuf>,
-        last: Option<PathBuf>,
+        recent: Vec<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -177,6 +179,7 @@ impl Shell {
             palette: None,
             vault: None,
             notes: Vec::new(),
+            recent: Vec::new(),
             path: None,
             synced: true,
             dirty: false,
@@ -191,7 +194,8 @@ impl Shell {
         match vault {
             Some(root) => {
                 this.set_vault(root, window, cx);
-                if let Some(last) = last.filter(|p| p.is_file()) {
+                this.recent = recent.into_iter().filter(|p| p.is_file()).collect();
+                if let Some(last) = this.recent.first().cloned() {
                     this.open_note(&last, cx);
                 }
             }
@@ -204,8 +208,9 @@ impl Shell {
         self.flush(cx);
         self.vault = Some(root.clone());
         self.notes.clear();
+        self.recent.clear();
         self.new_note(String::new(), cx);
-        vault::save_config(&root, None);
+        vault::save_config(&root, &[]);
         window.focus(&self.editor.focus_handle(cx));
         // L'index (noms, tags) se construit hors du thread UI.
         cx.spawn(async move |this, cx| {
@@ -276,6 +281,26 @@ impl Shell {
         self.editor.update(cx, |e, _| e.set_notes(names));
     }
 
+    /// Place la note en tête des récentes et mémorise la liste.
+    fn touch(&mut self, path: &Path) {
+        self.recent.retain(|p| p != path);
+        self.recent.insert(0, path.to_path_buf());
+        self.recent.truncate(200);
+        if let Some(root) = &self.vault {
+            vault::save_config(root, &self.recent);
+        }
+    }
+
+    /// Les notes, de la plus récemment ouverte à la plus ancienne ; celles jamais
+    /// ouvertes suivent, par date de modification.
+    fn by_recency(&self) -> Vec<&Note> {
+        let mut notes: Vec<&Note> = self.notes.iter().collect();
+        notes.sort_by_cached_key(|n| {
+            self.recent.iter().position(|p| *p == n.path).unwrap_or(usize::MAX)
+        });
+        notes
+    }
+
     fn open_note(&mut self, path: &Path, cx: &mut Context<Self>) {
         self.flush(cx);
         match fs::read_to_string(path) {
@@ -284,9 +309,7 @@ impl Shell {
                 self.path = Some(path.to_path_buf());
                 self.error = None;
                 self.editor.update(cx, |e, cx| e.load(text, 0, cx));
-                if let Some(root) = &self.vault {
-                    vault::save_config(root, Some(path));
-                }
+                self.touch(path);
             }
             Err(e) => {
                 let what = tr("Cannot open", "Impossible d'ouvrir");
@@ -328,17 +351,20 @@ impl Shell {
                 self.error = None;
                 self.notes
                     .retain(|n| Some(&n.path) != self.path.as_ref() && n.path != path);
+                let (tags, links) = markdown::index(&content);
                 self.notes.insert(
                     0,
                     Note {
                         name: vault::stem(&path),
-                        tags: markdown::tags(&content),
+                        tags,
+                        links,
                         mtime: SystemTime::now(),
                         path: path.clone(),
                     },
                 );
                 if self.path.as_ref() != Some(&path) {
-                    vault::save_config(&root, Some(&path));
+                    self.recent.retain(|p| Some(p) != self.path.as_ref());
+                    self.touch(&path);
                     self.path = Some(path);
                     self.push_names(cx);
                 }
@@ -393,8 +419,8 @@ impl Shell {
         }
         self.flush(cx);
         let entries = self
-            .notes
-            .iter()
+            .by_recency()
+            .into_iter()
             .map(|n| Entry {
                 name: n.name.clone(),
                 path: n.path.clone(),
@@ -823,6 +849,18 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-y", Redo, e),
         KeyBinding::new("escape", Cancel, e),
     ]);
+    // Conventions macOS : Cmd+flèches pour les extrémités de ligne et de document.
+    #[cfg(target_os = "macos")]
+    cx.bind_keys([
+        KeyBinding::new("cmd-left", Home, e),
+        KeyBinding::new("cmd-right", End, e),
+        KeyBinding::new("cmd-up", DocStart, e),
+        KeyBinding::new("cmd-down", DocEnd, e),
+        KeyBinding::new("cmd-shift-left", SelectHome, e),
+        KeyBinding::new("cmd-shift-right", SelectEnd, e),
+        KeyBinding::new("cmd-shift-up", SelectDocStart, e),
+        KeyBinding::new("cmd-shift-down", SelectDocEnd, e),
+    ]);
 }
 
 /// Le pilote Vulkan NVIDIA (paquet `nvidia-utils`) met environ 2 s à renoncer
@@ -838,18 +876,6 @@ fn skip_absent_nvidia_driver() {
         // Sûr : appelé au tout début de `main`, avant la création du moindre thread.
         unsafe { std::env::set_var("VK_LOADER_DRIVERS_DISABLE", "*nvidia*") };
     }
-    // Conventions macOS : Cmd+flèches pour les extrémités de ligne et de document.
-    #[cfg(target_os = "macos")]
-    cx.bind_keys([
-        KeyBinding::new("cmd-left", Home, e),
-        KeyBinding::new("cmd-right", End, e),
-        KeyBinding::new("cmd-up", DocStart, e),
-        KeyBinding::new("cmd-down", DocEnd, e),
-        KeyBinding::new("cmd-shift-left", SelectHome, e),
-        KeyBinding::new("cmd-shift-right", SelectEnd, e),
-        KeyBinding::new("cmd-shift-up", SelectDocStart, e),
-        KeyBinding::new("cmd-shift-down", SelectDocEnd, e),
-    ]);
 }
 
 fn main() {
@@ -887,7 +913,7 @@ fn main() {
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.on_window_closed(|cx| cx.quit()).detach();
 
-        let (vault, last) = vault::load_config();
+        let (vault, recent) = vault::load_config();
         let vault = vault.filter(|v| v.is_dir());
         let bounds = Bounds::centered(None, size(px(860.), px(720.)), cx);
         cx.open_window(
@@ -908,7 +934,7 @@ fn main() {
                 window_min_size: Some(size(px(360.), px(240.))),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| Shell::new(vault, last, window, cx)),
+            |window, cx| cx.new(|cx| Shell::new(vault, recent, window, cx)),
         )
         .unwrap();
         cx.activate(true);
@@ -935,7 +961,7 @@ mod tests {
         cx.update(bind_keys);
         let (shell, cx) = cx.add_window_view({
             let root = root.clone();
-            |window, cx| Shell::new(Some(root), None, window, cx)
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
         });
         cx.run_until_parked();
         let text = |cx: &mut gpui::VisualTestContext| {
@@ -969,6 +995,15 @@ mod tests {
         cx.simulate_input("crs");
         cx.simulate_keystrokes("enter");
         assert_eq!(text(cx), "# Courses\n\n- lait #maison\n");
+
+        // Récents : la dernière note ouverte d'abord, dans l'app comme dans la config.
+        let recent = shell.read_with(cx, |s, _| s.recent.clone());
+        assert_eq!(recent, [root.join("Courses.md"), root.join("Test.md")]);
+        assert_eq!(vault::load_config(), (Some(root.clone()), recent));
+        let names = shell.read_with(cx, |s, _| {
+            s.by_recency().iter().map(|n| n.name.clone()).collect::<Vec<_>>()
+        });
+        assert_eq!(names, ["Courses", "Test"]);
 
         // Wikilien complété puis nouvelle note créée depuis la palette.
         cx.simulate_keystrokes("secondary-end");

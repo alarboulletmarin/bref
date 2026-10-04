@@ -12,6 +12,8 @@ pub struct Note {
     pub name: String,
     pub path: PathBuf,
     pub tags: Vec<String>,
+    /// Notes visées par ses `[[wikiliens]]`, en minuscules.
+    pub links: Vec<String>,
     pub mtime: SystemTime,
 }
 
@@ -32,23 +34,22 @@ fn config_path() -> PathBuf {
     config_dir().join("encre/config")
 }
 
-/// (coffre, dernière note ouverte) : une ligne chacun.
-pub fn load_config() -> (Option<PathBuf>, Option<PathBuf>) {
+/// (coffre, notes ouvertes de la plus récente à la plus ancienne) : une ligne chacun.
+pub fn load_config() -> (Option<PathBuf>, Vec<PathBuf>) {
     // Repli sur la config de l'ancien nom de l'app ; elle n'est jamais réécrite.
     let text = fs::read_to_string(config_path())
         .or_else(|_| fs::read_to_string(config_dir().join("onenote/config")))
         .unwrap_or_default();
     let mut lines = text.lines().filter(|l| !l.is_empty()).map(PathBuf::from);
-    (lines.next(), lines.next())
+    (lines.next(), lines.collect())
 }
 
-pub fn save_config(vault: &Path, last: Option<&Path>) {
+pub fn save_config(vault: &Path, recent: &[PathBuf]) {
     let path = config_path();
-    let text = format!(
-        "{}\n{}\n",
-        vault.display(),
-        last.map(|p| p.display().to_string()).unwrap_or_default()
-    );
+    let text: String = std::iter::once(vault)
+        .chain(recent.iter().map(PathBuf::as_path))
+        .map(|p| format!("{}\n", p.display()))
+        .collect();
     let result = path
         .parent()
         .map_or(Ok(()), fs::create_dir_all)
@@ -80,11 +81,13 @@ pub fn scan(root: &Path) -> Vec<Note> {
             if path.is_dir() {
                 dirs.push(path);
             } else if path.extension().is_some_and(|e| e == "md") {
+                let (tags, links) = fs::read_to_string(&path)
+                    .map(|t| markdown::index(&t))
+                    .unwrap_or_default();
                 notes.push(Note {
                     name: stem(&path),
-                    tags: fs::read_to_string(&path)
-                        .map(|t| markdown::tags(&t))
-                        .unwrap_or_default(),
+                    tags,
+                    links,
                     mtime: entry
                         .metadata()
                         .and_then(|m| m.modified())
@@ -117,11 +120,12 @@ pub fn title_of(content: &str) -> String {
     }
 }
 
-/// Enregistre la note et renvoie son chemin. Si `synced` (le nom du fichier
+/// Enregistre la note et renvoie son chemin ; une nouvelle note est créée dans
+/// `dir`. Si `synced` (le nom du fichier
 /// suivait déjà le titre), le fichier est renommé quand le titre change, sauf
 /// si le nouveau nom est déjà pris.
 pub fn save(
-    root: &Path,
+    dir: &Path,
     current: Option<&Path>,
     synced: bool,
     content: &str,
@@ -135,8 +139,8 @@ pub fn save(
         }
         None => (1..)
             .map(|n| match n {
-                1 => root.join(format!("{title}.md")),
-                n => root.join(format!("{title} {n}.md")),
+                1 => dir.join(format!("{title}.md")),
+                n => dir.join(format!("{title} {n}.md")),
             })
             .find(|p| !p.exists())
             .unwrap(),

@@ -188,24 +188,27 @@ pub fn inline(line: &str, from: usize, flags: &mut [u8]) {
     }
 }
 
-/// Tags d'une note entière (hors blocs de code), dédupliqués.
-pub fn tags(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
+/// Tags et wikiliens (en minuscules) d'une note entière, hors blocs de code, dédupliqués.
+pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
+    let (mut tags, mut wikis) = (Vec::new(), Vec::new());
     let mut in_code = false;
     for line in text.lines() {
         if is_fence(line) {
             in_code = !in_code;
         } else if !in_code {
             for (_, link) in links(line) {
-                if let Link::Tag(t) = link
-                    && !out.contains(&t)
-                {
-                    out.push(t);
+                let (list, item) = match link {
+                    Link::Tag(t) => (&mut tags, t),
+                    Link::Wiki(w) => (&mut wikis, w.to_lowercase()),
+                    Link::Url(_) => continue,
+                };
+                if !list.contains(&item) {
+                    list.push(item);
                 }
             }
         }
     }
-    out
+    (tags, wikis)
 }
 
 #[derive(PartialEq, Debug)]
@@ -326,7 +329,9 @@ mod tests {
         assert_eq!(l[1].1, Link::Tag("projet/x".into()));
         assert_eq!(l[2].1, Link::Url("https://a.b/c".into()));
         assert!(links("a#b et #123").is_empty());
-        assert_eq!(tags("#A\n```\n#b\n```\n#a #c"), vec!["a", "c"]);
+        let (tags, wikis) = index("#A\n```\n#b [[z]]\n```\n#a #c [[X]] [[x|alias]] [[Y]]");
+        assert_eq!(tags, vec!["a", "c"]);
+        assert_eq!(wikis, vec!["x", "y"]);
     }
 
     #[test]
