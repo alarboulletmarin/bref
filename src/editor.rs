@@ -763,9 +763,12 @@ impl Editor {
                     },
                     color,
                     background_color: (f & md::CODE != 0).then_some(t.code_bg),
+                    // Un seul trait pour tout le lien, crochets compris : gpui 0.2 laisse
+                    // un bout de trait dans la marge si le soulignement change de style
+                    // juste à un retour à la ligne.
                     underline: (m || f & md::LINK != 0).then_some(UnderlineStyle {
                         thickness: px(1.),
-                        color: Some(color.opacity(0.5)),
+                        color: Some(if f & md::LINK != 0 { t.accent } else { color }.opacity(0.5)),
                         wavy: false,
                     }),
                     strikethrough: (f & md::STRIKE != 0).then_some(StrikethroughStyle {
