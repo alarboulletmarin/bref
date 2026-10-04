@@ -11,7 +11,7 @@ makedepends=('cargo' 'fontconfig' 'freetype2')
 optdepends=('vulkan-driver: a Vulkan driver for your GPU is required to open the window')
 # Pinned by scripts/release.sh once the release tarball exists.
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('5cf449bdd46e43315ad0b658040b66d3e39be28f2cfe6b321643947feb015bd4')
 
 prepare() {
     cd "$pkgname-$pkgver"
