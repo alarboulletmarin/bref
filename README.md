@@ -28,11 +28,18 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 | macOS | [macOS](#macos) |
 | Windows | [Windows](#windows) |
 
-encre is compiled on your machine, which takes a few minutes the first time. You need a recent stable Rust: install it with [rustup](https://rustup.rs) if `rustc --version` shows less than 1.88.
+On Arch there is a prebuilt package; everywhere else encre is compiled on your machine, which takes a few minutes the first time. Compiling needs a recent stable Rust: install it with [rustup](https://rustup.rs) if `rustc --version` shows less than 1.88.
 
 ### Arch Linux
 
-Build and install the package that follows `main` (needs `cargo` and `git`):
+Every release ships a ready-to-install package (no compiler needed), which pacman then tracks as `encre`. The package is not signed, so download it first: given a URL, pacman looks for a `.sig` file and warns when there is none.
+
+```bash
+curl -LO https://github.com/alarboulletmarin/encre/releases/latest/download/encre-x86_64.pkg.tar.zst
+sudo pacman -U ./encre-x86_64.pkg.tar.zst
+```
+
+To follow `main` instead, build the development package from a checkout (needs `cargo` and `git`, it conflicts with `encre`):
 
 ```bash
 git clone https://github.com/alarboulletmarin/encre.git
@@ -40,7 +47,7 @@ cd encre/aur/encre-git
 makepkg -si
 ```
 
-pacman then tracks it as `encre-git`. Tagged releases also attach a prebuilt package to their [release page](https://github.com/alarboulletmarin/encre/releases): download `encre-x86_64.pkg.tar.zst` and install it with `sudo pacman -U ./encre-x86_64.pkg.tar.zst`. Not on the AUR yet.
+Or build the latest tagged release yourself with `makepkg -si` from the repository root. Not on the AUR yet.
 
 ### Ubuntu, Linux Mint, Debian
 
@@ -110,6 +117,7 @@ This installs `encre.exe` in `%USERPROFILE%\.cargo\bin`. There is no installer y
 
 | Installed with | Upgrade |
 |---|---|
+| Arch, prebuilt package | run the two commands above again |
 | Arch, `encre-git` | `git pull`, then `makepkg -si` in `aur/encre-git` |
 | `make install` | `git pull`, then `make` and `sudo make install` |
 | `cargo install` | `git pull`, then `cargo install --path . --locked` |
