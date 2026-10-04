@@ -13,7 +13,9 @@ die() { echo "release: $*" >&2; exit 1; }
 ver=${1:?usage: scripts/release.sh X.Y.Z [notes-file]}
 [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must look like 1.2.3"
 [ "$(git branch --show-current)" = main ] || die "not on main"
-git diff --quiet && git diff --cached --quiet || die "uncommitted changes"
+# makepkg rewrites pkgver in aur/encre-git/PKGBUILD at every build of the -git
+# package: that file may differ, and it is never staged by this script.
+git diff --quiet -- . ':!aur/encre-git/PKGBUILD' && git diff --cached --quiet || die "uncommitted changes"
 git fetch -q origin
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "main differs from origin/main"
 git rev-parse -q --verify "refs/tags/v$ver" >/dev/null && die "tag v$ver already exists"
