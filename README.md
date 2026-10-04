@@ -16,7 +16,8 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Three ways around your notes**: the vault as a tree, the notes you opened last, and a graph of the links between them, in a panel that folds down to a thin rail of icons.
 - **Keyboard first**: one palette to find, create and switch notes, and a shortcut for every view. No toolbar.
 - **No save button**: notes are written to disk as you type, and named after their first line.
-- Light and dark, following your system. English and French, following the system language.
+- **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, any installed font for the text and for the code, and the text size you like.
+- Light and dark, following your system, until you pick a theme. English and French, following the system language.
 
 ## Install
 
@@ -144,6 +145,8 @@ On macOS, read `Cmd` for `Ctrl`, and `Alt` for `Ctrl` when moving by word.
 | `Ctrl + E`, `Ctrl + R`, `Ctrl + G` | [navigation panel](#navigation): vault tree, recent notes, graph |
 | `Ctrl + M` | navigation panel on the whole window, and back |
 | `Ctrl + O` | change vault |
+| `Ctrl + K` then `Ctrl + T` | [theme](#appearance) (also the half-moon icon at the bottom of the rail) |
+| `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` | bigger, smaller, default text size |
 | `Ctrl + Shift + C` | copy the whole note (also the icon at the bottom right) |
 | `Ctrl + click` | open a `[[link]]`, a `#tag` or a URL |
 | `F1`, `Ctrl + /` | the list of shortcuts, inside the app |
@@ -192,7 +195,8 @@ A previewed note only counts as opened, and moves to the top of the recent list,
 
 - **Sizes**: drag the line between the panel and the note. Dragged all the way left, the panel folds back to its rail; all the way right, it takes the whole window. Double-click the line for the default width. `Ctrl + M`, or the arrows button at the top of the panel, also switches to the whole window and back.
 - **Folding**: pressing the key of the view on display, or clicking its icon, folds the panel. The rail stays, with the three views, search, new note and help one click away.
-- **Graph**: drag the background to move around and scroll to zoom. Pointing at a note lights up the notes it is linked to. The target button fits the whole graph in view. With the graph on the whole window, a click only selects: `Enter` or a double click brings the note back.
+- **Graph**: drag the background to move around and scroll to zoom. Pointing at a note lights up the notes it is linked to. Drag a note to move it: the notes linked to it follow, the closest ones the most. The target button glides back to the whole graph. With the graph on the whole window, a click only selects: `Enter` or a double click brings the note back.
+- **Folders**: the double-chevron button at the top of the tree folds every folder; when they are all folded, it unfolds them all.
 - **New note from the tree**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line.
 - **Right click** on a line for its menu: open, new note here, new folder, copy the `[[link]]`, rename, move to the trash. A right click below the last line acts on the vault itself.
 - **Drag and drop**: in the tree, drag a note or a folder onto a folder to move it there, or below the last line to move it to the top of the vault. Nothing is ever overwritten: if the name is taken, the move is refused.
@@ -200,6 +204,14 @@ A previewed note only counts as opened, and moves to the top of the recent list,
 - **The trash** is the hidden folder `.trash` at the top of the vault: deleting moves the note or the folder there, and never destroys anything. Empty it, or take a note back, with your file manager.
 
 encre reopens with the panel as you left it.
+
+## Appearance
+
+- **Theme**: `Ctrl + K` then `Ctrl + T`, the half-moon icon at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system.
+- **Fonts**: type `font` in the palette (`Ctrl + P`) to choose the font of the app, or the one used for code, among those installed on your system; type in the list to filter it. Zed's fonts are IBM Plex Sans and Lilex: install them (`ttf-ibm-plex` on Arch) and they show up in the list.
+- **Text size**: `Ctrl + +` and `Ctrl + -`, `Ctrl + 0` for the default. Headings and code scale with it.
+
+These choices are kept in a file named `settings`, next to the [config file](#notes-and-vault).
 
 ## Markdown
 
@@ -228,7 +240,7 @@ Tables, images and footnotes are kept as you typed them, without special renderi
 - A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) is never renamed.
 - `[[Groceries]]` finds the note by file name, in any subfolder, ignoring case.
 - When a note is renamed, from the tree or by changing its first line, the `[[links]]` to its old name are rewritten in every note, keeping their `|alias` and `#heading`. After a change of title, this happens when you leave the note, not at each keystroke. If another note still carries the old name, the links are left alone: they may be meant for it.
-- The vault and the notes you opened, most recent first, are remembered in a small text file (and the navigation panel in a file named `layout` next to it):
+- The vault and the notes you opened, most recent first, are remembered in a small text file (the navigation panel in a file named `layout` next to it, and the [appearance](#appearance) in `settings`):
 
   | System | File |
   |---|---|
@@ -254,7 +266,7 @@ Tables, images and footnotes are kept as you typed them, without special renderi
 
 **The window does not open, with an error about a surface or an adapter.** No usable Vulkan driver: install the one for your GPU (`vulkan-intel`, `vulkan-radeon`, `nvidia-utils`… on Arch; `mesa-vulkan-drivers` on Ubuntu).
 
-**Bold text is not bold.** The font in use is a variable font, which the text engine cannot embolden. Install Inter or Noto Sans.
+**Bold text is not bold.** The font in use is a variable font, which the text engine cannot embolden. Install Inter or Noto Sans, or [pick another font](#appearance).
 
 **A note was not renamed after I changed its title.** Either another note already has that name, or the file name did not match the first line to begin with, see [Notes and vault](#notes-and-vault).
 

@@ -6,24 +6,25 @@ use std::{
     fs,
     ops::Range,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use gpui::{
-    ClickEvent, ClipboardItem, Context, CursorStyle, Div, FocusHandle, Focusable, MouseButton,
+    Animation, AnimationExt, ClickEvent, ClipboardItem, Context, CursorStyle, Div, FocusHandle, Focusable, MouseButton,
     MouseDownEvent, Pixels, Point, ScrollStrategy, Stateful, UniformListScrollHandle, Window,
-    actions, div, point, prelude::*, px, svg, uniform_list,
+    actions, div, ease_out_quint, point, prelude::*, px, svg, uniform_list,
 };
 
 use crate::{
     Shell, Theme,
-    palette::{Palette, PaletteEvent},
+    palette::{Palette, PaletteEvent, Setting},
     tr,
     vault::{self, Note},
 };
 
 actions!(nav, [ShowTree, ShowRecent, ShowGraph, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Trash]);
 
-const RAIL: Pixels = px(40.);
+pub const RAIL: Pixels = px(40.);
 const ROW: Pixels = px(26.);
 const LIST_W: Pixels = px(260.);
 
@@ -102,12 +103,15 @@ pub struct Nav {
     /// Ligne sélectionnée (note ou dossier).
     pub sel: Option<PathBuf>,
     /// Dossiers dépliés.
-    open: HashSet<PathBuf>,
+    pub open: HashSet<PathBuf>,
     /// Lignes de la dernière frame.
     rows: Vec<Row>,
     scroll: UniformListScrollHandle,
     /// Amener la sélection à l'écran à la prochaine frame.
     reveal: bool,
+    /// Le logo se place en tête du rail quand l'app ne dessine pas la barre de
+    /// titre (macOS, Windows).
+    pub logo: bool,
     // Bord gauche et largeur du contenu de la fenêtre, à la dernière frame.
     pub left: Pixels,
     pub total: Pixels,
@@ -138,6 +142,7 @@ impl Nav {
             rows: Vec::new(),
             scroll: UniformListScrollHandle::new(),
             reveal: false,
+            logo: false,
             left: px(0.),
             total: px(0.),
         }
@@ -255,6 +260,7 @@ fn button(id: &'static str, icon: &'static str, active: bool, t: Theme) -> State
         .rounded(px(6.))
         .cursor_pointer()
         .hover(|s| s.bg(t.border))
+        .active(|s| s.bg(t.selection))
         .when(active, |d| d.bg(t.selection))
         .child(
             svg()
@@ -520,6 +526,21 @@ impl Shell {
         }
     }
 
+    /// Replie tous les dossiers de l'arbre ; s'ils le sont déjà, les déplie tous.
+    pub fn fold_all(&mut self) {
+        if self.all_folded() {
+            self.nav.open = self.dirs.iter().cloned().collect();
+        } else {
+            self.nav.open.clear();
+        }
+    }
+
+    /// Aucun dossier du coffre n'est déplié. `open` garde aussi les parents du
+    /// coffre lui-même, d'où le test dossier par dossier.
+    fn all_folded(&self) -> bool {
+        !self.dirs.iter().any(|d| self.nav.open.contains(d))
+    }
+
     fn fail(&mut self, what: &str, e: std::io::Error) {
         self.error = Some(format!("{what} : {e}"));
     }
@@ -700,7 +721,12 @@ impl Shell {
                         .rounded(px(8.))
                         .shadow_lg()
                         .text_size(px(13.))
-                        .children(rows),
+                        .children(rows)
+                        .with_animation(
+                            "menu-in",
+                            Animation::new(Duration::from_millis(110)).with_easing(ease_out_quint()),
+                            |menu, delta| menu.opacity(delta),
+                        ),
                 ),
         )
     }
@@ -842,6 +868,7 @@ impl Shell {
             .items_center()
             .gap_1()
             .when(!unfolded, |d| d.border_r_1().border_color(t.border))
+            .when(self.nav.logo, |d| d.child(crate::logo(t).mb_1()))
             .child(mode_button("nav-tree", "tree.svg", Mode::Tree))
             .child(mode_button("nav-recent", "clock.svg", Mode::Recent))
             .child(mode_button("nav-graph", "graph.svg", Mode::Graph))
@@ -855,6 +882,9 @@ impl Shell {
                     .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
             )
             .child(div().flex_1())
+            .child(button("nav-theme", "theme.svg", false, t).on_click(cx.listener(
+                |this, _, window, cx| this.choose_setting(Setting::Theme, window, cx),
+            )))
             .child(
                 button("nav-help", "help.svg", false, t)
                     .on_click(cx.listener(|this, _, window, cx| this.set_help(true, window, cx))),
@@ -866,6 +896,7 @@ impl Shell {
         }
 
         let full = panel == Panel::Full;
+        let folded = self.all_folded();
         let title = match (mode, &self.vault) {
             (Mode::Tree, Some(root)) => vault::stem(root),
             (Mode::Graph, _) => tr("Graph", "Graphe").to_string(),
@@ -888,12 +919,13 @@ impl Shell {
                 d.child(button("nav-folder", "folder-plus.svg", false, t).on_click(cx.listener(
                     |this, _, window, cx| this.menu_do(Do::NewFolder, this.nav.sel.clone(), window, cx),
                 )))
-                .child(button("nav-fold", "fold.svg", false, t).on_click(cx.listener(
-                    |this, _, _, cx| {
-                        this.nav.open.clear();
+                // Tout replier ; si tout l'est déjà, tout déplier.
+                .child(button("nav-fold", if folded { "unfold.svg" } else { "fold.svg" }, false, t).on_click(
+                    cx.listener(|this, _, _, cx| {
+                        this.fold_all();
                         cx.notify();
-                    },
-                )))
+                    }),
+                ))
             })
             .child(
                 button("nav-full", if full { "shrink.svg" } else { "expand.svg" }, false, t)
@@ -972,7 +1004,14 @@ impl Shell {
             .flex()
             .justify_center()
             .cursor(CursorStyle::ResizeLeftRight)
-            .child(div().w(px(1.)).h_full().bg(t.border))
+            .group("nav-divider")
+            .child(
+                div()
+                    .w(px(1.))
+                    .h_full()
+                    .bg(if self.nav.dragging { t.accent } else { t.border })
+                    .group_hover("nav-divider", |s| s.bg(t.accent)),
+            )
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, e: &MouseDownEvent, window, cx| {

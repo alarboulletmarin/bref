@@ -3,10 +3,12 @@
 
 use std::{ops::Range, path::PathBuf};
 
+use std::time::Duration;
+
 use gpui::{
-    App, Bounds, Context, ElementInputHandler, EntityInputHandler, EventEmitter, FocusHandle,
-    Focusable, MouseButton, Pixels, Point, UTF16Selection, Window, actions, canvas, div,
-    prelude::*, px,
+    Animation, AnimationExt, App, Bounds, Context, ElementInputHandler, EntityInputHandler,
+    EventEmitter, FocusHandle, Focusable, MouseButton, Pixels, Point, UTF16Selection, Window,
+    actions, canvas, div, ease_out_quint, prelude::*, px,
 };
 
 use crate::{Theme, tr};
@@ -19,8 +21,25 @@ fn help_label() -> &'static str {
     tr("Keyboard shortcuts", "Raccourcis clavier")
 }
 
-actions!(palette, [Prev, Next, Confirm, Dismiss, DeleteChar]);
+/// Réglage d'apparence proposé par la palette.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Setting {
+    Theme,
+    Font,
+    Mono,
+}
 
+impl Setting {
+    pub fn label(self) -> &'static str {
+        match self {
+            Setting::Theme => tr("Theme…", "Thème…"),
+            Setting::Font => tr("Font…", "Police…"),
+            Setting::Mono => tr("Code font…", "Police du code…"),
+        }
+    }
+}
+
+actions!(palette, [Prev, Next, Confirm, Dismiss, DeleteChar]);
 
 pub struct Entry {
     pub name: String,
@@ -33,8 +52,11 @@ pub enum PaletteEvent {
     Create(String),
     ChangeVault,
     Help,
-    /// Texte validé dans un champ de saisie.
+    Setting(Setting),
+    /// Texte validé dans un champ de saisie, ou choix validé dans une liste.
     Submit(String),
+    /// Choix survolé dans une liste : à appliquer en aperçu.
+    Preview(String),
     Dismiss,
 }
 
@@ -44,6 +66,7 @@ enum Item {
     Create,
     Vault,
     Help,
+    Setting(Setting),
 }
 
 pub struct Palette {
@@ -54,6 +77,8 @@ pub struct Palette {
     selected: usize,
     /// Champ de saisie : son libellé. Aucune note n'est alors proposée.
     prompt: Option<&'static str>,
+    /// Liste de choix : `entries` sont les options, sans création ni commande.
+    choices: bool,
     theme: Theme,
 }
 
@@ -87,6 +112,7 @@ impl Palette {
             items: Vec::new(),
             selected: 0,
             prompt: None,
+            choices: false,
             theme,
         };
         this.refresh();
@@ -101,8 +127,44 @@ impl Palette {
         }
     }
 
+    /// Liste de choix filtrable (thème, police), `current` présélectionné :
+    /// chaque déplacement émet `Preview`, Entrée émet `Submit`.
+    pub fn choose(
+        label: &'static str,
+        options: Vec<String>,
+        current: &str,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let entries =
+            options.into_iter().map(|name| Entry { name, path: PathBuf::new(), tags: Vec::new() }).collect();
+        let mut this = Self { prompt: Some(label), choices: true, ..Self::new(entries, "", theme, cx) };
+        this.refresh();
+        this.selected = this.items.iter().position(|i| this.choice(i) == Some(current)).unwrap_or(0);
+        this
+    }
+
+    pub fn set_theme(&mut self, theme: Theme, cx: &mut Context<Self>) {
+        self.theme = theme;
+        cx.notify();
+    }
+
+    fn choice(&self, item: &Item) -> Option<&str> {
+        match item {
+            Item::Note(i) if self.choices => Some(&self.entries[*i].name),
+            _ => None,
+        }
+    }
+
+    /// Dans une liste de choix, le choix sélectionné s'applique en aperçu.
+    fn preview(&self, cx: &mut Context<Self>) {
+        if let Some(name) = self.items.get(self.selected).and_then(|i| self.choice(i)) {
+            cx.emit(PaletteEvent::Preview(name.to_string()));
+        }
+    }
+
     fn refresh(&mut self) {
-        if self.prompt.is_some() {
+        if self.prompt.is_some() && !self.choices {
             return self.items.clear();
         }
         let q = self.query.trim().to_lowercase();
@@ -122,6 +184,12 @@ impl Palette {
             scored.sort_by_key(|(score, _)| -score);
             scored.into_iter().map(|(_, i)| Item::Note(i)).collect()
         };
+        if self.choices {
+            items.truncate(14);
+            self.items = items;
+            self.selected = 0;
+            return;
+        }
         items.truncate(8);
         let exact = self.entries.iter().any(|e| e.name.to_lowercase() == q);
         if !q.is_empty() && !q.starts_with('#') && !exact {
@@ -132,6 +200,12 @@ impl Palette {
                 items.push(item);
             }
         }
+        // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
+        for setting in [Setting::Theme, Setting::Font, Setting::Mono] {
+            if !q.is_empty() && fuzzy(&q, &setting.label().to_lowercase()).is_some() {
+                items.push(Item::Setting(setting));
+            }
+        }
         self.items = items;
         self.selected = 0;
     }
@@ -139,11 +213,18 @@ impl Palette {
     fn step(&mut self, by: usize, cx: &mut Context<Self>) {
         if !self.items.is_empty() {
             self.selected = (self.selected + by) % self.items.len();
+            self.preview(cx);
             cx.notify();
         }
     }
 
     fn confirm(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.choices {
+            return cx.emit(match self.items.get(index).and_then(|i| self.choice(i)) {
+                Some(name) => PaletteEvent::Submit(name.to_string()),
+                None => PaletteEvent::Dismiss,
+            });
+        }
         if self.prompt.is_some() {
             return cx.emit(PaletteEvent::Submit(self.query.trim().to_string()));
         }
@@ -152,6 +233,7 @@ impl Palette {
             Some(Item::Create) => PaletteEvent::Create(self.query.trim().to_string()),
             Some(Item::Vault) => PaletteEvent::ChangeVault,
             Some(Item::Help) => PaletteEvent::Help,
+            Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
             None => PaletteEvent::Dismiss,
         });
     }
@@ -159,6 +241,7 @@ impl Palette {
     fn typed(&mut self, text: &str, cx: &mut Context<Self>) {
         self.query.push_str(text);
         self.refresh();
+        self.preview(cx);
         cx.notify();
     }
 }
@@ -262,6 +345,7 @@ impl Render for Palette {
                 ),
                 Item::Vault => (vault_label().to_string(), String::new()),
                 Item::Help => (help_label().to_string(), "F1".into()),
+                Item::Setting(setting) => (setting.label().to_string(), String::new()),
             };
             div()
                 .mx_1()
@@ -272,6 +356,7 @@ impl Render for Palette {
                 .justify_between()
                 .gap_3()
                 .when(i == self.selected, |d| d.bg(t.selection))
+                .when(i != self.selected, |d| d.hover(|s| s.bg(t.code_bg)))
                 .child(div().truncate().child(label))
                 .child(div().flex_none().text_color(t.dim).text_size(px(12.)).child(detail))
                 .on_mouse_down(
@@ -293,6 +378,7 @@ impl Render for Palette {
             .on_action(cx.listener(|this, _: &DeleteChar, _, cx| {
                 this.query.pop();
                 this.refresh();
+                this.preview(cx);
                 cx.notify();
             }))
             .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.emit(PaletteEvent::Dismiss)))
@@ -337,7 +423,13 @@ impl Render for Palette {
                                 }))
                             }),
                     )
-                    .children(rows),
+                    .children(rows)
+                    // Le panneau glisse en place à l'ouverture.
+                    .with_animation(
+                        "palette-in",
+                        Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
+                        |panel, delta| panel.opacity(delta).mt(px(64. + 8. * delta)),
+                    ),
             )
     }
 }

@@ -717,6 +717,8 @@ impl Editor {
                 Kind::Code | Kind::Fence => (px(14.), px(0.)),
                 _ => (px(16.), px(0.)),
             };
+            // Les tailles ci-dessus valent pour un texte courant de 16 px.
+            let font_size = font_size * (t.size / 16.);
             let pad = if offset == 0 { px(0.) } else { pad };
 
             let mut flags = vec![0u8; line.len()];

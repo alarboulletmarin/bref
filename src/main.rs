@@ -12,23 +12,23 @@ use std::{
     borrow::Cow,
     fs,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{OnceLock, RwLock},
     time::{Duration, SystemTime},
 };
 
 use gpui::{
-    App, Application, AssetSource, Bounds, BoxShadow, ClipboardItem, Context, CursorStyle, Decorations, Entity,
-    FocusHandle, Focusable, Hsla, KeyBinding, MouseButton, MouseMoveEvent, PathPromptOptions,
-    Pixels, Point, ResizeEdge, SharedString, Size, TitlebarOptions, Window, WindowAppearance, WindowBounds,
-    WindowBackgroundAppearance, WindowDecorations, WindowOptions, actions, div, hsla, point,
-    prelude::*, px, rgb, rgba, size, svg,
+    Animation, AnimationExt, App, Application, AssetSource, Bounds, BoxShadow, ClipboardItem, Context,
+    CursorStyle, Decorations, Entity, FocusHandle, Focusable, Hsla, KeyBinding, MouseButton,
+    MouseMoveEvent, PathPromptOptions, Pixels, Point, ResizeEdge, SharedString, Size, TitlebarOptions,
+    Window, WindowAppearance, WindowBounds, WindowBackgroundAppearance, WindowDecorations,
+    WindowOptions, actions, div, ease_out_quint, hsla, point, prelude::*, px, rgb, size, svg,
 };
 
 use editor::{Editor, EditorEvent};
 use graph::{Graph, GraphEvent};
 use markdown::Link;
 use nav::{Mode, Nav, Panel};
-use palette::{Entry, Palette, PaletteEvent};
+use palette::{Entry, Palette, PaletteEvent, Setting};
 use vault::Note;
 
 /// Touche des raccourcis, telle qu'affichée : Cmd sur macOS, Ctrl ailleurs.
@@ -50,15 +50,86 @@ pub fn tr(en: &'static str, fr: &'static str) -> &'static str {
     if french { fr } else { en }
 }
 
-/// Polices (texte, code) retenues au démarrage parmi celles installées.
-static FONTS: OnceLock<(&str, &str)> = OnceLock::new();
+/// Polices installées, relevées au démarrage.
+static FAMILIES: OnceLock<Vec<&'static str>> = OnceLock::new();
+
+/// Polices (texte, code) en usage : celles choisies, sinon celles par défaut.
+static FONTS: RwLock<(&str, &str)> = RwLock::new(("Cantarell", "DejaVu Sans Mono"));
 
 pub fn sans() -> &'static str {
-    FONTS.get().map_or("Cantarell", |f| f.0)
+    FONTS.read().unwrap().0
 }
 
 pub fn mono() -> &'static str {
-    FONTS.get().map_or("DejaVu Sans Mono", |f| f.1)
+    FONTS.read().unwrap().1
+}
+
+fn init_fonts(cx: &mut App) {
+    FAMILIES.get_or_init(|| {
+        let names: &'static [String] = cx.text_system().all_font_names().leak();
+        names.iter().map(String::as_str).collect()
+    });
+}
+
+/// Met en usage les polices des réglages ; à défaut, les premières installées
+/// de chaque liste.
+fn apply_fonts(prefs: &Prefs) {
+    let installed = FAMILIES.get().map_or(&[][..], Vec::as_slice);
+    let pick = |chosen: &str, wanted: &[&'static str]| {
+        let known = |name: &str| installed.iter().copied().find(|i| *i == name);
+        known(chosen)
+            .or_else(|| wanted.iter().find_map(|w| known(w)))
+            .unwrap_or(wanted[wanted.len() - 1])
+    };
+    *FONTS.write().unwrap() = (
+        // Adwaita Sans et Cantarell sont des polices variables : pas de gras avec gpui 0.2.
+        pick(&prefs.font, &["Inter", "Noto Sans", "Segoe UI", "Helvetica Neue", "DejaVu Sans", "Cantarell"]),
+        pick(
+            &prefs.mono,
+            &[
+                "JetBrains Mono",
+                "JetBrainsMono Nerd Font",
+                "Adwaita Mono",
+                "Noto Sans Mono",
+                "Menlo",
+                "Consolas",
+                "DejaVu Sans Mono",
+            ],
+        ),
+    );
+}
+
+/// Apparence choisie par l'utilisateur ; un champ vide garde la valeur par défaut.
+#[derive(Clone, Debug, PartialEq)]
+struct Prefs {
+    theme: String,
+    font: String,
+    mono: String,
+    /// Taille du texte courant de la note, en pixels.
+    size: f32,
+}
+
+impl Prefs {
+    const SIZE: f32 = 16.;
+
+    fn parse(text: &str) -> Self {
+        let mut prefs = Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE };
+        for (key, value) in text.lines().filter_map(|line| line.split_once('=')) {
+            match key {
+                "theme" => prefs.theme = value.into(),
+                "font" => prefs.font = value.into(),
+                "mono" => prefs.mono = value.into(),
+                "size" => prefs.size = value.parse().ok().filter(|s: &f32| s.is_finite()).unwrap_or(Self::SIZE),
+                _ => {}
+            }
+        }
+        prefs.size = prefs.size.clamp(11., 32.);
+        prefs
+    }
+
+    fn to_text(&self) -> String {
+        format!("theme={}\nfont={}\nmono={}\nsize={}\n", self.theme, self.font, self.mono, self.size)
+    }
 }
 
 /// Marge transparente autour de la fenêtre quand l'app dessine ses décorations.
@@ -94,9 +165,17 @@ impl AssetSource for Assets {
             "folder-plus.svg" => {
                 r#"<path d="M2.5 4.5A1 1 0 0 1 3.5 3.5H6.5L8 5H12.5A1 1 0 0 1 13.5 6V11.5A1 1 0 0 1 12.5 12.5H3.5A1 1 0 0 1 2.5 11.5Z"/><path d="M8 7.2V10.4M6.4 8.8H9.6"/>"#
             }
+            "unfold.svg" => r#"<path d="M4.5 6.5L8 3.5L11.5 6.5M4.5 9.5L8 12.5L11.5 9.5"/>"#,
             "fold.svg" => r#"<path d="M4.5 3.5L8 6.5L11.5 3.5M4.5 12.5L8 9.5L11.5 12.5"/>"#,
             "expand.svg" => r#"<path d="M9.5 3.5H12.5V6.5M6.5 12.5H3.5V9.5M12.5 3.5L9 7M3.5 12.5L7 9"/>"#,
             "shrink.svg" => r#"<path d="M12.5 6.5H9.5V3.5M3.5 9.5H6.5V12.5M9.5 6.5L13 3M6.5 9.5L3 13"/>"#,
+            "theme.svg" => {
+                r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="black"/>"#
+            }
+            // La goutte de l'icône de l'app, pleine.
+            "logo.svg" => {
+                r#"<path d="M8 2.5C8 2.5 4.5 6.75 4.5 9.25A3.5 3.5 0 0 0 11.5 9.25C11.5 6.75 8 2.5 8 2.5Z" fill="black" stroke="none"/>"#
+            }
             _ => return Ok(None),
         };
         let svg = format!(
@@ -110,7 +189,12 @@ impl AssetSource for Assets {
     }
 }
 
-actions!(app, [OpenPalette, NewNote, OpenVault, CopyAll, ToggleHelp, CloseHelp, Quit]);
+/// Le logo de l'app, discret : la goutte, à la couleur d'accent.
+pub fn logo(t: Theme) -> gpui::Svg {
+    svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
+}
+
+actions!(app, [OpenPalette, NewNote, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -122,31 +206,45 @@ pub struct Theme {
     pub code_bg: Hsla,
     pub panel: Hsla,
     pub border: Hsla,
+    /// Taille du texte courant de la note, en pixels.
+    pub size: f32,
 }
 
+/// Thèmes proposés : (nom, [fond, texte, discret, accent, fond du code, panneau, bordure]).
+/// Les deux premiers sont ceux d'Encre, sombre et clair, qui suivent le système.
+const THEMES: &[(&str, [u32; 7])] = &[
+    ("Encre Dark", [0x1b1a19, 0xe4e0da, 0x77716a, 0xe0926b, 0x262423, 0x242221, 0x3a3735]),
+    ("Encre Light", [0xfbfaf8, 0x26231f, 0xa8a29a, 0xb4532a, 0xf1eeea, 0xffffff, 0xe2ddd6]),
+    ("Dracula", [0x282a36, 0xf8f8f2, 0x6272a4, 0xbd93f9, 0x21222c, 0x343746, 0x44475a]),
+    ("One Dark", [0x282c34, 0xabb2bf, 0x5c6370, 0x61afef, 0x21252b, 0x2c313a, 0x3e4451]),
+    ("Gruvbox Dark", [0x282828, 0xebdbb2, 0x928374, 0xfabd2f, 0x32302f, 0x3c3836, 0x504945]),
+    ("Nord", [0x2e3440, 0xd8dee9, 0x616e88, 0x88c0d0, 0x3b4252, 0x3b4252, 0x4c566a]),
+    ("Catppuccin Mocha", [0x1e1e2e, 0xcdd6f4, 0x6c7086, 0xcba6f7, 0x181825, 0x313244, 0x45475a]),
+    ("Tokyo Night", [0x1a1b26, 0xc0caf5, 0x565f89, 0x7aa2f7, 0x16161e, 0x24283b, 0x3b4261]),
+    ("Rosé Pine", [0x191724, 0xe0def4, 0x6e6a86, 0xebbcba, 0x1f1d2e, 0x26233a, 0x403d52]),
+    ("Solarized Dark", [0x002b36, 0x93a1a1, 0x586e75, 0x268bd2, 0x073642, 0x073642, 0x0a4856]),
+    ("Solarized Light", [0xfdf6e3, 0x586e75, 0x93a1a1, 0x268bd2, 0xeee8d5, 0xfffbf0, 0xd9d2c2]),
+    ("Catppuccin Latte", [0xeff1f5, 0x4c4f69, 0x9ca0b0, 0x8839ef, 0xe6e9ef, 0xffffff, 0xccd0da]),
+    ("Gruvbox Light", [0xfbf1c7, 0x3c3836, 0x928374, 0xb57614, 0xf2e5bc, 0xf9f5d7, 0xd5c4a1]),
+];
+
 impl Theme {
-    fn of(appearance: WindowAppearance) -> Self {
-        match appearance {
-            WindowAppearance::Dark | WindowAppearance::VibrantDark => Self {
-                bg: rgb(0x1b1a19).into(),
-                text: rgb(0xe4e0da).into(),
-                dim: rgb(0x77716a).into(),
-                accent: rgb(0xe0926b).into(),
-                selection: rgba(0xe0926b40).into(),
-                code_bg: rgb(0x262423).into(),
-                panel: rgb(0x242221).into(),
-                border: rgb(0x3a3735).into(),
-            },
-            _ => Self {
-                bg: rgb(0xfbfaf8).into(),
-                text: rgb(0x26231f).into(),
-                dim: rgb(0xa8a29a).into(),
-                accent: rgb(0xb4532a).into(),
-                selection: rgba(0xb4532a33).into(),
-                code_bg: rgb(0xf1eeea).into(),
-                panel: rgb(0xffffff).into(),
-                border: rgb(0xe2ddd6).into(),
-            },
+    /// Le thème choisi ; à défaut, celui d'Encre accordé à l'apparence du système.
+    fn of(prefs: &Prefs, appearance: WindowAppearance) -> Self {
+        let dark = matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark);
+        let system = &THEMES[if dark { 0 } else { 1 }];
+        let (_, colors) = THEMES.iter().find(|t| t.0 == prefs.theme).unwrap_or(system);
+        let [bg, text, dim, accent, code_bg, panel, border] = colors.map(|c| Hsla::from(rgb(c)));
+        Self {
+            bg,
+            text,
+            dim,
+            accent,
+            selection: accent.opacity(if bg.l < 0.5 { 0.25 } else { 0.2 }),
+            code_bg,
+            panel,
+            border,
+            size: prefs.size,
         }
     }
 }
@@ -183,6 +281,7 @@ struct Shell {
     save_gen: usize,
     error: Option<String>,
     title: String,
+    prefs: Prefs,
     theme: Theme,
     /// Bord de fenêtre survolé (redimensionnement sans décorations système).
     edge: Option<ResizeEdge>,
@@ -197,15 +296,12 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let theme = Theme::of(window.appearance());
+        let prefs = Prefs::parse(&vault::load_settings());
+        apply_fonts(&prefs);
+        let theme = Theme::of(&prefs, window.appearance());
         let editor = cx.new(|cx| Editor::new(theme, cx));
         cx.subscribe_in(&editor, window, Self::on_editor_event).detach();
-        cx.observe_window_appearance(window, |this, window, cx| {
-            this.theme = Theme::of(window.appearance());
-            this.editor.update(cx, |e, cx| e.set_theme(this.theme, cx));
-            cx.notify();
-        })
-        .detach();
+        cx.observe_window_appearance(window, |this, window, cx| this.restyle(window, cx)).detach();
         cx.on_app_quit(|this, cx| {
             this.leave(cx);
             async {}
@@ -242,6 +338,7 @@ impl Shell {
             save_gen: 0,
             error: None,
             title: String::new(),
+            prefs,
             theme,
             edge: None,
             copied: false,
@@ -310,6 +407,75 @@ impl Shell {
             }
         })
         .detach();
+    }
+
+    /// Applique les réglages d'apparence à toute la fenêtre.
+    fn restyle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        apply_fonts(&self.prefs);
+        let theme = Theme::of(&self.prefs, window.appearance());
+        self.theme = theme;
+        self.editor.update(cx, |e, cx| e.set_theme(theme, cx));
+        if let Some(palette) = &self.palette {
+            palette.update(cx, |p, cx| p.set_theme(theme, cx));
+        }
+        cx.notify();
+    }
+
+    /// Liste de choix d'un réglage, comme le sélecteur de thème de Zed : le choix
+    /// parcouru s'applique en aperçu, Entrée le garde, Échap revient au précédent.
+    pub fn choose_setting(&mut self, setting: Setting, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_none() {
+            return;
+        }
+        let default = tr("Default", "Par défaut");
+        let (mut options, current): (Vec<String>, &str) = match setting {
+            Setting::Theme => (THEMES.iter().map(|t| t.0.to_string()).collect(), &self.prefs.theme),
+            Setting::Font | Setting::Mono => (
+                FAMILIES.get().into_iter().flatten().map(|f| f.to_string()).collect(),
+                if setting == Setting::Font { &self.prefs.font } else { &self.prefs.mono },
+            ),
+        };
+        // ponytail: la liste montre 14 choix sans défiler ; le choix en cours remonte
+        // en tête pour rester visible. Une liste défilante si le filtre ne suffit plus.
+        if let Some(i) = options.iter().position(|o| o == current) {
+            let chosen = options.remove(i);
+            options.insert(0, chosen);
+        }
+        options.insert(0, default.to_string());
+        let current = if current.is_empty() { default } else { current };
+        let (theme, before) = (self.theme, self.prefs.clone());
+        let palette = cx.new(|cx| Palette::choose(setting.label(), options, current, theme, cx));
+        cx.subscribe_in(&palette, window, move |this, _, event, window, cx| {
+            match event {
+                PaletteEvent::Preview(name) | PaletteEvent::Submit(name) => {
+                    let value = if name == default { String::new() } else { name.clone() };
+                    match setting {
+                        Setting::Theme => this.prefs.theme = value,
+                        Setting::Font => this.prefs.font = value,
+                        Setting::Mono => this.prefs.mono = value,
+                    }
+                }
+                _ => this.prefs = before.clone(),
+            }
+            if !matches!(event, PaletteEvent::Preview(_)) {
+                this.palette = None;
+                window.focus(&this.editor.focus_handle(cx));
+                vault::save_settings(&this.prefs.to_text());
+            }
+            this.restyle(window, cx);
+        })
+        .detach();
+        window.focus(&palette.focus_handle(cx));
+        self.palette = Some(palette);
+        cx.notify();
+    }
+
+    /// Grossit ou réduit le texte de la note ; `None` revient à la taille d'origine.
+    fn resize_text(&mut self, by: Option<f32>, window: &mut Window, cx: &mut Context<Self>) {
+        let size = by.map_or(Prefs::SIZE, |by| self.prefs.size + by);
+        self.prefs = Prefs::parse(&Prefs { size, ..self.prefs.clone() }.to_text());
+        vault::save_settings(&self.prefs.to_text());
+        self.restyle(window, cx);
     }
 
     /// Copie toute la note dans le presse-papiers.
@@ -600,7 +766,8 @@ impl Shell {
                 PaletteEvent::Create(name) => this.open_wiki(name, cx),
                 PaletteEvent::ChangeVault => this.choose_vault(window, cx),
                 PaletteEvent::Help => this.set_help(true, window, cx),
-                PaletteEvent::Dismiss | PaletteEvent::Submit(_) => {}
+                PaletteEvent::Setting(setting) => this.choose_setting(*setting, window, cx),
+                PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
             cx.notify();
         })
@@ -636,6 +803,15 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (tr("Enter / Esc", "Entrée / Échap").into(), tr("Open the note / back to the note", "Ouvrir la note / revenir à la note")),
                 (m("Shift+N"), tr("New folder", "Nouveau dossier")),
                 (tr("F2 / Delete", "F2 / Suppr").into(), tr("Rename / move to the trash", "Renommer / mettre à la corbeille")),
+                (tr("Drag a node", "Glisser un nœud").into(), tr("Move it in the graph, linked notes follow", "Le déplacer dans le graphe, les notes liées suivent")),
+            ],
+        ),
+        (
+            tr("Appearance", "Apparence"),
+            vec![
+                (format!("{} {}", m("K"), m("T")), tr("Theme, previewed as you browse", "Thème, en aperçu pendant le choix")),
+                (format!("{} › {}", m("P"), tr("font", "police")), tr("Font of the app / of the code", "Police de l'app / du code")),
+                (format!("{} / {} / {}", m("+"), m("-"), m("0")), tr("Bigger / smaller / default text", "Texte plus grand / plus petit / d'origine")),
             ],
         ),
         (
@@ -714,7 +890,12 @@ impl Shell {
                     .rounded(px(10.))
                     .shadow_lg()
                     .text_size(px(13.))
-                    .children(sections),
+                    .children(sections)
+                    .with_animation(
+                        "help-in",
+                        Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
+                        |help, delta| help.opacity(delta),
+                    ),
             )
     }
 }
@@ -748,6 +929,7 @@ impl Render for Shell {
         let inset = if framed { SHADOW } else { px(0.) };
         window.set_client_inset(inset);
         self.nav.left = inset;
+        self.nav.logo = !client;
         self.nav.total = window.viewport_size().width - inset * 2.;
 
         // Bouton icône : cercle visible au survol, comme les contrôles de fenêtre de Zed.
@@ -761,7 +943,7 @@ impl Render for Shell {
                 .rounded_full()
                 .cursor_pointer()
                 .hover(|s| s.bg(t.border))
-                .active(|s| s.bg(t.border))
+                .active(|s| s.bg(t.selection))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(svg().path(icon).size(px(16.)).flex_none().text_color(t.text))
         };
@@ -781,7 +963,9 @@ impl Render for Shell {
                 }
             })
             .on_mouse_down(MouseButton::Right, |e, window, _| window.show_window_menu(e.position))
-            .child(div().flex_1().px_3().truncate().child(self.title.clone()))
+            // Le logo, discret, à l'aplomb du rail.
+            .child(div().flex_none().w(nav::RAIL).flex().justify_center().child(logo(t)))
+            .child(div().flex_1().pr_3().truncate().child(self.title.clone()))
             .child(
                 div()
                     .flex()
@@ -932,6 +1116,12 @@ impl Render for Shell {
             )
             .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(cx)))
+            .on_action(cx.listener(|this, _: &ChooseTheme, window, cx| {
+                this.choose_setting(Setting::Theme, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ZoomIn, window, cx| this.resize_text(Some(1.), window, cx)))
+            .on_action(cx.listener(|this, _: &ZoomOut, window, cx| this.resize_text(Some(-1.), window, cx)))
+            .on_action(cx.listener(|this, _: &ZoomReset, window, cx| this.resize_text(None, window, cx)))
             .on_action(cx.listener(|this, _: &ToggleHelp, window, cx| {
                 this.set_help(!this.help, window, cx)
             }))
@@ -1017,6 +1207,11 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("f1", ToggleHelp, None),
         KeyBinding::new("secondary-/", ToggleHelp, None),
         KeyBinding::new("escape", CloseHelp, Some("Shell")),
+        KeyBinding::new("secondary-k secondary-t", ChooseTheme, None),
+        KeyBinding::new("secondary-=", ZoomIn, None),
+        KeyBinding::new("secondary-+", ZoomIn, None),
+        KeyBinding::new("secondary--", ZoomOut, None),
+        KeyBinding::new("secondary-0", ZoomReset, None),
         KeyBinding::new("secondary-q", Quit, None),
         KeyBinding::new("secondary-e", nav::ShowTree, Some("Shell")),
         KeyBinding::new("secondary-r", nav::ShowRecent, Some("Shell")),
@@ -1112,33 +1307,7 @@ fn main() {
     skip_absent_nvidia_driver();
     Application::new().with_assets(Assets).run(|cx: &mut App| {
         bind_keys(cx);
-        let installed = cx.text_system().all_font_names();
-        let pick = |wanted: &[&'static str]| {
-            let found = wanted.iter().find(|w| installed.iter().any(|i| i == *w));
-            *found.unwrap_or(&wanted[wanted.len() - 1])
-        };
-        FONTS.get_or_init(|| {
-            (
-                // Adwaita Sans et Cantarell sont des polices variables : pas de gras avec gpui 0.2.
-                pick(&[
-                    "Inter",
-                    "Noto Sans",
-                    "Segoe UI",
-                    "Helvetica Neue",
-                    "DejaVu Sans",
-                    "Cantarell",
-                ]),
-                pick(&[
-                    "JetBrains Mono",
-                    "JetBrainsMono Nerd Font",
-                    "Adwaita Mono",
-                    "Noto Sans Mono",
-                    "Menlo",
-                    "Consolas",
-                    "DejaVu Sans Mono",
-                ]),
-            )
-        });
+        init_fonts(cx);
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.on_window_closed(|cx| cx.quit()).detach();
 
@@ -1190,6 +1359,7 @@ mod tests {
         }
 
         cx.update(bind_keys);
+        cx.update(init_fonts);
         let (shell, cx) = cx.add_window_view({
             let root = root.clone();
             |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
@@ -1263,6 +1433,34 @@ mod tests {
         cx.simulate_input("ok");
         assert_eq!(text(cx), "# Idées\n\nok");
 
+        // Thème : Ctrl+K Ctrl+T liste les thèmes, celui qu'on parcourt s'applique en
+        // aperçu ; Échap revient au précédent, Entrée garde le choix et le mémorise.
+        let look = |cx: &mut gpui::VisualTestContext| {
+            shell.read_with(cx, |s, _| (s.prefs.theme.clone(), s.theme.bg))
+        };
+        let system = look(cx);
+        cx.simulate_keystrokes("secondary-k secondary-t");
+        cx.simulate_input("drac");
+        assert_eq!(look(cx), ("Dracula".to_string(), Hsla::from(rgb(0x282a36))));
+        cx.simulate_keystrokes("escape");
+        assert_eq!(look(cx), system);
+        cx.simulate_keystrokes("secondary-k secondary-t down down enter");
+        assert_eq!(look(cx), ("Encre Light".to_string(), Hsla::from(rgb(0xfbfaf8))));
+        // Police du code, depuis la palette ; taille du texte au clavier.
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("police du");
+        cx.simulate_keystrokes("down enter");
+        cx.simulate_input("systemui");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(mono(), ".SystemUIFont");
+        cx.simulate_keystrokes("secondary-= secondary-= secondary--");
+        assert_eq!(shell.read_with(cx, |s, _| s.theme.size), 17.);
+        assert_eq!(vault::load_settings(), "theme=Encre Light\nfont=\nmono=.SystemUIFont\nsize=17\n");
+        cx.simulate_keystrokes("secondary-0");
+        assert_eq!(shell.read_with(cx, |s, _| s.theme.size), 16.);
+        cx.simulate_input("!");
+        assert_eq!(text(cx), "# Idées\n\nok!");
+
         // Arbre : Ctrl+E l'ouvre et lui donne le focus ; les flèches affichent un aperçu,
         // qui ne compte pas comme une ouverture.
         cx.executor().advance_clock(Duration::from_millis(500));
@@ -1272,6 +1470,12 @@ mod tests {
         assert!(shell.read_with(cx, |s, _| s.preview && s.recent[0] == root.join("Idées.md")));
         // Le dossier se déplie avec Droite ; Entrée ouvre la note et rend la main à l'éditeur.
         cx.simulate_keystrokes("up right down");
+        // Le bouton de repli replie tout l'arbre, puis le déplie tout entier.
+        let open = |s: &mut Shell| {
+            s.fold_all();
+            s.nav.open.len()
+        };
+        assert_eq!(shell.update(cx, |s, _| (open(s), open(s))), (0, 1));
         assert_eq!(text(cx), "# Plan\n\n[[Courses]]\n");
         cx.simulate_keystrokes("enter");
         assert!(shell.read_with(cx, |s, _| !s.preview && s.recent[0] == root.join("Projets/Plan.md")));
@@ -1314,6 +1518,16 @@ mod tests {
         cx.run_until_parked();
         assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (Mode::Graph, Panel::Split));
         assert_eq!(shell.read_with(cx, |s, cx| s.graph.read(cx).size()), (5, 2));
+        // Un nœud tiré à la souris suit le pointeur.
+        let spot = |cx: &mut gpui::VisualTestContext| {
+            shell.read_with(cx, |s, cx| s.graph.read(cx).spot(&root.join("Courses.md")))
+        };
+        let from = spot(cx);
+        let to = from + point(px(40.), px(30.));
+        cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_move(to, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_up(to, MouseButton::Left, gpui::Modifiers::none());
+        assert!((spot(cx).x - to.x).abs() < px(1.) && (spot(cx).y - to.y).abs() < px(1.));
         let mut linked = Vec::new();
         for _ in 0..2 {
             cx.simulate_keystrokes("tab");
@@ -1402,5 +1616,14 @@ mod tests {
         assert_eq!(left, ["Idées"]);
 
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn reads_settings() {
+        let prefs = Prefs::parse("theme=Dracula\nfont=Inter\nsize=99\nbogus\nmono=\n");
+        assert_eq!((prefs.theme.as_str(), prefs.font.as_str(), prefs.mono.as_str()), ("Dracula", "Inter", ""));
+        // Taille bornée, et valeur illisible ignorée.
+        assert_eq!((prefs.size, Prefs::parse("size=NaN").size), (32., 16.));
+        assert_eq!(Prefs::parse(&prefs.to_text()), prefs);
     }
 }

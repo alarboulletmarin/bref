@@ -59,15 +59,32 @@ pub fn save_config(vault: &Path, recent: &[PathBuf]) {
     }
 }
 
+fn load_file(name: &str) -> String {
+    fs::read_to_string(config_dir().join("encre").join(name)).unwrap_or_default()
+}
+
+fn save_file(name: &str, text: &str) {
+    let path = config_dir().join("encre").join(name);
+    // Simple confort : si l'écriture échoue, l'app rouvrira avec ses réglages d'origine.
+    let _ = path.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(path, text));
+}
+
 /// Disposition du panneau de navigation, mémorisée telle quelle sur une ligne.
 pub fn load_layout() -> String {
-    fs::read_to_string(config_dir().join("encre/layout")).unwrap_or_default()
+    load_file("layout")
 }
 
 pub fn save_layout(text: &str) {
-    let path = config_dir().join("encre/layout");
-    // Simple confort : si l'écriture échoue, l'app rouvrira panneau replié.
-    let _ = path.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(path, text));
+    save_file("layout", text)
+}
+
+/// Apparence choisie (thème, polices, taille) : une ligne `clé=valeur` par réglage.
+pub fn load_settings() -> String {
+    load_file("settings")
+}
+
+pub fn save_settings(text: &str) {
+    save_file("settings", text)
 }
 
 pub fn stem(path: &Path) -> String {
