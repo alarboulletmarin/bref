@@ -565,6 +565,15 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
             ],
         ),
         (
+            "Navigation",
+            vec![
+                (format!("{} / R / G", m("E")), tr("Vault tree / recent notes / graph", "Arbre du coffre / notes récentes / graphe")),
+                (m("M"), tr("Panel on the whole window", "Panneau en pleine fenêtre")),
+                (tr("Arrows / Tab", "Flèches / Tab").into(), tr("Select and preview / linked notes (graph)", "Sélectionner en aperçu / notes liées (graphe)")),
+                (tr("Enter / Esc", "Entrée / Échap").into(), tr("Open the note / back to the note", "Ouvrir la note / revenir à la note")),
+            ],
+        ),
+        (
             tr("Typing", "À la frappe"),
             vec![
                 ("- ".into(), tr("Bullet list", "Liste à puces")),
@@ -596,6 +605,7 @@ impl Shell {
         let t = self.theme;
         let sections = help_sections().into_iter().map(|(title, rows)| {
             div()
+                .w(px(370.))
                 .flex()
                 .flex_col()
                 .gap_1()
@@ -604,14 +614,15 @@ impl Shell {
                     div()
                         .flex()
                         .gap_3()
-                        .child(div().w(px(176.)).flex_none().font_family(mono()).text_size(px(12.)).child(keys))
-                        .child(div().text_color(t.dim).child(effect))
+                        .child(div().w(px(156.)).flex_none().font_family(mono()).text_size(px(12.)).child(keys))
+                        .child(div().flex_1().min_w_0().text_color(t.dim).child(effect))
                 }))
         });
         div()
             .absolute()
             .inset_0()
             .occlude()
+            .p_4()
             .flex()
             .items_center()
             .justify_center()
@@ -621,12 +632,17 @@ impl Shell {
             )
             .child(
                 div()
-                    .w(px(560.))
+                    .id("help")
+                    // Deux colonnes si la fenêtre est assez large, une seule sinon.
+                    .w(px(812.))
                     .max_w_full()
+                    .max_h_full()
+                    .overflow_y_scroll()
                     .p_5()
                     .flex()
-                    .flex_col()
-                    .gap_4()
+                    .flex_wrap()
+                    .gap_x_6()
+                    .gap_y_4()
                     .bg(t.panel)
                     .border_1()
                     .border_color(t.border)
