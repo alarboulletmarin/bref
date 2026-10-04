@@ -16,7 +16,7 @@ use gpui::{
 };
 
 use crate::{
-    Shell, Theme,
+    Shell, Theme, graph,
     palette::{Palette, PaletteEvent, Setting},
     tr,
     vault::{self, Note},
@@ -197,13 +197,22 @@ impl Nav {
 /// dossiers sans note.
 // ponytail: reconstruit à chaque frame où le panneau est visible (quelques ms pour
 // des milliers de notes) ; mettre en cache si l'arbre devient très gros.
-pub fn tree_rows(root: &Path, notes: &[Note], dirs: &[PathBuf], open: &HashSet<PathBuf>) -> Vec<Row> {
+pub fn tree_rows(
+    root: &Path,
+    notes: &[Note],
+    dirs: &[PathBuf],
+    images: &[PathBuf],
+    open: &HashSet<PathBuf>,
+) -> Vec<Row> {
     let mut all: HashSet<&Path> = dirs.iter().map(PathBuf::as_path).collect();
-    let mut files: HashMap<&Path, Vec<&Note>> = HashMap::new();
-    for note in notes {
-        let parents = note.path.ancestors().skip(1).take_while(|a| *a != root && a.starts_with(root));
+    // Par dossier : ses notes puis ses images, chacune avec le nom affiché.
+    let mut files: HashMap<&Path, Vec<(&Path, String)>> = HashMap::new();
+    let named = notes.iter().map(|n| (n.path.as_path(), n.name.clone()));
+    let pictures = images.iter().map(|p| (p.as_path(), graph::image_name(p)));
+    for (path, name) in named.chain(pictures) {
+        let parents = path.ancestors().skip(1).take_while(|a| *a != root && a.starts_with(root));
         all.extend(parents);
-        files.entry(note.path.parent().unwrap_or(root)).or_default().push(note);
+        files.entry(path.parent().unwrap_or(root)).or_default().push((path, name));
     }
     let mut folders: HashMap<&Path, Vec<&Path>> = HashMap::new();
     for dir in all {
@@ -211,7 +220,9 @@ pub fn tree_rows(root: &Path, notes: &[Note], dirs: &[PathBuf], open: &HashSet<P
     }
     let label = |dir: &Path| dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
     folders.values_mut().for_each(|f| f.sort_by_cached_key(|d| label(d).to_lowercase()));
-    files.values_mut().for_each(|f| f.sort_by_cached_key(|n| n.name.to_lowercase()));
+    files
+        .values_mut()
+        .for_each(|f| f.sort_by_cached_key(|(path, name)| (vault::is_image(path), name.to_lowercase())));
 
     let mut rows = Vec::new();
     // Parcours en profondeur : (dossier, profondeur de son contenu), sous-dossiers d'abord.
@@ -219,7 +230,7 @@ pub fn tree_rows(root: &Path, notes: &[Note], dirs: &[PathBuf], open: &HashSet<P
         dir: &Path,
         depth: usize,
         folders: &HashMap<&Path, Vec<&Path>>,
-        files: &HashMap<&Path, Vec<&Note>>,
+        files: &HashMap<&Path, Vec<(&Path, String)>>,
         open: &HashSet<PathBuf>,
         rows: &mut Vec<Row>,
     ) {
@@ -235,10 +246,10 @@ pub fn tree_rows(root: &Path, notes: &[Note], dirs: &[PathBuf], open: &HashSet<P
                 walk(sub, depth + 1, folders, files, open, rows);
             }
         }
-        for note in files.get(dir).into_iter().flatten() {
+        for (path, name) in files.get(dir).into_iter().flatten() {
             rows.push(Row {
-                path: note.path.clone(),
-                name: note.name.clone(),
+                path: path.to_path_buf(),
+                name: name.clone(),
                 depth,
                 dir: None,
             });
@@ -294,7 +305,16 @@ impl Shell {
     pub fn refresh_graph(&mut self, cx: &mut Context<Self>) {
         if self.graph_stale && self.nav.panel != Panel::Rail && self.nav.mode == Mode::Graph {
             self.graph_stale = false;
-            self.graph.update(cx, |graph, cx| graph.set_notes(&self.notes, cx));
+            // Seules les images qu'une note affiche : le graphe reste celui des notes.
+            let linked: HashSet<&str> =
+                self.notes.iter().flat_map(|n| &n.links).map(String::as_str).collect();
+            let shown: Vec<PathBuf> = self
+                .images
+                .iter()
+                .filter(|p| linked.contains(graph::image_name(p).to_lowercase().as_str()))
+                .cloned()
+                .collect();
+            self.graph.update(cx, |graph, cx| graph.set_notes(&self.notes, &shown, cx));
         }
     }
 
@@ -349,7 +369,7 @@ impl Shell {
             return Vec::new();
         };
         match self.nav.mode {
-            Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.nav.open),
+            Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.images, &self.nav.open),
             Mode::Graph => Vec::new(),
             Mode::Recent => self
                 .by_recency()
@@ -418,7 +438,10 @@ impl Shell {
         if self.nav.panel == Panel::Full {
             self.nav.panel = Panel::Split;
         }
-        window.focus(&self.editor.focus_handle(cx));
+        // Une image s'affiche à la place de la note ; le panneau garde la main.
+        if self.picture.is_none() {
+            window.focus(&self.editor.focus_handle(cx));
+        }
         self.settle_nav(window, cx);
     }
 
@@ -500,8 +523,14 @@ impl Shell {
                         return;
                     }
                     this.flush(cx);
+                    let image = vault::is_image(&path);
                     let renamed = if is_dir {
                         let to = path.with_file_name(&name);
+                        vault::rename(&path, &to).map(|()| to)
+                    } else if image {
+                        // Une image garde son extension.
+                        let extension = path.extension().unwrap_or_default().to_string_lossy();
+                        let to = path.with_file_name(format!("{name}.{extension}"));
                         vault::rename(&path, &to).map(|()| to)
                     } else {
                         vault::rename_note(&path, &name)
@@ -510,7 +539,13 @@ impl Shell {
                         Ok(to) => {
                             // Le titre d'une note renommée a pu changer : on la relit.
                             this.relocate(&path, &to, !is_dir, cx);
-                            if !is_dir && this.relink(&current, &name, cx) {
+                            // Les liens suivent : par nom de note, ou par nom de fichier pour une image.
+                            let (old, new) = if image {
+                                (graph::image_name(&path), graph::image_name(&to))
+                            } else {
+                                (current.clone(), name)
+                            };
+                            if !is_dir && this.relink(&old, &new, cx) {
                                 this.reload(cx);
                             }
                         }
@@ -520,7 +555,12 @@ impl Shell {
             }
             (Do::Trash, Some(path)) => self.trash(&root, &path, cx),
             (Do::CopyLink, Some(path)) => {
-                cx.write_to_clipboard(ClipboardItem::new_string(format!("[[{}]]", vault::stem(&path))));
+                let link = if vault::is_image(&path) {
+                    format!("![[{}]]", graph::image_name(&path))
+                } else {
+                    format!("[[{}]]", vault::stem(&path))
+                };
+                cx.write_to_clipboard(ClipboardItem::new_string(link));
             }
             _ => {}
         }
@@ -604,6 +644,8 @@ impl Shell {
             note.name = vault::stem(&note.path);
         }
         self.dirs = self.dirs.iter().map(shift).collect();
+        self.images = self.images.iter().map(shift).collect();
+        self.picture = self.picture.as_ref().map(shift);
         self.recent = self.recent.iter().map(shift).collect();
         self.nav.open = self.nav.open.iter().map(shift).collect();
         self.new_dir = self.new_dir.as_ref().map(shift);
@@ -624,7 +666,11 @@ impl Shell {
         let gone = |p: &PathBuf| p.starts_with(path);
         self.notes.retain(|n| !gone(&n.path));
         self.dirs.retain(|d| !gone(d));
+        self.images.retain(|p| !gone(p));
         self.recent.retain(|p| !gone(p));
+        if self.picture.as_ref().is_some_and(gone) {
+            self.picture = None;
+        }
         self.nav.sel = None;
         if self.path.as_ref().is_some_and(gone) {
             self.path = None;
@@ -1051,7 +1097,7 @@ mod tests {
         let notes = [note("b.md"), note("Z/x.md"), note("a/c/d.md"), note("a/B.md"), note("A.md")];
         let shown = |open: &[&str]| -> Vec<String> {
             let open = open.iter().map(|d| root.join(d)).collect();
-            tree_rows(root, &notes, &[root.join("a/vide"), root.join("a")], &open)
+            tree_rows(root, &notes, &[root.join("a/vide"), root.join("a")], &[root.join("a/Photo.png")], &open)
                 .iter()
                 .map(|r| format!("{}{}{}", "  ".repeat(r.depth), r.name, if r.dir.is_some() { "/" } else { "" }))
                 .collect()
@@ -1059,9 +1105,10 @@ mod tests {
         // Dossiers d'abord, sans tenir compte de la casse ; tout est replié.
         assert_eq!(shown(&[]), ["a/", "Z/", "A", "b"]);
         // Un dossier sans note apparaît aussi.
-        assert_eq!(shown(&["a"]), ["a/", "  c/", "  vide/", "  B", "Z/", "A", "b"]);
+        // Les images d'un dossier suivent ses notes.
+        assert_eq!(shown(&["a"]), ["a/", "  c/", "  vide/", "  B", "  Photo.png", "Z/", "A", "b"]);
         // Un dossier déplié dans un dossier replié reste caché.
         assert_eq!(shown(&["a/c", "Z"]), ["a/", "Z/", "  x", "A", "b"]);
-        assert_eq!(shown(&["a", "a/c"]), ["a/", "  c/", "    d", "  vide/", "  B", "Z/", "A", "b"]);
+        assert_eq!(shown(&["a", "a/c"]), ["a/", "  c/", "    d", "  vide/", "  B", "  Photo.png", "Z/", "A", "b"]);
     }
 }

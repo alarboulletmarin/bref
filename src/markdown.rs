@@ -355,7 +355,12 @@ pub fn math(line: &str) -> Option<(Range<usize>, &str, bool)> {
     None
 }
 
+fn file_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
 /// Tags et wikiliens (en minuscules) d'une note entière, hors blocs de code, dédupliqués.
+/// Les images affichées y figurent par leur nom de fichier.
 pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
     let (mut tags, mut wikis) = (Vec::new(), Vec::new());
     let mut in_code = false;
@@ -371,6 +376,13 @@ pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
                 };
                 if !list.contains(&item) {
                     list.push(item);
+                }
+            }
+            // Une image affichée compte comme un lien vers son fichier.
+            if let Some((_, path)) = image(line) {
+                let name = file_name(&path).to_lowercase();
+                if !wikis.contains(&name) {
+                    wikis.push(name);
                 }
             }
         }
@@ -403,7 +415,37 @@ pub fn relink(text: &str, old: &str, new: &str) -> Option<String> {
         }
         out.push_str(&line[done..]);
     }
+    let out = reembed(&out, &old, new);
     (out != text).then_some(out)
+}
+
+/// Le texte où les images `![…](dossier/old)` désignent le fichier `new`.
+fn reembed(text: &str, old: &str, new: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_code = false;
+    for line in text.split_inclusive('\n') {
+        if is_fence(line) {
+            in_code = !in_code;
+        } else if !in_code
+            && let Some((range, path)) = image(line)
+            && !line[range.clone()].starts_with("![[")
+            && file_name(&path).to_lowercase() == old
+        {
+            // Le nom tel qu'il est écrit : avec ses espaces, ou en `%20`.
+            let name = file_name(&path);
+            let spot = [name.to_string(), name.replace(' ', "%20")]
+                .into_iter()
+                .find_map(|written| Some((line[range.clone()].rfind(&written)?, written.len())));
+            if let Some((at, len)) = spot {
+                out.push_str(&line[..range.start + at]);
+                out.push_str(&new.replace(' ', "%20"));
+                out.push_str(&line[range.start + at + len..]);
+                continue;
+            }
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 #[derive(PartialEq, Debug)]
@@ -535,6 +577,11 @@ mod tests {
         let want = "[[Essai]] et [[Essai|alias]], [[Essai#titre]]\n```\n[[Test]]\n```\n[[Testé]] [[Essai]]";
         assert_eq!(relink(text, "Test", "Essai").as_deref(), Some(want));
         assert_eq!(relink(text, "Autre", "Essai"), None);
+        // Une image renommée : les deux écritures suivent, le reste de la ligne aussi.
+        let text = "![a](img/Le%20chat.png \"t\") ![[le chat.png|300]] le chat.png";
+        let want = "![a](img/Un%20chien.png \"t\") ![[Un chien.png|300]] le chat.png";
+        assert_eq!(relink(text, "Le chat.png", "Un chien.png").as_deref(), Some(want));
+        assert_eq!(index("![x](img/Le%20chat.png)\n![[B.svg]]").1, ["le chat.png", "b.svg"]);
     }
 
     #[test]

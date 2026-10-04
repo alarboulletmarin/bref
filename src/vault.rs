@@ -95,8 +95,16 @@ pub fn stem(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Empreinte de l'état du coffre : les chemins de ses notes et dossiers, et la
-/// date de chaque note. Elle change dès qu'un autre programme y touche, sans
+/// Le fichier est une image que l'app sait afficher.
+pub fn is_image(path: &Path) -> bool {
+    let known = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tif", "tiff", "avif"];
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| known.iter().any(|k| e.eq_ignore_ascii_case(k)))
+}
+
+/// Empreinte de l'état du coffre : les chemins de ses notes, images et dossiers,
+/// et la date de chaque note. Elle change dès qu'un autre programme y touche, sans
 /// qu'il faille lire un seul fichier.
 pub fn fingerprint(root: &Path) -> u64 {
     let mut seen = Vec::new();
@@ -112,6 +120,8 @@ pub fn fingerprint(root: &Path) -> u64 {
                 dirs.push(path);
             } else if path.extension().is_some_and(|e| e == "md") {
                 seen.push((path, entry.metadata().and_then(|m| m.modified()).ok()));
+            } else if is_image(&path) {
+                seen.push((path, None));
             }
         }
     }
@@ -123,9 +133,10 @@ pub fn fingerprint(root: &Path) -> u64 {
 }
 
 /// Toutes les notes du coffre (récursif, dossiers cachés ignorés), plus récentes
-/// d'abord, et tous ses dossiers, même vides.
-pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>) {
+/// d'abord, tous ses dossiers, même vides, et ses images.
+pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
     let mut notes = Vec::new();
+    let mut images = Vec::new();
     let mut found = Vec::new();
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
@@ -154,11 +165,13 @@ pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>) {
                         .unwrap_or(SystemTime::UNIX_EPOCH),
                     path,
                 });
+            } else if is_image(&path) {
+                images.push(path);
             }
         }
     }
     notes.sort_by(|a, b| b.mtime.cmp(&a.mtime));
-    (notes, found)
+    (notes, found, images)
 }
 
 /// Nom de fichier ou de dossier débarrassé de ce qu'un système de fichiers ou
@@ -337,8 +350,10 @@ mod tests {
         trash(&root, &c).unwrap();
         assert_eq!(fs::read_to_string(root.join(".trash/C.md")).unwrap(), "# A\n");
         assert_eq!(fs::read_to_string(root.join(".trash/2 C.md")).unwrap(), "autre");
-        let (notes, dirs) = scan(&root);
+        fs::write(root.join("vide/Photo.PNG"), "").unwrap();
+        let (notes, dirs, images) = scan(&root);
         assert_eq!((notes.len(), dirs), (2, vec![root.join("vide")]));
+        assert_eq!(images, [root.join("vide/Photo.PNG")]);
         assert_eq!(clean_name(" ../a:b. "), Some("ab".into()));
         assert_eq!(clean_name(" . "), None);
         fs::remove_dir_all(&root).unwrap();

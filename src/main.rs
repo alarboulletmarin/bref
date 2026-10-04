@@ -20,9 +20,9 @@ use std::{
 use gpui::{
     Animation, AnimationExt, App, Application, AssetSource, Bounds, BoxShadow, ClipboardItem, Context,
     CursorStyle, Decorations, Entity, FocusHandle, Focusable, Hsla, KeyBinding, MouseButton,
-    MouseMoveEvent, PathPromptOptions, Pixels, Point, ResizeEdge, SharedString, Size, TitlebarOptions,
+    MouseMoveEvent, ObjectFit, PathPromptOptions, Pixels, Point, ResizeEdge, SharedString, Size, TitlebarOptions,
     Window, WindowAppearance, WindowBounds, WindowBackgroundAppearance, WindowDecorations,
-    WindowOptions, actions, div, ease_out_quint, hsla, point, prelude::*, px, rgb, size, svg,
+    WindowOptions, actions, div, ease_out_quint, hsla, img, point, prelude::*, px, rgb, size, svg,
 };
 
 use editor::{Editor, EditorEvent};
@@ -262,6 +262,10 @@ struct Shell {
     notes: Vec<Note>,
     /// Dossiers du coffre, y compris ceux qui ne contiennent aucune note.
     dirs: Vec<PathBuf>,
+    /// Images du coffre.
+    images: Vec<PathBuf>,
+    /// Image affichée à la place de la note, choisie dans l'arbre ou le graphe.
+    picture: Option<PathBuf>,
     /// Menu contextuel de l'arbre, s'il est ouvert.
     menu: Option<nav::Menu>,
     /// Notes ouvertes, de la plus récente à la plus ancienne.
@@ -331,6 +335,8 @@ impl Shell {
             vault: None,
             notes: Vec::new(),
             dirs: Vec::new(),
+            images: Vec::new(),
+            picture: None,
             menu: None,
             recent: Vec::new(),
             path: None,
@@ -398,13 +404,13 @@ impl Shell {
                     })
                     .await;
                 pause = Duration::from_secs(2).max(scanned.0 * 200);
-                let Some(((notes, dirs), root, print)) = scanned.1 else {
+                let Some(((notes, dirs, images), root, print)) = scanned.1 else {
                     continue;
                 };
                 this.update(cx, |this, cx| {
                     // Une frappe ou un enregistrement pendant la lecture : on réessaie au prochain tour.
                     if this.vault.as_ref() == Some(&root) && this.save_gen == generation && !this.dirty {
-                        this.sync(notes, dirs, cx);
+                        this.sync(notes, dirs, images, cx);
                         last = Some((root, print));
                     }
                 })
@@ -415,7 +421,13 @@ impl Shell {
     }
 
     /// Aligne l'app sur le coffre tel qu'il vient d'être relu.
-    fn sync(&mut self, notes: Vec<Note>, mut dirs: Vec<PathBuf>, cx: &mut Context<Self>) {
+    fn sync(
+        &mut self,
+        notes: Vec<Note>,
+        mut dirs: Vec<PathBuf>,
+        mut images: Vec<PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
         let shape = |notes: &[Note]| {
             let mut shape: Vec<_> = notes.iter().map(|n| (n.path.clone(), n.tags.clone(), n.links.clone())).collect();
             shape.sort();
@@ -423,9 +435,12 @@ impl Shell {
         };
         dirs.sort();
         self.dirs.sort();
-        if shape(&notes) != shape(&self.notes) || dirs != self.dirs {
+        images.sort();
+        self.images.sort();
+        if shape(&notes) != shape(&self.notes) || dirs != self.dirs || images != self.images {
             self.notes = notes;
             self.dirs = dirs;
+            self.images = images;
             self.push_names(cx);
             self.graph_stale = true;
             self.refresh_graph(cx);
@@ -446,6 +461,7 @@ impl Shell {
         self.vault = Some(root.clone());
         self.notes.clear();
         self.dirs.clear();
+        self.images.clear();
         self.recent.clear();
         self.new_note(String::new(), cx);
         vault::save_config(&root, &[]);
@@ -453,7 +469,7 @@ impl Shell {
         // L'index (noms, tags) se construit hors du thread UI.
         cx.spawn(async move |this, cx| {
             let scan_root = root.clone();
-            let (notes, dirs) = cx
+            let (notes, dirs, images) = cx
                 .background_executor()
                 .spawn(async move { vault::scan(&scan_root) })
                 .await;
@@ -461,6 +477,7 @@ impl Shell {
                 if this.vault.as_ref() == Some(&root) {
                     this.notes = notes;
                     this.dirs = dirs;
+                    this.images = images;
                     this.push_names(cx);
                     this.graph_stale = true;
                     this.refresh_graph(cx);
@@ -593,7 +610,10 @@ impl Shell {
 
     fn push_names(&mut self, cx: &mut Context<Self>) {
         let names = self.notes.iter().map(|n| n.name.clone()).collect();
-        self.editor.update(cx, |e, _| e.set_notes(names));
+        self.editor.update(cx, |e, _| {
+            e.set_notes(names);
+            e.set_images(&self.images);
+        });
     }
 
     /// Indique à l'éditeur où chercher les images : à côté de la note, puis dans le coffre.
@@ -625,6 +645,13 @@ impl Shell {
 
     /// Charge la note dans l'éditeur ; faux si le fichier est illisible.
     fn load_note(&mut self, path: &Path, cx: &mut Context<Self>) -> bool {
+        // Une image prend la place de la note, qui reste chargée dessous.
+        if vault::is_image(path) {
+            self.picture = Some(path.to_path_buf());
+            cx.notify();
+            return false;
+        }
+        self.picture = None;
         self.leave(cx);
         cx.notify();
         match fs::read_to_string(path) {
@@ -686,6 +713,7 @@ impl Shell {
 
     fn new_note(&mut self, text: String, cx: &mut Context<Self>) {
         self.leave(cx);
+        self.picture = None;
         self.path = None;
         self.origin = None;
         self.synced = true;
@@ -898,6 +926,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
             "Navigation",
             vec![
                 (format!("{} / R / G", m("E")), tr("Vault tree / recent notes / graph", "Arbre du coffre / notes récentes / graphe")),
+                (tr("A picture", "Une image").into(), tr("Shown in place of the note; a square in the graph", "Affichée à la place de la note ; un carré dans le graphe")),
                 (m("M"), tr("Panel on the whole window", "Panneau en pleine fenêtre")),
                 (tr("Arrows / Tab", "Flèches / Tab").into(), tr("Select and preview / linked notes (graph)", "Sélectionner en aperçu / notes liées (graphe)")),
                 (tr("Enter / Esc", "Entrée / Échap").into(), tr("Open the note / back to the note", "Ouvrir la note / revenir à la note")),
@@ -1149,7 +1178,17 @@ impl Render for Shell {
                 .rounded(px(8.))
                 .occlude()
                 .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
-            let note = div().flex_1().min_w_0().h_full().relative().child(self.editor.clone()).child(copy);
+            // L'image choisie dans le panneau ; elle s'efface dès que la note reprend la main.
+            if self.editor.focus_handle(cx).is_focused(window) {
+                self.picture = None;
+            }
+            let note = div().flex_1().min_w_0().h_full().relative();
+            let note = match &self.picture {
+                Some(path) => note.p_6().flex().items_center().justify_center().child(
+                    img(path.clone()).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
+                ),
+                None => note.child(self.editor.clone()).child(copy),
+            };
             body.flex()
                 .child(self.render_nav(cx))
                 .when(self.nav.panel != Panel::Full, |d| d.child(note))
@@ -1807,6 +1846,25 @@ mod tests {
             ["![](image-", "```\nsoit", "soit $x^2$"].map(|line| editor.decorations(line).1.is_some())
         });
         assert_eq!(figures, [true, true, true]);
+
+        // Les images du coffre sont suivies comme les notes. Celles qu'une note affiche
+        // ont leur nœud dans le graphe ; en choisir une l'affiche à la place de la note.
+        for _ in 0..2 {
+            cx.executor().advance_clock(Duration::from_secs(3));
+            cx.run_until_parked();
+        }
+        cx.simulate_keystrokes("secondary-g");
+        cx.run_until_parked();
+        let (images, notes, nodes) = shell.read_with(cx, |s, cx| {
+            (s.images.len(), s.notes.len(), s.graph.read(cx).size().0)
+        });
+        assert_eq!((images, nodes), (2, notes + 2));
+        shell.update(cx, |s, cx| s.preview_note(&root.join("carré.svg"), cx));
+        assert_eq!(shell.read_with(cx, |s, _| s.picture.clone()), Some(root.join("carré.svg")));
+        assert!(text(cx).ends_with("fin"));
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert_eq!(shell.read_with(cx, |s, _| s.picture.clone()), None);
 
         fs::remove_dir_all(&root).unwrap();
     }

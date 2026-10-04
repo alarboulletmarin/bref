@@ -24,7 +24,7 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    MOD, Theme, figure, mono, sans, tr, vault,
+    MOD, Theme, figure, graph, mono, sans, tr, vault,
     markdown::{self as md, Enter, Kind, Link},
 };
 
@@ -219,6 +219,9 @@ pub struct Editor {
     notes: Vec<String>,
     /// Dossiers où chercher les images : celui de la note, puis le coffre.
     dirs: Vec<PathBuf>,
+    /// Images du coffre par nom de fichier (en minuscules) : où qu'elles soient
+    /// rangées, une note les trouve.
+    images: HashMap<String, PathBuf>,
     /// Début de la ligne dont le bloc de code vient d'être copié.
     copied: Option<usize>,
     /// Début de la ligne dont le bouton de copie est survolé.
@@ -262,6 +265,7 @@ impl Editor {
             last_edit: None,
             notes: Vec::new(),
             dirs: Vec::new(),
+            images: HashMap::new(),
             copied: None,
             hover: None,
             copy_hitboxes: Vec::new(),
@@ -305,6 +309,11 @@ impl Editor {
     /// Noms des notes du coffre, pour compléter les `[[wikiliens]]`.
     pub fn set_notes(&mut self, notes: Vec<String>) {
         self.notes = notes;
+    }
+
+    pub fn set_images(&mut self, images: &[PathBuf]) {
+        let named = images.iter().map(|p| (graph::image_name(p).to_lowercase(), p.clone()));
+        self.images = named.collect();
     }
 
     pub fn set_dirs(&mut self, dirs: Vec<PathBuf>) {
@@ -1021,11 +1030,15 @@ impl Editor {
             if kind == Kind::Task(true) {
                 flags[marker..].iter_mut().for_each(|f| *f |= md::STRIKE | md::DIM);
             }
-            // ponytail: une image par ligne, cherchée dans le dossier de la note puis à
-            // la racine du coffre ; les images en ligne (http) ne sont pas chargées.
+            // ponytail: une image par ligne, cherchée dans le dossier de la note, à la
+            // racine du coffre, puis par son nom dans tout le coffre ; les images en
+            // ligne (http) ne sont pas chargées.
             let image = (!code).then(|| md::image(line)).flatten().and_then(|(range, path)| {
                 flags[range].iter_mut().for_each(|f| *f |= md::DIM);
-                let file = self.dirs.iter().map(|d| d.join(&path)).find(|p| p.is_file())?;
+                let file = self.dirs.iter().map(|d| d.join(&path)).find(|p| p.is_file()).or_else(|| {
+                    let name = path.rsplit('/').next()?.to_lowercase();
+                    self.images.get(&name).cloned()
+                })?;
                 // gpui 0.2 rend un SVG deux fois plus grand que nature, pour qu'il reste
                 // net (`SMOOTH_SVG_SCALE_FACTOR`, qui n'est pas public).
                 let svg = file.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));

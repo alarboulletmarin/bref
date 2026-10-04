@@ -18,7 +18,7 @@ use crate::{
     Theme,
     nav::{Fold, Next, Open, Prev, Unfold},
     sans,
-    vault::Note,
+    vault::{self, Note},
 };
 
 actions!(graph, [Cycle]);
@@ -34,11 +34,20 @@ pub enum GraphEvent {
     Open(PathBuf),
 }
 
-/// Arêtes `(i, j)`, `i < j`, sans doublon : les wikiliens qui visent une note du coffre.
-pub fn edges(notes: &[Note]) -> Vec<(usize, usize)> {
+/// Nom d'une image dans le graphe et dans les liens : son nom de fichier.
+pub fn image_name(path: &Path) -> String {
+    path.file_name().unwrap_or_default().to_string_lossy().into_owned()
+}
+
+/// Arêtes `(i, j)`, `i < j`, sans doublon : les wikiliens qui visent une note du
+/// coffre, et les images affichées. Les images sont numérotées après les notes.
+pub fn edges(notes: &[Note], images: &[PathBuf]) -> Vec<(usize, usize)> {
     let mut by_name: HashMap<String, usize> = HashMap::new();
     for (i, note) in notes.iter().enumerate() {
         by_name.entry(note.name.to_lowercase()).or_insert(i);
+    }
+    for (i, image) in images.iter().enumerate() {
+        by_name.entry(image_name(image).to_lowercase()).or_insert(notes.len() + i);
     }
     let mut edges: Vec<(usize, usize)> = notes
         .iter()
@@ -193,21 +202,27 @@ impl Graph {
 
     /// Reconstruit le graphe ; les notes déjà placées gardent leur position de
     /// départ, et la disposition se calcule hors du thread UI.
-    pub fn set_notes(&mut self, notes: &[Note], cx: &mut Context<Self>) {
+    /// Les nœuds du graphe : les notes, puis les images que des notes affichent.
+    pub fn set_notes(&mut self, notes: &[Note], images: &[PathBuf], cx: &mut Context<Self>) {
+        let nodes: Vec<(PathBuf, SharedString)> = notes
+            .iter()
+            .map(|n| (n.path.clone(), n.name.clone().into()))
+            .chain(images.iter().map(|p| (p.clone(), image_name(p).into())))
+            .collect();
         let known: HashMap<&Path, (f32, f32)> =
             self.nodes.iter().zip(&self.pos).map(|((path, _), p)| (path.as_path(), *p)).collect();
         let seed: Vec<Option<(f32, f32)>> =
-            notes.iter().map(|n| known.get(n.path.as_path()).copied()).collect();
+            nodes.iter().map(|(path, _)| known.get(path.as_path()).copied()).collect();
         drop(known);
         let first = self.nodes.is_empty();
-        self.edges = edges(notes);
-        self.near = vec![Vec::new(); notes.len()];
+        self.edges = edges(notes, images);
+        self.near = vec![Vec::new(); nodes.len()];
         for &(i, j) in &self.edges {
             self.near[i].push(j);
             self.near[j].push(i);
         }
         self.pos = seed.iter().enumerate().map(|(i, s)| s.unwrap_or_else(|| spiral(i))).collect();
-        self.nodes = notes.iter().map(|n| (n.path.clone(), n.name.clone().into())).collect();
+        self.nodes = nodes;
         (self.hover, self.cycle, self.drag, self.pull) = (None, None, None, None);
         self.generation += 1;
         let (generation, edges) = (self.generation, self.edges.clone());
@@ -471,7 +486,9 @@ impl Graph {
                 let ring = disc(c, r + 4.);
                 window.paint_quad(quad(ring, px(r + 4.), t.selection, px(1.5), t.accent, BorderStyle::default()));
             }
-            window.paint_quad(quad(disc(c, r), px(r), fade(color, on), px(0.), t.bg, BorderStyle::default()));
+            // Une image : un carré, pour la distinguer d'une note.
+            let corner = if vault::is_image(&self.nodes[i].0) { r * 0.3 } else { r };
+            window.paint_quad(quad(disc(c, r), px(corner), fade(color, on), px(0.), t.bg, BorderStyle::default()));
 
             let named = self.zoom >= LABEL_ZOOM || focus.is_some_and(|_| on) || self.current == Some(i);
             if !named {
@@ -553,7 +570,10 @@ mod tests {
     fn resolves_edges() {
         let notes = [note("A", &["b", "a", "absente"]), note("B", &["a", "c"]), note("c", &[])];
         // Sans doublon, sans boucle, sans lien vers une note inexistante.
-        assert_eq!(edges(&notes), [(0, 1), (1, 2)]);
+        assert_eq!(edges(&notes, &[]), [(0, 1), (1, 2)]);
+        // Une image affichée par une note lui est reliée ; elle vient après les notes.
+        let notes = [note("a", &["plan.png"]), note("b", &[])];
+        assert_eq!(edges(&notes, &[PathBuf::from("/v/img/Plan.PNG")]), [(0, 2)]);
     }
 
     #[test]

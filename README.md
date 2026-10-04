@@ -230,7 +230,7 @@ What you type is what is saved. encre only changes how it looks.
 | `[[Note name]]` | a link to another note, with suggestions as you type |
 | `#tag` | a tag, usable as a filter in the palette |
 | `https://…` | a link, opened in your browser |
-| `![](picture.png)` or `![[picture.png]]` | the picture, under its line. It is looked for next to the note, then at the top of the vault |
+| `![](picture.png)` or `![[picture.png]]` | the picture, under its line. It is looked for next to the note, at the top of the vault, then by its file name anywhere in the vault |
 | `Ctrl + V` with a picture in the clipboard | the picture is saved next to the note, and its `![](…)` line inserted |
 | `` ```mermaid `` | a [Mermaid](https://mermaid.js.org) diagram, drawn under its block once the cursor has left it |
 | `$x^2$`, `$$…$$`, or lines between two `$$` lines | a LaTeX formula, drawn under its line |
@@ -241,6 +241,7 @@ Tables and footnotes are kept as you typed them, without special rendering. So a
 ## Notes and vault
 
 - A vault is an ordinary folder. Notes in subfolders are found too; hidden folders (`.git`, `.obsidian`…) are ignored. New notes are created at the top of the vault, or in the selected folder when the tree is on display.
+- Pictures are part of the vault: the tree lists them under the notes of their folder, and the graph shows the ones a note displays, as squares linked to that note. Selecting one shows it in place of the note; it can be renamed (the notes that display it follow), moved or trashed like a note.
 - What other programs change in the vault (a sync tool, a script, another editor) is picked up within two seconds, without restarting.
 - A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
 - A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) keeps its name, until you add or change a `# ` title on its first line: the file then takes that name, as in Obsidian.
