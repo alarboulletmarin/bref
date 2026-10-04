@@ -305,16 +305,7 @@ impl Shell {
     pub fn refresh_graph(&mut self, cx: &mut Context<Self>) {
         if self.graph_stale && self.nav.panel != Panel::Rail && self.nav.mode == Mode::Graph {
             self.graph_stale = false;
-            // Seules les images qu'une note affiche : le graphe reste celui des notes.
-            let linked: HashSet<&str> =
-                self.notes.iter().flat_map(|n| &n.links).map(String::as_str).collect();
-            let shown: Vec<PathBuf> = self
-                .images
-                .iter()
-                .filter(|p| linked.contains(graph::image_name(p).to_lowercase().as_str()))
-                .cloned()
-                .collect();
-            self.graph.update(cx, |graph, cx| graph.set_notes(&self.notes, &shown, cx));
+            self.graph.update(cx, |graph, cx| graph.set_notes(&self.notes, &self.images, cx));
         }
     }
 
