@@ -1,6 +1,6 @@
 # Maintainer: Andrea Larboullet Marin <a.larboulletmarin@gmail.com>
 pkgname=encre
-pkgver=0.1.3
+pkgver=0.1.4
 pkgrel=1
 pkgdesc="Fast, minimal Markdown note-taking app"
 arch=('x86_64' 'aarch64')
