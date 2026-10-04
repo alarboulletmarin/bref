@@ -1867,6 +1867,13 @@ mod tests {
             (s.images.len(), s.notes.len(), s.graph.read(cx).size().0)
         });
         assert_eq!((images, nodes), (2, notes + 2));
+        // Une image qu'aucune note n'affiche a aussi son nœud, sans lien.
+        fs::write(root.join("seule.svg"), svg).unwrap();
+        for _ in 0..2 {
+            cx.executor().advance_clock(Duration::from_secs(3));
+            cx.run_until_parked();
+        }
+        assert_eq!(shell.read_with(cx, |s, cx| s.graph.read(cx).size().0), notes + 3);
         shell.update(cx, |s, cx| s.preview_note(&root.join("carré.svg"), cx));
         assert_eq!(shell.read_with(cx, |s, _| s.picture.clone()), Some(root.join("carré.svg")));
         assert!(text(cx).ends_with("fin"));

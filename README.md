@@ -249,7 +249,7 @@ Tables and footnotes are kept as you typed them, without special rendering. So a
 ## Notes and vault
 
 - A vault is an ordinary folder. Notes in subfolders are found too; hidden folders (`.git`, `.obsidian`…) are ignored. New notes are created at the top of the vault, or in the selected folder when the tree is on display.
-- Pictures are part of the vault: the tree lists them under the notes of their folder, and the graph shows the ones a note displays, as squares linked to that note. Selecting one shows it in place of the note; it can be renamed (the notes that display it follow), moved or trashed like a note.
+- Pictures are part of the vault: the tree lists them under the notes of their folder, and the graph shows them as squares, linked to the notes that display them. Selecting one shows it in place of the note; it can be renamed (the notes that display it follow), moved or trashed like a note.
 - What other programs change in the vault (a sync tool, a script, another editor) is picked up within two seconds, without restarting.
 - A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
 - A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) keeps its name, until you add or change a `# ` title on its first line: the file then takes that name, as in Obsidian.
