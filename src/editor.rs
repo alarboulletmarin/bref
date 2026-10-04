@@ -2,17 +2,21 @@
 //! rendu change (tailles, graisses, couleurs).
 
 use std::{
+    borrow::Cow,
     ops::Range,
+    path::PathBuf,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use gpui::{
-    App, BorderStyle, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Font, FontStyle, FontWeight,
-    GlobalElementId, InspectorElementId, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point, ScrollWheelEvent, SharedString, StrikethroughStyle, Style,
-    TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine, actions, div, fill,
-    font, point, prelude::*, px, quad, relative, size,
+    App, BorderStyle, Bounds, ClipboardItem, Context, Corners, CursorStyle, ElementId,
+    ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Font,
+    FontStyle, FontWeight, GlobalElementId, Hsla, ImgResourceLoader, InspectorElementId, LayoutId,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, RenderImage,
+    Resource, ScrollWheelEvent, SharedString, Size, StrikethroughStyle, Style, TextAlign, TextRun,
+    UTF16Selection, UnderlineStyle, Window, WrappedLine, actions, div, fill, font, point,
+    prelude::*, px, quad, relative, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -68,6 +72,10 @@ actions!(
 
 const TOP: Pixels = px(20.);
 const MAX_WIDTH: Pixels = px(720.);
+/// Largeur de la zone cliquable « Copier », à droite de l'ouverture d'un bloc de code.
+const COPY_WIDTH: Pixels = px(70.);
+/// Espace entre une ligne et l'image qu'elle désigne.
+const IMAGE_GAP: Pixels = px(8.);
 
 #[derive(Clone, Copy, PartialEq)]
 enum Motion {
@@ -100,27 +108,70 @@ struct Row {
     height: Pixels,
     kind: Kind,
     line: Option<WrappedLine>,
+    /// Signes affichés à la place de leur écriture ASCII : (octet de début,
+    /// longueur dans le texte, longueur affichée).
+    subs: Vec<(usize, usize, usize)>,
+    /// Image désignée par la ligne, dessinée dessous, et sa taille à l'écran.
+    image: Option<(Arc<RenderImage>, Size<Pixels>)>,
+    /// La ligne ouvre un bloc de code : elle porte le bouton « Copier ».
+    opens: bool,
 }
 
 impl Row {
     fn pos(&self, i: usize) -> Point<Pixels> {
         self.line
             .as_ref()
-            .and_then(|l| l.position_for_index(i.min(self.len), self.lh))
+            .and_then(|l| l.position_for_index(self.shown(i.min(self.len)), self.lh))
             .unwrap_or_default()
+    }
+
+    /// Octet du texte → octet du texte affiché.
+    fn shown(&self, i: usize) -> usize {
+        let mut shift = 0isize;
+        for &(at, src, dst) in &self.subs {
+            if i <= at {
+                break;
+            }
+            // À l'intérieur d'un signe : on se place juste après lui.
+            if i < at + src {
+                return (at as isize + shift) as usize + dst;
+            }
+            shift += dst as isize - src as isize;
+        }
+        (i as isize + shift) as usize
+    }
+
+    /// Octet du texte affiché → octet du texte.
+    fn source(&self, i: usize) -> usize {
+        let mut shift = 0isize;
+        for &(at, src, dst) in &self.subs {
+            let start = (at as isize + shift) as usize;
+            if i <= start {
+                break;
+            }
+            if i < start + dst {
+                return at + src;
+            }
+            shift += dst as isize - src as isize;
+        }
+        (i as isize - shift) as usize
+    }
+
+    fn image_height(&self) -> Pixels {
+        self.image.as_ref().map_or(px(0.), |(_, s)| s.height + IMAGE_GAP)
     }
 
     fn index_at(&self, p: Point<Pixels>) -> usize {
         match &self.line {
             Some(l) => match l.closest_index_for_position(p, self.lh) {
-                Ok(i) | Err(i) => i,
+                Ok(i) | Err(i) => self.source(i),
             },
             None => 0,
         }
     }
 
     fn visual_rows(&self) -> i32 {
-        (f32::from(self.height - self.pad) / f32::from(self.lh)).round() as i32
+        (f32::from(self.height - self.pad - self.image_height()) / f32::from(self.lh)).round() as i32
     }
 }
 
@@ -136,6 +187,10 @@ pub struct Editor {
     redo: Vec<(String, Range<usize>)>,
     last_edit: Option<Instant>,
     notes: Vec<String>,
+    /// Dossiers où chercher les images : celui de la note, puis le coffre.
+    dirs: Vec<PathBuf>,
+    /// Début de la ligne dont le bloc de code vient d'être copié.
+    copied: Option<usize>,
     ac_index: usize,
     ac_dismissed: Option<usize>,
     theme: Theme,
@@ -170,6 +225,8 @@ impl Editor {
             redo: Vec::new(),
             last_edit: None,
             notes: Vec::new(),
+            dirs: Vec::new(),
+            copied: None,
             ac_index: 0,
             ac_dismissed: None,
             theme,
@@ -211,6 +268,31 @@ impl Editor {
         self.notes = notes;
     }
 
+    pub fn set_dirs(&mut self, dirs: Vec<PathBuf>) {
+        self.dirs = dirs;
+    }
+
+    /// Contenu du bloc de code où se trouve le curseur.
+    pub fn code_at_cursor(&self) -> Option<&str> {
+        md::code_block(&self.content, self.cursor()).map(|r| &self.content[r])
+    }
+
+    /// Centre du premier bouton « Copier » affiché.
+    #[cfg(test)]
+    pub fn copy_button(&self) -> Option<Point<Pixels>> {
+        let row = self.rows.iter().find(|r| r.opens)?;
+        let at = point(self.width - COPY_WIDTH / 2., row.y + row.height / 2.);
+        Some(self.origin + at)
+    }
+
+    /// Nombre de signes et taille de l'image affichés sur la ligne qui commence par `prefix`.
+    #[cfg(test)]
+    pub fn decorations(&self, prefix: &str) -> (usize, Option<(f32, f32)>) {
+        let row = self.rows.iter().find(|r| self.content[r.start..].starts_with(prefix)).unwrap();
+        let image = row.image.as_ref().map(|(_, s)| (s.width.into(), s.height.into()));
+        (row.subs.len(), image)
+    }
+
     fn cursor(&self) -> usize {
         if self.reversed { self.sel.start } else { self.sel.end }
     }
@@ -233,8 +315,10 @@ impl Editor {
         self.content[..at].lines().filter(|l| md::is_fence(l)).count()
     }
 
+    /// Un ``` sans clôture n'ouvre pas de bloc, comme dans `layout`.
     fn in_code(&self, line_start: usize) -> bool {
         self.fences_before(line_start) % 2 == 1
+            && self.content[line_start..].lines().any(md::is_fence)
     }
 
     fn move_to(&mut self, to: usize, cx: &mut Context<Self>) {
@@ -278,6 +362,7 @@ impl Editor {
 
     fn changed(&mut self, cx: &mut Context<Self>) {
         self.marked = None;
+        self.copied = None;
         self.ac_index = 0;
         self.goal_x = None;
         self.reveal = true;
@@ -592,6 +677,18 @@ impl Editor {
     }
 
     fn mouse_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // « Copier », à droite de l'ouverture d'un bloc de code.
+        let y = e.position.y - self.origin.y;
+        self.copied = None;
+        if let Some(row) = self.rows.iter().find(|r| (r.y..r.y + r.height).contains(&y))
+            && row.opens
+            && e.position.x > self.origin.x + self.width - COPY_WIDTH
+            && let Some(block) = md::code_block(&self.content, row.start + row.len + 1)
+        {
+            cx.write_to_clipboard(ClipboardItem::new_string(self.content[block].to_string()));
+            self.copied = Some(row.start);
+            return cx.notify();
+        }
         let i = self.index_at(e.position);
         let lr = self.line_range(i);
         let line = &self.content[lr.clone()];
@@ -696,8 +793,28 @@ impl Editor {
     // ponytail: toutes les lignes sont remises en forme à chaque frame (le cache
     // de gpui absorbe les lignes inchangées). Ne mettre en forme que le visible
     // si une note de plusieurs dizaines de milliers de lignes devient lente.
-    fn layout(&mut self, bounds: Bounds<Pixels>, window: &mut Window) {
+    fn layout(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         let t = self.theme;
+        let cursor = self.cursor();
+        // ponytail: chaînes et nombres prennent la couleur d'accent décalée en teinte,
+        // pour s'accorder à chaque thème sans palette dédiée ; donner ses couleurs de
+        // code à chaque thème si l'une d'elles jure.
+        let hue = |by: f32| Hsla { h: (t.accent.h + by).fract(), ..t.accent };
+        // Un ``` sans clôture n'ouvre pas de bloc : sinon chaque ``` tapé ferait
+        // basculer en code, donc remettre en forme, toute la suite de la note. S'il
+        // y en a un de trop, c'est celui qu'on est en train de taper, sinon le dernier.
+        let mut fences = self.content.split('\n').filter(|l| md::is_fence(l)).count();
+        let typed = self.line_range(cursor);
+        let orphan = (fences % 2 == 1 && md::is_fence(&self.content[typed.clone()]))
+            .then_some(typed.start);
+        fences -= orphan.is_some() as usize;
+        // Une police sans `≠` le compose d'un `=` et d'une barre mal placée : autant
+        // laisser `!=`.
+        let text_system = window.text_system().clone();
+        let has_unequal = text_system
+            .advance(text_system.resolve_font(&font(sans())), px(16.), '≠')
+            .is_ok();
+        let mut lang = String::new();
         let width = (bounds.size.width - px(48.)).min(MAX_WIDTH).max(px(120.));
         let marked = self.marked.clone();
         let mut rows = Vec::new();
@@ -706,8 +823,14 @@ impl Editor {
         let mut in_code = false;
         for line in self.content.split('\n') {
             let (kind, marker) = md::classify(line, in_code);
-            if kind == Kind::Fence {
-                in_code = !in_code;
+            let mut opens = false;
+            if kind == Kind::Fence && orphan != Some(offset) {
+                opens = !in_code && fences > 1;
+                in_code = opens;
+                fences -= 1;
+                if opens {
+                    lang = line.trim_start()[3..].trim().to_lowercase();
+                }
             }
             let code = matches!(kind, Kind::Code | Kind::Fence);
             let (font_size, pad) = match kind {
@@ -721,29 +844,82 @@ impl Editor {
             let font_size = font_size * (t.size / 16.);
             let pad = if offset == 0 { px(0.) } else { pad };
 
-            let mut flags = vec![0u8; line.len()];
+            let mut flags = vec![0u16; line.len()];
             let list = matches!(kind, Kind::Bullet | Kind::Ordered | Kind::Task(_));
             flags[..marker].fill(if list { md::MARK } else { md::DIM });
-            if !code && kind != Kind::Rule {
+            if kind == Kind::Code {
+                // Sans langage annoncé, ou en texte brut, le bloc reste tel quel.
+                if !matches!(lang.as_str(), "" | "text" | "txt" | "plain") {
+                    md::code(line, &lang, &mut flags);
+                }
+            } else if !code && kind != Kind::Rule {
                 md::inline(line, marker, &mut flags);
             }
             if kind == Kind::Task(true) {
                 flags[marker..].iter_mut().for_each(|f| *f |= md::STRIKE | md::DIM);
             }
+            // ponytail: une image par ligne, cherchée dans le dossier de la note puis à
+            // la racine du coffre ; les images en ligne (http) ne sont pas chargées.
+            let image = (!code).then(|| md::image(line)).flatten().and_then(|(range, path)| {
+                flags[range].iter_mut().for_each(|f| *f |= md::DIM);
+                let file = self.dirs.iter().map(|d| d.join(&path)).find(|p| p.is_file())?;
+                // gpui 0.2 rend un SVG deux fois plus grand que nature, pour qu'il reste
+                // net (`SMOOTH_SVG_SCALE_FACTOR`, qui n'est pas public).
+                let svg = file.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
+                let zoom = if svg { 2. } else { 1. };
+                let image = window
+                    .use_asset::<ImgResourceLoader>(&Resource::Path(file.into()), cx)?
+                    .ok()?;
+                let natural = |d: gpui::DevicePixels| d.0 as f32 / zoom;
+                let (w, h) = (natural(image.size(0).width), natural(image.size(0).height));
+                let scale = (f32::from(width) / w.max(1.)).min(1.);
+                Some((image, size(px(w * scale), px(h * scale))))
+            });
+
+            // Hors de la ligne du curseur, `->`, `!=`… s'affichent comme des signes ;
+            // le texte, lui, ne change pas.
+            let has_cursor = (offset..=offset + line.len()).contains(&cursor);
+            let mut signs = if code || has_cursor || kind == Kind::Rule {
+                Vec::new()
+            } else {
+                md::symbols(line, marker, &flags)
+            };
+            signs.retain(|(_, _, sign)| has_unequal || *sign != "≠");
+            let mut shown = Cow::Borrowed(line);
+            let mut subs = Vec::new();
+            if !signs.is_empty() {
+                let (mut text, mut styles, mut done) = (String::new(), Vec::new(), 0);
+                for (at, len, sign) in signs {
+                    text.push_str(&line[done..at]);
+                    styles.extend_from_slice(&flags[done..at]);
+                    text.push_str(sign);
+                    styles.resize(text.len(), flags[at]);
+                    subs.push((at, len, sign.len()));
+                    done = at + len;
+                }
+                text.push_str(&line[done..]);
+                styles.extend_from_slice(&flags[done..]);
+                shown = Cow::Owned(text);
+                flags = styles;
+            }
             let is_marked = |i: usize| marked.as_ref().is_some_and(|m| m.contains(&(offset + i)));
 
             let mut runs: Vec<TextRun> = Vec::new();
             let mut i = 0;
-            while i < line.len() {
+            while i < shown.len() {
                 let (f, m) = (flags[i], is_marked(i));
                 let mut j = i + 1;
-                while j < line.len() && flags[j] == f && is_marked(j) == m {
+                while j < shown.len() && flags[j] == f && is_marked(j) == m {
                     j += 1;
                 }
                 let heading = matches!(kind, Kind::Heading(_));
                 let color = if f & md::DIM != 0 {
                     t.dim
-                } else if f & (md::LINK | md::TAG | md::MARK) != 0 {
+                } else if f & md::STRING != 0 {
+                    hue(0.33)
+                } else if f & md::NUMBER != 0 {
+                    hue(0.6)
+                } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
                     t.accent
                 } else {
                     t.text
@@ -784,11 +960,11 @@ impl Editor {
             let lh = (font_size * 1.65).round();
             let shaped = window
                 .text_system()
-                .shape_text(line.to_string().into(), font_size, &runs, Some(width), None)
+                .shape_text(shown.into_owned().into(), font_size, &runs, Some(width), None)
                 .ok()
                 .and_then(|lines| lines.into_iter().next());
             let text_height = shaped.as_ref().map_or(lh, |l| l.size(lh).height);
-            rows.push(Row {
+            let row = Row {
                 start: offset,
                 len: line.len(),
                 y,
@@ -797,8 +973,13 @@ impl Editor {
                 height: pad + text_height,
                 kind,
                 line: shaped,
-            });
-            y += pad + text_height;
+                subs,
+                image,
+                opens,
+            };
+            let height = row.height + row.image_height();
+            rows.push(Row { height, ..row });
+            y += height;
             offset += line.len() + 1;
         }
         self.rows = rows;
@@ -831,6 +1012,19 @@ impl Editor {
         let (t, o, w) = (self.theme, self.origin, self.width);
         let cursor = self.cursor();
         let sel = &self.sel;
+        let label = |text: &str, color, window: &mut Window| {
+            let run = TextRun {
+                len: text.len(),
+                font: font(sans()),
+                color,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            };
+            window
+                .text_system()
+                .shape_line(SharedString::from(text.to_string()), px(14.), &[run], None)
+        };
         for row in &self.rows {
             let top = o.y + row.y;
             if top + row.height < self.viewport.top() || top > self.viewport.bottom() {
@@ -880,21 +1074,20 @@ impl Editor {
                 let caret = block(p.x, text_top + p.y + row.lh * 0.14, px(2.), row.lh * 0.72);
                 window.paint_quad(fill(caret, t.accent));
             }
+            if let Some((image, s)) = &row.image {
+                let at = block(px(0.), top + row.height - s.height, s.width, s.height);
+                window.paint_image(at, Corners::all(px(6.)), image.clone(), 0, false).ok();
+            }
+            if row.opens {
+                let text = if self.copied == Some(row.start) {
+                    tr("Copied", "Copié")
+                } else {
+                    tr("Copy", "Copier")
+                };
+                let line = label(text, t.dim, window);
+                line.paint(point(o.x + w - line.width, text_top), row.lh, window, cx).ok();
+            }
         }
-
-        let label = |text: &str, color, window: &mut Window| {
-            let run = TextRun {
-                len: text.len(),
-                font: font(sans()),
-                color,
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            };
-            window
-                .text_system()
-                .shape_line(SharedString::from(text.to_string()), px(14.), &[run], None)
-        };
         if self.content.is_empty() {
             let hint = format!(
                 "{}   {MOD}+P : notes   {MOD}+N : {}   F1 : {}",
@@ -1153,7 +1346,7 @@ impl Element for EditorElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        self.0.update(cx, |editor, _| editor.layout(bounds, window));
+        self.0.update(cx, |editor, cx| editor.layout(bounds, window, cx));
     }
 
     fn paint(

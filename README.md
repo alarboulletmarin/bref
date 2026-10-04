@@ -147,7 +147,7 @@ On macOS, read `Cmd` for `Ctrl`, and `Alt` for `Ctrl` when moving by word.
 | `Ctrl + O` | change vault |
 | `Ctrl + K` then `Ctrl + T` | [theme](#appearance) (also the half-moon icon at the bottom of the rail) |
 | `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` | bigger, smaller, default text size |
-| `Ctrl + Shift + C` | copy the whole note (also the icon at the bottom right) |
+| `Ctrl + Shift + C` | copy the code block the cursor is in, otherwise the whole note (also the icon at the bottom right, for the note) |
 | `Ctrl + click` | open a `[[link]]`, a `#tag` or a URL |
 | `F1`, `Ctrl + /` | the list of shortcuts, inside the app |
 | `Ctrl + Q` | quit |
@@ -224,20 +224,22 @@ What you type is what is saved. encre only changes how it looks.
 | `1. ` | a numbered list, renumbered as you add, remove or indent items |
 | `[] ` or `- [ ] ` | a task; click the box or press `Ctrl + Enter` to check it |
 | `> ` | a quote |
-| `` ``` `` then `Enter` | a code block, closed for you |
+| `` ``` `` then `Enter` | a code block, closed for you. Name the language (`` ```rust ``) to get it colored; `Copy`, on its first line, copies its content |
 | `---` | a divider |
 | `**bold**`, `*italic*`, `~~struck~~`, `` `code` `` | inline styles |
 | `[[Note name]]` | a link to another note, with suggestions as you type |
 | `#tag` | a tag, usable as a filter in the palette |
 | `https://…` | a link, opened in your browser |
+| `![](picture.png)` or `![[picture.png]]` | the picture, under its line. It is looked for next to the note, then at the top of the vault |
+| `->`, `<-`, `<->`, `=>`, `<=>`, `!=`, `<=`, `>=` | shown as →, ←, ↔, ⇒, ⇔, ≠, ≤, ≥, except on the line you are editing and inside code |
 
-Tables, images and footnotes are kept as you typed them, without special rendering.
+Tables, footnotes, Mermaid diagrams and LaTeX formulas are kept as you typed them, without special rendering. So are pictures given as a web address.
 
 ## Notes and vault
 
 - A vault is an ordinary folder. Notes in subfolders are found too; hidden folders (`.git`, `.obsidian`…) are ignored. New notes are created at the top of the vault, or in the selected folder when the tree is on display.
 - A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
-- A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) is never renamed.
+- A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) keeps its name, until you add or change a `# ` title on its first line: the file then takes that name, as in Obsidian.
 - `[[Groceries]]` finds the note by file name, in any subfolder, ignoring case.
 - When a note is renamed, from the tree or by changing its first line, the `[[links]]` to its old name are rewritten in every note, keeping their `|alias` and `#heading`. After a change of title, this happens when you leave the note, not at each keystroke. If another note still carries the old name, the links are left alone: they may be meant for it.
 - The vault and the notes you opened, most recent first, are remembered in a small text file (the navigation panel in a file named `layout` next to it, and the [appearance](#appearance) in `settings`):
@@ -268,7 +270,7 @@ Tables, images and footnotes are kept as you typed them, without special renderi
 
 **Bold text is not bold.** The font in use is a variable font, which the text engine cannot embolden. Install Inter or Noto Sans, or [pick another font](#appearance).
 
-**A note was not renamed after I changed its title.** Either another note already has that name, or the file name did not match the first line to begin with, see [Notes and vault](#notes-and-vault).
+**A note was not renamed after I changed its title.** Either another note already has that name, or the file name did not match the first line to begin with and that line is not a `# ` title you just added or changed, see [Notes and vault](#notes-and-vault).
 
 **I edited a note in another program while it was open in encre.** encre does not watch files: it keeps its own version and writes it back on the next edit. Switch to another note and back to reload it from disk.
 

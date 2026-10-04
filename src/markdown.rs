@@ -22,15 +22,19 @@ pub enum Link {
     Tag(String),
 }
 
-// Styles en ligne, un octet de drapeaux par octet de texte.
-pub const BOLD: u8 = 1;
-pub const ITALIC: u8 = 2;
-pub const CODE: u8 = 4;
-pub const STRIKE: u8 = 8;
-pub const DIM: u8 = 16;
-pub const LINK: u8 = 32;
-pub const TAG: u8 = 64;
-pub const MARK: u8 = 128;
+// Styles en ligne, un mot de drapeaux par octet de texte.
+pub const BOLD: u16 = 1;
+pub const ITALIC: u16 = 2;
+pub const CODE: u16 = 4;
+pub const STRIKE: u16 = 8;
+pub const DIM: u16 = 16;
+pub const LINK: u16 = 32;
+pub const TAG: u16 = 64;
+pub const MARK: u16 = 128;
+// Coloration des blocs de code.
+pub const KEYWORD: u16 = 256;
+pub const STRING: u16 = 512;
+pub const NUMBER: u16 = 1024;
 
 pub const INDENT: &str = "    ";
 
@@ -127,10 +131,10 @@ pub fn links(line: &str) -> Vec<(Range<usize>, Link)> {
 }
 
 /// Remplit `flags` avec les styles en ligne de `line` à partir de l'octet `from`.
-pub fn inline(line: &str, from: usize, flags: &mut [u8]) {
+pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
     let b = line.as_bytes();
     let alnum = |i: Option<usize>| i.and_then(|i| b.get(i)).is_some_and(u8::is_ascii_alphanumeric);
-    let mut active = 0u8;
+    let mut active = 0u16;
     let mut i = from;
     while i < b.len() {
         let rest = &line[i..];
@@ -186,6 +190,145 @@ pub fn inline(line: &str, from: usize, flags: &mut [u8]) {
             }
         }
     }
+}
+
+const KEYWORDS: &[&str] = &[
+    "False", "None", "Self", "True", "and", "as", "async", "await", "break", "case", "catch",
+    "class", "const", "continue", "def", "default", "defer", "do", "done", "elif", "else", "end",
+    "enum", "except", "export", "extends", "false", "fi", "final", "finally", "fn", "for", "from",
+    "func", "function", "go", "if", "impl", "import", "in", "interface", "is", "lambda", "let",
+    "loop", "match", "mod", "mut", "namespace", "new", "nil", "not", "null", "or", "package",
+    "private", "protected", "pub", "public", "return", "self", "static", "struct", "super",
+    "switch", "then", "this", "throw", "trait", "true", "try", "type", "use", "using", "var",
+    "void", "where", "while", "with", "yield",
+];
+
+/// Colore une ligne de code : commentaires, chaînes, nombres et mots-clés.
+// ponytail: un seul lexeur ligne à ligne pour tous les langages, sans état d'une
+// ligne à l'autre (commentaires `/* */` et chaînes sur plusieurs lignes ignorés).
+// Passer à une grammaire par langage (tree-sitter) si la coloration devient fausse.
+pub fn code(line: &str, lang: &str, flags: &mut [u16]) {
+    let comment = match lang {
+        "py" | "python" | "sh" | "bash" | "zsh" | "fish" | "shell" | "yaml" | "yml" | "toml"
+        | "rb" | "ruby" | "r" | "perl" | "make" | "makefile" | "dockerfile" | "conf" | "ini"
+        | "nix" | "elixir" => "#",
+        "sql" | "lua" | "haskell" | "hs" | "elm" | "ada" => "--",
+        _ => "//",
+    };
+    let rust = matches!(lang, "rs" | "rust");
+    let mut i = 0;
+    while i < line.len() {
+        let rest = &line[i..];
+        if rest.starts_with(comment) {
+            flags[i..].fill(DIM | ITALIC);
+            return;
+        }
+        let c = rest.chars().next().unwrap();
+        let (n, flag) = if matches!(c, '"' | '\'' | '`') {
+            let mut end = None;
+            let mut escaped = false;
+            for (j, x) in rest.char_indices().skip(1) {
+                if !escaped && x == c {
+                    end = Some(j + 1);
+                    break;
+                }
+                escaped = !escaped && x == '\\';
+            }
+            match end {
+                // En Rust, `'a` est une durée de vie : seul `'x'` ou `'\n'` est un caractère.
+                Some(n) if rust && c == '\'' && rest[..n].chars().count() > 3 && !rest[1..].starts_with('\\') => {
+                    (1, 0)
+                }
+                Some(n) => (n, STRING),
+                None if c == '"' => (rest.len(), STRING),
+                None => (1, 0),
+            }
+        } else if c.is_alphabetic() || c == '_' {
+            let n = rest.find(|x: char| !x.is_alphanumeric() && x != '_').unwrap_or(rest.len());
+            (n, if KEYWORDS.contains(&&rest[..n]) { KEYWORD } else { 0 })
+        } else if c.is_ascii_digit() {
+            let n = rest
+                .find(|x: char| !x.is_ascii_alphanumeric() && x != '.' && x != '_')
+                .unwrap_or(rest.len());
+            (n, NUMBER)
+        } else {
+            (c.len_utf8(), 0)
+        };
+        flags[i..i + n].fill(flag);
+        i += n;
+    }
+}
+
+/// Contenu (clôtures exclues) du bloc de code qui contient l'octet `at`. Un
+/// ``` sans clôture n'ouvre pas de bloc.
+pub fn code_block(text: &str, at: usize) -> Option<Range<usize>> {
+    let mut open = None;
+    let mut offset = 0;
+    for line in text.split('\n') {
+        if is_fence(line) {
+            match open.take() {
+                Some(start) if (start..offset).contains(&at) => return Some(start..offset - 1),
+                Some(_) => {}
+                None => open = Some(offset + line.len() + 1),
+            }
+        }
+        offset += line.len() + 1;
+    }
+    None
+}
+
+const SYMBOLS: &[(&str, &str)] = &[
+    ("<->", "↔"),
+    ("<=>", "⇔"),
+    ("->", "→"),
+    ("<-", "←"),
+    ("=>", "⇒"),
+    ("!=", "≠"),
+    ("<=", "≤"),
+    (">=", "≥"),
+];
+
+/// Signes à afficher à la place de leur écriture ASCII (`->` devient `→`), hors
+/// code et liens : (octet de début, longueur remplacée, signe). Le texte ne change pas.
+pub fn symbols(line: &str, from: usize, flags: &[u16]) -> Vec<(usize, usize, &'static str)> {
+    let b = line.as_bytes();
+    // Un signe collé à un autre opérateur (`-->`, `!==`, `<--`) reste tel quel.
+    let glued = |i: Option<usize>| i.and_then(|i| b.get(i)).is_some_and(|c| b"-=<>!".contains(c));
+    let mut out = Vec::new();
+    let mut i = from;
+    while i < b.len() {
+        let found = SYMBOLS.iter().find(|(ascii, _)| {
+            b[i..].starts_with(ascii.as_bytes())
+                && flags[i..i + ascii.len()].iter().all(|f| f & (CODE | LINK) == 0)
+                && !glued(i.checked_sub(1))
+                && !glued(Some(i + ascii.len()))
+        });
+        match found {
+            Some((ascii, sign)) => {
+                out.push((i, ascii.len(), *sign));
+                i += ascii.len();
+            }
+            None => i += 1,
+        }
+    }
+    out
+}
+
+/// Première image de la ligne, `![alt](chemin)` ou `![[chemin]]` : son étendue
+/// et son chemin.
+pub fn image(line: &str) -> Option<(Range<usize>, String)> {
+    let start = line.find("![")?;
+    let rest = &line[start + 2..];
+    let (len, path) = if let Some(inner) = rest.strip_prefix('[') {
+        let end = inner.find("]]")?;
+        (end + 5, inner[..end].split('|').next()?)
+    } else {
+        let open = rest.find("](")?;
+        let end = open + rest[open..].find(')')?;
+        (end + 3, rest[open + 2..end].split(" \"").next()?)
+    };
+    let path = path.trim().replace("%20", " ");
+    (!path.is_empty()).then(|| (start..start + len, path))
 }
 
 /// Tags et wikiliens (en minuscules) d'une note entière, hors blocs de code, dédupliqués.
@@ -373,7 +516,7 @@ mod tests {
     #[test]
     fn styles_inline() {
         let line = "a **b** `c*` snake_case_x *é*";
-        let mut f = vec![0u8; line.len()];
+        let mut f = vec![0u16; line.len()];
         inline(line, 0, &mut f);
         assert_eq!(f[2], DIM);
         assert_eq!(f[4], BOLD);
@@ -383,6 +526,43 @@ mod tests {
         assert!(f[13..25].iter().all(|&x| x == 0));
         assert_eq!(f[27], ITALIC);
         assert_eq!(f[28], ITALIC);
+    }
+
+    #[test]
+    fn colors_code() {
+        let line = r#"let x = f("a // b", 42); // fin"#;
+        let mut f = vec![0u16; line.len()];
+        code(line, "rust", &mut f);
+        assert_eq!((f[0], f[4], f[8]), (KEYWORD, 0, 0));
+        assert!(f[10..18].iter().all(|&x| x == STRING));
+        assert_eq!((f[20], f[25]), (NUMBER, DIM | ITALIC));
+        // Une durée de vie n'est pas une chaîne ; `#` commente en Python, pas en Rust.
+        let line = "fn f<'a>(x: &'a str) # '\\n'";
+        let mut f = vec![0u16; line.len()];
+        code(line, "rust", &mut f);
+        assert!(f[3..21].iter().all(|&x| x == 0) && f[23] == STRING);
+        code(line, "python", &mut f);
+        assert_eq!(f[21], DIM | ITALIC);
+    }
+
+    #[test]
+    fn finds_code_blocks() {
+        let text = "a\n```rust\nun\ndeux\n```\nb\n```\nouvert";
+        assert_eq!(code_block(text, 10).map(|r| &text[r]), Some("un\ndeux"));
+        assert_eq!(code_block(text, 16).map(|r| &text[r]), Some("un\ndeux"));
+        // Hors bloc, sur une clôture, ou après un ``` jamais refermé.
+        assert_eq!((code_block(text, 0), code_block(text, 3), code_block(text, 30)), (None, None, None));
+    }
+
+    #[test]
+    fn finds_symbols_and_images() {
+        let line = "a -> b != c `x -> y` <-> --> !== [[a->b]]";
+        let mut f = vec![0u16; line.len()];
+        inline(line, 0, &mut f);
+        assert_eq!(symbols(line, 0, &f), vec![(2, 2, "→"), (7, 2, "≠"), (21, 3, "↔")]);
+        assert_eq!(image("voir ![un chat](img/le%20chat.png \"titre\") ici"), Some((5..42, "img/le chat.png".into())));
+        assert_eq!(image("![[photo.jpg|300]]"), Some((0..18, "photo.jpg".into())));
+        assert_eq!((image("![]()"), image("[lien](a.png)")), (None, None));
     }
 
     #[test]

@@ -193,6 +193,12 @@ pub fn title_of(content: &str) -> String {
         .unwrap_or_else(|| tr("Untitled", "Sans titre").to_string())
 }
 
+/// Titre `# …` en tête de note, sous la forme d'un nom de fichier.
+pub fn h1_of(content: &str) -> Option<String> {
+    let first = content.lines().find(|l| !l.trim().is_empty())?;
+    clean_name(first.trim_start().strip_prefix("# ")?)
+}
+
 /// Écriture atomique : un crash ne laisse jamais une note tronquée.
 pub fn write(path: &Path, content: &str) -> io::Result<()> {
     let tmp = path.with_file_name(format!(".{}.tmp", stem(path)));
@@ -244,6 +250,8 @@ mod tests {
         assert_eq!(title_of("  [[x]] / y  "), "x  y");
         assert_eq!(title_of("\n\n"), "Sans titre");
         assert_eq!(title_of("# .."), "Sans titre");
+        assert_eq!(h1_of("\n# Courses: lundi\n"), Some("Courses lundi".into()));
+        assert_eq!((h1_of("## Sous-titre"), h1_of("texte"), h1_of("# ")), (None, None, None));
     }
 
     #[test]

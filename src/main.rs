@@ -269,6 +269,9 @@ struct Shell {
     path: Option<PathBuf>,
     /// Le nom du fichier suit le titre (première ligne) de la note.
     synced: bool,
+    /// Titre `# …` de la note quand elle a été chargée : s'il change, ou s'il
+    /// apparaît, le fichier prend son nom.
+    h1: Option<String>,
     /// Nom de la note quand elle a été chargée ; `None` pour une nouvelle note.
     /// Si son titre change, les liens vers ce nom suivent quand on la quitte.
     origin: Option<String>,
@@ -331,6 +334,7 @@ impl Shell {
             recent: Vec::new(),
             path: None,
             synced: true,
+            h1: None,
             origin: None,
             preview: false,
             new_dir: None,
@@ -479,8 +483,12 @@ impl Shell {
     }
 
     /// Copie toute la note dans le presse-papiers.
-    fn copy_all(&mut self, cx: &mut Context<Self>) {
-        let text = self.editor.read(cx).text().to_string();
+    /// Copie la note ; avec `block`, seulement le bloc de code où est le curseur
+    /// s'il y en a un.
+    fn copy_all(&mut self, block: bool, cx: &mut Context<Self>) {
+        let editor = self.editor.read(cx);
+        let code = editor.code_at_cursor().filter(|_| block);
+        let text = code.unwrap_or(editor.text()).to_string();
         cx.write_to_clipboard(ClipboardItem::new_string(text));
         self.copied = true;
         cx.notify();
@@ -511,6 +519,13 @@ impl Shell {
         self.editor.update(cx, |e, _| e.set_notes(names));
     }
 
+    /// Indique à l'éditeur où chercher les images : à côté de la note, puis dans le coffre.
+    fn push_dirs(&mut self, cx: &mut Context<Self>) {
+        let note_dir = self.path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
+        let dirs = note_dir.into_iter().chain(self.vault.clone()).collect();
+        self.editor.update(cx, |e, _| e.set_dirs(dirs));
+    }
+
     /// Place la note en tête des récentes et mémorise la liste.
     fn touch(&mut self, path: &Path) {
         self.recent.retain(|p| p != path);
@@ -538,10 +553,12 @@ impl Shell {
         match fs::read_to_string(path) {
             Ok(text) => {
                 self.synced = vault::stem(path) == vault::title_of(&text);
+                self.h1 = vault::h1_of(&text);
                 self.origin = Some(vault::stem(path));
                 self.path = Some(path.to_path_buf());
                 self.error = None;
                 self.editor.update(cx, |e, cx| e.load(text, 0, cx));
+                self.push_dirs(cx);
                 self.nav.reveal(path);
                 true
             }
@@ -600,6 +617,7 @@ impl Shell {
         self.dirty = !text.is_empty();
         let cursor = text.len();
         self.editor.update(cx, |e, cx| e.load(text, cursor, cx));
+        self.push_dirs(cx);
         self.flush(cx);
         cx.notify();
     }
@@ -665,6 +683,10 @@ impl Shell {
             self.dirty = false;
             return;
         }
+        // Un titre `#` ajouté ou modifié en tête : le fichier porte désormais son nom.
+        if vault::h1_of(&content).is_some_and(|h1| self.h1.as_ref() != Some(&h1)) {
+            self.synced = true;
+        }
         let dir = self.new_dir.as_deref().unwrap_or(&root);
         match vault::save(dir, self.path.as_deref(), self.synced, &content) {
             Ok(path) => {
@@ -694,6 +716,7 @@ impl Shell {
                     self.nav.reveal(&path);
                     self.path = Some(path);
                     self.push_names(cx);
+                    self.push_dirs(cx);
                 }
                 self.refresh_graph(cx);
             }
@@ -789,7 +812,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (m("P"), tr("Find, create, filter by #tag", "Chercher, créer, filtrer par #tag")),
                 (m("N"), tr("New note", "Nouvelle note")),
                 (m("O"), tr("Change vault", "Changer de coffre")),
-                (m("Shift+C"), tr("Copy the whole note", "Copier toute la note")),
+                (m("Shift+C"), tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
                 (format!("{MOD}+{}", tr("click", "clic")), tr("Open a [[link]], #tag or URL", "Ouvrir un [[lien]], #tag ou URL")),
                 ("F1".into(), tr("This help", "Cette aide")),
             ],
@@ -820,11 +843,13 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 ("- ".into(), tr("Bullet list", "Liste à puces")),
                 ("1. ".into(), tr("Numbered list", "Liste numérotée")),
                 ("[] ".into(), tr("Task", "Tâche à cocher")),
-                ("# ## ###".into(), tr("Headings", "Titres")),
+                ("# ## ###".into(), tr("Headings; the first # names the file", "Titres ; le premier # nomme le fichier")),
                 ("> ".into(), tr("Quote", "Citation")),
-                ("```".into(), tr("Code block", "Bloc de code")),
+                ("```rust".into(), tr("Code block: colors, Copy", "Bloc de code : couleurs, Copier")),
                 ("---".into(), tr("Divider", "Séparateur")),
                 ("[[".into(), tr("Link to a note", "Lien vers une note")),
+                ("![](image.png)".into(), tr("Picture, under its line", "Image, sous sa ligne")),
+                ("-> != <= =>".into(), tr("Shown as → ≠ ≤ ⇒", "Affichés → ≠ ≤ ⇒")),
             ],
         ),
         (
@@ -1043,7 +1068,7 @@ impl Render for Shell {
                 .size(px(30.))
                 .rounded(px(8.))
                 .occlude()
-                .on_click(cx.listener(|this, _, _, cx| this.copy_all(cx)));
+                .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
             let note = div().flex_1().min_w_0().h_full().relative().child(self.editor.clone()).child(copy);
             body.flex()
                 .child(self.render_nav(cx))
@@ -1115,7 +1140,7 @@ impl Render for Shell {
                 }),
             )
             .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
-            .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(cx)))
+            .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
             .on_action(cx.listener(|this, _: &ChooseTheme, window, cx| {
                 this.choose_setting(Setting::Theme, window, cx)
             }))
@@ -1614,6 +1639,54 @@ mod tests {
             s.notes.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
         });
         assert_eq!(left, ["Idées"]);
+
+        // Un titre `#` ajouté en tête d'une note qui n'en avait pas : le fichier prend
+        // son nom. Sans titre touché, une note au nom libre garde le sien.
+        fs::write(root.join("brouillon.md"), "texte\n").unwrap();
+        shell.update(cx, |s, cx| s.open_note(&root.join("brouillon.md"), cx));
+        cx.update(|window, cx| window.focus(&shell.read(cx).editor.focus_handle(cx)));
+        cx.simulate_keystrokes("secondary-end");
+        cx.simulate_input("suite");
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        assert_eq!(fs::read_to_string(root.join("brouillon.md")).unwrap(), "texte\nsuite");
+        cx.simulate_keystrokes("secondary-home");
+        cx.simulate_input("# Titre");
+        cx.simulate_keystrokes("enter");
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        assert_eq!(fs::read_to_string(root.join("Titre.md")).unwrap(), "# Titre\ntexte\nsuite");
+        assert!(!root.join("brouillon.md").exists());
+
+        // Bloc de code : Entrée pose la clôture ; curseur dedans, la copie rapide ne
+        // prend que le bloc, et le bouton « Copier » de son ouverture fait de même.
+        cx.simulate_keystrokes("secondary-end enter");
+        cx.simulate_input("```rust");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("let x = 1;");
+        assert!(text(cx).ends_with("```rust\nlet x = 1;\n```"));
+        let clipboard = |cx: &mut gpui::VisualTestContext| cx.read_from_clipboard().and_then(|item| item.text());
+        cx.simulate_keystrokes("secondary-shift-c");
+        assert_eq!(clipboard(cx).as_deref(), Some("let x = 1;"));
+        cx.simulate_keystrokes("secondary-home secondary-shift-c");
+        assert!(clipboard(cx).unwrap().starts_with("# Titre"));
+        let button = shell.read_with(cx, |s, cx| s.editor.read(cx).copy_button().unwrap());
+        cx.simulate_click(button, gpui::Modifiers::none());
+        assert_eq!(clipboard(cx).as_deref(), Some("let x = 1;"));
+
+        // Image : la ligne qui la désigne porte l'image, trouvée à côté de la note.
+        // Les signes (`->`) ne s'affichent que hors de la ligne du curseur, sans toucher au texte.
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20"/></svg>"#;
+        fs::write(root.join("carré.svg"), svg).unwrap();
+        cx.simulate_keystrokes("secondary-end enter");
+        cx.simulate_input("a -> b ![](carré.svg)");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        cx.simulate_input("fin");
+        cx.run_until_parked();
+        let (signs, image) = shell.read_with(cx, |s, cx| s.editor.read(cx).decorations("a -> b"));
+        assert_eq!((signs, image), (1, Some((40., 20.))));
+        assert!(text(cx).ends_with("a -> b ![](carré.svg)\nfin"));
 
         fs::remove_dir_all(&root).unwrap();
     }
