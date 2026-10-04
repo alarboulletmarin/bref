@@ -683,7 +683,12 @@ impl Shell {
 
     /// Affiche la note sans la compter comme ouverte.
     fn preview_note(&mut self, path: &Path, cx: &mut Context<Self>) {
-        if self.path.as_deref() != Some(path) && self.load_note(path, cx) {
+        // La note déjà chargée, cachée par une image : il suffit de retirer l'image.
+        if self.path.as_deref() == Some(path) {
+            if self.picture.take().is_some() {
+                cx.notify();
+            }
+        } else if self.load_note(path, cx) {
             self.preview = true;
         }
     }
@@ -1877,6 +1882,14 @@ mod tests {
         shell.update(cx, |s, cx| s.preview_note(&root.join("carré.svg"), cx));
         assert_eq!(shell.read_with(cx, |s, _| s.picture.clone()), Some(root.join("carré.svg")));
         assert!(text(cx).ends_with("fin"));
+        // Revenir d'une image à la note qu'elle cachait se fait en une sélection, comme
+        // d'une note à une autre.
+        shell.update(cx, |s, cx| {
+            let note = s.path.clone().unwrap();
+            s.preview_note(&note, cx);
+            assert_eq!(s.picture, None);
+            s.preview_note(&root.join("carré.svg"), cx);
+        });
         cx.simulate_keystrokes("escape");
         cx.run_until_parked();
         assert_eq!(shell.read_with(cx, |s, _| s.picture.clone()), None);
