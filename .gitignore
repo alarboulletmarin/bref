@@ -6,7 +6,7 @@
 
 # makepkg: build tree, downloaded sources, packages, logs
 /pkg/
-/src/encre-*/
+/src/encre-*
 /*.tar.gz
 /*.pkg.tar.*
 /*.src.tar.*
