@@ -9,6 +9,8 @@ repository = "https://github.com/alarboulletmarin/encre"
 
 [dependencies]
 gpui = "0.2.2"
+latex-rust = "2.1.0"
+mermaid-rs-renderer = { version = "0.3.1", default-features = false }
 unicode-segmentation = "1.13.3"
 
 [dev-dependencies]

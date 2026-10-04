@@ -3,6 +3,8 @@
 
 use std::{
     borrow::Cow,
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
     ops::Range,
     path::PathBuf,
     sync::Arc,
@@ -10,18 +12,19 @@ use std::{
 };
 
 use gpui::{
-    App, BorderStyle, Bounds, ClipboardItem, Context, Corners, CursorStyle, ElementId,
-    ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Font,
-    FontStyle, FontWeight, GlobalElementId, Hsla, ImgResourceLoader, InspectorElementId, LayoutId,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, RenderImage,
-    Resource, ScrollWheelEvent, SharedString, Size, StrikethroughStyle, Style, TextAlign, TextRun,
+    App, BorderStyle, Bounds, ClipboardEntry, ClipboardItem, Context, Corners, CursorStyle,
+    ElementId, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle,
+    Focusable, Font, FontStyle, FontWeight, GlobalElementId, Hitbox, HitboxBehavior, Hsla, Image,
+    ImageFormat, ImgResourceLoader, InspectorElementId, LayoutId, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point, RenderImage, Resource, Rgba, ScrollWheelEvent,
+    SharedString, Size, StrikethroughStyle, Style, TextAlign, TextRun, TransformationMatrix,
     UTF16Selection, UnderlineStyle, Window, WrappedLine, actions, div, fill, font, point,
     prelude::*, px, quad, relative, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    MOD, Theme, mono, sans, tr,
+    MOD, Theme, figure, mono, sans, tr, vault,
     markdown::{self as md, Enter, Kind, Link},
 };
 
@@ -72,8 +75,10 @@ actions!(
 
 const TOP: Pixels = px(20.);
 const MAX_WIDTH: Pixels = px(720.);
-/// Largeur de la zone cliquable « Copier », à droite de l'ouverture d'un bloc de code.
-const COPY_WIDTH: Pixels = px(70.);
+/// Côté du bouton de copie, à droite de l'ouverture d'un bloc de code.
+const COPY_SIZE: Pixels = px(22.);
+/// Corps des formules, par rapport au texte : la police mathématique paraît petite à taille égale.
+const MATH_SCALE: f32 = 1.2;
 /// Espace entre une ligne et l'image qu'elle désigne.
 const IMAGE_GAP: Pixels = px(8.);
 
@@ -111,9 +116,10 @@ struct Row {
     /// Signes affichés à la place de leur écriture ASCII : (octet de début,
     /// longueur dans le texte, longueur affichée).
     subs: Vec<(usize, usize, usize)>,
-    /// Image désignée par la ligne, dessinée dessous, et sa taille à l'écran.
+    /// Image désignée par la ligne, ou figure (diagramme, formule) qu'elle
+    /// termine, dessinée dessous, et sa taille à l'écran.
     image: Option<(Arc<RenderImage>, Size<Pixels>)>,
-    /// La ligne ouvre un bloc de code : elle porte le bouton « Copier ».
+    /// La ligne ouvre un bloc de code : elle porte le bouton de copie.
     opens: bool,
 }
 
@@ -175,6 +181,30 @@ impl Row {
     }
 }
 
+/// Figure prête à dessiner (`None` : source invalide) et sa taille.
+type Drawing = Option<(Arc<Image>, Size<Pixels>)>;
+
+/// La figure de clé `key`, reprise de la frame précédente ou dessinée par `make` ;
+/// si `lazy`, seulement reprise.
+fn cached(
+    old: &mut HashMap<u64, Drawing>,
+    kept: &mut HashMap<u64, Drawing>,
+    key: u64,
+    lazy: bool,
+    make: impl FnOnce() -> Option<figure::Figure>,
+) -> Drawing {
+    let drawing = match old.remove(&key).or_else(|| kept.get(&key).cloned()) {
+        Some(drawing) => drawing,
+        None if lazy => return None,
+        None => make().map(|(svg, w, h)| {
+            let image = Image::from_bytes(ImageFormat::Svg, svg.into_bytes());
+            (Arc::new(image), size(px(w), px(h)))
+        }),
+    };
+    kept.insert(key, drawing.clone());
+    drawing
+}
+
 pub struct Editor {
     focus: FocusHandle,
     content: String,
@@ -191,6 +221,12 @@ pub struct Editor {
     dirs: Vec<PathBuf>,
     /// Début de la ligne dont le bloc de code vient d'être copié.
     copied: Option<usize>,
+    /// Début de la ligne dont le bouton de copie est survolé.
+    hover: Option<usize>,
+    /// Zones des boutons de copie, par début de ligne : elles portent le curseur en main.
+    copy_hitboxes: Vec<(usize, Hitbox)>,
+    /// Diagrammes et formules de la dernière frame, par empreinte de leur source.
+    figures: HashMap<u64, Drawing>,
     ac_index: usize,
     ac_dismissed: Option<usize>,
     theme: Theme,
@@ -227,6 +263,9 @@ impl Editor {
             notes: Vec::new(),
             dirs: Vec::new(),
             copied: None,
+            hover: None,
+            copy_hitboxes: Vec::new(),
+            figures: HashMap::new(),
             ac_index: 0,
             ac_dismissed: None,
             theme,
@@ -280,9 +319,7 @@ impl Editor {
     /// Centre du premier bouton « Copier » affiché.
     #[cfg(test)]
     pub fn copy_button(&self) -> Option<Point<Pixels>> {
-        let row = self.rows.iter().find(|r| r.opens)?;
-        let at = point(self.width - COPY_WIDTH / 2., row.y + row.height / 2.);
-        Some(self.origin + at)
+        Some(self.copy_bounds(self.rows.iter().find(|r| r.opens)?).center())
     }
 
     /// Nombre de signes et taille de l'image affichés sur la ligne qui commence par `prefix`.
@@ -667,6 +704,17 @@ impl Editor {
 
     // ----- Souris -----
 
+    fn copy_bounds(&self, row: &Row) -> Bounds<Pixels> {
+        let at = point(self.width - COPY_SIZE, row.y + row.pad + (row.lh - COPY_SIZE) / 2.);
+        Bounds::new(self.origin + at, size(COPY_SIZE, COPY_SIZE))
+    }
+
+    /// Début de la ligne dont le bouton de copie est sous le pointeur.
+    fn copy_at(&self, at: Point<Pixels>) -> Option<usize> {
+        let row = self.rows.iter().find(|r| r.opens && self.copy_bounds(r).contains(&at))?;
+        Some(row.start)
+    }
+
     fn index_at(&self, pos: Point<Pixels>) -> usize {
         let y = pos.y - self.origin.y;
         let Some(row) = self.rows.iter().find(|r| y < r.y + r.height).or(self.rows.last()) else {
@@ -677,16 +725,21 @@ impl Editor {
     }
 
     fn mouse_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        // « Copier », à droite de l'ouverture d'un bloc de code.
-        let y = e.position.y - self.origin.y;
-        self.copied = None;
-        if let Some(row) = self.rows.iter().find(|r| (r.y..r.y + r.height).contains(&y))
-            && row.opens
-            && e.position.x > self.origin.x + self.width - COPY_WIDTH
-            && let Some(block) = md::code_block(&self.content, row.start + row.len + 1)
+        // Bouton de copie, à droite de l'ouverture d'un bloc de code.
+        if let Some(start) = self.copy_at(e.position)
+            && let Some(block) = md::code_block(&self.content, self.line_range(start).end + 1)
         {
             cx.write_to_clipboard(ClipboardItem::new_string(self.content[block].to_string()));
-            self.copied = Some(row.start);
+            self.copied = Some(start);
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(Duration::from_millis(1500)).await;
+                this.update(cx, |this, cx| {
+                    this.copied = None;
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
             return cx.notify();
         }
         let i = self.index_at(e.position);
@@ -731,6 +784,11 @@ impl Editor {
         if self.selecting {
             self.select_to(self.index_at(e.position), cx);
         }
+        let hover = self.copy_at(e.position);
+        if hover != self.hover {
+            self.hover = hover;
+            cx.notify();
+        }
     }
 
     fn mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
@@ -757,10 +815,37 @@ impl Editor {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
-        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.push_undo(true);
-            self.edit(self.sel.clone(), &text.replace("\r\n", "\n"), cx);
-        }
+        let Some(item) = cx.read_from_clipboard() else {
+            return;
+        };
+        let image = item.entries().iter().find_map(|entry| match entry {
+            ClipboardEntry::Image(image) => Some(image),
+            _ => None,
+        });
+        let text = match (image, self.dirs.first()) {
+            // Une image collée est enregistrée à côté de la note, qui la désigne.
+            (Some(image), Some(dir)) => {
+                let extension = match image.format {
+                    ImageFormat::Png => "png",
+                    ImageFormat::Jpeg => "jpg",
+                    ImageFormat::Webp => "webp",
+                    ImageFormat::Gif => "gif",
+                    ImageFormat::Svg => "svg",
+                    ImageFormat::Bmp => "bmp",
+                    ImageFormat::Tiff => "tiff",
+                };
+                match vault::save_image(dir, extension, &image.bytes) {
+                    Ok(name) => format!("![]({name})"),
+                    Err(_) => return,
+                }
+            }
+            _ => match item.text() {
+                Some(text) => text.replace("\r\n", "\n"),
+                None => return,
+            },
+        };
+        self.push_undo(true);
+        self.edit(self.sel.clone(), &text, cx);
     }
 
     // ----- UTF-16 (méthodes de saisie) -----
@@ -815,6 +900,34 @@ impl Editor {
             .advance(text_system.resolve_font(&font(sans())), px(16.), '≠')
             .is_ok();
         let mut lang = String::new();
+        // Diagrammes Mermaid et formules LaTeX : dessinés une fois, repris ensuite.
+        let rgb = |c: Hsla| {
+            let c = Rgba::from(c);
+            [c.r, c.g, c.b].map(|v| (v * 255.) as u8)
+        };
+        let hex = |c: Hsla| {
+            let [r, g, b] = rgb(c);
+            format!("#{r:02x}{g:02x}{b:02x}")
+        };
+        let look = figure::Look {
+            dark: t.bg.l < 0.5,
+            bg: hex(t.bg),
+            fill: hex(t.code_bg),
+            text: hex(t.text),
+            line: hex(t.dim),
+            font: sans().to_string(),
+        };
+        let key = |kind: u8, source: &str| {
+            let mut hasher = DefaultHasher::new();
+            (kind, source, &look.bg, &look.fill, &look.text, &look.line, &look.font, t.size.to_bits())
+                .hash(&mut hasher);
+            hasher.finish()
+        };
+        let mut old = std::mem::take(&mut self.figures);
+        let mut kept = HashMap::new();
+        // Bloc Mermaid ou `$$` en cours : son début et son source.
+        let mut block: Option<(usize, String)> = None;
+        let mut dollars = self.content.split('\n').filter(|l| l.trim() == "$$").count();
         let width = (bounds.size.width - px(48.)).min(MAX_WIDTH).max(px(120.));
         let marked = self.marked.clone();
         let mut rows = Vec::new();
@@ -822,17 +935,55 @@ impl Editor {
         let mut offset = 0;
         let mut in_code = false;
         for line in self.content.split('\n') {
-            let (kind, marker) = md::classify(line, in_code);
+            let (mut kind, mut marker) = md::classify(line, in_code);
             let mut opens = false;
+            let mut drawing = None;
             if kind == Kind::Fence && orphan != Some(offset) {
                 opens = !in_code && fences > 1;
                 in_code = opens;
                 fences -= 1;
                 if opens {
                     lang = line.trim_start()[3..].trim().to_lowercase();
+                    block = (lang == "mermaid").then(|| (offset, String::new()));
+                } else if let Some((start, source)) = block.take() {
+                    // ponytail: un diagramme se dessine sur le thread UI (quelques dizaines
+                    // de ms), donc seulement une fois le curseur sorti du bloc ; passer
+                    // en tâche de fond si de gros diagrammes font attendre.
+                    let editing = (start..=offset + line.len()).contains(&cursor);
+                    drawing = cached(&mut old, &mut kept, key(0, &source), editing, || {
+                        figure::mermaid(&source, &look)
+                    });
                 }
             }
             let code = matches!(kind, Kind::Code | Kind::Fence);
+            // Formule sur plusieurs lignes, entre deux lignes `$$`.
+            let mut math = false;
+            if kind == Kind::Code {
+                if let Some((_, source)) = &mut block {
+                    source.push_str(line);
+                    source.push('\n');
+                }
+            } else if !code && line.trim() == "$$" {
+                math = true;
+                dollars -= 1;
+                match block.take() {
+                    Some((_, source)) => {
+                        drawing = cached(&mut old, &mut kept, key(1, &source), false, || {
+                            figure::latex(&source, true, rgb(t.text), t.size * MATH_SCALE)
+                        });
+                    }
+                    // Comme pour ``` : un `$$` sans clôture n'ouvre rien.
+                    None if dollars > 0 => block = Some((offset, String::new())),
+                    None => {}
+                }
+            } else if !code && let Some((_, source)) = &mut block {
+                math = true;
+                source.push_str(line);
+                source.push('\n');
+            }
+            if math {
+                (kind, marker) = (Kind::Para, 0);
+            }
             let (font_size, pad) = match kind {
                 Kind::Heading(1) => (px(27.), px(14.)),
                 Kind::Heading(2) => (px(21.), px(10.)),
@@ -847,13 +998,25 @@ impl Editor {
             let mut flags = vec![0u16; line.len()];
             let list = matches!(kind, Kind::Bullet | Kind::Ordered | Kind::Task(_));
             flags[..marker].fill(if list { md::MARK } else { md::DIM });
-            if kind == Kind::Code {
-                // Sans langage annoncé, ou en texte brut, le bloc reste tel quel.
-                if !matches!(lang.as_str(), "" | "text" | "txt" | "plain") {
+            if math {
+                flags.fill(if line.trim() == "$$" { md::DIM } else { md::CODE });
+            } else if kind == Kind::Code {
+                // Sans langage annoncé, en texte brut ou en Mermaid, le bloc reste tel quel.
+                if !matches!(lang.as_str(), "" | "text" | "txt" | "plain" | "mermaid") {
                     md::code(line, &lang, &mut flags);
                 }
             } else if !code && kind != Kind::Rule {
                 md::inline(line, marker, &mut flags);
+                // Formule sur la ligne : son source reste lisible, comme du code.
+                if let Some((range, source, display)) = md::math(line)
+                    && range.start >= marker
+                    && flags[range.start] & md::CODE == 0
+                {
+                    flags[range].fill(md::CODE);
+                    drawing = cached(&mut old, &mut kept, key(1 + display as u8, source), false, || {
+                        figure::latex(source, display, rgb(t.text), t.size * MATH_SCALE)
+                    });
+                }
             }
             if kind == Kind::Task(true) {
                 flags[marker..].iter_mut().for_each(|f| *f |= md::STRIKE | md::DIM);
@@ -874,6 +1037,12 @@ impl Editor {
                 let (w, h) = (natural(image.size(0).width), natural(image.size(0).height));
                 let scale = (f32::from(width) / w.max(1.)).min(1.);
                 Some((image, size(px(w * scale), px(h * scale))))
+            });
+            let image = image.or_else(|| {
+                let (image, s) = drawing?;
+                let image = image.use_render_image(window, cx)?;
+                let scale = (width / s.width).min(1.);
+                Some((image, size(s.width * scale, s.height * scale)))
             });
 
             // Hors de la ligne du curseur, `->`, `!=`… s'affichent comme des signes ;
@@ -983,6 +1152,7 @@ impl Editor {
             offset += line.len() + 1;
         }
         self.rows = rows;
+        self.figures = kept;
 
         if self.reveal {
             self.reveal = false;
@@ -1006,6 +1176,10 @@ impl Editor {
         );
         self.width = width;
         self.viewport = bounds;
+        let opening = self.rows.iter().filter(|r| r.opens);
+        self.copy_hitboxes = opening
+            .map(|r| (r.start, window.insert_hitbox(self.copy_bounds(r), HitboxBehavior::Normal)))
+            .collect();
     }
 
     fn paint(&self, focused: bool, window: &mut Window, cx: &mut App) {
@@ -1078,14 +1252,19 @@ impl Editor {
                 let at = block(px(0.), top + row.height - s.height, s.width, s.height);
                 window.paint_image(at, Corners::all(px(6.)), image.clone(), 0, false).ok();
             }
+            // Bouton de copie du bloc : la même icône que pour copier la note.
             if row.opens {
-                let text = if self.copied == Some(row.start) {
-                    tr("Copied", "Copié")
-                } else {
-                    tr("Copy", "Copier")
-                };
-                let line = label(text, t.dim, window);
-                line.paint(point(o.x + w - line.width, text_top), row.lh, window, cx).ok();
+                let bounds = self.copy_bounds(row);
+                if self.hover == Some(row.start) {
+                    window.paint_quad(fill(bounds, t.border).corner_radii(px(6.)));
+                }
+                let icon = if self.copied == Some(row.start) { "check.svg" } else { "copy.svg" };
+                let inset = (COPY_SIZE - px(16.)) / 2.;
+                let at = Bounds::new(bounds.origin + point(inset, inset), size(px(16.), px(16.)));
+                window.paint_svg(at, icon.into(), TransformationMatrix::unit(), t.text, cx).ok();
+                if let Some((_, hitbox)) = self.copy_hitboxes.iter().find(|(s, _)| *s == row.start) {
+                    window.set_cursor_style(CursorStyle::PointingHand, hitbox);
+                }
             }
         }
         if self.content.is_empty() {

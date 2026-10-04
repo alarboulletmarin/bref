@@ -2,6 +2,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod editor;
+mod figure;
 mod graph;
 mod markdown;
 mod nav;
@@ -845,10 +846,13 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 ("[] ".into(), tr("Task", "Tâche à cocher")),
                 ("# ## ###".into(), tr("Headings; the first # names the file", "Titres ; le premier # nomme le fichier")),
                 ("> ".into(), tr("Quote", "Citation")),
-                ("```rust".into(), tr("Code block: colors, Copy", "Bloc de code : couleurs, Copier")),
+                ("```rust".into(), tr("Code block: colors, copy icon", "Bloc de code : couleurs, icône de copie")),
                 ("---".into(), tr("Divider", "Séparateur")),
                 ("[[".into(), tr("Link to a note", "Lien vers une note")),
                 ("![](image.png)".into(), tr("Picture, under its line", "Image, sous sa ligne")),
+                (m("V"), tr("Paste text, or a picture", "Coller du texte, ou une image")),
+                ("```mermaid".into(), tr("Diagram, under its block", "Diagramme, sous son bloc")),
+                ("$x^2$  $$…$$".into(), tr("LaTeX formula, under its line", "Formule LaTeX, sous sa ligne")),
                 ("-> != <= =>".into(), tr("Shown as → ≠ ≤ ⇒", "Affichés → ≠ ≤ ⇒")),
             ],
         ),
@@ -1687,6 +1691,35 @@ mod tests {
         let (signs, image) = shell.read_with(cx, |s, cx| s.editor.read(cx).decorations("a -> b"));
         assert_eq!((signs, image), (1, Some((40., 20.))));
         assert!(text(cx).ends_with("a -> b ![](carré.svg)\nfin"));
+
+        // Coller une image l'enregistre à côté de la note, qui la désigne.
+        let image = gpui::Image::from_bytes(gpui::ImageFormat::Svg, svg.as_bytes().to_vec());
+        cx.write_to_clipboard(ClipboardItem::new_image(&image));
+        cx.simulate_keystrokes("enter secondary-v");
+        let note = text(cx);
+        let pasted = note.rsplit_once("![](").unwrap().1.trim_end_matches(')');
+        assert!(pasted.starts_with("image-") && pasted.ends_with(".svg"));
+        assert_eq!(fs::read_to_string(root.join(pasted)).unwrap(), svg);
+
+        // Diagramme Mermaid, dessiné sous son bloc une fois le curseur sorti, et
+        // formule LaTeX, sous sa ligne.
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("```mermaid");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("flowchart LR");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("A --> B");
+        cx.simulate_keystrokes("secondary-end enter");
+        cx.simulate_input("soit $x^2$");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        cx.simulate_input("fin");
+        cx.run_until_parked();
+        let figures = shell.read_with(cx, |s, cx| {
+            let editor = s.editor.read(cx);
+            ["![](image-", "```\nsoit", "soit $x^2$"].map(|line| editor.decorations(line).1.is_some())
+        });
+        assert_eq!(figures, [true, true, true]);
 
         fs::remove_dir_all(&root).unwrap();
     }

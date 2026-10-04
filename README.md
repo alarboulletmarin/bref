@@ -224,16 +224,19 @@ What you type is what is saved. encre only changes how it looks.
 | `1. ` | a numbered list, renumbered as you add, remove or indent items |
 | `[] ` or `- [ ] ` | a task; click the box or press `Ctrl + Enter` to check it |
 | `> ` | a quote |
-| `` ``` `` then `Enter` | a code block, closed for you. Name the language (`` ```rust ``) to get it colored; `Copy`, on its first line, copies its content |
+| `` ``` `` then `Enter` | a code block, closed for you. Name the language (`` ```rust ``) to get it colored; the copy icon, on its first line, copies its content |
 | `---` | a divider |
 | `**bold**`, `*italic*`, `~~struck~~`, `` `code` `` | inline styles |
 | `[[Note name]]` | a link to another note, with suggestions as you type |
 | `#tag` | a tag, usable as a filter in the palette |
 | `https://…` | a link, opened in your browser |
 | `![](picture.png)` or `![[picture.png]]` | the picture, under its line. It is looked for next to the note, then at the top of the vault |
+| `Ctrl + V` with a picture in the clipboard | the picture is saved next to the note, and its `![](…)` line inserted |
+| `` ```mermaid `` | a [Mermaid](https://mermaid.js.org) diagram, drawn under its block once the cursor has left it |
+| `$x^2$`, `$$…$$`, or lines between two `$$` lines | a LaTeX formula, drawn under its line |
 | `->`, `<-`, `<->`, `=>`, `<=>`, `!=`, `<=`, `>=` | shown as →, ←, ↔, ⇒, ⇔, ≠, ≤, ≥, except on the line you are editing and inside code |
 
-Tables, footnotes, Mermaid diagrams and LaTeX formulas are kept as you typed them, without special rendering. So are pictures given as a web address.
+Tables and footnotes are kept as you typed them, without special rendering. So are pictures given as a web address. A formula is drawn under its line, not within the text, and only the first one of a line.
 
 ## Notes and vault
 

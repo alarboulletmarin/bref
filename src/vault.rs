@@ -3,7 +3,7 @@
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
-    time::SystemTime,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::{markdown, tr};
@@ -197,6 +197,20 @@ pub fn title_of(content: &str) -> String {
 pub fn h1_of(content: &str) -> Option<String> {
     let first = content.lines().find(|l| !l.trim().is_empty())?;
     clean_name(first.trim_start().strip_prefix("# ")?)
+}
+
+/// Enregistre une image collée dans `dir`, sous un nom libre, et renvoie ce nom.
+pub fn save_image(dir: &Path, extension: &str, bytes: &[u8]) -> io::Result<String> {
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let name = (1..)
+        .map(|n| match n {
+            1 => format!("image-{stamp}.{extension}"),
+            n => format!("image-{stamp}-{n}.{extension}"),
+        })
+        .find(|name| !dir.join(name).exists())
+        .unwrap();
+    fs::write(dir.join(&name), bytes)?;
+    Ok(name)
 }
 
 /// Écriture atomique : un crash ne laisse jamais une note tronquée.

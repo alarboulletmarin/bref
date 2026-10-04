@@ -331,6 +331,30 @@ pub fn image(line: &str) -> Option<(Range<usize>, String)> {
     (!path.is_empty()).then(|| (start..start + len, path))
 }
 
+/// Première formule de la ligne, `$$…$$` ou `$…$` : son étendue, son source, et
+/// si elle est hors texte (`$$`).
+pub fn math(line: &str) -> Option<(Range<usize>, &str, bool)> {
+    let mut from = 0;
+    while let Some(i) = line[from..].find('$') {
+        let start = from + i;
+        let n = if line[start..].starts_with("$$") { 2 } else { 1 };
+        let body = &line[start + n..];
+        if let Some(len) = body.find(&"$$"[..n])
+            && len > 0
+            // Comme pandoc : un `$` collé à la formule, et pas suivi d'un chiffre,
+            // pour laisser « 5 $ et 10 $ » ou « $5 et $10 » tranquilles.
+            && (n == 2
+                || !(body.starts_with(' ')
+                    || body[..len].ends_with(' ')
+                    || body[len + 1..].starts_with(|c: char| c.is_ascii_digit())))
+        {
+            return Some((start..start + len + 2 * n, body[..len].trim(), n == 2));
+        }
+        from = start + n;
+    }
+    None
+}
+
 /// Tags et wikiliens (en minuscules) d'une note entière, hors blocs de code, dédupliqués.
 pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
     let (mut tags, mut wikis) = (Vec::new(), Vec::new());
@@ -563,6 +587,9 @@ mod tests {
         assert_eq!(image("voir ![un chat](img/le%20chat.png \"titre\") ici"), Some((5..42, "img/le chat.png".into())));
         assert_eq!(image("![[photo.jpg|300]]"), Some((0..18, "photo.jpg".into())));
         assert_eq!((image("![]()"), image("[lien](a.png)")), (None, None));
+        assert_eq!(math("soit $x^2$ et $y$"), Some((5..10, "x^2", false)));
+        assert_eq!(math("$$ \\frac{1}{2} $$"), Some((0..17, "\\frac{1}{2}", true)));
+        assert_eq!((math("$5 et $10"), math("5 $ et 10 $"), math("prix : 3$")), (None, None, None));
     }
 
     #[test]
