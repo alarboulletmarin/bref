@@ -16,6 +16,7 @@
 /aur/*/src/
 /aur/*/pkg/
 /aur/*/encre/
+/aur/*/*.pkg.tar.*
 
 # Claude Code local caches
 /.claude/

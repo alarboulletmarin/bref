@@ -37,7 +37,8 @@ cargo update -p encre --offline -q
 cargo test --locked -q
 
 git add Cargo.toml Cargo.lock PKGBUILD
-git commit -q -m "chore: release $ver"
+# Nothing to commit when the files already carry this version (first release).
+git diff --cached --quiet || git commit -q -m "chore: release $ver"
 git tag -a "v$ver" -m "encre $ver"
 git push origin main "v$ver"
 gh release create "v$ver" --title "encre $ver" --notes-file "$notes"
