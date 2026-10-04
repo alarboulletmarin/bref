@@ -1,0 +1,42 @@
+# Maintainer: Andrea Larboullet Marin <a.larboulletmarin@gmail.com>
+# Tracks the main branch: every `makepkg -si` builds the latest commit.
+pkgname=encre-git
+_name=encre
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+pkgdesc="Fast, minimal Markdown note-taking app (development version)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/alarboulletmarin/encre"
+license=('MIT')
+depends=('libxcb' 'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'vulkan-icd-loader')
+makedepends=('cargo' 'git' 'fontconfig' 'freetype2')
+optdepends=('vulkan-driver: a Vulkan driver for your GPU is required to open the window')
+provides=('encre')
+conflicts=('encre')
+source=("git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$_name"
+    # Before the first tag there is nothing to describe: count commits instead.
+    git describe --long --tags --abbrev=7 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
+        printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+    cd "$_name"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$_name"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release
+}
+
+package() {
+    cd "$_name"
+    make DESTDIR="$pkgdir" PREFIX=/usr install
+}

@@ -1,0 +1,30 @@
+# Attaches a ready-to-install Arch package to every published release.
+name: Arch package
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - run: pacman -Syu --noconfirm cargo git github-cli fontconfig freetype2 libxcb libxkbcommon libxkbcommon-x11 wayland
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - name: Build
+        run: |
+          useradd -m builder
+          chown -R builder .
+          # --skipinteg: the PKGBUILD checksum is pinned after the release exists
+          su builder -c 'makepkg -f --noconfirm --nodeps --skipinteg'
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp encre-[0-9]*-x86_64.pkg.tar.zst encre-x86_64.pkg.tar.zst
+          gh release upload "${{ github.event.release.tag_name }}" \
+            encre-[0-9]*-x86_64.pkg.tar.zst encre-x86_64.pkg.tar.zst \
+            --clobber --repo "${{ github.repository }}"

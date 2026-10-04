@@ -1,0 +1,20 @@
+[package]
+name = "encre"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Fast, minimal Markdown note-taking app"
+license = "MIT"
+repository = "https://github.com/alarboulletmarin/encre"
+
+[dependencies]
+gpui = "0.2.2"
+unicode-segmentation = "1.13.3"
+
+[dev-dependencies]
+gpui = { version = "0.2.2", features = ["test-support"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
