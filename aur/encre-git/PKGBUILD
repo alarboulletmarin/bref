@@ -19,8 +19,11 @@ sha256sums=('SKIP')
 pkgver() {
     cd "$_name"
     # Before the first tag there is nothing to describe: count commits instead.
-    git describe --long --tags --abbrev=7 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
+    if git describe --long --tags >/dev/null 2>&1; then
+        git describe --long --tags --abbrev=7 | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+    else
         printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+    fi
 }
 
 prepare() {
