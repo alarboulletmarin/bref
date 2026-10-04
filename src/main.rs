@@ -3,6 +3,7 @@
 
 mod editor;
 mod markdown;
+mod nav;
 mod palette;
 mod vault;
 
@@ -24,6 +25,7 @@ use gpui::{
 
 use editor::{Editor, EditorEvent};
 use markdown::Link;
+use nav::{Mode, Nav, Panel};
 use palette::{Entry, Palette, PaletteEvent};
 use vault::Note;
 
@@ -74,6 +76,18 @@ impl AssetSource for Assets {
                 r#"<rect x="6" y="6" width="7.5" height="7.5" rx="1.5"/><path d="M10 4A1.5 1.5 0 0 0 8.5 2.5H4A1.5 1.5 0 0 0 2.5 4V8.5A1.5 1.5 0 0 0 4 10"/>"#
             }
             "check.svg" => r#"<path d="M4 8.5L7 11L12 5"/>"#,
+            "tree.svg" => r#"<path d="M3 3.5H10M3 3.5V12H6M3 7.75H6M8.5 7.75H13M8.5 12H13"/>"#,
+            "clock.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 5V8L10 9.5"/>"#,
+            "search.svg" => r#"<circle cx="7" cy="7" r="3.5"/><path d="M9.7 9.7L12.5 12.5"/>"#,
+            "plus.svg" => r#"<path d="M8 3.5V12.5M3.5 8H12.5"/>"#,
+            "help.svg" => {
+                r#"<circle cx="8" cy="8" r="5.5"/><path d="M6.4 6.6A1.6 1.6 0 1 1 8 8.4V9.2M8 11.2V11.3"/>"#
+            }
+            "chevron-right.svg" => r#"<path d="M6.5 4.5L10 8L6.5 11.5"/>"#,
+            "chevron-down.svg" => r#"<path d="M4.5 6.5L8 10L11.5 6.5"/>"#,
+            "fold.svg" => r#"<path d="M4.5 3.5L8 6.5L11.5 3.5M4.5 12.5L8 9.5L11.5 12.5"/>"#,
+            "expand.svg" => r#"<path d="M9.5 3.5H12.5V6.5M6.5 12.5H3.5V9.5M12.5 3.5L9 7M3.5 12.5L7 9"/>"#,
+            "shrink.svg" => r#"<path d="M12.5 6.5H9.5V3.5M3.5 9.5H6.5V12.5M9.5 6.5L13 3M6.5 9.5L3 13"/>"#,
             _ => return Ok(None),
         };
         let svg = format!(
@@ -131,6 +145,7 @@ impl Theme {
 struct Shell {
     focus: FocusHandle,
     editor: Entity<Editor>,
+    nav: Nav,
     palette: Option<Entity<Palette>>,
     vault: Option<PathBuf>,
     notes: Vec<Note>,
@@ -140,6 +155,11 @@ struct Shell {
     path: Option<PathBuf>,
     /// Le nom du fichier suit le titre (première ligne) de la note.
     synced: bool,
+    /// La note affichée n'est qu'un aperçu : elle ne compte comme ouverte que
+    /// lorsqu'on y entre (focus ou frappe).
+    preview: bool,
+    /// Dossier où enregistrer la nouvelle note ; le coffre par défaut.
+    new_dir: Option<PathBuf>,
     dirty: bool,
     save_gen: usize,
     error: Option<String>,
@@ -176,12 +196,15 @@ impl Shell {
         let mut this = Self {
             focus: cx.focus_handle(),
             editor,
+            nav: Nav::new(cx.focus_handle()),
             palette: None,
             vault: None,
             notes: Vec::new(),
             recent: Vec::new(),
             path: None,
             synced: true,
+            preview: false,
+            new_dir: None,
             dirty: false,
             save_gen: 0,
             error: None,
@@ -197,6 +220,9 @@ impl Shell {
                 this.recent = recent.into_iter().filter(|p| p.is_file()).collect();
                 if let Some(last) = this.recent.first().cloned() {
                     this.open_note(&last, cx);
+                }
+                if this.nav.panel == Panel::Full {
+                    window.focus(&this.nav.focus);
                 }
             }
             None => window.focus(&this.focus),
@@ -223,6 +249,7 @@ impl Shell {
                 if this.vault.as_ref() == Some(&root) {
                     this.notes = notes;
                     this.push_names(cx);
+                    cx.notify();
                 }
             })
             .ok();
@@ -301,28 +328,70 @@ impl Shell {
         notes
     }
 
-    fn open_note(&mut self, path: &Path, cx: &mut Context<Self>) {
+    /// Charge la note dans l'éditeur ; faux si le fichier est illisible.
+    fn load_note(&mut self, path: &Path, cx: &mut Context<Self>) -> bool {
         self.flush(cx);
+        cx.notify();
         match fs::read_to_string(path) {
             Ok(text) => {
                 self.synced = vault::stem(path) == vault::title_of(&text);
                 self.path = Some(path.to_path_buf());
                 self.error = None;
                 self.editor.update(cx, |e, cx| e.load(text, 0, cx));
-                self.touch(path);
+                self.nav.reveal(path);
+                true
             }
             Err(e) => {
                 let what = tr("Cannot open", "Impossible d'ouvrir");
-                self.error = Some(format!("{what} {} : {e}", path.display()))
+                self.error = Some(format!("{what} {} : {e}", path.display()));
+                false
             }
         }
-        cx.notify();
+    }
+
+    fn open_note(&mut self, path: &Path, cx: &mut Context<Self>) {
+        if self.load_note(path, cx) {
+            self.preview = false;
+            self.touch(path);
+        }
+    }
+
+    /// Affiche la note sans la compter comme ouverte.
+    fn preview_note(&mut self, path: &Path, cx: &mut Context<Self>) {
+        if self.path.as_deref() != Some(path) && self.load_note(path, cx) {
+            self.preview = true;
+        }
+    }
+
+    /// L'aperçu devient une note ouverte.
+    fn keep_preview(&mut self) {
+        if std::mem::take(&mut self.preview)
+            && let Some(path) = self.path.clone()
+        {
+            self.touch(&path);
+        }
+    }
+
+    /// Nouvelle note, rangée dans le dossier sélectionné quand l'arbre est affiché.
+    fn new_note_here(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_none() {
+            return;
+        }
+        self.new_note(String::new(), cx);
+        self.new_dir = self.nav.target_dir();
+        if self.nav.panel == Panel::Full {
+            self.nav.panel = Panel::Split;
+        }
+        window.focus(&self.editor.focus_handle(cx));
+        self.settle_nav(window, cx);
     }
 
     fn new_note(&mut self, text: String, cx: &mut Context<Self>) {
         self.flush(cx);
         self.path = None;
         self.synced = true;
+        self.preview = false;
+        self.new_dir = None;
         self.dirty = !text.is_empty();
         let cursor = text.len();
         self.editor.update(cx, |e, cx| e.load(text, cursor, cx));
@@ -345,7 +414,8 @@ impl Shell {
             self.dirty = false;
             return;
         }
-        match vault::save(&root, self.path.as_deref(), self.synced, &content) {
+        let dir = self.new_dir.as_deref().unwrap_or(&root);
+        match vault::save(dir, self.path.as_deref(), self.synced, &content) {
             Ok(path) => {
                 self.dirty = false;
                 self.error = None;
@@ -365,6 +435,7 @@ impl Shell {
                 if self.path.as_ref() != Some(&path) {
                     self.recent.retain(|p| Some(p) != self.path.as_ref());
                     self.touch(&path);
+                    self.nav.reveal(&path);
                     self.path = Some(path);
                     self.push_names(cx);
                 }
@@ -385,6 +456,7 @@ impl Shell {
     ) {
         match event {
             EditorEvent::Changed => {
+                self.keep_preview();
                 self.dirty = true;
                 self.save_gen += 1;
                 let generation = self.save_gen;
@@ -541,6 +613,9 @@ impl Shell {
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        if self.editor.focus_handle(cx).is_focused(window) {
+            self.keep_preview();
+        }
         let title = match (&self.path, &self.vault) {
             (Some(p), _) => vault::stem(p),
             (None, Some(_)) => tr("New note", "Nouvelle note").to_string(),
@@ -561,7 +636,10 @@ impl Render for Shell {
         let framed = tiling.is_some_and(|t| !t.is_tiled())
             && !window.is_maximized()
             && !window.is_fullscreen();
-        window.set_client_inset(if framed { SHADOW } else { px(0.) });
+        let inset = if framed { SHADOW } else { px(0.) };
+        window.set_client_inset(inset);
+        self.nav.left = inset;
+        self.nav.total = window.viewport_size().width - inset * 2.;
 
         // Bouton icône : cercle visible au survol, comme les contrôles de fenêtre de Zed.
         let icon_button = |id: &'static str, icon: &'static str| {
@@ -673,8 +751,10 @@ impl Render for Shell {
                 .rounded(px(8.))
                 .occlude()
                 .on_click(cx.listener(|this, _, _, cx| this.copy_all(cx)));
-            body.child(self.editor.clone())
-                .child(copy)
+            let note = div().flex_1().min_w_0().h_full().relative().child(self.editor.clone()).child(copy);
+            body.flex()
+                .child(self.render_nav(cx))
+                .when(self.nav.panel != Panel::Full, |d| d.child(note))
                 .children(self.palette.clone())
                 .children(self.error.clone().map(|message| {
                     div()
@@ -712,11 +792,31 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &OpenPalette, window, cx| {
                 this.open_palette("", window, cx)
             }))
-            .on_action(cx.listener(|this, _: &NewNote, _, cx| {
-                if this.vault.is_some() {
-                    this.new_note(String::new(), cx)
+            .on_action(cx.listener(|this, _: &NewNote, window, cx| this.new_note_here(window, cx)))
+            .on_action(cx.listener(|this, _: &nav::ShowTree, window, cx| {
+                this.show_nav(Mode::Tree, false, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &nav::ShowRecent, window, cx| {
+                this.show_nav(Mode::Recent, false, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &nav::ToggleFull, window, cx| this.toggle_full(window, cx)))
+            // Séparateur du panneau : il suit le pointeur tant que le bouton est tenu.
+            .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
+                if !this.nav.dragging {
+                } else if e.pressed_button == Some(MouseButton::Left) {
+                    this.drag_nav(e.position.x, cx)
+                } else {
+                    this.settle_nav(window, cx)
                 }
             }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    if this.nav.dragging {
+                        this.settle_nav(window, cx)
+                    }
+                }),
+            )
             .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(cx)))
             .on_action(cx.listener(|this, _: &ToggleHelp, window, cx| {
@@ -792,6 +892,7 @@ fn bind_keys(cx: &mut App) {
     use palette::{Confirm, DeleteChar, Dismiss, Next, Prev};
     let e = Some("Editor");
     let p = Some("Palette");
+    let n = Some("Nav");
     // `secondary` = Cmd sur macOS, Ctrl ailleurs ; les mots se parcourent avec Alt sur macOS.
     let word = if cfg!(target_os = "macos") { "alt" } else { "ctrl" };
     cx.bind_keys([
@@ -803,6 +904,15 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-/", ToggleHelp, None),
         KeyBinding::new("escape", CloseHelp, Some("Shell")),
         KeyBinding::new("secondary-q", Quit, None),
+        KeyBinding::new("secondary-e", nav::ShowTree, Some("Shell")),
+        KeyBinding::new("secondary-r", nav::ShowRecent, Some("Shell")),
+        KeyBinding::new("secondary-m", nav::ToggleFull, Some("Shell")),
+        KeyBinding::new("up", nav::Prev, n),
+        KeyBinding::new("down", nav::Next, n),
+        KeyBinding::new("left", nav::Fold, n),
+        KeyBinding::new("right", nav::Unfold, n),
+        KeyBinding::new("enter", nav::Open, n),
+        KeyBinding::new("escape", nav::Close, n),
         KeyBinding::new("up", Prev, p),
         KeyBinding::new("down", Next, p),
         KeyBinding::new("enter", Confirm, p),
@@ -953,6 +1063,8 @@ mod tests {
         let root = std::env::temp_dir().join(format!("encre-e2e-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("Courses.md"), "# Courses\n\n- lait #maison\n").unwrap();
+        fs::create_dir(root.join("Projets")).unwrap();
+        fs::write(root.join("Projets/Plan.md"), "# Plan\n\n[[Courses]]\n").unwrap();
         // La config de test ne doit pas toucher celle de l'utilisateur.
         for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
             unsafe { std::env::set_var(key, root.join(".config")) };
@@ -1003,7 +1115,7 @@ mod tests {
         let names = shell.read_with(cx, |s, _| {
             s.by_recency().iter().map(|n| n.name.clone()).collect::<Vec<_>>()
         });
-        assert_eq!(names, ["Courses", "Test"]);
+        assert_eq!(names, ["Courses", "Test", "Plan"]);
 
         // Wikilien complété puis nouvelle note créée depuis la palette.
         cx.simulate_keystrokes("secondary-end");
@@ -1031,6 +1143,49 @@ mod tests {
         assert!(!shell.read_with(cx, |s, _| s.help));
         cx.simulate_input("ok");
         assert_eq!(text(cx), "# Idées\n\nok");
+
+        // Arbre : Ctrl+E l'ouvre et lui donne le focus ; les flèches affichent un aperçu,
+        // qui ne compte pas comme une ouverture.
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.simulate_keystrokes("secondary-e up");
+        assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (Mode::Tree, Panel::Split));
+        assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[Test]]");
+        assert!(shell.read_with(cx, |s, _| s.preview && s.recent[0] == root.join("Idées.md")));
+        // Le dossier se déplie avec Droite ; Entrée ouvre la note et rend la main à l'éditeur.
+        cx.simulate_keystrokes("up right down");
+        assert_eq!(text(cx), "# Plan\n\n[[Courses]]\n");
+        cx.simulate_keystrokes("enter");
+        assert!(shell.read_with(cx, |s, _| !s.preview && s.recent[0] == root.join("Projets/Plan.md")));
+        assert!(cx.update(|window, cx| shell.read(cx).editor.focus_handle(cx).is_focused(window)));
+
+        // Nouvelle note depuis l'arbre : rangée dans le dossier de la sélection.
+        cx.simulate_keystrokes("secondary-n");
+        cx.simulate_input("# Sous");
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        assert!(root.join("Projets/Sous.md").is_file());
+
+        // Séparateur : il règle la largeur, et replie le panneau en bout de course.
+        let drag = |cx: &mut gpui::VisualTestContext, from: f32, to: f32| {
+            let at = |x: f32| point(px(x), px(300.));
+            cx.simulate_mouse_down(at(from), MouseButton::Left, gpui::Modifiers::none());
+            cx.simulate_mouse_move(at(to), MouseButton::Left, gpui::Modifiers::none());
+            cx.simulate_mouse_up(at(to), MouseButton::Left, gpui::Modifiers::none());
+        };
+        drag(cx, 302., 450.);
+        assert_eq!(vault::load_layout(), "tree split 410\n");
+        drag(cx, 452., 60.);
+        assert_eq!(shell.read_with(cx, |s, _| s.nav.panel), Panel::Rail);
+
+        // Récents, plein écran (Ctrl+M), puis Échap rend la place et le focus à la note.
+        cx.simulate_keystrokes("secondary-r secondary-m");
+        assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (Mode::Recent, Panel::Full));
+        cx.simulate_keystrokes("down escape");
+        assert_eq!(shell.read_with(cx, |s, _| s.nav.panel), Panel::Split);
+        assert_eq!(text(cx), "# Sous");
+        // Redemander le mode affiché : d'abord le focus, puis le repli sur le rail.
+        cx.simulate_keystrokes("secondary-r secondary-r");
+        assert_eq!(vault::load_layout(), "recent rail 410\n");
 
         fs::remove_dir_all(&root).unwrap();
     }

@@ -59,6 +59,17 @@ pub fn save_config(vault: &Path, recent: &[PathBuf]) {
     }
 }
 
+/// Disposition du panneau de navigation, mémorisée telle quelle sur une ligne.
+pub fn load_layout() -> String {
+    fs::read_to_string(config_dir().join("encre/layout")).unwrap_or_default()
+}
+
+pub fn save_layout(text: &str) {
+    let path = config_dir().join("encre/layout");
+    // Simple confort : si l'écriture échoue, l'app rouvrira panneau replié.
+    let _ = path.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(path, text));
+}
+
 pub fn stem(path: &Path) -> String {
     path.file_stem()
         .map(|s| s.to_string_lossy().into_owned())
