@@ -14,7 +14,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{OnceLock, RwLock},
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use gpui::{
@@ -370,13 +370,15 @@ impl Shell {
     /// renommées, supprimées, ou modifiées pendant qu'elles sont affichées.
     // ponytail: l'empreinte du coffre (noms et dates, sans lire les fichiers) est
     // recalculée toutes les 2 s, hors du thread UI, plutôt que d'écouter le système
-    // de fichiers ; passer à inotify et ses équivalents (crate `notify`) si un
-    // coffre de dizaines de milliers de notes rend ce parcours coûteux.
+    // de fichiers. Le parcours ne prend jamais plus de 0,5 % d'un cœur : un gros
+    // coffre est donc regardé moins souvent (5 000 notes : toutes les 5 s). Passer à
+    // inotify et ses équivalents (crate `notify`) si ce délai devient gênant.
     fn watch(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let mut last = None;
+            let mut pause = Duration::from_secs(2);
             loop {
-                cx.background_executor().timer(Duration::from_secs(2)).await;
+                cx.background_executor().timer(pause).await;
                 let Ok(state) = this.update(cx, |this, _| this.vault.clone().map(|root| (root, this.save_gen)))
                 else {
                     return;
@@ -388,11 +390,15 @@ impl Shell {
                 let scanned = cx
                     .background_executor()
                     .spawn(async move {
+                        let start = Instant::now();
                         let print = vault::fingerprint(&root);
-                        (known != Some((root.clone(), print))).then(|| (vault::scan(&root), root, print))
+                        let took = start.elapsed();
+                        let changed = known != Some((root.clone(), print));
+                        (took, changed.then(|| (vault::scan(&root), root, print)))
                     })
                     .await;
-                let Some(((notes, dirs), root, print)) = scanned else {
+                pause = Duration::from_secs(2).max(scanned.0 * 200);
+                let Some(((notes, dirs), root, print)) = scanned.1 else {
                     continue;
                 };
                 this.update(cx, |this, cx| {
