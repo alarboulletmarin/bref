@@ -918,6 +918,7 @@ mod tests {
     use super::*;
     use gpui::TestAppContext;
 
+    /// `secondary` = Cmd sur macOS, Ctrl ailleurs, comme dans `bind_keys`.
     /// Parcours complet au clavier : saisie, listes, enregistrement, palette, wikilien.
     #[gpui::test]
     fn end_to_end(cx: &mut TestAppContext) {
@@ -946,14 +947,14 @@ mod tests {
         cx.simulate_input("deux");
         cx.simulate_keystrokes("enter enter");
         cx.simulate_input("[] tâche");
-        cx.simulate_keystrokes("ctrl-enter enter");
+        cx.simulate_keystrokes("secondary-enter enter");
         cx.simulate_input("suite");
         cx.simulate_keystrokes("tab");
         assert_eq!(
             text(cx),
             "# Test\n1. un\n2. deux\n- [x] tâche\n    - [ ] suite"
         );
-        cx.simulate_keystrokes("ctrl-z");
+        cx.simulate_keystrokes("secondary-z");
         assert_eq!(text(cx), "# Test\n1. un\n2. deux\n- [x] tâche\n- [ ] suite");
 
         // Enregistrement automatique, nommé d'après le titre.
@@ -962,17 +963,17 @@ mod tests {
         assert_eq!(fs::read_to_string(root.join("Test.md")).unwrap(), text(cx));
 
         // Palette : recherche floue puis ouverture.
-        cx.simulate_keystrokes("ctrl-p");
+        cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("crs");
         cx.simulate_keystrokes("enter");
         assert_eq!(text(cx), "# Courses\n\n- lait #maison\n");
 
         // Wikilien complété puis nouvelle note créée depuis la palette.
-        cx.simulate_keystrokes("ctrl-end");
+        cx.simulate_keystrokes("secondary-end");
         cx.simulate_input("[[te");
         cx.simulate_keystrokes("enter");
         assert!(text(cx).ends_with("[[Test]]"));
-        cx.simulate_keystrokes("ctrl-p");
+        cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("Idées");
         cx.simulate_keystrokes("enter");
         assert_eq!(text(cx), "# Idées\n\n");
@@ -981,7 +982,7 @@ mod tests {
 
 
         // Copie rapide de toute la note.
-        cx.simulate_keystrokes("ctrl-shift-c");
+        cx.simulate_keystrokes("secondary-shift-c");
         let clipboard = cx.read_from_clipboard().and_then(|item| item.text());
         assert_eq!(clipboard.as_deref(), Some("# Idées\n\n"));
 
