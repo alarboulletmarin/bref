@@ -1,6 +1,6 @@
 pkgbase = encre
 	pkgdesc = Fast, minimal Markdown note-taking app
-	pkgver = 0.1.1
+	pkgver = 0.1.2
 	pkgrel = 1
 	url = https://github.com/alarboulletmarin/encre
 	arch = x86_64
@@ -16,7 +16,7 @@ pkgbase = encre
 	depends = vulkan-icd-loader
 	optdepends = vulkan-driver: a Vulkan driver for your GPU is required to open the window
 	options = !debug
-	source = encre-0.1.1.tar.gz::https://github.com/alarboulletmarin/encre/archive/refs/tags/v0.1.1.tar.gz
-	sha256sums = 490e535e538adc73c9f1965ae25bb25b264ed511b9b9ef2d76c1970648829dc2
+	source = encre-0.1.2.tar.gz::https://github.com/alarboulletmarin/encre/archive/refs/tags/v0.1.2.tar.gz
+	sha256sums = 0263dc1015478d600dd7cd5aae83d58ae77e7bcf11514c06c36a0a07f808033b
 
 pkgname = encre
