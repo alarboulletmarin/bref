@@ -362,7 +362,77 @@ impl Shell {
             }
             None => window.focus(&this.focus),
         }
+        this.watch(cx);
         this
+    }
+
+    /// Suit ce que d'autres programmes changent dans le coffre : notes ajoutées,
+    /// renommées, supprimées, ou modifiées pendant qu'elles sont affichées.
+    // ponytail: l'empreinte du coffre (noms et dates, sans lire les fichiers) est
+    // recalculée toutes les 2 s, hors du thread UI, plutôt que d'écouter le système
+    // de fichiers ; passer à inotify et ses équivalents (crate `notify`) si un
+    // coffre de dizaines de milliers de notes rend ce parcours coûteux.
+    fn watch(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let mut last = None;
+            loop {
+                cx.background_executor().timer(Duration::from_secs(2)).await;
+                let Ok(state) = this.update(cx, |this, _| this.vault.clone().map(|root| (root, this.save_gen)))
+                else {
+                    return;
+                };
+                let Some((root, generation)) = state else {
+                    continue;
+                };
+                let known = last.clone();
+                let scanned = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let print = vault::fingerprint(&root);
+                        (known != Some((root.clone(), print))).then(|| (vault::scan(&root), root, print))
+                    })
+                    .await;
+                let Some(((notes, dirs), root, print)) = scanned else {
+                    continue;
+                };
+                this.update(cx, |this, cx| {
+                    // Une frappe ou un enregistrement pendant la lecture : on réessaie au prochain tour.
+                    if this.vault.as_ref() == Some(&root) && this.save_gen == generation && !this.dirty {
+                        this.sync(notes, dirs, cx);
+                        last = Some((root, print));
+                    }
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// Aligne l'app sur le coffre tel qu'il vient d'être relu.
+    fn sync(&mut self, notes: Vec<Note>, mut dirs: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let shape = |notes: &[Note]| {
+            let mut shape: Vec<_> = notes.iter().map(|n| (n.path.clone(), n.tags.clone(), n.links.clone())).collect();
+            shape.sort();
+            shape
+        };
+        dirs.sort();
+        self.dirs.sort();
+        if shape(&notes) != shape(&self.notes) || dirs != self.dirs {
+            self.notes = notes;
+            self.dirs = dirs;
+            self.push_names(cx);
+            self.graph_stale = true;
+            self.refresh_graph(cx);
+            cx.notify();
+        }
+        // La note affichée a été réécrite ailleurs : on la relit. Sans modification
+        // en attente ici (l'appelant s'en assure), rien n'est perdu.
+        if let Some(path) = &self.path
+            && let Ok(text) = fs::read_to_string(path)
+            && text != self.editor.read(cx).text()
+        {
+            self.reload(cx);
+        }
     }
 
     fn set_vault(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -1643,6 +1713,17 @@ mod tests {
             s.notes.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
         });
         assert_eq!(left, ["Idées"]);
+
+        // Ce qu'un autre programme change dans le coffre apparaît sans rien faire : une
+        // note ajoutée, puis la note affichée réécrite ailleurs.
+        fs::write(root.join("Ailleurs.md"), "# Ailleurs\n").unwrap();
+        fs::write(root.join("Idées.md"), "# Idées\n\nréécrite\n").unwrap();
+        shell.update(cx, |s, cx| s.open_note(&root.join("Idées.md"), cx));
+        fs::write(root.join("Idées.md"), "# Idées\n\nréécrite ailleurs\n").unwrap();
+        cx.executor().advance_clock(Duration::from_secs(3));
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Ailleurs")));
+        assert_eq!(text(cx), "# Idées\n\nréécrite ailleurs\n");
 
         // Un titre `#` ajouté en tête d'une note qui n'en avait pas : le fichier prend
         // son nom. Sans titre touché, une note au nom libre garde le sien.

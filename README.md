@@ -241,6 +241,7 @@ Tables and footnotes are kept as you typed them, without special rendering. So a
 ## Notes and vault
 
 - A vault is an ordinary folder. Notes in subfolders are found too; hidden folders (`.git`, `.obsidian`…) are ignored. New notes are created at the top of the vault, or in the selected folder when the tree is on display.
+- What other programs change in the vault (a sync tool, a script, another editor) is picked up within two seconds, without restarting.
 - A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
 - A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) keeps its name, until you add or change a `# ` title on its first line: the file then takes that name, as in Obsidian.
 - `[[Groceries]]` finds the note by file name, in any subfolder, ignoring case.
@@ -275,7 +276,7 @@ Tables and footnotes are kept as you typed them, without special rendering. So a
 
 **A note was not renamed after I changed its title.** Either another note already has that name, or the file name did not match the first line to begin with and that line is not a `# ` title you just added or changed, see [Notes and vault](#notes-and-vault).
 
-**I edited a note in another program while it was open in encre.** encre does not watch files: it keeps its own version and writes it back on the next edit. Switch to another note and back to reload it from disk.
+**I changed the vault from another program while encre was open.** encre looks at the vault every two seconds: notes and folders added, renamed or removed elsewhere show up in the tree, the palette and the graph, and the note on display is read again when its file changes. If you were typing in that note at that moment, your version is kept and written back.
 
 **Limits.** The name field of a new folder or a rename only edits at its end: type, or erase with Backspace. Links written as plain text inside a code block are not followed when a note is renamed. No full-text search: the palette matches note names and tags.
 

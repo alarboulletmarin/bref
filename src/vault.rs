@@ -1,7 +1,9 @@
 //! Coffre : un dossier de fichiers `.md`, plus la petite config de l'app.
 
 use std::{
-    env, fs, io,
+    env, fs,
+    hash::{DefaultHasher, Hash, Hasher},
+    io,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -91,6 +93,33 @@ pub fn stem(path: &Path) -> String {
     path.file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+/// Empreinte de l'état du coffre : les chemins de ses notes et dossiers, et la
+/// date de chaque note. Elle change dès qu'un autre programme y touche, sans
+/// qu'il faille lire un seul fichier.
+pub fn fingerprint(root: &Path) -> u64 {
+    let mut seen = Vec::new();
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            if path.is_dir() {
+                seen.push((path.clone(), None));
+                dirs.push(path);
+            } else if path.extension().is_some_and(|e| e == "md") {
+                seen.push((path, entry.metadata().and_then(|m| m.modified()).ok()));
+            }
+        }
+    }
+    // L'ordre de lecture d'un dossier n'est pas garanti.
+    seen.sort();
+    let mut hasher = DefaultHasher::new();
+    seen.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Toutes les notes du coffre (récursif, dossiers cachés ignorés), plus récentes
@@ -285,6 +314,12 @@ mod tests {
         assert_eq!(save(&root, Some(&b), false, "# Z\n").unwrap(), b);
         assert_eq!(fs::read_to_string(&b).unwrap(), "# Z\n");
         assert_eq!(scan(&root).0.len(), 2);
+        // L'empreinte du coffre suit ce qu'un autre programme y change.
+        let before = fingerprint(&root);
+        assert_eq!(before, fingerprint(&root));
+        fs::write(root.join("ailleurs.md"), "x").unwrap();
+        assert_ne!(before, fingerprint(&root));
+        fs::remove_file(root.join("ailleurs.md")).unwrap();
 
         // Renommer une note accordée à son titre réécrit ce titre ; sinon le texte reste tel quel.
         let c = rename_note(&root.join("A 2.md"), "C").unwrap();
