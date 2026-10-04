@@ -185,6 +185,8 @@ The same keys work in the three views:
 | `←` `→` | tree: fold or unfold a folder; graph: move to the nearest note on that side |
 | `Tab` | graph: walk through the notes linked to the selected one |
 | `Esc` | back to the note |
+| `F2`, `Delete` | tree and recent: rename the selected line, move it to the trash |
+| `Ctrl + Shift + N` | new folder, next to the selected line of the tree |
 
 A previewed note only counts as opened, and moves to the top of the recent list, once you click or type in it.
 
@@ -192,6 +194,10 @@ A previewed note only counts as opened, and moves to the top of the recent list,
 - **Folding**: pressing the key of the view on display, or clicking its icon, folds the panel. The rail stays, with the three views, search, new note and help one click away.
 - **Graph**: drag the background to move around and scroll to zoom. Pointing at a note lights up the notes it is linked to. The target button fits the whole graph in view. With the graph on the whole window, a click only selects: `Enter` or a double click brings the note back.
 - **New note from the tree**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line.
+- **Right click** on a line for its menu: open, new note here, new folder, copy the `[[link]]`, rename, move to the trash. A right click below the last line acts on the vault itself.
+- **Drag and drop**: in the tree, drag a note or a folder onto a folder to move it there, or below the last line to move it to the top of the vault. Nothing is ever overwritten: if the name is taken, the move is refused.
+- **Renaming** a note whose first line is its name rewrites that line too, so both stay in step. `[[links]]` to the old name are not updated.
+- **The trash** is the hidden folder `.trash` at the top of the vault: deleting moves the note or the folder there, and never destroys anything. Empty it, or take a note back, with your file manager.
 
 encre reopens with the panel as you left it.
 
@@ -253,7 +259,7 @@ Tables, images and footnotes are kept as you typed them, without special renderi
 
 **I edited a note in another program while it was open in encre.** encre does not watch files: it keeps its own version and writes it back on the next edit. Switch to another note and back to reload it from disk.
 
-**Limits.** No way to delete, move or rename a file from the app yet, nor to create a folder (use your file manager). Renaming a note does not update the `[[links]]` pointing to it. No full-text search: the palette matches note names and tags.
+**Limits.** The name field of a new folder or a rename only edits at its end: type, or erase with Backspace. Renaming a note does not update the `[[links]]` pointing to it. No full-text search: the palette matches note names and tags.
 
 ## How it works
 
@@ -261,7 +267,7 @@ Tables, images and footnotes are kept as you typed them, without special renderi
 - **Typing rules** (`src/markdown.rs`): pure functions decide what Enter and Tab do on a line and renumber the list around the cursor. They are unit-tested without any UI.
 - **Vault** (`src/vault.rs`): the note list and its tags are indexed off the UI thread when the vault opens, then kept up to date on each save.
 - **Palette**: substring matches first, ranked by position, then subsequence matches; ties keep the most recently opened note first.
-- **Navigation** (`src/nav.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. A folder that holds no note is not shown.
+- **Navigation** (`src/nav.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. 
 - **Graph** (`src/graph.rs`): a force-directed layout computed off the UI thread when the links change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
 - **Startup**: the last note is read before the first frame, so the window appears with its content. Icons are embedded in the binary.
 - **Window**: on Linux encre draws its own title bar, shadow and resize edges (client-side decorations); on macOS and Windows the system does.
@@ -274,7 +280,7 @@ cargo run --release       # what gets installed
 make test                 # cargo test --locked
 ```
 
-The tests include an end-to-end run driven by simulated keystrokes (typing, lists, autosave, palette, links, navigation panel), using GPUI's test platform: no display needed.
+The tests include an end-to-end run driven by simulated keystrokes (typing, lists, autosave, palette, links, navigation panel, file operations), using GPUI's test platform: no display needed.
 
 `Cargo.lock` started as a copy of the one GPUI 0.2.2 was published with: newer versions of some of its dependencies no longer build together. Update dependencies one at a time.
 

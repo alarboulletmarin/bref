@@ -2,22 +2,26 @@
 //! coffre, notes récentes ou graphe) qui partage la fenêtre avec la note.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
+    fs,
     ops::Range,
     path::{Path, PathBuf},
 };
 
 use gpui::{
-    Context, CursorStyle, Div, FocusHandle, Focusable, MouseButton, MouseDownEvent, Pixels, ScrollStrategy,
-    Stateful, UniformListScrollHandle, Window, actions, div, prelude::*, px, svg, uniform_list,
+    ClickEvent, ClipboardItem, Context, CursorStyle, Div, FocusHandle, Focusable, MouseButton,
+    MouseDownEvent, Pixels, Point, ScrollStrategy, Stateful, UniformListScrollHandle, Window,
+    actions, div, point, prelude::*, px, svg, uniform_list,
 };
 
 use crate::{
-    Shell, Theme, tr,
+    Shell, Theme,
+    palette::{Palette, PaletteEvent},
+    tr,
     vault::{self, Note},
 };
 
-actions!(nav, [ShowTree, ShowRecent, ShowGraph, ToggleFull, Prev, Next, Fold, Unfold, Open, Close]);
+actions!(nav, [ShowTree, ShowRecent, ShowGraph, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Trash]);
 
 const RAIL: Pixels = px(40.);
 const ROW: Pixels = px(26.);
@@ -45,6 +49,46 @@ pub struct Row {
     pub depth: usize,
     /// Dossier, déplié ou non ; `None` pour une note.
     pub dir: Option<bool>,
+}
+
+/// Menu contextuel : où il s'ouvre et la ligne visée (`None` : le coffre lui-même).
+pub struct Menu {
+    at: Point<Pixels>,
+    target: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy)]
+enum Do {
+    Open,
+    NewNote,
+    NewFolder,
+    Rename,
+    Trash,
+    CopyLink,
+}
+
+/// Ligne de l'arbre en cours de glisser-déposer ; dessinée sous le pointeur.
+#[derive(Clone)]
+struct Dragged {
+    path: PathBuf,
+    name: String,
+    theme: Theme,
+}
+
+impl Render for Dragged {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let t = self.theme;
+        div()
+            .px_2()
+            .py_1()
+            .rounded(px(5.))
+            .bg(t.panel)
+            .border_1()
+            .border_color(t.border)
+            .text_size(px(13.))
+            .text_color(t.text)
+            .child(self.name.clone())
+    }
 }
 
 pub struct Nav {
@@ -144,57 +188,58 @@ impl Nav {
 }
 
 /// Lignes visibles de l'arbre : dossiers d'abord, puis notes, par ordre
-/// alphabétique ; le contenu des dossiers repliés est omis.
-// ponytail: retrié à chaque frame où le panneau est visible (quelques ms pour des
-// milliers de notes) ; mettre en cache si l'arbre devient très gros.
-pub fn tree_rows(root: &Path, notes: &[Note], open: &HashSet<PathBuf>) -> Vec<Row> {
-    let key = |note: &Note| -> Vec<(bool, String)> {
-        let rel = note.path.strip_prefix(root).unwrap_or(&note.path);
-        let last = rel.components().count().saturating_sub(1);
-        rel.components()
-            .enumerate()
-            .map(|(i, c)| (i == last, c.as_os_str().to_string_lossy().to_lowercase()))
-            .collect()
-    };
-    let mut sorted: Vec<&Note> = notes.iter().collect();
-    sorted.sort_by_cached_key(|n| key(n));
+/// alphabétique ; le contenu des dossiers repliés est omis. `dirs` apporte les
+/// dossiers sans note.
+// ponytail: reconstruit à chaque frame où le panneau est visible (quelques ms pour
+// des milliers de notes) ; mettre en cache si l'arbre devient très gros.
+pub fn tree_rows(root: &Path, notes: &[Note], dirs: &[PathBuf], open: &HashSet<PathBuf>) -> Vec<Row> {
+    let mut all: HashSet<&Path> = dirs.iter().map(PathBuf::as_path).collect();
+    let mut files: HashMap<&Path, Vec<&Note>> = HashMap::new();
+    for note in notes {
+        let parents = note.path.ancestors().skip(1).take_while(|a| *a != root && a.starts_with(root));
+        all.extend(parents);
+        files.entry(note.path.parent().unwrap_or(root)).or_default().push(note);
+    }
+    let mut folders: HashMap<&Path, Vec<&Path>> = HashMap::new();
+    for dir in all {
+        folders.entry(dir.parent().unwrap_or(root)).or_default().push(dir);
+    }
+    let label = |dir: &Path| dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    folders.values_mut().for_each(|f| f.sort_by_cached_key(|d| label(d).to_lowercase()));
+    files.values_mut().for_each(|f| f.sort_by_cached_key(|n| n.name.to_lowercase()));
 
     let mut rows = Vec::new();
-    let mut prev: Vec<PathBuf> = Vec::new();
-    for note in sorted {
-        let rel = note.path.strip_prefix(root).unwrap_or(&note.path);
-        let mut dirs = Vec::new();
-        let mut dir = root.to_path_buf();
-        for part in rel.parent().into_iter().flat_map(Path::components) {
-            dir.push(part);
-            dirs.push(dir.clone());
-        }
-        let mut visible = true;
-        for (depth, dir) in dirs.iter().enumerate() {
-            if !visible {
-                break;
+    // Parcours en profondeur : (dossier, profondeur de son contenu), sous-dossiers d'abord.
+    fn walk(
+        dir: &Path,
+        depth: usize,
+        folders: &HashMap<&Path, Vec<&Path>>,
+        files: &HashMap<&Path, Vec<&Note>>,
+        open: &HashSet<PathBuf>,
+        rows: &mut Vec<Row>,
+    ) {
+        for sub in folders.get(dir).into_iter().flatten() {
+            let unfolded = open.contains(*sub);
+            rows.push(Row {
+                path: sub.to_path_buf(),
+                name: sub.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+                depth,
+                dir: Some(unfolded),
+            });
+            if unfolded {
+                walk(sub, depth + 1, folders, files, open, rows);
             }
-            let unfolded = open.contains(dir);
-            if prev.get(depth) != Some(dir) {
-                rows.push(Row {
-                    path: dir.clone(),
-                    name: vault::stem(dir),
-                    depth,
-                    dir: Some(unfolded),
-                });
-            }
-            visible = unfolded;
         }
-        if visible {
+        for note in files.get(dir).into_iter().flatten() {
             rows.push(Row {
                 path: note.path.clone(),
                 name: note.name.clone(),
-                depth: dirs.len(),
+                depth,
                 dir: None,
             });
         }
-        prev = dirs;
     }
+    walk(root, 0, &folders, &files, open, &mut rows);
     rows
 }
 
@@ -298,7 +343,7 @@ impl Shell {
             return Vec::new();
         };
         match self.nav.mode {
-            Mode::Tree => tree_rows(root, &self.notes, &self.nav.open),
+            Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.nav.open),
             Mode::Graph => Vec::new(),
             Mode::Recent => self
                 .by_recency()
@@ -395,6 +440,270 @@ impl Shell {
         cx.notify();
     }
 
+    /// Ctrl+Maj+N : nouveau dossier dans l'arbre, à côté de la sélection.
+    pub fn new_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_none() {
+            return;
+        }
+        if self.nav.panel == Panel::Rail || self.nav.mode != Mode::Tree {
+            self.show_nav(Mode::Tree, false, window, cx);
+        }
+        self.menu_do(Do::NewFolder, self.nav.sel.clone(), window, cx);
+    }
+
+    /// Exécute une entrée du menu contextuel sur `target` (`None` : le coffre).
+    fn menu_do(&mut self, what: Do, target: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
+        self.menu = None;
+        cx.notify();
+        let Some(root) = self.vault.clone() else {
+            return;
+        };
+        let is_dir = target.as_ref().is_none_or(|t| self.dirs.contains(t));
+        // Dossier visé : la cible elle-même, ou celui qui contient la note.
+        let dir = match &target {
+            Some(t) if is_dir => t.clone(),
+            Some(t) => t.parent().map_or(root.clone(), Path::to_path_buf),
+            None => root.clone(),
+        };
+        match (what, target) {
+            (Do::Open, Some(path)) => self.open_from_nav(&path, window, cx),
+            (Do::NewNote, _) => {
+                self.nav.open.insert(dir.clone());
+                self.nav.sel = Some(dir);
+                self.new_note_here(window, cx);
+            }
+            (Do::NewFolder, _) => {
+                let label = tr("New folder: its name", "Nouveau dossier : son nom");
+                self.ask(label, "", window, cx, move |this, name, _| {
+                    let new = dir.join(name);
+                    match fs::create_dir(&new) {
+                        Ok(()) => {
+                            this.nav.open.insert(dir.clone());
+                            this.dirs.push(new.clone());
+                            this.nav.reveal(&new);
+                        }
+                        Err(e) => this.fail(tr("Folder not created", "Dossier non créé"), e),
+                    }
+                });
+            }
+            (Do::Rename, Some(path)) => {
+                let label = tr("Rename: new name", "Renommer : nouveau nom");
+                let current = if is_dir { path.file_name().unwrap_or_default().to_string_lossy().into_owned() } else { vault::stem(&path) };
+                self.ask(label, &current.clone(), window, cx, move |this, name, cx| {
+                    if name == current {
+                        return;
+                    }
+                    this.flush(cx);
+                    let renamed = if is_dir {
+                        let to = path.with_file_name(&name);
+                        vault::rename(&path, &to).map(|()| to)
+                    } else {
+                        vault::rename_note(&path, &name)
+                    };
+                    match renamed {
+                        // Le titre d'une note renommée a pu changer : on la relit.
+                        Ok(to) => this.relocate(&path, &to, !is_dir, cx),
+                        Err(e) => this.fail(tr("Not renamed", "Renommage impossible"), e),
+                    }
+                });
+            }
+            (Do::Trash, Some(path)) => self.trash(&root, &path, cx),
+            (Do::CopyLink, Some(path)) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(format!("[[{}]]", vault::stem(&path))));
+            }
+            _ => {}
+        }
+    }
+
+    fn fail(&mut self, what: &str, e: std::io::Error) {
+        self.error = Some(format!("{what} : {e}"));
+    }
+
+    /// Demande un nom dans un champ de saisie, puis appelle `then` avec ce nom nettoyé.
+    fn ask(
+        &mut self,
+        label: &'static str,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        then: impl Fn(&mut Self, String, &mut Context<Self>) + 'static,
+    ) {
+        let theme = self.theme;
+        let prompt = cx.new(|cx| Palette::prompt(label, text, theme, cx));
+        cx.subscribe_in(&prompt, window, move |this, _, event, window, cx| {
+            this.palette = None;
+            window.focus(&this.nav.focus);
+            if let PaletteEvent::Submit(text) = event
+                && let Some(name) = vault::clean_name(text)
+            {
+                then(this, name, cx);
+            }
+            cx.notify();
+        })
+        .detach();
+        window.focus(&prompt.focus_handle(cx));
+        self.palette = Some(prompt);
+        cx.notify();
+    }
+
+    /// Range la note ou le dossier `from` dans le dossier `dir`.
+    pub fn move_into(&mut self, from: &Path, dir: &Path, cx: &mut Context<Self>) {
+        // Déjà dans ce dossier, ou dossier déposé dans lui-même : rien à faire.
+        if from.parent() == Some(dir) || dir.starts_with(from) {
+            return;
+        }
+        let Some(name) = from.file_name() else {
+            return;
+        };
+        let to = dir.join(name);
+        self.flush(cx);
+        match vault::rename(from, &to) {
+            Ok(()) => {
+                self.nav.open.insert(dir.to_path_buf());
+                self.relocate(from, &to, false, cx);
+            }
+            Err(e) => self.fail(tr("Not moved", "Déplacement impossible"), e),
+        }
+    }
+
+    /// `from` est devenu `to` sur le disque : tout ce que l'app en sait suit.
+    fn relocate(&mut self, from: &Path, to: &Path, reload: bool, cx: &mut Context<Self>) {
+        let shift = |p: &PathBuf| match p.strip_prefix(from) {
+            Ok(rest) if rest.as_os_str().is_empty() => to.to_path_buf(),
+            Ok(rest) => to.join(rest),
+            Err(_) => p.clone(),
+        };
+        for note in &mut self.notes {
+            note.path = shift(&note.path);
+            note.name = vault::stem(&note.path);
+        }
+        self.dirs = self.dirs.iter().map(shift).collect();
+        self.recent = self.recent.iter().map(shift).collect();
+        self.nav.open = self.nav.open.iter().map(shift).collect();
+        self.new_dir = self.new_dir.as_ref().map(shift);
+        self.path = self.path.as_ref().map(shift);
+        if reload
+            && let Some(path) = self.path.clone().filter(|p| p == to)
+        {
+            let preview = self.preview;
+            self.load_note(&path, cx);
+            self.preview = preview;
+        }
+        self.nav.reveal(to);
+        self.files_changed(cx);
+    }
+
+    /// Met à la corbeille du coffre (`.trash`) la note ou le dossier.
+    fn trash(&mut self, root: &Path, path: &Path, cx: &mut Context<Self>) {
+        self.flush(cx);
+        if let Err(e) = vault::trash(root, path) {
+            return self.fail(tr("Not moved to the trash", "Mise à la corbeille impossible"), e);
+        }
+        let gone = |p: &PathBuf| p.starts_with(path);
+        self.notes.retain(|n| !gone(&n.path));
+        self.dirs.retain(|d| !gone(d));
+        self.recent.retain(|p| !gone(p));
+        self.nav.sel = None;
+        if self.path.as_ref().is_some_and(gone) {
+            self.path = None;
+            self.new_note(String::new(), cx);
+        }
+        self.files_changed(cx);
+    }
+
+    /// Après un déplacement ou une suppression : config, complétion et graphe à jour.
+    fn files_changed(&mut self, cx: &mut Context<Self>) {
+        if let Some(root) = &self.vault {
+            vault::save_config(root, &self.recent);
+        }
+        self.error = None;
+        self.push_names(cx);
+        self.graph_stale = true;
+        self.refresh_graph(cx);
+        cx.notify();
+    }
+
+    /// Menu contextuel, par-dessus toute la fenêtre : un clic ailleurs le ferme.
+    pub fn render_menu(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let menu = self.menu.as_ref()?;
+        let t = self.theme;
+        let is_dir = menu.target.as_ref().is_none_or(|p| self.dirs.contains(p));
+        let tree = self.nav.mode == Mode::Tree;
+        let mut items: Vec<(&'static str, Do)> = Vec::new();
+        if !is_dir {
+            items.push((tr("Open", "Ouvrir"), Do::Open));
+        }
+        if tree {
+            items.push((tr("New note here", "Nouvelle note ici"), Do::NewNote));
+            items.push((tr("New folder", "Nouveau dossier"), Do::NewFolder));
+        }
+        if menu.target.is_some() {
+            if !is_dir {
+                items.push((tr("Copy the [[link]]", "Copier le [[lien]]"), Do::CopyLink));
+            }
+            items.push((tr("Rename", "Renommer"), Do::Rename));
+            items.push((tr("Move to the trash", "Mettre à la corbeille"), Do::Trash));
+        }
+        // Le menu reste dans la fenêtre, même ouvert près d'un bord.
+        let view = window.viewport_size();
+        let (width, height) = (px(210.), px(28. * items.len() as f32 + 10.));
+        let at = point(
+            (menu.at.x - self.nav.left).min(view.width - self.nav.left * 2. - width - px(8.)),
+            (menu.at.y - self.nav.left).min(view.height - self.nav.left * 2. - height - px(8.)),
+        );
+        let target = menu.target.clone();
+        let rows = items.into_iter().enumerate().map(|(i, (label, what))| {
+            let target = target.clone();
+            div()
+                .id(i)
+                .h(px(28.))
+                .mx_1()
+                .px_2()
+                .flex()
+                .items_center()
+                .rounded(px(5.))
+                .hover(|s| s.bg(t.selection))
+                .when(matches!(what, Do::Trash), |d| d.text_color(t.accent))
+                .child(label)
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.menu_do(what, target.clone(), window, cx)
+                    }),
+                )
+        });
+        let close = || {
+            cx.listener(|this: &mut Self, _: &MouseDownEvent, _, cx| {
+                this.menu = None;
+                cx.notify();
+            })
+        };
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .occlude()
+                .on_mouse_down(MouseButton::Left, close())
+                .on_mouse_down(MouseButton::Right, close())
+                .child(
+                    div()
+                        .absolute()
+                        .left(at.x)
+                        .top(at.y)
+                        .w(width)
+                        .py(px(5.))
+                        .bg(t.panel)
+                        .border_1()
+                        .border_color(t.border)
+                        .rounded(px(8.))
+                        .shadow_lg()
+                        .text_size(px(13.))
+                        .children(rows),
+                ),
+        )
+    }
+
     fn render_rows(
         &mut self,
         range: Range<usize>,
@@ -454,6 +763,13 @@ impl Shell {
                                 .text_color(t.dim)
                                 .child(detail),
                         );
+                let (path, name) = (row.path.clone(), row.name.clone());
+                // Déposer sur une note range dans le dossier de cette note.
+                let into = match row.dir {
+                    Some(_) => Some(path.clone()),
+                    None => path.parent().map(Path::to_path_buf),
+                };
+                let target = path.clone();
                 Some(
                     div()
                         .id(ix)
@@ -461,17 +777,37 @@ impl Shell {
                         .h(ROW)
                         .px_1()
                         .child(line)
+                        .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
+                            let folder = this.nav.rows.get(ix).is_some_and(|r| r.dir.is_some());
+                            if folder || e.click_count() >= 2 {
+                                this.nav_activate(ix, window, cx)
+                            } else {
+                                this.nav_select(ix, cx)
+                            }
+                        }))
                         .on_mouse_down(
-                            MouseButton::Left,
+                            MouseButton::Right,
                             cx.listener(move |this, e: &MouseDownEvent, window, cx| {
-                                let folder = this.nav.rows.get(ix).is_some_and(|r| r.dir.is_some());
-                                if folder || e.click_count >= 2 {
-                                    this.nav_activate(ix, window, cx)
-                                } else {
-                                    this.nav_select(ix, cx)
-                                }
+                                this.nav.sel = Some(target.clone());
+                                this.menu = Some(Menu { at: e.position, target: Some(target.clone()) });
+                                window.focus(&this.nav.focus);
+                                cx.stop_propagation();
+                                cx.notify();
                             }),
-                        ),
+                        )
+                        .when(tree, |d| {
+                            d.on_drag(Dragged { path, name, theme: t }, |dragged, _, _, cx| {
+                                cx.new(|_| dragged.clone())
+                            })
+                            .when(row.dir.is_some(), |d| {
+                                d.drag_over::<Dragged>(move |style, _, _, _| style.bg(t.selection))
+                            })
+                            .on_drop(cx.listener(move |this, dragged: &Dragged, _, cx| {
+                                if let Some(into) = &into {
+                                    this.move_into(&dragged.path, into, cx)
+                                }
+                            }))
+                        }),
                 )
             })
             .collect()
@@ -548,7 +884,10 @@ impl Shell {
                 )))
             })
             .when(mode == Mode::Tree, |d| {
-                d.child(button("nav-fold", "fold.svg", false, t).on_click(cx.listener(
+                d.child(button("nav-folder", "folder-plus.svg", false, t).on_click(cx.listener(
+                    |this, _, window, cx| this.menu_do(Do::NewFolder, this.nav.sel.clone(), window, cx),
+                )))
+                .child(button("nav-fold", "fold.svg", false, t).on_click(cx.listener(
                     |this, _, _, cx| {
                         this.nav.open.clear();
                         cx.notify();
@@ -562,7 +901,22 @@ impl Shell {
         let list = uniform_list("nav-rows", self.nav.rows.len(), cx.processor(Self::render_rows))
             .track_scroll(self.nav.scroll.clone())
             .flex_1()
-            .min_h_0();
+            .min_h_0()
+            // Hors de toute ligne : déposer range à la racine, le clic droit vise le coffre.
+            .when(mode == Mode::Tree, |d| {
+                d.on_drop(cx.listener(|this, dragged: &Dragged, _, cx| {
+                    if let Some(root) = this.vault.clone() {
+                        this.move_into(&dragged.path, &root, cx)
+                    }
+                }))
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, e: &MouseDownEvent, _, cx| {
+                        this.menu = Some(Menu { at: e.position, target: None });
+                        cx.notify();
+                    }),
+                )
+            });
         let room = self.nav.total - RAIL;
         let width = match *self.nav.width() {
             w if w == px(0.) => room / 2.,
@@ -585,7 +939,18 @@ impl Shell {
                     this.nav_activate(ix, window, cx)
                 }
             }))
+            .when(mode != Mode::Graph, |d| {
+                d.on_action(cx.listener(|this, _: &Rename, window, cx| {
+                    this.menu_do(Do::Rename, this.nav.sel.clone(), window, cx)
+                }))
+                .on_action(cx.listener(|this, _: &Trash, window, cx| {
+                    this.menu_do(Do::Trash, this.nav.sel.clone(), window, cx)
+                }))
+            })
             .on_action(cx.listener(|this, _: &Close, window, cx| {
+                if this.menu.take().is_some() {
+                    return cx.notify();
+                }
                 if this.nav.panel == Panel::Full {
                     this.nav.panel = Panel::Split;
                 }
@@ -646,16 +1011,17 @@ mod tests {
         let notes = [note("b.md"), note("Z/x.md"), note("a/c/d.md"), note("a/B.md"), note("A.md")];
         let shown = |open: &[&str]| -> Vec<String> {
             let open = open.iter().map(|d| root.join(d)).collect();
-            tree_rows(root, &notes, &open)
+            tree_rows(root, &notes, &[root.join("a/vide"), root.join("a")], &open)
                 .iter()
                 .map(|r| format!("{}{}{}", "  ".repeat(r.depth), r.name, if r.dir.is_some() { "/" } else { "" }))
                 .collect()
         };
         // Dossiers d'abord, sans tenir compte de la casse ; tout est replié.
         assert_eq!(shown(&[]), ["a/", "Z/", "A", "b"]);
-        assert_eq!(shown(&["a"]), ["a/", "  c/", "  B", "Z/", "A", "b"]);
+        // Un dossier sans note apparaît aussi.
+        assert_eq!(shown(&["a"]), ["a/", "  c/", "  vide/", "  B", "Z/", "A", "b"]);
         // Un dossier déplié dans un dossier replié reste caché.
         assert_eq!(shown(&["a/c", "Z"]), ["a/", "Z/", "  x", "A", "b"]);
-        assert_eq!(shown(&["a", "a/c"]), ["a/", "  c/", "    d", "  B", "Z/", "A", "b"]);
+        assert_eq!(shown(&["a", "a/c"]), ["a/", "  c/", "    d", "  vide/", "  B", "Z/", "A", "b"]);
     }
 }

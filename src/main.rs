@@ -91,6 +91,9 @@ impl AssetSource for Assets {
                 r#"<circle cx="4" cy="11.5" r="1.7"/><circle cx="11.5" cy="4.5" r="1.7"/><circle cx="12" cy="12" r="1.3"/><path d="M5.3 10.3L10.2 5.7M11.6 6.2L11.9 10.7"/>"#
             }
             "target.svg" => r#"<circle cx="8" cy="8" r="2"/><path d="M8 2.5V5M8 11V13.5M2.5 8H5M11 8H13.5"/>"#,
+            "folder-plus.svg" => {
+                r#"<path d="M2.5 4.5A1 1 0 0 1 3.5 3.5H6.5L8 5H12.5A1 1 0 0 1 13.5 6V11.5A1 1 0 0 1 12.5 12.5H3.5A1 1 0 0 1 2.5 11.5Z"/><path d="M8 7.2V10.4M6.4 8.8H9.6"/>"#
+            }
             "fold.svg" => r#"<path d="M4.5 3.5L8 6.5L11.5 3.5M4.5 12.5L8 9.5L11.5 12.5"/>"#,
             "expand.svg" => r#"<path d="M9.5 3.5H12.5V6.5M6.5 12.5H3.5V9.5M12.5 3.5L9 7M3.5 12.5L7 9"/>"#,
             "shrink.svg" => r#"<path d="M12.5 6.5H9.5V3.5M3.5 9.5H6.5V12.5M9.5 6.5L13 3M6.5 9.5L3 13"/>"#,
@@ -158,6 +161,10 @@ struct Shell {
     palette: Option<Entity<Palette>>,
     vault: Option<PathBuf>,
     notes: Vec<Note>,
+    /// Dossiers du coffre, y compris ceux qui ne contiennent aucune note.
+    dirs: Vec<PathBuf>,
+    /// Menu contextuel de l'arbre, s'il est ouvert.
+    menu: Option<nav::Menu>,
     /// Notes ouvertes, de la plus récente à la plus ancienne.
     recent: Vec<PathBuf>,
     /// Fichier de la note ouverte ; `None` tant qu'une nouvelle note n'est pas enregistrée.
@@ -220,6 +227,8 @@ impl Shell {
             palette: None,
             vault: None,
             notes: Vec::new(),
+            dirs: Vec::new(),
+            menu: None,
             recent: Vec::new(),
             path: None,
             synced: true,
@@ -254,6 +263,7 @@ impl Shell {
         self.flush(cx);
         self.vault = Some(root.clone());
         self.notes.clear();
+        self.dirs.clear();
         self.recent.clear();
         self.new_note(String::new(), cx);
         vault::save_config(&root, &[]);
@@ -261,13 +271,14 @@ impl Shell {
         // L'index (noms, tags) se construit hors du thread UI.
         cx.spawn(async move |this, cx| {
             let scan_root = root.clone();
-            let notes = cx
+            let (notes, dirs) = cx
                 .background_executor()
                 .spawn(async move { vault::scan(&scan_root) })
                 .await;
             this.update(cx, |this, cx| {
                 if this.vault.as_ref() == Some(&root) {
                     this.notes = notes;
+                    this.dirs = dirs;
                     this.push_names(cx);
                     this.graph_stale = true;
                     this.refresh_graph(cx);
@@ -537,7 +548,7 @@ impl Shell {
                 PaletteEvent::Create(name) => this.open_wiki(name, cx),
                 PaletteEvent::ChangeVault => this.choose_vault(window, cx),
                 PaletteEvent::Help => this.set_help(true, window, cx),
-                PaletteEvent::Dismiss => {}
+                PaletteEvent::Dismiss | PaletteEvent::Submit(_) => {}
             }
             cx.notify();
         })
@@ -571,6 +582,8 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (m("M"), tr("Panel on the whole window", "Panneau en pleine fenêtre")),
                 (tr("Arrows / Tab", "Flèches / Tab").into(), tr("Select and preview / linked notes (graph)", "Sélectionner en aperçu / notes liées (graphe)")),
                 (tr("Enter / Esc", "Entrée / Échap").into(), tr("Open the note / back to the note", "Ouvrir la note / revenir à la note")),
+                (m("Shift+N"), tr("New folder", "Nouveau dossier")),
+                (tr("F2 / Delete", "F2 / Suppr").into(), tr("Rename / move to the trash", "Renommer / mettre à la corbeille")),
             ],
         ),
         (
@@ -843,6 +856,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &nav::ShowRecent, window, cx| {
                 this.show_nav(Mode::Recent, false, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &nav::NewFolder, window, cx| this.new_folder(window, cx)))
             .on_action(cx.listener(|this, _: &nav::ShowGraph, window, cx| {
                 this.show_nav(Mode::Graph, false, window, cx)
             }))
@@ -877,6 +891,7 @@ impl Render for Shell {
             .key_context("Shell")
             .when(client, |d| d.child(header))
             .child(body)
+            .children(self.render_menu(window, cx))
             .when(self.help, |d| d.child(self.render_help(cx)));
 
         // La marge transparente porte l'ombre et sert de poignée de redimensionnement.
@@ -956,6 +971,9 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-g", nav::ShowGraph, Some("Shell")),
         KeyBinding::new("secondary-m", nav::ToggleFull, Some("Shell")),
         KeyBinding::new("tab", graph::Cycle, n),
+        KeyBinding::new("secondary-shift-n", nav::NewFolder, Some("Shell")),
+        KeyBinding::new("f2", nav::Rename, n),
+        KeyBinding::new("delete", nav::Trash, n),
         KeyBinding::new("up", nav::Prev, n),
         KeyBinding::new("down", nav::Next, n),
         KeyBinding::new("left", nav::Fold, n),
@@ -1261,6 +1279,55 @@ mod tests {
         assert!(shell.read_with(cx, |s, _| s.nav.panel == Panel::Full && s.nav.sel != s.path));
         cx.simulate_keystrokes("enter");
         assert!(shell.read_with(cx, |s, _| s.nav.panel == Panel::Split && s.path != open));
+
+        // Fichiers. Ctrl+Maj+N affiche l'arbre et crée un dossier à côté de la sélection.
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("cou");
+        cx.simulate_keystrokes("enter secondary-shift-n");
+        cx.simulate_input("Archives: 2026");
+        cx.simulate_keystrokes("enter");
+        let archives = root.join("Archives 2026");
+        assert!(archives.is_dir());
+        assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.sel.clone())), (Mode::Tree, Some(archives.clone())));
+
+        // F2 renomme : le titre d'une note accordée à son nom suit, la liste des récents aussi.
+        shell.update(cx, |s, _| s.nav.sel = Some(root.join("Test.md")));
+        cx.simulate_keystrokes("f2");
+        cx.simulate_input("s");
+        cx.simulate_keystrokes("enter");
+        let renamed = fs::read_to_string(root.join("Tests.md")).unwrap();
+        assert!(renamed.starts_with("# Tests\n1. un") && !root.join("Test.md").exists());
+        assert!(shell.read_with(cx, |s, _| s.recent.contains(&root.join("Tests.md"))));
+
+        // Glisser-déposer : une note, puis un dossier entier, rangés dans un autre dossier.
+        shell.update(cx, |s, cx| {
+            s.move_into(&root.join("Tests.md"), &archives, cx);
+            s.move_into(&root.join("Projets"), &archives, cx);
+            // Un dossier ne se range pas dans lui-même.
+            s.move_into(&archives, &archives.join("Projets"), cx);
+        });
+        assert!(archives.join("Tests.md").is_file() && archives.join("Projets/Plan.md").is_file());
+        assert!(shell.read_with(cx, |s, _| {
+            s.dirs.contains(&archives.join("Projets"))
+                && s.recent.contains(&archives.join("Projets/Plan.md"))
+                && s.notes.iter().all(|n| n.path.is_file())
+        }));
+
+        // Suppr met à la corbeille du coffre, sans rien détruire ; la note ouverte laisse
+        // place à une note vide.
+        shell.update(cx, |s, _| s.nav.sel = Some(archives.clone()));
+        cx.simulate_keystrokes("delete");
+        assert!(root.join(".trash/Archives 2026/Projets/Plan.md").is_file() && !archives.exists());
+        assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[Test]]");
+        shell.update(cx, |s, _| s.nav.sel = Some(root.join("Courses.md")));
+        cx.simulate_keystrokes("delete");
+        assert!(root.join(".trash/Courses.md").is_file());
+        assert_eq!(text(cx), "");
+        let left = shell.read_with(cx, |s, _| {
+            assert!(s.dirs.is_empty() && s.path.is_none() && s.recent.iter().all(|p| p.is_file()));
+            s.notes.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
+        });
+        assert_eq!(left, ["Idées"]);
 
         fs::remove_dir_all(&root).unwrap();
     }

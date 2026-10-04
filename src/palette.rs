@@ -1,4 +1,5 @@
 //! Palette (Ctrl+P) : recherche de notes, filtre par `#tag`, création, coffre.
+//! Sert aussi de simple champ de saisie (nom d'un dossier, nouveau nom).
 
 use std::{ops::Range, path::PathBuf};
 
@@ -32,6 +33,8 @@ pub enum PaletteEvent {
     Create(String),
     ChangeVault,
     Help,
+    /// Texte validé dans un champ de saisie.
+    Submit(String),
     Dismiss,
 }
 
@@ -49,6 +52,8 @@ pub struct Palette {
     entries: Vec<Entry>,
     items: Vec<Item>,
     selected: usize,
+    /// Champ de saisie : son libellé. Aucune note n'est alors proposée.
+    prompt: Option<&'static str>,
     theme: Theme,
 }
 
@@ -81,13 +86,25 @@ impl Palette {
             entries,
             items: Vec::new(),
             selected: 0,
+            prompt: None,
             theme,
         };
         this.refresh();
         this
     }
 
+    /// Champ de saisie prérempli avec `text` ; Entrée émet `Submit`.
+    pub fn prompt(label: &'static str, text: &str, theme: Theme, cx: &mut Context<Self>) -> Self {
+        Self {
+            prompt: Some(label),
+            ..Self::new(Vec::new(), text, theme, cx)
+        }
+    }
+
     fn refresh(&mut self) {
+        if self.prompt.is_some() {
+            return self.items.clear();
+        }
         let q = self.query.trim().to_lowercase();
         let mut items: Vec<Item> = if let Some(tag) = q.strip_prefix('#') {
             (0..self.entries.len())
@@ -127,6 +144,9 @@ impl Palette {
     }
 
     fn confirm(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.prompt.is_some() {
+            return cx.emit(PaletteEvent::Submit(self.query.trim().to_string()));
+        }
         cx.emit(match self.items.get(index) {
             Some(Item::Note(i)) => PaletteEvent::Open(self.entries[*i].path.clone()),
             Some(Item::Create) => PaletteEvent::Create(self.query.trim().to_string()),
@@ -304,13 +324,18 @@ impl Render for Palette {
                             .text_size(px(15.))
                             .child(input)
                             .when(self.query.is_empty(), |d| {
-                                d.child(div().text_color(t.dim).child(tr(
+                                d.child(div().text_color(t.dim).child(self.prompt.unwrap_or(tr(
                                     "Search or create a note, #tag…",
                                     "Chercher ou créer une note, #tag…",
-                                )))
+                                ))))
                             })
                             .when(!self.query.is_empty(), |d| d.child(self.query.clone()))
-                            .child(div().w(px(2.)).h(px(18.)).bg(t.accent)),
+                            .child(div().w(px(2.)).h(px(18.)).bg(t.accent))
+                            .when(!self.query.is_empty(), |d| {
+                                d.children(self.prompt.map(|label| {
+                                    div().ml_auto().pl_3().text_size(px(12.)).text_color(t.dim).child(label)
+                                }))
+                            }),
                     )
                     .children(rows),
             )

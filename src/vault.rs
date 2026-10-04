@@ -76,9 +76,11 @@ pub fn stem(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Toutes les notes du coffre (récursif, dossiers cachés ignorés), plus récentes d'abord.
-pub fn scan(root: &Path) -> Vec<Note> {
+/// Toutes les notes du coffre (récursif, dossiers cachés ignorés), plus récentes
+/// d'abord, et tous ses dossiers, même vides.
+pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>) {
     let mut notes = Vec::new();
+    let mut found = Vec::new();
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
         let Ok(entries) = fs::read_dir(&dir) else {
@@ -90,6 +92,7 @@ pub fn scan(root: &Path) -> Vec<Note> {
                 continue;
             }
             if path.is_dir() {
+                found.push(path.clone());
                 dirs.push(path);
             } else if path.extension().is_some_and(|e| e == "md") {
                 let (tags, links) = fs::read_to_string(&path)
@@ -109,26 +112,68 @@ pub fn scan(root: &Path) -> Vec<Note> {
         }
     }
     notes.sort_by(|a, b| b.mtime.cmp(&a.mtime));
-    notes
+    (notes, found)
 }
 
-/// Nom de fichier (sans extension) tiré de la première ligne non vide.
-pub fn title_of(content: &str) -> String {
-    let first = content.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-    let title: String = first
-        .trim()
-        .trim_start_matches('#')
+/// Nom de fichier ou de dossier débarrassé de ce qu'un système de fichiers ou
+/// un wikilien refuse ; `None` s'il n'en reste rien.
+pub fn clean_name(name: &str) -> Option<String> {
+    let name: String = name
         .chars()
         .filter(|c| !c.is_control() && !r#"/\:*?"<>|#^[]"#.contains(*c))
         .take(80)
         .collect();
     // Ni point en tête (fichier caché) ni en fin (refusé par Windows).
-    let title = title.trim().trim_matches('.').trim();
-    if title.is_empty() {
-        tr("Untitled", "Sans titre").to_string()
-    } else {
-        title.to_string()
+    let name = name.trim().trim_matches('.').trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
+/// Déplace ou renomme, sans jamais écraser ce qui porte déjà ce nom.
+pub fn rename(from: &Path, to: &Path) -> io::Result<()> {
+    if to.exists() {
+        let taken = tr("this name is already taken", "ce nom est déjà pris");
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, taken));
     }
+    fs::rename(from, to)
+}
+
+/// Renomme une note et renvoie son chemin. Si son nom suivait son titre, la
+/// première ligne est réécrite pour qu'ils restent accordés.
+pub fn rename_note(path: &Path, name: &str) -> io::Result<PathBuf> {
+    let content = fs::read_to_string(path)?;
+    let to = path.with_file_name(format!("{name}.md"));
+    rename(path, &to)?;
+    if stem(path) == title_of(&content)
+        && let Some(first) = content.lines().find(|l| !l.trim().is_empty())
+    {
+        let hashes = first.trim_start().chars().take_while(|c| *c == '#').count();
+        let title = if hashes > 0 { format!("{} {name}", "#".repeat(hashes)) } else { name.to_string() };
+        fs::write(&to, content.replacen(first, &title, 1))?;
+    }
+    Ok(to)
+}
+
+/// Met la note ou le dossier à la corbeille du coffre : le dossier caché
+/// `.trash`, que l'index ignore. Rien n'est détruit.
+pub fn trash(root: &Path, path: &Path) -> io::Result<()> {
+    let bin = root.join(".trash");
+    fs::create_dir_all(&bin)?;
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let free = (1..)
+        .map(|n| match n {
+            1 => bin.join(&*name),
+            n => bin.join(format!("{n} {name}")),
+        })
+        .find(|p| !p.exists())
+        .unwrap();
+    fs::rename(path, free)
+}
+
+/// Nom de fichier (sans extension) tiré de la première ligne non vide.
+pub fn title_of(content: &str) -> String {
+    let first = content.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+    clean_name(first.trim().trim_start_matches('#'))
+        .unwrap_or_else(|| tr("Untitled", "Sans titre").to_string())
 }
 
 /// Enregistre la note et renvoie son chemin ; une nouvelle note est créée dans
@@ -196,7 +241,28 @@ mod tests {
         assert_eq!(save(&root, Some(&b), true, "# A 2\n").unwrap(), b);
         assert_eq!(save(&root, Some(&b), false, "# Z\n").unwrap(), b);
         assert_eq!(fs::read_to_string(&b).unwrap(), "# Z\n");
-        assert_eq!(scan(&root).len(), 2);
+        assert_eq!(scan(&root).0.len(), 2);
+
+        // Renommer une note accordée à son titre réécrit ce titre ; sinon le texte reste tel quel.
+        let c = rename_note(&root.join("A 2.md"), "C").unwrap();
+        assert_eq!(fs::read_to_string(&c).unwrap(), "# A\n");
+        fs::write(root.join("D.md"), "\n## D\ntexte D\n").unwrap();
+        let e = rename_note(&root.join("D.md"), "E").unwrap();
+        assert_eq!(fs::read_to_string(&e).unwrap(), "\n## E\ntexte D\n");
+        // Jamais d'écrasement.
+        assert!(rename_note(&e, "C").is_err() && e.exists());
+
+        // Corbeille : rien n'est détruit, et l'index ne la voit pas.
+        fs::create_dir(root.join("vide")).unwrap();
+        trash(&root, &c).unwrap();
+        fs::write(&c, "autre").unwrap();
+        trash(&root, &c).unwrap();
+        assert_eq!(fs::read_to_string(root.join(".trash/C.md")).unwrap(), "# A\n");
+        assert_eq!(fs::read_to_string(root.join(".trash/2 C.md")).unwrap(), "autre");
+        let (notes, dirs) = scan(&root);
+        assert_eq!((notes.len(), dirs), (2, vec![root.join("vide")]));
+        assert_eq!(clean_name(" ../a:b. "), Some("ab".into()));
+        assert_eq!(clean_name(" . "), None);
         fs::remove_dir_all(&root).unwrap();
     }
 }
