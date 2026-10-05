@@ -742,13 +742,18 @@ impl Editor {
             return None;
         }
         let query = query.to_lowercase();
-        let items: Vec<&str> = self
-            .notes
-            .iter()
-            .filter(|n| n.to_lowercase().contains(&query))
-            .map(String::as_str)
-            .take(6)
-            .collect();
+        // `![[` affiche un fichier : ce sont les images et les schémas du coffre
+        // qu'on propose, par leur nom de fichier ; `[[` propose les notes.
+        let embed = before[..open].ends_with('!');
+        let mut items: Vec<&str> = match embed {
+            true => self.images.values().filter_map(|p| p.file_name()?.to_str()).collect(),
+            false => self.notes.iter().map(String::as_str).collect(),
+        };
+        items.retain(|name| name.to_lowercase().contains(&query));
+        if embed {
+            items.sort_unstable_by_key(|name| name.to_lowercase());
+        }
+        items.truncate(6);
         (!items.is_empty()).then_some((start, items))
     }
 

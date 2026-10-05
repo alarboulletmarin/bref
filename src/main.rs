@@ -1143,6 +1143,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 ("---".into(), tr("Divider", "Séparateur")),
                 ("[[".into(), tr("Link to a note", "Lien vers une note")),
                 ("![](image.png)".into(), tr("Picture, under its line", "Image, sous sa ligne")),
+                ("![[".into(), tr("Suggests the pictures and diagrams of the vault", "Propose les images et les schémas du coffre")),
                 (m("V"), tr("Paste text, or a picture", "Coller du texte, ou une image")),
                 ("```mermaid".into(), tr("Diagram, under its block", "Diagramme, sous son bloc")),
                 ("$x^2$  $$…$$".into(), tr("LaTeX formula, under its line", "Formule LaTeX, sous sa ligne")),
@@ -2232,6 +2233,14 @@ mod tests {
         cx.simulate_keystrokes("escape escape");
         cx.run_until_parked();
         assert!(shell.read_with(cx, |s, _| s.picture.is_none() && s.drawing.is_none()));
+
+        // `![[` propose les images et les schémas du coffre ; Entrée complète le nom.
+        cx.simulate_keystrokes("secondary-end enter");
+        cx.simulate_input("![[sch");
+        cx.simulate_keystrokes("enter");
+        assert!(text(cx).ends_with("![[Schéma.svg]]"));
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
 
         // Import : un fichier Excalidraw devient un schéma du coffre, sous son nom.
         // Son image PNG s'enregistre à côté de lui.
