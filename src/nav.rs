@@ -4,6 +4,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    hash::{BuildHasher, BuildHasherDefault, DefaultHasher, Hash, Hasher},
     ops::Range,
     path::{Path, PathBuf},
     time::Duration,
@@ -28,7 +29,7 @@ pub const RAIL: Pixels = px(40.);
 const ROW: Pixels = px(26.);
 const LIST_W: Pixels = px(260.);
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Hash, Debug)]
 pub enum Mode {
     Tree,
     Recent,
@@ -104,8 +105,9 @@ pub struct Nav {
     pub sel: Option<PathBuf>,
     /// Dossiers dépliés.
     pub open: HashSet<PathBuf>,
-    /// Lignes de la dernière frame.
+    /// Lignes de la dernière frame, et l'empreinte de ce dont elles sont tirées.
     rows: Vec<Row>,
+    rows_from: u64,
     scroll: UniformListScrollHandle,
     /// Amener la sélection à l'écran à la prochaine frame.
     reveal: bool,
@@ -140,6 +142,7 @@ impl Nav {
             sel: None,
             open: HashSet::new(),
             rows: Vec::new(),
+            rows_from: 0,
             scroll: UniformListScrollHandle::new(),
             reveal: false,
             logo: false,
@@ -195,8 +198,6 @@ impl Nav {
 /// Lignes visibles de l'arbre : dossiers d'abord, puis notes, par ordre
 /// alphabétique ; le contenu des dossiers repliés est omis. `dirs` apporte les
 /// dossiers sans note.
-// ponytail: reconstruit à chaque frame où le panneau est visible (quelques ms pour
-// des milliers de notes) ; mettre en cache si l'arbre devient très gros.
 pub fn tree_rows(
     root: &Path,
     notes: &[Note],
@@ -353,6 +354,21 @@ impl Shell {
             Panel::Split
         };
         cx.notify();
+    }
+
+    /// Empreinte de tout ce dont les lignes du panneau dépendent : les recalculer
+    /// coûte dix fois plus cher que de vérifier qu'elles sont encore justes.
+    fn rows_source(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        let open = self.nav.open.iter().map(|dir| BuildHasherDefault::<DefaultHasher>::default().hash_one(dir)).fold(0u64, u64::wrapping_add);
+        (self.nav.mode, self.nav.panel == Panel::Rail, &self.vault, &self.dirs, &self.images, open).hash(&mut hasher);
+        if self.nav.mode == Mode::Recent {
+            self.recent.hash(&mut hasher);
+        }
+        for note in &self.notes {
+            (&note.path, &note.name).hash(&mut hasher);
+        }
+        hasher.finish()
     }
 
     fn nav_rows(&self) -> Vec<Row> {
@@ -882,7 +898,11 @@ impl Shell {
         let t = self.theme;
         let (mode, panel) = (self.nav.mode, self.nav.panel);
         let unfolded = panel != Panel::Rail;
-        self.nav.rows = if unfolded { self.nav_rows() } else { Vec::new() };
+        let source = self.rows_source();
+        if source != self.nav.rows_from {
+            self.nav.rows = if unfolded { self.nav_rows() } else { Vec::new() };
+            self.nav.rows_from = source;
+        }
         let (current, selected) = (self.path.clone(), self.nav.sel.clone());
         self.graph.update(cx, |graph, _| graph.sync(t, current.as_deref(), selected.as_deref()));
         if std::mem::take(&mut self.nav.reveal)
