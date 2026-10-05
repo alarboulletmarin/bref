@@ -13,12 +13,12 @@ use gpui::{
 
 use crate::{
     Theme,
-    diagram::{self, Cmd, Diagram, End, Form, Head},
+    diagram::{self, Cmd, Diagram, End, Form, Head, Route},
     nav::button,
     sans, tr,
 };
 
-actions!(canvas, [Erase, EraseNext, Duplicate, SelectAll, Undo, Redo, Confirm, Cancel, Left, Right, Up, Down, Paste]);
+actions!(canvas, [ZoomIn, ZoomOut, ZoomFit, Erase, EraseNext, Duplicate, SelectAll, Undo, Redo, Confirm, Cancel, Left, Right, Up, Down, Paste]);
 
 pub enum CanvasEvent {
     /// Le schéma a changé : il est à enregistrer.
@@ -49,6 +49,27 @@ const TOOLS: [(Tool, &str, &str); 11] = [
     (Tool::Link(Head::Arrow), "d-arrow.svg", "a"),
     (Tool::Link(Head::None), "d-line.svg", "l"),
 ];
+
+/// Forme tirée depuis la barre d'outils, dessinée sous le pointeur jusqu'au canevas.
+#[derive(Clone)]
+struct Placing(Form, &'static str, Theme);
+
+impl Render for Placing {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        button("d-placing", self.1, true, self.2)
+    }
+}
+
+/// Taille d'une forme posée d'un clic ou déposée depuis la barre.
+fn usual(form: Form) -> (f32, f32) {
+    match form {
+        Form::Text => (80., diagram::LINE),
+        Form::Actor => (40., 80.),
+        Form::Cylinder => (80., 100.),
+        Form::Ellipse | Form::Diamond => (120., 80.),
+        _ => (140., 60.),
+    }
+}
 
 /// Geste en cours à la souris ; les points sont dans le repère du schéma.
 #[derive(Clone, Copy, PartialEq)]
@@ -84,6 +105,8 @@ pub struct Canvas {
     bounds: Bounds<Pixels>,
     /// L'image PNG vient d'être enregistrée : le bouton le montre un instant.
     exported: bool,
+    /// Tracé des prochaines flèches : le dernier choisi.
+    route: Route,
 }
 
 impl EventEmitter<CanvasEvent> for Canvas {}
@@ -111,6 +134,7 @@ impl Canvas {
             redo: Vec::new(),
             bounds: Bounds::default(),
             exported: false,
+            route: Route::Elbow,
         }
     }
 
@@ -217,8 +241,15 @@ impl Canvas {
     /// Insère `text` au curseur ; hors écriture, une lettre choisit un outil.
     fn typed(&mut self, text: &str, cx: &mut Context<Self>) {
         let Some((id, at)) = self.editing else {
-            if let Some((tool, ..)) = TOOLS.iter().find(|(_, _, key)| key.eq_ignore_ascii_case(text)) {
-                self.set_tool(*tool, cx);
+            match text {
+                "+" | "=" => self.zoom_by(1.25, cx),
+                "-" => self.zoom_by(0.8, cx),
+                "0" => self.zoom_fit(cx),
+                _ => {
+                    if let Some((tool, ..)) = TOOLS.iter().find(|(_, _, key)| key.eq_ignore_ascii_case(text)) {
+                        self.set_tool(*tool, cx);
+                    }
+                }
             }
             return;
         };
@@ -308,12 +339,42 @@ impl Canvas {
         [(x, y), (x1, y), (x1, y1), (x, y1)]
     }
 
-    /// Bout de flèche pour ce point : la forme qui s'y trouve, sinon le point aimanté.
+    /// Bout de flèche pour ce point : accroché à la forme qui s'y trouve, au
+    /// bord si l'on en est près ; sinon le point aimanté.
     fn end_at(&self, p: (f32, f32), not: Option<u32>) -> End {
-        match self.diagram.shape_at(p.0, p.1).filter(|id| Some(*id) != not) {
-            Some(id) => End::Shape(id),
+        let shape = self.diagram.shape_at(p.0, p.1).filter(|id| Some(*id) != not).and_then(|id| self.diagram.shape(id));
+        match shape {
+            Some(shape) => shape.hook(p.0, p.1),
             None => End::Point(diagram::snap(p.0), diagram::snap(p.1)),
         }
+    }
+
+    /// Zoome autour du centre de la vue.
+    fn zoom_by(&mut self, by: f32, cx: &mut Context<Self>) {
+        let zoom = (self.zoom * by).clamp(0.2, 4.);
+        let (mx, my) = (f32::from(self.bounds.size.width) / 2., f32::from(self.bounds.size.height) / 2.);
+        let k = zoom / self.zoom;
+        self.pan = (mx - (mx - self.pan.0) * k, my - (my - self.pan.1) * k);
+        self.zoom = zoom;
+        cx.notify();
+    }
+
+    fn zoom_fit(&mut self, cx: &mut Context<Self>) {
+        self.fit = true;
+        cx.notify();
+    }
+
+    /// Pose une forme à sa taille habituelle, centrée sur ce point de l'écran.
+    fn place(&mut self, form: Form, at: Point<Pixels>, cx: &mut Context<Self>) {
+        self.stop_editing(cx);
+        self.remember();
+        let (p, (w, h)) = (self.world(at), usual(form));
+        let id = self.diagram.add_shape(form, diagram::snap(p.0 - w / 2.), diagram::snap(p.1 - h / 2.), w, h);
+        (self.selected, self.tool) = (vec![id], Tool::Select);
+        if form == Form::Text {
+            self.editing = Some((id, 0));
+        }
+        self.changed(cx);
     }
 
     fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -332,7 +393,7 @@ impl Canvas {
             Tool::Link(head) => {
                 self.remember();
                 let from = self.end_at(p, None);
-                let id = self.diagram.add_link(from, End::Point(p.0, p.1), head);
+                let id = self.diagram.add_link(from, End::Point(p.0, p.1), head, self.route);
                 Drag::Tip { id, to: true }
             }
             Tool::Select => {
@@ -408,10 +469,7 @@ impl Canvas {
             Drag::Tip { id, to } => {
                 // Un bout ne s'accroche pas à la forme d'où part l'autre.
                 let other = self.diagram.link(id).map(|l| if to { l.from } else { l.to });
-                let not = match other {
-                    Some(End::Shape(id)) => Some(id),
-                    _ => None,
-                };
+                let not = other.and_then(End::shape);
                 let end = self.end_at(p, not);
                 if let Some(link) = self.diagram.link_mut(id) {
                     *(if to { &mut link.to } else { &mut link.from }) = end;
@@ -447,13 +505,7 @@ impl Canvas {
                 let Some(shape) = self.diagram.shape_mut(id) else { return };
                 // Un simple clic pose la forme à sa taille habituelle.
                 if shape.w < diagram::GRID || shape.h < diagram::GRID {
-                    (shape.w, shape.h) = match shape.form {
-                        Form::Text => (80., diagram::LINE),
-                        Form::Actor => (40., 80.),
-                        Form::Cylinder => (80., 100.),
-                        Form::Ellipse | Form::Diamond => (120., 80.),
-                        _ => (140., 60.),
-                    };
+                    (shape.w, shape.h) = usual(shape.form);
                 }
                 let text = shape.form == Form::Text;
                 (self.selected, self.tool) = (vec![id], Tool::Select);
@@ -633,36 +685,25 @@ impl Canvas {
             }
         }
         for link in &self.diagram.links {
-            let Some((a, b)) = self.diagram.ends(link) else { continue };
+            let Some(drawn) = self.diagram.trace(link) else { continue };
             let ink = self.ink(link.color);
-            let len = (b.0 - a.0).hypot(b.1 - a.1).max(1e-3);
-            let u = ((b.0 - a.0) / len, (b.1 - a.1) / len);
-            let (start, end) = (diagram::head(link.start, a, (-u.0, -u.1)), diagram::head(link.end, b, u));
-            let (a2, b2) = ((a.0 + u.0 * start.3, a.1 + u.1 * start.3), (b.0 - u.0 * end.3, b.1 - u.1 * end.3));
-            stroke(window, &[Cmd::Move(a2.0, a2.1), Cmd::Line(b2.0, b2.1)], link.dashed, ink);
-            for (points, closed, full, _) in [start, end] {
-                let mut path: Vec<Cmd> = points.iter().enumerate().map(|(i, p)| if i == 0 { Cmd::Move(p.0, p.1) } else { Cmd::Line(p.0, p.1) }).collect();
-                if closed {
-                    path.push(Cmd::Close);
+            stroke(window, &drawn.line, link.dashed, ink);
+            for (path, full) in &drawn.heads {
+                if *full {
+                    flood(window, path, ink);
                 }
-                if full {
-                    flood(window, &path, ink);
-                }
-                if !path.is_empty() {
-                    stroke(window, &path, false, ink);
-                }
+                stroke(window, path, false, ink);
             }
-            let mid = ((a.0 + b.0) / 2., (a.1 + b.1) / 2.);
             let lines: Vec<&str> = link.text.split('\n').collect();
             for (i, text) in lines.iter().enumerate() {
-                let y = mid.1 - diagram::LINE * (lines.len() - i) as f32 - 2.;
-                write(self, window, cx, mid.0, y, text, true, false, ink);
+                let (x, y, centered) = Diagram::label_at(&drawn, i, lines.len());
+                write(self, window, cx, x, y, text, centered, false, ink);
                 if let Some((id, row, col)) = caret
                     && id == link.id
                     && row == i
                 {
-                    let width = self.measure(text, false, 1., window);
-                    caret_at = Some((mid.0 - width / 2. + self.measure(&text[..col], false, 1., window), y));
+                    let left = if centered { x - self.measure(text, false, 1., window) / 2. } else { x };
+                    caret_at = Some((left + self.measure(&text[..col], false, 1., window), y));
                 }
             }
         }
@@ -691,6 +732,18 @@ impl Canvas {
             } else if let Some((a, b)) = self.diagram.link(id).and_then(|l| self.diagram.ends(l)) {
                 knob(window, a);
                 knob(window, b);
+            }
+        }
+        // Pendant qu'on tire un bout sur une forme : ses points d'accroche.
+        if let Drag::Tip { id, to } = self.drag
+            && let Some(link) = self.diagram.link(id)
+            && let Some(shape) = (if to { link.to } else { link.from }).shape().and_then(|id| self.diagram.shape(id))
+        {
+            frame(window, shape.x - pad, shape.y - pad, shape.x + shape.w + pad, shape.y + shape.h + pad, t.accent);
+            for hook in shape.hooks() {
+                let c = at(hook);
+                let dot = Bounds::new(point(c.x - px(2.5), c.y - px(2.5)), size(px(5.), px(5.)));
+                window.paint_quad(quad(dot, px(2.5), t.accent, px(0.), t.accent, gpui::BorderStyle::default()));
             }
         }
         if let Drag::Marquee { from, to } = self.drag {
@@ -765,9 +818,40 @@ impl Render for Canvas {
         )
         .size_full();
 
+        // Un outil se choisit d'un clic ; une forme peut aussi se tirer jusqu'au canevas.
         let tools = TOOLS.iter().map(|&(tool, icon, _)| {
-            button(icon, icon, self.tool == tool, t).on_click(cx.listener(move |this, _, _, cx| this.set_tool(tool, cx)))
+            let tool_button = button(icon, icon, self.tool == tool, t).on_click(cx.listener(move |this, _, _, cx| this.set_tool(tool, cx)));
+            match tool {
+                Tool::Shape(form) => tool_button.on_drag(Placing(form, icon, t), |placing, _, _, cx| cx.new(|_| placing.clone())),
+                _ => tool_button,
+            }
         });
+        let percent = format!("{} %", (self.zoom * 100.).round());
+        let zoom = div()
+            .absolute()
+            .bottom_3()
+            .right_3()
+            .p(px(2.))
+            .flex()
+            .items_center()
+            .rounded(px(8.))
+            .bg(t.panel)
+            .border_1()
+            .border_color(t.border)
+            .occlude()
+            .child(button("d-zoom-out", "minimize.svg", false, t).on_click(cx.listener(|this, _, _, cx| this.zoom_by(0.8, cx))))
+            .child(
+                div()
+                    .id("d-zoom-fit")
+                    .w(px(52.))
+                    .text_center()
+                    .text_size(px(12.))
+                    .text_color(t.dim)
+                    .cursor_pointer()
+                    .child(percent)
+                    .on_click(cx.listener(|this, _, _, cx| this.zoom_fit(cx))),
+            )
+            .child(button("d-zoom-in", "plus.svg", false, t).on_click(cx.listener(|this, _, _, cx| this.zoom_by(1.25, cx))));
         // Réglages de la sélection : couleur, fond, pointillé, pointes des flèches.
         let any = !self.selected.is_empty();
         let links = self.selected.iter().any(|id| self.diagram.shape(*id).is_none());
@@ -822,7 +906,19 @@ impl Render for Canvas {
                     }))
             })
             .when(links, |d| {
-                d.child(toggle("d-head-start", "d-head-start.svg", cx, |_, link| {
+                d.child(button("d-route", "d-route.svg", false, t).on_click(cx.listener(|this, _, _, cx| {
+                    // Le tracé choisi vaut aussi pour les flèches à venir.
+                    let first = this.selected.iter().find_map(|id| this.diagram.link(*id)).map(|l| l.route.next());
+                    if let Some(route) = first {
+                        this.route = route;
+                        this.style(cx, move |_, link| {
+                            if let Some(link) = link {
+                                link.route = route;
+                            }
+                        });
+                    }
+                })))
+                .child(toggle("d-head-start", "d-head-start.svg", cx, |_, link| {
                     if let Some(link) = link {
                         link.start = link.start.next();
                     }
@@ -842,6 +938,9 @@ impl Render for Canvas {
             .flex_col()
             .key_context("Canvas")
             .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom_by(1.25, cx)))
+            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.zoom_by(0.8, cx)))
+            .on_action(cx.listener(|this, _: &ZoomFit, _, cx| this.zoom_fit(cx)))
             .on_action(cx.listener(|this, _: &Erase, _, cx| this.erase(false, cx)))
             .on_action(cx.listener(|this, _: &EraseNext, _, cx| this.erase(true, cx)))
             .on_action(cx.listener(|this, _: &Left, _, cx| this.nudge(-1., 0., cx)))
@@ -900,7 +999,12 @@ impl Render for Canvas {
                     .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
                     .on_mouse_up(MouseButton::Middle, cx.listener(|this, _, _, _| this.drag = Drag::None))
                     .on_scroll_wheel(cx.listener(Self::scroll))
-                    .child(drawing),
+                    .on_drop(cx.listener(|this, placing: &Placing, window, cx| {
+                        this.place(placing.0, window.mouse_position(), cx)
+                    }))
+                    .relative()
+                    .child(drawing)
+                    .child(zoom),
             )
     }
 }

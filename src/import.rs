@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::{
-    diagram::{COLORS, Diagram, End, Form, Head, RULE},
+    diagram::{COLORS, Diagram, End, Form, Head, RULE, Route},
     tr,
 };
 
@@ -70,7 +70,13 @@ pub fn excalidraw(json: &str) -> Result<Diagram, String> {
             Some(_) => Head::Arrow,
         };
         let (Some(from), Some(to)) = (end("startBinding", 0), end("endBinding", last)) else { continue };
-        let id = diagram.add_link(from, to, head("endArrowhead"));
+        let bent = e["points"].as_array().is_some_and(|p| p.len() > 2);
+        let route = match (e["elbowed"] == true, bent && !e["roundness"].is_null()) {
+            (true, _) => Route::Elbow,
+            (_, true) => Route::Curve,
+            _ => Route::Straight,
+        };
+        let id = diagram.add_link(from, to, head("endArrowhead"), route);
         let link = diagram.link_mut(id).unwrap();
         link.start = head("startArrowhead");
         link.color = color(e["strokeColor"].as_str().unwrap_or(""));
@@ -217,7 +223,12 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
             }
         };
         let (Some(from), Some(to)) = (end("source", "sourcePoint"), end("target", "targetPoint")) else { continue };
-        let id = diagram.add_link(from, to, head("endArrow", "endFill", "classic"));
+        let route = match style(cell, "edgeStyle") {
+            _ if style(cell, "curved").as_deref() == Some("1") => Route::Curve,
+            Some(_) => Route::Elbow,
+            None => Route::Straight,
+        };
+        let id = diagram.add_link(from, to, head("endArrow", "endFill", "classic"), route);
         let link = diagram.link_mut(id).unwrap();
         link.start = head("startArrow", "startFill", "none");
         link.text = label(cell);

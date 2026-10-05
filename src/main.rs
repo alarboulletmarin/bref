@@ -185,6 +185,7 @@ impl AssetSource for Assets {
             "d-text.svg" => r#"<path d="M4 4.5V3.5H12V4.5M8 3.5V12.5M6.5 12.5H9.5"/>"#,
             "d-arrow.svg" => r#"<path d="M3 13L13 3M7.5 3H13V8.5"/>"#,
             "d-line.svg" => r#"<path d="M3 13L13 3"/>"#,
+            "d-route.svg" => r#"<path d="M2.5 12.5H8V3.5H13.5"/>"#,
             "d-fill.svg" => r#"<rect x="3" y="3" width="10" height="10" rx="1.5" fill="black" fill-opacity="0.35"/>"#,
             "d-dash.svg" => r#"<path d="M2.5 8H5M7 8H9M11 8H13.5"/>"#,
             "d-head-start.svg" => r#"<path d="M13.5 8H3M6.5 4.5L3 8L6.5 11.5"/>"#,
@@ -1116,7 +1117,8 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (tr("Enter, double click", "Entrée, double-clic").into(), tr("Write in the shape or on the arrow; Esc when done", "Écrire dans la forme ou sur la flèche ; Échap pour finir")),
                 ("---".into(), tr("Alone on a line of a box: a compartment (UML class)", "Seul sur une ligne d'une boîte : un compartiment (classe UML)")),
                 (format!("{} / {} / {}", tr("Del", "Suppr"), m("D"), m("Z")), tr("Remove / duplicate / undo", "Retirer / dupliquer / annuler")),
-                (format!("{} / {MOD}+{}", tr("Wheel", "Molette"), tr("wheel", "molette")), tr("Move the view / zoom", "Déplacer la vue / zoomer")),
+                (tr("Edge of a shape", "Bord d'une forme").into(), tr("An arrow end dropped there stays there; in the middle, it follows the other end", "Un bout de flèche lâché là y reste ; au milieu, il suit l'autre bout")),
+                (tr("Wheel / + - 0", "Molette / + - 0").into(), tr("Move the view / zoom in, out, fit all", "Déplacer la vue / zoomer, dézoomer, tout cadrer")),
                 ("![](Schéma.svg)".into(), tr("Show the diagram in a note", "Afficher le schéma dans une note")),
                 (format!("{} › import", m("P")), tr("Bring in an Excalidraw or draw.io file", "Reprendre un fichier Excalidraw ou draw.io")),
             ],
@@ -1605,6 +1607,10 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-0", ZoomReset, None),
         KeyBinding::new("secondary-q", Quit, None),
         KeyBinding::new("secondary-shift-d", NewDiagram, Some("Shell")),
+        KeyBinding::new("secondary-=", canvas::ZoomIn, c),
+        KeyBinding::new("secondary-+", canvas::ZoomIn, c),
+        KeyBinding::new("secondary--", canvas::ZoomOut, c),
+        KeyBinding::new("secondary-0", canvas::ZoomFit, c),
         KeyBinding::new("backspace", canvas::Erase, c),
         KeyBinding::new("delete", canvas::EraseNext, c),
         KeyBinding::new("left", canvas::Left, c),
@@ -2199,6 +2205,19 @@ mod tests {
         assert_eq!((drawn.shapes.len(), drawn.shapes[0].text.as_str(), drawn.shapes[0].w), (2, "Client", 120.));
         let ends = (diagram::End::Shape(drawn.shapes[0].id), diagram::End::Shape(drawn.shapes[1].id));
         assert_eq!((drawn.links[0].from, drawn.links[0].to, drawn.links[0].end), (ends.0, ends.1, diagram::Head::Arrow));
+        // Tirée du bord d'une forme, la flèche s'y fixe ; elle est coudée d'office.
+        cx.simulate_input("a");
+        drag(cx, (115., 30.), (350., 40.));
+        let pinned = saved().links[1].clone();
+        assert_eq!((pinned.from, pinned.route), (diagram::End::Pin(drawn.shapes[0].id, 1., 0.5), diagram::Route::Elbow));
+        // « + » et « - » zooment, « 0 » recadre tout.
+        let span = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| f32::from(c.spot(100., 0.).x - c.spot(0., 0.).x));
+        cx.simulate_input("+");
+        assert_eq!(span(cx), 125.);
+        cx.simulate_input("-");
+        cx.simulate_input("0");
+        cx.run_until_parked();
+        assert!(span(cx) <= 100.);
         // Une forme se déplace en la tirant, sur la grille ; Ctrl+Z la remet en place.
         drag(cx, (350., 40.), (350., 143.));
         assert_eq!(saved().shapes[1].y, 100.);

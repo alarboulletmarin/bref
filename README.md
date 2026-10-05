@@ -260,17 +260,18 @@ Mermaid turns text into a diagram. When you would rather place things yourself, 
 | `A`, `L` | arrow, line |
 | `V` | select |
 
-Pick a tool, from its key or from the bar above the canvas, then drag; a click drops the shape at its usual size.
+Pick a tool, from its key or from the bar above the canvas, then drag; a click drops the shape at its usual size. A shape can also be dragged from the bar and dropped on the canvas.
 
-- **Arrows** started or ended on a shape hold on to it: move the shape, they follow. Select an arrow and drag one of its ends to hook it elsewhere.
+- **Arrows** started or ended on a shape hold on to it: move the shape, they follow. Dropped in the middle of a shape, an end leaves by the side that faces the other end; dropped near an edge, it stays at that spot (the dots shown while you drag). Select an arrow and drag one of its ends to hook it elsewhere.
+- **Routes**: an arrow is elbowed (right angles, leaving the shape by its side), straight or curved; with an arrow selected, a button of the bar goes from one to the next, and new arrows take the last one chosen. An elbowed arrow does not find its way around the shapes in its path: hook its ends on the sides that let it pass.
 - **Text**: `Enter` or a double click writes in the selected shape, or on the arrow; `Esc` when done. A double click on the empty canvas starts a text there. A shape grows to hold what you write.
 - **UML**: in a rectangle, a line made of `---` starts a new compartment: the name of the class on top, then its fields, then its methods. With an arrow selected, two buttons of the bar change the head at each end: none, arrow, hollow triangle (inheritance), hollow or full diamond (aggregation, composition). Another makes it dashed.
 - **Selection**: click, `Shift` + click, or drag on the empty canvas. Drag to move, on a grid; drag a corner to resize. The bar gives six colors, a tinted background and a dashed outline. `Delete` removes, `Ctrl + D` duplicates, `Ctrl + Z` undoes, the arrow keys move by one step.
-- **View**: the wheel moves it, `Ctrl` + wheel zooms, the middle button drags it.
+- **View**: the wheel moves it and the middle button drags it. `+` and `-` zoom, as do `Ctrl` + wheel and the buttons at the bottom right; `0`, or a click on the percentage, fits the whole diagram.
 - **In a note**: `![](Diagram.svg)` shows the diagram, in the colors of your theme, and follows its changes.
 - **The file** is a plain SVG, saved at each change: it opens in a browser and displays on GitHub. It also carries its own source, which is what Bref reads to keep editing it.
 - **Export**: the button at the right of the bar saves a PNG next to the diagram, dark on white.
-- **Import**: `import` in the palette takes an Excalidraw file (`.excalidraw`) or a draw.io file (`.drawio`, saved without compression: untick *File › Properties › Compressed*). Shapes, texts, arrows and what they hold on to are kept; freehand strokes, pictures and elbow routing are not.
+- **Import**: `import` in the palette takes an Excalidraw file (`.excalidraw`) or a draw.io file (`.drawio`, saved without compression: untick *File › Properties › Compressed*). Shapes, texts, arrows and what they hold on to are kept; freehand strokes and pictures are not, and arrows are routed again by Bref.
 
 ## Notes and vault
 
