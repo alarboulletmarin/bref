@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Kind {
     Para,
     Heading(u8),

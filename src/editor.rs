@@ -7,6 +7,7 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
     ops::Range,
     path::PathBuf,
+    rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -112,10 +113,8 @@ struct Row {
     lh: Pixels,
     height: Pixels,
     kind: Kind,
-    line: Option<WrappedLine>,
-    /// Signes affichés à la place de leur écriture ASCII : (octet de début,
-    /// longueur dans le texte, longueur affichée).
-    subs: Vec<(usize, usize, usize)>,
+    /// Son texte mis en forme, partagé avec le cache des lignes.
+    shaped: Rc<Shaped>,
     /// Image désignée par la ligne, ou figure (diagramme, formule) qu'elle
     /// termine, dessinée dessous, et sa taille à l'écran.
     image: Option<(Arc<RenderImage>, Size<Pixels>)>,
@@ -125,7 +124,7 @@ struct Row {
 
 impl Row {
     fn pos(&self, i: usize) -> Point<Pixels> {
-        self.line
+        self.shaped.line
             .as_ref()
             .and_then(|l| l.position_for_index(self.shown(i.min(self.len)), self.lh))
             .unwrap_or_default()
@@ -134,7 +133,7 @@ impl Row {
     /// Octet du texte → octet du texte affiché.
     fn shown(&self, i: usize) -> usize {
         let mut shift = 0isize;
-        for &(at, src, dst) in &self.subs {
+        for &(at, src, dst) in &self.shaped.subs {
             if i <= at {
                 break;
             }
@@ -150,7 +149,7 @@ impl Row {
     /// Octet du texte affiché → octet du texte.
     fn source(&self, i: usize) -> usize {
         let mut shift = 0isize;
-        for &(at, src, dst) in &self.subs {
+        for &(at, src, dst) in &self.shaped.subs {
             let start = (at as isize + shift) as usize;
             if i <= start {
                 break;
@@ -168,7 +167,7 @@ impl Row {
     }
 
     fn index_at(&self, p: Point<Pixels>) -> usize {
-        match &self.line {
+        match &self.shaped.line {
             Some(l) => match l.closest_index_for_position(p, self.lh) {
                 Ok(i) | Err(i) => self.source(i),
             },
@@ -179,6 +178,60 @@ impl Row {
     fn visual_rows(&self) -> i32 {
         (f32::from(self.height - self.pad - self.image_height()) / f32::from(self.lh)).round() as i32
     }
+}
+
+/// États du texte qu'on peut retrouver, du plus ancien au plus récent. Seul le
+/// dernier est gardé en entier : chacun des autres ne retient que ce qui le
+/// distingue du suivant, soit quelques octets par frappe plutôt qu'une copie de la note.
+#[derive(Default)]
+struct History {
+    last: Option<(String, Range<usize>)>,
+    /// (début de la différence, sa longueur dans l'état suivant, son texte ici, sélection).
+    earlier: Vec<(usize, usize, String, Range<usize>)>,
+}
+
+impl History {
+    fn push(&mut self, text: String, sel: Range<usize>) {
+        if let Some((old, old_sel)) = self.last.replace((text, sel)) {
+            let new = self.last.as_ref().unwrap().0.as_bytes();
+            let old_bytes = old.as_bytes();
+            let mut start = old_bytes.iter().zip(new).take_while(|(a, b)| a == b).count();
+            while !old.is_char_boundary(start) {
+                start -= 1;
+            }
+            let room = old.len().min(new.len()) - start;
+            let mut tail = old_bytes.iter().rev().zip(new.iter().rev()).take(room).take_while(|(a, b)| a == b).count();
+            while !old.is_char_boundary(old.len() - tail) {
+                tail -= 1;
+            }
+            self.earlier.push((start, new.len() - tail - start, old[start..old.len() - tail].to_string(), old_sel));
+            if self.earlier.len() >= 200 {
+                self.earlier.remove(0);
+            }
+        }
+    }
+
+    fn pop(&mut self) -> Option<(String, Range<usize>)> {
+        let out = self.last.take()?;
+        if let Some((start, len, own, sel)) = self.earlier.pop() {
+            let mut text = out.0.clone();
+            text.replace_range(start..start + len, &own);
+            self.last = Some((text, sel));
+        }
+        Some(out)
+    }
+}
+
+/// Ce qu'une ligne affiche, tant que ni elle ni son contexte ne changent.
+struct Shaped {
+    line: Option<WrappedLine>,
+    /// Signes affichés à la place de leur écriture ASCII : (octet de début,
+    /// longueur dans le texte, longueur affichée).
+    subs: Vec<(usize, usize, usize)>,
+    /// Formule sur la ligne : son source, et si elle est hors texte.
+    formula: Option<(String, bool)>,
+    /// Chemin de l'image que la ligne désigne.
+    picture: Option<String>,
 }
 
 /// Figure prête à dessiner (`None` : source invalide) et sa taille.
@@ -213,8 +266,8 @@ pub struct Editor {
     marked: Option<Range<usize>>,
     selecting: bool,
     goal_x: Option<Pixels>,
-    undo: Vec<(String, Range<usize>)>,
-    redo: Vec<(String, Range<usize>)>,
+    undo: History,
+    redo: History,
     last_edit: Option<Instant>,
     notes: Vec<String>,
     /// Dossiers où chercher les images : celui de la note, puis le coffre.
@@ -230,6 +283,9 @@ pub struct Editor {
     copy_hitboxes: Vec<(usize, Hitbox)>,
     /// Diagrammes et formules de la dernière frame, par empreinte de leur source.
     figures: HashMap<u64, Drawing>,
+    /// Lignes mises en forme à la dernière frame, par empreinte de leur texte et
+    /// de leur contexte.
+    shaped: HashMap<u64, Rc<Shaped>>,
     ac_index: usize,
     ac_dismissed: Option<usize>,
     theme: Theme,
@@ -260,8 +316,8 @@ impl Editor {
             marked: None,
             selecting: false,
             goal_x: None,
-            undo: Vec::new(),
-            redo: Vec::new(),
+            undo: History::default(),
+            redo: History::default(),
             last_edit: None,
             notes: Vec::new(),
             dirs: Vec::new(),
@@ -270,6 +326,7 @@ impl Editor {
             hover: None,
             copy_hitboxes: Vec::new(),
             figures: HashMap::new(),
+            shaped: HashMap::new(),
             ac_index: 0,
             ac_dismissed: None,
             theme,
@@ -293,8 +350,8 @@ impl Editor {
         self.sel = cursor..cursor;
         self.reversed = false;
         self.marked = None;
-        self.undo.clear();
-        self.redo.clear();
+        self.undo = History::default();
+        self.redo = History::default();
         self.last_edit = None;
         self.scroll_y = px(0.);
         self.reveal = true;
@@ -336,7 +393,7 @@ impl Editor {
     pub fn decorations(&self, prefix: &str) -> (usize, Option<(f32, f32)>) {
         let row = self.rows.iter().find(|r| self.content[r.start..].starts_with(prefix)).unwrap();
         let image = row.image.as_ref().map(|(_, s)| (s.width.into(), s.height.into()));
-        (row.subs.len(), image)
+        (row.shaped.subs.len(), image)
     }
 
     fn cursor(&self) -> usize {
@@ -390,19 +447,17 @@ impl Editor {
         cx.notify();
     }
 
-    // ponytail: l'annulation garde des copies entières du texte (200 max) ;
-    // passer à un journal d'opérations si les notes dépassent le Mo.
+    // ponytail: chaque étape d'annulation (200 max) recopie une fois la note pour
+    // en tirer la différence ; passer à un journal d'opérations si les notes
+    // dépassent le Mo.
     fn push_undo(&mut self, boundary: bool) {
         let stale = self
             .last_edit
             .is_none_or(|t| t.elapsed() > Duration::from_millis(600));
         if boundary || stale {
-            self.undo.push((self.content.clone(), self.sel.clone()));
-            if self.undo.len() > 200 {
-                self.undo.remove(0);
-            }
+            self.undo.push(self.content.clone(), self.sel.clone());
         }
-        self.redo.clear();
+        self.redo = History::default();
         self.last_edit = Some(Instant::now());
     }
 
@@ -459,7 +514,7 @@ impl Editor {
         let Some((text, sel)) = from.pop() else {
             return;
         };
-        to.push((std::mem::replace(&mut self.content, text), self.sel.clone()));
+        to.push(std::mem::replace(&mut self.content, text), self.sel.clone());
         self.sel = sel;
         self.reversed = false;
         self.last_edit = None;
@@ -884,9 +939,9 @@ impl Editor {
 
     // ----- Mise en page et rendu -----
 
-    // ponytail: toutes les lignes sont remises en forme à chaque frame (le cache
-    // de gpui absorbe les lignes inchangées). Ne mettre en forme que le visible
-    // si une note de plusieurs dizaines de milliers de lignes devient lente.
+    // ponytail: chaque frame parcourt toutes les lignes (classement, empreinte) et
+    // garde leur mise en forme en mémoire, même hors de l'écran. Ne traiter que le
+    // visible si une note de plusieurs dizaines de milliers de lignes devient lente.
     fn layout(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         let t = self.theme;
         let cursor = self.cursor();
@@ -932,6 +987,13 @@ impl Editor {
                 .hash(&mut hasher);
             hasher.finish()
         };
+        let style = {
+            let mut hasher = DefaultHasher::new();
+            (key(0, ""), hex(t.accent), mono(), has_unequal).hash(&mut hasher);
+            hasher.finish()
+        };
+        let mut stale = std::mem::take(&mut self.shaped);
+        let mut shaped = HashMap::new();
         let mut old = std::mem::take(&mut self.figures);
         let mut kept = HashMap::new();
         // Bloc Mermaid ou `$$` en cours : son début et son source.
@@ -1004,38 +1066,147 @@ impl Editor {
             let font_size = font_size * (t.size / 16.);
             let pad = if offset == 0 { px(0.) } else { pad };
 
-            let mut flags = vec![0u16; line.len()];
-            let list = matches!(kind, Kind::Bullet | Kind::Ordered | Kind::Task(_));
-            flags[..marker].fill(if list { md::MARK } else { md::DIM });
-            if math {
-                flags.fill(if line.trim() == "$$" { md::DIM } else { md::CODE });
-            } else if kind == Kind::Code {
-                // Sans langage annoncé, en texte brut ou en Mermaid, le bloc reste tel quel.
-                if !matches!(lang.as_str(), "" | "text" | "txt" | "plain" | "mermaid") {
-                    md::code(line, &lang, &mut flags);
+            // Une ligne inchangée, dans le même contexte, reprend sa mise en forme de
+            // la frame précédente : la frappe ne retraite que la ligne touchée.
+            let has_cursor = (offset..=offset + line.len()).contains(&cursor);
+            let composed = marked.clone().filter(|m| m.start <= offset + line.len() && m.end >= offset);
+            let id = {
+                let near = composed.as_ref().map(|m| (m.start.wrapping_sub(offset), m.end.wrapping_sub(offset)));
+                let lang = (kind == Kind::Code).then_some(&lang);
+                let mut hasher = DefaultHasher::new();
+                (style, line, kind, marker, math, lang, has_cursor, near, f32::from(width).to_bits())
+                    .hash(&mut hasher);
+                hasher.finish()
+            };
+            let lh = (font_size * 1.65).round();
+            let made = stale.remove(&id).or_else(|| shaped.get(&id).cloned()).unwrap_or_else(|| {
+                let mut formula = None;
+                let mut flags = vec![0u16; line.len()];
+                let list = matches!(kind, Kind::Bullet | Kind::Ordered | Kind::Task(_));
+                flags[..marker].fill(if list { md::MARK } else { md::DIM });
+                if math {
+                    flags.fill(if line.trim() == "$$" { md::DIM } else { md::CODE });
+                } else if kind == Kind::Code {
+                    // Sans langage annoncé, en texte brut ou en Mermaid, le bloc reste tel quel.
+                    if !matches!(lang.as_str(), "" | "text" | "txt" | "plain" | "mermaid") {
+                        md::code(line, &lang, &mut flags);
+                    }
+                } else if !code && kind != Kind::Rule {
+                    md::inline(line, marker, &mut flags);
+                    // Formule sur la ligne : son source reste lisible, comme du code.
+                    if let Some((range, source, display)) = md::math(line)
+                        && range.start >= marker
+                        && flags[range.start] & md::CODE == 0
+                    {
+                        flags[range].fill(md::CODE);
+                        formula = Some((source.to_string(), display));
+                    }
                 }
-            } else if !code && kind != Kind::Rule {
-                md::inline(line, marker, &mut flags);
-                // Formule sur la ligne : son source reste lisible, comme du code.
-                if let Some((range, source, display)) = md::math(line)
-                    && range.start >= marker
-                    && flags[range.start] & md::CODE == 0
-                {
-                    flags[range].fill(md::CODE);
-                    drawing = cached(&mut old, &mut kept, key(1 + display as u8, source), false, || {
-                        figure::latex(source, display, rgb(t.text), t.size * MATH_SCALE)
+                if kind == Kind::Task(true) {
+                    flags[marker..].iter_mut().for_each(|f| *f |= md::STRIKE | md::DIM);
+                }
+                let picture = (!code).then(|| md::image(line)).flatten().map(|(range, path)| {
+                    flags[range].iter_mut().for_each(|f| *f |= md::DIM);
+                    path
+                });
+                // Hors de la ligne du curseur, `->`, `!=`… s'affichent comme des signes ;
+                // le texte, lui, ne change pas.
+                let mut signs = if code || has_cursor || kind == Kind::Rule {
+                    Vec::new()
+                } else {
+                    md::symbols(line, marker, &flags)
+                };
+                signs.retain(|(_, _, sign)| has_unequal || *sign != "≠");
+                let mut shown = Cow::Borrowed(line);
+                let mut subs = Vec::new();
+                if !signs.is_empty() {
+                    let (mut text, mut styles, mut done) = (String::new(), Vec::new(), 0);
+                    for (at, len, sign) in signs {
+                        text.push_str(&line[done..at]);
+                        styles.extend_from_slice(&flags[done..at]);
+                        text.push_str(sign);
+                        styles.resize(text.len(), flags[at]);
+                        subs.push((at, len, sign.len()));
+                        done = at + len;
+                    }
+                    text.push_str(&line[done..]);
+                    styles.extend_from_slice(&flags[done..]);
+                    shown = Cow::Owned(text);
+                    flags = styles;
+                }
+                let is_marked = |i: usize| composed.as_ref().is_some_and(|m| m.contains(&(offset + i)));
+
+                let mut runs: Vec<TextRun> = Vec::new();
+                let mut i = 0;
+                while i < shown.len() {
+                    let (f, m) = (flags[i], is_marked(i));
+                    let mut j = i + 1;
+                    while j < shown.len() && flags[j] == f && is_marked(j) == m {
+                        j += 1;
+                    }
+                    let heading = matches!(kind, Kind::Heading(_));
+                    let color = if f & md::DIM != 0 {
+                        t.dim
+                    } else if f & md::STRING != 0 {
+                        hue(0.33)
+                    } else if f & md::NUMBER != 0 {
+                        hue(0.6)
+                    } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
+                        t.accent
+                    } else {
+                        t.text
+                    };
+                    runs.push(TextRun {
+                        len: j - i,
+                        font: Font {
+                            weight: if heading || f & md::BOLD != 0 {
+                                FontWeight::BOLD
+                            } else {
+                                FontWeight::NORMAL
+                            },
+                            style: if f & md::ITALIC != 0 || kind == Kind::Quote {
+                                FontStyle::Italic
+                            } else {
+                                FontStyle::Normal
+                            },
+                            ..font(if code || f & md::CODE != 0 { mono() } else { sans() })
+                        },
+                        color,
+                        background_color: (f & md::CODE != 0).then_some(t.code_bg),
+                        // Un seul trait pour tout le lien, crochets compris : gpui 0.2 laisse
+                        // un bout de trait dans la marge si le soulignement change de style
+                        // juste à un retour à la ligne.
+                        underline: (m || f & md::LINK != 0).then_some(UnderlineStyle {
+                            thickness: px(1.),
+                            color: Some(if f & md::LINK != 0 { t.accent } else { color }.opacity(0.5)),
+                            wavy: false,
+                        }),
+                        strikethrough: (f & md::STRIKE != 0).then_some(StrikethroughStyle {
+                            thickness: px(1.),
+                            color: Some(color),
+                        }),
                     });
+                    i = j;
                 }
-            }
-            if kind == Kind::Task(true) {
-                flags[marker..].iter_mut().for_each(|f| *f |= md::STRIKE | md::DIM);
+
+                let line = window
+                    .text_system()
+                    .shape_text(shown.into_owned().into(), font_size, &runs, Some(width), None)
+                    .ok()
+                    .and_then(|lines| lines.into_iter().next());
+                Rc::new(Shaped { line, subs, formula, picture })
+            });
+            shaped.insert(id, made.clone());
+            if let Some((source, display)) = &made.formula {
+                drawing = cached(&mut old, &mut kept, key(1 + *display as u8, source), false, || {
+                    figure::latex(source, *display, rgb(t.text), t.size * MATH_SCALE)
+                });
             }
             // ponytail: une image par ligne, cherchée dans le dossier de la note, à la
             // racine du coffre, puis par son nom dans tout le coffre ; les images en
             // ligne (http) ne sont pas chargées.
-            let image = (!code).then(|| md::image(line)).flatten().and_then(|(range, path)| {
-                flags[range].iter_mut().for_each(|f| *f |= md::DIM);
-                let file = self.dirs.iter().map(|d| d.join(&path)).find(|p| p.is_file()).or_else(|| {
+            let image = made.picture.as_ref().and_then(|path| {
+                let file = self.dirs.iter().map(|d| d.join(path)).find(|p| p.is_file()).or_else(|| {
                     let name = path.rsplit('/').next()?.to_lowercase();
                     self.images.get(&name).cloned()
                 })?;
@@ -1058,94 +1229,7 @@ impl Editor {
                 Some((image, size(s.width * scale, s.height * scale)))
             });
 
-            // Hors de la ligne du curseur, `->`, `!=`… s'affichent comme des signes ;
-            // le texte, lui, ne change pas.
-            let has_cursor = (offset..=offset + line.len()).contains(&cursor);
-            let mut signs = if code || has_cursor || kind == Kind::Rule {
-                Vec::new()
-            } else {
-                md::symbols(line, marker, &flags)
-            };
-            signs.retain(|(_, _, sign)| has_unequal || *sign != "≠");
-            let mut shown = Cow::Borrowed(line);
-            let mut subs = Vec::new();
-            if !signs.is_empty() {
-                let (mut text, mut styles, mut done) = (String::new(), Vec::new(), 0);
-                for (at, len, sign) in signs {
-                    text.push_str(&line[done..at]);
-                    styles.extend_from_slice(&flags[done..at]);
-                    text.push_str(sign);
-                    styles.resize(text.len(), flags[at]);
-                    subs.push((at, len, sign.len()));
-                    done = at + len;
-                }
-                text.push_str(&line[done..]);
-                styles.extend_from_slice(&flags[done..]);
-                shown = Cow::Owned(text);
-                flags = styles;
-            }
-            let is_marked = |i: usize| marked.as_ref().is_some_and(|m| m.contains(&(offset + i)));
-
-            let mut runs: Vec<TextRun> = Vec::new();
-            let mut i = 0;
-            while i < shown.len() {
-                let (f, m) = (flags[i], is_marked(i));
-                let mut j = i + 1;
-                while j < shown.len() && flags[j] == f && is_marked(j) == m {
-                    j += 1;
-                }
-                let heading = matches!(kind, Kind::Heading(_));
-                let color = if f & md::DIM != 0 {
-                    t.dim
-                } else if f & md::STRING != 0 {
-                    hue(0.33)
-                } else if f & md::NUMBER != 0 {
-                    hue(0.6)
-                } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
-                    t.accent
-                } else {
-                    t.text
-                };
-                runs.push(TextRun {
-                    len: j - i,
-                    font: Font {
-                        weight: if heading || f & md::BOLD != 0 {
-                            FontWeight::BOLD
-                        } else {
-                            FontWeight::NORMAL
-                        },
-                        style: if f & md::ITALIC != 0 || kind == Kind::Quote {
-                            FontStyle::Italic
-                        } else {
-                            FontStyle::Normal
-                        },
-                        ..font(if code || f & md::CODE != 0 { mono() } else { sans() })
-                    },
-                    color,
-                    background_color: (f & md::CODE != 0).then_some(t.code_bg),
-                    // Un seul trait pour tout le lien, crochets compris : gpui 0.2 laisse
-                    // un bout de trait dans la marge si le soulignement change de style
-                    // juste à un retour à la ligne.
-                    underline: (m || f & md::LINK != 0).then_some(UnderlineStyle {
-                        thickness: px(1.),
-                        color: Some(if f & md::LINK != 0 { t.accent } else { color }.opacity(0.5)),
-                        wavy: false,
-                    }),
-                    strikethrough: (f & md::STRIKE != 0).then_some(StrikethroughStyle {
-                        thickness: px(1.),
-                        color: Some(color),
-                    }),
-                });
-                i = j;
-            }
-
-            let lh = (font_size * 1.65).round();
-            let shaped = window
-                .text_system()
-                .shape_text(shown.into_owned().into(), font_size, &runs, Some(width), None)
-                .ok()
-                .and_then(|lines| lines.into_iter().next());
-            let text_height = shaped.as_ref().map_or(lh, |l| l.size(lh).height);
+            let text_height = made.line.as_ref().map_or(lh, |l| l.size(lh).height);
             let row = Row {
                 start: offset,
                 len: line.len(),
@@ -1154,8 +1238,7 @@ impl Editor {
                 lh,
                 height: pad + text_height,
                 kind,
-                line: shaped,
-                subs,
+                shaped: made,
                 image,
                 opens,
             };
@@ -1166,6 +1249,7 @@ impl Editor {
         }
         self.rows = rows;
         self.figures = kept;
+        self.shaped = shaped;
 
         if self.reveal {
             self.reveal = false;
@@ -1252,7 +1336,7 @@ impl Editor {
                     rect(px(0.), b.y, b.x + tail, row.lh);
                 }
             }
-            if let Some(line) = &row.line {
+            if let Some(line) = &row.shaped.line {
                 line.paint(point(o.x, text_top), row.lh, TextAlign::Left, None, window, cx)
                     .ok();
             }
@@ -1555,5 +1639,25 @@ impl Element for EditorElement {
         window.handle_input(&focus, ElementInputHandler::new(bounds, self.0.clone()), cx);
         let focused = focus.is_focused(window);
         self.0.update(cx, |editor, cx| editor.paint(focused, window, cx));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_returns_each_state() {
+        let states = ["", "é", "éa", "éa\nligne", "a\nligne", "a\nligné"];
+        let mut history = History::default();
+        for (i, state) in states.iter().enumerate() {
+            history.push(state.to_string(), i..i);
+        }
+        // Seul le dernier état est gardé en entier.
+        assert!(history.earlier.iter().all(|(_, _, own, _)| own.len() <= 2));
+        for (i, state) in states.iter().enumerate().rev() {
+            assert_eq!(history.pop(), Some((state.to_string(), i..i)));
+        }
+        assert_eq!(history.pop(), None);
     }
 }
