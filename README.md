@@ -12,6 +12,8 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Plain files**: one `.md` file per note, in a folder (the *vault*) you can sync with git, Syncthing or anything else. An existing Obsidian vault works as is.
 - **Styled as you type**: headings grow, bold and italic render, markers stay visible but dimmed. The file on disk is always plain Markdown.
 - **Lists that continue themselves**: `- `, `1. ` and `[] ` start a list, Enter continues it, numbering stays in order.
+- **Slash commands**: type `/` for a heading, a list, a colored panel, a code block, a formula or a table, whose size you pick on a grid. What lands in the note is plain Markdown.
+- **Tables that stay aligned**: columns line up as you type, `Tab` moves from cell to cell, `Enter` adds a row, and two `+` buttons add a row or a column.
 - **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `#tags` filter the note list.
 - **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons.
 - **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas like Excalidraw's. Each diagram is an SVG file in your vault, shown in your notes.
@@ -209,7 +211,8 @@ A previewed note only counts as opened, and moves to the top of the recent list,
 - **Graph**: drag the background to move around and scroll to zoom. Pointing at a note lights up the notes it is linked to. Drag a note to move it: the notes linked to it follow, the closest ones the most. The target button glides back to the whole graph. With the graph on the whole window, a click only selects: `Enter` or a double click brings the note back.
 - **Folders**: the double-chevron button at the top of the tree folds every folder; when they are all folded, it unfolds them all.
 - **New note from the tree**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line.
-- **Right click** on a line for its menu: open, new note here, new folder, copy the `[[link]]`, rename, move to the trash. A right click below the last line acts on the vault itself.
+- **Right click** on a line for its menu: open, new note here, new folder, copy the `[[link]]`, the path or the path relative to the vault, reveal in the file explorer, duplicate (`Ctrl + D`), rename, move to the trash. A right click below the last line acts on the vault itself.
+- **Several lines at once**: `Ctrl + click` adds a line to the selection or takes it out, `Shift + click` selects everything from the last line chosen. Dragging, duplicating, copying links or paths and moving to the trash then apply to all of them.
 - **Drag and drop**: in the tree, drag a note or a folder onto a folder to move it there, or below the last line to move it to the top of the vault. Nothing is ever overwritten: if the name is taken, the move is refused.
 - **Renaming** a note whose first line is its name rewrites that line too, so both stay in step. The `[[links]]` to it in the other notes follow, see [Notes and vault](#notes-and-vault).
 - **The trash** is the hidden folder `.trash` at the top of the vault: deleting moves the note or the folder there, and never destroys anything. Empty it, or take a note back, with your file manager.
@@ -235,6 +238,8 @@ What you type is what is saved. Bref only changes how it looks.
 | `1. ` | a numbered list, renumbered as you add, remove or indent items |
 | `[] ` or `- [ ] ` | a task; click the box or press `Ctrl + Enter` to check it |
 | `> ` | a quote |
+| `> [!NOTE]` | a colored panel, made of that line and the quote lines after it. `NOTE`, `TIP`, `IMPORTANT`, `WARNING` and `CAUTION` each have their color, as on GitHub and in Obsidian |
+| `\| a \| b \|` | a table, see [Tables](#tables) |
 | `` ``` `` then `Enter` | a code block, closed for you. Name the language (`` ```rust ``) to get it colored; the copy icon, on its first line, copies its content |
 | `---` | a divider |
 | `**bold**`, `*italic*`, `~~struck~~`, `` `code` `` | inline styles |
@@ -247,7 +252,33 @@ What you type is what is saved. Bref only changes how it looks.
 | `$x^2$`, `$$…$$`, or lines between two `$$` lines | a LaTeX formula, drawn under its line |
 | `->`, `<-`, `<->`, `=>`, `<=>`, `!=`, `<=`, `>=` | shown as →, ←, ↔, ⇒, ⇔, ≠, ≤, ≥, except on the line you are editing and inside code |
 
-Tables and footnotes are kept as you typed them, without special rendering. So are pictures given as a web address. A formula is drawn under its line, not within the text, and only the first one of a line.
+Footnotes are kept as you typed them, without special rendering. So are pictures given as a web address. A formula is drawn under its line, not within the text, and only the first one of a line.
+
+### Slash commands
+
+Type `/` at the start of a line or of a word: a list offers what can be inserted there. Keep typing to filter it by name (`/h2`, `/todo`, `/table`) or by label (`/panel` lists the five panels), `Up` and `Down` to choose, `Enter` or `Tab` to insert, `Esc` to dismiss.
+
+| Command | Inserts |
+|---|---|
+| `/h1`, `/h2`, `/h3` | a heading |
+| `/list`, `/num`, `/todo` | a bullet list, a numbered list, a task |
+| `/note`, `/tip`, `/important`, `/warning`, `/caution` | a colored panel |
+| `/quote`, `/rule` | a quote, a divider |
+| `/code`, `/mermaid`, `/math` | a code block, a Mermaid diagram, a formula, with the cursor inside |
+| `/table` | a table, after you chose its size |
+| `/link`, `/image` | `[[` or `![[`, and their suggestions |
+
+### Tables
+
+`/table` opens a grid under the cursor. Move the pointer over it, or use the arrows, to choose how many columns and rows you want, then click or press `Enter`: the empty table is written, and the cursor waits in its first cell. For a table larger than the grid, type its size while the grid is open, columns first: `12x5`.
+
+- Columns realign as you type or erase in a cell.
+- `Tab` and `Shift + Tab` go to the next and the previous cell, whose content is selected: typing replaces it. After the last cell, `Tab` adds a row.
+- `Enter` adds a row under the one you are in. On a last row left empty, it removes that row and leaves the table.
+- Two `+` buttons appear when the pointer or the cursor is on a table: the one below adds a row, the one on the right adds a column.
+- A table you type by hand works the same: `| a | b |` then `Tab` is enough, the line of dashes is written for you. `:--` and `--:` in that line keep their meaning.
+
+A table stays plain text, in the code font so that columns line up. A row wider than the page wraps; to remove a column, delete its cells by hand.
 
 ## Diagrams
 

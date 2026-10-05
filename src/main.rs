@@ -1104,7 +1104,9 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (tr("Arrows / Tab", "Flèches / Tab").into(), tr("Select and preview / linked notes (graph)", "Sélectionner en aperçu / notes liées (graphe)")),
                 (tr("Enter / Esc", "Entrée / Échap").into(), tr("Open the note / back to the note", "Ouvrir la note / revenir à la note")),
                 (m("Shift+N"), tr("New folder", "Nouveau dossier")),
-                (tr("F2 / Delete", "F2 / Suppr").into(), tr("Rename / move to the trash", "Renommer / mettre à la corbeille")),
+                (format!("F2 / {} / {}", m("D"), tr("Delete", "Suppr")), tr("Rename / duplicate / move to the trash", "Renommer / dupliquer / mettre à la corbeille")),
+                (format!("{} / Shift+{}", m(tr("click", "clic")), tr("click", "clic")), tr("Select several rows: move, duplicate, trash them together", "Sélectionner plusieurs lignes : les déplacer, dupliquer, jeter ensemble")),
+                (tr("Right click", "Clic droit").into(), tr("Copy the link or the path, reveal in the file explorer…", "Copier le lien ou le chemin, afficher dans l'explorateur…")),
                 (tr("Drag a node", "Glisser un nœud").into(), tr("Move it in the graph, linked notes follow", "Le déplacer dans le graphe, les notes liées suivent")),
             ],
         ),
@@ -1134,6 +1136,9 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
         (
             tr("Typing", "À la frappe"),
             vec![
+                ("/".into(), tr("Components: headings, lists, panel, table, code, formula…", "Composants : titres, listes, panneau, tableau, code, formule…")),
+                ("/table".into(), tr("Table: pick its size on the grid (mouse, arrows), or type it: 12x5", "Tableau : choisir sa taille sur la grille (souris, flèches), ou la taper : 12x5")),
+                ("> [!NOTE]".into(), tr("Colored panel: NOTE, TIP, IMPORTANT, WARNING, CAUTION", "Panneau coloré : NOTE, TIP, IMPORTANT, WARNING, CAUTION")),
                 ("- ".into(), tr("Bullet list", "Liste à puces")),
                 ("1. ".into(), tr("Numbered list", "Liste numérotée")),
                 ("[] ".into(), tr("Task", "Tâche à cocher")),
@@ -1155,6 +1160,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
             vec![
                 (tr("Enter", "Entrée").into(), tr("Continue the list, or leave it on an empty item", "Continuer la liste, ou en sortir sur un item vide")),
                 ("Tab / Shift+Tab".into(), tr("Indent / outdent", "Indenter / désindenter")),
+                (tr("Tab / Enter in a table", "Tab / Entrée dans un tableau").into(), tr("Next cell / new row; columns stay aligned; + buttons add a row or a column", "Cellule suivante / nouvelle ligne ; les colonnes restent alignées ; les boutons + ajoutent ligne ou colonne")),
                 (m(tr("Enter", "Entrée")), tr("Check / uncheck a task", "Cocher / décocher une tâche")),
                 (format!("{} / {}", m("B"), m("I")), tr("Bold / italic", "Gras / italique")),
                 (format!("{} / {}", m("Z"), m("Shift+Z")), tr("Undo / redo", "Annuler / rétablir")),
@@ -1633,6 +1639,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("tab", graph::Cycle, n),
         KeyBinding::new("secondary-shift-n", nav::NewFolder, Some("Shell")),
         KeyBinding::new("f2", nav::Rename, n),
+        KeyBinding::new("secondary-d", nav::Duplicate, n),
         KeyBinding::new("delete", nav::Trash, n),
         KeyBinding::new("up", nav::Prev, n),
         KeyBinding::new("down", nav::Next, n),
@@ -2020,6 +2027,31 @@ mod tests {
                 && s.notes.iter().all(|n| n.path.is_file())
         }));
 
+        // Sélection multiple : Ctrl+clic ajoute une ligne, Maj+clic étend depuis la
+        // ligne choisie ; dupliquer, copier les chemins et jeter portent sur le lot.
+        cx.run_until_parked();
+        let mark = |cx: &mut gpui::VisualTestContext, from: &str, to: &str, extend: bool| {
+            shell.update(cx, |s, cx| {
+                let row = |s: &Shell, name: &str| s.nav.rows.iter().position(|r| r.path == root.join(name)).unwrap();
+                s.nav.marked.clear();
+                s.nav.sel = Some(root.join(from));
+                s.nav_mark(row(s, to), extend, cx);
+            });
+        };
+        mark(cx, "Courses.md", "Idées.md", false);
+        cx.simulate_keystrokes("secondary-d");
+        assert!(root.join("Courses 2.md").is_file() && root.join("Idées 2.md").is_file());
+        assert_eq!(fs::read_to_string(root.join("Courses 2.md")).unwrap(), text(cx));
+        cx.run_until_parked();
+        mark(cx, "Courses.md", "Idées.md", true);
+        assert_eq!(shell.read_with(cx, |s, _| s.nav.marked.len()), 3);
+        mark(cx, "Courses 2.md", "Idées 2.md", false);
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::CopyRelative, s.nav.sel.clone(), window, cx));
+        assert_eq!(cx.read_from_clipboard().and_then(|item| item.text()).as_deref(), Some("Courses 2.md\nIdées 2.md"));
+        cx.simulate_keystrokes("delete");
+        assert!(root.join(".trash/Courses 2.md").is_file() && root.join(".trash/Idées 2.md").is_file());
+        assert!(root.join("Courses.md").is_file() && shell.read_with(cx, |s, _| s.nav.marked.is_empty()));
+
         // Suppr met à la corbeille du coffre, sans rien détruire ; la note ouverte laisse
         // place à une note vide.
         shell.update(cx, |s, _| s.nav.sel = Some(archives.clone()));
@@ -2239,6 +2271,72 @@ mod tests {
         cx.simulate_input("![[sch");
         cx.simulate_keystrokes("enter");
         assert!(text(cx).ends_with("![[Schéma.svg]]"));
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+
+        // Commandes `/` : la liste se filtre par nom ou par libellé ; Entrée pose le
+        // composant. Ici un panneau, dont la citation continue à la ligne.
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("/pan");
+        cx.simulate_keystrokes("down enter");
+        cx.simulate_input("vu");
+        assert!(text(cx).ends_with("\n> [!TIP]\n> vu"));
+        cx.simulate_keystrokes("enter enter");
+        // `/tableau` ouvre la grille : les flèches règlent colonnes et lignes.
+        cx.simulate_input("/tableau");
+        cx.simulate_keystrokes("enter left down enter");
+        cx.simulate_input("Nom");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("Âge");
+        // Tab passe à la cellule suivante, par-dessus les tirets, et réaligne les colonnes.
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("Élodie");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("31");
+        cx.simulate_keystrokes("tab");
+        let empty = "|        |     |";
+        let table = format!("| Nom    | Âge |\n| ------ | --- |\n| Élodie | 31  |\n{empty}\n{empty}");
+        assert!(text(cx).ends_with(&format!("\n\n{table}")), "{}", text(cx));
+        // Entrée ajoute une ligne sous celle du curseur ; les boutons « + » une
+        // colonne à droite et une ligne en bas.
+        cx.simulate_keystrokes("enter");
+        assert!(text(cx).ends_with(&format!("{table}\n{empty}")));
+        cx.run_until_parked();
+        let [_, column] = shell.read_with(cx, |s, cx| s.editor.read(cx).plus_buttons().unwrap());
+        cx.simulate_click(column, gpui::Modifiers::none());
+        cx.simulate_input("Ville");
+        // Chaque frappe réaligne les colonnes ; effacer aussi.
+        assert!(text(cx).contains("| Nom    | Âge | Ville |\n| ------ | --- | ----- |\n| Élodie | 31  |       |"), "{}", text(cx));
+        cx.simulate_input("s x");
+        cx.simulate_keystrokes("backspace backspace backspace");
+        assert!(text(cx).contains("| Nom    | Âge | Ville |\n| ------ | --- | ----- |\n| Élodie | 31  |       |"), "{}", text(cx));
+        cx.run_until_parked();
+        let [row, _] = shell.read_with(cx, |s, cx| s.editor.read(cx).plus_buttons().unwrap());
+        cx.simulate_click(row, gpui::Modifiers::none());
+        // Entrée sur une dernière ligne vide la retire et sort du tableau.
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("fin");
+        let empty = "|        |     |       |";
+        let table = format!("| Nom    | Âge | Ville |\n| ------ | --- | ----- |\n| Élodie | 31  |       |\n{empty}\n{empty}\n{empty}");
+        assert!(text(cx).ends_with(&format!("\n\n{table}\nfin")), "{}", text(cx));
+        // À la souris : la case survolée de la grille donne la taille du tableau.
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("/table");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        let cell = shell.read_with(cx, |s, cx| s.editor.read(cx).grid_cell(2, 1).unwrap());
+        cx.simulate_click(cell, gpui::Modifiers::none());
+        assert!(text(cx).ends_with("fin\n\n|     |     |\n| --- | --- |"), "{}", text(cx));
+        // Au clavier : une taille tapée dans la grille, au-delà de ses cases.
+        cx.simulate_keystrokes("secondary-end enter enter");
+        cx.simulate_input("/table");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("12x9");
+        cx.simulate_keystrokes("backspace");
+        cx.simulate_input("1");
+        cx.simulate_keystrokes("enter");
+        let wide = format!("|{}\n|{}", "     |".repeat(12), " --- |".repeat(12));
+        assert!(text(cx).ends_with(&format!("| --- | --- |\n\n{wide}")), "{}", text(cx));
         cx.executor().advance_clock(Duration::from_millis(500));
         cx.run_until_parked();
 

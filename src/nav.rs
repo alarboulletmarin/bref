@@ -23,7 +23,7 @@ use crate::{
     vault::{self, Note},
 };
 
-actions!(nav, [ShowTree, ShowRecent, ShowGraph, ShowTags, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Trash]);
+actions!(nav, [ShowTree, ShowRecent, ShowGraph, ShowTags, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Duplicate, Trash]);
 
 pub const RAIL: Pixels = px(40.);
 const ROW: Pixels = px(26.);
@@ -61,20 +61,25 @@ pub struct Menu {
 }
 
 #[derive(Clone, Copy)]
-enum Do {
+pub enum Do {
     Open,
     NewNote,
     NewDiagram,
     NewFolder,
     Rename,
+    Duplicate,
     Trash,
     CopyLink,
+    CopyPath,
+    CopyRelative,
+    Reveal,
 }
 
 /// Ligne de l'arbre en cours de glisser-déposer ; dessinée sous le pointeur.
 #[derive(Clone)]
 struct Dragged {
-    path: PathBuf,
+    /// La ligne saisie, ou toute la sélection multiple si elle en fait partie.
+    paths: Vec<PathBuf>,
     name: String,
     theme: Theme,
 }
@@ -105,10 +110,13 @@ pub struct Nav {
     pub dragging: bool,
     /// Ligne sélectionnée (note ou dossier).
     pub sel: Option<PathBuf>,
+    /// Sélection multiple (Ctrl+clic, Maj+clic) ; vide tant qu'une seule ligne
+    /// est choisie. `sel` est alors la ligne d'où Maj+clic étend.
+    pub marked: HashSet<PathBuf>,
     /// Dossiers dépliés.
     pub open: HashSet<PathBuf>,
     /// Lignes de la dernière frame, et l'empreinte de ce dont elles sont tirées.
-    rows: Vec<Row>,
+    pub rows: Vec<Row>,
     rows_from: u64,
     scroll: UniformListScrollHandle,
     /// Amener la sélection à l'écran à la prochaine frame.
@@ -143,6 +151,7 @@ impl Nav {
             graph_w: words.next().and_then(|w| w.parse().ok()).map_or(px(0.), px),
             dragging: false,
             sel: None,
+            marked: HashSet::new(),
             open: HashSet::new(),
             rows: Vec::new(),
             rows_from: 0,
@@ -439,6 +448,7 @@ impl Shell {
             return;
         };
         let (path, is_note) = (row.path.clone(), row.dir.is_none());
+        self.nav.marked.clear();
         self.nav.scroll.scroll_to_item(ix, ScrollStrategy::Center);
         if is_note && self.nav.panel == Panel::Split {
             self.preview_note(&path, cx);
@@ -446,6 +456,46 @@ impl Shell {
         self.nav.sel = Some(path);
         self.nav.reveal = false;
         cx.notify();
+    }
+
+    /// Ctrl+clic ajoute la ligne à la sélection ou l'en retire ; Maj+clic
+    /// sélectionne tout depuis la dernière ligne choisie.
+    pub fn nav_mark(&mut self, ix: usize, extend: bool, cx: &mut Context<Self>) {
+        let Some(path) = self.nav.rows.get(ix).map(|r| r.path.clone()) else {
+            return;
+        };
+        let marked = &mut self.nav.marked;
+        if extend {
+            let from = self.nav.sel.as_ref().and_then(|sel| self.nav.rows.iter().position(|r| r.path == *sel)).unwrap_or(ix);
+            *marked = self.nav.rows[from.min(ix)..=from.max(ix)].iter().map(|r| r.path.clone()).collect();
+            self.nav.sel.get_or_insert(path);
+        } else {
+            // La ligne déjà sélectionnée fait partie du lot.
+            if marked.is_empty() {
+                marked.extend(self.nav.sel.take());
+            }
+            if !marked.remove(&path) {
+                marked.insert(path.clone());
+            }
+            // Retirée, elle laisse sa place de ligne choisie à une autre du lot.
+            let other = self.nav.rows.iter().map(|r| &r.path).find(|p| marked.contains(*p)).cloned();
+            self.nav.sel = if marked.contains(&path) { Some(path) } else { other.or(Some(path)) };
+        }
+        cx.notify();
+    }
+
+    /// Ce qu'une action sur `target` vise : toute la sélection multiple s'il en
+    /// fait partie, dans l'ordre du panneau, sans ce qu'un dossier visé contient déjà.
+    fn targets(&self, target: &Path) -> Vec<PathBuf> {
+        let marked = &self.nav.marked;
+        if !marked.contains(target) {
+            return vec![target.to_path_buf()];
+        }
+        let mut seen = HashSet::new();
+        let rows = self.nav.rows.iter().map(|r| &r.path);
+        rows.filter(|p| marked.contains(*p) && !p.ancestors().skip(1).any(|a| marked.contains(a)) && seen.insert(*p))
+            .cloned()
+            .collect()
     }
 
     fn nav_step(&mut self, down: bool, cx: &mut Context<Self>) {
@@ -464,6 +514,7 @@ impl Shell {
             return;
         };
         let path = row.path.clone();
+        self.nav.marked.clear();
         if row.dir.is_some() {
             if !self.nav.open.remove(&path) {
                 self.nav.open.insert(path.clone());
@@ -525,7 +576,7 @@ impl Shell {
     }
 
     /// Exécute une entrée du menu contextuel sur `target` (`None` : le coffre).
-    fn menu_do(&mut self, what: Do, target: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn menu_do(&mut self, what: Do, target: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         self.menu = None;
         cx.notify();
         let Some(root) = self.vault.clone() else {
@@ -541,6 +592,11 @@ impl Shell {
             Some(t) if is_dir => t.clone(),
             Some(t) => t.parent().map_or(root.clone(), Path::to_path_buf),
             None => root.clone(),
+        };
+        // Corbeille, copies et duplication portent sur toute la sélection multiple.
+        let all = target.as_deref().map_or_else(|| vec![root.clone()], |t| self.targets(t));
+        let copy = |lines: Vec<String>, cx: &mut Context<Self>| {
+            cx.write_to_clipboard(ClipboardItem::new_string(lines.join("\n")));
         };
         match (what, target) {
             (Do::Open, Some(path)) => self.open_from_nav(&path, window, cx),
@@ -606,14 +662,44 @@ impl Shell {
                     }
                 });
             }
-            (Do::Trash, Some(path)) => self.trash(&root, &path, cx),
-            (Do::CopyLink, Some(path)) => {
-                let link = if vault::is_image(&path) {
-                    format!("![[{}]]", graph::image_name(&path))
-                } else {
-                    format!("[[{}]]", vault::stem(&path))
+            (Do::Trash, Some(_)) => {
+                all.iter().for_each(|path| self.trash(&root, path, cx));
+                self.nav.marked.clear();
+            }
+            (Do::CopyLink, Some(_)) => {
+                let files = all.iter().filter(|p| !self.dirs.contains(p));
+                let link = |path: &PathBuf| match vault::is_image(path) {
+                    true => format!("![[{}]]", graph::image_name(path)),
+                    false => format!("[[{}]]", vault::stem(path)),
                 };
-                cx.write_to_clipboard(ClipboardItem::new_string(link));
+                copy(files.map(link).collect(), cx);
+            }
+            (Do::CopyPath, _) => copy(all.iter().map(|p| p.display().to_string()).collect(), cx),
+            (Do::CopyRelative, _) => {
+                let relative = |p: &PathBuf| p.strip_prefix(&root).unwrap_or(p).display().to_string();
+                copy(all.iter().map(relative).collect(), cx);
+            }
+            (Do::Reveal, _) => cx.reveal_path(&all[0]),
+            // ponytail: seuls les fichiers se dupliquent ; copier un dossier entier
+            // demande un parcours récursif, à écrire si le besoin se présente.
+            (Do::Duplicate, Some(_)) => {
+                // La copie part de ce qui est à l'écran, pas d'un fichier en retard.
+                self.flush(cx);
+                let mut last = None;
+                for path in all.iter().filter(|p| p.is_file()) {
+                    let extension = path.extension().unwrap_or_default().to_string_lossy();
+                    let twin = vault::free_path(path.parent().unwrap_or(&root), &vault::stem(path), &extension);
+                    match fs::copy(path, &twin) {
+                        Ok(_) => last = Some(twin),
+                        Err(e) => return self.fail(tr("Not duplicated", "Duplication impossible"), e),
+                    }
+                }
+                if let Some(twin) = last {
+                    let (notes, dirs, images) = vault::rescan(&root, &self.notes);
+                    self.sync(notes, dirs, images, cx);
+                    self.nav.marked.clear();
+                    self.nav.reveal(&twin);
+                }
             }
             _ => {}
         }
@@ -663,6 +749,12 @@ impl Shell {
         window.focus(&prompt.focus_handle(cx));
         self.palette = Some(prompt);
         cx.notify();
+    }
+
+    /// Range dans le dossier `dir` tout ce qui a été glissé.
+    fn move_all(&mut self, from: &[PathBuf], dir: &Path, cx: &mut Context<Self>) {
+        from.iter().for_each(|path| self.move_into(path, dir, cx));
+        self.nav.marked.clear();
     }
 
     /// Range la note ou le dossier `from` dans le dossier `dir`.
@@ -753,34 +845,51 @@ impl Shell {
         let t = self.theme;
         let is_dir = menu.target.as_ref().is_none_or(|p| self.dirs.contains(p));
         let tree = self.nav.mode == Mode::Tree;
-        let mut items: Vec<(&'static str, Do)> = Vec::new();
-        if !is_dir {
-            items.push((tr("Open", "Ouvrir"), Do::Open));
+        let many = menu.target.as_ref().is_some_and(|p| self.nav.marked.contains(p)) && self.nav.marked.len() > 1;
+        // Groupes d'entrées ; un trait sépare ceux qui en ont.
+        let mut groups: Vec<Vec<(&'static str, Do)>> = vec![Vec::new(); 4];
+        if !is_dir && !many {
+            groups[0].push((tr("Open", "Ouvrir"), Do::Open));
         }
-        if tree {
-            items.push((tr("New note here", "Nouvelle note ici"), Do::NewNote));
-            items.push((tr("New diagram here", "Nouveau schéma ici"), Do::NewDiagram));
-            items.push((tr("New folder", "Nouveau dossier"), Do::NewFolder));
+        if tree && !many {
+            groups[1].push((tr("New note here", "Nouvelle note ici"), Do::NewNote));
+            groups[1].push((tr("New diagram here", "Nouveau schéma ici"), Do::NewDiagram));
+            groups[1].push((tr("New folder", "Nouveau dossier"), Do::NewFolder));
+        }
+        if !is_dir || many {
+            groups[2].push((tr("Copy the [[link]]", "Copier le [[lien]]"), Do::CopyLink));
+        }
+        groups[2].push((tr("Copy path", "Copier le chemin"), Do::CopyPath));
+        if menu.target.is_some() {
+            groups[2].push((tr("Copy relative path", "Copier le chemin relatif"), Do::CopyRelative));
+        }
+        if !many {
+            groups[2].push((tr("Reveal in file explorer", "Afficher dans l'explorateur"), Do::Reveal));
         }
         if menu.target.is_some() {
-            if !is_dir {
-                items.push((tr("Copy the [[link]]", "Copier le [[lien]]"), Do::CopyLink));
+            if !is_dir || many {
+                groups[3].push((tr("Duplicate", "Dupliquer"), Do::Duplicate));
             }
-            items.push((tr("Rename", "Renommer"), Do::Rename));
-            items.push((tr("Move to the trash", "Mettre à la corbeille"), Do::Trash));
+            if !many {
+                groups[3].push((tr("Rename", "Renommer"), Do::Rename));
+            }
+            groups[3].push((tr("Move to the trash", "Mettre à la corbeille"), Do::Trash));
         }
+        groups.retain(|g| !g.is_empty());
+        let count: usize = groups.iter().map(Vec::len).sum();
+        let lines = (groups.len() - 1) as f32;
         // Le menu reste dans la fenêtre, même ouvert près d'un bord.
         let view = window.viewport_size();
-        let (width, height) = (px(210.), px(28. * items.len() as f32 + 10.));
+        let (width, height) = (px(230.), px(28. * count as f32 + 9. * lines + 10.));
         let at = point(
             (menu.at.x - self.nav.left).min(view.width - self.nav.left * 2. - width - px(8.)),
             (menu.at.y - self.nav.left).min(view.height - self.nav.left * 2. - height - px(8.)),
         );
         let target = menu.target.clone();
-        let rows = items.into_iter().enumerate().map(|(i, (label, what))| {
+        let entry = |(label, what): (&'static str, Do), cx: &mut Context<Self>| {
             let target = target.clone();
             div()
-                .id(i)
+                .id(label)
                 .h(px(28.))
                 .mx_1()
                 .px_2()
@@ -797,7 +906,15 @@ impl Shell {
                         this.menu_do(what, target.clone(), window, cx)
                     }),
                 )
-        });
+                .into_any_element()
+        };
+        let mut rows = Vec::new();
+        for (i, group) in groups.into_iter().enumerate() {
+            if i > 0 {
+                rows.push(div().h(px(1.)).my(px(4.)).bg(t.border).into_any_element());
+            }
+            rows.extend(group.into_iter().map(|item| entry(item, cx)));
+        }
         let close = || {
             cx.listener(|this: &mut Self, _: &MouseDownEvent, _, cx| {
                 this.menu = None;
@@ -843,10 +960,16 @@ impl Shell {
         let t = self.theme;
         let focused = self.nav.focus.is_focused(window);
         let tree = self.nav.mode == Mode::Tree;
+        let marked = &self.nav.marked;
+        // Glisser une ligne de la sélection multiple emporte tout le lot.
+        let lot = marked.iter().next().map(|any| self.targets(any)).unwrap_or_default();
         range
             .filter_map(|ix| {
                 let row = self.nav.rows.get(ix)?;
-                let selected = self.nav.sel.as_ref() == Some(&row.path);
+                let selected = match marked.is_empty() {
+                    true => self.nav.sel.as_ref() == Some(&row.path),
+                    false => marked.contains(&row.path),
+                };
                 let current = self.path.as_ref() == Some(&row.path);
                 // Dans la liste des récents, le dossier de la note sert de détail.
                 let detail = match (&self.vault, row.path.parent()) {
@@ -909,6 +1032,10 @@ impl Shell {
                     None => path.parent().map(Path::to_path_buf),
                 };
                 let target = path.clone();
+                let (paths, name) = match marked.contains(&path) {
+                    true => (lot.clone(), format!("{} {}", lot.len(), tr("items", "éléments"))),
+                    false => (vec![path], name),
+                };
                 Some(
                     div()
                         .id(ix)
@@ -917,6 +1044,10 @@ impl Shell {
                         .px_1()
                         .child(line)
                         .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
+                            let held = e.modifiers();
+                            if held.secondary() || held.shift {
+                                return this.nav_mark(ix, held.shift, cx);
+                            }
                             let folder = this.nav.rows.get(ix).is_some_and(|r| r.dir.is_some());
                             if folder || e.click_count() >= 2 {
                                 this.nav_activate(ix, window, cx)
@@ -927,7 +1058,11 @@ impl Shell {
                         .on_mouse_down(
                             MouseButton::Right,
                             cx.listener(move |this, e: &MouseDownEvent, window, cx| {
-                                this.nav.sel = Some(target.clone());
+                                // Hors de la sélection multiple, le clic droit la remplace.
+                                if !this.nav.marked.contains(&target) {
+                                    this.nav.marked.clear();
+                                    this.nav.sel = Some(target.clone());
+                                }
                                 // Un tag n'a pas de menu.
                                 if this.vault.as_ref().is_some_and(|root| target.starts_with(root)) {
                                     this.menu = Some(Menu { at: e.position, target: Some(target.clone()) });
@@ -938,7 +1073,7 @@ impl Shell {
                             }),
                         )
                         .when(tree, |d| {
-                            d.on_drag(Dragged { path, name, theme: t }, |dragged, _, _, cx| {
+                            d.on_drag(Dragged { paths, name, theme: t }, |dragged, _, _, cx| {
                                 cx.new(|_| dragged.clone())
                             })
                             .when(row.dir.is_some(), |d| {
@@ -946,7 +1081,7 @@ impl Shell {
                             })
                             .on_drop(cx.listener(move |this, dragged: &Dragged, _, cx| {
                                 if let Some(into) = &into {
-                                    this.move_into(&dragged.path, into, cx)
+                                    this.move_all(&dragged.paths, into, cx)
                                 }
                             }))
                         }),
@@ -1060,7 +1195,7 @@ impl Shell {
             .when(mode == Mode::Tree, |d| {
                 d.on_drop(cx.listener(|this, dragged: &Dragged, _, cx| {
                     if let Some(root) = this.vault.clone() {
-                        this.move_into(&dragged.path, &root, cx)
+                        this.move_all(&dragged.paths, &root, cx)
                     }
                 }))
                 .on_mouse_down(
@@ -1096,6 +1231,9 @@ impl Shell {
             .when(mode != Mode::Graph, |d| {
                 d.on_action(cx.listener(|this, _: &Rename, window, cx| {
                     this.menu_do(Do::Rename, this.nav.sel.clone(), window, cx)
+                }))
+                .on_action(cx.listener(|this, _: &Duplicate, window, cx| {
+                    this.menu_do(Do::Duplicate, this.nav.sel.clone(), window, cx)
                 }))
                 .on_action(cx.listener(|this, _: &Trash, window, cx| {
                     this.menu_do(Do::Trash, this.nav.sel.clone(), window, cx)
