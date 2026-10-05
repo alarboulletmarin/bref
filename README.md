@@ -14,6 +14,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Lists that continue themselves**: `- `, `1. ` and `[] ` start a list, Enter continues it, numbering stays in order.
 - **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `#tags` filter the note list.
 - **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons.
+- **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas like Excalidraw's. Each diagram is an SVG file in your vault, shown in your notes.
 - **Keyboard first**: one palette to find, create and switch notes, and a shortcut for every view. No toolbar.
 - **No save button**: notes are written to disk as you type, and named after their first line.
 - **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, any installed font for the text and for the code, and the text size you like.
@@ -152,6 +153,7 @@ On macOS, read `Cmd` for `Ctrl`, and `Alt` for `Ctrl` when moving by word.
 | `Ctrl + N` | new note |
 | `Ctrl + E`, `Ctrl + R`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |
 | `Ctrl + M` | navigation panel on the whole window, and back |
+| `Ctrl + Shift + D` | new [diagram](#diagrams) |
 | `Ctrl + O` | change vault |
 | `Ctrl + K` then `Ctrl + T` | [theme](#appearance) (also the half-moon icon at the bottom of the rail) |
 | `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` | bigger, smaller, default text size |
@@ -247,6 +249,29 @@ What you type is what is saved. Bref only changes how it looks.
 
 Tables and footnotes are kept as you typed them, without special rendering. So are pictures given as a web address. A formula is drawn under its line, not within the text, and only the first one of a line.
 
+## Diagrams
+
+Mermaid turns text into a diagram. When you would rather place things yourself, `Ctrl + Shift + D` opens a canvas (also `New diagram` in the palette, and in the menu of the tree).
+
+| Key | Tool |
+|---|---|
+| `R`, `U`, `O`, `D` | rectangle, rounded rectangle, ellipse, diamond |
+| `C`, `P`, `N`, `T` | cylinder (a database), person (an actor), note, text |
+| `A`, `L` | arrow, line |
+| `V` | select |
+
+Pick a tool, from its key or from the bar above the canvas, then drag; a click drops the shape at its usual size.
+
+- **Arrows** started or ended on a shape hold on to it: move the shape, they follow. Select an arrow and drag one of its ends to hook it elsewhere.
+- **Text**: `Enter` or a double click writes in the selected shape, or on the arrow; `Esc` when done. A double click on the empty canvas starts a text there. A shape grows to hold what you write.
+- **UML**: in a rectangle, a line made of `---` starts a new compartment: the name of the class on top, then its fields, then its methods. With an arrow selected, two buttons of the bar change the head at each end: none, arrow, hollow triangle (inheritance), hollow or full diamond (aggregation, composition). Another makes it dashed.
+- **Selection**: click, `Shift` + click, or drag on the empty canvas. Drag to move, on a grid; drag a corner to resize. The bar gives six colors, a tinted background and a dashed outline. `Delete` removes, `Ctrl + D` duplicates, `Ctrl + Z` undoes, the arrow keys move by one step.
+- **View**: the wheel moves it, `Ctrl` + wheel zooms, the middle button drags it.
+- **In a note**: `![](Diagram.svg)` shows the diagram, in the colors of your theme, and follows its changes.
+- **The file** is a plain SVG, saved at each change: it opens in a browser and displays on GitHub. It also carries its own source, which is what Bref reads to keep editing it.
+- **Export**: the button at the right of the bar saves a PNG next to the diagram, dark on white.
+- **Import**: `import` in the palette takes an Excalidraw file (`.excalidraw`) or a draw.io file (`.drawio`, saved without compression: untick *File › Properties › Compressed*). Shapes, texts, arrows and what they hold on to are kept; freehand strokes, pictures and elbow routing are not.
+
 ## Notes and vault
 
 - A vault is an ordinary folder. Notes in subfolders are found too; hidden folders (`.git`, `.obsidian`…) are ignored. New notes are created at the top of the vault, or in the selected folder when the tree is on display.
@@ -298,6 +323,7 @@ Tables and footnotes are kept as you typed them, without special rendering. So a
 - **Palette**: substring matches first, ranked by position, then subsequence matches; ties keep the most recently opened note first.
 - **Navigation** (`src/nav.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. 
 - **Graph** (`src/graph.rs`): a force-directed layout computed off the UI thread when the links change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
+- **Diagrams** (`src/diagram.rs`, `src/canvas.rs`, `src/import.rs`): shapes and arrows are plain data; the same outlines are drawn on the canvas and written to the SVG file, whose `<metadata>` holds one line of source per element.
 - **Startup**: the last note is read before the first frame, so the window appears with its content. Icons are embedded in the binary.
 - **Window**: on Linux Bref draws its own title bar, shadow and resize edges (client-side decorations); on macOS and Windows the system does.
 

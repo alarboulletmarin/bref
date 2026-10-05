@@ -624,6 +624,9 @@ dependencies = [
  "gpui",
  "latex-rust",
  "mermaid-rs-renderer",
+ "resvg",
+ "roxmltree",
+ "serde_json",
  "unicode-segmentation",
 ]
 

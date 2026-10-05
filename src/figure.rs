@@ -61,6 +61,27 @@ pub fn latex(source: &str, display: bool, rgb: [u8; 3], size: f32) -> Option<Fig
     sharpen(&svg)
 }
 
+/// L'image PNG d'un SVG, `scale` fois plus grande que nature, sur fond blanc ;
+/// son texte est écrit dans la police `font`.
+pub fn png(svg: &str, font: &str, scale: f32) -> Option<Vec<u8>> {
+    use resvg::{tiny_skia, usvg};
+    let mut options = usvg::Options::default();
+    options.fontdb_mut().load_system_fonts();
+    // Une police absente serait remplacée par la première venue, parfois une
+    // police de symboles : on n'en désigne qu'une qui existe.
+    let known = |name: &str| options.fontdb.faces().any(|face| face.families.iter().any(|(family, _)| family == name));
+    let usual = [font, "DejaVu Sans", "Noto Sans", "Liberation Sans", "Arial", "Helvetica"];
+    if let Some(family) = usual.into_iter().find(|name| known(name)) {
+        options.fontdb_mut().set_sans_serif_family(family);
+    }
+    let tree = usvg::Tree::from_str(svg, &options).ok()?;
+    let size = tree.size();
+    let mut pixmap = tiny_skia::Pixmap::new((size.width() * scale).ceil() as u32, (size.height() * scale).ceil() as u32)?;
+    pixmap.fill(tiny_skia::Color::WHITE);
+    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    pixmap.encode_png().ok()
+}
+
 /// Le SVG prêt pour gpui 0.2, et sa taille d'origine en pixels. Un SVG donné en
 /// mémoire y est rendu à l'échelle 1, donc flou, et avec le rouge et le bleu
 /// échangés (seul le chargement d'un fichier les remet en ordre) : on l'agrandit

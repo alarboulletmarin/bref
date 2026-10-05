@@ -6,6 +6,7 @@ mod diagram;
 mod editor;
 mod figure;
 mod graph;
+mod import;
 mod markdown;
 mod nav;
 mod palette;
@@ -924,31 +925,92 @@ impl Shell {
         };
         let result = match event {
             CanvasEvent::Changed => vault::write(path, &canvas.read(cx).diagram().to_svg(diagram::COLORS[0])),
-            CanvasEvent::Export => Ok(()),
+            CanvasEvent::Export => return self.export_png(path.clone(), &canvas, cx),
         };
         self.error = result.err().map(|e| format!("{} : {e}", tr("Diagram not saved", "Schéma non enregistré")));
         cx.notify();
     }
 
-    /// Nouveau schéma, rangé dans le dossier sélectionné, sinon à côté de la note.
-    fn new_diagram(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self.vault.clone() else {
-            return;
-        };
+    /// Image PNG du schéma, à côté de lui : encre sombre sur fond blanc, pour
+    /// qu'elle se colle partout. Elle est dessinée hors du thread UI.
+    fn export_png(&mut self, file: PathBuf, canvas: &Entity<Canvas>, cx: &mut Context<Self>) {
+        let svg = canvas.read(cx).diagram().to_svg(0x1e1e1e);
+        let canvas = canvas.downgrade();
+        cx.spawn(async move |this, cx| {
+            let drawn = cx.background_executor().spawn(async move {
+                let bytes = figure::png(&svg, sans(), 2.).ok_or_else(|| std::io::Error::other("PNG"))?;
+                let path = vault::free_path(file.parent().unwrap_or(Path::new("")), &vault::stem(&file), "png");
+                fs::write(&path, bytes).map(|_| path)
+            });
+            let saved = drawn.await;
+            this.update(cx, |this, cx| {
+                match saved {
+                    Ok(path) => {
+                        this.images.push(path);
+                        this.push_names(cx);
+                        this.graph_stale = true;
+                        this.refresh_graph(cx);
+                        canvas.update(cx, |canvas, cx| canvas.exported(cx)).ok();
+                    }
+                    Err(e) => this.error = Some(format!("{} : {e}", tr("Picture not saved", "Image non enregistrée"))),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Dossier d'un nouveau schéma : celui sélectionné dans l'arbre, sinon celui de la note.
+    fn diagram_dir(&self) -> Option<PathBuf> {
         let beside = self.path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
-        let dir = self.nav.target_dir().or(beside).unwrap_or(root);
-        self.add_diagram(&dir, tr("Diagram", "Schéma"), Diagram::default(), window, cx);
+        self.nav.target_dir().or(beside).or(self.vault.clone())
+    }
+
+    fn new_diagram(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(dir) = self.diagram_dir().filter(|_| self.vault.is_some()) {
+            self.add_diagram(&dir, tr("Diagram", "Schéma"), Diagram::default(), window, cx);
+        }
+    }
+
+    /// Demande un fichier Excalidraw ou draw.io, et en fait un schéma du coffre.
+    fn import_diagram(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_none() {
+            return;
+        }
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(tr("Import", "Importer").into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(Ok(Some(paths))) = paths.await
+                && let Some(file) = paths.into_iter().next()
+            {
+                this.update_in(cx, |this, window, cx| this.import_file(&file, window, cx)).ok();
+            }
+        })
+        .detach();
+    }
+
+    fn import_file(&mut self, file: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        let drawio = file.extension().is_some_and(|e| e == "drawio" || e == "xml");
+        let read = fs::read_to_string(file).map_err(|e| e.to_string()).and_then(|text| match drawio {
+            true => import::drawio(&text),
+            false => import::excalidraw(&text),
+        });
+        match (read, self.diagram_dir()) {
+            (Ok(diagram), Some(dir)) => self.add_diagram(&dir, &vault::stem(file), diagram, window, cx),
+            (Err(e), _) => self.error = Some(format!("{} : {e}", tr("Import failed", "Import impossible"))),
+            _ => {}
+        }
+        cx.notify();
     }
 
     /// Enregistre `diagram` dans `dir` sous un nom libre, et l'ouvre.
     fn add_diagram(&mut self, dir: &Path, name: &str, diagram: Diagram, window: &mut Window, cx: &mut Context<Self>) {
-        let path = (1..)
-            .map(|n| match n {
-                1 => dir.join(format!("{name}.svg")),
-                n => dir.join(format!("{name} {n}.svg")),
-            })
-            .find(|p| !p.exists())
-            .unwrap();
+        let path = vault::free_path(dir, name, "svg");
         if let Err(e) = vault::write(&path, &diagram.to_svg(diagram::COLORS[0])) {
             self.error = Some(format!("{} : {e}", tr("Diagram not saved", "Schéma non enregistré")));
             return cx.notify();
@@ -1000,6 +1062,8 @@ impl Shell {
                 PaletteEvent::Create(name) => this.open_wiki(name, cx),
                 PaletteEvent::ChangeVault => this.choose_vault(window, cx),
                 PaletteEvent::Help => this.set_help(true, window, cx),
+                PaletteEvent::NewDiagram => this.new_diagram(window, cx),
+                PaletteEvent::ImportDiagram => this.import_diagram(window, cx),
                 PaletteEvent::Setting(setting) => this.choose_setting(*setting, window, cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
@@ -1041,6 +1105,20 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (m("Shift+N"), tr("New folder", "Nouveau dossier")),
                 (tr("F2 / Delete", "F2 / Suppr").into(), tr("Rename / move to the trash", "Renommer / mettre à la corbeille")),
                 (tr("Drag a node", "Glisser un nœud").into(), tr("Move it in the graph, linked notes follow", "Le déplacer dans le graphe, les notes liées suivent")),
+            ],
+        ),
+        (
+            tr("Diagrams", "Schémas"),
+            vec![
+                (m("Shift+D"), tr("New diagram: an SVG file in the vault", "Nouveau schéma : un fichier SVG du coffre")),
+                ("R U O D C P N T".into(), tr("Rectangle, rounded, ellipse, diamond, cylinder, person, note, text", "Rectangle, arrondi, ellipse, losange, cylindre, personnage, note, texte")),
+                ("A / L / V".into(), tr("Arrow / line, held by the shapes they join / select", "Flèche / trait, accrochés aux formes reliées / sélection")),
+                (tr("Enter, double click", "Entrée, double-clic").into(), tr("Write in the shape or on the arrow; Esc when done", "Écrire dans la forme ou sur la flèche ; Échap pour finir")),
+                ("---".into(), tr("Alone on a line of a box: a compartment (UML class)", "Seul sur une ligne d'une boîte : un compartiment (classe UML)")),
+                (format!("{} / {} / {}", tr("Del", "Suppr"), m("D"), m("Z")), tr("Remove / duplicate / undo", "Retirer / dupliquer / annuler")),
+                (format!("{} / {MOD}+{}", tr("Wheel", "Molette"), tr("wheel", "molette")), tr("Move the view / zoom", "Déplacer la vue / zoomer")),
+                ("![](Schéma.svg)".into(), tr("Show the diagram in a note", "Afficher le schéma dans une note")),
+                (format!("{} › import", m("P")), tr("Bring in an Excalidraw or draw.io file", "Reprendre un fichier Excalidraw ou draw.io")),
             ],
         ),
         (
@@ -2135,6 +2213,19 @@ mod tests {
         cx.simulate_keystrokes("escape escape");
         cx.run_until_parked();
         assert!(shell.read_with(cx, |s, _| s.picture.is_none() && s.drawing.is_none()));
+
+        // Import : un fichier Excalidraw devient un schéma du coffre, sous son nom.
+        // Son image PNG s'enregistre à côté de lui.
+        let outside = root.join(".config/croquis.excalidraw");
+        fs::write(&outside, r#"{"elements":[{"id":"a","type":"ellipse","x":0,"y":0,"width":80,"height":60}]}"#).unwrap();
+        shell.update_in(cx, |s, window, cx| s.import_file(&outside, window, cx));
+        cx.run_until_parked();
+        let (file, canvas) = shell.read_with(cx, |s, _| s.drawing.clone().unwrap());
+        assert_eq!((file.file_name().unwrap().to_str(), canvas.read_with(cx, |c, _| c.diagram().shapes.len())), (Some("croquis.svg"), 1));
+        shell.update(cx, |s, cx| s.export_png(file.clone(), &canvas, cx));
+        cx.run_until_parked();
+        assert!(fs::read(file.with_extension("png")).unwrap().starts_with(b"\x89PNG"));
+        assert!(shell.read_with(cx, |s, _| s.images.contains(&file.with_extension("png")) && s.error.is_none()));
 
         fs::remove_dir_all(&root).unwrap();
     }

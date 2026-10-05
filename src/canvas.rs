@@ -82,6 +82,8 @@ pub struct Canvas {
     undo: Vec<Diagram>,
     redo: Vec<Diagram>,
     bounds: Bounds<Pixels>,
+    /// L'image PNG vient d'être enregistrée : le bouton le montre un instant.
+    exported: bool,
 }
 
 impl EventEmitter<CanvasEvent> for Canvas {}
@@ -108,6 +110,7 @@ impl Canvas {
             undo: Vec::new(),
             redo: Vec::new(),
             bounds: Bounds::default(),
+            exported: false,
         }
     }
 
@@ -118,6 +121,20 @@ impl Canvas {
     /// Le thème, tel que la fenêtre le connaît.
     pub fn sync(&mut self, theme: Theme) {
         self.theme = theme;
+    }
+
+    pub fn exported(&mut self, cx: &mut Context<Self>) {
+        self.exported = true;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(std::time::Duration::from_millis(1500)).await;
+            this.update(cx, |this, cx| {
+                this.exported = false;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     /// Position à l'écran d'un point du schéma.
@@ -817,7 +834,7 @@ impl Render for Canvas {
                 }))
             })
             .child(div().flex_1())
-            .child(button("d-export", "export.svg", false, t).on_click(cx.listener(|_, _, _, cx| cx.emit(CanvasEvent::Export))));
+            .child(button("d-export", if self.exported { "check.svg" } else { "export.svg" }, false, t).on_click(cx.listener(|_, _, _, cx| cx.emit(CanvasEvent::Export))));
 
         div()
             .size_full()

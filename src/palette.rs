@@ -17,6 +17,14 @@ fn vault_label() -> &'static str {
     tr("Change vault…", "Changer de coffre…")
 }
 
+fn diagram_label() -> &'static str {
+    tr("New diagram", "Nouveau schéma")
+}
+
+fn import_label() -> &'static str {
+    tr("Import a diagram (Excalidraw, draw.io)…", "Importer un schéma (Excalidraw, draw.io)…")
+}
+
 fn help_label() -> &'static str {
     tr("Keyboard shortcuts, about", "Raccourcis clavier, à propos")
 }
@@ -52,6 +60,8 @@ pub enum PaletteEvent {
     Create(String),
     ChangeVault,
     Help,
+    NewDiagram,
+    ImportDiagram,
     Setting(Setting),
     /// Texte validé dans un champ de saisie, ou choix validé dans une liste.
     Submit(String),
@@ -66,6 +76,8 @@ enum Item {
     Create,
     Vault,
     Help,
+    Diagram,
+    Import,
     Setting(Setting),
 }
 
@@ -200,6 +212,12 @@ impl Palette {
                 items.push(item);
             }
         }
+        // Comme les réglages : proposés seulement quand on les cherche.
+        for (label, item) in [(diagram_label(), Item::Diagram), (import_label(), Item::Import)] {
+            if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
+                items.push(item);
+            }
+        }
         // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
         for setting in [Setting::Theme, Setting::Font, Setting::Mono] {
             if !q.is_empty() && fuzzy(&q, &setting.label().to_lowercase()).is_some() {
@@ -233,6 +251,8 @@ impl Palette {
             Some(Item::Create) => PaletteEvent::Create(self.query.trim().to_string()),
             Some(Item::Vault) => PaletteEvent::ChangeVault,
             Some(Item::Help) => PaletteEvent::Help,
+            Some(Item::Diagram) => PaletteEvent::NewDiagram,
+            Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
             None => PaletteEvent::Dismiss,
         });
@@ -345,6 +365,8 @@ impl Render for Palette {
                 ),
                 Item::Vault => (vault_label().to_string(), String::new()),
                 Item::Help => (help_label().to_string(), "F1".into()),
+                Item::Diagram => (diagram_label().to_string(), format!("{}+Shift+D", crate::MOD)),
+                Item::Import => (import_label().to_string(), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
             };
             div()

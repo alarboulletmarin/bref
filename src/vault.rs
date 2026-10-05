@@ -233,6 +233,16 @@ pub fn trash(root: &Path, path: &Path) -> io::Result<()> {
     fs::rename(path, free)
 }
 
+/// Chemin libre dans `dir` pour un fichier `name.extension` : le nom est suivi
+/// d'un numéro s'il est déjà pris.
+pub fn free_path(dir: &Path, name: &str, extension: &str) -> PathBuf {
+    let numbered = (1..).map(|n| match n {
+        1 => dir.join(format!("{name}.{extension}")),
+        n => dir.join(format!("{name} {n}.{extension}")),
+    });
+    numbered.into_iter().find(|p| !p.exists()).unwrap()
+}
+
 /// Nom de fichier (sans extension) tiré de la première ligne non vide.
 pub fn title_of(content: &str) -> String {
     let first = content.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
