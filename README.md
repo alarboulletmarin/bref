@@ -13,7 +13,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Styled as you type**: headings grow, bold and italic render, markers stay visible but dimmed. The file on disk is always plain Markdown.
 - **Lists that continue themselves**: `- `, `1. ` and `[] ` start a list, Enter continues it, numbering stays in order.
 - **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `#tags` filter the note list.
-- **Three ways around your notes**: the vault as a tree, the notes you opened last, and a graph of the links between them, in a panel that folds down to a thin rail of icons.
+- **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons.
 - **Keyboard first**: one palette to find, create and switch notes, and a shortcut for every view. No toolbar.
 - **No save button**: notes are written to disk as you type, and named after their first line.
 - **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, any installed font for the text and for the code, and the text size you like.
@@ -150,14 +150,14 @@ On macOS, read `Cmd` for `Ctrl`, and `Alt` for `Ctrl` when moving by word.
 |---|---|
 | `Ctrl + P` | palette: find a note, create one, filter by `#tag` |
 | `Ctrl + N` | new note |
-| `Ctrl + E`, `Ctrl + R`, `Ctrl + G` | [navigation panel](#navigation): vault tree, recent notes, graph |
+| `Ctrl + E`, `Ctrl + R`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |
 | `Ctrl + M` | navigation panel on the whole window, and back |
 | `Ctrl + O` | change vault |
 | `Ctrl + K` then `Ctrl + T` | [theme](#appearance) (also the half-moon icon at the bottom of the rail) |
 | `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` | bigger, smaller, default text size |
 | `Ctrl + Shift + C` | copy the code block the cursor is in, otherwise the whole note (also the icon at the bottom right, for the note) |
 | `Ctrl + click` | open a `[[link]]`, a `#tag` or a URL |
-| `F1`, `Ctrl + /` | the list of shortcuts, inside the app |
+| `F1`, `Ctrl + /` | the list of shortcuts, inside the app; at its foot, the version of Bref and links to its source and to its Ko-fi page |
 | `Ctrl + Q` | quit |
 
 In the palette, type to search; `Enter` opens the selected note. If no note has that name, the last row creates it. Typing `#` lists the notes carrying a tag.
@@ -179,30 +179,31 @@ In the palette, type to search; `Enter` opens the selected note. If no note has 
 
 ![The graph next to a note](docs/screenshots/navigation.png)
 
-A rail of icons stays on the left of the window. It opens a panel beside the note, in one of three views:
+A rail of icons stays on the left of the window. It opens a panel beside the note, in one of four views:
 
 | View | Key | Shows |
 |---|---|---|
 | Tree | `Ctrl + E` | the vault and its folders; the open note is highlighted |
 | Recent | `Ctrl + R` | every note, from the most to the least recently opened |
 | Graph | `Ctrl + G` | one dot per note, one line per `[[link]]` between two notes |
+| Tags | `Ctrl + T` | every `#tag` of the vault with its number of notes; unfold a tag to see them |
 
-The same keys work in the three views:
+The same keys work in the four views:
 
 | Key | Action |
 |---|---|
 | `↑` `↓`, or a click | select a note and preview it beside the panel |
 | `Enter`, or a double click | open the note and start typing |
-| `←` `→` | tree: fold or unfold a folder; graph: move to the nearest note on that side |
+| `←` `→` | tree and tags: fold or unfold a folder or a tag; graph: move to the nearest note on that side |
 | `Tab` | graph: walk through the notes linked to the selected one |
 | `Esc` | back to the note |
-| `F2`, `Delete` | tree and recent: rename the selected line, move it to the trash |
+| `F2`, `Delete` | tree, recent and tags: rename the selected note or folder, move it to the trash |
 | `Ctrl + Shift + N` | new folder, next to the selected line of the tree |
 
 A previewed note only counts as opened, and moves to the top of the recent list, once you click or type in it.
 
 - **Sizes**: drag the line between the panel and the note. Dragged all the way left, the panel folds back to its rail; all the way right, it takes the whole window. Double-click the line for the default width. `Ctrl + M`, or the arrows button at the top of the panel, also switches to the whole window and back.
-- **Folding**: pressing the key of the view on display, or clicking its icon, folds the panel. The rail stays, with the three views, search, new note and help one click away.
+- **Folding**: pressing the key of the view on display, or clicking its icon, folds the panel. The rail stays, with the four views, search, new note and help one click away.
 - **Graph**: drag the background to move around and scroll to zoom. Pointing at a note lights up the notes it is linked to. Drag a note to move it: the notes linked to it follow, the closest ones the most. The target button glides back to the whole graph. With the graph on the whole window, a click only selects: `Enter` or a double click brings the note back.
 - **Folders**: the double-chevron button at the top of the tree folds every folder; when they are all folded, it unfolds them all.
 - **New note from the tree**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line.

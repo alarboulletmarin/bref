@@ -162,6 +162,11 @@ impl AssetSource for Assets {
             "graph.svg" => {
                 r#"<circle cx="4" cy="11.5" r="1.7"/><circle cx="11.5" cy="4.5" r="1.7"/><circle cx="12" cy="12" r="1.3"/><path d="M5.3 10.3L10.2 5.7M11.6 6.2L11.9 10.7"/>"#
             }
+            "tag.svg" => r#"<path d="M6.5 3L5 13M11 3L9.5 13M3.5 6H13M3 10H12.5"/>"#,
+            "code.svg" => r#"<path d="M5.5 4.5L2.5 8L5.5 11.5M10.5 4.5L13.5 8L10.5 11.5"/>"#,
+            "heart.svg" => {
+                r#"<path d="M8 13C3.5 9.8 2.5 7.6 2.5 5.9A2.6 2.6 0 0 1 8 4.9A2.6 2.6 0 0 1 13.5 5.9C13.5 7.6 12.5 9.8 8 13Z"/>"#
+            }
             "target.svg" => r#"<circle cx="8" cy="8" r="2"/><path d="M8 2.5V5M8 11V13.5M2.5 8H5M11 8H13.5"/>"#,
             "folder-plus.svg" => {
                 r#"<path d="M2.5 4.5A1 1 0 0 1 3.5 3.5H6.5L8 5H12.5A1 1 0 0 1 13.5 6V11.5A1 1 0 0 1 12.5 12.5H3.5A1 1 0 0 1 2.5 11.5Z"/><path d="M8 7.2V10.4M6.4 8.8H9.6"/>"#
@@ -918,6 +923,8 @@ impl Shell {
     }
 }
 
+const KOFI: &str = "https://ko-fi.com/T6T01WC5ZC";
+
 /// Contenu du panneau d'aide : (titre de section, [(touches, effet)]).
 fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
     let m = |key: &str| format!("{MOD}+{key}");
@@ -937,7 +944,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
         (
             "Navigation",
             vec![
-                (format!("{} / R / G", m("E")), tr("Vault tree / recent notes / graph", "Arbre du coffre / notes récentes / graphe")),
+                (format!("{} / R / G / T", m("E")), tr("Vault tree / recent notes / graph / tags", "Arbre du coffre / notes récentes / graphe / tags")),
                 (tr("A picture", "Une image").into(), tr("Shown in place of the note; a square in the graph", "Affichée à la place de la note ; un carré dans le graphe")),
                 (m("M"), tr("Panel on the whole window", "Panneau en pleine fenêtre")),
                 (tr("Arrows / Tab", "Flèches / Tab").into(), tr("Select and preview / linked notes (graph)", "Sélectionner en aperçu / notes liées (graphe)")),
@@ -1005,6 +1012,41 @@ impl Shell {
                         .child(div().flex_1().min_w_0().text_color(t.dim).child(effect))
                 }))
         });
+        // À propos, en pied de panneau : ce qu'est l'app, et où la trouver.
+        let link = |id: &'static str, icon: &'static str, label: &'static str, url: &'static str| {
+            div()
+                .id(id)
+                .px_2()
+                .py_1()
+                .flex()
+                .items_center()
+                .gap_1p5()
+                .rounded(px(6.))
+                .cursor_pointer()
+                .text_color(t.accent)
+                .hover(|s| s.bg(t.border))
+                .child(svg().path(icon).size(px(14.)).flex_none().text_color(t.accent))
+                .child(label)
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| cx.open_url(url))
+        };
+        let about = div()
+            .flex_none()
+            .px_5()
+            .py_3()
+            .border_t_1()
+            .border_color(t.border)
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .child(logo(t))
+            .child(format!("Bref {}", env!("CARGO_PKG_VERSION")))
+            .child(div().flex_1().min_w(px(200.)).text_color(t.dim).child(tr(
+                "Fast, minimal Markdown notes, in plain files you own.",
+                "Des notes Markdown rapides et minimales, dans de simples fichiers qui t'appartiennent.",
+            )))
+            .child(link("about-github", "code.svg", "GitHub", env!("CARGO_PKG_REPOSITORY")))
+            .child(link("about-kofi", "heart.svg", tr("Support on Ko-fi", "Soutenir sur Ko-fi"), KOFI));
         div()
             .absolute()
             .inset_0()
@@ -1024,19 +1066,28 @@ impl Shell {
                     .w(px(812.))
                     .max_w_full()
                     .max_h_full()
-                    .overflow_y_scroll()
-                    .p_5()
                     .flex()
-                    .flex_wrap()
-                    .gap_x_6()
-                    .gap_y_4()
+                    .flex_col()
                     .bg(t.panel)
                     .border_1()
                     .border_color(t.border)
                     .rounded(px(10.))
                     .shadow_lg()
                     .text_size(px(13.))
-                    .children(sections)
+                    .child(
+                        div()
+                            .id("help-keys")
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .p_5()
+                            .flex()
+                            .flex_wrap()
+                            .gap_x_6()
+                            .gap_y_4()
+                            .children(sections),
+                    )
+                    .child(about)
                     .with_animation(
                         "help-in",
                         Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
@@ -1252,6 +1303,9 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &nav::ShowGraph, window, cx| {
                 this.show_nav(Mode::Graph, false, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &nav::ShowTags, window, cx| {
+                this.show_nav(Mode::Tags, false, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &nav::ToggleFull, window, cx| this.toggle_full(window, cx)))
             // Séparateur du panneau : il suit le pointeur tant que le bouton est tenu.
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
@@ -1372,6 +1426,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-e", nav::ShowTree, Some("Shell")),
         KeyBinding::new("secondary-r", nav::ShowRecent, Some("Shell")),
         KeyBinding::new("secondary-g", nav::ShowGraph, Some("Shell")),
+        KeyBinding::new("secondary-t", nav::ShowTags, Some("Shell")),
         KeyBinding::new("secondary-m", nav::ToggleFull, Some("Shell")),
         KeyBinding::new("tab", graph::Cycle, n),
         KeyBinding::new("secondary-shift-n", nav::NewFolder, Some("Shell")),
@@ -1900,6 +1955,27 @@ mod tests {
         cx.simulate_keystrokes("escape");
         cx.run_until_parked();
         assert_eq!(shell.read_with(cx, |s, _| s.picture.clone()), None);
+
+        // Tags : Ctrl+T liste les tags du coffre ; Droite déplie le premier, Bas
+        // affiche en aperçu une note qui le porte.
+        fs::write(root.join("Tagué.md"), "# Tagué\n\n#alpha\n").unwrap();
+        for _ in 0..2 {
+            cx.executor().advance_clock(Duration::from_secs(3));
+            cx.run_until_parked();
+        }
+        cx.simulate_keystrokes("secondary-t down right down");
+        cx.run_until_parked();
+        assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), Mode::Tags);
+        assert!(vault::load_layout().starts_with("tags split"));
+        let (tagged, previewed) = shell.read_with(cx, |s, _| {
+            let tag = s.notes.iter().flat_map(|n| &n.tags).min().unwrap().clone();
+            let has = |n: &&Note| n.tags.contains(&tag);
+            (s.notes.iter().filter(has).count(), s.notes.iter().filter(has).any(|n| Some(&n.path) == s.path.as_ref()))
+        });
+        assert!(tagged > 0 && previewed);
+        // Un tag n'est pas un fichier : Suppr n'y fait rien.
+        cx.simulate_keystrokes("up delete");
+        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.error.is_none()));
 
         fs::remove_dir_all(&root).unwrap();
     }

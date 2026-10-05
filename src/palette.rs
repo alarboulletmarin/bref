@@ -18,7 +18,7 @@ fn vault_label() -> &'static str {
 }
 
 fn help_label() -> &'static str {
-    tr("Keyboard shortcuts", "Raccourcis clavier")
+    tr("Keyboard shortcuts, about", "Raccourcis clavier, à propos")
 }
 
 /// Réglage d'apparence proposé par la palette.

@@ -1,8 +1,8 @@
 //! Navigation : un rail d'icônes toujours visible, et un panneau (arbre du
-//! coffre, notes récentes ou graphe) qui partage la fenêtre avec la note.
+//! coffre, notes récentes, graphe ou tags) qui partage la fenêtre avec la note.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     hash::{BuildHasher, BuildHasherDefault, DefaultHasher, Hash, Hasher},
     ops::Range,
@@ -23,7 +23,7 @@ use crate::{
     vault::{self, Note},
 };
 
-actions!(nav, [ShowTree, ShowRecent, ShowGraph, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Trash]);
+actions!(nav, [ShowTree, ShowRecent, ShowGraph, ShowTags, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Trash]);
 
 pub const RAIL: Pixels = px(40.);
 const ROW: Pixels = px(26.);
@@ -34,6 +34,7 @@ pub enum Mode {
     Tree,
     Recent,
     Graph,
+    Tags,
 }
 
 /// Place du panneau : replié sur son rail, à côté de la note, ou seul.
@@ -129,6 +130,7 @@ impl Nav {
             mode: match words.next() {
                 Some("recent") => Mode::Recent,
                 Some("graph") => Mode::Graph,
+                Some("tags") => Mode::Tags,
                 _ => Mode::Tree,
             },
             panel: match words.next() {
@@ -156,6 +158,7 @@ impl Nav {
             Mode::Tree => "tree",
             Mode::Recent => "recent",
             Mode::Graph => "graph",
+            Mode::Tags => "tags",
         };
         let panel = match self.panel {
             Panel::Rail => "rail",
@@ -257,6 +260,35 @@ pub fn tree_rows(
         }
     }
     walk(root, 0, &folders, &files, open, &mut rows);
+    rows
+}
+
+/// Ligne d'un tag dans le panneau : un faux chemin, qu'aucun fichier ne porte.
+fn tag_path(tag: &str) -> PathBuf {
+    PathBuf::from(format!("#{tag}"))
+}
+
+/// Les tags du coffre par ordre alphabétique ; sous un tag déplié, ses notes.
+// ponytail: une note qui porte plusieurs tags dépliés apparaît sous chacun, et la
+// sélection, tenue par son chemin, les marque toutes ; donner une identité propre
+// à chaque ligne si cela gêne.
+pub fn tag_rows(notes: &[Note], open: &HashSet<PathBuf>) -> Vec<Row> {
+    let mut tagged: BTreeMap<&str, Vec<&Note>> = BTreeMap::new();
+    for note in notes {
+        for tag in &note.tags {
+            tagged.entry(tag).or_default().push(note);
+        }
+    }
+    let mut rows = Vec::new();
+    for (tag, mut notes) in tagged {
+        let path = tag_path(tag);
+        let unfolded = open.contains(&path);
+        rows.push(Row { path, name: format!("#{tag}"), depth: 0, dir: Some(unfolded) });
+        if unfolded {
+            notes.sort_by_cached_key(|n| n.name.to_lowercase());
+            rows.extend(notes.iter().map(|n| Row { path: n.path.clone(), name: n.name.clone(), depth: 1, dir: None }));
+        }
+    }
     rows
 }
 
@@ -367,6 +399,9 @@ impl Shell {
         }
         for note in &self.notes {
             (&note.path, &note.name).hash(&mut hasher);
+            if self.nav.mode == Mode::Tags {
+                note.tags.hash(&mut hasher);
+            }
         }
         hasher.finish()
     }
@@ -378,6 +413,7 @@ impl Shell {
         match self.nav.mode {
             Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.images, &self.nav.open),
             Mode::Graph => Vec::new(),
+            Mode::Tags => tag_rows(&self.notes, &self.nav.open),
             Mode::Recent => self
                 .by_recency()
                 .into_iter()
@@ -494,6 +530,10 @@ impl Shell {
         let Some(root) = self.vault.clone() else {
             return;
         };
+        // Un tag n'est ni une note ni un dossier : rien à renommer ni à jeter.
+        if target.as_ref().is_some_and(|t| !t.starts_with(&root)) {
+            return;
+        }
         let is_dir = target.as_ref().is_none_or(|t| self.dirs.contains(t));
         // Dossier visé : la cible elle-même, ou celui qui contient la note.
         let dir = match &target {
@@ -806,6 +846,15 @@ impl Shell {
                         .unwrap_or_default(),
                     _ => String::new(),
                 };
+                // Sous un tag, le nombre de notes qui le portent.
+                let detail = match row.dir {
+                    Some(_) if !tree => {
+                        let tag = &row.name[1..];
+                        self.notes.iter().filter(|n| n.tags.iter().any(|t| t == tag)).count().to_string()
+                    }
+                    _ => detail,
+                };
+                let foldable = self.nav.mode != Mode::Recent;
                 let chevron = match row.dir {
                     Some(true) => "chevron-down.svg",
                     Some(false) => "chevron-right.svg",
@@ -822,7 +871,7 @@ impl Shell {
                         .text_size(px(13.))
                         .when(!selected, |d| d.hover(|s| s.bg(t.code_bg)))
                         .when(selected, |d| d.bg(if focused { t.selection } else { t.border }))
-                        .when(tree, |d| {
+                        .when(foldable, |d| {
                             d.child(div().size(px(14.)).flex_none().when(row.dir.is_some(), |d| {
                                 d.child(svg().path(chevron).size(px(14.)).text_color(t.dim))
                             }))
@@ -869,7 +918,10 @@ impl Shell {
                             MouseButton::Right,
                             cx.listener(move |this, e: &MouseDownEvent, window, cx| {
                                 this.nav.sel = Some(target.clone());
-                                this.menu = Some(Menu { at: e.position, target: Some(target.clone()) });
+                                // Un tag n'a pas de menu.
+                                if this.vault.as_ref().is_some_and(|root| target.starts_with(root)) {
+                                    this.menu = Some(Menu { at: e.position, target: Some(target.clone()) });
+                                }
                                 window.focus(&this.nav.focus);
                                 cx.stop_propagation();
                                 cx.notify();
@@ -929,6 +981,7 @@ impl Shell {
             .child(mode_button("nav-tree", "tree.svg", Mode::Tree))
             .child(mode_button("nav-recent", "clock.svg", Mode::Recent))
             .child(mode_button("nav-graph", "graph.svg", Mode::Graph))
+            .child(mode_button("nav-tags", "tag.svg", Mode::Tags))
             .child(div().w(px(16.)).h(px(1.)).my_1().bg(t.border))
             .child(
                 button("nav-search", "search.svg", false, t)
@@ -957,6 +1010,7 @@ impl Shell {
         let title = match (mode, &self.vault) {
             (Mode::Tree, Some(root)) => vault::stem(root),
             (Mode::Graph, _) => tr("Graph", "Graphe").to_string(),
+            (Mode::Tags, _) => "Tags".to_string(),
             _ => tr("Recent", "Récents").to_string(),
         };
         let header = div()
@@ -1121,5 +1175,15 @@ mod tests {
         // Un dossier déplié dans un dossier replié reste caché.
         assert_eq!(shown(&["a/c", "Z"]), ["a/", "Z/", "  x", "A", "b"]);
         assert_eq!(shown(&["a", "a/c"]), ["a/", "  c/", "    d", "  vide/", "  B", "  Photo.png", "Z/", "A", "b"]);
+
+        // Tags : par ordre alphabétique ; un tag déplié montre ses notes.
+        let tagged = |rel: &str, tags: &[&str]| Note { tags: tags.iter().map(|t| t.to_string()).collect(), ..note(rel) };
+        let notes = [tagged("b.md", &["zoo", "ami"]), tagged("A.md", &["zoo"]), note("sans.md")];
+        let shown = |open: &[&str]| -> Vec<String> {
+            let open = open.iter().map(|t| tag_path(t)).collect();
+            tag_rows(&notes, &open).iter().map(|r| format!("{}{}", "  ".repeat(r.depth), r.name)).collect()
+        };
+        assert_eq!(shown(&[]), ["#ami", "#zoo"]);
+        assert_eq!(shown(&["zoo"]), ["#ami", "#zoo", "  A", "  b"]);
     }
 }
