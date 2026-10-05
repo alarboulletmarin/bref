@@ -1,6 +1,8 @@
 // Pas de console derrière la fenêtre sous Windows.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod canvas;
+mod diagram;
 mod editor;
 mod figure;
 mod graph;
@@ -25,6 +27,8 @@ use gpui::{
     WindowOptions, actions, div, ease_out_quint, hsla, img, point, prelude::*, px, rgb, size, svg,
 };
 
+use canvas::{Canvas, CanvasEvent};
+use diagram::Diagram;
 use editor::{Editor, EditorEvent};
 use graph::{Graph, GraphEvent};
 use markdown::Link;
@@ -167,6 +171,24 @@ impl AssetSource for Assets {
             "heart.svg" => {
                 r#"<path d="M8 13C3.5 9.8 2.5 7.6 2.5 5.9A2.6 2.6 0 0 1 8 4.9A2.6 2.6 0 0 1 13.5 5.9C13.5 7.6 12.5 9.8 8 13Z"/>"#
             }
+            "d-select.svg" => r#"<path d="M4 3V12L6.5 9.8L8.2 13.2L9.6 12.5L7.9 9.2L11 9Z"/>"#,
+            "d-rect.svg" => r#"<rect x="2.5" y="4" width="11" height="8" rx="0.5"/>"#,
+            "d-round.svg" => r#"<rect x="2.5" y="4" width="11" height="8" rx="3"/>"#,
+            "d-ellipse.svg" => r#"<ellipse cx="8" cy="8" rx="5.5" ry="4"/>"#,
+            "d-diamond.svg" => r#"<path d="M8 2.5L13.5 8L8 13.5L2.5 8Z"/>"#,
+            "d-cylinder.svg" => {
+                r#"<ellipse cx="8" cy="4.5" rx="4.5" ry="1.8"/><path d="M3.5 4.5V11.5A4.5 1.8 0 0 0 12.5 11.5V4.5"/>"#
+            }
+            "d-actor.svg" => r#"<circle cx="8" cy="4" r="1.7"/><path d="M8 5.7V10M5 7.5H11M5.5 13.5L8 10L10.5 13.5"/>"#,
+            "d-note.svg" => r#"<path d="M3.5 3H10L12.5 5.5V13H3.5ZM10 3V5.5H12.5"/>"#,
+            "d-text.svg" => r#"<path d="M4 4.5V3.5H12V4.5M8 3.5V12.5M6.5 12.5H9.5"/>"#,
+            "d-arrow.svg" => r#"<path d="M3 13L13 3M7.5 3H13V8.5"/>"#,
+            "d-line.svg" => r#"<path d="M3 13L13 3"/>"#,
+            "d-fill.svg" => r#"<rect x="3" y="3" width="10" height="10" rx="1.5" fill="black" fill-opacity="0.35"/>"#,
+            "d-dash.svg" => r#"<path d="M2.5 8H5M7 8H9M11 8H13.5"/>"#,
+            "d-head-start.svg" => r#"<path d="M13.5 8H3M6.5 4.5L3 8L6.5 11.5"/>"#,
+            "d-head-end.svg" => r#"<path d="M2.5 8H13M9.5 4.5L13 8L9.5 11.5"/>"#,
+            "export.svg" => r#"<path d="M8 2.5V10M5 7L8 10L11 7M3 13H13"/>"#,
             "target.svg" => r#"<circle cx="8" cy="8" r="2"/><path d="M8 2.5V5M8 11V13.5M2.5 8H5M11 8H13.5"/>"#,
             "folder-plus.svg" => {
                 r#"<path d="M2.5 4.5A1 1 0 0 1 3.5 3.5H6.5L8 5H12.5A1 1 0 0 1 13.5 6V11.5A1 1 0 0 1 12.5 12.5H3.5A1 1 0 0 1 2.5 11.5Z"/><path d="M8 7.2V10.4M6.4 8.8H9.6"/>"#
@@ -200,7 +222,7 @@ pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
 
-actions!(app, [OpenPalette, NewNote, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -271,6 +293,8 @@ struct Shell {
     images: Vec<PathBuf>,
     /// Image affichée à la place de la note, choisie dans l'arbre ou le graphe.
     picture: Option<PathBuf>,
+    /// Schéma ouvert dans son canevas, quand l'image affichée en est un.
+    drawing: Option<(PathBuf, Entity<Canvas>)>,
     /// Menu contextuel de l'arbre, s'il est ouvert.
     menu: Option<nav::Menu>,
     /// Notes ouvertes, de la plus récente à la plus ancienne.
@@ -342,6 +366,7 @@ impl Shell {
             dirs: Vec::new(),
             images: Vec::new(),
             picture: None,
+            drawing: None,
             menu: None,
             recent: Vec::new(),
             path: None,
@@ -660,6 +685,17 @@ impl Shell {
         // Une image prend la place de la note, qui reste chargée dessous.
         if vault::is_image(path) {
             self.picture = Some(path.to_path_buf());
+            // Un schéma s'ouvre dans son canevas, prêt à être repris.
+            let svg = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
+            if svg && self.drawing.as_ref().is_none_or(|(open, _)| open != path) {
+                let diagram = fs::read_to_string(path).ok().and_then(|svg| Diagram::from_svg(&svg));
+                let theme = self.theme;
+                self.drawing = diagram.map(|diagram| {
+                    let canvas = cx.new(|cx| Canvas::new(diagram, theme, cx));
+                    cx.subscribe(&canvas, Self::on_canvas_event).detach();
+                    (path.to_path_buf(), canvas)
+                });
+            }
             cx.notify();
             return false;
         }
@@ -877,6 +913,59 @@ impl Shell {
             EditorEvent::Open(Link::Tag(tag)) => self.open_palette(&format!("#{tag}"), window, cx),
             EditorEvent::Open(Link::Wiki(name)) => self.open_wiki(name, cx),
         }
+    }
+
+    /// Le schéma est enregistré à chaque changement : rien n'attend en mémoire.
+    // ponytail: écriture synchrone à chaque geste ou frappe (quelques Ko) ;
+    // la différer comme celle des notes si de gros schémas font attendre.
+    fn on_canvas_event(&mut self, canvas: Entity<Canvas>, event: &CanvasEvent, cx: &mut Context<Self>) {
+        let Some((path, _)) = self.drawing.as_ref().filter(|(_, open)| *open == canvas) else {
+            return;
+        };
+        let result = match event {
+            CanvasEvent::Changed => vault::write(path, &canvas.read(cx).diagram().to_svg(diagram::COLORS[0])),
+            CanvasEvent::Export => Ok(()),
+        };
+        self.error = result.err().map(|e| format!("{} : {e}", tr("Diagram not saved", "Schéma non enregistré")));
+        cx.notify();
+    }
+
+    /// Nouveau schéma, rangé dans le dossier sélectionné, sinon à côté de la note.
+    fn new_diagram(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.vault.clone() else {
+            return;
+        };
+        let beside = self.path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
+        let dir = self.nav.target_dir().or(beside).unwrap_or(root);
+        self.add_diagram(&dir, tr("Diagram", "Schéma"), Diagram::default(), window, cx);
+    }
+
+    /// Enregistre `diagram` dans `dir` sous un nom libre, et l'ouvre.
+    fn add_diagram(&mut self, dir: &Path, name: &str, diagram: Diagram, window: &mut Window, cx: &mut Context<Self>) {
+        let path = (1..)
+            .map(|n| match n {
+                1 => dir.join(format!("{name}.svg")),
+                n => dir.join(format!("{name} {n}.svg")),
+            })
+            .find(|p| !p.exists())
+            .unwrap();
+        if let Err(e) = vault::write(&path, &diagram.to_svg(diagram::COLORS[0])) {
+            self.error = Some(format!("{} : {e}", tr("Diagram not saved", "Schéma non enregistré")));
+            return cx.notify();
+        }
+        self.images.push(path.clone());
+        self.push_names(cx);
+        self.graph_stale = true;
+        self.refresh_graph(cx);
+        self.nav.reveal(&path);
+        self.load_note(&path, cx);
+        if self.nav.panel == Panel::Full {
+            self.nav.panel = Panel::Split;
+        }
+        if let Some((_, canvas)) = &self.drawing {
+            window.focus(&canvas.focus_handle(cx));
+        }
+        self.settle_nav(window, cx);
     }
 
     fn open_wiki(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -1103,7 +1192,7 @@ impl Render for Shell {
         if self.editor.focus_handle(cx).is_focused(window) {
             self.keep_preview();
         }
-        let title = match (&self.path, &self.vault) {
+        let title = match (self.picture.as_ref().or(self.path.as_ref()), &self.vault) {
             (Some(p), _) => vault::stem(p),
             (None, Some(_)) => tr("New note", "Nouvelle note").to_string(),
             (None, None) => "Bref".to_string(),
@@ -1245,12 +1334,19 @@ impl Render for Shell {
             if self.editor.focus_handle(cx).is_focused(window) {
                 self.picture = None;
             }
+            if self.drawing.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
+                self.drawing = None;
+            }
             let note = div().flex_1().min_w_0().h_full().relative();
-            let note = match &self.picture {
-                Some(path) => note.p_6().flex().items_center().justify_center().child(
+            let note = match (&self.picture, &self.drawing) {
+                (Some(_), Some((_, canvas))) => {
+                    canvas.update(cx, |canvas, _| canvas.sync(t));
+                    note.child(canvas.clone())
+                }
+                (Some(path), None) => note.p_6().flex().items_center().justify_center().child(
                     img(path.clone()).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
                 ),
-                None => note.child(self.editor.clone()).child(copy),
+                (None, _) => note.child(self.editor.clone()).child(copy),
             };
             body.flex()
                 .child(self.render_nav(cx))
@@ -1293,6 +1389,12 @@ impl Render for Shell {
                 this.open_palette("", window, cx)
             }))
             .on_action(cx.listener(|this, _: &NewNote, window, cx| this.new_note_here(window, cx)))
+            .on_action(cx.listener(|this, _: &NewDiagram, window, cx| this.new_diagram(window, cx)))
+            // Échap dans un schéma où plus rien n'est en cours : retour à la note.
+            .on_action(cx.listener(|this, _: &canvas::Cancel, window, cx| {
+                window.focus(&this.editor.focus_handle(cx));
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &nav::ShowTree, window, cx| {
                 this.show_nav(Mode::Tree, false, window, cx)
             }))
@@ -1407,6 +1509,7 @@ fn bind_keys(cx: &mut App) {
     let e = Some("Editor");
     let p = Some("Palette");
     let n = Some("Nav");
+    let c = Some("Canvas");
     // `secondary` = Cmd sur macOS, Ctrl ailleurs ; les mots se parcourent avec Alt sur macOS.
     let word = if cfg!(target_os = "macos") { "alt" } else { "ctrl" };
     cx.bind_keys([
@@ -1423,6 +1526,20 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary--", ZoomOut, None),
         KeyBinding::new("secondary-0", ZoomReset, None),
         KeyBinding::new("secondary-q", Quit, None),
+        KeyBinding::new("secondary-shift-d", NewDiagram, Some("Shell")),
+        KeyBinding::new("backspace", canvas::Erase, c),
+        KeyBinding::new("delete", canvas::EraseNext, c),
+        KeyBinding::new("left", canvas::Left, c),
+        KeyBinding::new("right", canvas::Right, c),
+        KeyBinding::new("up", canvas::Up, c),
+        KeyBinding::new("down", canvas::Down, c),
+        KeyBinding::new("secondary-z", canvas::Undo, c),
+        KeyBinding::new("secondary-shift-z", canvas::Redo, c),
+        KeyBinding::new("secondary-d", canvas::Duplicate, c),
+        KeyBinding::new("secondary-a", canvas::SelectAll, c),
+        KeyBinding::new("secondary-v", canvas::Paste, c),
+        KeyBinding::new("enter", canvas::Confirm, c),
+        KeyBinding::new("escape", canvas::Cancel, c),
         KeyBinding::new("secondary-e", nav::ShowTree, Some("Shell")),
         KeyBinding::new("secondary-r", nav::ShowRecent, Some("Shell")),
         KeyBinding::new("secondary-g", nav::ShowGraph, Some("Shell")),
@@ -1976,6 +2093,48 @@ mod tests {
         // Un tag n'est pas un fichier : Suppr n'y fait rien.
         cx.simulate_keystrokes("up delete");
         assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.error.is_none()));
+
+        // Schéma : Ctrl+Maj+D en crée un à côté de la note. Une lettre choisit la
+        // forme, glisser la pose ; Entrée écrit dedans ; une flèche tirée d'une
+        // forme à l'autre s'y accroche.
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (file, canvas) = shell.read_with(cx, |s, _| s.drawing.clone().unwrap());
+        assert_eq!(file.file_name().unwrap(), "Schéma.svg");
+        let drag = |cx: &mut gpui::VisualTestContext, from: (f32, f32), to: (f32, f32)| {
+            let (from, to) = canvas.read_with(cx, |c, _| (c.spot(from.0, from.1), c.spot(to.0, to.1)));
+            cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
+            cx.simulate_mouse_move(to, MouseButton::Left, gpui::Modifiers::none());
+            cx.simulate_mouse_up(to, MouseButton::Left, gpui::Modifiers::none());
+        };
+        let saved = || Diagram::from_svg(&fs::read_to_string(&file).unwrap()).unwrap();
+        cx.simulate_input("r");
+        drag(cx, (0., 0.), (120., 60.));
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("Client");
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("o");
+        drag(cx, (300., 0.), (400., 80.));
+        cx.simulate_input("a");
+        drag(cx, (60., 30.), (350., 40.));
+        let drawn = saved();
+        assert_eq!((drawn.shapes.len(), drawn.shapes[0].text.as_str(), drawn.shapes[0].w), (2, "Client", 120.));
+        let ends = (diagram::End::Shape(drawn.shapes[0].id), diagram::End::Shape(drawn.shapes[1].id));
+        assert_eq!((drawn.links[0].from, drawn.links[0].to, drawn.links[0].end), (ends.0, ends.1, diagram::Head::Arrow));
+        // Une forme se déplace en la tirant, sur la grille ; Ctrl+Z la remet en place.
+        drag(cx, (350., 40.), (350., 143.));
+        assert_eq!(saved().shapes[1].y, 100.);
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(saved().shapes[1].y, 0.);
+        // Suppr retire la forme sélectionnée, et la flèche qui y tenait.
+        drag(cx, (350., 40.), (350., 40.));
+        cx.simulate_keystrokes("delete");
+        assert_eq!((saved().shapes.len(), saved().links.len()), (1, 0));
+        // Le schéma figure parmi les images du coffre ; Échap rend la main à la note.
+        assert!(shell.read_with(cx, |s, _| s.images.contains(&file)));
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.picture.is_none() && s.drawing.is_none()));
 
         fs::remove_dir_all(&root).unwrap();
     }

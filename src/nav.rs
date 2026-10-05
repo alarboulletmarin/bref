@@ -64,6 +64,7 @@ pub struct Menu {
 enum Do {
     Open,
     NewNote,
+    NewDiagram,
     NewFolder,
     Rename,
     Trash,
@@ -293,7 +294,7 @@ pub fn tag_rows(notes: &[Note], open: &HashSet<PathBuf>) -> Vec<Row> {
 }
 
 /// Bouton icône du rail et des en-têtes de panneau.
-fn button(id: &'static str, icon: &'static str, active: bool, t: Theme) -> Stateful<Div> {
+pub fn button(id: &'static str, icon: &'static str, active: bool, t: Theme) -> Stateful<Div> {
     div()
         .id(id)
         .size(px(28.))
@@ -548,6 +549,11 @@ impl Shell {
                 self.nav.sel = Some(dir);
                 self.new_note_here(window, cx);
             }
+            (Do::NewDiagram, _) => {
+                self.nav.open.insert(dir.clone());
+                self.nav.sel = Some(dir);
+                self.new_diagram(window, cx);
+            }
             (Do::NewFolder, _) => {
                 let label = tr("New folder: its name", "Nouveau dossier : son nom");
                 self.ask(label, "", window, cx, move |this, name, _| {
@@ -693,6 +699,9 @@ impl Shell {
         self.dirs = self.dirs.iter().map(shift).collect();
         self.images = self.images.iter().map(shift).collect();
         self.picture = self.picture.as_ref().map(shift);
+        if let Some((path, _)) = &mut self.drawing {
+            *path = shift(path);
+        }
         self.recent = self.recent.iter().map(shift).collect();
         self.nav.open = self.nav.open.iter().map(shift).collect();
         self.new_dir = self.new_dir.as_ref().map(shift);
@@ -750,6 +759,7 @@ impl Shell {
         }
         if tree {
             items.push((tr("New note here", "Nouvelle note ici"), Do::NewNote));
+            items.push((tr("New diagram here", "Nouveau schéma ici"), Do::NewDiagram));
             items.push((tr("New folder", "Nouveau dossier"), Do::NewFolder));
         }
         if menu.target.is_some() {

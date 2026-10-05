@@ -65,7 +65,7 @@ pub fn latex(source: &str, display: bool, rgb: [u8; 3], size: f32) -> Option<Fig
 /// mémoire y est rendu à l'échelle 1, donc flou, et avec le rouge et le bleu
 /// échangés (seul le chargement d'un fichier les remet en ordre) : on l'agrandit
 /// deux fois et on échange les deux couleurs d'avance.
-fn sharpen(svg: &str) -> Option<Figure> {
+pub fn sharpen(svg: &str) -> Option<Figure> {
     let body = &svg[svg.find("<svg")?..];
     let head = &body[..body.find('>')?];
     let dim = |name: &str| {

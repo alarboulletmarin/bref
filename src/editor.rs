@@ -4,6 +4,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    fs,
     hash::{DefaultHasher, Hash, Hasher},
     ops::Range,
     path::PathBuf,
@@ -25,7 +26,7 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    MOD, Theme, figure, graph, mono, sans, tr, vault,
+    MOD, Theme, diagram::Diagram, figure, graph, mono, sans, tr, vault,
     markdown::{self as md, Enter, Kind, Link},
 };
 
@@ -1205,14 +1206,28 @@ impl Editor {
             // ponytail: une image par ligne, cherchée dans le dossier de la note, à la
             // racine du coffre, puis par son nom dans tout le coffre ; les images en
             // ligne (http) ne sont pas chargées.
-            let image = made.picture.as_ref().and_then(|path| {
-                let file = self.dirs.iter().map(|d| d.join(path)).find(|p| p.is_file()).or_else(|| {
+            let file = made.picture.as_ref().and_then(|path| {
+                self.dirs.iter().map(|d| d.join(path)).find(|p| p.is_file()).or_else(|| {
                     let name = path.rsplit('/').next()?.to_lowercase();
                     self.images.get(&name).cloned()
-                })?;
+                })
+            });
+            let svg = file.as_ref().is_some_and(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")));
+            // Un schéma de Bref est redessiné aux couleurs du thème, et à chaque fois
+            // que son fichier change : sa date fait partie de sa clé.
+            if svg
+                && let Some(file) = &file
+                && let Ok(stamp) = fs::metadata(file).and_then(|m| m.modified())
+            {
+                let own = cached(&mut old, &mut kept, key(3, &format!("{}{stamp:?}", file.display())), false, || {
+                    let diagram = Diagram::from_svg(&fs::read_to_string(file).ok()?)?;
+                    figure::sharpen(&diagram.to_svg(crate::canvas::neutral(t)))
+                });
+                drawing = own.or(drawing);
+            }
+            let image = file.filter(|_| drawing.is_none()).and_then(|file| {
                 // gpui 0.2 rend un SVG deux fois plus grand que nature, pour qu'il reste
                 // net (`SMOOTH_SVG_SCALE_FACTOR`, qui n'est pas public).
-                let svg = file.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
                 let zoom = if svg { 2. } else { 1. };
                 let image = window
                     .use_asset::<ImgResourceLoader>(&Resource::Path(file.into()), cx)?
