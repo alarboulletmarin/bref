@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bref — fast, minimal Markdown notes</title>
+<meta name="description" content="A fast, minimal note-taking app. Notes are plain Markdown files in a folder you choose, styled as you type. Written in Rust with GPUI.">
+<meta property="og:title" content="Bref — fast, minimal Markdown notes">
+<meta property="og:description" content="Plain Markdown files, styled as you type. Opens in about 75 ms. Rust + GPUI.">
+<meta property="og:image" content="https://alarboulletmarin.github.io/bref/screenshots/bref.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+/* Palette de l'app : thèmes « Bref Light » et « Bref Dark » (src/main.rs). */
+:root {
+  --bg: #fbfaf8; --text: #26231f; --dim: #a8a29a; --accent: #b4532a;
+  --code: #f1eeea; --panel: #ffffff; --border: #e2ddd6;
+  --soft: color-mix(in srgb, var(--text) 62%, var(--bg));
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1a19; --text: #e4e0da; --dim: #77716a; --accent: #e0926b;
+    --code: #262423; --panel: #242221; --border: #3a3735;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.7 Inter, "Noto Sans", "Segoe UI", "Helvetica Neue", sans-serif;
+}
+code, pre { font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: .86em; }
+main { max-width: 720px; margin: 0 auto; padding: 0 24px 40px; }
+
+/* Les liens se lisent comme des [[liens]] de l'app : crochets estompés, texte en accent. */
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+a.wiki::before { content: "[["; color: var(--dim); }
+a.wiki::after { content: "]]"; color: var(--dim); }
+
+/* Les marqueurs Markdown restent visibles, estompés, comme dans l'éditeur. */
+h1, h2, h3 { line-height: 1.25; letter-spacing: -.01em; margin: 0; }
+h1::before, h2::before, h3::before { color: var(--dim); }
+h1 { font-size: 2.1rem; }  h1::before { content: "# "; }
+h2 { font-size: 1.45rem; margin: 72px 0 20px; }  h2::before { content: "## "; }
+h3 { font-size: 1.1rem; margin: 28px 0 8px; }  h3::before { content: "### "; }
+
+nav { display: flex; align-items: center; gap: 18px; padding: 22px 0; font-size: .92rem; }
+nav .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; color: var(--text); font-weight: 600; }
+nav .brand:hover { text-decoration: none; }
+nav img { width: 24px; height: 24px; }
+
+.lead { margin: 56px 0 0; }
+.lead h1 { margin-bottom: 20px; }
+blockquote {
+  margin: 0 0 20px -14px; padding: 0 0 0 11px; border-left: 3px solid var(--border);
+  font-style: italic; font-size: 1.15rem;
+}
+blockquote::before { content: "> "; color: var(--dim); }
+.lead p { margin: 0 0 14px; }
+.tag { color: var(--accent); margin-right: 10px; }
+
+.wide { width: min(1040px, calc(100vw - 32px)); margin-left: 50%; transform: translateX(-50%); }
+.wide img { display: block; width: 100%; height: auto; }
+.hero { margin-top: 48px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
+.cap { color: var(--soft); font-size: .88rem; margin: 6px 0 0; }
+
+ul { list-style: none; margin: 0; padding: 0; }
+li { padding-left: 1.6em; position: relative; margin: 4px 0; }
+li::before { content: "-"; position: absolute; left: .4em; color: var(--accent); }
+li b { font-weight: 600; }
+
+pre {
+   background: var(--code);
+  margin: 10px 0 16px; padding: 14px 52px 14px 16px; overflow-x: auto; line-height: 1.6;
+}
+pre code { font-size: 1em; }
+:not(pre) > code::before, :not(pre) > code::after { content: "`"; color: var(--dim); }
+div.code { position: relative; }
+button.copy {
+  position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; padding: 0;
+  background: none; border: 0; border-radius: 6px; color: var(--dim); cursor: pointer;
+}
+button.copy:hover { background: var(--border); color: var(--text); }
+button.copy svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+
+.panel {
+  --tint: hsl(209 70% 50%);
+  margin: 16px -14px; padding: 6px 14px 6px 11px; font-style: italic;
+  border-left: 3px solid var(--tint);
+  background: color-mix(in srgb, var(--tint) 10%, transparent);
+}
+.panel::before { content: "> "; color: var(--dim); font-style: normal; }
+.panel b { color: var(--tint); font-style: normal; font-weight: 700; margin-right: .4em; }
+
+/* Un tableau Bref reste du texte, en police de code. */
+pre.table { background: none; padding: 0; margin: 14px 0 20px; }
+pre.table kbd { font: inherit; }
+pre.table i { font-style: normal; color: var(--dim); }
+
+.release time { color: var(--dim); font-weight: 400; font-size: .8rem; margin-left: 10px; }
+.release ul { color: var(--soft); font-size: .95rem; }
+
+hr { border: 0; border-top: 1px solid var(--border); margin: 72px 0 24px; }
+footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; gap: 6px 22px; }
+
+@media (max-width: 640px) {
+  .pair { grid-template-columns: 1fr; }
+  h2 { margin-top: 56px; }
+  nav .hide { display: none; }
+}
+</style>
+</head>
+<body>
+<main>
+  <nav>
+    <a class="brand" href="#"><img src="icon.svg" alt="">Bref</a>
+    <a class="wiki hide" href="#install">Install</a>
+    <a class="wiki hide" href="#docs">Docs</a>
+    <a class="wiki hide" href="#releases">Releases</a>
+    <a class="wiki" href="https://github.com/alarboulletmarin/bref">GitHub</a>
+  </nav>
+
+  <header class="lead">
+    <h1>Bref</h1>
+    <blockquote>Notes that open before you blink.</blockquote>
+    <p>A fast, minimal note-taking app. Notes are plain Markdown files in a folder you choose, styled as you type. Written in Rust with <a href="https://www.gpui.rs">GPUI</a>, the framework behind Zed.</p>
+    <p><span class="tag">#markdown</span><span class="tag">#rust</span><span class="tag">#linux</span><span class="tag">#macos</span><span class="tag">#windows</span></p>
+  </header>
+
+  <div class="wide hero"><img src="site/bref.png" width="1720" height="720" alt="Bref showing the same note in the light and dark themes"></div>
+
+  <h2>Features</h2>
+  <ul>
+    <li><b>Opens instantly</b>: the window is on screen in about 75 ms.</li>
+    <li><b>Plain files</b>: one <code>.md</code> per note. Sync with git or Syncthing; an Obsidian vault works as is.</li>
+    <li><b>Styled as you type</b>: headings grow, markers stay visible but dimmed. The file is always plain Markdown.</li>
+    <li><b>Slash commands</b>: <code>/</code> inserts a heading, list, panel, code block, formula, or a table sized on a grid.</li>
+    <li><b>Links and graph</b>: <code>[[links]]</code>, <code>#tags</code>, renames that rewrite your links, and a graph of your notes.</li>
+    <li><b>Diagrams</b>: Mermaid, LaTeX, or shapes and arrows drawn on a canvas, saved as SVG in your vault.</li>
+    <li><b>Keyboard first</b>: one palette to find, create and switch. No toolbar, no save button.</li>
+    <li><b>Yours to dress</b>: a dozen themes, any installed font. English and French.</li>
+  </ul>
+
+  <h2>Around your notes</h2>
+  <div class="wide pair">
+    <figure style="margin:0"><img src="site/navigation.png" loading="lazy" alt="The graph of links next to a note"><p class="cap">Tree, recent notes, graph and tags, in a panel that folds to a rail.</p></figure>
+    <figure style="margin:0"><img src="site/help.png" loading="lazy" alt="The shortcut panel, with the version and links at its foot"><p class="cap">Every shortcut, one F1 away.</p></figure>
+  </div>
+
+  <h2 id="install">Install</h2>
+  <h3>Arch Linux</h3>
+  <p>A prebuilt package ships with every release. No compiler needed.</p>
+<pre><code>curl -LO https://github.com/alarboulletmarin/bref/releases/latest/download/bref-x86_64.pkg.tar.zst
+sudo pacman -U ./bref-x86_64.pkg.tar.zst</code></pre>
+  <h3>macOS, Windows, other Linux</h3>
+  <p>Bref is compiled on your machine, with a recent <a href="https://rustup.rs">Rust</a> (1.88 or later).</p>
+<pre><code>git clone https://github.com/alarboulletmarin/bref.git
+cd bref
+cargo install --path . --locked</code></pre>
+  <div class="panel"><b>[!NOTE]</b>Linux needs a few system libraries and a Vulkan driver, macOS needs Xcode, Windows the Visual Studio C++ tools. There is no <code>.app</code> or installer yet. <a href="https://github.com/alarboulletmarin/bref#install">Steps for each system</a>.</div>
+
+  <h2 id="docs">Documentation</h2>
+  <p>On first run Bref asks for a vault, the folder that holds your notes. That is the only setup. The essentials, <code>Cmd</code> instead of <code>Ctrl</code> on macOS:</p>
+<pre class="table"><i>|</i> <b>Key</b>                <i>|</i> <b>Action</b>                                         <i>|</i>
+<i>| ------------------ | ---------------------------------------------- |</i>
+<i>|</i> Ctrl + P           <i>|</i> palette: find or create a note, filter by #tag <i>|</i>
+<i>|</i> Ctrl + N           <i>|</i> new note                                       <i>|</i>
+<i>|</i> /                  <i>|</i> insert a heading, list, panel, code or table   <i>|</i>
+<i>|</i> Ctrl + E R G T     <i>|</i> tree, recent, graph, tags                      <i>|</i>
+<i>|</i> Ctrl + Shift + D   <i>|</i> new diagram                                    <i>|</i>
+<i>|</i> Ctrl + K, Ctrl + T <i>|</i> theme                                          <i>|</i>
+<i>|</i> F1                 <i>|</i> every shortcut, inside the app                 <i>|</i></pre>
+  <p>The README covers the rest:
+    <a class="wiki" href="https://github.com/alarboulletmarin/bref#using-bref">shortcuts</a>
+    <a class="wiki" href="https://github.com/alarboulletmarin/bref#navigation">navigation</a>
+    <a class="wiki" href="https://github.com/alarboulletmarin/bref#markdown">markdown</a>
+    <a class="wiki" href="https://github.com/alarboulletmarin/bref#diagrams">diagrams</a>
+    <a class="wiki" href="https://github.com/alarboulletmarin/bref#notes-and-vault">vault</a>
+    <a class="wiki" href="https://github.com/alarboulletmarin/bref#troubleshooting">troubleshooting</a></p>
+
+  <h2 id="releases">Releases</h2>
+  <div id="release-list"><p><a class="wiki" href="https://github.com/alarboulletmarin/bref/releases">Releases on GitHub</a></p></div>
+
+  <hr>
+  <footer>
+    <span>MIT</span>
+    <a class="wiki" href="https://github.com/alarboulletmarin/bref">Source</a>
+    <a class="wiki" href="https://github.com/alarboulletmarin/bref/issues">Issues</a>
+    <a class="wiki" href="https://ko-fi.com/T6T01WC5ZC">Ko-fi</a>
+  </footer>
+</main>
+
+<script>
+// Bouton de copie sur chaque bloc de code, comme dans l'app.
+const COPY = '<svg viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.5"/></svg>';
+for (const pre of document.querySelectorAll("pre:not(.table)")) {
+  const wrap = document.createElement("div");
+  wrap.className = "code"; pre.replaceWith(wrap); wrap.append(pre);
+  const b = document.createElement("button");
+  b.className = "copy"; b.title = "Copy"; b.innerHTML = COPY;
+  b.onclick = () => navigator.clipboard.writeText(pre.textContent).then(() => { b.style.color = "var(--accent)"; setTimeout(() => b.style.color = "", 900); });
+  wrap.append(b);
+}
+
+// Dernières releases lues sur l'API GitHub ; sans réseau, le lien statique reste.
+fetch("https://api.github.com/repos/alarboulletmarin/bref/releases?per_page=5")
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(list => {
+    if (!list.length) return;
+    const out = document.getElementById("release-list");
+    out.replaceChildren();
+    for (const r of list) {
+      const box = document.createElement("div");
+      box.className = "release";
+      const h = document.createElement("h3");
+      const a = document.createElement("a");
+      a.href = r.html_url; a.textContent = r.tag_name;
+      const t = document.createElement("time");
+      t.textContent = new Date(r.published_at).toLocaleDateString("en", { dateStyle: "medium" });
+      h.append(a, t);
+      const ul = document.createElement("ul");
+      for (const m of r.body.matchAll(/^- (.+)$/gm)) {
+        const li = document.createElement("li");
+        li.textContent = m[1].replace(/^\w+: /, "");
+        ul.append(li);
+      }
+      box.append(h, ul);
+      out.append(box);
+    }
+    const more = document.createElement("p");
+    more.innerHTML = '<a class="wiki" href="https://github.com/alarboulletmarin/bref/releases">All releases</a>';
+    out.append(more);
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>
