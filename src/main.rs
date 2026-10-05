@@ -1321,13 +1321,30 @@ impl Render for Shell {
                 .child(svg().path(icon).size(px(16.)).flex_none().text_color(t.text))
         };
         let controls = window.window_controls();
-        let header = div()
-            .flex_none()
-            .h(px(34.))
+        // Pastille flottante en haut à droite de la note : un fond et un bord fins la
+        // distinguent du texte, ni flou ni transparence. Elle sert aussi de poignée de
+        // déplacement. ponytail: seule la pastille déplace la fenêtre, une bande
+        // transparente sur le haut de la note gênerait les premières lignes.
+        let pill = div()
+            .absolute()
+            .top_2()
+            .right_2()
             .flex()
             .items_center()
-            .text_size(px(12.5))
-            .text_color(t.dim)
+            .gap_2()
+            .px_2()
+            .py_1()
+            .rounded(px(10.))
+            .bg(t.panel)
+            .border_1()
+            .border_color(t.border)
+            .shadow(vec![BoxShadow {
+                color: hsla(0., 0., 0., 0.18),
+                offset: point(px(0.), px(1.)),
+                blur_radius: px(6.),
+                spread_radius: px(0.),
+            }])
+            .occlude()
             .on_mouse_down(MouseButton::Left, |e, window, _| {
                 if e.click_count == 2 {
                     window.zoom_window()
@@ -1336,32 +1353,14 @@ impl Render for Shell {
                 }
             })
             .on_mouse_down(MouseButton::Right, |e, window, _| window.show_window_menu(e.position))
-            // Le logo, discret, à l'aplomb du rail.
-            .child(div().flex_none().w(nav::RAIL).flex().justify_center().child(logo(t)))
-            .child(div().flex_1().pr_3().truncate().child(self.title.clone()))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .px_3()
-                    .when(controls.minimize, |d| {
-                        d.child(
-                            icon_button("minimize", "minimize.svg")
-                                .on_click(|_, window, _| window.minimize_window()),
-                        )
-                    })
-                    .when(controls.maximize, |d| {
-                        let icon = if window.is_maximized() { "restore.svg" } else { "maximize.svg" };
-                        d.child(
-                            icon_button("maximize", icon).on_click(|_, window, _| window.zoom_window()),
-                        )
-                    })
-                    .child(
-                        icon_button("close", "close.svg")
-                            .on_click(|_, window, _| window.remove_window()),
-                    ),
-            );
+            .when(controls.minimize, |d| {
+                d.child(icon_button("minimize", "minimize.svg").on_click(|_, window, _| window.minimize_window()))
+            })
+            .when(controls.maximize, |d| {
+                let icon = if window.is_maximized() { "restore.svg" } else { "maximize.svg" };
+                d.child(icon_button("maximize", icon).on_click(|_, window, _| window.zoom_window()))
+            })
+            .child(icon_button("close", "close.svg").on_click(|_, window, _| window.remove_window()));
 
         let body = div().flex_1().min_h_0().relative();
         let body = if self.vault.is_none() {
@@ -1530,8 +1529,8 @@ impl Render for Shell {
                 }
             }))
             .key_context("Shell")
-            .when(client, |d| d.child(header))
             .child(body)
+            .when(client, |d| d.child(pill))
             .children(self.render_menu(window, cx))
             .when(self.help, |d| d.child(self.render_help(cx)));
 
