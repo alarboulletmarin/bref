@@ -83,6 +83,60 @@ const COPY_SIZE: Pixels = px(22.);
 const MATH_SCALE: f32 = 1.2;
 /// Espace entre une ligne et l'image qu'elle désigne.
 const IMAGE_GAP: Pixels = px(8.);
+/// Place gardée sous un tableau pour le bouton qui lui ajoute une ligne, et
+/// épaisseur de ce bouton.
+const TABLE_GAP: Pixels = px(18.);
+const PLUS: Pixels = px(12.);
+/// Sélecteur de tableau : colonnes et lignes proposées, pas de la grille.
+const GRID: usize = 8;
+const GRID_STEP: Pixels = px(20.);
+/// Plus grand tableau qu'on puisse demander, au clavier : (colonnes, lignes).
+const GRID_MAX: (usize, usize) = (20, 99);
+/// Choix affichés à la fois dans la liste de complétion.
+const SHOWN: usize = 8;
+
+/// Commande `/nom` : (nom, libellé anglais, libellé français, texte posé avant
+/// le curseur, texte posé après).
+type Command = (&'static str, &'static str, &'static str, &'static str, &'static str);
+
+// ponytail: pas de `/date` : la bibliothèque standard ne connaît pas le fuseau
+// horaire ; l'ajouter si une dépendance de dates entre un jour dans le projet.
+const COMMANDS: &[Command] = &[
+    ("h1", "Heading 1", "Titre 1", "# ", ""),
+    ("h2", "Heading 2", "Titre 2", "## ", ""),
+    ("h3", "Heading 3", "Titre 3", "### ", ""),
+    ("list", "Bullet list", "Liste à puces", "- ", ""),
+    ("num", "Numbered list", "Liste numérotée", "1. ", ""),
+    ("todo", "Task", "Tâche à cocher", "- [ ] ", ""),
+    ("table", "Table", "Tableau", "", ""),
+    ("note", "Panel: note", "Panneau : note", "> [!NOTE]\n> ", ""),
+    ("tip", "Panel: tip", "Panneau : astuce", "> [!TIP]\n> ", ""),
+    ("important", "Panel: important", "Panneau : important", "> [!IMPORTANT]\n> ", ""),
+    ("warning", "Panel: warning", "Panneau : attention", "> [!WARNING]\n> ", ""),
+    ("caution", "Panel: danger", "Panneau : danger", "> [!CAUTION]\n> ", ""),
+    ("quote", "Quote", "Citation", "> ", ""),
+    ("code", "Code block", "Bloc de code", "```", "\n\n```"),
+    ("mermaid", "Mermaid diagram", "Diagramme Mermaid", "```mermaid\n", "\n```"),
+    ("math", "Formula", "Formule", "$$\n", "\n$$"),
+    ("rule", "Divider", "Séparateur", "---\n", ""),
+    ("link", "Link to a note", "Lien vers une note", "[[", ""),
+    ("image", "Picture or diagram", "Image ou schéma", "![[", ""),
+];
+
+/// Ce que la complétion propose : un nom à poser après `[[`, ou une commande.
+#[derive(Clone, Copy)]
+enum Choice<'a> {
+    Name(&'a str),
+    Command(&'static Command),
+}
+
+/// Boutons « + » d'un tableau : sous lui pour une ligne, à sa droite pour une colonne.
+fn plus_bars(frame: Bounds<Pixels>) -> [Bounds<Pixels>; 2] {
+    [
+        Bounds::new(point(frame.left(), frame.bottom() + px(3.)), size(frame.size.width, PLUS)),
+        Bounds::new(point(frame.right() + px(4.), frame.top()), size(PLUS, frame.size.height)),
+    ]
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Motion {
@@ -121,6 +175,10 @@ struct Row {
     image: Option<(Arc<RenderImage>, Size<Pixels>)>,
     /// La ligne ouvre un bloc de code : elle porte le bouton de copie.
     opens: bool,
+    /// Place laissée sous la dernière ligne d'un tableau.
+    gap: Pixels,
+    /// Couleur du panneau `> [!TYPE]` dont la ligne fait partie.
+    tint: Option<Hsla>,
 }
 
 impl Row {
@@ -177,7 +235,7 @@ impl Row {
     }
 
     fn visual_rows(&self) -> i32 {
-        (f32::from(self.height - self.pad - self.image_height()) / f32::from(self.lh)).round() as i32
+        (f32::from(self.height - self.pad - self.image_height() - self.gap) / f32::from(self.lh)).round() as i32
     }
 }
 
@@ -289,6 +347,18 @@ pub struct Editor {
     shaped: HashMap<u64, Rc<Shaped>>,
     ac_index: usize,
     ac_dismissed: Option<usize>,
+    /// Sélecteur de tableau ouvert sous le curseur : colonnes et lignes choisies.
+    grid: Option<(usize, usize)>,
+    /// Taille tapée pendant qu'il est ouvert (`12x5`) : elle dépasse la grille.
+    grid_typed: String,
+    /// Sa zone : le pointeur y prend la forme d'une main.
+    grid_hitbox: Option<Hitbox>,
+    /// Étendue et cadre de chaque tableau à la dernière frame, puis les zones de
+    /// leurs boutons « + », deux par tableau.
+    tables: Vec<(Range<usize>, Bounds<Pixels>)>,
+    table_hitboxes: Vec<Hitbox>,
+    /// Tableau survolé (son début), et celui de ses boutons qui l'est.
+    table_hover: Option<(usize, Option<usize>)>,
     theme: Theme,
     // Mise en page de la dernière frame.
     rows: Vec<Row>,
@@ -330,6 +400,12 @@ impl Editor {
             shaped: HashMap::new(),
             ac_index: 0,
             ac_dismissed: None,
+            grid: None,
+            grid_typed: String::new(),
+            grid_hitbox: None,
+            tables: Vec::new(),
+            table_hitboxes: Vec::new(),
+            table_hover: None,
             theme,
             rows: Vec::new(),
             origin: Point::default(),
@@ -397,6 +473,20 @@ impl Editor {
         (row.shaped.subs.len(), image)
     }
 
+    /// Centre des boutons « + » (ligne, colonne) du premier tableau affiché.
+    #[cfg(test)]
+    pub fn plus_buttons(&self) -> Option<[Point<Pixels>; 2]> {
+        Some(plus_bars(self.tables.first()?.1).map(|bar| bar.center()))
+    }
+
+    /// Centre d'une case du sélecteur de tableau, s'il est ouvert.
+    #[cfg(test)]
+    pub fn grid_cell(&self, col: usize, row: usize) -> Option<Point<Pixels>> {
+        self.grid?;
+        let step = |n: usize| px(16.) + GRID_STEP * (n - 1) as f32;
+        Some(self.popup_at(Self::grid_size())? + point(step(col), step(row)))
+    }
+
     fn cursor(&self) -> usize {
         if self.reversed { self.sel.start } else { self.sel.end }
     }
@@ -429,6 +519,7 @@ impl Editor {
         self.sel = to..to;
         self.reversed = false;
         self.goal_x = None;
+        self.grid = None;
         self.reveal = true;
         cx.notify();
     }
@@ -465,6 +556,7 @@ impl Editor {
     fn changed(&mut self, cx: &mut Context<Self>) {
         self.marked = None;
         self.copied = None;
+        self.grid = None;
         self.ac_index = 0;
         self.goal_x = None;
         self.reveal = true;
@@ -589,6 +681,18 @@ impl Editor {
     }
 
     fn go(&mut self, m: Motion, select: bool, cx: &mut Context<Self>) {
+        // Sélecteur de tableau : les flèches règlent sa taille.
+        if let Some((cols, rows)) = &mut self.grid {
+            match m {
+                Motion::Left => *cols = (*cols - 1).max(1),
+                Motion::Right => *cols = (*cols + 1).min(GRID_MAX.0),
+                Motion::Up => *rows = (*rows - 1).max(1),
+                Motion::Down => *rows = (*rows + 1).min(GRID_MAX.1),
+                _ => self.grid = None,
+            }
+            self.grid_typed.clear();
+            return cx.notify();
+        }
         if !select
             && matches!(m, Motion::Up | Motion::Down)
             && let Some((_, items)) = self.completion()
@@ -621,7 +725,30 @@ impl Editor {
         }
     }
 
+    /// Sélecteur de tableau ouvert : `12x5` tapé au clavier donne sa taille, au-delà
+    /// de la grille. Renvoie faux si `text` n'est pas une taille.
+    fn type_grid(&mut self, text: &str, cx: &mut Context<Self>) -> bool {
+        let Some((cols, rows)) = self.grid else {
+            return false;
+        };
+        if !text.chars().all(|c| c.is_ascii_digit() || matches!(c, 'x' | 'X' | '×' | '*' | ' ')) {
+            return false;
+        }
+        self.grid_typed.push_str(text);
+        let mut sizes = self.grid_typed.split(|c: char| !c.is_ascii_digit()).filter_map(|n| n.parse::<usize>().ok());
+        let cols = sizes.next().unwrap_or(cols).clamp(1, GRID_MAX.0);
+        let rows = sizes.next().unwrap_or(rows).clamp(1, GRID_MAX.1);
+        self.grid = Some((cols, rows));
+        cx.notify();
+        true
+    }
+
     fn delete(&mut self, m: Motion, cx: &mut Context<Self>) {
+        if self.grid.is_some() {
+            self.grid_typed.pop();
+            self.type_grid("", cx);
+            return;
+        }
         let range = if self.sel.is_empty() {
             let (c, t) = (self.cursor(), self.target(m, px(0.)));
             c.min(t)..c.max(t)
@@ -630,6 +757,7 @@ impl Editor {
         };
         self.edit(range, "", cx);
         self.renumber(cx);
+        self.realign(cx);
     }
 
     // ----- Édition Markdown -----
@@ -637,6 +765,22 @@ impl Editor {
     fn newline(&mut self, cx: &mut Context<Self>) {
         if self.accept_completion(cx) {
             return;
+        }
+        if let Some((cols, rows)) = self.grid {
+            return self.insert_table(cols, rows, cx);
+        }
+        // Dans un tableau : une ligne de plus sous celle du curseur ; sur une
+        // dernière ligne restée vide, on la retire et on sort du tableau.
+        if let Some((range, mut rows, (r, _))) = self.table_at(self.cursor()) {
+            if r >= 2 && r + 1 == rows.len() && rows[r].iter().all(String::is_empty) {
+                rows.pop();
+                let text = format!("{}\n", self.format_table(&range, &rows));
+                self.push_undo(true);
+                return self.edit(range, &text, cx);
+            }
+            let at = r.max(1) + 1;
+            rows.insert(at, vec![String::new(); rows[0].len()]);
+            return self.set_table(range, &rows, (at, 0), cx);
         }
         if !self.sel.is_empty() {
             return self.edit(self.sel.clone(), "\n", cx);
@@ -663,6 +807,9 @@ impl Editor {
 
     fn shift_lines(&mut self, indent: bool, cx: &mut Context<Self>) {
         if indent && self.accept_completion(cx) {
+            return;
+        }
+        if self.table_step(indent, cx) {
             return;
         }
         let first = self.line_range(self.sel.start);
@@ -726,21 +873,185 @@ impl Editor {
         self.sel = sel.start + n..sel.end + n;
     }
 
-    // ----- Complétion des wikiliens -----
+    // ----- Tableaux -----
 
-    /// Début de la requête après `[[` et notes correspondantes.
-    fn completion(&self) -> Option<(usize, Vec<&str>)> {
+    /// Tableau autour de l'octet `at` : son étendue, ses lignes, et la cellule
+    /// (ligne, colonne) où se trouve `at`.
+    fn table_at(&self, at: usize) -> Option<(Range<usize>, Vec<Vec<String>>, (usize, usize))> {
+        let is_row = |r: &Range<usize>| self.content[r.clone()].trim_start().starts_with('|');
+        let line = self.line_range(at);
+        if !is_row(&line) || self.in_code(line.start) {
+            return None;
+        }
+        let (mut start, mut end) = (line.start, line.end);
+        while start > 0 {
+            let above = self.line_range(start - 1);
+            if !is_row(&above) {
+                break;
+            }
+            start = above.start;
+        }
+        while end < self.content.len() {
+            let below = self.line_range(end + 1);
+            if !is_row(&below) {
+                break;
+            }
+            end = below.end;
+        }
+        let (rows, added) = md::table(&self.content[start..end]);
+        let mut r = self.content[start..at].matches('\n').count();
+        // La ligne de tirets qui manquait décale celles qui suivent l'en-tête.
+        r += (added && r > 0) as usize;
+        let col = at - line.start;
+        let bars = md::bars(&self.content[line]).into_iter().filter(|&bar| bar < col).count();
+        let c = bars.saturating_sub(1).min(rows[0].len() - 1);
+        Some((start..end, rows, (r, c)))
+    }
+
+    fn format_table(&self, range: &Range<usize>, rows: &[Vec<String>]) -> String {
+        let first = &self.content[range.clone()];
+        md::format_table(rows, &first[..first.len() - first.trim_start().len()])
+    }
+
+    /// Réécrit le tableau `range`, colonnes alignées, et sélectionne le contenu
+    /// de la cellule : taper le remplace.
+    fn set_table(&mut self, range: Range<usize>, rows: &[Vec<String>], (r, c): (usize, usize), cx: &mut Context<Self>) {
+        let text = self.format_table(&range, rows);
+        if self.content[range.clone()] != text {
+            self.push_undo(true);
+            self.edit(range.clone(), &text, cx);
+        }
+        let line = text.split('\n').nth(r).unwrap_or_default();
+        let at = range.start + text.split('\n').take(r).map(|l| l.len() + 1).sum::<usize>();
+        let cell = md::cells(line).get(c).cloned().unwrap_or(0..0);
+        self.move_to(at + cell.start, cx);
+        self.select_to(at + cell.end, cx);
+    }
+
+    /// Après une frappe dans un tableau déjà formé (il a sa ligne de tirets) : ses
+    /// colonnes se réalignent et le curseur garde sa place dans sa cellule. Comme
+    /// `renumber`, sans étape d'annulation propre.
+    fn realign(&mut self, cx: &mut Context<Self>) {
+        let c = self.cursor();
+        let line = self.line_range(c);
+        if !self.sel.is_empty() || !self.content[line.clone()].trim_start().starts_with('|') {
+            return;
+        }
+        let Some((range, rows, (r, col))) = self.table_at(c) else {
+            return;
+        };
+        let text = self.format_table(&range, &rows);
+        let formed = self.content[range.clone()].matches('\n').count() + 1 == rows.len();
+        if !formed || text == self.content[range.clone()] {
+            return;
+        }
+        let old = md::cells(&self.content[line.clone()]).get(col).map_or(c, |cell| line.start + cell.start);
+        let at = range.start + text.split('\n').take(r).map(|l| l.len() + 1).sum::<usize>();
+        let new = text.split('\n').nth(r).unwrap_or_default();
+        // Au plus loin, juste avant le `|` qui ferme la cellule.
+        let (start, end) = (md::cells(new)[col].start, md::bars(new)[col + 1]);
+        let cursor = at + (start + c.saturating_sub(old)).min(end);
+        self.content.replace_range(range, &text);
+        self.sel = cursor..cursor;
+        self.changed(cx);
+    }
+
+    /// Tab et Maj+Tab dans un tableau : cellule suivante ou précédente ; au bout
+    /// du tableau, une ligne s'ajoute.
+    fn table_step(&mut self, forward: bool, cx: &mut Context<Self>) -> bool {
+        let Some((range, mut rows, (r, c))) = self.table_at(self.cursor()) else {
+            return false;
+        };
+        let cols = rows[0].len();
+        let mut cell = r * cols + c;
+        // La ligne de tirets (la deuxième) se saute.
+        loop {
+            cell = if forward { cell + 1 } else { cell.saturating_sub(1) };
+            if cell / cols != 1 {
+                break;
+            }
+        }
+        if cell / cols == rows.len() {
+            rows.push(vec![String::new(); cols]);
+        }
+        self.set_table(range, &rows, (cell / cols, cell % cols), cx);
+        true
+    }
+
+    /// Pose un tableau vide au curseur, sur ses propres lignes.
+    fn insert_table(&mut self, cols: usize, rows: usize, cx: &mut Context<Self>) {
+        let c = self.cursor();
+        let line = self.line_range(c);
+        // Une ligne vide le sépare de ce qui précède : collé à une citation, il en ferait partie.
+        let above = self.content[..line.start].trim_end_matches(' ');
+        let apart = self.content[line.start..c].trim().is_empty() && (above.is_empty() || above.ends_with("\n\n"));
+        let lead = if apart { "" } else { "\n" };
+        let tail = if c == line.end { "" } else { "\n" };
+        let table = md::new_table(cols, rows);
+        self.push_undo(true);
+        self.edit(c..c, &format!("{lead}{}{tail}", md::format_table(&table, "")), cx);
+        if let Some((range, rows, _)) = self.table_at(c + lead.len()) {
+            self.set_table(range, &rows, (0, 0), cx);
+        }
+    }
+
+    /// Bouton « + » sous le pointeur : (début du tableau, 0 pour une ligne ou 1
+    /// pour une colonne).
+    fn plus_at(&self, at: Point<Pixels>) -> Option<(usize, usize)> {
+        self.tables.iter().find_map(|(range, frame)| {
+            Some((range.start, plus_bars(*frame).iter().position(|bar| bar.contains(&at))?))
+        })
+    }
+
+    fn grid_size() -> Size<Pixels> {
+        let side = GRID_STEP * GRID as f32 + px(12.);
+        size(side, side + px(22.))
+    }
+
+    /// Case du sélecteur de tableau sous le pointeur : (colonnes, lignes).
+    fn grid_at(&self, at: Point<Pixels>) -> Option<(usize, usize)> {
+        self.grid?;
+        let local = at - self.popup_at(Self::grid_size())? - point(px(8.), px(8.));
+        let (col, row) = ((local.x / GRID_STEP).floor(), (local.y / GRID_STEP).floor());
+        let inside = |n: f32| (0. ..GRID as f32).contains(&n);
+        (inside(col) && inside(row)).then_some((col as usize + 1, row as usize + 1))
+    }
+
+    /// Coin d'un panneau flottant de taille `panel` : sous le curseur, ou
+    /// au-dessus s'il n'y tient pas.
+    fn popup_at(&self, panel: Size<Pixels>) -> Option<Point<Pixels>> {
+        let c = self.cursor();
+        let row = &self.rows[self.row_at(c)?];
+        let p = row.pos(c - row.start);
+        let top = self.origin.y + row.y + row.pad + p.y;
+        let (below, above) = (top + row.lh + px(4.), top - panel.height - px(4.));
+        let fits = below + panel.height <= self.viewport.bottom() || above < self.viewport.top();
+        let x = (self.origin.x + p.x).min(self.viewport.right() - panel.width - px(8.));
+        Some(point(x.max(self.viewport.left()), if fits { below } else { above }))
+    }
+
+    // ----- Complétion : wikiliens et commandes `/` -----
+
+    /// Début de la requête (après `[[` ou `/`) et ce qui lui correspond.
+    fn completion(&self) -> Option<(usize, Vec<Choice<'_>>)> {
         if !self.sel.is_empty() {
             return None;
         }
         let c = self.cursor();
-        let before = &self.content[self.line_range(c).start..c];
+        let line = self.line_range(c).start;
+        let before = &self.content[line..c];
+        let (start, items) = self.names(before, c).or_else(|| self.commands(before, c, line))?;
+        (!items.is_empty() && self.ac_dismissed != Some(start)).then_some((start, items))
+    }
+
+    /// Après `[[` : les notes du coffre ; après `![[` : ses images et ses schémas.
+    fn names(&self, before: &str, c: usize) -> Option<(usize, Vec<Choice<'_>>)> {
         let open = before.rfind("[[")?;
         let query = &before[open + 2..];
-        let start = c - query.len();
-        if query.contains("]]") || query.contains('|') || self.ac_dismissed == Some(start) {
+        if query.contains("]]") || query.contains('|') {
             return None;
         }
+        let start = c - query.len();
         let query = query.to_lowercase();
         // `![[` affiche un fichier : ce sont les images et les schémas du coffre
         // qu'on propose, par leur nom de fichier ; `[[` propose les notes.
@@ -754,20 +1065,58 @@ impl Editor {
             items.sort_unstable_by_key(|name| name.to_lowercase());
         }
         items.truncate(6);
-        (!items.is_empty()).then_some((start, items))
+        Some((start, items.into_iter().map(Choice::Name).collect()))
+    }
+
+    /// Après un `/` en début de ligne ou de mot, hors du code : les commandes dont
+    /// le nom commence par la requête, puis celles dont le libellé la contient.
+    fn commands(&self, before: &str, c: usize, line: usize) -> Option<(usize, Vec<Choice<'_>>)> {
+        let slash = before.rfind('/')?;
+        let query = before[slash + 1..].to_lowercase();
+        let starts_word = before[..slash].chars().next_back().is_none_or(char::is_whitespace);
+        if !starts_word || !query.chars().all(char::is_alphanumeric) || self.in_code(line) {
+            return None;
+        }
+        let mut items: Vec<&'static Command> = COMMANDS
+            .iter()
+            .filter(|(name, en, fr, ..)| name.starts_with(&query) || tr(en, fr).to_lowercase().contains(&query))
+            .collect();
+        items.sort_by_key(|(name, ..)| !name.starts_with(&query));
+        Some((c - query.len(), items.into_iter().map(Choice::Command).collect()))
     }
 
     fn accept_completion(&mut self, cx: &mut Context<Self>) -> bool {
         let Some((start, items)) = self.completion() else {
             return false;
         };
-        let name = items[self.ac_index.min(items.len() - 1)].to_string();
         let c = self.cursor();
-        let closed = self.content[c..].starts_with("]]");
-        self.edit(start..c, &format!("{name}]]"), cx);
-        if closed {
-            let end = self.cursor();
-            self.splice(end..end + 2, "", cx);
+        match items[self.ac_index.min(items.len() - 1)] {
+            Choice::Name(name) => {
+                let name = name.to_string();
+                let closed = self.content[c..].starts_with("]]");
+                self.edit(start..c, &format!("{name}]]"), cx);
+                if closed {
+                    let end = self.cursor();
+                    self.splice(end..end + 2, "", cx);
+                }
+            }
+            Choice::Command(&(name, _, _, before, after)) => {
+                let slash = start - 1;
+                self.push_undo(true);
+                if name == "table" {
+                    self.edit(slash..c, "", cx);
+                    self.grid = Some((3, 3));
+                    self.grid_typed.clear();
+                    return true;
+                }
+                // Un lien se pose dans la phrase ; tout le reste commence sa ligne.
+                let line = self.line_range(c);
+                let inline = before.ends_with("[[") || self.content[line.start..slash].trim().is_empty();
+                let lead = if inline { "" } else { "\n" };
+                let tail = if after.is_empty() || c == line.end { "" } else { "\n" };
+                self.edit(slash..c, &format!("{lead}{before}{after}{tail}"), cx);
+                self.move_to(slash + lead.len() + before.len(), cx);
+            }
         }
         true
     }
@@ -811,6 +1160,24 @@ impl Editor {
             })
             .detach();
             return cx.notify();
+        }
+        if let Some((cols, rows)) = self.grid_at(e.position) {
+            return self.insert_table(cols, rows, cx);
+        }
+        self.grid = None;
+        // Boutons « + » d'un tableau : une ligne à la fin, ou une colonne.
+        if let Some((at, bar)) = self.plus_at(e.position)
+            && let Some((range, mut rows, _)) = self.table_at(at)
+        {
+            let cell = if bar == 0 {
+                rows.push(vec![String::new(); rows[0].len()]);
+                (rows.len() - 1, 0)
+            } else {
+                let cells = rows.iter_mut().enumerate();
+                cells.for_each(|(i, row)| row.push(if i == 1 { "---" } else { "" }.to_string()));
+                (0, rows[0].len() - 1)
+            };
+            return self.set_table(range, &rows, cell, cx);
         }
         let i = self.index_at(e.position);
         let lr = self.line_range(i);
@@ -857,6 +1224,23 @@ impl Editor {
         let hover = self.copy_at(e.position);
         if hover != self.hover {
             self.hover = hover;
+            cx.notify();
+        }
+        if let Some(cell) = self.grid_at(e.position)
+            && self.grid != Some(cell)
+        {
+            self.grid = Some(cell);
+            self.grid_typed.clear();
+            cx.notify();
+        }
+        // Un tableau montre ses boutons « + » dès qu'on s'en approche.
+        let bar = self.plus_at(e.position);
+        let near = |(range, frame): &(Range<usize>, Bounds<Pixels>)| {
+            frame.dilate(px(20.)).contains(&e.position).then_some((range.start, None))
+        };
+        let over = bar.map(|(at, bar)| (at, Some(bar))).or_else(|| self.tables.iter().find_map(near));
+        if over != self.table_hover {
+            self.table_hover = over;
             cx.notify();
         }
     }
@@ -1011,6 +1395,18 @@ impl Editor {
         let mut y = px(0.);
         let mut offset = 0;
         let mut in_code = false;
+        // Couleur d'un panneau `[!TYPE]` : sa teinte dit son type.
+        let tint_of = |label: &str| {
+            let h = match label.to_ascii_lowercase().as_str() {
+                "[!tip]" | "[!success]" => 0.38,
+                "[!important]" => 0.75,
+                "[!warning]" => 0.09,
+                "[!caution]" | "[!danger]" | "[!error]" => 0.,
+                _ => 0.58,
+            };
+            Hsla { h, s: 0.7, l: 0.5, a: 1. }
+        };
+        let mut tint = None;
         for line in self.content.split('\n') {
             let (mut kind, mut marker) = md::classify(line, in_code);
             let mut opens = false;
@@ -1061,11 +1457,23 @@ impl Editor {
             if math {
                 (kind, marker) = (Kind::Para, 0);
             }
+            // Panneau : la citation `> [!TYPE]` et celles qui la suivent.
+            let own_tint = (kind == Kind::Quote).then(|| md::callout(line)).flatten().map(|r| tint_of(&line[r]));
+            tint = own_tint.or(tint).filter(|_| kind == Kind::Quote);
+            let tinted = tint.is_some();
+            let last: Option<&mut Row> = rows.last_mut();
+            let after_table = last.as_ref().is_some_and(|r| r.kind == Kind::Table);
+            let header = kind == Kind::Table && !after_table;
+            if kind != Kind::Table && after_table && let Some(last) = last {
+                last.gap = TABLE_GAP;
+                last.height += TABLE_GAP;
+                y += TABLE_GAP;
+            }
             let (font_size, pad) = match kind {
                 Kind::Heading(1) => (px(27.), px(14.)),
                 Kind::Heading(2) => (px(21.), px(10.)),
                 Kind::Heading(_) => (px(17.5), px(6.)),
-                Kind::Code | Kind::Fence => (px(14.), px(0.)),
+                Kind::Code | Kind::Fence | Kind::Table => (px(14.), px(0.)),
                 _ => (px(16.), px(0.)),
             };
             // Les tailles ci-dessus valent pour un texte courant de 16 px.
@@ -1080,7 +1488,7 @@ impl Editor {
                 let near = composed.as_ref().map(|m| (m.start.wrapping_sub(offset), m.end.wrapping_sub(offset)));
                 let lang = (kind == Kind::Code).then_some(&lang);
                 let mut hasher = DefaultHasher::new();
-                (style, line, kind, marker, math, lang, has_cursor, near, f32::from(width).to_bits())
+                (style, line, kind, marker, math, lang, has_cursor, near, f32::from(width).to_bits(), header, tinted)
                     .hash(&mut hasher);
                 hasher.finish()
             };
@@ -1111,13 +1519,28 @@ impl Editor {
                 if kind == Kind::Task(true) {
                     flags[marker..].iter_mut().for_each(|f| *f |= md::STRIKE | md::DIM);
                 }
+                if let Some(label) = md::callout(line).filter(|_| own_tint.is_some()) {
+                    flags[label].fill(md::BOLD | md::MARK);
+                }
+                // Tableau : en-tête en gras, `|` et tirets en retrait.
+                // ponytail: une ligne plus large que la page passe à la ligne et casse
+                // la grille ; défilement horizontal si les tableaux larges sont courants.
+                if kind == Kind::Table {
+                    if header {
+                        flags.iter_mut().for_each(|f| *f |= md::BOLD);
+                    }
+                    md::bars(line).into_iter().for_each(|bar| flags[bar] = md::DIM);
+                    if line.chars().all(|c| matches!(c, '|' | '-' | ':' | ' ')) {
+                        flags.fill(md::DIM);
+                    }
+                }
                 let picture = (!code).then(|| md::image(line)).flatten().map(|(range, path)| {
                     flags[range].iter_mut().for_each(|f| *f |= md::DIM);
                     path
                 });
                 // Hors de la ligne du curseur, `->`, `!=`… s'affichent comme des signes ;
                 // le texte, lui, ne change pas.
-                let mut signs = if code || has_cursor || kind == Kind::Rule {
+                let mut signs = if code || has_cursor || matches!(kind, Kind::Rule | Kind::Table) {
                     Vec::new()
                 } else {
                     md::symbols(line, marker, &flags)
@@ -1157,6 +1580,8 @@ impl Editor {
                         hue(0.33)
                     } else if f & md::NUMBER != 0 {
                         hue(0.6)
+                    } else if f & md::MARK != 0 && let Some(tint) = own_tint {
+                        tint
                     } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
                         t.accent
                     } else {
@@ -1170,12 +1595,12 @@ impl Editor {
                             } else {
                                 FontWeight::NORMAL
                             },
-                            style: if f & md::ITALIC != 0 || kind == Kind::Quote {
+                            style: if f & md::ITALIC != 0 || (kind == Kind::Quote && !tinted) {
                                 FontStyle::Italic
                             } else {
                                 FontStyle::Normal
                             },
-                            ..font(if code || f & md::CODE != 0 { mono() } else { sans() })
+                            ..font(if code || kind == Kind::Table || f & md::CODE != 0 { mono() } else { sans() })
                         },
                         color,
                         background_color: (f & md::CODE != 0).then_some(t.code_bg),
@@ -1261,11 +1686,18 @@ impl Editor {
                 shaped: made,
                 image,
                 opens,
+                gap: px(0.),
+                tint,
             };
             let height = row.height + row.image_height();
             rows.push(Row { height, ..row });
             y += height;
             offset += line.len() + 1;
+        }
+        if let Some(last) = rows.last_mut().filter(|r| r.kind == Kind::Table) {
+            last.gap = TABLE_GAP;
+            last.height += TABLE_GAP;
+            y += TABLE_GAP;
         }
         self.rows = rows;
         self.figures = kept;
@@ -1297,6 +1729,25 @@ impl Editor {
         self.copy_hitboxes = opening
             .map(|r| (r.start, window.insert_hitbox(self.copy_bounds(r), HitboxBehavior::Normal)))
             .collect();
+        let grid = self.grid.and_then(|_| self.popup_at(Self::grid_size()));
+        self.grid_hitbox = grid.map(|at| window.insert_hitbox(Bounds::new(at, Self::grid_size()), HitboxBehavior::Normal));
+        // Cadre de chaque tableau : ses lignes, à la largeur de la plus longue.
+        self.tables.clear();
+        let mut i = 0;
+        while i < self.rows.len() {
+            let n = self.rows[i..].iter().take_while(|r| r.kind == Kind::Table).count();
+            if n > 0 {
+                let (first, last) = (&self.rows[i], &self.rows[i + n - 1]);
+                let widths = self.rows[i..i + n].iter().filter_map(|r| Some(r.shaped.line.as_ref()?.width()));
+                let wide = widths.fold(px(0.), |a, b| a.max(b));
+                let top = first.y + first.pad;
+                let frame = Bounds::new(self.origin + point(px(0.), top), size(wide, last.y + last.height - last.gap - top));
+                self.tables.push((first.start..last.start + last.len, frame));
+            }
+            i += n.max(1);
+        }
+        let bars = self.tables.iter().flat_map(|(_, frame)| plus_bars(*frame));
+        self.table_hitboxes = bars.map(|bar| window.insert_hitbox(bar, HitboxBehavior::Normal)).collect();
     }
 
     fn paint(&self, focused: bool, window: &mut Window, cx: &mut App) {
@@ -1332,7 +1783,10 @@ impl Editor {
                     window.paint_quad(fill(block(px(-12.), top, w + px(24.), row.height), t.code_bg))
                 }
                 Kind::Quote => {
-                    window.paint_quad(fill(block(px(-14.), top, px(3.), row.height), t.border))
+                    if let Some(tint) = row.tint {
+                        window.paint_quad(fill(block(px(-14.), top, w + px(28.), row.height), tint.opacity(0.1)));
+                    }
+                    window.paint_quad(fill(block(px(-14.), top, px(3.), row.height), row.tint.unwrap_or(t.border)))
                 }
                 Kind::Rule if !has_cursor => {
                     let mid = top + row.height / 2.;
@@ -1395,26 +1849,73 @@ impl Editor {
                 .paint(point(o.x + px(8.), o.y + px(3.)), px(22.), window, cx)
                 .ok();
         }
+        for (n, (range, frame)) in self.tables.iter().enumerate() {
+            let hover = self.table_hover.filter(|(at, _)| *at == range.start);
+            if hover.is_none() && !(focused && (range.start..=range.end).contains(&cursor)) {
+                continue;
+            }
+            for (i, bar) in plus_bars(*frame).into_iter().enumerate() {
+                let hot = hover.is_some_and(|(_, over)| over == Some(i));
+                window.paint_quad(fill(bar, if hot { t.selection } else { t.code_bg }).corner_radii(px(4.)));
+                let icon = Bounds::new(bar.center() - point(px(5.), px(5.)), size(px(10.), px(10.)));
+                let color = if hot { t.accent } else { t.dim };
+                window.paint_svg(icon, "plus.svg".into(), TransformationMatrix::unit(), color, cx).ok();
+                if let Some(hitbox) = self.table_hitboxes.get(n * 2 + i) {
+                    window.set_cursor_style(CursorStyle::PointingHand, hitbox);
+                }
+            }
+        }
+        // Sélecteur de tableau : la grille, et la taille choisie dessous.
         if focused
-            && let Some((_, items)) = self.completion()
-            && let Some(r) = self.row_at(cursor)
+            && let Some((cols, rows)) = self.grid
+            && let Some(at) = self.popup_at(Self::grid_size())
         {
-            let row = &self.rows[r];
-            let p = row.pos(cursor - row.start);
-            let item_h = px(28.);
-            let at = point(o.x + p.x, o.y + row.y + row.pad + p.y + row.lh + px(4.));
-            let panel = Bounds::new(at, size(px(280.), item_h * items.len() as f32 + px(8.)));
+            let panel = Bounds::new(at, Self::grid_size());
             window.paint_quad(quad(panel, px(8.), t.panel, px(1.), t.border, BorderStyle::default()));
-            for (i, name) in items.iter().enumerate() {
+            for (col, row) in (0..GRID * GRID).map(|i| (i % GRID, i / GRID)) {
+                let corner = at + point(px(8.) + GRID_STEP * col as f32, px(8.) + GRID_STEP * row as f32);
+                let on = col < cols && row < rows;
+                let (inside, edge) = if on { (t.selection, t.accent) } else { (t.code_bg, t.border) };
+                let cell = Bounds::new(corner, size(px(16.), px(16.)));
+                window.paint_quad(quad(cell, px(3.), inside, px(1.), edge, BorderStyle::default()));
+            }
+            if let Some(hitbox) = &self.grid_hitbox {
+                window.set_cursor_style(CursorStyle::PointingHand, hitbox);
+            }
+            let size = format!("{cols} × {rows}");
+            label(&size, t.text, window)
+                .paint(point(at.x + px(8.), panel.bottom() - px(24.)), px(20.), window, cx)
+                .ok();
+            let hint = label(tr("or type 12x5", "ou tape 12x5"), t.dim, window);
+            hint.paint(point(panel.right() - px(8.) - hint.width, panel.bottom() - px(24.)), px(20.), window, cx).ok();
+        }
+        if focused && let Some((_, items)) = self.completion() {
+            let chosen = self.ac_index.min(items.len() - 1);
+            // La liste suit le choix quand elle dépasse ce qu'elle montre.
+            let first = chosen.saturating_sub(SHOWN - 1);
+            let shown = &items[first..items.len().min(first + SHOWN)];
+            let item_h = px(28.);
+            let panel = size(px(280.), item_h * shown.len() as f32 + px(8.));
+            let Some(at) = self.popup_at(panel) else {
+                return;
+            };
+            window.paint_quad(quad(Bounds::new(at, panel), px(8.), t.panel, px(1.), t.border, BorderStyle::default()));
+            for (i, choice) in shown.iter().enumerate() {
                 let y = at.y + px(4.) + item_h * i as f32;
-                if i == self.ac_index.min(items.len() - 1) {
+                if first + i == chosen {
                     let hl = Bounds::new(point(at.x + px(4.), y), size(px(272.), item_h));
                     window.paint_quad(fill(hl, t.selection).corner_radii(px(5.)));
                 }
-                let name: String = name.chars().take(36).collect();
-                label(&name, t.text, window)
-                    .paint(point(at.x + px(12.), y + px(4.)), px(20.), window, cx)
-                    .ok();
+                let mut write = |text: &str, x: Pixels, color| {
+                    label(text, color, window).paint(point(at.x + x, y + px(4.)), px(20.), window, cx).ok();
+                };
+                match choice {
+                    Choice::Name(name) => write(&name.chars().take(36).collect::<String>(), px(12.), t.text),
+                    Choice::Command((name, en, fr, ..)) => {
+                        write(tr(en, fr), px(12.), t.text);
+                        write(&format!("/{name}"), px(186.), t.dim);
+                    }
+                }
             }
         }
     }
@@ -1464,7 +1965,11 @@ impl EntityInputHandler for Editor {
             .map(|r| self.range_from_utf16(&r))
             .or(self.marked.clone())
             .unwrap_or(self.sel.clone());
+        if self.type_grid(text, cx) {
+            return;
+        }
         self.edit(range, text, cx);
+        self.realign(cx);
         if text != " " {
             return;
         }
@@ -1584,7 +2089,9 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
         .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
         .on_action(cx.listener(|this, _: &Cancel, _, cx| {
-            if let Some((start, _)) = this.completion() {
+            if this.grid.take().is_some() {
+                cx.notify();
+            } else if let Some((start, _)) = this.completion() {
                 this.ac_dismissed = Some(start);
                 cx.notify();
             }

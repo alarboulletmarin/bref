@@ -13,6 +13,7 @@ pub enum Kind {
     Fence,
     Code,
     Rule,
+    Table,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -63,6 +64,9 @@ pub fn classify(line: &str, in_code: bool) -> (Kind, usize) {
     let t = rest.trim_end();
     if t.len() >= 3 && ['-', '*', '_'].iter().any(|&c| t.chars().all(|x| x == c)) {
         return (Kind::Rule, line.len());
+    }
+    if rest.starts_with('|') {
+        return (Kind::Table, 0);
     }
     if rest == ">" || rest.starts_with("> ") {
         return (Kind::Quote, indent + rest.len().min(2));
@@ -538,6 +542,100 @@ pub fn renumber(text: &str, cursor: usize) -> Option<(String, usize)> {
     changed.then(|| (out.join("\n"), new_cursor.max(0) as usize))
 }
 
+// ----- Panneaux et tableaux -----
+
+/// Type du panneau qu'ouvre une citation `> [!NOTE]` (syntaxe de GitHub et d'Obsidian).
+pub fn callout(line: &str) -> Option<Range<usize>> {
+    let open = line.find('>')? + 1;
+    let open = open + indent_len(&line[open..]);
+    let close = line[open..].strip_prefix("[!")?.find(']')?;
+    Some(open..open + close + 3)
+}
+
+/// Place de chaque `|` qui sépare deux cellules : pas ceux qui sont échappés ou
+/// pris dans un `[[lien|alias]]`.
+pub fn bars(line: &str) -> Vec<usize> {
+    let b = line.as_bytes();
+    let mut bars = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'\\' => i += 1,
+            b'[' if line[i..].starts_with("[[") => i += line[i..].find("]]").unwrap_or(0),
+            b'|' => bars.push(i),
+            _ => {}
+        }
+        i += 1;
+    }
+    bars
+}
+
+/// Étendue du contenu de chaque cellule de la ligne, sans les espaces autour.
+pub fn cells(line: &str) -> Vec<Range<usize>> {
+    let mut bars = bars(line);
+    // Sans `|` final, ce qui suit le dernier est encore une cellule.
+    if bars.last().is_some_and(|&last| !line[last + 1..].trim().is_empty()) {
+        bars.push(line.len());
+    }
+    bars.windows(2)
+        .map(|pair| {
+            let cell = &line[pair[0] + 1..pair[1]];
+            // Cellule vide : le curseur s'y place à un espace du `|`.
+            let lead = if cell.trim().is_empty() { cell.len().min(1) } else { indent_len(cell) };
+            let start = pair[0] + 1 + lead;
+            start..start + cell.trim().len()
+        })
+        .collect()
+}
+
+fn is_dashes(row: &[String]) -> bool {
+    !row.is_empty() && row.iter().all(|c| c.contains('-') && c.chars().all(|x| matches!(x, '-' | ':')))
+}
+
+/// Lignes d'un tableau (en-tête, tirets, puis le reste), toutes de même
+/// longueur ; et si la ligne de tirets, absente, a dû être ajoutée.
+pub fn table(block: &str) -> (Vec<Vec<String>>, bool) {
+    let mut rows: Vec<Vec<String>> =
+        block.lines().map(|l| cells(l).into_iter().map(|r| l[r].to_string()).collect()).collect();
+    let cols = rows.iter().map(Vec::len).max().unwrap_or(0).max(1);
+    let added = rows.len() < 2 || !is_dashes(&rows[1]);
+    if added {
+        rows.insert(rows.len().min(1), vec!["---".to_string(); cols]);
+    }
+    rows.iter_mut().for_each(|row| row.resize(cols, String::new()));
+    rows[1].iter_mut().filter(|c| c.is_empty()).for_each(|c| *c = "---".to_string());
+    (rows, added)
+}
+
+/// Tableau vide de `cols` colonnes et `rows` lignes, en-tête compris.
+pub fn new_table(cols: usize, rows: usize) -> Vec<Vec<String>> {
+    table(&vec![format!("{}|", "| ".repeat(cols)); rows].join("\n")).0
+}
+
+/// Le tableau écrit en Markdown, colonnes alignées.
+// ponytail: largeur comptée en caractères ; idéogrammes et émojis, deux fois plus
+// larges, décalent leur colonne (crate `unicode-width` si cela gêne).
+pub fn format_table(rows: &[Vec<String>], indent: &str) -> String {
+    let wide = |c: usize| {
+        let cells = rows.iter().enumerate().filter(|(i, _)| *i != 1);
+        cells.map(|(_, row)| row[c].chars().count()).max().unwrap_or(0).max(3)
+    };
+    let widths: Vec<usize> = (0..rows.first().map_or(0, Vec::len)).map(wide).collect();
+    let lines = rows.iter().enumerate().map(|(i, row)| {
+        let cells = row.iter().zip(&widths).map(|(cell, &w)| match i {
+            // Les deux-points d'alignement restent aux bouts des tirets.
+            1 => {
+                let (left, right) = (cell.starts_with(':'), cell.len() > 1 && cell.ends_with(':'));
+                let dashes = "-".repeat(w - left as usize - right as usize);
+                format!(" {}{dashes}{} |", if left { ":" } else { "" }, if right { ":" } else { "" })
+            }
+            _ => format!(" {cell}{} |", " ".repeat(w - cell.chars().count())),
+        });
+        format!("{indent}|{}", cells.collect::<String>())
+    });
+    lines.collect::<Vec<_>>().join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -659,5 +757,27 @@ mod tests {
         assert_eq!((t.as_str(), c), ("9. a\n10. b", 10));
         assert_eq!(renumber("1. a\n2. b", 0), None);
         assert_eq!(renumber("texte", 0), None);
+    }
+    #[test]
+    fn reads_and_writes_tables() {
+        assert_eq!(classify("| a | b |", false), (Kind::Table, 0));
+        assert_eq!(callout("> [!NOTE] titre"), Some(2..9));
+        assert_eq!(callout("> note"), None);
+        // Un `|` échappé ou dans un lien ne sépare pas ; le `|` final est facultatif.
+        let line = r"| a \| b | [[n|alias]] |  | fin";
+        let found: Vec<&str> = cells(line).into_iter().map(|r| &line[r]).collect();
+        assert_eq!(found, [r"a \| b", "[[n|alias]]", "", "fin"]);
+        assert_eq!(cells("|   |")[0], 2..2);
+
+        // Colonnes alignées, tirets ajoutés sous l'en-tête, lignes complétées.
+        let (rows, added) = table("| Nom | Âge |\n| Élodie |");
+        assert!(added);
+        assert_eq!(format_table(&rows, ""), "| Nom    | Âge |\n| ------ | --- |\n| Élodie |     |");
+        // L'alignement demandé est gardé ; un tableau déjà en forme ne bouge pas.
+        let text = "  | a   | b   |\n  | :-- | --: |\n  | 1   | 2   |";
+        let (rows, added) = table(text);
+        assert!(!added);
+        assert_eq!(format_table(&rows, "  "), text);
+        assert_eq!(format_table(&new_table(2, 2), ""), "|     |     |\n| --- | --- |\n|     |     |");
     }
 }
