@@ -392,21 +392,28 @@ impl Shell {
                 let Some((root, generation)) = state else {
                     continue;
                 };
-                let known = last.clone();
-                let scanned = cx
+                let print_root = root.clone();
+                let (took, print) = cx
                     .background_executor()
                     .spawn(async move {
                         let start = Instant::now();
-                        let print = vault::fingerprint(&root);
-                        let took = start.elapsed();
-                        let changed = known != Some((root.clone(), print));
-                        (took, changed.then(|| (vault::scan(&root), root, print)))
+                        let print = vault::fingerprint(&print_root);
+                        (start.elapsed(), print)
                     })
                     .await;
-                pause = Duration::from_secs(2).max(scanned.0 * 200);
-                let Some(((notes, dirs, images), root, print)) = scanned.1 else {
+                pause = Duration::from_secs(2).max(took * 200);
+                if last == Some((root.clone(), print)) {
                     continue;
+                }
+                // Seules les notes dont la date a changé sont relues.
+                let Ok(known) = this.update(cx, |this, _| this.notes.clone()) else {
+                    return;
                 };
+                let scan_root = root.clone();
+                let (notes, dirs, images) = cx
+                    .background_executor()
+                    .spawn(async move { vault::rescan(&scan_root, &known) })
+                    .await;
                 this.update(cx, |this, cx| {
                     // Une frappe ou un enregistrement pendant la lecture : on réessaie au prochain tour.
                     if this.vault.as_ref() == Some(&root) && this.save_gen == generation && !this.dirty {
@@ -1894,6 +1901,67 @@ mod tests {
         cx.run_until_parked();
         assert_eq!(shell.read_with(cx, |s, _| s.picture.clone()), None);
 
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Temps par geste sur un gros coffre et une grosse note. Hors de la suite
+    /// courante : `cargo test --release --locked -- --ignored --nocapture bench`.
+    #[gpui::test]
+    #[ignore]
+    fn bench(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-bench-{}", std::process::id()));
+        for i in 0..2000 {
+            let dir = root.join(format!("d{}", i % 40));
+            fs::create_dir_all(&dir).unwrap();
+            let body: String = (0..30).map(|j| format!("Ligne {j} vers [[Note {}]] #tag{}\n", (i + j) % 2000, j % 12)).collect();
+            fs::write(dir.join(format!("Note {i}.md")), format!("# Note {i}\n\n{body}")).unwrap();
+        }
+        let big: String =
+            (0..5000).map(|j| format!("Ligne {j} avec **gras**, `code`, [[Note {}]] et #tag{} -> fin.\n", j % 2000, j % 12)).collect();
+        fs::write(root.join("Grosse.md"), format!("# Grosse\n\n{big}")).unwrap();
+        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
+            unsafe { std::env::set_var(key, root.join(".config")) };
+        }
+        vault::save_layout("tree split 260 0");
+
+        let start = Instant::now();
+        let scanned = vault::scan(&root);
+        println!("scan du coffre : {:?}", start.elapsed());
+        let start = Instant::now();
+        let again = vault::rescan(&root, &scanned.0);
+        println!("nouveau scan, rien n'a changé : {:?}", start.elapsed());
+        assert_eq!(again.0.len(), scanned.0.len());
+
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        shell.update(cx, |s, cx| s.open_note(&root.join("Grosse.md"), cx));
+        cx.run_until_parked();
+        let time = |what: &str, cx: &mut gpui::VisualTestContext, act: &dyn Fn(&mut gpui::VisualTestContext)| {
+            let start = Instant::now();
+            for _ in 0..20 {
+                act(cx);
+                cx.run_until_parked();
+            }
+            println!("{what} : {:?} par geste", start.elapsed() / 20);
+        };
+        time("frappe", cx, &|cx| cx.simulate_input("a"));
+        time("flèche bas", cx, &|cx| cx.simulate_keystrokes("down"));
+        time("molette", cx, &|cx| {
+            cx.simulate_event(gpui::ScrollWheelEvent {
+                position: point(px(700.), px(300.)),
+                delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-40.))),
+                ..Default::default()
+            })
+        });
+        time("mot puis annulation", cx, &|cx| {
+            cx.simulate_input("mot ");
+            cx.simulate_keystrokes("secondary-z");
+        });
         fs::remove_dir_all(&root).unwrap();
     }
 

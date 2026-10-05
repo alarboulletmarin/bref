@@ -1,6 +1,7 @@
 //! Coffre : un dossier de fichiers `.md`, plus la petite config de l'app.
 
 use std::{
+    collections::HashMap,
     env, fs,
     hash::{DefaultHasher, Hash, Hasher},
     io,
@@ -10,6 +11,7 @@ use std::{
 
 use crate::{markdown, tr};
 
+#[derive(Clone)]
 pub struct Note {
     pub name: String,
     pub path: PathBuf,
@@ -139,6 +141,12 @@ pub fn fingerprint(root: &Path) -> u64 {
 /// Toutes les notes du coffre (récursif, dossiers cachés ignorés), plus récentes
 /// d'abord, tous ses dossiers, même vides, et ses images.
 pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
+    rescan(root, &[])
+}
+
+/// Comme `scan`, sans relire les notes de `known` dont la date n'a pas changé.
+pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
+    let known: HashMap<&Path, &Note> = known.iter().map(|n| (n.path.as_path(), n)).collect();
     let mut notes = Vec::new();
     let mut images = Vec::new();
     let mut found = Vec::new();
@@ -156,19 +164,12 @@ pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
                 found.push(path.clone());
                 dirs.push(path);
             } else if path.extension().is_some_and(|e| e == "md") {
-                let (tags, links) = fs::read_to_string(&path)
-                    .map(|t| markdown::index(&t))
-                    .unwrap_or_default();
-                notes.push(Note {
-                    name: stem(&path),
-                    tags,
-                    links,
-                    mtime: entry
-                        .metadata()
-                        .and_then(|m| m.modified())
-                        .unwrap_or(SystemTime::UNIX_EPOCH),
-                    path,
-                });
+                let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH);
+                let (tags, links) = match known.get(path.as_path()) {
+                    Some(note) if note.mtime == mtime => (note.tags.clone(), note.links.clone()),
+                    _ => fs::read_to_string(&path).map(|t| markdown::index(&t)).unwrap_or_default(),
+                };
+                notes.push(Note { name: stem(&path), tags, links, mtime, path });
             } else if is_image(&path) {
                 images.push(path);
             }
