@@ -879,11 +879,14 @@ impl Render for Canvas {
         let toggle = |id, icon, cx: &Context<Self>, set: fn(Option<&mut diagram::Shape>, Option<&mut diagram::Link>)| {
             button(id, icon, false, t).on_click(cx.listener(move |this, _, _, cx| this.style(cx, set)))
         };
+        // Dans une fenêtre étroite, la barre passe à la ligne : aucun outil n'est hors d'atteinte.
         let bar = div()
             .flex_none()
-            .h(px(44.))
+            .min_h(px(44.))
             .px_2()
+            .py_1()
             .flex()
+            .flex_wrap()
             .items_center()
             .gap_1()
             .children(tools)
