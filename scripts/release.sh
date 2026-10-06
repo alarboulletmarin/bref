@@ -29,7 +29,10 @@ else
     { echo "## Changes"; echo
       git log "$prev..HEAD" --no-merges --pretty='- %s' | grep -vE '^- (chore|build)(\(.*\))?: ' || true
       echo; echo "## Install and upgrade"; echo
-      echo "See the [README](https://github.com/alarboulletmarin/bref#install). On Arch, download \`bref-x86_64.pkg.tar.zst\` from the assets below, then \`sudo pacman -U ./bref-x86_64.pkg.tar.zst\`."
+      echo "See the [README](https://github.com/alarboulletmarin/bref#install). The downloads appear in the assets below within about 15 minutes, once GitHub has built them:"
+      echo "- Arch: \`bref-x86_64.pkg.tar.zst\`, then \`sudo pacman -U ./bref-x86_64.pkg.tar.zst\`"
+      echo "- macOS: \`bref-macos.dmg\`"
+      echo "- Windows: \`bref-windows-x86_64-setup.exe\`, or \`bref-windows-x86_64.zip\` to install nothing"
     } >"$notes"
 fi
 

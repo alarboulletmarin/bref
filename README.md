@@ -33,7 +33,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 | macOS | [macOS](#macos) |
 | Windows | [Windows](#windows) |
 
-On Arch there is a prebuilt package; everywhere else Bref is compiled on your machine, which takes a few minutes the first time. Compiling needs a recent stable Rust: install it with [rustup](https://rustup.rs) if `rustc --version` shows less than 1.88.
+On Arch, macOS and Windows there is a ready-made download; everywhere else Bref is compiled on your machine, which takes a few minutes the first time. Compiling needs a recent stable Rust: install it with [rustup](https://rustup.rs) if `rustc --version` shows less than 1.88.
 
 ### Arch Linux
 
@@ -96,7 +96,15 @@ sudo make install       # PREFIX=/usr/local by default, PREFIX=/usr for a system
 
 ### macOS
 
-Needs Xcode (the full app, for the Metal shader compiler) and Rust.
+Download [`bref-macos.dmg`](https://github.com/alarboulletmarin/bref/releases/latest/download/bref-macos.dmg) (Apple Silicon and Intel, macOS 11 or later), open it and drag Bref to Applications.
+
+The app is not notarized (that needs a paid Apple Developer account), so macOS blocks the first launch. Open **System Settings**, **Privacy & Security**, scroll down and click **Open Anyway**. Or run this once in a terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Bref.app
+```
+
+To compile it yourself instead you need Xcode (the full app, for the Metal shader compiler) and Rust:
 
 ```bash
 git clone https://github.com/alarboulletmarin/bref.git
@@ -104,11 +112,15 @@ cd bref
 cargo install --path . --locked
 ```
 
-This installs the `bref` command in `~/.cargo/bin`. There is no `.app` bundle yet: start it from a terminal.
+This installs the `bref` command in `~/.cargo/bin`, without the `.app` bundle: start it from a terminal.
 
 ### Windows
 
-Needs the Visual Studio C++ build tools with the Windows SDK, and Rust (MSVC toolchain).
+Download [`bref-windows-x86_64-setup.exe`](https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64-setup.exe) and run it (Windows 10 or 11, 64-bit). It installs for your user only, with no administrator rights, adds a Start menu entry and an uninstaller. If you would rather install nothing, take [`bref-windows-x86_64.zip`](https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64.zip), unzip it anywhere and run `bref.exe`.
+
+The files are not signed (a code-signing certificate costs a few hundred euros a year), so SmartScreen may show "Windows protected your PC": click **More info**, then **Run anyway**.
+
+To compile it yourself instead you need the Visual Studio C++ build tools with the Windows SDK, and Rust (MSVC toolchain):
 
 ```powershell
 git clone https://github.com/alarboulletmarin/bref.git
@@ -116,13 +128,16 @@ cd bref
 cargo install --path . --locked
 ```
 
-This installs `bref.exe` in `%USERPROFILE%\.cargo\bin`. There is no installer yet.
+This installs `bref.exe` in `%USERPROFILE%\.cargo\bin`.
 
 ### Upgrading
 
 | Installed with | Upgrade |
 |---|---|
 | Arch, prebuilt package | run the two commands above again |
+| macOS, `.dmg` | download the new `.dmg` and drop Bref on Applications again, replacing the old one |
+| Windows, installer | run the new installer: it upgrades in place |
+| Windows, `.zip` | unzip the new version over the old one |
 | Arch, `bref-git` | `git pull`, then `makepkg -si` in `aur/bref-git` |
 | `make install` | `git pull`, then `make` and `sudo make install` |
 | `cargo install` | `git pull`, then `cargo install --path . --locked` |
@@ -327,7 +342,7 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
 |---|---|
 | Linux, GNOME on Wayland | first-class: this is what Bref is built and used on (Arch Linux) |
 | Linux, other desktops, Wayland or X11 | should work, with the same built-in title bar. Not tested |
-| macOS, Windows | built and tested by CI on every commit; not used day to day by the author |
+| macOS, Windows | built and tested by CI on every commit, and the downloads are built there too; not used day to day by the author |
 
 - **Linux** needs a working Vulkan driver (Mesa or the vendor one). Bref draws its own title bar, as Zed does: GNOME under Wayland draws none for applications. On macOS and Windows the system title bar is used.
 - **Language**: French if the system language is French, English otherwise. On Windows it is always English for now.

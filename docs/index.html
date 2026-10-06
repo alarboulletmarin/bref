@@ -152,12 +152,16 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
   <p>A prebuilt package ships with every release. No compiler needed.</p>
 <pre><code>curl -LO https://github.com/alarboulletmarin/bref/releases/latest/download/bref-x86_64.pkg.tar.zst
 sudo pacman -U ./bref-x86_64.pkg.tar.zst</code></pre>
-  <h3>macOS, Windows, other Linux</h3>
+  <h3>macOS</h3>
+  <p>Apple Silicon and Intel, macOS 11 or later: <a href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-macos.dmg">download <code>bref-macos.dmg</code></a>, open it and drag Bref to Applications. The app is not notarized, so the first launch needs <b>Open Anyway</b> in System Settings, Privacy &amp; Security.</p>
+  <h3>Windows</h3>
+  <p>Windows 10 or 11, 64-bit: <a href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64-setup.exe">download the installer</a> (no administrator rights needed), or the <a href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64.zip">zip</a> to install nothing. The files are not signed: if SmartScreen warns, click <b>More info</b>, then <b>Run anyway</b>.</p>
+  <h3>Other Linux</h3>
   <p>Bref is compiled on your machine, with a recent <a href="https://rustup.rs">Rust</a> (1.88 or later).</p>
 <pre><code>git clone https://github.com/alarboulletmarin/bref.git
 cd bref
 cargo install --path . --locked</code></pre>
-  <div class="panel"><b>[!NOTE]</b>Linux needs a few system libraries and a Vulkan driver, macOS needs Xcode, Windows the Visual Studio C++ tools. There is no <code>.app</code> or installer yet. <a href="https://github.com/alarboulletmarin/bref#install">Steps for each system</a>.</div>
+  <div class="panel"><b>[!NOTE]</b>Linux needs a few system libraries and a Vulkan driver. <a href="https://github.com/alarboulletmarin/bref#install">Steps for each system</a>, including compiling on macOS and Windows.</div>
 
   <h2 id="docs">Documentation</h2>
   <p>On first run Bref asks for a vault, the folder that holds your notes. That is the only setup. The essentials, <code>Cmd</code> instead of <code>Ctrl</code> on macOS:</p>
