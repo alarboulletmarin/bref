@@ -10,6 +10,7 @@ mod import;
 mod markdown;
 mod nav;
 mod palette;
+mod update;
 mod vault;
 
 use std::{
@@ -156,19 +157,23 @@ struct Prefs {
     mono: String,
     /// Taille du texte courant de la note, en pixels.
     size: f32,
+    /// Chercher une nouvelle version de l'app (une requête par jour).
+    updates: bool,
 }
 
 impl Prefs {
     const SIZE: f32 = 16.;
 
     fn parse(text: &str) -> Self {
-        let mut prefs = Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE };
+        let mut prefs =
+            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true };
         for (key, value) in text.lines().filter_map(|line| line.split_once('=')) {
             match key {
                 "theme" => prefs.theme = value.into(),
                 "font" => prefs.font = value.into(),
                 "mono" => prefs.mono = value.into(),
                 "size" => prefs.size = value.parse().ok().filter(|s: &f32| s.is_finite()).unwrap_or(Self::SIZE),
+                "updates" => prefs.updates = value != "off",
                 _ => {}
             }
         }
@@ -177,7 +182,12 @@ impl Prefs {
     }
 
     fn to_text(&self) -> String {
-        format!("theme={}\nfont={}\nmono={}\nsize={}\n", self.theme, self.font, self.mono, self.size)
+        let mut text = format!("theme={}\nfont={}\nmono={}\nsize={}\n", self.theme, self.font, self.mono, self.size);
+        // Absent tant qu'on ne l'a pas coupé : la valeur par défaut n'encombre pas le fichier.
+        if !self.updates {
+            text.push_str("updates=off\n");
+        }
+        text
     }
 }
 
@@ -362,6 +372,8 @@ struct Shell {
     dirty: bool,
     save_gen: usize,
     error: Option<String>,
+    /// Version plus récente que celle qui tourne, trouvée sur GitHub.
+    update: Option<String>,
     title: String,
     prefs: Prefs,
     theme: Theme,
@@ -423,6 +435,7 @@ impl Shell {
             dirty: false,
             save_gen: 0,
             error: None,
+            update: None,
             title: String::new(),
             prefs,
             theme,
@@ -444,7 +457,36 @@ impl Shell {
             None => window.focus(&this.focus),
         }
         this.watch(cx);
+        this.check_updates(cx);
         this
+    }
+
+    /// Cherche en tâche de fond une version plus récente (au plus une requête par jour).
+    /// Les tests ne sortent pas sur le réseau.
+    fn check_updates(&mut self, cx: &mut Context<Self>) {
+        if !self.prefs.updates || cfg!(test) {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let found = cx.background_executor().spawn(async move { update::check() }).await;
+            this.update(cx, |this, cx| {
+                if this.prefs.updates && found.is_some() {
+                    this.update = found;
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Active ou coupe la recherche de nouvelle version, et retient le choix.
+    fn toggle_updates(&mut self, cx: &mut Context<Self>) {
+        self.prefs.updates = !self.prefs.updates;
+        vault::save_settings(&self.prefs.to_text());
+        self.update = None;
+        self.check_updates(cx);
+        cx.notify();
     }
 
     /// Suit ce que d'autres programmes changent dans le coffre : notes ajoutées,
@@ -1143,7 +1185,8 @@ impl Shell {
             })
             .collect();
         let theme = self.theme;
-        let palette = cx.new(|cx| Palette::new(entries, query, theme, cx));
+        let updates = self.prefs.updates;
+        let palette = cx.new(|cx| Palette::new(entries, query, theme, cx).with_updates(updates));
         cx.subscribe_in(&palette, window, |this, _, event, window, cx| {
             this.palette = None;
             window.focus(&this.editor.focus_handle(cx));
@@ -1155,6 +1198,7 @@ impl Shell {
                 PaletteEvent::NewDiagram => this.new_diagram(window, cx),
                 PaletteEvent::ImportDiagram => this.import_diagram(window, cx),
                 PaletteEvent::Setting(setting) => this.choose_setting(*setting, window, cx),
+                PaletteEvent::ToggleUpdates => this.toggle_updates(cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
             cx.notify();
@@ -1527,6 +1571,48 @@ impl Render for Shell {
                 .child(self.render_nav(cx))
                 .when(self.nav.panel != Panel::Full, |d| d.child(note))
                 .children(self.palette.clone())
+                .children(self.update.clone().map(|version| {
+                    div()
+                        .absolute()
+                        .bottom_3()
+                        .left_16()
+                        .pl_3()
+                        .pr_2()
+                        .py_1p5()
+                        .rounded(px(6.))
+                        .bg(t.panel)
+                        .border_1()
+                        .border_color(t.border)
+                        .text_size(px(13.))
+                        .flex()
+                        .items_center()
+                        .gap_3()
+                        .child(format!("{} {version}", tr("New version:", "Nouvelle version :")))
+                        .child(
+                            div()
+                                .cursor_pointer()
+                                .text_color(t.accent)
+                                .hover(|s| s.underline())
+                                .child(tr("Download", "Télécharger"))
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.open_url(&update::releases_url())),
+                        )
+                        .child(
+                            svg()
+                                .path("close.svg")
+                                .size(px(14.))
+                                .flex_none()
+                                .text_color(t.dim)
+                                .cursor_pointer()
+                                .hover(|s| s.text_color(t.text))
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, _, cx| {
+                                        this.update = None;
+                                        cx.notify();
+                                    }),
+                                ),
+                        )
+                }))
                 .children(self.error.clone().map(|message| {
                     div()
                         .absolute()
@@ -1932,6 +2018,19 @@ mod tests {
         cx.simulate_input("lait maison");
         cx.simulate_keystrokes("enter");
         assert_eq!(text(cx), "# Courses\n\n- lait #maison\n");
+
+        // Mises à jour : la palette coupe la recherche (et la bannière), puis la rétablit.
+        shell.update(cx, |s, _| s.update = Some("9.9.9".into()));
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("mises à jour");
+        cx.simulate_keystrokes("down enter");
+        assert!(shell.read_with(cx, |s, _| !s.prefs.updates && s.update.is_none()));
+        assert!(vault::load_settings().ends_with("updates=off\n"));
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("mises à jour");
+        cx.simulate_keystrokes("down enter");
+        assert!(shell.read_with(cx, |s, _| s.prefs.updates));
+        assert!(!vault::load_settings().contains("updates"));
 
         // Wikilien complété puis nouvelle note créée depuis la palette.
         cx.simulate_keystrokes("secondary-end");
@@ -2523,6 +2622,9 @@ mod tests {
         // Taille bornée, et valeur illisible ignorée.
         assert_eq!((prefs.size, Prefs::parse("size=NaN").size), (32., 16.));
         assert_eq!(Prefs::parse(&prefs.to_text()), prefs);
+        // La recherche de nouvelle version est active tant qu'on ne l'a pas coupée.
+        assert!(prefs.updates && !Prefs::parse("updates=off\n").updates && Prefs::parse("updates=on").updates);
+        assert!(!Prefs::parse(&Prefs::parse("updates=off").to_text()).updates);
     }
 
     #[test]

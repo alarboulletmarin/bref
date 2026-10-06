@@ -336,6 +336,12 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
   | macOS | `~/Library/Application Support/bref/config` |
   | Windows | `%APPDATA%\bref\config` |
 
+## Updates
+
+Once a day, in the background, Bref asks GitHub whether a newer version exists. If so, a discreet banner at the bottom of the window says so, with a link to the download page: Bref never downloads or installs anything itself. Then follow [Upgrading](#upgrading) for the way you installed it.
+
+This is the only network request the app makes. It runs `curl` against `api.github.com/repos/alarboulletmarin/bref/releases/latest`, which sees your IP address and the client name `bref`, and nothing else. Without `curl`, or offline, nothing is shown. Type `updates` in the palette (`Ctrl + P`) to stop checking, or to resume: the choice is kept as `updates=off` in the `settings` file, and the time of the last check in the `update` file, both next to `config`.
+
 ## Compatibility
 
 | System | Status |
@@ -368,6 +374,7 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
 - **Typing rules** (`src/markdown.rs`): pure functions decide what Enter and Tab do on a line and renumber the list around the cursor. They are unit-tested without any UI.
 - **Vault** (`src/vault.rs`): the note list, its tags and its text are indexed off the UI thread when the vault opens, then kept up to date on each save. Changes made elsewhere are reported by the `notify` crate; the vault is also checked on a slow timer, which becomes the only mechanism when watching is not possible.
 - **Palette**: name matches first (substring, ranked by position, then subsequence; ties keep the most recently opened note first), then notes whose text contains every word, most recent first. The whole text of the vault is kept in memory for that.
+- **Updates** (`src/update.rs`): the latest release number comes from the GitHub API through `curl`, at most once a day, off the UI thread. Comparing versions and reading the answer are pure functions with unit tests.
 - **Navigation** (`src/nav.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. 
 - **Graph** (`src/graph.rs`): a force-directed layout computed off the UI thread when the links change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
 - **Diagrams** (`src/diagram.rs`, `src/canvas.rs`, `src/import.rs`): shapes and arrows are plain data; the same outlines are drawn on the canvas and written to the SVG file, whose `<metadata>` holds one line of source per element.

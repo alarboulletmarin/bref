@@ -25,6 +25,14 @@ fn import_label() -> &'static str {
     tr("Import a diagram (Excalidraw, draw.io)…", "Importer un schéma (Excalidraw, draw.io)…")
 }
 
+fn updates_label(on: bool) -> &'static str {
+    if on {
+        tr("Stop checking for updates", "Ne plus chercher les mises à jour")
+    } else {
+        tr("Check for updates", "Chercher les mises à jour")
+    }
+}
+
 fn help_label() -> &'static str {
     tr("Keyboard shortcuts, about", "Raccourcis clavier, à propos")
 }
@@ -67,6 +75,8 @@ pub enum PaletteEvent {
     NewDiagram,
     ImportDiagram,
     Setting(Setting),
+    /// Active ou coupe la recherche de nouvelle version.
+    ToggleUpdates,
     /// Texte validé dans un champ de saisie, ou choix validé dans une liste.
     Submit(String),
     /// Choix survolé dans une liste : à appliquer en aperçu.
@@ -84,6 +94,7 @@ enum Item {
     Help,
     Diagram,
     Import,
+    Updates,
     Setting(Setting),
 }
 
@@ -97,6 +108,8 @@ pub struct Palette {
     prompt: Option<&'static str>,
     /// Liste de choix : `entries` sont les options, sans création ni commande.
     choices: bool,
+    /// La recherche de nouvelle version est active : `None` hors de la palette principale.
+    updates: Option<bool>,
     theme: Theme,
 }
 
@@ -158,10 +171,18 @@ impl Palette {
             selected: 0,
             prompt: None,
             choices: false,
+            updates: None,
             theme,
         };
         this.refresh();
         this
+    }
+
+    /// Propose d'activer ou de couper la recherche de nouvelle version, selon son état.
+    pub fn with_updates(mut self, on: bool) -> Self {
+        self.updates = Some(on);
+        self.refresh();
+        self
     }
 
     /// Champ de saisie prérempli avec `text` ; Entrée émet `Submit`.
@@ -267,6 +288,12 @@ impl Palette {
                 items.push(item);
             }
         }
+        if let Some(on) = self.updates
+            && !q.is_empty()
+            && fuzzy(&q, &updates_label(on).to_lowercase()).is_some()
+        {
+            items.push(Item::Updates);
+        }
         // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
         for setting in [Setting::Theme, Setting::Font, Setting::Mono] {
             if !q.is_empty() && fuzzy(&q, &setting.label().to_lowercase()).is_some() {
@@ -302,6 +329,7 @@ impl Palette {
             Some(Item::Help) => PaletteEvent::Help,
             Some(Item::Diagram) => PaletteEvent::NewDiagram,
             Some(Item::Import) => PaletteEvent::ImportDiagram,
+            Some(Item::Updates) => PaletteEvent::ToggleUpdates,
             Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
             None => PaletteEvent::Dismiss,
         });
@@ -422,6 +450,7 @@ impl Render for Palette {
                 Item::Help => (help_label().to_string(), "F1".into()),
                 Item::Diagram => (diagram_label().to_string(), format!("{}+Shift+D", crate::MOD)),
                 Item::Import => (import_label().to_string(), String::new()),
+                Item::Updates => (updates_label(self.updates.unwrap_or(true)).to_string(), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
             };
             div()

@@ -74,14 +74,14 @@ pub fn save_config(vault: &Path, recent: &[PathBuf]) {
     }
 }
 
-fn load_file(name: &str) -> String {
+pub fn load_file(name: &str) -> String {
     // Même repli que pour la config : les réglages laissés sous l'ancien nom sont relus.
     fs::read_to_string(config_dir().join("bref").join(name))
         .or_else(|_| fs::read_to_string(config_dir().join("encre").join(name)))
         .unwrap_or_default()
 }
 
-fn save_file(name: &str, text: &str) {
+pub fn save_file(name: &str, text: &str) {
     let path = config_dir().join("bref").join(name);
     // Simple confort : si l'écriture échoue, l'app rouvrira avec ses réglages d'origine.
     let _ = path.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(path, text));
