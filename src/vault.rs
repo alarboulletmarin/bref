@@ -6,9 +6,14 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
     io,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
+
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::{markdown, tr};
 
@@ -141,6 +146,33 @@ pub fn fingerprint(root: &Path) -> u64 {
     let mut hasher = DefaultHasher::new();
     seen.hash(&mut hasher);
     hasher.finish()
+}
+
+/// Un changement du coffre qui mérite de relire le disque : pas une simple lecture,
+/// et pas un fichier ou un dossier caché (`.trash`, `.git`…).
+fn matters(root: &Path, event: &Event) -> bool {
+    let hidden = |path: &PathBuf| {
+        path.strip_prefix(root)
+            .is_ok_and(|rel| rel.components().any(|c| c.as_os_str().to_string_lossy().starts_with('.')))
+    };
+    !event.kind.is_access() && (event.paths.is_empty() || !event.paths.iter().all(hidden))
+}
+
+/// Demande au système de signaler tout changement du coffre : `changed` passe à vrai
+/// dès qu'il y en a un. `None` si le système ne sait pas le faire (limite d'inotify
+/// atteinte, dossier réseau) : l'appelant relit alors le coffre à intervalle régulier.
+/// La surveillance s'arrête quand le résultat est lâché.
+pub fn watch(root: &Path, changed: Arc<AtomicBool>) -> Option<RecommendedWatcher> {
+    let base = root.to_path_buf();
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<Event>| {
+        // Une erreur du système : des événements ont pu être perdus, mieux vaut relire.
+        if event.map_or(true, |e| matters(&base, &e)) {
+            changed.store(true, Ordering::Release);
+        }
+    })
+    .ok()?;
+    watcher.watch(root, RecursiveMode::Recursive).ok()?;
+    Some(watcher)
 }
 
 /// Toutes les notes du coffre (récursif, dossiers cachés ignorés), plus récentes
@@ -380,6 +412,38 @@ mod tests {
         assert_eq!(images, [root.join("vide/Photo.PNG")]);
         assert_eq!(clean_name(" ../a:b. "), Some("ab".into()));
         assert_eq!(clean_name(" . "), None);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn ignores_reads_and_hidden_files() {
+        use notify::{EventKind, event::{AccessKind, CreateKind}};
+        let root = Path::new("/v");
+        let event = |kind, path: &str| Event::new(kind).add_path(root.join(path));
+        let created = EventKind::Create(CreateKind::File);
+        assert!(matters(root, &event(created, "a.md")));
+        assert!(matters(root, &event(created, "dossier/a.md")));
+        assert!(!matters(root, &event(created, ".trash/a.md")));
+        assert!(!matters(root, &event(created, ".git/objects/ab")));
+        assert!(!matters(root, &event(EventKind::Access(AccessKind::Read), "a.md")));
+        // Hors du coffre ou sans chemin : dans le doute, on relit.
+        assert!(matters(root, &Event::new(created).add_path("/ailleurs/.x".into())));
+        assert!(matters(root, &Event::new(created)));
+    }
+
+    #[test]
+    fn watcher_reports_a_new_note() {
+        let root = env::temp_dir().join(format!("bref-watch-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let changed = Arc::new(AtomicBool::new(false));
+        let _watcher = watch(&root, changed.clone()).expect("le système doit pouvoir surveiller un dossier");
+        // Pas d'horloge simulée ici : le système met quelques millisecondes (FSEvents, un peu plus).
+        fs::write(root.join("neuve.md"), "x").unwrap();
+        let start = std::time::Instant::now();
+        while !changed.load(Ordering::Acquire) && start.elapsed() < std::time::Duration::from_secs(10) {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(changed.load(Ordering::Acquire), "aucun événement en 10 s");
         fs::remove_dir_all(&root).unwrap();
     }
 }

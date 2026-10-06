@@ -16,7 +16,10 @@ use std::{
     borrow::Cow,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock, RwLock},
+    sync::{
+        Arc, OnceLock, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant, SystemTime},
 };
 
@@ -446,17 +449,28 @@ impl Shell {
 
     /// Suit ce que d'autres programmes changent dans le coffre : notes ajoutées,
     /// renommées, supprimées, ou modifiées pendant qu'elles sont affichées.
-    // ponytail: l'empreinte du coffre (noms et dates, sans lire les fichiers) est
-    // recalculée toutes les 2 s, hors du thread UI, plutôt que d'écouter le système
-    // de fichiers. Le parcours ne prend jamais plus de 0,5 % d'un cœur : un gros
-    // coffre est donc regardé moins souvent (5 000 notes : toutes les 5 s). Passer à
-    // inotify et ses équivalents (crate `notify`) si ce délai devient gênant.
+    ///
+    /// Le système signale les changements (inotify, FSEvents…) : la relecture suit
+    /// dans la fraction de seconde. Une relecture de contrôle a lieu quand même toutes
+    /// les 30 s, au cas où un événement se perdrait. Sans surveillance possible (limite
+    /// d'inotify atteinte, dossier réseau), l'empreinte du coffre est recalculée toutes
+    /// les 2 s.
+    // ponytail: l'empreinte (noms et dates, sans lire les fichiers) est calculée hors
+    // du thread UI et ne prend jamais plus de 0,5 % d'un cœur : un gros coffre est
+    // donc regardé moins souvent (5 000 notes : toutes les 5 s, ou 100 s en contrôle).
+    // Les tests n'installent pas de surveillance : leur horloge est simulée.
     fn watch(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
+            let changed = Arc::new(AtomicBool::new(false));
+            let mut watched: Option<(PathBuf, Option<notify::RecommendedWatcher>)> = None;
             let mut last = None;
             let mut pause = Duration::from_secs(2);
+            // Tours de 100 ms écoulés depuis la dernière relecture, et tours entre deux contrôles.
+            let mut idle = 0u32;
+            let mut check_every = 300u32;
             loop {
-                cx.background_executor().timer(pause).await;
+                let live = watched.as_ref().is_some_and(|(_, w)| w.is_some());
+                cx.background_executor().timer(if live { Duration::from_millis(100) } else { pause }).await;
                 let Ok(state) = this.update(cx, |this, _| this.vault.clone().map(|root| (root, this.save_gen)))
                 else {
                     return;
@@ -464,6 +478,26 @@ impl Shell {
                 let Some((root, generation)) = state else {
                     continue;
                 };
+                if watched.as_ref().map(|(r, _)| r) != Some(&root) {
+                    let watcher = if cfg!(test) { None } else { vault::watch(&root, changed.clone()) };
+                    watched = Some((root.clone(), watcher));
+                    idle = check_every;
+                }
+                let live = watched.as_ref().is_some_and(|(_, w)| w.is_some());
+                if live {
+                    idle += 1;
+                    let notified = changed.swap(false, Ordering::AcqRel);
+                    if !notified && idle < check_every {
+                        continue;
+                    }
+                    if notified {
+                        // Un enregistrement ou une synchronisation touche souvent plusieurs
+                        // fichiers d'affilée : on laisse la rafale se terminer.
+                        cx.background_executor().timer(Duration::from_millis(250)).await;
+                        changed.store(false, Ordering::Release);
+                    }
+                }
+                idle = 0;
                 let print_root = root.clone();
                 let (took, print) = cx
                     .background_executor()
@@ -474,6 +508,7 @@ impl Shell {
                     })
                     .await;
                 pause = Duration::from_secs(2).max(took * 200);
+                check_every = (Duration::from_secs(30).max(took * 200).as_millis() / 100) as u32;
                 if last == Some((root.clone(), print)) {
                     continue;
                 }
@@ -486,14 +521,20 @@ impl Shell {
                     .background_executor()
                     .spawn(async move { vault::rescan(&scan_root, &known) })
                     .await;
+                let mut applied = false;
                 this.update(cx, |this, cx| {
                     // Une frappe ou un enregistrement pendant la lecture : on réessaie au prochain tour.
                     if this.vault.as_ref() == Some(&root) && this.save_gen == generation && !this.dirty {
                         this.sync(notes, dirs, images, cx);
                         last = Some((root, print));
+                        applied = true;
                     }
                 })
                 .ok();
+                if !applied {
+                    // Avec une surveillance, le prochain tour est celui du contrôle : le rapprocher.
+                    idle = check_every.saturating_sub(10);
+                }
             }
         })
         .detach();

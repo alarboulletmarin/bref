@@ -323,7 +323,7 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
 
 - A vault is an ordinary folder. Notes in subfolders are found too; hidden folders (`.git`, `.obsidian`…) are ignored. New notes are created at the top of the vault, or in the selected folder when the tree is on display.
 - Pictures are part of the vault: the tree lists them under the notes of their folder, and the graph shows them as squares, linked to the notes that display them. Selecting one shows it in place of the note; it can be renamed (the notes that display it follow), moved or trashed like a note.
-- What other programs change in the vault (a sync tool, a script, another editor) is picked up within two seconds, without restarting.
+- What other programs change in the vault (a sync tool, a script, another editor) is picked up within a second, without restarting: Bref asks the system to report changes (inotify, FSEvents, ReadDirectoryChangesW).
 - A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
 - A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) keeps its name, until you add or change a `# ` title on its first line: the file then takes that name, as in Obsidian.
 - `[[Groceries]]` finds the note by file name, in any subfolder, ignoring case.
@@ -358,7 +358,7 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
 
 **A note was not renamed after I changed its title.** Either another note already has that name, or the file name did not match the first line to begin with and that line is not a `# ` title you just added or changed, see [Notes and vault](#notes-and-vault).
 
-**I changed the vault from another program while Bref was open.** Bref looks at the vault every two seconds: notes and folders added, renamed or removed elsewhere show up in the tree, the palette and the graph, and the note on display is read again when its file changes. If you were typing in that note at that moment, your version is kept and written back.
+**I changed the vault from another program while Bref was open.** Bref is told by the system when the vault changes, and also looks at it every 30 seconds in case an event got lost (every two seconds when the system cannot watch the folder, for instance on some network drives, or when Linux has run out of inotify watches: raise `fs.inotify.max_user_watches`). Notes and folders added, renamed or removed elsewhere show up in the tree, the palette and the graph, and the note on display is read again when its file changes. If you were typing in that note at that moment, your version is kept and written back.
 
 **Limits.** The name field of a new folder or a rename only edits at its end: type, or erase with Backspace. Links written as plain text inside a code block are not followed when a note is renamed. No full-text search: the palette matches note names and tags.
 
@@ -366,7 +366,7 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
 
 - **Editor**: a custom text element drawn directly with GPUI's text system. Each line is classified (heading, list item, quote, code…) and shaped with its own size and style runs; the text itself is never transformed.
 - **Typing rules** (`src/markdown.rs`): pure functions decide what Enter and Tab do on a line and renumber the list around the cursor. They are unit-tested without any UI.
-- **Vault** (`src/vault.rs`): the note list and its tags are indexed off the UI thread when the vault opens, then kept up to date on each save.
+- **Vault** (`src/vault.rs`): the note list, its tags and its text are indexed off the UI thread when the vault opens, then kept up to date on each save. Changes made elsewhere are reported by the `notify` crate; the vault is also checked on a slow timer, which becomes the only mechanism when watching is not possible.
 - **Palette**: name matches first (substring, ranked by position, then subsequence; ties keep the most recently opened note first), then notes whose text contains every word, most recent first. The whole text of the vault is kept in memory for that.
 - **Navigation** (`src/nav.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. 
 - **Graph** (`src/graph.rs`): a force-directed layout computed off the UI thread when the links change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
