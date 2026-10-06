@@ -3,12 +3,18 @@ name: Binaries
 on:
   release:
     types: [published]
-  # Recovery: build again and re-attach to an existing release (its tag must contain packaging/).
+  # By hand: build again and re-attach to an existing release (its tag must contain packaging/),
+  # or build any branch without touching a release (`-f tag=<branch> -f attach=false`): the
+  # files are then only in the run artifacts.
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to build and attach to
+        description: Release tag (or branch, with attach off) to build
         required: true
+      attach:
+        description: Attach the files to the release of that tag
+        type: boolean
+        default: true
 permissions:
   contents: write
 env:
@@ -55,6 +61,7 @@ jobs:
           retention-days: 7
           overwrite: true
       - name: Attach to the release
+        if: github.event_name == 'release' || inputs.attach
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$TAG" dist/* --clobber
@@ -92,6 +99,7 @@ jobs:
           retention-days: 7
           overwrite: true
       - name: Attach to the release
+        if: github.event_name == 'release' || inputs.attach
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$TAG" dist/* --clobber

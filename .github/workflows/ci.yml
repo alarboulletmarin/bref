@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # By hand on any branch: `gh workflow run CI --ref <branch>`.
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
