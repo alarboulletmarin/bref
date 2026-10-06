@@ -20,6 +20,10 @@ unicode-segmentation = "1.13.3"
 [dev-dependencies]
 gpui = { version = "0.2.2", features = ["test-support"] }
 
+# Déjà tirée par gpui, à la même version : icône de bref.exe.
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3.0"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

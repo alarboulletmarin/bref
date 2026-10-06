@@ -1,0 +1,3 @@
+# Windows : runtime C lié statiquement, pour que bref.exe démarre sans le redistribuable Visual C++.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

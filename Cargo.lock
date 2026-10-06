@@ -621,6 +621,7 @@ dependencies = [
 name = "bref"
 version = "0.1.9"
 dependencies = [
+ "embed-resource",
  "gpui",
  "latex-rust",
  "mermaid-rs-renderer",
