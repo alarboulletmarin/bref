@@ -41,19 +41,59 @@ use vault::Note;
 pub const MOD: &str = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" };
 
 /// Texte d'interface : français si la langue du système l'est, anglais sinon.
-// ponytail: langue lue dans LC_ALL / LC_MESSAGES / LANG, absentes sous Windows
-// (donc anglais) ; interroger l'API de locale Windows si le besoin apparaît.
 pub fn tr(en: &'static str, fr: &'static str) -> &'static str {
     static FRENCH: OnceLock<bool> = OnceLock::new();
-    let french = *FRENCH.get_or_init(|| {
-        // Les tests tournent en français pour rester déterministes.
-        cfg!(test)
-            || ["LC_ALL", "LC_MESSAGES", "LANG"]
-                .iter()
-                .find_map(|key| std::env::var(key).ok().filter(|v| !v.is_empty()))
-                .is_some_and(|lang| lang.starts_with("fr"))
-    });
-    if french { fr } else { en }
+    // Les tests tournent en français pour rester déterministes.
+    if *FRENCH.get_or_init(|| cfg!(test) || system_is_french()) { fr } else { en }
+}
+
+/// Les variables de locale d'abord (lancement depuis un terminal), sinon le système :
+/// une application lancée depuis le Finder ou le menu Démarrer n'en reçoit aucune.
+fn system_is_french() -> bool {
+    match ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .find_map(|key| std::env::var(key).ok().filter(|v| !v.is_empty()))
+    {
+        Some(lang) => lang.starts_with("fr"),
+        None => os_language_is_french(),
+    }
+}
+
+#[cfg(windows)]
+fn os_language_is_french() -> bool {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetUserDefaultUILanguage() -> u16;
+    }
+    // Un LANGID : les 10 bits de poids faible donnent la langue (0x0c : français).
+    (unsafe { GetUserDefaultUILanguage() } & 0x3ff) == 0x0c
+}
+
+#[cfg(target_os = "macos")]
+fn os_language_is_french() -> bool {
+    std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleLanguages"])
+        .output()
+        .ok()
+        .and_then(|out| first_language(&String::from_utf8_lossy(&out.stdout)).map(|l| l.starts_with("fr")))
+        .unwrap_or(false)
+}
+
+// ponytail: sous Linux, seules les variables d'environnement comptent (le système
+// n'en offre pas d'autre) ; sous macOS la langue vient d'un appel à `defaults` au démarrage.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn os_language_is_french() -> bool {
+    false
+}
+
+/// Première langue de la liste que `defaults read -g AppleLanguages` imprime :
+/// `(\n    "fr-FR",\n    "en-US"\n)`, avec ou sans guillemets.
+#[cfg(any(target_os = "macos", test))]
+fn first_language(list: &str) -> Option<&str> {
+    list.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && *l != "(" && *l != ")")
+        .map(|l| l.trim_end_matches(',').trim_matches('"'))
 }
 
 /// Polices installées, relevées au démarrage.
@@ -2423,5 +2463,14 @@ mod tests {
         // Taille bornée, et valeur illisible ignorée.
         assert_eq!((prefs.size, Prefs::parse("size=NaN").size), (32., 16.));
         assert_eq!(Prefs::parse(&prefs.to_text()), prefs);
+    }
+
+    #[test]
+    fn reads_the_first_system_language() {
+        // Ce que `defaults read -g AppleLanguages` imprime, avec et sans guillemets.
+        assert_eq!(first_language("(\n    \"fr-FR\",\n    \"en-US\"\n)\n"), Some("fr-FR"));
+        assert_eq!(first_language("(\n    en,\n    fr\n)"), Some("en"));
+        assert_eq!(first_language("(\n)"), None);
+        assert_eq!(first_language(""), None);
     }
 }

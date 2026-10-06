@@ -345,7 +345,7 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
 | macOS, Windows | built and tested by CI on every commit, and the downloads are built there too; not used day to day by the author |
 
 - **Linux** needs a working Vulkan driver (Mesa or the vendor one). Bref draws its own title bar, as Zed does: GNOME under Wayland draws none for applications. On macOS and Windows the system title bar is used.
-- **Language**: French if the system language is French, English otherwise. On Windows it is always English for now.
+- **Language**: French if the system language is French, English otherwise. Bref asks the system (Windows, macOS) or reads `LC_ALL`, `LC_MESSAGES` and `LANG` (Linux, or any system when started from a terminal).
 - **Fonts**: Bref picks Inter, Noto Sans, Segoe UI or Helvetica Neue, whichever is installed, and JetBrains Mono, Menlo or Consolas for code.
 
 ## Troubleshooting
