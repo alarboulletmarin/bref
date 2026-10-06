@@ -563,6 +563,7 @@ mod tests {
             tags: Vec::new(),
             links: links.iter().map(|l| l.to_string()).collect(),
             mtime: SystemTime::UNIX_EPOCH,
+            body: "".into(),
         }
     }
 

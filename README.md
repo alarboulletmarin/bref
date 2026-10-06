@@ -166,7 +166,7 @@ On macOS, read `Cmd` for `Ctrl`, and `Alt` for `Ctrl` when moving by word.
 
 | Key | Action |
 |---|---|
-| `Ctrl + P` | palette: find a note, create one, filter by `#tag` |
+| `Ctrl + P` | palette: find a note by name or text, create one, filter by `#tag` |
 | `Ctrl + N` | new note |
 | `Ctrl + E`, `Ctrl + R`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |
 | `Ctrl + M` | navigation panel on the whole window, and back |
@@ -179,7 +179,7 @@ On macOS, read `Cmd` for `Ctrl`, and `Alt` for `Ctrl` when moving by word.
 | `F1`, `Ctrl + /` | the list of shortcuts, inside the app; at its foot, the version of Bref and links to its source and to its Ko-fi page |
 | `Ctrl + Q` | quit |
 
-In the palette, type to search; `Enter` opens the selected note. If no note has that name, the last row creates it. Typing `#` lists the notes carrying a tag.
+In the palette, type to search; `Enter` opens the selected note. Notes whose name matches come first, then the notes whose text contains every word you typed (from two letters), with the line where the first word appears. If no note has that name, the last row creates it. Typing `#` lists the notes carrying a tag.
 
 | Key | While editing |
 |---|---|
@@ -367,7 +367,7 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
 - **Editor**: a custom text element drawn directly with GPUI's text system. Each line is classified (heading, list item, quote, code…) and shaped with its own size and style runs; the text itself is never transformed.
 - **Typing rules** (`src/markdown.rs`): pure functions decide what Enter and Tab do on a line and renumber the list around the cursor. They are unit-tested without any UI.
 - **Vault** (`src/vault.rs`): the note list and its tags are indexed off the UI thread when the vault opens, then kept up to date on each save.
-- **Palette**: substring matches first, ranked by position, then subsequence matches; ties keep the most recently opened note first.
+- **Palette**: name matches first (substring, ranked by position, then subsequence; ties keep the most recently opened note first), then notes whose text contains every word, most recent first. The whole text of the vault is kept in memory for that.
 - **Navigation** (`src/nav.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. 
 - **Graph** (`src/graph.rs`): a force-directed layout computed off the UI thread when the links change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
 - **Diagrams** (`src/diagram.rs`, `src/canvas.rs`, `src/import.rs`): shapes and arrows are plain data; the same outlines are drawn on the canvas and written to the SVG file, whose `<metadata>` holds one line of source per element.

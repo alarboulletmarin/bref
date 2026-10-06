@@ -16,7 +16,7 @@ use std::{
     borrow::Cow,
     fs,
     path::{Path, PathBuf},
-    sync::{OnceLock, RwLock},
+    sync::{Arc, OnceLock, RwLock},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -524,6 +524,9 @@ impl Shell {
             self.graph_stale = true;
             self.refresh_graph(cx);
             cx.notify();
+        } else {
+            // Ni nom, ni tag, ni lien n'ont changé, mais le texte peut avoir : la recherche le suit.
+            self.notes = notes;
         }
         // La note affichée a été réécrite ailleurs : on la relit. Sans modification
         // en attente ici (l'appelant s'en assure), rien n'est perdu.
@@ -908,6 +911,7 @@ impl Shell {
                         links,
                         mtime: SystemTime::now(),
                         path: path.clone(),
+                        body: Arc::from(content),
                     },
                 );
                 if self.path.as_ref() != Some(&path) {
@@ -1091,6 +1095,10 @@ impl Shell {
                 name: n.name.clone(),
                 path: n.path.clone(),
                 tags: n.tags.clone(),
+                body: n.body.clone(),
+                // ponytail: mis en minuscules à chaque ouverture (5 000 notes : environ 50 ms) ;
+                // à garder dans `Note` si cela se remarque.
+                lower: n.body.to_lowercase(),
             })
             .collect();
         let theme = self.theme;
@@ -1127,7 +1135,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
         (
             "Notes",
             vec![
-                (m("P"), tr("Find, create, filter by #tag", "Chercher, créer, filtrer par #tag")),
+                (m("P"), tr("Find by name or text, create, filter by #tag", "Chercher par nom ou texte, créer, filtrer par #tag")),
                 (m("N"), tr("New note", "Nouvelle note")),
                 (m("O"), tr("Change vault", "Changer de coffre")),
                 (m("Shift+C"), tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
@@ -1872,6 +1880,17 @@ mod tests {
             s.by_recency().iter().map(|n| n.name.clone()).collect::<Vec<_>>()
         });
         assert_eq!(names, ["Courses", "Test", "Plan"]);
+
+        // Palette : le texte des notes se cherche aussi (« deux » n'est dans aucun nom),
+        // et tous les mots de la requête doivent s'y trouver.
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("deux");
+        cx.simulate_keystrokes("enter");
+        assert!(text(cx).starts_with("# Test\n1. un\n2. deux"));
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("lait maison");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(text(cx), "# Courses\n\n- lait #maison\n");
 
         // Wikilien complété puis nouvelle note créée depuis la palette.
         cx.simulate_keystrokes("secondary-end");

@@ -6,6 +6,7 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
     io,
     path::{Path, PathBuf},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -19,6 +20,10 @@ pub struct Note {
     /// Notes visées par ses `[[wikiliens]]`, en minuscules.
     pub links: Vec<String>,
     pub mtime: SystemTime,
+    /// Texte entier de la note, pour la recherche plein texte.
+    // ponytail: tout le texte du coffre reste en mémoire (5 000 notes de 6 Ko : 30 Mo) ;
+    // passer à un index sur disque si des coffres bien plus gros se présentent.
+    pub body: Arc<str>,
 }
 
 /// Dossier de configuration de l'utilisateur, selon la plateforme.
@@ -165,11 +170,15 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
                 dirs.push(path);
             } else if path.extension().is_some_and(|e| e == "md") {
                 let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH);
-                let (tags, links) = match known.get(path.as_path()) {
-                    Some(note) if note.mtime == mtime => (note.tags.clone(), note.links.clone()),
-                    _ => fs::read_to_string(&path).map(|t| markdown::index(&t)).unwrap_or_default(),
+                let (tags, links, body) = match known.get(path.as_path()) {
+                    Some(note) if note.mtime == mtime => (note.tags.clone(), note.links.clone(), note.body.clone()),
+                    _ => {
+                        let text = fs::read_to_string(&path).unwrap_or_default();
+                        let (tags, links) = markdown::index(&text);
+                        (tags, links, Arc::from(text))
+                    }
                 };
-                notes.push(Note { name: stem(&path), tags, links, mtime, path });
+                notes.push(Note { name: stem(&path), tags, links, mtime, path, body });
             } else if is_image(&path) {
                 images.push(path);
             }

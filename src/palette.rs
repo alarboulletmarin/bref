@@ -1,7 +1,7 @@
 //! Palette (Ctrl+P) : recherche de notes, filtre par `#tag`, création, coffre.
 //! Sert aussi de simple champ de saisie (nom d'un dossier, nouveau nom).
 
-use std::{ops::Range, path::PathBuf};
+use std::{ops::Range, path::PathBuf, sync::Arc};
 
 use std::time::Duration;
 
@@ -49,10 +49,14 @@ impl Setting {
 
 actions!(palette, [Prev, Next, Confirm, Dismiss, DeleteChar]);
 
+#[derive(Default)]
 pub struct Entry {
     pub name: String,
     pub path: PathBuf,
     pub tags: Vec<String>,
+    /// Texte de la note, et le même en minuscules, pour la recherche plein texte.
+    pub body: Arc<str>,
+    pub lower: String,
 }
 
 pub enum PaletteEvent {
@@ -73,6 +77,8 @@ pub enum PaletteEvent {
 #[derive(Clone, Copy)]
 enum Item {
     Note(usize),
+    /// Note dont le texte, et non le nom, répond à la recherche.
+    Text(usize),
     Create,
     Vault,
     Help,
@@ -100,6 +106,33 @@ impl Focusable for Palette {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus.clone()
     }
+}
+
+/// Tous les mots figurent dans le texte (déjà en minuscules).
+fn contains_all(lower: &str, words: &[&str]) -> bool {
+    words.iter().all(|w| lower.contains(w))
+}
+
+/// La ligne de la note où figure `word` (en minuscules), avec sa casse d'origine,
+/// recentrée sur le mot et raccourcie.
+fn snippet(body: &str, lower: &str, word: &str) -> String {
+    let Some(at) = lower.find(word) else {
+        return String::new();
+    };
+    let row = lower[..at].matches('\n').count();
+    let (Some(shown), Some(low)) = (body.lines().nth(row), lower.lines().nth(row)) else {
+        return String::new();
+    };
+    let col = low.find(word).map_or(0, |i| low[..i].chars().count());
+    let chars: Vec<char> = shown.chars().collect();
+    let start = col.saturating_sub(24);
+    let part: String = chars.iter().skip(start).take(80).collect();
+    format!(
+        "{}{}{}",
+        if start > 0 { "…" } else { "" },
+        part.trim(),
+        if start + 80 < chars.len() { "…" } else { "" }
+    )
 }
 
 /// Score de correspondance : sous-chaîne d'abord, sinon sous-séquence.
@@ -149,7 +182,7 @@ impl Palette {
         cx: &mut Context<Self>,
     ) -> Self {
         let entries =
-            options.into_iter().map(|name| Entry { name, path: PathBuf::new(), tags: Vec::new() }).collect();
+            options.into_iter().map(|name| Entry { name, ..Entry::default() }).collect();
         let mut this = Self { prompt: Some(label), choices: true, ..Self::new(entries, "", theme, cx) };
         this.refresh();
         this.selected = this.items.iter().position(|i| this.choice(i) == Some(current)).unwrap_or(0);
@@ -194,7 +227,23 @@ impl Palette {
                 .collect();
             // Tri stable : à score égal, l'ordre « plus récent d'abord » est conservé.
             scored.sort_by_key(|(score, _)| -score);
-            scored.into_iter().map(|(_, i)| Item::Note(i)).collect()
+            let mut named = vec![false; self.entries.len()];
+            for &(_, i) in &scored {
+                named[i] = true;
+            }
+            let mut items: Vec<Item> = scored.into_iter().map(|(_, i)| Item::Note(i)).collect();
+            // Après les noms : les notes dont le texte contient tous les mots, les plus récentes d'abord.
+            // Une lettre seule les ramènerait presque toutes.
+            if !self.choices && q.chars().count() >= 2 {
+                let words: Vec<&str> = q.split_whitespace().collect();
+                items.extend(
+                    (0..self.entries.len())
+                        .filter(|&i| !named[i] && contains_all(&self.entries[i].lower, &words))
+                        .take(8)
+                        .map(Item::Text),
+                );
+            }
+            items
         };
         if self.choices {
             items.truncate(14);
@@ -247,7 +296,7 @@ impl Palette {
             return cx.emit(PaletteEvent::Submit(self.query.trim().to_string()));
         }
         cx.emit(match self.items.get(index) {
-            Some(Item::Note(i)) => PaletteEvent::Open(self.entries[*i].path.clone()),
+            Some(Item::Note(i) | Item::Text(i)) => PaletteEvent::Open(self.entries[*i].path.clone()),
             Some(Item::Create) => PaletteEvent::Create(self.query.trim().to_string()),
             Some(Item::Vault) => PaletteEvent::ChangeVault,
             Some(Item::Help) => PaletteEvent::Help,
@@ -359,6 +408,12 @@ impl Render for Palette {
                     let tags: Vec<String> = e.tags.iter().take(4).map(|t| format!("#{t}")).collect();
                     (e.name.clone(), tags.join(" "))
                 }
+                Item::Text(n) => {
+                    let e = &self.entries[*n];
+                    let word = self.query.trim().to_lowercase();
+                    let word = word.split_whitespace().next().unwrap_or_default().to_string();
+                    (e.name.clone(), snippet(&e.body, &e.lower, &word))
+                }
                 Item::Create => (
                     format!("{} « {} »", tr("Create", "Créer"), self.query.trim()),
                     tr("new note", "nouvelle note").into(),
@@ -379,8 +434,21 @@ impl Render for Palette {
                 .gap_3()
                 .when(i == self.selected, |d| d.bg(t.selection))
                 .when(i != self.selected, |d| d.hover(|s| s.bg(t.code_bg)))
-                .child(div().truncate().child(label))
-                .child(div().flex_none().text_color(t.dim).text_size(px(12.)).child(detail))
+                // Avec un extrait de texte, le nom garde sa place et l'extrait se raccourcit.
+                .child(
+                    div()
+                        .truncate()
+                        .when(matches!(item, Item::Text(_)), |d| d.flex_none().max_w(px(220.)))
+                        .child(label),
+                )
+                .child(
+                    div()
+                        .truncate()
+                        .when(!matches!(item, Item::Text(_)), |d| d.flex_none())
+                        .text_color(t.dim)
+                        .text_size(px(12.))
+                        .child(detail),
+                )
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, _, cx| this.confirm(i, cx)),
@@ -458,7 +526,23 @@ impl Render for Palette {
 
 #[cfg(test)]
 mod tests {
-    use super::fuzzy;
+    use super::{contains_all, fuzzy, snippet};
+
+    #[test]
+    fn finds_text_with_all_the_words() {
+        let lower = "# courses\n\n- lait et pâtes au citron\n";
+        assert!(contains_all(lower, &["pâtes", "citron"]));
+        assert!(!contains_all(lower, &["pâtes", "beurre"]));
+    }
+
+    #[test]
+    fn snippet_keeps_the_case_and_trims() {
+        let body = "# Courses\n\n- Lait et Pâtes au Citron\n";
+        assert_eq!(snippet(body, &body.to_lowercase(), "pâtes"), "- Lait et Pâtes au Citron");
+        let long = format!("{}Citron{}", "a".repeat(100), "b".repeat(100));
+        let cut = snippet(&long, &long.to_lowercase(), "citron");
+        assert!(cut.starts_with('…') && cut.ends_with('…') && cut.contains("Citron"));
+    }
 
     #[test]
     fn ranks_matches() {
