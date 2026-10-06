@@ -1,0 +1,97 @@
+# Builds the Windows and macOS downloads and attaches them to every published release.
+name: Binaries
+on:
+  release:
+    types: [published]
+  # Recovery: build again and re-attach to an existing release (its tag must contain packaging/).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach to
+        required: true
+permissions:
+  contents: write
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo build --release --locked
+      - name: The C runtime is linked in (no Visual C++ redistributable needed)
+        shell: pwsh
+        run: |
+          if (Select-String -Path target\release\bref.exe -Pattern 'VCRUNTIME|MSVCP' -Quiet) {
+            throw 'bref.exe still imports the Visual C++ runtime'
+          }
+      - name: Package
+        run: |
+          BREF_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          export BREF_VERSION
+          mkdir dist
+          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          # Preinstalled on the runner image; install it only if that ever changes.
+          [ -f "$iscc" ] || { choco install innosetup -y --no-progress; }
+          "$iscc" packaging/windows/bref.iss
+          7z a -tzip dist/bref-windows-x86_64.zip ./target/release/bref.exe LICENSE
+          ls -l dist
+      - name: The installer installs bref.exe
+        shell: pwsh
+        run: |
+          Start-Process -Wait dist\bref-windows-x86_64-setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\bref-test'
+          if (-not (Test-Path C:\bref-test\bref.exe)) { throw 'the installer did not install bref.exe' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+          retention-days: 7
+          overwrite: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/* --clobber
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - run: rustup toolchain install stable --profile minimal --target aarch64-apple-darwin --target x86_64-apple-darwin
+      - name: Build one binary for Apple Silicon and Intel
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          lipo -create -output bref-universal \
+            target/aarch64-apple-darwin/release/bref target/x86_64-apple-darwin/release/bref
+          lipo -info bref-universal
+      - name: Package
+        run: |
+          ver=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          scripts/bundle-macos.sh bref-universal "$ver" dist/bref-macos.dmg
+      - name: The disk image holds a valid Bref.app
+        run: |
+          hdiutil attach dist/bref-macos.dmg -mountpoint /Volumes/Bref -nobrowse -quiet
+          codesign --verify --strict /Volumes/Bref/Bref.app
+          lipo -archs /Volumes/Bref/Bref.app/Contents/MacOS/bref
+          hdiutil detach /Volumes/Bref -quiet
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+          retention-days: 7
+          overwrite: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/* --clobber
