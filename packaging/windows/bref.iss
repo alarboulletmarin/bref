@@ -43,3 +43,11 @@ Name: "{autodesktop}\Bref"; Filename: "{app}\bref.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\bref.exe"; Description: "{cm:LaunchProgram,Bref}"; Flags: nowait postinstall skipifsilent
+; Update started by the app (setup /VERYSILENT ... /RELAUNCH=1): the app opens again by itself.
+Filename: "{app}\bref.exe"; Flags: nowait runasoriginaluser; Check: Relaunch
+
+[Code]
+function Relaunch: Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;

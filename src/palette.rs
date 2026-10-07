@@ -33,6 +33,10 @@ fn updates_label(on: bool) -> &'static str {
     }
 }
 
+fn install_label(version: &str) -> String {
+    format!("{} {version}", tr("Update Bref to", "Mettre à jour Bref vers"))
+}
+
 fn help_label() -> &'static str {
     tr("Keyboard shortcuts, about", "Raccourcis clavier, à propos")
 }
@@ -77,6 +81,8 @@ pub enum PaletteEvent {
     Setting(Setting),
     /// Active ou coupe la recherche de nouvelle version.
     ToggleUpdates,
+    /// Installe la nouvelle version.
+    InstallUpdate,
     /// Texte validé dans un champ de saisie, ou choix validé dans une liste.
     Submit(String),
     /// Choix survolé dans une liste : à appliquer en aperçu.
@@ -95,6 +101,7 @@ enum Item {
     Diagram,
     Import,
     Updates,
+    Install,
     Setting(Setting),
 }
 
@@ -110,6 +117,8 @@ pub struct Palette {
     choices: bool,
     /// La recherche de nouvelle version est active : `None` hors de la palette principale.
     updates: Option<bool>,
+    /// Numéro de la nouvelle version que l'app sait installer seule.
+    installable: Option<String>,
     theme: Theme,
 }
 
@@ -172,6 +181,7 @@ impl Palette {
             prompt: None,
             choices: false,
             updates: None,
+            installable: None,
             theme,
         };
         this.refresh();
@@ -179,8 +189,9 @@ impl Palette {
     }
 
     /// Propose d'activer ou de couper la recherche de nouvelle version, selon son état.
-    pub fn with_updates(mut self, on: bool) -> Self {
+    pub fn with_updates(mut self, on: bool, installable: Option<String>) -> Self {
         self.updates = Some(on);
+        self.installable = installable;
         self.refresh();
         self
     }
@@ -288,6 +299,12 @@ impl Palette {
                 items.push(item);
             }
         }
+        if let Some(version) = &self.installable
+            && !q.is_empty()
+            && fuzzy(&q, &install_label(version).to_lowercase()).is_some()
+        {
+            items.push(Item::Install);
+        }
         if let Some(on) = self.updates
             && !q.is_empty()
             && fuzzy(&q, &updates_label(on).to_lowercase()).is_some()
@@ -330,6 +347,7 @@ impl Palette {
             Some(Item::Diagram) => PaletteEvent::NewDiagram,
             Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
+            Some(Item::Install) => PaletteEvent::InstallUpdate,
             Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
             None => PaletteEvent::Dismiss,
         });
@@ -451,6 +469,7 @@ impl Render for Palette {
                 Item::Diagram => (diagram_label().to_string(), format!("{}+Shift+D", crate::MOD)),
                 Item::Import => (import_label().to_string(), String::new()),
                 Item::Updates => (updates_label(self.updates.unwrap_or(true)).to_string(), String::new()),
+                Item::Install => (install_label(self.installable.as_deref().unwrap_or_default()), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
             };
             div()

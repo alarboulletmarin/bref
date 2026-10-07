@@ -134,9 +134,9 @@ This installs `bref.exe` in `%USERPROFILE%\.cargo\bin`.
 
 | Installed with | Upgrade |
 |---|---|
-| Arch, prebuilt package | run the two commands above again |
-| macOS, `.dmg` | download the new `.dmg` and drop Bref on Applications again, replacing the old one |
-| Windows, installer | run the new installer: it upgrades in place |
+| Arch, prebuilt package | the **Update** button of the banner, or run the two commands above again |
+| macOS, `.dmg` | the **Update** button of the banner, or download the new `.dmg` and drop Bref on Applications again |
+| Windows, installer | the **Update** button of the banner, or run the new installer: it upgrades in place |
 | Windows, `.zip` | unzip the new version over the old one |
 | Arch, `bref-git` | `git pull`, then `makepkg -si` in `aur/bref-git` |
 | `make install` | `git pull`, then `make` and `sudo make install` |
@@ -338,9 +338,21 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
 
 ## Updates
 
-Once a day, in the background, Bref asks GitHub whether a newer version exists. If so, a discreet banner at the bottom of the window says so, with a link to the download page: Bref never downloads or installs anything itself. Then follow [Upgrading](#upgrading) for the way you installed it.
+Once a day, in the background, Bref asks GitHub whether a newer version exists. If so, a discreet banner at the bottom of the window says so.
 
-This is the only network request the app makes. It runs `curl` against `api.github.com/repos/alarboulletmarin/bref/releases/latest`, which sees your IP address and the client name `bref`, and nothing else. Without `curl`, or offline, nothing is shown. Type `updates` in the palette (`Ctrl + P`) to stop checking, or to resume: the choice is kept as `updates=off` in the `settings` file, and the time of the last check in the `update` file, both next to `config`.
+Where Bref can install itself, the banner offers **Update** (also `Update Bref to …` in the palette): it downloads the new version, installs it, and restarts, with your notes saved first.
+
+| Installed with | What Update does |
+|---|---|
+| Windows installer | runs the new installer silently; it replaces `bref.exe` and opens Bref again |
+| macOS `.dmg` | replaces `Bref.app` in place (it needs write access to the folder that holds it, `/Applications` for most people) and opens it again |
+| Arch, prebuilt package | installs the new package with `pacman -U`, through `pkexec`, which asks for your password in a desktop window |
+
+Elsewhere (Windows zip, compiled from source, `bref-git`, other Linux distributions) the banner links to the download page: follow [Upgrading](#upgrading). If an update fails, Bref stays as it was and says why.
+
+Bref checks nothing but HTTPS: the files are not signed (see [Windows](#windows) and [macOS](#macos)), so an update is as trustworthy as downloading the same file by hand from this repository's releases.
+
+The check is the only network request the app makes until you press Update. It runs `curl` against `api.github.com/repos/alarboulletmarin/bref/releases/latest`, which sees your IP address and the client name `bref`, and nothing else. Without `curl`, or offline, nothing is shown. Type `updates` in the palette (`Ctrl + P`) to stop checking, or to resume: the choice is kept as `updates=off` in the `settings` file, and the time of the last check in the `update` file, both next to `config`.
 
 ## Compatibility
 
@@ -374,7 +386,7 @@ This is the only network request the app makes. It runs `curl` against `api.gith
 - **Typing rules** (`src/markdown.rs`): pure functions decide what Enter and Tab do on a line and renumber the list around the cursor. They are unit-tested without any UI.
 - **Vault** (`src/vault.rs`): the note list, its tags and its text are indexed off the UI thread when the vault opens, then kept up to date on each save. Changes made elsewhere are reported by the `notify` crate; the vault is also checked on a slow timer, which becomes the only mechanism when watching is not possible.
 - **Palette**: name matches first (substring, ranked by position, then subsequence; ties keep the most recently opened note first), then notes whose text contains every word, most recent first. The whole text of the vault is kept in memory for that.
-- **Updates** (`src/update.rs`): the latest release number comes from the GitHub API through `curl`, at most once a day, off the UI thread. Comparing versions and reading the answer are pure functions with unit tests.
+- **Updates** (`src/update.rs`): the latest release comes from the GitHub API through `curl`, at most once a day, off the UI thread, and so does the download. Reading the answer and comparing versions are pure functions with unit tests; swapping `Bref.app` from a disk image is tested on a real macOS by CI. `BREF_RELEASES_API` points the check at a local `file://` release description, to try an update without publishing one.
 - **Navigation** (`src/nav.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. 
 - **Graph** (`src/graph.rs`): a force-directed layout computed off the UI thread when the links change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
 - **Diagrams** (`src/diagram.rs`, `src/canvas.rs`, `src/import.rs`): shapes and arrows are plain data; the same outlines are drawn on the canvas and written to the SVG file, whose `<metadata>` holds one line of source per element.

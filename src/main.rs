@@ -373,7 +373,9 @@ struct Shell {
     save_gen: usize,
     error: Option<String>,
     /// Version plus récente que celle qui tourne, trouvée sur GitHub.
-    update: Option<String>,
+    update: Option<update::Release>,
+    /// Son installation est en cours.
+    updating: bool,
     title: String,
     prefs: Prefs,
     theme: Theme,
@@ -436,6 +438,7 @@ impl Shell {
             save_gen: 0,
             error: None,
             update: None,
+            updating: false,
             title: String::new(),
             prefs,
             theme,
@@ -472,6 +475,34 @@ impl Shell {
             this.update(cx, |this, cx| {
                 if this.prefs.updates && found.is_some() {
                     this.update = found;
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Télécharge et installe la version trouvée, puis quitte : le nouveau programme se
+    /// relance de lui-même. Un échec laisse l'app telle qu'elle est, avec son message.
+    fn install_update(&mut self, cx: &mut Context<Self>) {
+        let Some(url) = self.update.as_ref().and_then(|r| r.asset.clone()) else {
+            return;
+        };
+        if self.updating {
+            return;
+        }
+        self.updating = true;
+        self.error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { update::install(&url) }).await;
+            this.update(cx, |this, cx| match result {
+                // La sortie enregistre la note en cours (`on_app_quit`).
+                Ok(()) => cx.quit(),
+                Err(e) => {
+                    this.updating = false;
+                    this.error = Some(format!("{} : {e}", tr("Update failed", "Mise à jour impossible")));
                     cx.notify();
                 }
             })
@@ -1186,7 +1217,8 @@ impl Shell {
             .collect();
         let theme = self.theme;
         let updates = self.prefs.updates;
-        let palette = cx.new(|cx| Palette::new(entries, query, theme, cx).with_updates(updates));
+        let installable = self.update.as_ref().filter(|r| r.asset.is_some()).map(|r| r.version.clone());
+        let palette = cx.new(|cx| Palette::new(entries, query, theme, cx).with_updates(updates, installable));
         cx.subscribe_in(&palette, window, |this, _, event, window, cx| {
             this.palette = None;
             window.focus(&this.editor.focus_handle(cx));
@@ -1199,6 +1231,7 @@ impl Shell {
                 PaletteEvent::ImportDiagram => this.import_diagram(window, cx),
                 PaletteEvent::Setting(setting) => this.choose_setting(*setting, window, cx),
                 PaletteEvent::ToggleUpdates => this.toggle_updates(cx),
+                PaletteEvent::InstallUpdate => this.install_update(cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
             cx.notify();
@@ -1571,8 +1604,8 @@ impl Render for Shell {
                 .child(self.render_nav(cx))
                 .when(self.nav.panel != Panel::Full, |d| d.child(note))
                 .children(self.palette.clone())
-                .children(self.update.clone().map(|version| {
-                    div()
+                .children(self.update.clone().map(|release| {
+                    let banner = div()
                         .absolute()
                         .bottom_3()
                         .left_16()
@@ -1586,15 +1619,33 @@ impl Render for Shell {
                         .text_size(px(13.))
                         .flex()
                         .items_center()
-                        .gap_3()
-                        .child(format!("{} {version}", tr("New version:", "Nouvelle version :")))
+                        .gap_3();
+                    if self.updating {
+                        return banner.pr_3().child(tr("Updating, Bref restarts…", "Mise à jour, Bref redémarre…"));
+                    }
+                    // « Mettre à jour » quand l'app sait le faire seule, sinon la page de téléchargement.
+                    let (action, install) = match release.asset {
+                        Some(_) => (tr("Update", "Mettre à jour"), true),
+                        None => (tr("Download", "Télécharger"), false),
+                    };
+                    banner
+                        .child(format!("{} {}", tr("New version:", "Nouvelle version :"), release.version))
                         .child(
                             div()
                                 .cursor_pointer()
                                 .text_color(t.accent)
                                 .hover(|s| s.underline())
-                                .child(tr("Download", "Télécharger"))
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.open_url(&update::releases_url())),
+                                .child(action)
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        if install {
+                                            this.install_update(cx)
+                                        } else {
+                                            cx.open_url(&update::releases_url())
+                                        }
+                                    }),
+                                ),
                         )
                         .child(
                             svg()
@@ -2020,7 +2071,7 @@ mod tests {
         assert_eq!(text(cx), "# Courses\n\n- lait #maison\n");
 
         // Mises à jour : la palette coupe la recherche (et la bannière), puis la rétablit.
-        shell.update(cx, |s, _| s.update = Some("9.9.9".into()));
+        shell.update(cx, |s, _| s.update = Some(update::Release { version: "9.9.9".into(), asset: None }));
         cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("mises à jour");
         cx.simulate_keystrokes("down enter");
@@ -2031,6 +2082,17 @@ mod tests {
         cx.simulate_keystrokes("down enter");
         assert!(shell.read_with(cx, |s, _| s.prefs.updates));
         assert!(!vault::load_settings().contains("updates"));
+
+        // Installer la nouvelle version : la palette le propose quand l'app sait le faire seule.
+        // Les tests n'installent rien : l'échec laisse l'app en place, avec son message.
+        let release = update::Release { version: "9.9.9".into(), asset: Some("file:///absent".into()) };
+        shell.update(cx, |s, _| s.update = Some(release));
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("mettre à jour");
+        cx.simulate_keystrokes("down enter");
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| !s.updating && s.error.as_deref().is_some_and(|e| e.contains("Mise à jour impossible"))));
+        shell.update(cx, |s, _| (s.update, s.error) = (None, None));
 
         // Wikilien complété puis nouvelle note créée depuis la palette.
         cx.simulate_keystrokes("secondary-end");
