@@ -1331,7 +1331,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (tr("Tab / Enter in a table", "Tab / Entrée dans un tableau").into(), tr("Next cell / new row; columns stay aligned; + buttons add a row or a column", "Cellule suivante / nouvelle ligne ; les colonnes restent alignées ; les boutons + ajoutent ligne ou colonne")),
                 (m("Shift+L / E / R"), tr("Align the column of the cursor: left, centered, right", "Aligner la colonne du curseur : à gauche, centrée, à droite")),
                 (tr("Pasting a table", "Coller un tableau").into(), tr("Spreadsheet cells or Markdown fill the grid, or become a table", "Des cellules de tableur ou du Markdown remplissent la grille, ou deviennent un tableau")),
-                (m(tr("Enter", "Entrée")), tr("Check / uncheck a task", "Cocher / décocher une tâche")),
+                (m(tr("Enter", "Entrée")), tr("Check / uncheck a task or a [ ] box; in a table cell, add one", "Cocher / décocher une tâche ou une case [ ] ; dans une cellule, en ajouter une")),
                 (format!("{} / {}", m("B"), m("I")), tr("Bold / italic", "Gras / italique")),
                 (format!("{} / {}", m("Z"), m("Shift+Z")), tr("Undo / redo", "Annuler / rétablir")),
                 (format!("{word}+{}", tr("Left / Right", "Gauche / Droite")), tr("Move by word", "Se déplacer par mot")),
@@ -2868,6 +2868,34 @@ mod tests {
             }
         }
         assert!(gestures > 500);
+
+        // Cases à cocher : dans le texte comme dans un tableau, un clic les coche, Ctrl+Entrée aussi.
+        let boxed = "avant [ ] fait [x] fin\n\n| Tâche | Fait |\n| ----- | ---- |\n| a     | [ ]  |\n| b     |      |\n";
+        load(cx, boxed, boxed.len());
+        let tick = |cx: &mut gpui::VisualTestContext, needle: &str| {
+            let at = boxed.find(needle).unwrap() + 1;
+            let spot = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(at).unwrap()) + gpui::point(px(3.), px(0.));
+            cx.simulate_click(spot, gpui::Modifiers::none());
+        };
+        tick(cx, "[ ] fait");
+        assert!(text(cx).starts_with("avant [x] fait [x] fin"), "{}", text(cx));
+        tick(cx, "[x] fin");
+        assert!(text(cx).starts_with("avant [x] fait [ ] fin"), "{}", text(cx));
+        tick(cx, "[ ]  |");
+        assert!(text(cx).ends_with("| a     | [x]  |\n| b     |      |\n"), "{}", text(cx));
+        cx.simulate_keystrokes("secondary-z");
+        assert!(text(cx).ends_with("| a     | [ ]  |\n| b     |      |\n"), "{}", text(cx));
+        // Une case dans le code reste du texte.
+        load(cx, "`[ ]` et\n\n```\n[ ]\n```\n", 0);
+        let code = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(2).unwrap()) + gpui::point(px(3.), px(0.));
+        cx.simulate_click(code, gpui::Modifiers::none());
+        assert!(text(cx).starts_with("`[ ]` et"));
+        // Ctrl+Entrée dans une cellule : elle reçoit une case, puis la coche.
+        load(cx, boxed, boxed.find("| b").unwrap() + "| b     | ".len());
+        cx.simulate_keystrokes("secondary-enter");
+        assert!(text(cx).ends_with("| b     | [ ]  |\n"), "{}", text(cx));
+        cx.simulate_keystrokes("secondary-enter");
+        assert!(text(cx).ends_with("| b     | [x]  |\n"), "{}", text(cx));
 
         // Double clic puis glisser : la sélection s'étend de mot en mot ; le triple, de ligne en ligne.
         let words = "alpha beta gamma delta\nsecond\ntroisième\n";

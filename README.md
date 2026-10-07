@@ -185,7 +185,7 @@ In the palette, type to search; `Enter` opens the selected note. Notes whose nam
 |---|---|
 | `Enter` | continue the list; on an empty item, leave the list |
 | `Tab`, `Shift + Tab` | indent, outdent (the selected lines, or the current list item) |
-| `Ctrl + Enter` | check or uncheck a task; turn a bullet into a task |
+| `Ctrl + Enter` | check or uncheck a task or a `[ ]` box; turn a bullet into a task; in a table cell, add a box |
 | `Ctrl + B`, `Ctrl + I` | bold, italic |
 | `Ctrl + Z`, `Ctrl + Shift + Z` | undo, redo |
 | `Ctrl + ←` `→`, `Ctrl + Backspace` | move, delete by word |
@@ -253,6 +253,7 @@ What you type is what is saved. Bref only changes how it looks.
 | `- `, `* `, `+ ` | a bullet list |
 | `1. ` | a numbered list, renumbered as you add, remove or indent items |
 | `[] ` or `- [ ] ` | a task; click the box or press `Ctrl + Enter` to check it |
+| `[ ]` or `[x]` | a box on its own, in a sentence or in a table cell; click it or press `Ctrl + Enter` next to it |
 | `> ` | a quote |
 | `> [!NOTE]` | a colored panel, made of that line and the quote lines after it. `NOTE`, `TIP`, `IMPORTANT`, `WARNING` and `CAUTION` each have their color, as on GitHub and in Obsidian |
 | `\| a \| b \|` | a table, see [Tables](#tables) |

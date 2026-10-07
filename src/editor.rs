@@ -1163,11 +1163,53 @@ impl Editor {
         self.renumber(cx);
     }
 
+    /// Coche ou décoche la case `[ ]` qui commence à l'octet `at`.
+    fn flip_box(&mut self, at: usize, cx: &mut Context<Self>) {
+        let done = self.content.as_bytes()[at + 1] != b' ';
+        self.push_undo(true);
+        self.splice(at + 1..at + 2, if done { " " } else { "x" }, cx);
+    }
+
+    /// Case à cocher sous le pointeur : son début. Elle est sur la ligne visuelle du pointeur,
+    /// entre ses deux bords, et n'est pas dans un bloc de code.
+    fn checkbox_at(&self, pos: Point<Pixels>) -> Option<usize> {
+        let row = &self.rows[self.row_at(self.index_at(pos))?];
+        if matches!(row.kind, Kind::Code | Kind::Fence) {
+            return None;
+        }
+        let line = &self.content[row.start..row.start + row.len];
+        let local = point(pos.x - self.origin.x, pos.y - self.origin.y - row.y - row.pad);
+        md::checkboxes(line, 0).into_iter().find_map(|b| {
+            let (from, to) = (row.pos(b.start), row.pos(b.end));
+            let inside = local.x >= from.x && local.x <= to.x && local.y >= from.y && local.y < from.y + row.lh;
+            (inside && from.y == to.y).then_some(row.start + b.start)
+        })
+    }
+
     fn toggle_task(&mut self, cx: &mut Context<Self>) {
         let lr = self.line_range(self.cursor());
         let line = &self.content[lr.clone()];
         let (kind, marker) = md::classify(line, self.in_code(lr.start));
         let at = lr.start + marker;
+        // Une case écrite dans le texte ou dans une cellule, sous le curseur ou dans sa cellule.
+        let c = self.cursor();
+        let cell = self.table_cells(c).map(|(cells, k)| cells[k].clone());
+        let near = |b: &Range<usize>| match &cell {
+            Some(cell) => b.start + lr.start >= cell.start && b.end + lr.start <= cell.end,
+            None => (b.start + lr.start..=b.end + lr.start).contains(&c),
+        };
+        if !self.in_code(lr.start) && !matches!(kind, Kind::Task(_) | Kind::Bullet) {
+            if let Some(b) = md::checkboxes(line, 0).into_iter().find(near) {
+                return self.flip_box(lr.start + b.start, cx);
+            }
+            // Une cellule sans case en reçoit une.
+            if let Some(cell) = cell {
+                self.push_undo(true);
+                let text = if cell.is_empty() { "[ ]" } else { "[ ] " };
+                self.edit(cell.start..cell.start, text, cx);
+                return self.realign(cx);
+            }
+        }
         match kind {
             Kind::Task(done) => self.splice(at - 3..at - 2, if done { " " } else { "x" }, cx),
             Kind::Bullet => {
@@ -1512,6 +1554,11 @@ impl Editor {
             && let Some((_, link)) = md::links(line).into_iter().find(|(r, _)| r.contains(&col))
         {
             return cx.emit(EditorEvent::Open(link));
+        }
+        if !e.modifiers.secondary()
+            && let Some(at) = self.checkbox_at(e.position)
+        {
+            return self.flip_box(at, cx);
         }
         let (kind, marker) = md::classify(line, self.in_code(lr.start));
         if matches!(kind, Kind::Task(_)) && col + 4 >= marker && col < marker {

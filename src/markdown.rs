@@ -136,6 +136,25 @@ pub fn links(line: &str) -> Vec<(Range<usize>, Link)> {
     out
 }
 
+/// Les `[ ]` et `[x]` de la ligne à partir de l'octet `from`, seuls entre des espaces, des `|` ou
+/// les bords de la ligne : ni `[[ ]]`, ni `[x](lien)`, ni `a[ ]`.
+fn boxes(line: &str, from: usize) -> impl Iterator<Item = Range<usize>> + '_ {
+    let b = line.as_bytes();
+    (from..b.len().saturating_sub(2)).filter_map(move |i| {
+        let token = b[i] == b'[' && matches!(b[i + 1], b' ' | b'x' | b'X') && b[i + 2] == b']';
+        let open = i == 0 || matches!(b[i - 1], b' ' | b'\t' | b'|');
+        let shut = i + 3 == b.len() || matches!(b[i + 3], b' ' | b'\t' | b'|');
+        (token && open && shut).then_some(i..i + 3)
+    })
+}
+
+/// Les cases à cocher de la ligne, hors du code en ligne.
+pub fn checkboxes(line: &str, from: usize) -> Vec<Range<usize>> {
+    let mut flags = vec![0u16; line.len()];
+    inline(line, from, &mut flags);
+    boxes(line, from).filter(|r| flags[r.start] & CODE == 0).collect()
+}
+
 /// Remplit `flags` avec les styles en ligne de `line` à partir de l'octet `from`.
 pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
     let b = line.as_bytes();
@@ -181,6 +200,13 @@ pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
         let n = rest.chars().next().map_or(1, char::len_utf8);
         flags[i..i + n].iter_mut().for_each(|f| *f |= active);
         i += n;
+    }
+    // Une case à cocher `[ ]` ou `[x]` : colorée, en gras une fois cochée.
+    for r in boxes(line, from) {
+        if flags[r.start] & CODE == 0 {
+            let checked = if b[r.start + 1] == b' ' { 0 } else { BOLD };
+            flags[r.clone()].iter_mut().for_each(|f| *f |= MARK | checked);
+        }
     }
     for (r, link) in links(line) {
         if r.start < from {
@@ -940,5 +966,24 @@ mod tests {
         assert_eq!(format_table(&table(&once).0, ""), once);
         let (rows, _) = table(&format!("| a | b |\n|:-:|--:|\n| {long} | c |"));
         assert!(format_table(&rows, "").contains("| :-: | --: |"));
+    }
+
+    #[test]
+    fn finds_checkboxes_anywhere() {
+        fn found(line: &str) -> Vec<&str> {
+            checkboxes(line, 0).into_iter().map(|r| &line[r]).collect()
+        }
+        assert_eq!(found("[ ] a [x] b [X]"), ["[ ]", "[x]", "[X]"]);
+        assert_eq!(found("| [ ] | fait [x] | a |"), ["[ ]", "[x]"]);
+        assert_eq!(found("|[ ]|"), ["[ ]"]);
+        // Ni lien, ni mot collé, ni code, ni échappé, ni autre contenu.
+        assert!(found("[[ ]] [x](lien) a[ ] [ ]b `[ ]` \\[ ] [y] [  ]").is_empty());
+        // La case d'une tâche de liste est celle du marqueur, qu'on saute.
+        assert_eq!(checkboxes("- [ ] a [ ] b", 6).len(), 1);
+        // Une case cochée est en gras.
+        let mut flags = vec![0u16; 7];
+        inline("[x] [ ]", 0, &mut flags);
+        assert!(flags[..3].iter().all(|f| f & (MARK | BOLD) == MARK | BOLD));
+        assert!(flags[4..].iter().all(|f| f & MARK != 0 && f & BOLD == 0));
     }
 }
