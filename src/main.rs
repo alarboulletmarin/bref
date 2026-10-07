@@ -105,7 +105,21 @@ fn first_language(list: &str) -> Option<&str> {
 static FAMILIES: OnceLock<Vec<&'static str>> = OnceLock::new();
 
 /// Polices (texte, code) en usage : celles choisies, sinon celles par défaut.
-static FONTS: RwLock<(&str, &str)> = RwLock::new(("Cantarell", "DejaVu Sans Mono"));
+static FONTS: RwLock<(&str, &str)> = RwLock::new(("IBM Plex Sans", "IBM Plex Mono"));
+
+/// IBM Plex Sans et Plex Mono (licence SIL OFL, `assets/fonts/`), dans le binaire : l'app
+/// a ses polices sans rien installer. Des polices statiques, car gpui 0.2 ne met pas en
+/// gras une police variable.
+pub const FONT_FILES: [&[u8]; 8] = [
+    include_bytes!("../assets/fonts/IBMPlexSans-Regular.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexSans-Italic.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexSans-Bold.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexSans-BoldItalic.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexMono-Italic.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexMono-Bold.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexMono-BoldItalic.ttf"),
+];
 
 pub fn sans() -> &'static str {
     FONTS.read().unwrap().0
@@ -116,38 +130,24 @@ pub fn mono() -> &'static str {
 }
 
 fn init_fonts(cx: &mut App) {
+    cx.text_system().add_fonts(FONT_FILES.iter().map(|f| Cow::Borrowed(*f)).collect()).ok();
     FAMILIES.get_or_init(|| {
         let names: &'static [String] = cx.text_system().all_font_names().leak();
         names.iter().map(String::as_str).collect()
     });
 }
 
-/// Met en usage les polices des réglages ; à défaut, les premières installées
-/// de chaque liste.
+/// Met en usage les polices des réglages (n'importe quelle police installée) ; à
+/// défaut, celles de l'app.
 fn apply_fonts(prefs: &Prefs) {
     let installed = FAMILIES.get().map_or(&[][..], Vec::as_slice);
     let pick = |chosen: &str, wanted: &[&'static str]| {
         let known = |name: &str| installed.iter().copied().find(|i| *i == name);
         known(chosen)
             .or_else(|| wanted.iter().find_map(|w| known(w)))
-            .unwrap_or(wanted[wanted.len() - 1])
+            .unwrap_or(wanted[0])
     };
-    *FONTS.write().unwrap() = (
-        // Adwaita Sans et Cantarell sont des polices variables : pas de gras avec gpui 0.2.
-        pick(&prefs.font, &["Inter", "Noto Sans", "Segoe UI", "Helvetica Neue", "DejaVu Sans", "Cantarell"]),
-        pick(
-            &prefs.mono,
-            &[
-                "JetBrains Mono",
-                "JetBrainsMono Nerd Font",
-                "Adwaita Mono",
-                "Noto Sans Mono",
-                "Menlo",
-                "Consolas",
-                "DejaVu Sans Mono",
-            ],
-        ),
-    );
+    *FONTS.write().unwrap() = (pick(&prefs.font, &["IBM Plex Sans"]), pick(&prefs.mono, &["IBM Plex Mono"]));
 }
 
 /// Apparence choisie par l'utilisateur ; un champ vide garde la valeur par défaut.

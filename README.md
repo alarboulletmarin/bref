@@ -19,7 +19,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas like Excalidraw's. Each diagram is an SVG file in your vault, shown in your notes.
 - **Keyboard first**: one palette to find, create and switch notes, and a shortcut for every view. No toolbar.
 - **No save button**: notes are written to disk as you type, and named after their first line.
-- **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, any installed font for the text and for the code, and the text size you like.
+- **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, IBM Plex Sans and Plex Mono built in (nothing to install), any installed font if you prefer, and the text size you like.
 - Light and dark, following your system, until you pick a theme. English and French, following the system language.
 
 ## Install
@@ -238,7 +238,7 @@ Bref reopens with the panel as you left it.
 ## Appearance
 
 - **Theme**: `Ctrl + K` then `Ctrl + T`, the half-moon icon at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system.
-- **Fonts**: type `font` in the palette (`Ctrl + P`) to choose the font of the app, or the one used for code, among those installed on your system; type in the list to filter it. Zed's fonts are IBM Plex Sans and Lilex: install them (`ttf-ibm-plex` on Arch) and they show up in the list.
+- **Fonts**: Bref carries IBM Plex Sans (text) and IBM Plex Mono (code), under the SIL Open Font License (`assets/fonts/`), so it looks the same everywhere without installing anything. Type `font` in the palette (`Ctrl + P`) to choose another font, for the app or for the code, among those installed on your system; type in the list to filter it. Ideograms and emoji, which Plex does not draw, come from a font of your system.
 - **Text size**: `Ctrl + +` and `Ctrl + -`, `Ctrl + 0` for the default. Headings and code scale with it.
 
 These choices are kept in a file named `settings`, next to the [config file](#notes-and-vault).
@@ -370,7 +370,7 @@ The check is the only network request the app makes until you press Update. It r
 
 - **Linux** needs a working Vulkan driver (Mesa or the vendor one). Bref draws its own title bar, as Zed does: GNOME under Wayland draws none for applications. On macOS and Windows the system title bar is used.
 - **Language**: French if the system language is French, English otherwise. Bref asks the system (Windows, macOS) or reads `LC_ALL`, `LC_MESSAGES` and `LANG` (Linux, or any system when started from a terminal).
-- **Fonts**: Bref picks Inter, Noto Sans, Segoe UI or Helvetica Neue, whichever is installed, and JetBrains Mono, Menlo or Consolas for code.
+- **Fonts**: IBM Plex Sans and Plex Mono, built into the app.
 
 ## Troubleshooting
 
@@ -378,7 +378,7 @@ The check is the only network request the app makes until you press Update. It r
 
 **The window does not open, with an error about a surface or an adapter.** No usable Vulkan driver: install the one for your GPU (`vulkan-intel`, `vulkan-radeon`, `nvidia-utils`… on Arch; `mesa-vulkan-drivers` on Ubuntu).
 
-**Bold text is not bold.** The font in use is a variable font, which the text engine cannot embolden. Install Inter or Noto Sans, or [pick another font](#appearance).
+**Bold text is not bold.** The font you picked is a variable font, which the text engine cannot embolden. [Pick another font](#appearance), or none to go back to the built-in ones.
 
 **A note was not renamed after I changed its title.** Either another note already has that name, or the file name did not match the first line to begin with and that line is not a `# ` title you just added or changed, see [Notes and vault](#notes-and-vault).
 

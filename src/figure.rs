@@ -67,6 +67,7 @@ pub fn png(svg: &str, font: &str, scale: f32) -> Option<Vec<u8>> {
     use resvg::{tiny_skia, usvg};
     let mut options = usvg::Options::default();
     options.fontdb_mut().load_system_fonts();
+    crate::FONT_FILES.iter().for_each(|data| options.fontdb_mut().load_font_data(data.to_vec()));
     // Une police absente serait remplacée par la première venue, parfois une
     // police de symboles : on n'en désigne qu'une qui existe.
     let known = |name: &str| options.fontdb.faces().any(|face| face.families.iter().any(|(family, _)| family == name));
