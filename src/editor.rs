@@ -7,7 +7,7 @@ use std::{
     fs,
     hash::{BuildHasherDefault, Hash, Hasher},
     ops::Range,
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
@@ -97,6 +97,17 @@ const GRID_STEP: Pixels = px(20.);
 const GRID_MAX: (usize, usize) = (20, 99);
 /// Choix affichés à la fois dans la liste de complétion.
 const SHOWN: usize = 8;
+
+/// `file` est dans `root`, une fois les `..` et les liens symboliques résolus : une note
+/// reçue ne doit pas faire afficher un fichier du disque hors du coffre.
+// ponytail: un dossier d'images relié par un lien symbolique vers l'extérieur du coffre n'est
+// pas suivi ; autoriser la cible de ce lien si quelqu'un en a besoin.
+fn inside(root: &Path, file: &Path) -> bool {
+    let (Ok(root), Ok(file)) = (fs::canonicalize(root), fs::canonicalize(file)) else {
+        return false;
+    };
+    file.starts_with(root)
+}
 
 /// Commande `/nom` : (nom, libellé anglais, libellé français, texte posé avant
 /// le curseur, texte posé après).
@@ -2158,7 +2169,9 @@ impl Editor {
             // racine du coffre, puis par son nom dans tout le coffre ; les images en
             // ligne (http) ne sont pas chargées.
             let file = made.picture.as_ref().and_then(|path| {
-                self.dirs.iter().map(|d| d.join(path)).find(|p| p.is_file()).or_else(|| {
+                let root = self.dirs.last();
+                let found = self.dirs.iter().map(|d| d.join(path)).find(|p| p.is_file() && root.is_some_and(|r| inside(r, p)));
+                found.or_else(|| {
                     let name = path.rsplit('/').next()?.to_lowercase();
                     self.images.get(&name).cloned()
                 })
@@ -2765,6 +2778,30 @@ impl Element for EditorElement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Une image du coffre se désigne par `..` (dossier frère) ; rien ne sort du coffre.
+    #[test]
+    fn images_stay_inside_the_vault() {
+        let base = std::env::temp_dir().join(format!("bref-inside-{}", std::process::id()));
+        let (vault, outside) = (base.join("vault"), base.join("outside.png"));
+        fs::create_dir_all(vault.join("notes")).unwrap();
+        fs::create_dir_all(vault.join("assets")).unwrap();
+        fs::write(vault.join("assets/p.png"), "").unwrap();
+        fs::write(&outside, "").unwrap();
+        let notes = vault.join("notes");
+        assert!(inside(&vault, &notes.join("../assets/p.png")));
+        assert!(inside(&vault, &vault.join("assets/p.png")));
+        assert!(!inside(&vault, &notes.join("../../outside.png")));
+        assert!(!inside(&vault, &outside));
+        assert!(!inside(&vault, &vault.join("absent.png")));
+        // Un lien symbolique du coffre vers l'extérieur n'est pas suivi.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&outside, vault.join("lien.png")).unwrap();
+            assert!(!inside(&vault, &vault.join("lien.png")));
+        }
+        fs::remove_dir_all(&base).unwrap();
+    }
 
     #[test]
     fn history_returns_each_state() {
