@@ -138,13 +138,20 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
     <li><b>Links and graph</b>: <code>[[links]]</code>, <code>#tags</code>, renames that rewrite your links, and a graph of your notes.</li>
     <li><b>Diagrams</b>: Mermaid, LaTeX, or shapes and arrows drawn on a canvas, saved as SVG in your vault.</li>
     <li><b>Keyboard first</b>: one palette to find, create and switch. No toolbar, no save button.</li>
-    <li><b>Yours to dress</b>: a dozen themes, any installed font. English and French.</li>
+    <li><b>Search inside your notes</b>: the palette finds a note by its name, then by any words in its text, and shows the line that matched.</li>
+    <li><b>Follows your folder</b>: notes added, renamed or changed by another program or a sync tool show up within a fraction of a second.</li>
+    <li><b>Keeps itself current</b>: a banner says when a new version is out. On Windows, macOS and Arch, one click installs it and restarts Bref. It can be turned off.</li>
+    <li><b>Yours to dress</b>: a dozen themes, any installed font. English and French, following your system.</li>
   </ul>
 
   <h2>Around your notes</h2>
   <div class="wide pair">
     <figure style="margin:0"><img src="site/navigation.png" loading="lazy" alt="The graph of links next to a note"><p class="cap">Tree, recent notes, graph and tags, in a panel that folds to a rail.</p></figure>
     <figure style="margin:0"><img src="site/help.png" loading="lazy" alt="The shortcut panel, with the version and links at its foot"><p class="cap">Every shortcut, one F1 away.</p></figure>
+  </div>
+  <div class="wide pair">
+    <figure style="margin:0"><img src="site/search.png" loading="lazy" alt="The palette listing a note by name, then two notes found by their text, each with the matching line"><p class="cap">The palette searches names first, then the text of your notes.</p></figure>
+    <figure style="margin:0"><img src="site/update.png" loading="lazy" alt="A banner at the bottom of the window announcing a new version, with an Update button"><p class="cap">A banner announces a new version; Update installs it.</p></figure>
   </div>
 
   <h2 id="install">Install</h2>
@@ -161,13 +168,14 @@ sudo pacman -U ./bref-x86_64.pkg.tar.zst</code></pre>
 <pre><code>git clone https://github.com/alarboulletmarin/bref.git
 cd bref
 cargo install --path . --locked</code></pre>
+  <div class="panel"><b>[!TIP]</b>Bref tells you when a new version is out. Where it can, the banner offers <b>Update</b>: the Windows installer, the macOS app and the Arch package are replaced and Bref restarts. Elsewhere it links here. Type <code>updates</code> in the palette to stop the daily check.</div>
   <div class="panel"><b>[!NOTE]</b>Linux needs a few system libraries and a Vulkan driver. <a href="https://github.com/alarboulletmarin/bref#install">Steps for each system</a>, including compiling on macOS and Windows.</div>
 
   <h2 id="docs">Documentation</h2>
   <p>On first run Bref asks for a vault, the folder that holds your notes. That is the only setup. The essentials, <code>Cmd</code> instead of <code>Ctrl</code> on macOS:</p>
 <pre class="table"><i>|</i> <b>Key</b>                <i>|</i> <b>Action</b>                                         <i>|</i>
 <i>| ------------------ | ---------------------------------------------- |</i>
-<i>|</i> Ctrl + P           <i>|</i> palette: find or create a note, filter by #tag <i>|</i>
+<i>|</i> Ctrl + P           <i>|</i> find by name or text, create, filter by #tag   <i>|</i>
 <i>|</i> Ctrl + N           <i>|</i> new note                                       <i>|</i>
 <i>|</i> /                  <i>|</i> insert a heading, list, panel, code or table   <i>|</i>
 <i>|</i> Ctrl + E R G T     <i>|</i> tree, recent, graph, tags                      <i>|</i>
