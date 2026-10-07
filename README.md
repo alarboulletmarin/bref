@@ -13,7 +13,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Styled as you type**: headings grow, bold and italic render, markers stay visible but dimmed. The file on disk is always plain Markdown.
 - **Lists that continue themselves**: `- `, `1. ` and `[] ` start a list, Enter continues it, numbering stays in order.
 - **Slash commands**: type `/` for a heading, a list, a colored panel, a code block, a formula or a table, whose size you pick on a grid. What lands in the note is plain Markdown.
-- **Tables that stay aligned**: columns line up as you type, `Tab` moves from cell to cell, `Enter` adds a row, and two `+` buttons add a row or a column.
+- **Tables like on the web**: cells wrap inside their column, `Tab` moves from cell to cell, `Enter` adds a row, two `+` buttons add a row or a column, and pasting a table from a web page, a spreadsheet or Markdown just works.
 - **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `#tags` filter the note list.
 - **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons.
 - **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas like Excalidraw's. Each diagram is an SVG file in your vault, shown in your notes.
@@ -191,6 +191,7 @@ In the palette, type to search; `Enter` opens the selected note. Notes whose nam
 | `Ctrl + ←` `→`, `Ctrl + Backspace` | move, delete by word |
 | `Ctrl + Home` `End` | start, end of the note |
 | `Ctrl + A` `C` `X` `V` | select all, copy, cut, paste |
+| Double click, triple click | select a word, a line; keep dragging to extend by words, by lines |
 
 ![The shortcut panel](docs/screenshots/help.png)
 
@@ -287,13 +288,17 @@ Type `/` at the start of a line or of a word: a list offers what can be inserted
 
 `/table` opens a grid under the cursor. Move the pointer over it, or use the arrows, to choose how many columns and rows you want, then click or press `Enter`: the empty table is written, and the cursor waits in its first cell. For a table larger than the grid, type its size while the grid is open, columns first: `12x5`.
 
-- Columns realign as you type or erase in a cell.
+- A table is drawn as a grid, like on the web: columns share the width of the page, a long cell wraps inside its column and its row grows, and a short column keeps its natural width. Header row in bold, `:--` `:-:` `--:` under it align a column. The text underneath is plain Markdown: `|`, the line of dashes and the padding that keeps the columns aligned in other editors are not drawn.
 - `Tab` and `Shift + Tab` go to the next and the previous cell, whose content is selected: typing replaces it. After the last cell, `Tab` adds a row.
 - `Enter` adds a row under the one you are in. On a last row left empty, it removes that row and leaves the table.
+- Arrows move from cell to cell without stopping on the `|`; `Up` and `Down` follow the lines of a wrapped cell, then the cell below. `Backspace` and `Delete` stop at the edge of a cell. Selecting several cells and erasing, cutting or typing empties them without merging the columns.
+- `Ctrl + Shift + L`, `E`, `R` (`Cmd` on macOS) align the column of the cursor left, centered or right.
 - Two `+` buttons appear when the pointer or the cursor is on a table: the one below adds a row, the one on the right adds a column.
-- A table you type by hand works the same: `| a | b |` then `Tab` is enough, the line of dashes is written for you. `:--` and `--:` in that line keep their meaning.
+- A table you type by hand works the same: `| a | b |` then `Tab` is enough, the line of dashes is written for you. A literal `|` in a cell is written `\|` and shown as `|`.
+- Columns of the text are aligned as you type, counting wide characters (ideograms, emoji) as two; a table too wide to stay aligned is written compactly. Only with more columns than the page can show, even at their narrowest, does the table scroll sideways (`Shift + wheel` or a horizontal swipe), following the cursor.
+- To remove a column, delete its cells by hand.
 
-A table stays plain text, in the code font so that columns line up. A row wider than the page wraps; to remove a column, delete its cells by hand.
+Pasting keeps tables tidy. In a table, text goes into one cell on one line, its `|` escaped; cells copied from a spreadsheet or a web page (tab-separated) or from another Markdown table fill the grid from the current cell, adding rows and columns as needed. Anywhere else, a pasted Markdown table, or tab-separated cells, becomes a table on its own lines, aligned, with the line of dashes added.
 
 ## Diagrams
 

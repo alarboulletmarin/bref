@@ -630,6 +630,7 @@ dependencies = [
  "roxmltree",
  "serde_json",
  "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

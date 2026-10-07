@@ -3,7 +3,7 @@
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fs,
     hash::{DefaultHasher, Hash, Hasher},
     ops::Range,
@@ -14,7 +14,7 @@ use std::{
 };
 
 use gpui::{
-    App, BorderStyle, Bounds, ClipboardEntry, ClipboardItem, Context, Corners, CursorStyle,
+    App, BorderStyle, Bounds, ClipboardEntry, ClipboardItem, ContentMask, Context, Corners, CursorStyle,
     ElementId, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle,
     Focusable, Font, FontStyle, FontWeight, GlobalElementId, Hitbox, HitboxBehavior, Hsla, Image,
     ImageFormat, ImgResourceLoader, InspectorElementId, LayoutId, MouseButton, MouseDownEvent,
@@ -26,13 +26,16 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    MOD, Theme, diagram::Diagram, figure, graph, mono, sans, tr, vault,
+    MOD, Theme, diagram::Diagram, figure, graph, grid::{self, TableRow}, mono, sans, tr, vault,
     markdown::{self as md, Enter, Kind, Link},
 };
 
 actions!(
     editor,
     [
+        AlignLeft,
+        AlignCenter,
+        AlignRight,
         Backspace,
         Delete,
         DeleteWordLeft,
@@ -179,46 +182,35 @@ struct Row {
     gap: Pixels,
     /// Couleur du panneau `> [!TYPE]` dont la ligne fait partie.
     tint: Option<Hsla>,
+    /// Ligne de tableau plus large que la page : de combien son texte est décalé vers la gauche.
+    dx: Pixels,
+    /// Ligne de tableau affichée en grille : ses cellules, qui passent à la ligne.
+    grid: Option<TableRow>,
 }
 
 impl Row {
+    /// Position à l'écran, par rapport au bord gauche de la page.
     fn pos(&self, i: usize) -> Point<Pixels> {
-        self.shaped.line
-            .as_ref()
-            .and_then(|l| l.position_for_index(self.shown(i.min(self.len)), self.lh))
-            .unwrap_or_default()
+        let p = match &self.grid {
+            Some(grid) => grid.pos(i.min(self.len), self.lh),
+            None => self
+                .shaped
+                .line
+                .as_ref()
+                .and_then(|l| l.position_for_index(self.shown(i.min(self.len)), self.lh))
+                .unwrap_or_default(),
+        };
+        point(p.x - self.dx, p.y)
     }
 
     /// Octet du texte → octet du texte affiché.
     fn shown(&self, i: usize) -> usize {
-        let mut shift = 0isize;
-        for &(at, src, dst) in &self.shaped.subs {
-            if i <= at {
-                break;
-            }
-            // À l'intérieur d'un signe : on se place juste après lui.
-            if i < at + src {
-                return (at as isize + shift) as usize + dst;
-            }
-            shift += dst as isize - src as isize;
-        }
-        (i as isize + shift) as usize
+        grid::shown(&self.shaped.subs, i)
     }
 
     /// Octet du texte affiché → octet du texte.
     fn source(&self, i: usize) -> usize {
-        let mut shift = 0isize;
-        for &(at, src, dst) in &self.shaped.subs {
-            let start = (at as isize + shift) as usize;
-            if i <= start {
-                break;
-            }
-            if i < start + dst {
-                return at + src;
-            }
-            shift += dst as isize - src as isize;
-        }
-        (i as isize - shift) as usize
+        grid::source(&self.shaped.subs, i)
     }
 
     fn image_height(&self) -> Pixels {
@@ -226,6 +218,10 @@ impl Row {
     }
 
     fn index_at(&self, p: Point<Pixels>) -> usize {
+        let p = point(p.x + self.dx, p.y);
+        if let Some(grid) = &self.grid {
+            return grid.index_at(p, self.lh);
+        }
         match &self.shaped.line {
             Some(l) => match l.closest_index_for_position(p, self.lh) {
                 Ok(i) | Err(i) => self.source(i),
@@ -235,7 +231,28 @@ impl Row {
     }
 
     fn visual_rows(&self) -> i32 {
-        (f32::from(self.height - self.pad - self.image_height() - self.gap) / f32::from(self.lh)).round() as i32
+        match &self.grid {
+            Some(grid) => grid.lines,
+            None => (f32::from(self.height - self.pad - self.image_height() - self.gap) / f32::from(self.lh)).round() as i32,
+        }
+    }
+
+    /// Lignes visuelles de ce qui contient l'octet `i` : la ligne, ou la cellule d'un tableau.
+    fn lines_at(&self, i: usize) -> i32 {
+        self.grid.as_ref().map_or_else(|| self.visual_rows(), |grid| grid.lines_at(i))
+    }
+
+    /// Ligne de tirets d'un tableau, qu'on ne voit pas.
+    fn hidden(&self) -> bool {
+        self.grid.as_ref().is_some_and(TableRow::hidden)
+    }
+
+    /// Largeur de ce qui est dessiné.
+    fn content_width(&self) -> Pixels {
+        match &self.grid {
+            Some(grid) => grid.total(),
+            None => self.shaped.line.as_ref().map_or(px(0.), |l| l.width()),
+        }
     }
 }
 
@@ -317,6 +334,67 @@ fn cached(
     drawing
 }
 
+/// Ce qui, dans le style d'une ligne, vient de sa nature plutôt que de son texte.
+pub struct RunStyle {
+    pub heading: bool,
+    pub italic: bool,
+    pub mono: bool,
+    /// Couleur du panneau dont la ligne fait partie.
+    pub tint: Option<Hsla>,
+}
+
+/// Les styles de la ligne `flags` (un mot de drapeaux par octet), d'un seul tenant
+/// tant que rien ne change ; `marked` : l'octet est dans le texte en cours de composition.
+pub fn text_runs(t: &Theme, flags: &[u16], marked: impl Fn(usize) -> bool, style: &RunStyle) -> Vec<TextRun> {
+    // ponytail: chaînes et nombres prennent la couleur d'accent décalée en teinte,
+    // pour s'accorder à chaque thème sans palette dédiée ; donner ses couleurs de
+    // code à chaque thème si l'une d'elles jure.
+    let hue = |by: f32| Hsla { h: (t.accent.h + by).fract(), ..t.accent };
+    let mut runs: Vec<TextRun> = Vec::new();
+    let mut i = 0;
+    while i < flags.len() {
+        let (f, m) = (flags[i], marked(i));
+        let mut j = i + 1;
+        while j < flags.len() && flags[j] == f && marked(j) == m {
+            j += 1;
+        }
+        let color = if f & md::DIM != 0 {
+            t.dim
+        } else if f & md::STRING != 0 {
+            hue(0.33)
+        } else if f & md::NUMBER != 0 {
+            hue(0.6)
+        } else if f & md::MARK != 0 && let Some(tint) = style.tint {
+            tint
+        } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
+            t.accent
+        } else {
+            t.text
+        };
+        runs.push(TextRun {
+            len: j - i,
+            font: Font {
+                weight: if style.heading || f & md::BOLD != 0 { FontWeight::BOLD } else { FontWeight::NORMAL },
+                style: if f & md::ITALIC != 0 || style.italic { FontStyle::Italic } else { FontStyle::Normal },
+                ..font(if style.mono || f & md::CODE != 0 { mono() } else { sans() })
+            },
+            color,
+            background_color: (f & md::CODE != 0).then_some(t.code_bg),
+            // Un seul trait pour tout le lien, crochets compris : gpui 0.2 laisse
+            // un bout de trait dans la marge si le soulignement change de style
+            // juste à un retour à la ligne.
+            underline: (m || f & md::LINK != 0).then_some(UnderlineStyle {
+                thickness: px(1.),
+                color: Some(if f & md::LINK != 0 { t.accent } else { color }.opacity(0.5)),
+                wavy: false,
+            }),
+            strikethrough: (f & md::STRIKE != 0).then_some(StrikethroughStyle { thickness: px(1.), color: Some(color) }),
+        });
+        i = j;
+    }
+    runs
+}
+
 pub struct Editor {
     focus: FocusHandle,
     content: String,
@@ -324,6 +402,9 @@ pub struct Editor {
     reversed: bool,
     marked: Option<Range<usize>>,
     selecting: bool,
+    /// Mot ou ligne saisi par un double ou triple clic (et s'il s'agit d'une ligne) :
+    /// glisser l'étend de mot en mot ou de ligne en ligne.
+    anchor: Option<(Range<usize>, bool)>,
     goal_x: Option<Pixels>,
     undo: History,
     redo: History,
@@ -345,6 +426,8 @@ pub struct Editor {
     /// Lignes mises en forme à la dernière frame, par empreinte de leur texte et
     /// de leur contexte.
     shaped: HashMap<u64, Rc<Shaped>>,
+    /// Cellules des tableaux mises en forme à la dernière frame.
+    cells: grid::Cache,
     ac_index: usize,
     ac_dismissed: Option<usize>,
     /// Sélecteur de tableau ouvert sous le curseur : colonnes et lignes choisies.
@@ -359,6 +442,10 @@ pub struct Editor {
     table_hitboxes: Vec<Hitbox>,
     /// Tableau survolé (son début), et celui de ses boutons qui l'est.
     table_hover: Option<(usize, Option<usize>)>,
+    /// Défilement horizontal des tableaux plus larges que la page, par début de tableau.
+    table_x: HashMap<usize, Pixels>,
+    /// Curseur de défilement de chaque tableau trop large, à la dernière frame.
+    thumbs: Vec<Bounds<Pixels>>,
     theme: Theme,
     // Mise en page de la dernière frame.
     rows: Vec<Row>,
@@ -386,6 +473,7 @@ impl Editor {
             reversed: false,
             marked: None,
             selecting: false,
+            anchor: None,
             goal_x: None,
             undo: History::default(),
             redo: History::default(),
@@ -398,6 +486,7 @@ impl Editor {
             copy_hitboxes: Vec::new(),
             figures: HashMap::new(),
             shaped: HashMap::new(),
+            cells: grid::Cache::default(),
             ac_index: 0,
             ac_dismissed: None,
             grid: None,
@@ -406,6 +495,8 @@ impl Editor {
             tables: Vec::new(),
             table_hitboxes: Vec::new(),
             table_hover: None,
+            table_x: HashMap::new(),
+            thumbs: Vec::new(),
             theme,
             rows: Vec::new(),
             origin: Point::default(),
@@ -431,6 +522,8 @@ impl Editor {
         self.redo = History::default();
         self.last_edit = None;
         self.scroll_y = px(0.);
+        self.table_x.clear();
+        self.selecting = false;
         self.reveal = true;
         cx.notify();
     }
@@ -477,6 +570,43 @@ impl Editor {
     #[cfg(test)]
     pub fn plus_buttons(&self) -> Option<[Point<Pixels>; 2]> {
         Some(plus_bars(self.tables.first()?.1).map(|bar| bar.center()))
+    }
+
+    /// Point de l'écran où se trouve l'octet `i`, au milieu de sa ligne.
+    #[cfg(test)]
+    pub fn point_of(&self, i: usize) -> Option<Point<Pixels>> {
+        let row = &self.rows[self.row_at(i)?];
+        Some(self.origin + point(px(0.), row.y + row.pad + row.lh / 2.) + row.pos(i - row.start))
+    }
+
+    #[cfg(test)]
+    pub fn caret(&self) -> usize {
+        self.cursor()
+    }
+
+    /// Lignes de tirets de tableau qu'on ne voit pas.
+    #[cfg(test)]
+    pub fn hidden_rows(&self) -> usize {
+        self.rows.iter().filter(|r| r.hidden()).count()
+    }
+
+    #[cfg(test)]
+    pub fn span(&self) -> Range<usize> {
+        self.sel.clone()
+    }
+
+    #[cfg(test)]
+    pub fn selected(&self) -> &str {
+        &self.content[self.sel.clone()]
+    }
+
+    /// Premier tableau : décalage de ses lignes, plus grand nombre de lignes
+    /// visuelles d'une des siennes, largeur de son cadre et de la page.
+    #[cfg(test)]
+    pub fn table_state(&self) -> Option<(Pixels, i32, Pixels, Pixels)> {
+        let rows = self.rows.iter().filter(|r| r.kind == Kind::Table);
+        let tall = rows.clone().map(Row::visual_rows).max()?;
+        Some((rows.map(|r| r.dx).next()?, tall, self.tables.first()?.1.size.width, self.width))
     }
 
     /// Centre d'une case du sélecteur de tableau, s'il est ouvert.
@@ -622,24 +752,35 @@ impl Editor {
             .checked_sub(1)
     }
 
+    /// Ligne voisine qu'on voit : la ligne de tirets d'un tableau se saute.
+    fn neighbour(&self, r: usize, down: bool) -> Option<usize> {
+        let step = |r: usize| if down { Some(r + 1) } else { r.checked_sub(1) };
+        let mut r = step(r)?;
+        while self.rows.get(r)?.hidden() {
+            r = step(r)?;
+        }
+        Some(r)
+    }
+
     fn vertical(&self, from: usize, down: bool, gx: Pixels) -> usize {
         let Some(r) = self.row_at(from) else {
             return from;
         };
         let row = &self.rows[r];
         let v = (f32::from(row.pos(from - row.start).y) / f32::from(row.lh)).round() as i32;
+        // Dans une cellule, on descend ligne visuelle après ligne visuelle, puis on passe à la ligne suivante.
         let (r, v) = if down {
-            if v + 1 < row.visual_rows() {
+            if v + 1 < row.lines_at(from - row.start) {
                 (r, v + 1)
-            } else if r + 1 < self.rows.len() {
-                (r + 1, 0)
+            } else if let Some(next) = self.neighbour(r, true) {
+                (next, 0)
             } else {
                 return self.content.len();
             }
         } else if v > 0 {
             (r, v - 1)
-        } else if r > 0 {
-            (r - 1, self.rows[r - 1].visual_rows() - 1)
+        } else if let Some(prev) = self.neighbour(r, false) {
+            (prev, self.rows[prev].visual_rows() - 1)
         } else {
             return 0;
         };
@@ -647,7 +788,165 @@ impl Editor {
         self.clamp(row.start + row.index_at(point(gx, row.lh * (v as f32 + 0.5))))
     }
 
+    fn is_table_line(&self, line: &Range<usize>) -> bool {
+        self.content[line.clone()].trim_start().starts_with('|') && !self.in_code(line.start)
+    }
+
+    /// Ligne de tableau qui précède celle qui commence en `start`, ou la suit.
+    fn next_line(&self, line: &Range<usize>, down: bool) -> Option<Range<usize>> {
+        if down {
+            (line.end < self.content.len()).then(|| self.line_range(line.end + 1))
+        } else {
+            (line.start > 0).then(|| self.line_range(line.start - 1))
+        }
+    }
+
+    /// La ligne est la ligne de tirets d'un tableau : la deuxième, quand elle n'a que des tirets.
+    fn is_dash_row(&self, line: &Range<usize>) -> bool {
+        let first = self.next_line(line, false).filter(|l| self.is_table_line(l));
+        let none_before = first.as_ref().is_some_and(|f| self.next_line(f, false).is_none_or(|l| !self.is_table_line(&l)));
+        let text = &self.content[line.clone()];
+        none_before && md::is_dashes(&md::cells(text).into_iter().map(|r| text[r].to_string()).collect::<Vec<_>>())
+    }
+
+    /// Cellules (octets du texte) de la ligne de tableau qui contient `c`, et celle où
+    /// l'on est : `None` hors d'un tableau, et sur la ligne de tirets, qui s'affiche comme du texte.
+    fn table_cells(&self, c: usize) -> Option<(Vec<Range<usize>>, usize)> {
+        let c = self.clamp(c);
+        let line = self.line_range(c);
+        if !self.is_table_line(&line) || self.is_dash_row(&line) {
+            return None;
+        }
+        let text = &self.content[line.clone()];
+        let cells: Vec<Range<usize>> = md::cells(text).into_iter().map(|r| line.start + r.start..line.start + r.end).collect();
+        let before = md::bars(text).into_iter().filter(|&bar| line.start + bar < c).count();
+        let k = before.saturating_sub(1).min(cells.len().checked_sub(1)?);
+        Some((cells, k))
+    }
+
+    /// Cellules de la ligne de tableau voisine, la ligne de tirets sautée.
+    fn table_neighbour(&self, c: usize, down: bool) -> Option<Vec<Range<usize>>> {
+        let mut line = self.next_line(&self.line_range(self.clamp(c)), down)?;
+        if self.is_table_line(&line) && self.is_dash_row(&line) {
+            line = self.next_line(&line, down)?;
+        }
+        self.table_cells(line.start).map(|(cells, _)| cells)
+    }
+
+    /// La sélection couvre plusieurs cellules d'un tableau (ou des `|`) : le texte de chacune
+    /// des cellules qu'elle touche. `None` si elle tient dans une cellule, ou sort du tableau.
+    fn selected_cells(&self) -> Option<Vec<Range<usize>>> {
+        if self.sel.is_empty() {
+            return None;
+        }
+        let (first, last) = (self.line_range(self.sel.start), self.line_range(self.sel.end));
+        let (mut found, mut bars, mut line) = (Vec::new(), false, first.clone());
+        loop {
+            if !self.is_table_line(&line) {
+                return None;
+            }
+            if !self.is_dash_row(&line) {
+                let text = &self.content[line.clone()];
+                let inside = |at: usize| (self.sel.start..self.sel.end).contains(&at);
+                bars |= md::bars(text).into_iter().any(|bar| inside(line.start + bar));
+                for cell in md::cells(text) {
+                    let (from, to) = (line.start + cell.start, line.start + cell.end);
+                    let (from, to) = (from.max(self.sel.start), to.min(self.sel.end));
+                    if from < to {
+                        found.push(self.off_escape(from, false)..self.off_escape(to, true));
+                    }
+                }
+            }
+            if line.end >= last.end {
+                break;
+            }
+            line = self.line_range(line.end + 1);
+        }
+        (first != last || bars || found.len() > 1).then_some(found)
+    }
+
+    /// Vide les cellules de la sélection, `|` compris dans la sélection : elles gardent leur
+    /// place, ce qu'effacer d'un bloc fusionnerait. Faux si la sélection n'en couvre pas plusieurs.
+    fn clear_cells(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(ranges) = self.selected_cells() else {
+            return false;
+        };
+        let at = ranges.first().map_or(self.sel.start, |r| r.start);
+        if !ranges.is_empty() {
+            self.push_undo(true);
+            ranges.iter().rev().for_each(|r| self.content.replace_range(r.clone(), ""));
+        }
+        self.sel = at..at;
+        self.reversed = false;
+        self.changed(cx);
+        self.realign(cx);
+        true
+    }
+
+    /// Un octet qui ne coupe pas un `\|` : la grille l'affiche d'un seul signe.
+    fn off_escape(&self, t: usize, forward: bool) -> usize {
+        let b = self.content.as_bytes();
+        let backslashes = b[..t].iter().rev().take_while(|&&x| x == b'\\').count();
+        if t < b.len() && b[t] == b'|' && backslashes % 2 == 1 {
+            if forward { t + 1 } else { t - 1 }
+        } else {
+            t
+        }
+    }
+
+    /// Déplacement horizontal dans une ligne de tableau : on saute les `|` et les espaces
+    /// entre les cellules, et on passe d'une ligne à l'autre sans s'arrêter sur les tirets.
+    fn table_move(&self, c: usize, m: Motion) -> Option<usize> {
+        let (cells, k) = self.table_cells(c)?;
+        let cell = cells[k].clone();
+        let at = c.clamp(cell.start, cell.end);
+        let line = self.line_range(self.clamp(c));
+        let prev_cell = || match k {
+            0 => self.table_neighbour(c, false).and_then(|cells| Some(cells.last()?.end)).unwrap_or(line.start.saturating_sub(1)),
+            _ => cells[k - 1].end,
+        };
+        let next_cell = || match cells.get(k + 1) {
+            Some(next) => next.start,
+            None => {
+                let first = self.table_neighbour(c, true).and_then(|cells| Some(cells.first()?.start));
+                first.unwrap_or((line.end + 1).min(self.content.len()))
+            }
+        };
+        let inside = &self.content[cell.clone()];
+        Some(match m {
+            Motion::Left if at > cell.start => {
+                let t = cell.start + inside[..at - cell.start].grapheme_indices(true).next_back().map_or(0, |(i, _)| i);
+                self.off_escape(t, false)
+            }
+            Motion::Right if at < cell.end => {
+                let t = at + inside[at - cell.start..].graphemes(true).next().map_or(0, str::len);
+                self.off_escape(t, true)
+            }
+            Motion::WordLeft if at > cell.start => cell.start
+                + inside[..at - cell.start]
+                    .split_word_bound_indices()
+                    .rev()
+                    .find(|(_, w)| !w.trim().is_empty())
+                    .map_or(0, |(i, _)| i),
+            Motion::WordRight if at < cell.end => at
+                + inside[at - cell.start..]
+                    .split_word_bound_indices()
+                    .find(|(_, w)| !w.trim().is_empty())
+                    .map_or(cell.end - at, |(i, w)| i + w.len()),
+            Motion::Left | Motion::WordLeft => prev_cell(),
+            Motion::Right | Motion::WordRight => next_cell(),
+            Motion::Home => cells[0].start,
+            Motion::End => cells[cells.len() - 1].end,
+            _ => return None,
+        })
+    }
+
     fn target(&self, m: Motion, gx: Pixels) -> usize {
+        self.table_move(self.cursor(), m).unwrap_or_else(|| self.plain_target(m, gx))
+    }
+
+    /// Où mène le déplacement `m`, en ne comptant que le texte.
+    fn plain_target(&self, m: Motion, gx: Pixels) -> usize {
         let c = self.cursor();
         let lr = self.line_range(c);
         let line = &self.content[lr.clone()];
@@ -749,9 +1048,25 @@ impl Editor {
             self.type_grid("", cx);
             return;
         }
+        if self.clear_cells(cx) {
+            return;
+        }
         let range = if self.sel.is_empty() {
-            let (c, t) = (self.cursor(), self.target(m, px(0.)));
-            c.min(t)..c.max(t)
+            let (c, t) = (self.cursor(), self.plain_target(m, px(0.)));
+            let mut range = c.min(t)..c.max(t);
+            // Dans un tableau, effacer ne passe pas d'une cellule à l'autre : cela fusionnerait
+            // les colonnes. Un `\|` s'efface d'un bloc, comme il s'affiche.
+            if let Some((_, k)) = self.table_cells(c) {
+                let line = self.line_range(c);
+                let bars = md::bars(&self.content[line.clone()]);
+                let (from, to) = (line.start + bars[k] + 1, bars.get(k + 1).map_or(line.end, |b| line.start + b));
+                range = range.start.max(from)..range.end.min(to);
+                if range.is_empty() {
+                    return;
+                }
+                range = self.off_escape(range.start, false)..self.off_escape(range.end, true);
+            }
+            range
         } else {
             self.sel.clone()
         };
@@ -978,6 +1293,16 @@ impl Editor {
         true
     }
 
+    /// Aligne la colonne du curseur : `:--`, `:-:` ou `--:` sous son en-tête. La ligne de
+    /// tirets ne se voit pas, c'est donc ce raccourci qui la règle.
+    fn align(&mut self, dashes: &str, cx: &mut Context<Self>) {
+        let Some((range, mut rows, (r, c))) = self.table_at(self.cursor()) else {
+            return;
+        };
+        rows[1][c] = dashes.to_string();
+        self.set_table(range, &rows, (r, c), cx);
+    }
+
     /// Pose un tableau vide au curseur, sur ses propres lignes.
     fn insert_table(&mut self, cols: usize, rows: usize, cx: &mut Context<Self>) {
         let c = self.cursor();
@@ -1194,20 +1519,16 @@ impl Editor {
             return self.toggle_task(cx);
         }
         match e.click_count {
-            2 => {
-                let word = line
-                    .split_word_bound_indices()
-                    .find(|(s, w)| (*s..=s + w.len()).contains(&col))
-                    .map_or(col..col, |(s, w)| s..s + w.len());
-                self.move_to(lr.start + word.start, cx);
-                self.select_to(lr.start + word.end, cx);
-            }
-            3 => {
-                self.move_to(lr.start, cx);
-                self.select_to(lr.end, cx);
+            n @ (2 | 3) => {
+                let unit = self.unit_at(i, n == 3);
+                self.move_to(unit.start, cx);
+                self.select_to(unit.end, cx);
+                self.selecting = true;
+                self.anchor = Some((unit, n == 3));
             }
             _ => {
                 self.selecting = true;
+                self.anchor = None;
                 if e.modifiers.shift {
                     self.select_to(i, cx)
                 } else {
@@ -1217,9 +1538,42 @@ impl Editor {
         }
     }
 
+    /// Mot (ou ligne entière) autour de l'octet `i`.
+    fn unit_at(&self, i: usize, by_line: bool) -> Range<usize> {
+        let lr = self.line_range(i);
+        if by_line {
+            return lr;
+        }
+        let col = i - lr.start;
+        let word = self.content[lr.clone()]
+            .split_word_bound_indices()
+            .find(|(s, w)| (*s..=s + w.len()).contains(&col))
+            .map_or(col..col, |(s, w)| s..s + w.len());
+        lr.start + word.start..lr.start + word.end
+    }
+
+    /// Le glisser étend la sélection jusqu'à `i` ; après un double ou triple clic,
+    /// par mots ou par lignes entières, le mot ou la ligne saisis restant sélectionnés.
+    fn drag_to(&mut self, i: usize, cx: &mut Context<Self>) {
+        let Some((first, by_line)) = self.anchor.clone() else {
+            return self.select_to(i, cx);
+        };
+        let unit = self.unit_at(i, by_line);
+        self.reversed = unit.start < first.start;
+        self.sel = if self.reversed { unit.start..first.end } else { first.start..unit.end.max(first.end) };
+        self.goal_x = None;
+        self.reveal = true;
+        cx.notify();
+    }
+
     fn mouse_move(&mut self, e: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // Un bouton relâché hors de la fenêtre n'envoie pas de `mouse_up` : on ne
+        // continue pas à sélectionner pointeur libre.
+        if self.selecting && e.pressed_button != Some(MouseButton::Left) {
+            self.selecting = false;
+        }
         if self.selecting {
-            self.select_to(self.index_at(e.position), cx);
+            self.drag_to(self.index_at(e.position), cx);
         }
         let hover = self.copy_at(e.position);
         if hover != self.hover {
@@ -1250,7 +1604,13 @@ impl Editor {
     }
 
     fn scroll(&mut self, e: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
-        self.scroll_y -= e.delta.pixel_delta(px(26.)).y;
+        let delta = e.delta.pixel_delta(px(26.));
+        // Maj + molette, ou geste horizontal du pavé tactile : un tableau trop large défile.
+        let (dx, dy) = if e.modifiers.shift { (delta.y, delta.x) } else { (delta.x, delta.y) };
+        if let Some((range, _)) = self.tables.iter().find(|(_, frame)| frame.contains(&e.position)) {
+            *self.table_x.entry(range.start).or_default() -= dx;
+        }
+        self.scroll_y -= dy;
         cx.notify();
     }
 
@@ -1263,9 +1623,59 @@ impl Editor {
         cx.write_to_clipboard(ClipboardItem::new_string(
             self.content[self.sel.clone()].to_string(),
         ));
-        if cut {
+        if cut && !self.clear_cells(cx) {
             self.edit(self.sel.clone(), "", cx);
+            self.realign(cx);
         }
+    }
+
+    /// Collage dans un tableau : une cellule garde une seule ligne et ses `|`
+    /// protégés ; des cellules de tableur ou de Markdown remplissent la grille à
+    /// partir de la cellule du curseur, qui s'agrandit au besoin.
+    fn paste_in_table(&mut self, text: &str, cx: &mut Context<Self>) -> bool {
+        self.clear_cells(cx);
+        let sel = self.sel.clone();
+        if sel.end > self.line_range(sel.start).end {
+            return false;
+        }
+        let Some((range, mut rows, (r, c))) = self.table_at(sel.start) else {
+            return false;
+        };
+        let Some(grid) = md::paste_grid(text) else {
+            // Avant le premier `|` ou après le dernier : dans la cellule voisine, pas sur la ligne.
+            let line = self.line_range(sel.start);
+            let bars = md::bars(&self.content[line.clone()]);
+            let col = sel.start - line.start;
+            let cell = md::cells(&self.content[line.clone()]).get(c).cloned().unwrap_or(0..0);
+            let sel = match (bars.first(), bars.last()) {
+                _ if !sel.is_empty() => sel,
+                (Some(&first), _) if col <= first => line.start + cell.start..line.start + cell.start,
+                (Some(_), Some(&last)) if col > last && self.content[line.clone()].trim_end().ends_with('|') => line.start + cell.end..line.start + cell.end,
+                _ => sel,
+            };
+            self.push_undo(true);
+            self.edit(sel, &md::cell_text(text), cx);
+            self.realign(cx);
+            return true;
+        };
+        let width = rows[0].len().max(c + grid.iter().map(Vec::len).max().unwrap_or(0));
+        for (i, row) in rows.iter_mut().enumerate() {
+            row.resize(width, if i == 1 { "---" } else { "" }.to_string());
+        }
+        // La ligne de tirets (la deuxième) se saute.
+        let mut at = if r == 1 { 2 } else { r };
+        let mut last = (at, c);
+        for cells in &grid {
+            at += (at == 1) as usize;
+            if at == rows.len() {
+                rows.push(vec![String::new(); width]);
+            }
+            rows[at][c..c + cells.len()].clone_from_slice(cells);
+            last = (at, c + cells.len() - 1);
+            at += 1;
+        }
+        self.set_table(range, &rows, last, cx);
+        true
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
@@ -1298,8 +1708,38 @@ impl Editor {
                 None => return,
             },
         };
+        if self.paste_in_table(&text, cx) {
+            return;
+        }
+        // Un tableau Markdown, ou des cellules de tableur ou de page web, se posent en tableau,
+        // sur leurs propres lignes et remis en forme.
+        let line = self.line_range(self.sel.start);
+        let (sel, table) = (self.sel.clone(), md::paste_table(&text).filter(|_| !self.in_code(line.start)));
+        if let Some(table) = table {
+            let alone = self.content[line.start..sel.start].trim().is_empty();
+            let apart = line.start == 0 || self.content[..line.start].ends_with("\n\n");
+            let lead = match (alone, apart) {
+                (true, true) => "",
+                (true, false) => "\n",
+                (false, _) => "\n\n",
+            };
+            let rest = self.line_range(sel.end);
+            let next = self.content[rest.end..].strip_prefix('\n').and_then(|n| n.lines().next());
+            let tail = if !self.content[sel.end..rest.end].trim().is_empty() {
+                "\n\n"
+            } else if next.is_some_and(|n| !n.trim().is_empty()) {
+                "\n"
+            } else {
+                ""
+            };
+            let from = if alone { line.start } else { sel.start };
+            self.push_undo(true);
+            return self.edit(from..sel.end, &format!("{lead}{table}{tail}"), cx);
+        }
         self.push_undo(true);
-        self.edit(self.sel.clone(), &text, cx);
+        self.edit(sel, &text, cx);
+        // Une ligne collée sous un tableau en fait partie : ses colonnes s'alignent.
+        self.realign(cx);
     }
 
     // ----- UTF-16 (méthodes de saisie) -----
@@ -1335,10 +1775,6 @@ impl Editor {
     fn layout(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         let t = self.theme;
         let cursor = self.cursor();
-        // ponytail: chaînes et nombres prennent la couleur d'accent décalée en teinte,
-        // pour s'accorder à chaque thème sans palette dédiée ; donner ses couleurs de
-        // code à chaque thème si l'une d'elles jure.
-        let hue = |by: f32| Hsla { h: (t.accent.h + by).fract(), ..t.accent };
         // Un ``` sans clôture n'ouvre pas de bloc : sinon chaque ``` tapé ferait
         // basculer en code, donc remettre en forme, toute la suite de la note. S'il
         // y en a un de trop, c'est celui qu'on est en train de taper, sinon le dernier.
@@ -1382,6 +1818,11 @@ impl Editor {
             (key(0, ""), hex(t.accent), mono(), has_unequal).hash(&mut hasher);
             hasher.finish()
         };
+        let mut cells = std::mem::take(&mut self.cells);
+        cells.next_frame();
+        // Lignes d'un tableau déjà mises en page, en attente de leur tour dans la boucle.
+        let mut pending: VecDeque<Option<TableRow>> = VecDeque::new();
+        let empty = Rc::new(Shaped { line: None, subs: Vec::new(), formula: None, picture: None });
         let mut stale = std::mem::take(&mut self.shaped);
         let mut shaped = HashMap::new();
         let mut old = std::mem::take(&mut self.figures);
@@ -1464,6 +1905,22 @@ impl Editor {
             let last: Option<&mut Row> = rows.last_mut();
             let after_table = last.as_ref().is_some_and(|r| r.kind == Kind::Table);
             let header = kind == Kind::Table && !after_table;
+            // Un tableau se met en page d'un bloc, à sa première ligne : ses colonnes
+            // dépendent de toutes ses cellules.
+            if header {
+                let mut at = offset;
+                let block: Vec<(usize, &str)> = self.content[offset..]
+                    .split('\n')
+                    .take_while(|l| md::classify(l, false).0 == Kind::Table)
+                    .map(|l| {
+                        at += l.len() + 1;
+                        (at - l.len() - 1, l)
+                    })
+                    .collect();
+                let look = grid::Look { theme: &t, style };
+                pending = grid::build(&mut cells, &text_system, &look, width, &block, cursor, marked.as_ref()).into();
+            }
+            let grid_row = if kind == Kind::Table { pending.pop_front().flatten() } else { None };
             if kind != Kind::Table && after_table && let Some(last) = last {
                 last.gap = TABLE_GAP;
                 last.height += TABLE_GAP;
@@ -1493,7 +1950,7 @@ impl Editor {
                 hasher.finish()
             };
             let lh = (font_size * 1.65).round();
-            let made = stale.remove(&id).or_else(|| shaped.get(&id).cloned()).unwrap_or_else(|| {
+            let made = if grid_row.is_some() { empty.clone() } else { stale.remove(&id).or_else(|| shaped.get(&id).cloned()).unwrap_or_else(|| {
                 let mut formula = None;
                 let mut flags = vec![0u16; line.len()];
                 let list = matches!(kind, Kind::Bullet | Kind::Ordered | Kind::Task(_));
@@ -1523,8 +1980,8 @@ impl Editor {
                     flags[label].fill(md::BOLD | md::MARK);
                 }
                 // Tableau : en-tête en gras, `|` et tirets en retrait.
-                // ponytail: une ligne plus large que la page passe à la ligne et casse
-                // la grille ; défilement horizontal si les tableaux larges sont courants.
+                // Une ligne ne passe jamais à la ligne, ce qui casserait la grille : un
+                // tableau plus large que la page défile horizontalement.
                 if kind == Kind::Table {
                     if header {
                         flags.iter_mut().for_each(|f| *f |= md::BOLD);
@@ -1565,69 +2022,24 @@ impl Editor {
                 }
                 let is_marked = |i: usize| composed.as_ref().is_some_and(|m| m.contains(&(offset + i)));
 
-                let mut runs: Vec<TextRun> = Vec::new();
-                let mut i = 0;
-                while i < shown.len() {
-                    let (f, m) = (flags[i], is_marked(i));
-                    let mut j = i + 1;
-                    while j < shown.len() && flags[j] == f && is_marked(j) == m {
-                        j += 1;
-                    }
-                    let heading = matches!(kind, Kind::Heading(_));
-                    let color = if f & md::DIM != 0 {
-                        t.dim
-                    } else if f & md::STRING != 0 {
-                        hue(0.33)
-                    } else if f & md::NUMBER != 0 {
-                        hue(0.6)
-                    } else if f & md::MARK != 0 && let Some(tint) = own_tint {
-                        tint
-                    } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
-                        t.accent
-                    } else {
-                        t.text
-                    };
-                    runs.push(TextRun {
-                        len: j - i,
-                        font: Font {
-                            weight: if heading || f & md::BOLD != 0 {
-                                FontWeight::BOLD
-                            } else {
-                                FontWeight::NORMAL
-                            },
-                            style: if f & md::ITALIC != 0 || (kind == Kind::Quote && !tinted) {
-                                FontStyle::Italic
-                            } else {
-                                FontStyle::Normal
-                            },
-                            ..font(if code || kind == Kind::Table || f & md::CODE != 0 { mono() } else { sans() })
-                        },
-                        color,
-                        background_color: (f & md::CODE != 0).then_some(t.code_bg),
-                        // Un seul trait pour tout le lien, crochets compris : gpui 0.2 laisse
-                        // un bout de trait dans la marge si le soulignement change de style
-                        // juste à un retour à la ligne.
-                        underline: (m || f & md::LINK != 0).then_some(UnderlineStyle {
-                            thickness: px(1.),
-                            color: Some(if f & md::LINK != 0 { t.accent } else { color }.opacity(0.5)),
-                            wavy: false,
-                        }),
-                        strikethrough: (f & md::STRIKE != 0).then_some(StrikethroughStyle {
-                            thickness: px(1.),
-                            color: Some(color),
-                        }),
-                    });
-                    i = j;
-                }
+                let style = RunStyle {
+                    heading: matches!(kind, Kind::Heading(_)),
+                    italic: kind == Kind::Quote && !tinted,
+                    mono: code || kind == Kind::Table,
+                    tint: own_tint,
+                };
+                let runs = text_runs(&t, &flags, is_marked, &style);
 
                 let line = window
                     .text_system()
-                    .shape_text(shown.into_owned().into(), font_size, &runs, Some(width), None)
+                    .shape_text(shown.into_owned().into(), font_size, &runs, (kind != Kind::Table).then_some(width), None)
                     .ok()
                     .and_then(|lines| lines.into_iter().next());
                 Rc::new(Shaped { line, subs, formula, picture })
-            });
-            shaped.insert(id, made.clone());
+            }) };
+            if grid_row.is_none() {
+                shaped.insert(id, made.clone());
+            }
             if let Some((source, display)) = &made.formula {
                 drawing = cached(&mut old, &mut kept, key(1 + *display as u8, source), false, || {
                     figure::latex(source, *display, rgb(t.text), t.size * MATH_SCALE)
@@ -1675,19 +2087,28 @@ impl Editor {
             });
 
             let text_height = made.line.as_ref().map_or(lh, |l| l.size(lh).height);
+            let (pad, lh, height) = match &grid_row {
+                Some(grid) => {
+                    let lh = grid::line_height(&t);
+                    (grid.pad(), lh, grid.height(lh))
+                }
+                None => (pad, lh, pad + text_height),
+            };
             let row = Row {
                 start: offset,
                 len: line.len(),
                 y,
                 pad,
                 lh,
-                height: pad + text_height,
+                height,
                 kind,
                 shaped: made,
                 image,
                 opens,
                 gap: px(0.),
                 tint,
+                dx: px(0.),
+                grid: grid_row,
             };
             let height = row.height + row.image_height();
             rows.push(Row { height, ..row });
@@ -1702,9 +2123,10 @@ impl Editor {
         self.rows = rows;
         self.figures = kept;
         self.shaped = shaped;
+        self.cells = cells;
 
-        if self.reveal {
-            self.reveal = false;
+        let reveal = std::mem::take(&mut self.reveal);
+        if reveal {
             let c = self.cursor();
             if let Some(r) = self.row_at(c) {
                 let row = &self.rows[r];
@@ -1731,18 +2153,47 @@ impl Editor {
             .collect();
         let grid = self.grid.and_then(|_| self.popup_at(Self::grid_size()));
         self.grid_hitbox = grid.map(|at| window.insert_hitbox(Bounds::new(at, Self::grid_size()), HitboxBehavior::Normal));
-        // Cadre de chaque tableau : ses lignes, à la largeur de la plus longue.
+        // Cadre de chaque tableau : ses lignes, à la largeur de la plus longue sans
+        // dépasser la page ; au-delà, il défile et suit le curseur.
+        let scrolled = std::mem::take(&mut self.table_x);
         self.tables.clear();
+        self.thumbs.clear();
         let mut i = 0;
         while i < self.rows.len() {
             let n = self.rows[i..].iter().take_while(|r| r.kind == Kind::Table).count();
             if n > 0 {
+                let wide = self.rows[i..i + n].iter().map(Row::content_width).fold(px(0.), |a, b| a.max(b));
+                let overflow = (wide - width).max(px(0.));
+                let (start, end) = (self.rows[i].start, self.rows[i + n - 1].start + self.rows[i + n - 1].len);
+                let mut dx = scrolled.get(&start).copied().unwrap_or_default().max(px(0.)).min(overflow);
+                if reveal && (start..=end).contains(&cursor) {
+                    let row = self.rows[i..i + n].iter().find(|r| r.start + r.len >= cursor).unwrap_or(&self.rows[i]);
+                    let x = row.pos(cursor - row.start).x;
+                    let margin = px(24.);
+                    if x - dx < margin {
+                        dx = x - margin;
+                    } else if x - dx > width - margin {
+                        dx = x - width + margin;
+                    }
+                    dx = dx.max(px(0.)).min(overflow);
+                }
+                if overflow > px(0.) {
+                    self.table_x.insert(start, dx);
+                }
+                self.rows[i..i + n].iter_mut().for_each(|r| r.dx = dx);
                 let (first, last) = (&self.rows[i], &self.rows[i + n - 1]);
-                let widths = self.rows[i..i + n].iter().filter_map(|r| Some(r.shaped.line.as_ref()?.width()));
-                let wide = widths.fold(px(0.), |a, b| a.max(b));
                 let top = first.y + first.pad;
-                let frame = Bounds::new(self.origin + point(px(0.), top), size(wide, last.y + last.height - last.gap - top));
-                self.tables.push((first.start..last.start + last.len, frame));
+                let frame = Bounds::new(
+                    self.origin + point(px(0.), top),
+                    size(wide.min(width), last.y + last.height - last.gap - top),
+                );
+                if overflow > px(0.) {
+                    let thumb = (width * (width / wide)).max(px(24.));
+                    let at = (width - thumb) * (dx / overflow);
+                    let bar = Bounds::new(point(frame.left() + at, frame.bottom() - px(5.)), size(thumb, px(3.)));
+                    self.thumbs.push(bar);
+                }
+                self.tables.push((start..end, frame));
             }
             i += n.max(1);
         }
@@ -1795,30 +2246,50 @@ impl Editor {
                 }
                 _ => {}
             }
-            if !sel.is_empty() && sel.start <= end && sel.end > row.start {
-                let a = row.pos(sel.start.max(row.start) - row.start);
-                let b = row.pos(sel.end.min(end) - row.start);
-                let tail = if sel.end > end { px(6.) } else { px(0.) };
-                let mut rect = |x: Pixels, y: Pixels, w: Pixels, h: Pixels| {
-                    window.paint_quad(fill(block(x, text_top + y, w, h), t.selection))
-                };
-                if a.y == b.y {
-                    rect(a.x, a.y, b.x - a.x + tail, row.lh);
-                } else {
-                    rect(a.x, a.y, w - a.x, row.lh);
-                    rect(px(0.), a.y + row.lh, w, b.y - a.y - row.lh);
-                    rect(px(0.), b.y, b.x + tail, row.lh);
+            // Un tableau plus large que la page est coupé à ses bords.
+            let mask = (row.kind == Kind::Table).then(|| ContentMask {
+                bounds: Bounds::new(point(o.x - px(2.), top), size(w + px(4.), row.height)),
+            });
+            if row.hidden() {
+                continue;
+            }
+            window.with_content_mask(mask, |window| {
+                // Dans un tableau, le fond de l'en-tête passe sous la sélection.
+                let table_top = point(o.x - row.dx, top);
+                if let Some(grid) = &row.grid {
+                    grid.paint_back(table_top, row.height - row.gap, &t, window);
                 }
-            }
-            if let Some(line) = &row.shaped.line {
-                line.paint(point(o.x, text_top), row.lh, TextAlign::Left, None, window, cx)
-                    .ok();
-            }
-            if focused && sel.is_empty() && has_cursor {
-                let p = row.pos(cursor - row.start);
-                let caret = block(p.x, text_top + p.y + row.lh * 0.14, px(2.), row.lh * 0.72);
-                window.paint_quad(fill(caret, t.accent));
-            }
+                if !sel.is_empty() && sel.start <= end && sel.end > row.start {
+                    let a = row.pos(sel.start.max(row.start) - row.start);
+                    let b = row.pos(sel.end.min(end) - row.start);
+                    let tail = if sel.end > end { px(6.) } else { px(0.) };
+                    let mut rect = |x: Pixels, y: Pixels, w: Pixels, h: Pixels| {
+                        window.paint_quad(fill(block(x, text_top + y, w, h), t.selection))
+                    };
+                    if let Some(grid) = &row.grid {
+                        for (x, y, w) in grid.spans(sel.start.max(row.start) - row.start, sel.end.min(end) - row.start, row.lh) {
+                            rect(x - row.dx, y, w, row.lh);
+                        }
+                    } else if a.y == b.y {
+                        rect(a.x, a.y, b.x - a.x + tail, row.lh);
+                    } else {
+                        rect(a.x, a.y, w - a.x, row.lh);
+                        rect(px(0.), a.y + row.lh, w, b.y - a.y - row.lh);
+                        rect(px(0.), b.y, b.x + tail, row.lh);
+                    }
+                }
+                if let Some(grid) = &row.grid {
+                    grid.paint_front(table_top, row.height - row.gap, row.lh, &t, window, cx);
+                } else if let Some(line) = &row.shaped.line {
+                    line.paint(point(o.x - row.dx, text_top), row.lh, TextAlign::Left, None, window, cx)
+                        .ok();
+                }
+                if focused && sel.is_empty() && has_cursor {
+                    let p = row.pos(cursor - row.start);
+                    let caret = block(p.x, text_top + p.y + row.lh * 0.14, px(2.), row.lh * 0.72);
+                    window.paint_quad(fill(caret, t.accent));
+                }
+            });
             if let Some((image, s)) = &row.image {
                 let at = block(px(0.), top + row.height - s.height, s.width, s.height);
                 window.paint_image(at, Corners::all(px(6.)), image.clone(), 0, false).ok();
@@ -1848,6 +2319,9 @@ impl Editor {
             label(&hint, t.dim, window)
                 .paint(point(o.x + px(8.), o.y + px(3.)), px(22.), window, cx)
                 .ok();
+        }
+        for thumb in &self.thumbs {
+            window.paint_quad(fill(*thumb, t.dim.opacity(0.5)).corner_radii(px(1.5)));
         }
         for (n, (range, frame)) in self.tables.iter().enumerate() {
             let hover = self.table_hover.filter(|(at, _)| *at == range.start);
@@ -1961,6 +2435,9 @@ impl EntityInputHandler for Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if range_utf16.is_none() && self.marked.is_none() {
+            self.clear_cells(cx);
+        }
         let range = range_utf16
             .map(|r| self.range_from_utf16(&r))
             .or(self.marked.clone())
@@ -2081,6 +2558,9 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &Indent, _, cx| this.shift_lines(true, cx)))
         .on_action(cx.listener(|this, _: &Outdent, _, cx| this.shift_lines(false, cx)))
         .on_action(cx.listener(|this, _: &ToggleTask, _, cx| this.toggle_task(cx)))
+        .on_action(cx.listener(|this, _: &AlignLeft, _, cx| this.align(":--", cx)))
+        .on_action(cx.listener(|this, _: &AlignCenter, _, cx| this.align(":-:", cx)))
+        .on_action(cx.listener(|this, _: &AlignRight, _, cx| this.align("--:", cx)))
         .on_action(cx.listener(|this, _: &Bold, _, cx| this.wrap("**", cx)))
         .on_action(cx.listener(|this, _: &Italic, _, cx| this.wrap("*", cx)))
         .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(false, cx)))

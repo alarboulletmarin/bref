@@ -2,6 +2,8 @@
 
 use std::ops::Range;
 
+use unicode_width::UnicodeWidthStr;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Kind {
     Para,
@@ -588,7 +590,7 @@ pub fn cells(line: &str) -> Vec<Range<usize>> {
         .collect()
 }
 
-fn is_dashes(row: &[String]) -> bool {
+pub fn is_dashes(row: &[String]) -> bool {
     !row.is_empty() && row.iter().all(|c| c.contains('-') && c.chars().all(|x| matches!(x, '-' | ':')))
 }
 
@@ -607,29 +609,88 @@ pub fn table(block: &str) -> (Vec<Vec<String>>, bool) {
     (rows, added)
 }
 
+/// Texte collé dans une cellule : sur une seule ligne, `|` protégé.
+pub fn cell_text(text: &str) -> String {
+    let text = text.trim_matches(['\n', '\r']);
+    let joined = text.split(['\n', '\r']).map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ");
+    joined.replace('\t', " ").replace("\\|", "|").replace('|', "\\|")
+}
+
+/// Cellules d'un texte copié d'un tableur (tabulations) ou d'un tableau Markdown,
+/// ligne par ligne ; `None` pour un texte ordinaire, qui tient dans une seule cellule.
+pub fn paste_grid(text: &str) -> Option<Vec<Vec<String>>> {
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let markdown = !lines.is_empty() && lines.iter().all(|l| l.trim_start().starts_with('|') && bars(l).len() >= 2);
+    let rows: Vec<Vec<String>> = if markdown {
+        let mut rows: Vec<Vec<String>> =
+            lines.iter().map(|l| cells(l).into_iter().map(|r| l[r].to_string()).collect()).collect();
+        // Seule la deuxième ligne peut être celle des tirets : `| - | - |` plus bas est une donnée.
+        if rows.get(1).is_some_and(|row| is_dashes(row)) {
+            rows.remove(1);
+        }
+        rows
+    } else if lines.iter().any(|l| l.contains('\t')) {
+        lines.iter().map(|l| l.split('\t').map(cell_text).collect()).collect()
+    } else {
+        return None;
+    };
+    (!rows.is_empty()).then_some(rows)
+}
+
+/// Texte collé en dehors d'un tableau qui en est un, remis en forme : un tableau Markdown de
+/// plusieurs lignes, ou des cellules séparées par des tabulations (tableur, page web), en
+/// nombre égal sur chaque ligne. Du code indenté par des tabulations n'en est pas un.
+pub fn paste_table(text: &str) -> Option<String> {
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.len() < 2 {
+        return None;
+    }
+    let block = if lines.iter().all(|l| l.trim_start().starts_with('|')) {
+        lines.iter().map(|l| l.trim()).collect::<Vec<_>>().join("\n")
+    } else {
+        let grid = paste_grid(text)?;
+        let cols = grid[0].len();
+        if cols < 2 || grid.iter().any(|row| row.len() != cols) || lines.iter().all(|l| l.starts_with('\t')) {
+            return None;
+        }
+        grid.iter().map(|row| format!("| {} |", row.join(" | "))).collect::<Vec<_>>().join("\n")
+    };
+    Some(format_table(&table(&block).0, ""))
+}
+
 /// Tableau vide de `cols` colonnes et `rows` lignes, en-tête compris.
 pub fn new_table(cols: usize, rows: usize) -> Vec<Vec<String>> {
     table(&vec![format!("{}|", "| ".repeat(cols)); rows].join("\n")).0
 }
 
-/// Le tableau écrit en Markdown, colonnes alignées.
-// ponytail: largeur comptée en caractères ; idéogrammes et émojis, deux fois plus
-// larges, décalent leur colonne (crate `unicode-width` si cela gêne).
+/// Largeur d'une ligne écrite en colonnes de texte : les idéogrammes et les émojis en prennent deux.
+fn columns(text: &str) -> usize {
+    UnicodeWidthStr::width(text)
+}
+
+/// Au-delà de cette largeur, les colonnes ne sont plus alignées : une longue cellule
+/// remplirait d'espaces toutes les lignes du fichier. Le tableau s'affiche pareil.
+const ALIGNED: usize = 100;
+
+/// Le tableau écrit en Markdown, colonnes alignées tant qu'il tient dans `ALIGNED`.
 pub fn format_table(rows: &[Vec<String>], indent: &str) -> String {
     let wide = |c: usize| {
         let cells = rows.iter().enumerate().filter(|(i, _)| *i != 1);
-        cells.map(|(_, row)| row[c].chars().count()).max().unwrap_or(0).max(3)
+        cells.map(|(_, row)| columns(&row[c])).max().unwrap_or(0).max(3)
     };
-    let widths: Vec<usize> = (0..rows.first().map_or(0, Vec::len)).map(wide).collect();
+    let mut widths: Vec<usize> = (0..rows.first().map_or(0, Vec::len)).map(wide).collect();
+    if widths.iter().map(|w| w + 3).sum::<usize>() + 1 > ALIGNED {
+        widths.fill(0);
+    }
     let lines = rows.iter().enumerate().map(|(i, row)| {
         let cells = row.iter().zip(&widths).map(|(cell, &w)| match i {
             // Les deux-points d'alignement restent aux bouts des tirets.
             1 => {
                 let (left, right) = (cell.starts_with(':'), cell.len() > 1 && cell.ends_with(':'));
-                let dashes = "-".repeat(w - left as usize - right as usize);
+                let dashes = "-".repeat(w.max(3) - left as usize - right as usize);
                 format!(" {}{dashes}{} |", if left { ":" } else { "" }, if right { ":" } else { "" })
             }
-            _ => format!(" {cell}{} |", " ".repeat(w - cell.chars().count())),
+            _ => format!(" {cell}{} |", " ".repeat(w.saturating_sub(columns(cell)))),
         });
         format!("{indent}|{}", cells.collect::<String>())
     });
@@ -779,5 +840,105 @@ mod tests {
         assert!(!added);
         assert_eq!(format_table(&rows, "  "), text);
         assert_eq!(format_table(&new_table(2, 2), ""), "|     |     |\n| --- | --- |\n|     |     |");
+    }
+    /// Plusieurs centaines de tableaux tirés au hasard (graine fixe) : cellules
+    /// variées (accents, idéogrammes, émojis, `\|`, liens à alias, code, vides ou
+    /// très longues), lignes irrégulières. Le tableau écrit se relit à l'identique,
+    /// garde le même nombre de cellules partout, et ne bouge plus une fois en forme.
+    #[test]
+    fn tables_survive_random_content() {
+        const PIECES: &[&str] = &[
+            "a", "é", "Élodie", "日本語", "😀", "x y", r"\|", "[[note|alias]]", "`code`", "**gras**", "12,5", "-", ":",
+            "http://a.b/c?d=e", "", "", "très long texte de cellule qui ne tient sur aucune page raisonnable ",
+        ];
+        let mut seed = 0x2545F4914F6CDD1Du64;
+        let mut next = move |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        for case in 0..600 {
+            let cols = 1 + next(6);
+            let rows = 1 + next(7);
+            let cell = |next: &mut dyn FnMut(usize) -> usize| {
+                let n = next(4);
+                (0..n).map(|_| PIECES[next(PIECES.len())]).collect::<Vec<_>>().join(if next(2) == 0 { "" } else { " " })
+            };
+            // Lignes irrégulières, sans `|` final une fois sur quatre.
+            let lines: Vec<String> = (0..rows)
+                .map(|_| {
+                    let n = 1 + next(cols);
+                    let body = (0..n).map(|_| format!(" {} ", cell(&mut next).trim())).collect::<Vec<_>>().join("|");
+                    format!("|{body}{}", if next(4) == 0 { "" } else { "|" })
+                })
+                .collect();
+            let (grid, _) = table(&lines.join("\n"));
+            let width = grid[0].len();
+            assert!(grid.iter().all(|row| row.len() == width), "cas {case}: {grid:?}");
+            let text = format_table(&grid, "");
+            // Même nombre de cellules sur chaque ligne, quel que soit le contenu.
+            for line in text.lines() {
+                assert_eq!(cells(line).len(), width, "cas {case}: {line}");
+            }
+            // Relu, le tableau écrit redonne les mêmes cellules, et le même texte.
+            let (again, added) = table(&text);
+            assert!(!added, "cas {case}");
+            // La ligne de tirets se relit à sa largeur d'écriture ; le reste à l'identique.
+            let data = |g: &[Vec<String>]| g.iter().enumerate().filter(|(i, _)| *i != 1).map(|(_, r)| r.clone()).collect::<Vec<_>>();
+            assert_eq!(data(&again), data(&grid), "cas {case}");
+            assert_eq!(format_table(&again, ""), text, "cas {case}");
+            // Collé depuis un autre tableau, il reste une grille de même forme.
+            let pasted = paste_grid(&text).unwrap();
+            assert_eq!(pasted.len(), grid.len() - 1, "cas {case}");
+            assert!(pasted.iter().all(|row| row.len() == width), "cas {case}");
+        }
+    }
+
+    #[test]
+    fn pasted_text_stays_in_its_cell() {
+        assert_eq!(cell_text("a|b"), r"a\|b");
+        assert_eq!(cell_text(r"a\|b"), r"a\|b");
+        assert_eq!(cell_text("une\r\n\r\n  deux  \n"), "une deux");
+        assert_eq!(cell_text("\tx\t"), "x");
+        assert_eq!(cell_text("a\tb"), "a b");
+        assert_eq!(paste_grid("texte\nsur deux lignes"), None);
+        assert_eq!(paste_grid("a|b"), None);
+        assert_eq!(paste_grid("a\tb\n\nc\t\n"), Some(vec![vec!["a".into(), "b".into()], vec!["c".into(), String::new()]]));
+        assert_eq!(paste_grid("1\t2\r\n3\t4"), Some(vec![vec!["1".into(), "2".into()], vec!["3".into(), "4".into()]]));
+        // Les tirets d'un tableau Markdown ne sont pas des données.
+        assert_eq!(paste_grid("| a | b |\n| :-- | --: |\n| c | d |").unwrap().len(), 2);
+        assert_eq!(paste_grid("| a | b |").unwrap(), vec![vec!["a".to_string(), "b".to_string()]]);
+        assert_eq!(paste_grid("a\t\"x|y\""), Some(vec![vec!["a".into(), "\"x\\|y\"".into()]]));
+    }
+
+    #[test]
+    fn pastes_tables_from_anywhere() {
+        let md = "| a | b |\n|:--|--:|\n| longue | 2 |";
+        assert_eq!(paste_table(md).unwrap(), "| a      | b   |\n| :----- | --: |\n| longue | 2   |");
+        // Des cellules de page web ou de tableur : la première ligne est l'en-tête.
+        assert_eq!(paste_table("Nom\tÂge\nLéa\t31").unwrap(), "| Nom | Âge |\n| --- | --- |\n| Léa | 31  |");
+        // Pas de colonnes, colonnes inégales, une seule ligne ou du code indenté : du texte.
+        assert_eq!(paste_table("a\nb"), None);
+        assert_eq!(paste_table("a\tb\nc"), None);
+        assert_eq!(paste_table("a\tb"), None);
+        assert_eq!(paste_table("| a | b |"), None);
+        assert_eq!(paste_table("\ta\n\tb"), None);
+    }
+
+    #[test]
+    fn aligns_by_display_width_and_stays_compact_when_wide() {
+        // Un idéogramme et un émoji prennent deux colonnes.
+        let (rows, _) = table("| a | b |\n| 日本 | 😀 |");
+        assert_eq!(format_table(&rows, ""), "| a    | b   |\n| ---- | --- |\n| 日本 | 😀  |");
+        // Trop large pour rester aligné : une seule espace autour de chaque cellule.
+        let long = "x".repeat(120);
+        let (rows, _) = table(&format!("| a | b |\n| {long} | c |"));
+        assert_eq!(format_table(&rows, ""), format!("| a | b |\n| --- | --- |\n| {long} | c |"));
+        // Réécrit, il ne bouge plus.
+        let once = format_table(&rows, "");
+        assert_eq!(format_table(&table(&once).0, ""), once);
+        let (rows, _) = table(&format!("| a | b |\n|:-:|--:|\n| {long} | c |"));
+        assert!(format_table(&rows, "").contains("| :-: | --: |"));
     }
 }
