@@ -1,10 +1,10 @@
 //! Coffre : un dossier de fichiers `.md`, plus la petite config de l'app.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env, fs,
     hash::{DefaultHasher, Hash, Hasher},
-    io,
+    io::{self, Write},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -119,11 +119,19 @@ pub fn is_image(path: &Path) -> bool {
         .is_some_and(|e| known.iter().any(|k| e.eq_ignore_ascii_case(k)))
 }
 
+/// Vrai la première fois qu'on entre dans ce dossier. Un lien symbolique qui remonte vers un
+/// dossier parent (ou deux liens vers le même) ne doit ni boucler ni dupliquer les notes.
+fn first_visit(visited: &mut HashSet<PathBuf>, dir: &Path) -> bool {
+    visited.insert(fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()))
+}
+
 /// Empreinte de l'état du coffre : les chemins de ses notes, images et dossiers,
 /// et la date de chaque note. Elle change dès qu'un autre programme y touche, sans
 /// qu'il faille lire un seul fichier.
 pub fn fingerprint(root: &Path) -> u64 {
     let mut seen = Vec::new();
+    let mut visited = HashSet::new();
+    first_visit(&mut visited, root);
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
         for entry in fs::read_dir(&dir).into_iter().flatten().flatten() {
@@ -132,8 +140,10 @@ pub fn fingerprint(root: &Path) -> u64 {
                 continue;
             }
             if path.is_dir() {
-                seen.push((path.clone(), None));
-                dirs.push(path);
+                if first_visit(&mut visited, &path) {
+                    seen.push((path.clone(), None));
+                    dirs.push(path);
+                }
             } else if path.extension().is_some_and(|e| e == "md") {
                 seen.push((path, entry.metadata().and_then(|m| m.modified()).ok()));
             } else if is_image(&path) {
@@ -225,6 +235,8 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
     let mut notes = Vec::new();
     let mut images = Vec::new();
     let mut found = Vec::new();
+    let mut visited = HashSet::new();
+    first_visit(&mut visited, root);
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
         let Ok(entries) = fs::read_dir(&dir) else {
@@ -236,8 +248,10 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
                 continue;
             }
             if path.is_dir() {
-                found.push(path.clone());
-                dirs.push(path);
+                if first_visit(&mut visited, &path) {
+                    found.push(path.clone());
+                    dirs.push(path);
+                }
             } else if path.extension().is_some_and(|e| e == "md") {
                 let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH);
                 let (tags, links, body) = match known.get(path.as_path()) {
@@ -352,7 +366,10 @@ pub fn save_image(dir: &Path, extension: &str, bytes: &[u8]) -> io::Result<Strin
 /// Écriture atomique : un crash ne laisse jamais une note tronquée.
 pub fn write(path: &Path, content: &str) -> io::Result<()> {
     let tmp = path.with_file_name(format!(".{}.tmp", stem(path)));
-    fs::write(&tmp, content)?;
+    let mut file = fs::File::create(&tmp)?;
+    file.write_all(content.as_bytes())?;
+    // Sans `fsync`, une coupure de courant peut laisser le renommage sans les données.
+    file.sync_all()?;
     fs::rename(&tmp, path)
 }
 
@@ -507,6 +524,25 @@ mod tests {
         // Hors du coffre ou sans chemin : dans le doute, on relit.
         assert!(matters(root, &Event::new(created).add_path("/ailleurs/.x".into())));
         assert!(matters(root, &Event::new(created)));
+    }
+
+    /// Un lien symbolique qui remonte au coffre, ou un second lien vers un dossier déjà
+    /// parcouru, ne boucle pas et ne duplique aucune note.
+    #[cfg(unix)]
+    #[test]
+    fn scan_survives_symlink_loops() {
+        let root = env::temp_dir().join(format!("bref-loop-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("a/b")).unwrap();
+        fs::write(root.join("a/b/Note.md"), "# Note\n").unwrap();
+        std::os::unix::fs::symlink(&root, root.join("a/b/loop")).unwrap();
+        std::os::unix::fs::symlink(root.join("a"), root.join("alias")).unwrap();
+        let (notes, dirs, _) = scan(&root);
+        assert_eq!(notes.len(), 1, "{:?}", notes.iter().map(|n| &n.path).collect::<Vec<_>>());
+        assert!(dirs.len() <= 3, "{dirs:?}");
+        // L'empreinte, elle aussi, se calcule sans boucler et ne bouge pas.
+        assert_eq!(fingerprint(&root), fingerprint(&root));
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
