@@ -44,7 +44,8 @@ fn api_url() -> String {
 pub fn check() -> Option<Release> {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let (at, known) = parse_state(&vault::load_file("update"));
-    let waiting_for_files = !known.version.is_empty() && known.asset.is_none() && asset_name().is_some();
+    let installable = asset_name().is_some();
+    let waiting_for_files = !known.version.is_empty() && known.asset.is_none() && installable;
     let latest = if at <= now && now - at < if waiting_for_files { HOUR } else { DAY } {
         known
     } else if let Some(found) = fetch() {
@@ -54,7 +55,14 @@ pub fn check() -> Option<Release> {
         // Hors ligne, ou sans `curl` : rien n'est noté, le prochain démarrage réessaie.
         known
     };
-    newer(env!("CARGO_PKG_VERSION"), &latest.version).then_some(latest)
+    newer(env!("CARGO_PKG_VERSION"), &latest.version).then(|| only_if_installable(latest, installable))
+}
+
+/// Le contrôle gardé dans le fichier `update` peut venir d'une autre installation de la même
+/// machine (le zip à côté de l'installeur, `bref-git` après le paquet) : son fichier à installer
+/// ne vaut que si celle-ci sait s'en servir.
+fn only_if_installable(release: Release, installable: bool) -> Release {
+    Release { asset: release.asset.filter(|_| installable), ..release }
 }
 
 /// Télécharge le fichier de la release et l'installe. `Ok` : le nouveau programme se
@@ -289,6 +297,13 @@ mod tests {
         // Réponse d'erreur ou charabia : rien.
         assert_eq!(release_of(r#"{"message": "Not Found"}"#, None), None);
         assert_eq!(release_of("<html>", None), None);
+    }
+
+    #[test]
+    fn keeps_the_file_only_for_an_installable_app() {
+        let found = Release { version: "0.2.0".into(), asset: Some("https://x/a.dmg".into()) };
+        assert_eq!(only_if_installable(found.clone(), true), found);
+        assert_eq!(only_if_installable(found, false), Release { version: "0.2.0".into(), asset: None });
     }
 
     #[test]
