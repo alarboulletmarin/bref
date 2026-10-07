@@ -2944,6 +2944,42 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
+    /// Frappes dans une grosse note, pour un profileur : `cargo test --release --locked -- --ignored profile_typing`.
+    #[gpui::test]
+    #[ignore]
+    fn profile_typing(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-profile-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
+            unsafe { std::env::set_var(key, root.join(".config")) };
+        }
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        // `BREF_PROFILE_LINES=n` : longueur de la note (5000 par défaut).
+        let lines = std::env::var("BREF_PROFILE_LINES").ok().and_then(|n| n.parse().ok()).unwrap_or(5000);
+        let big: String = if std::env::var("BREF_PROFILE_TABLE").is_ok() {
+            // Un tableau de `lines` lignes.
+            let rows: String = (0..lines)
+                .map(|j| format!("| Ligne {j} | texte moyen avec **gras** et `code` {j} | {}| [[Note {}]] | x | y |\n", "mot ".repeat(j % 30), j))
+                .collect();
+            format!("| A | B | C | D | E | F |\n| --- | --- | --- | --- | --- | --- |\n{rows}")
+        } else {
+            (0..lines).map(|j| format!("Ligne {j} avec **gras**, `code`, [[Note {}]] et #tag{} -> fin.\n", j % 2000, j % 12)).collect()
+        };
+        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load(format!("# Grosse\n\n{big}"), 100, cx)));
+        cx.run_until_parked();
+        for _ in 0..300 {
+            cx.simulate_input("a");
+            cx.run_until_parked();
+        }
+        fs::remove_dir_all(&root).unwrap();
+    }
+
     /// Temps par geste sur un gros coffre et une grosse note. Hors de la suite
     /// courante : `cargo test --release --locked -- --ignored --nocapture bench`.
     #[gpui::test]
@@ -3002,6 +3038,17 @@ mod tests {
             cx.simulate_input("mot ");
             cx.simulate_keystrokes("secondary-z");
         });
+        // Selon la longueur de la note : le prix d'une frappe est un prix fixe, plus un peu par ligne.
+        for lines in [300, 1000] {
+            let body: String = (0..lines).map(|j| format!("Ligne {j} avec **gras**, `code`, [[Note {}]] et #tag{} -> fin.\n", j % 2000, j % 12)).collect();
+            shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load(format!("# Note\n\n{body}"), 100, cx)));
+            cx.run_until_parked();
+            time(&format!("frappe dans une note de {lines} lignes"), cx, &|cx| cx.simulate_input("a"));
+        }
+        // Le même geste sur une note courte : ce qui reste est le prix fixe d'une frappe.
+        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load("# Courte\n\nun peu de texte\n".into(), 20, cx)));
+        cx.run_until_parked();
+        time("frappe dans une note courte", cx, &|cx| cx.simulate_input("a"));
         // Un grand tableau, dont les cellules passent à la ligne.
         let rows: String = (0..400)
             .map(|j| format!("| Ligne {j} | texte moyen avec **gras** et `code` {j} | {}| [[Note {}]] | x | y |\n", "mot ".repeat(j % 30), j))

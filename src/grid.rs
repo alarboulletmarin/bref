@@ -3,8 +3,7 @@
 //! seul le rendu change.
 
 use std::{
-    collections::HashMap,
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::{Hash, Hasher},
     ops::Range,
     rc::Rc,
 };
@@ -15,7 +14,7 @@ use gpui::{
 
 use crate::{
     Theme,
-    editor::{RunStyle, text_runs},
+    editor::{Fast, FastMap, RunStyle, text_runs},
     markdown as md,
 };
 
@@ -31,6 +30,8 @@ const NARROWEST: f32 = 36.;
 /// Texte d'une cellule mis en forme (sur une ligne, ou à la largeur de sa colonne).
 pub struct Shape {
     line: Option<WrappedLine>,
+    /// Largeur du plus long morceau insécable, mesurée quand le texte est sur une ligne.
+    narrow: Pixels,
     /// `\|` écrit, `|` affiché : (octet, longueur écrite, longueur affichée), comme
     /// pour les signes d'une ligne.
     subs: Vec<(usize, usize, usize)>,
@@ -40,13 +41,21 @@ pub struct Shape {
 /// ne changent pas : taper dans une cellule ne remet en forme que celles qui bougent.
 #[derive(Default)]
 pub struct Cache {
-    old: HashMap<u64, Rc<Shape>>,
-    new: HashMap<u64, Rc<Shape>>,
+    old: FastMap<u64, Rc<Shape>>,
+    new: FastMap<u64, Rc<Shape>>,
+    /// Les tableaux entiers, par empreinte de leur texte : un tableau qui ne change pas
+    /// (le curseur ou la page bougent) n'est pas remis en page.
+    tables_old: FastMap<u64, Tables>,
+    tables_new: FastMap<u64, Tables>,
 }
+
+/// Les lignes d'un tableau mises en page.
+pub type Tables = Rc<Vec<Option<Rc<TableRow>>>>;
 
 impl Cache {
     pub fn next_frame(&mut self) {
         self.old = std::mem::take(&mut self.new);
+        self.tables_old = std::mem::take(&mut self.tables_new);
     }
 
     fn shape(&mut self, key: u64, make: impl FnOnce() -> Shape) -> Rc<Shape> {
@@ -176,6 +185,7 @@ pub fn column_widths(narrow: &[f32], wide: &[f32], avail: f32) -> Vec<f32> {
 }
 
 /// Une cellule : son contenu dans la ligne et son texte mis en forme.
+#[derive(Clone)]
 pub struct Cell {
     /// Contenu, sans les espaces autour (octets de la ligne) ; vide au bout de la ligne
     /// pour une colonne qu'elle n'a pas.
@@ -253,6 +263,7 @@ impl Cell {
 }
 
 /// Une ligne du tableau. Les rangées sont des lignes du texte : les octets sont ceux de la ligne.
+#[derive(Clone)]
 pub struct TableRow {
     pub cells: Vec<Cell>,
     /// Abscisse des traits verticaux, depuis le bord gauche de la page : un de plus que de colonnes.
@@ -374,7 +385,7 @@ impl TableRow {
 
 /// Un morceau du texte à mettre en forme.
 fn key(text: &str, wrap: Option<Pixels>, bold: bool, marked: &Option<Range<usize>>, look: &Look) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = Fast::default();
     (text, wrap.map(|w| f32::from(w).to_bits()), bold, marked, look.style, f32::from(font_size(look.theme)).to_bits()).hash(&mut hasher);
     hasher.finish()
 }
@@ -389,7 +400,7 @@ fn shape(
     look: &Look,
 ) -> Shape {
     if text.is_empty() {
-        return Shape { line: None, subs: Vec::new() };
+        return Shape { line: None, narrow: px(0.), subs: Vec::new() };
     }
     let mut flags = vec![0u16; text.len()];
     md::inline(text, 0, &mut flags);
@@ -426,7 +437,8 @@ fn shape(
         .shape_text(shown_text.into(), font_size(look.theme), &runs, wrap, None)
         .ok()
         .and_then(|lines| lines.into_iter().next());
-    Shape { line, subs }
+    let narrow = line.as_ref().filter(|_| wrap.is_none()).map_or(px(0.), longest);
+    Shape { line, narrow, subs }
 }
 
 /// Alignement demandé par une cellule de la ligne de tirets : `:--`, `:-:` ou `--:`.
@@ -442,6 +454,33 @@ fn align_of(dashes: &str) -> TextAlign {
 /// du tableau. `None` : la ligne de tirets, quand le curseur y est ; elle s'affiche
 /// alors comme du texte. Sinon elle est masquée.
 pub fn build(
+    cache: &mut Cache,
+    text_system: &WindowTextSystem,
+    look: &Look,
+    width: Pixels,
+    lines: &[(usize, &str)],
+    cursor: usize,
+    marked: Option<&Range<usize>>,
+) -> Tables {
+    // Ce dont la mise en page dépend : le texte, la largeur, le thème, la ligne de tirets
+    // quand le curseur y est, et le texte en cours de composition quand il touche le tableau.
+    let touched = lines.get(1).is_some_and(|&(at, line)| (at..=at + line.len()).contains(&cursor));
+    let (first, last) = (lines[0].0, lines[lines.len() - 1]);
+    let composing = marked.filter(|m| m.start <= last.0 + last.1.len() && m.end >= first);
+    let mut hasher = Fast::default();
+    (look.style, f32::from(width).to_bits(), touched, composing.map(|m| (m.start - first.min(m.start), m.end)), lines.len()).hash(&mut hasher);
+    lines.iter().for_each(|(at, line)| (composing.is_some().then_some(at - first), line).hash(&mut hasher));
+    let key = hasher.finish();
+    if let Some(rows) = cache.tables_old.remove(&key).or_else(|| cache.tables_new.get(&key).cloned()) {
+        cache.tables_new.insert(key, rows.clone());
+        return rows;
+    }
+    let rows: Tables = Rc::new(rows(cache, text_system, look, width, lines, cursor, marked).into_iter().map(|r| r.map(Rc::new)).collect());
+    cache.tables_new.insert(key, rows.clone());
+    rows
+}
+
+fn rows(
     cache: &mut Cache,
     text_system: &WindowTextSystem,
     look: &Look,
@@ -474,7 +513,7 @@ pub fn build(
             if let Some(line) = &one.line {
                 alone[r][c] = line.unwrapped_layout.width;
                 wide[c] = wide[c].max(f32::from(alone[r][c]));
-                narrow[c] = narrow[c].max(f32::from(longest(line)));
+                narrow[c] = narrow[c].max(f32::from(one.narrow));
             }
         }
     }

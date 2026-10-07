@@ -5,7 +5,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, VecDeque},
     fs,
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::{BuildHasherDefault, Hash, Hasher},
     ops::Range,
     path::PathBuf,
     rc::Rc,
@@ -185,7 +185,7 @@ struct Row {
     /// Ligne de tableau plus large que la page : de combien son texte est décalé vers la gauche.
     dx: Pixels,
     /// Ligne de tableau affichée en grille : ses cellules, qui passent à la ligne.
-    grid: Option<TableRow>,
+    grid: Option<Rc<TableRow>>,
 }
 
 impl Row {
@@ -244,7 +244,7 @@ impl Row {
 
     /// Ligne de tirets d'un tableau, qu'on ne voit pas.
     fn hidden(&self) -> bool {
-        self.grid.as_ref().is_some_and(TableRow::hidden)
+        self.grid.as_ref().is_some_and(|g| g.hidden())
     }
 
     /// Largeur de ce qui est dessiné.
@@ -298,6 +298,64 @@ impl History {
     }
 }
 
+/// Empreinte rapide (FxHash, brassée à la fin) : chaque ligne de la note est hachée à chaque
+/// image, et SipHash, celui de la bibliothèque standard, y passait un tiers du temps. Les
+/// clés ne viennent que de la note : pas besoin de résister à qui les choisirait.
+#[derive(Default)]
+pub struct Fast(u64);
+
+impl Fast {
+    fn add(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl Hasher for Fast {
+    fn write(&mut self, bytes: &[u8]) {
+        let mut words = bytes.chunks_exact(8);
+        for word in &mut words {
+            self.add(u64::from_le_bytes(word.try_into().unwrap()));
+        }
+        let rest = words.remainder();
+        let mut last = [0u8; 8];
+        last[..rest.len()].copy_from_slice(rest);
+        self.add(u64::from_le_bytes(last) ^ (rest.len() as u64) << 56);
+    }
+
+    fn write_u64(&mut self, n: u64) {
+        self.add(n);
+    }
+
+    fn write_usize(&mut self, n: usize) {
+        self.add(n as u64);
+    }
+
+    fn finish(&self) -> u64 {
+        let mut h = self.0;
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xff51_afd7_ed55_8ccd);
+        h ^ (h >> 33)
+    }
+}
+
+/// La mise en forme de la ligne d'empreinte `id`, reprise de celles gardées, ou faite par `make`.
+fn cached_shape(
+    map: &mut FastMap<u64, (Rc<Shaped>, u32)>,
+    id: u64,
+    frame: u32,
+    make: impl FnOnce() -> Rc<Shaped>,
+) -> Rc<Shaped> {
+    if let Some((shape, used)) = map.get_mut(&id) {
+        *used = frame;
+        return shape.clone();
+    }
+    let shape = make();
+    map.insert(id, (shape.clone(), frame));
+    shape
+}
+
+pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<Fast>>;
+
 /// Ce qu'une ligne affiche, tant que ni elle ni son contexte ne changent.
 struct Shaped {
     line: Option<WrappedLine>,
@@ -316,8 +374,8 @@ type Drawing = Option<(Arc<Image>, Size<Pixels>)>;
 /// La figure de clé `key`, reprise de la frame précédente ou dessinée par `make` ;
 /// si `lazy`, seulement reprise.
 fn cached(
-    old: &mut HashMap<u64, Drawing>,
-    kept: &mut HashMap<u64, Drawing>,
+    old: &mut FastMap<u64, Drawing>,
+    kept: &mut FastMap<u64, Drawing>,
     key: u64,
     lazy: bool,
     make: impl FnOnce() -> Option<figure::Figure>,
@@ -422,10 +480,12 @@ pub struct Editor {
     /// Zones des boutons de copie, par début de ligne : elles portent le curseur en main.
     copy_hitboxes: Vec<(usize, Hitbox)>,
     /// Diagrammes et formules de la dernière frame, par empreinte de leur source.
-    figures: HashMap<u64, Drawing>,
+    figures: FastMap<u64, Drawing>,
     /// Lignes mises en forme à la dernière frame, par empreinte de leur texte et
     /// de leur contexte.
-    shaped: HashMap<u64, Rc<Shaped>>,
+    shaped: FastMap<u64, (Rc<Shaped>, u32)>,
+    /// Numéro de la dernière mise en page : une ligne y est marquée quand elle sert.
+    frame: u32,
     /// Cellules des tableaux mises en forme à la dernière frame.
     cells: grid::Cache,
     ac_index: usize,
@@ -484,8 +544,9 @@ impl Editor {
             copied: None,
             hover: None,
             copy_hitboxes: Vec::new(),
-            figures: HashMap::new(),
-            shaped: HashMap::new(),
+            figures: FastMap::default(),
+            shaped: FastMap::default(),
+            frame: 0,
             cells: grid::Cache::default(),
             ac_index: 0,
             ac_dismissed: None,
@@ -1825,7 +1886,11 @@ impl Editor {
         // Un ``` sans clôture n'ouvre pas de bloc : sinon chaque ``` tapé ferait
         // basculer en code, donc remettre en forme, toute la suite de la note. S'il
         // y en a un de trop, c'est celui qu'on est en train de taper, sinon le dernier.
-        let mut fences = self.content.split('\n').filter(|l| md::is_fence(l)).count();
+        let (mut fences, mut dollars) = (0, 0);
+        for l in self.content.split('\n') {
+            fences += md::is_fence(l) as usize;
+            dollars += (l.trim() == "$$") as usize;
+        }
         let typed = self.line_range(cursor);
         let orphan = (fences % 2 == 1 && md::is_fence(&self.content[typed.clone()]))
             .then_some(typed.start);
@@ -1855,31 +1920,31 @@ impl Editor {
             font: sans().to_string(),
         };
         let key = |kind: u8, source: &str| {
-            let mut hasher = DefaultHasher::new();
+            let mut hasher = Fast::default();
             (kind, source, &look.bg, &look.fill, &look.text, &look.line, &look.font, t.size.to_bits())
                 .hash(&mut hasher);
             hasher.finish()
         };
         let style = {
-            let mut hasher = DefaultHasher::new();
+            let mut hasher = Fast::default();
             (key(0, ""), hex(t.accent), mono(), has_unequal).hash(&mut hasher);
             hasher.finish()
         };
         let mut cells = std::mem::take(&mut self.cells);
         cells.next_frame();
         // Lignes d'un tableau déjà mises en page, en attente de leur tour dans la boucle.
-        let mut pending: VecDeque<Option<TableRow>> = VecDeque::new();
+        let mut pending: VecDeque<Option<Rc<TableRow>>> = VecDeque::new();
         let empty = Rc::new(Shaped { line: None, subs: Vec::new(), formula: None, picture: None });
-        let mut stale = std::mem::take(&mut self.shaped);
-        let mut shaped = HashMap::new();
+        let mut shaped = std::mem::take(&mut self.shaped);
+        self.frame = self.frame.wrapping_add(1);
+        let frame = self.frame;
         let mut old = std::mem::take(&mut self.figures);
-        let mut kept = HashMap::new();
+        let mut kept = FastMap::default();
         // Bloc Mermaid ou `$$` en cours : son début et son source.
         let mut block: Option<(usize, String)> = None;
-        let mut dollars = self.content.split('\n').filter(|l| l.trim() == "$$").count();
         let width = (bounds.size.width - px(48.)).min(MAX_WIDTH).max(px(120.));
         let marked = self.marked.clone();
-        let mut rows = Vec::new();
+        let mut rows = Vec::with_capacity(self.rows.len() + 16);
         let mut y = px(0.);
         let mut offset = 0;
         let mut in_code = false;
@@ -1965,7 +2030,7 @@ impl Editor {
                     })
                     .collect();
                 let look = grid::Look { theme: &t, style };
-                pending = grid::build(&mut cells, &text_system, &look, width, &block, cursor, marked.as_ref()).into();
+                pending = grid::build(&mut cells, &text_system, &look, width, &block, cursor, marked.as_ref()).iter().cloned().collect();
             }
             let grid_row = if kind == Kind::Table { pending.pop_front().flatten() } else { None };
             if kind != Kind::Table && after_table && let Some(last) = last {
@@ -1991,13 +2056,13 @@ impl Editor {
             let id = {
                 let near = composed.as_ref().map(|m| (m.start.wrapping_sub(offset), m.end.wrapping_sub(offset)));
                 let lang = (kind == Kind::Code).then_some(&lang);
-                let mut hasher = DefaultHasher::new();
+                let mut hasher = Fast::default();
                 (style, line, kind, marker, math, lang, has_cursor, near, f32::from(width).to_bits(), header, tinted)
                     .hash(&mut hasher);
                 hasher.finish()
             };
             let lh = (font_size * 1.65).round();
-            let made = if grid_row.is_some() { empty.clone() } else { stale.remove(&id).or_else(|| shaped.get(&id).cloned()).unwrap_or_else(|| {
+            let made = if grid_row.is_some() { empty.clone() } else { cached_shape(&mut shaped, id, frame, || {
                 let mut formula = None;
                 let mut flags = vec![0u16; line.len()];
                 let list = matches!(kind, Kind::Bullet | Kind::Ordered | Kind::Task(_));
@@ -2084,9 +2149,6 @@ impl Editor {
                     .and_then(|lines| lines.into_iter().next());
                 Rc::new(Shaped { line, subs, formula, picture })
             }) };
-            if grid_row.is_none() {
-                shaped.insert(id, made.clone());
-            }
             if let Some((source, display)) = &made.formula {
                 drawing = cached(&mut old, &mut kept, key(1 + *display as u8, source), false, || {
                     figure::latex(source, *display, rgb(t.text), t.size * MATH_SCALE)
@@ -2169,6 +2231,10 @@ impl Editor {
         }
         self.rows = rows;
         self.figures = kept;
+        // Les lignes qui ne servent plus (supprimées, modifiées) partent quand elles dépassent la note.
+        if shaped.len() > self.rows.len() * 2 + 256 {
+            shaped.retain(|_, (_, used)| *used == frame);
+        }
         self.shaped = shaped;
         self.cells = cells;
 

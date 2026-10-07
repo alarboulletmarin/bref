@@ -700,27 +700,38 @@ const ALIGNED: usize = 100;
 
 /// Le tableau écrit en Markdown, colonnes alignées tant qu'il tient dans `ALIGNED`.
 pub fn format_table(rows: &[Vec<String>], indent: &str) -> String {
-    let wide = |c: usize| {
-        let cells = rows.iter().enumerate().filter(|(i, _)| *i != 1);
-        cells.map(|(_, row)| columns(&row[c])).max().unwrap_or(0).max(3)
-    };
-    let mut widths: Vec<usize> = (0..rows.first().map_or(0, Vec::len)).map(wide).collect();
+    // La largeur de chaque cellule, comptée une fois.
+    let shown: Vec<Vec<usize>> = rows.iter().map(|row| row.iter().map(|cell| columns(cell)).collect()).collect();
+    let cols = rows.first().map_or(0, Vec::len);
+    let mut widths: Vec<usize> = (0..cols)
+        .map(|c| shown.iter().enumerate().filter(|(i, _)| *i != 1).map(|(_, row)| row[c]).max().unwrap_or(0).max(3))
+        .collect();
     if widths.iter().map(|w| w + 3).sum::<usize>() + 1 > ALIGNED {
         widths.fill(0);
     }
-    let lines = rows.iter().enumerate().map(|(i, row)| {
-        let cells = row.iter().zip(&widths).map(|(cell, &w)| match i {
-            // Les deux-points d'alignement restent aux bouts des tirets.
-            1 => {
+    let mut text = String::with_capacity(rows.len() * (indent.len() + widths.iter().sum::<usize>() + 3 * cols + 2));
+    for (i, row) in rows.iter().enumerate() {
+        if i > 0 {
+            text.push('\n');
+        }
+        text.push_str(indent);
+        text.push('|');
+        for (c, cell) in row.iter().enumerate() {
+            text.push(' ');
+            if i == 1 {
+                // Les deux-points d'alignement restent aux bouts des tirets.
                 let (left, right) = (cell.starts_with(':'), cell.len() > 1 && cell.ends_with(':'));
-                let dashes = "-".repeat(w.max(3) - left as usize - right as usize);
-                format!(" {}{dashes}{} |", if left { ":" } else { "" }, if right { ":" } else { "" })
+                text.push_str(if left { ":" } else { "" });
+                text.extend(std::iter::repeat_n('-', widths[c].max(3) - left as usize - right as usize));
+                text.push_str(if right { ":" } else { "" });
+            } else {
+                text.push_str(cell);
+                text.extend(std::iter::repeat_n(' ', widths[c].saturating_sub(shown[i][c])));
             }
-            _ => format!(" {cell}{} |", " ".repeat(w.saturating_sub(columns(cell)))),
-        });
-        format!("{indent}|{}", cells.collect::<String>())
-    });
-    lines.collect::<Vec<_>>().join("\n")
+            text.push_str(" |");
+        }
+    }
+    text
 }
 
 #[cfg(test)]
