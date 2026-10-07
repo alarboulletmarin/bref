@@ -193,11 +193,7 @@ In the palette, type to search; `Enter` opens the selected note. Notes whose nam
 | `Ctrl + A` `C` `X` `V` | select all, copy, cut, paste |
 | Double click, triple click | select a word, a line; keep dragging to extend by words, by lines |
 
-![The shortcut panel](docs/screenshots/help.png)
-
 ## Navigation
-
-![The graph next to a note](docs/screenshots/navigation.png)
 
 A rail of icons stays on the left of the window. It opens a panel beside the note, in one of four views:
 
