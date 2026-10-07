@@ -484,7 +484,7 @@ impl Shell {
     /// Télécharge et installe la version trouvée, puis quitte : le nouveau programme se
     /// relance de lui-même. Un échec laisse l'app telle qu'elle est, avec son message.
     fn install_update(&mut self, cx: &mut Context<Self>) {
-        let Some(url) = self.update.as_ref().and_then(|r| r.asset.clone()) else {
+        let Some((url, sha256)) = self.update.as_ref().and_then(|r| Some((r.asset.clone()?, r.sha256.clone()))) else {
             return;
         };
         if self.updating {
@@ -494,7 +494,7 @@ impl Shell {
         self.error = None;
         cx.notify();
         cx.spawn(async move |this, cx| {
-            let result = cx.background_executor().spawn(async move { update::install(&url) }).await;
+            let result = cx.background_executor().spawn(async move { update::install(&url, sha256.as_deref()) }).await;
             this.update(cx, |this, cx| match result {
                 // La sortie enregistre la note en cours (`on_app_quit`).
                 Ok(()) => cx.quit(),
@@ -2078,7 +2078,7 @@ mod tests {
         assert_eq!(text(cx), "# Courses\n\n- lait #maison\n");
 
         // Mises à jour : la palette coupe la recherche (et la bannière), puis la rétablit.
-        shell.update(cx, |s, _| s.update = Some(update::Release { version: "9.9.9".into(), asset: None }));
+        shell.update(cx, |s, _| s.update = Some(update::Release { version: "9.9.9".into(), ..Default::default() }));
         cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("mises à jour");
         cx.simulate_keystrokes("down enter");
@@ -2092,7 +2092,7 @@ mod tests {
 
         // Installer la nouvelle version : la palette le propose quand l'app sait le faire seule.
         // Les tests n'installent rien : l'échec laisse l'app en place, avec son message.
-        let release = update::Release { version: "9.9.9".into(), asset: Some("file:///absent".into()) };
+        let release = update::Release { version: "9.9.9".into(), asset: Some("file:///absent".into()), ..Default::default() };
         shell.update(cx, |s, _| s.update = Some(release));
         cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("mettre à jour");

@@ -4,12 +4,16 @@
 
 use std::{
     ffi::OsStr,
-    path::Path,
+    fs::{DirBuilder, File},
+    io,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::vault;
+use sha2::{Digest, Sha256};
+
+use crate::{tr, vault};
 
 const DAY: u64 = 24 * 3600;
 /// Les fichiers d'une release arrivent un quart d'heure après elle : on revérifie plus tôt.
@@ -22,6 +26,8 @@ pub struct Release {
     /// Adresse du fichier à installer pour ce système et cette installation ; `None` si l'app
     /// ne peut pas se mettre à jour seule (ou si le fichier n'est pas encore publié).
     pub asset: Option<String>,
+    /// Somme SHA-256 (hexadécimale) de ce fichier, telle que GitHub la publie avec la release.
+    pub sha256: Option<String>,
 }
 
 /// Page où télécharger la dernière version.
@@ -36,6 +42,25 @@ fn api_url() -> String {
         let repo = env!("CARGO_PKG_REPOSITORY").replace("https://github.com/", "https://api.github.com/repos/");
         format!("{repo}/releases/latest")
     })
+}
+
+/// `BREF_RELEASES_API` est un réglage d'essai : il lève les contrôles de l'adresse et de la somme.
+fn overridden() -> bool {
+    std::env::var_os("BREF_RELEASES_API").is_some()
+}
+
+/// Le fichier à installer ne vient que des releases de ce dépôt, et en HTTPS de bout en bout
+/// (`curl` suit les redirections : sans `--proto-redir`, une adresse `http://` passerait).
+fn trusted(url: &str) -> bool {
+    url.strip_prefix(env!("CARGO_PKG_REPOSITORY")).is_some_and(|rest| rest.starts_with("/releases/download/"))
+}
+
+fn curl() -> Command {
+    let mut curl = command("curl");
+    if !overridden() {
+        curl.args(["--proto", "=https", "--proto-redir", "=https"]);
+    }
+    curl
 }
 
 /// Version plus récente que celle qui tourne, si GitHub en connaît une. Le résultat du
@@ -62,30 +87,73 @@ pub fn check() -> Option<Release> {
 /// machine (le zip à côté de l'installeur, `bref-git` après le paquet) : son fichier à installer
 /// ne vaut que si celle-ci sait s'en servir.
 fn only_if_installable(release: Release, installable: bool) -> Release {
-    Release { asset: release.asset.filter(|_| installable), ..release }
+    if installable { release } else { Release { asset: None, sha256: None, ..release } }
 }
 
-/// Télécharge le fichier de la release et l'installe. `Ok` : le nouveau programme se
-/// relance de lui-même, l'app peut quitter. Bloquant : à lancer hors du thread UI.
-pub fn install(url: &str) -> Result<(), String> {
+/// Télécharge le fichier de la release, vérifie sa somme et l'installe. `Ok` : le nouveau
+/// programme se relance de lui-même, l'app peut quitter. Bloquant : à lancer hors du thread UI.
+pub fn install(url: &str, sha256: Option<&str>) -> Result<(), String> {
     // Les tests ne sortent pas sur le réseau et n'installent rien.
     if cfg!(test) {
         return Err("no installation in tests".into());
     }
-    let dir = std::env::temp_dir().join("bref-update");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    if !overridden() {
+        if !trusted(url) {
+            return Err(tr("untrusted download address", "adresse de téléchargement non fiable").into());
+        }
+        if sha256.is_none() {
+            return Err(tr("this release publishes no checksum", "cette version ne publie pas de somme de contrôle").into());
+        }
+    }
+    let dir = private_dir().map_err(|e| e.to_string())?;
     let name = url.rsplit('/').next().filter(|n| !n.is_empty()).unwrap_or("bref-update");
     let file = dir.join(name);
-    run(command("curl").args(["-fL", "--max-time", "900", "-A", "bref", "-o"]).arg(&file).arg(url))?;
-    apply(&file)
+    let installed = run(curl().args(["-fL", "--max-time", "900", "-A", "bref", "-o"]).arg(&file).arg(url))
+        .and_then(|()| sha256.map_or(Ok(()), |expected| verify(&file, expected)))
+        .and_then(|()| apply(&file));
+    // Un fichier refusé ou dont l'installation a échoué ne reste pas dans le dossier temporaire ;
+    // après un succès, il y reste : l'installeur le lit encore quand l'app a quitté.
+    if installed.is_err() {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    installed
+}
+
+/// Un dossier neuf, à nous seuls (`0700`), dans le dossier temporaire. Le nom n'est pas
+/// prévisible et la création échoue s'il existe : sous Linux, `/tmp` est partagé, et un
+/// autre utilisateur pourrait sinon remplacer le fichier avant que `pkexec` l'installe.
+fn private_dir() -> io::Result<PathBuf> {
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
+    for n in 0..100 {
+        let dir = std::env::temp_dir().join(format!("bref-update-{}-{stamp:x}-{n}", std::process::id()));
+        let mut builder = DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        match builder.create(&dir) {
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            made => return made.map(|()| dir),
+        }
+    }
+    Err(io::Error::new(io::ErrorKind::AlreadyExists, tr("no free folder", "aucun dossier libre")))
+}
+
+/// La somme SHA-256 du fichier téléchargé est celle que GitHub a publiée.
+fn verify(file: &Path, expected: &str) -> Result<(), String> {
+    let mut hasher = Sha256::new();
+    io::copy(&mut File::open(file).map_err(|e| e.to_string())?, &mut hasher).map_err(|e| e.to_string())?;
+    if format!("{:x}", hasher.finalize()).eq_ignore_ascii_case(expected) {
+        Ok(())
+    } else {
+        Err(tr("the download does not match its checksum", "le fichier téléchargé ne correspond pas à sa somme de contrôle").into())
+    }
 }
 
 // ponytail: `curl` (livré avec macOS, Windows 10 et la plupart des Linux) plutôt qu'une
 // bibliothèque HTTP et TLS en dépendance ; sans lui, l'app ne signale simplement rien.
-// Aucune somme de contrôle ni signature : on fait confiance à HTTPS et au compte GitHub,
-// comme pour un téléchargement à la main. Signer les versions (clé minisign) si l'app grandit.
+// Le fichier est vérifié par la somme SHA-256 que GitHub publie avec la release : elle protège
+// le téléchargement, pas le compte GitHub lui-même. Signer les versions (clé minisign) si l'app grandit.
 fn fetch() -> Option<Release> {
-    let out = command("curl")
+    let out = curl()
         .args(["-fsSL", "--max-time", "10", "-A", "bref", "-H", "Accept: application/vnd.github+json"])
         .arg(api_url())
         .stdin(Stdio::null())
@@ -242,15 +310,13 @@ fn release_of(json: &str, asset: Option<&str>) -> Option<Release> {
         return None;
     }
     let version = release["tag_name"].as_str()?.trim_start_matches('v').to_string();
-    let asset = asset.and_then(|name| {
-        release["assets"]
-            .as_array()?
-            .iter()
-            .find(|a| a["name"] == name)
-            .and_then(|a| a["browser_download_url"].as_str())
-            .map(String::from)
-    });
-    Some(Release { version, asset })
+    let found = asset.and_then(|name| release["assets"].as_array()?.iter().find(|a| a["name"] == name));
+    let text = |key| found.and_then(|a| a[key].as_str());
+    Some(Release {
+        version,
+        asset: text("browser_download_url").map(String::from),
+        sha256: text("digest").and_then(|d| d.strip_prefix("sha256:")).map(String::from),
+    })
 }
 
 /// `latest` est un numéro `X.Y.Z` strictement plus grand que `current`.
@@ -263,17 +329,19 @@ fn newer(current: &str, latest: &str) -> bool {
 }
 
 /// Contenu du fichier `update` : l'heure du dernier contrôle (secondes depuis 1970), la
-/// version trouvée, puis l'adresse de son fichier. Illisible ou absent : jamais contrôlé.
+/// version trouvée, l'adresse de son fichier, puis sa somme. Illisible ou absent : jamais contrôlé.
 fn parse_state(text: &str) -> (u64, Release) {
     let mut lines = text.lines().map(str::trim);
     let at = lines.next().and_then(|l| l.parse().ok()).unwrap_or(0);
     let version = lines.next().unwrap_or_default().to_string();
-    let asset = lines.next().filter(|l| !l.is_empty()).map(String::from);
-    (at, Release { version, asset })
+    let mut optional = || lines.next().filter(|l| !l.is_empty()).map(String::from);
+    let (asset, sha256) = (optional(), optional());
+    (at, Release { version, asset, sha256 })
 }
 
 fn state_text(at: u64, release: &Release) -> String {
-    format!("{at}\n{}\n{}\n", release.version, release.asset.as_deref().unwrap_or_default())
+    let text = |value: &Option<String>| value.clone().unwrap_or_default();
+    format!("{at}\n{}\n{}\n{}\n", release.version, text(&release.asset), text(&release.sha256))
 }
 
 #[cfg(test)]
@@ -282,13 +350,17 @@ mod tests {
 
     const JSON: &str = r#"{"tag_name": "v0.2.0", "draft": false, "prerelease": false, "assets": [
         {"name": "bref-x86_64.pkg.tar.zst", "browser_download_url": "https://x/bref-x86_64.pkg.tar.zst"},
-        {"name": "bref-macos.dmg", "browser_download_url": "https://x/bref-macos.dmg"}]}"#;
+        {"name": "bref-macos.dmg", "browser_download_url": "https://x/bref-macos.dmg", "digest": "sha256:ab12"}]}"#;
 
     #[test]
     fn reads_the_published_release() {
         let release = |asset| release_of(JSON, asset).unwrap();
-        assert_eq!(release(None), Release { version: "0.2.0".into(), asset: None });
-        assert_eq!(release(Some("bref-macos.dmg")).asset.as_deref(), Some("https://x/bref-macos.dmg"));
+        assert_eq!(release(None), Release { version: "0.2.0".into(), ..Default::default() });
+        let dmg = release(Some("bref-macos.dmg"));
+        assert_eq!(dmg.asset.as_deref(), Some("https://x/bref-macos.dmg"));
+        assert_eq!(dmg.sha256.as_deref(), Some("ab12"));
+        // Pas de somme publiée : rien à comparer, l'installation sera refusée.
+        assert_eq!(release(Some("bref-x86_64.pkg.tar.zst")).sha256, None);
         // Le fichier de ce système n'est pas (encore) publié.
         assert_eq!(release(Some("bref-windows-x86_64-setup.exe")).asset, None);
         assert_eq!(release_of(r#"{"tag_name": "0.3.1"}"#, Some("a")).unwrap().version, "0.3.1");
@@ -301,9 +373,44 @@ mod tests {
 
     #[test]
     fn keeps_the_file_only_for_an_installable_app() {
-        let found = Release { version: "0.2.0".into(), asset: Some("https://x/a.dmg".into()) };
+        let found = Release { version: "0.2.0".into(), asset: Some("https://x/a.dmg".into()), sha256: Some("ab12".into()) };
         assert_eq!(only_if_installable(found.clone(), true), found);
-        assert_eq!(only_if_installable(found, false), Release { version: "0.2.0".into(), asset: None });
+        assert_eq!(only_if_installable(found, false), Release { version: "0.2.0".into(), ..Default::default() });
+    }
+
+    #[test]
+    fn only_trusts_release_files_of_this_repository() {
+        let repo = env!("CARGO_PKG_REPOSITORY");
+        assert!(trusted(&format!("{repo}/releases/download/v0.2.2/bref-macos.dmg")));
+        assert!(!trusted("http://github.com/alarboulletmarin/bref/releases/download/v1/a"));
+        assert!(!trusted(&format!("{repo}-evil/releases/download/v1/a")));
+        assert!(!trusted("https://github.com/autre/bref/releases/download/v1/a"));
+        assert!(!trusted("file:///tmp/a.pkg.tar.zst"));
+    }
+
+    #[test]
+    fn refuses_a_download_that_does_not_match_its_checksum() {
+        let dir = private_dir().unwrap();
+        let file = dir.join("a");
+        std::fs::write(&file, "abc").unwrap();
+        // SHA-256 de « abc ».
+        let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert!(verify(&file, abc).is_ok());
+        assert!(verify(&file, &abc.to_uppercase()).is_ok());
+        assert!(verify(&file, "00").is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Le dossier de téléchargement est neuf et fermé aux autres utilisateurs.
+    #[cfg(unix)]
+    #[test]
+    fn downloads_into_a_private_folder() {
+        use std::os::unix::fs::PermissionsExt;
+        let (a, b) = (private_dir().unwrap(), private_dir().unwrap());
+        assert_ne!(a, b);
+        assert_eq!(std::fs::metadata(&a).unwrap().permissions().mode() & 0o777, 0o700);
+        std::fs::remove_dir_all(&a).unwrap();
+        std::fs::remove_dir_all(&b).unwrap();
     }
 
     #[test]
@@ -319,9 +426,9 @@ mod tests {
 
     #[test]
     fn reads_the_saved_check() {
-        let found = Release { version: "0.2.0".into(), asset: Some("https://x/a.dmg".into()) };
+        let found = Release { version: "0.2.0".into(), asset: Some("https://x/a.dmg".into()), sha256: Some("ab12".into()) };
         assert_eq!(parse_state(&state_text(1_730_000_000, &found)), (1_730_000_000, found));
-        let bare = Release { version: "0.2.0".into(), asset: None };
+        let bare = Release { version: "0.2.0".into(), ..Default::default() };
         assert_eq!(parse_state(&state_text(5, &bare)), (5, bare));
         // L'ancien format (sans adresse), puis vide ou illisible : jamais contrôlé.
         assert_eq!(parse_state("1730000000\n0.2.0\n").1.version, "0.2.0");

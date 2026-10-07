@@ -18,6 +18,8 @@ notify = "7"
 resvg = { version = "0.45.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 roxmltree = "0.20.0"
 serde_json = "1.0.145"
+# Déjà tirée par gpui, à la même version : somme de contrôle de la mise à jour.
+sha2 = "0.10.9"
 unicode-segmentation = "1.13.3"
 unicode-width = "0.2.2"
 
