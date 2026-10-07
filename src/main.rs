@@ -18,10 +18,7 @@ use std::{
     borrow::Cow,
     fs,
     path::{Path, PathBuf},
-    sync::{
-        Arc, OnceLock, RwLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, OnceLock, RwLock},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -535,16 +532,22 @@ impl Shell {
     // Les tests n'installent pas de surveillance : leur horloge est simulée.
     fn watch(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
-            let changed = Arc::new(AtomicBool::new(false));
+            let changed = Arc::new(vault::Signal::default());
             let mut watched: Option<(PathBuf, Option<notify::RecommendedWatcher>)> = None;
             let mut last = None;
             let mut pause = Duration::from_secs(2);
-            // Tours de 100 ms écoulés depuis la dernière relecture, et tours entre deux contrôles.
-            let mut idle = 0u32;
-            let mut check_every = 300u32;
+            // Prochain contrôle de la surveillance.
+            let mut next_check = Instant::now();
             loop {
                 let live = watched.as_ref().is_some_and(|(_, w)| w.is_some());
-                cx.background_executor().timer(if live { Duration::from_millis(100) } else { pause }).await;
+                // Avec la surveillance, la tâche dort jusqu'au signal du système ; elle se réveille
+                // quand même toutes les 2 s pour voir si on a changé de coffre.
+                let notified = if live {
+                    changed.wait(cx.background_executor().timer(Duration::from_secs(2))).await
+                } else {
+                    cx.background_executor().timer(pause).await;
+                    false
+                };
                 let Ok(state) = this.update(cx, |this, _| this.vault.clone().map(|root| (root, this.save_gen)))
                 else {
                     return;
@@ -555,23 +558,20 @@ impl Shell {
                 if watched.as_ref().map(|(r, _)| r) != Some(&root) {
                     let watcher = if cfg!(test) { None } else { vault::watch(&root, changed.clone()) };
                     watched = Some((root.clone(), watcher));
-                    idle = check_every;
+                    next_check = Instant::now();
                 }
                 let live = watched.as_ref().is_some_and(|(_, w)| w.is_some());
                 if live {
-                    idle += 1;
-                    let notified = changed.swap(false, Ordering::AcqRel);
-                    if !notified && idle < check_every {
+                    if !notified && Instant::now() < next_check {
                         continue;
                     }
                     if notified {
                         // Un enregistrement ou une synchronisation touche souvent plusieurs
                         // fichiers d'affilée : on laisse la rafale se terminer.
                         cx.background_executor().timer(Duration::from_millis(250)).await;
-                        changed.store(false, Ordering::Release);
+                        changed.take();
                     }
                 }
-                idle = 0;
                 let print_root = root.clone();
                 let (took, print) = cx
                     .background_executor()
@@ -582,7 +582,7 @@ impl Shell {
                     })
                     .await;
                 pause = Duration::from_secs(2).max(took * 200);
-                check_every = (Duration::from_secs(30).max(took * 200).as_millis() / 100) as u32;
+                next_check = Instant::now() + Duration::from_secs(30).max(took * 200);
                 if last == Some((root.clone(), print)) {
                     continue;
                 }
@@ -607,7 +607,7 @@ impl Shell {
                 .ok();
                 if !applied {
                     // Avec une surveillance, le prochain tour est celui du contrôle : le rapprocher.
-                    idle = check_every.saturating_sub(10);
+                    next_check = Instant::now() + Duration::from_secs(1);
                 }
             }
         })

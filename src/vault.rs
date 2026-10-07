@@ -158,16 +158,54 @@ fn matters(root: &Path, event: &Event) -> bool {
     !event.kind.is_access() && (event.paths.is_empty() || !event.paths.iter().all(hidden))
 }
 
-/// Demande au système de signaler tout changement du coffre : `changed` passe à vrai
+/// Un signal qui réveille la tâche qui l'attend, sans qu'elle ait à le guetter : le thread
+/// du système le lève, la tâche dort jusque-là.
+#[derive(Default)]
+pub struct Signal {
+    raised: AtomicBool,
+    waker: std::sync::Mutex<Option<std::task::Waker>>,
+}
+
+impl Signal {
+    pub fn raise(&self) {
+        self.raised.store(true, Ordering::Release);
+        if let Some(waker) = self.waker.lock().unwrap().take() {
+            waker.wake();
+        }
+    }
+
+    /// Vrai, et le signal retombe, s'il a été levé depuis le dernier appel.
+    pub fn take(&self) -> bool {
+        self.raised.swap(false, Ordering::AcqRel)
+    }
+
+    /// Attend que le signal soit levé (vrai) ou que `deadline` finisse (faux).
+    pub async fn wait<D: std::future::Future<Output = ()> + Unpin>(&self, mut deadline: D) -> bool {
+        std::future::poll_fn(|cx| {
+            if self.take() {
+                return std::task::Poll::Ready(true);
+            }
+            *self.waker.lock().unwrap() = Some(cx.waker().clone());
+            // Levé entre-temps, avant que le réveil soit en place : on ne le manque pas.
+            if self.take() {
+                return std::task::Poll::Ready(true);
+            }
+            std::pin::Pin::new(&mut deadline).poll(cx).map(|()| false)
+        })
+        .await
+    }
+}
+
+/// Demande au système de signaler tout changement du coffre : `changed` est levé
 /// dès qu'il y en a un. `None` si le système ne sait pas le faire (limite d'inotify
 /// atteinte, dossier réseau) : l'appelant relit alors le coffre à intervalle régulier.
 /// La surveillance s'arrête quand le résultat est lâché.
-pub fn watch(root: &Path, changed: Arc<AtomicBool>) -> Option<RecommendedWatcher> {
+pub fn watch(root: &Path, changed: Arc<Signal>) -> Option<RecommendedWatcher> {
     let base = root.to_path_buf();
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<Event>| {
         // Une erreur du système : des événements ont pu être perdus, mieux vaut relire.
         if event.map_or(true, |e| matters(&base, &e)) {
-            changed.store(true, Ordering::Release);
+            changed.raise();
         }
     })
     .ok()?;
@@ -356,6 +394,46 @@ pub fn save(
 mod tests {
     use super::*;
 
+    /// Exécute un futur sur le thread courant, qui dort entre deux réveils.
+    fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
+        struct Unpark(std::thread::Thread);
+        impl std::task::Wake for Unpark {
+            fn wake(self: Arc<Self>) {
+                self.0.unpark();
+            }
+        }
+        let waker = Arc::new(Unpark(std::thread::current())).into();
+        let mut cx = std::task::Context::from_waker(&waker);
+        let mut future = std::pin::pin!(future);
+        loop {
+            if let std::task::Poll::Ready(value) = future.as_mut().poll(&mut cx) {
+                return value;
+            }
+            std::thread::park_timeout(std::time::Duration::from_secs(5));
+        }
+    }
+
+    #[test]
+    fn signal_wakes_a_sleeping_task() {
+        let signal = Arc::new(Signal::default());
+        // Levé avant l'attente : pas de sommeil. Retombé ensuite.
+        signal.raise();
+        assert!(block_on(signal.wait(std::future::pending())));
+        assert!(!signal.take());
+        // L'échéance finie, sans signal : faux.
+        assert!(!block_on(signal.wait(std::future::ready(()))));
+        // Levé par un autre thread pendant que la tâche dort.
+        let other = signal.clone();
+        let thread = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            other.raise();
+        });
+        let start = std::time::Instant::now();
+        assert!(block_on(signal.wait(std::future::pending())));
+        assert!(start.elapsed() < std::time::Duration::from_secs(4));
+        thread.join().unwrap();
+    }
+
     #[test]
     fn derives_titles() {
         assert_eq!(title_of("\n# Courses: lundi\nlait"), "Courses lundi");
@@ -435,15 +513,15 @@ mod tests {
     fn watcher_reports_a_new_note() {
         let root = env::temp_dir().join(format!("bref-watch-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        let changed = Arc::new(AtomicBool::new(false));
+        let changed = Arc::new(Signal::default());
         let _watcher = watch(&root, changed.clone()).expect("le système doit pouvoir surveiller un dossier");
         // Pas d'horloge simulée ici : le système met quelques millisecondes (FSEvents, un peu plus).
         fs::write(root.join("neuve.md"), "x").unwrap();
         let start = std::time::Instant::now();
-        while !changed.load(Ordering::Acquire) && start.elapsed() < std::time::Duration::from_secs(10) {
+        while !changed.raised.load(Ordering::Acquire) && start.elapsed() < std::time::Duration::from_secs(10) {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        assert!(changed.load(Ordering::Acquire), "aucun événement en 10 s");
+        assert!(changed.take(), "aucun événement en 10 s");
         fs::remove_dir_all(&root).unwrap();
     }
 }
