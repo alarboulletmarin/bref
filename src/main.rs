@@ -2980,21 +2980,97 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
+    /// Coffre synthétique, toujours le même : `notes` notes de 30 lignes réparties dans 40
+    /// dossiers, liées entre elles et étiquetées, plus `Grosse.md`, une note de 5 000 lignes.
+    fn synthetic_vault(root: &Path, notes: usize) {
+        for i in 0..notes {
+            let dir = root.join(format!("d{}", i % 40));
+            fs::create_dir_all(&dir).unwrap();
+            let body: String = (0..30).map(|j| format!("Ligne {j} vers [[Note {}]] #tag{}\n", (i + j) % notes, j % 12)).collect();
+            fs::write(dir.join(format!("Note {i}.md")), format!("# Note {i}\n\n{body}")).unwrap();
+        }
+        let big: String =
+            (0..5000).map(|j| format!("Ligne {j} avec **gras**, `code`, [[Note {}]] et #tag{} -> fin.\n", j % notes, j % 12)).collect();
+        fs::write(root.join("Grosse.md"), format!("# Grosse\n\n{big}")).unwrap();
+    }
+
+    /// Mémoire résidente du processus en Mo (Linux seulement).
+    fn resident_mb() -> Option<u64> {
+        let status = fs::read_to_string("/proc/self/status").ok()?;
+        let kb: u64 = status.lines().find_map(|l| l.strip_prefix("VmRSS:"))?.trim().trim_end_matches("kB").trim().parse().ok()?;
+        Some(kb / 1024)
+    }
+
+    /// Temps pour un coffre de 1 000, 5 000 puis 20 000 notes : scan, nouveau scan sans
+    /// changement, empreinte, démarrage de l'app, ouverture et frappe dans une note de
+    /// 5 000 lignes. `BREF_BENCH_NOTES=500,3000` change les tailles. Hors de la suite
+    /// courante : `cargo test --release --locked -- --ignored --nocapture bench_scale`.
+    #[gpui::test]
+    #[ignore]
+    fn bench_scale(cx: &mut TestAppContext) {
+        let sizes: Vec<usize> = std::env::var("BREF_BENCH_NOTES")
+            .map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect())
+            .unwrap_or_else(|_| vec![1000, 5000, 20000]);
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let ms = |d: Duration| format!("{:.1}", d.as_secs_f64() * 1000.);
+        let mut rows = Vec::new();
+        for notes in sizes {
+            let root = std::env::temp_dir().join(format!("bref-scale-{notes}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&root);
+            synthetic_vault(&root, notes);
+            for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
+                unsafe { std::env::set_var(key, root.join(".config")) };
+            }
+            vault::save_layout("tree split 260 0");
+
+            let start = Instant::now();
+            let scanned = vault::scan(&root);
+            let scan = start.elapsed();
+            let start = Instant::now();
+            let again = vault::rescan(&root, &scanned.0);
+            let rescan = start.elapsed();
+            assert_eq!(again.0.len(), notes + 1);
+            let start = Instant::now();
+            vault::fingerprint(&root);
+            let fingerprint = start.elapsed();
+
+            let start = Instant::now();
+            let (shell, cx) = cx.add_window_view({
+                let root = root.clone();
+                |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+            });
+            cx.run_until_parked();
+            let startup = start.elapsed();
+            let start = Instant::now();
+            shell.update(cx, |s, cx| s.open_note(&root.join("Grosse.md"), cx));
+            cx.run_until_parked();
+            let open = start.elapsed();
+            let start = Instant::now();
+            for _ in 0..20 {
+                cx.simulate_input("a");
+                cx.run_until_parked();
+            }
+            let typing = start.elapsed() / 20;
+            let memory = resident_mb().map_or("?".into(), |m| m.to_string());
+            rows.push(format!("| {notes} | {} | {} | {} | {} | {} | {} | {memory} |", ms(scan), ms(rescan), ms(fingerprint), ms(startup), ms(open), ms(typing)));
+            // La fenêtre et son watcher partent avant le coffre suivant.
+            cx.update(|_, cx| cx.windows().iter().for_each(|w| { w.update(cx, |_, window, _| window.remove_window()).ok(); }));
+            cx.run_until_parked();
+            fs::remove_dir_all(&root).unwrap();
+        }
+        println!("\n| notes | scan (ms) | rescan (ms) | empreinte (ms) | démarrage (ms) | ouverture 5000 l. (ms) | frappe 5000 l. (ms) | mémoire (Mo) |");
+        println!("|---|---|---|---|---|---|---|---|");
+        rows.iter().for_each(|row| println!("{row}"));
+    }
+
     /// Temps par geste sur un gros coffre et une grosse note. Hors de la suite
     /// courante : `cargo test --release --locked -- --ignored --nocapture bench`.
     #[gpui::test]
     #[ignore]
     fn bench(cx: &mut TestAppContext) {
         let root = std::env::temp_dir().join(format!("bref-bench-{}", std::process::id()));
-        for i in 0..2000 {
-            let dir = root.join(format!("d{}", i % 40));
-            fs::create_dir_all(&dir).unwrap();
-            let body: String = (0..30).map(|j| format!("Ligne {j} vers [[Note {}]] #tag{}\n", (i + j) % 2000, j % 12)).collect();
-            fs::write(dir.join(format!("Note {i}.md")), format!("# Note {i}\n\n{body}")).unwrap();
-        }
-        let big: String =
-            (0..5000).map(|j| format!("Ligne {j} avec **gras**, `code`, [[Note {}]] et #tag{} -> fin.\n", j % 2000, j % 12)).collect();
-        fs::write(root.join("Grosse.md"), format!("# Grosse\n\n{big}")).unwrap();
+        synthetic_vault(&root, 2000);
         for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
             unsafe { std::env::set_var(key, root.join(".config")) };
         }
