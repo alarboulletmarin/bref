@@ -18,13 +18,13 @@ use gpui::{
 
 use crate::{
     Shell, Theme, Tone, editor, graph,
-    markdown::Link,
+    markdown::{self, Date, Link},
     palette::{Palette, PaletteEvent, Setting},
     tr,
     vault::{self, Note},
 };
 
-actions!(nav, [ShowTree, ShowRecent, ShowGraph, ShowTags, ShowLinks, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Duplicate, Trash]);
+actions!(nav, [ShowCalendar, PrevMonth, NextMonth, ShowTree, ShowRecent, ShowGraph, ShowTags, ShowLinks, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Duplicate, Trash]);
 
 pub const RAIL: Pixels = px(40.);
 const ROW: Pixels = px(26.);
@@ -38,6 +38,8 @@ pub enum Mode {
     Tags,
     /// Rétroliens : les notes qui mènent à la note ouverte.
     Links,
+    /// Calendrier : un mois, où se voient les jours qui ont leur note.
+    Calendar,
 }
 
 /// Place du panneau : replié sur son rail, à côté de la note, ou seul.
@@ -133,6 +135,8 @@ pub struct Nav {
     /// Note dont le panneau montre les rétroliens : la dernière ouverte, pas celle qu'on
     /// parcourt en aperçu, sinon la liste changerait sous la sélection.
     pub anchor: Option<PathBuf>,
+    /// Jour choisi dans le calendrier, qui montre son mois.
+    pub day: Date,
     /// Dossiers dépliés.
     pub open: HashSet<PathBuf>,
     /// Lignes de la dernière frame, et l'empreinte de ce dont elles sont tirées.
@@ -161,6 +165,7 @@ impl Nav {
                 Some("graph") => Mode::Graph,
                 Some("tags") => Mode::Tags,
                 Some("links") => Mode::Links,
+                Some("calendar") => Mode::Calendar,
                 _ => Mode::Tree,
             },
             panel: match words.next() {
@@ -174,6 +179,7 @@ impl Nav {
             sel: None,
             marked: HashSet::new(),
             anchor: None,
+            day: crate::today(),
             open: HashSet::new(),
             rows: Vec::new(),
             rows_from: 0,
@@ -192,6 +198,7 @@ impl Nav {
             Mode::Graph => "graph",
             Mode::Tags => "tags",
             Mode::Links => "links",
+            Mode::Calendar => "calendar",
         };
         let panel = match self.panel {
             Panel::Rail => "rail",
@@ -451,7 +458,7 @@ impl Shell {
         };
         match self.nav.mode {
             Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.images, &self.nav.open),
-            Mode::Graph => Vec::new(),
+            Mode::Graph | Mode::Calendar => Vec::new(),
             Mode::Tags => tag_rows(&self.notes, &self.nav.open),
             Mode::Links => (self.nav.anchor.iter())
                 .flat_map(|target| graph::backlinks(&self.notes, target))
@@ -531,7 +538,82 @@ impl Shell {
             .collect()
     }
 
+    /// Calendrier : avance le jour choisi de `days` jours, ou de `months` mois.
+    pub fn day_step(&mut self, days: i64, months: i32, cx: &mut Context<Self>) {
+        let moved = markdown::day_of(markdown::day_number(self.nav.day) + days);
+        self.nav.day = markdown::add_months(moved, months);
+        cx.notify();
+    }
+
+    /// Ouvre la note du jour `day`, ou la crée : celle que `@` et Ctrl+J désignent.
+    pub fn open_day(&mut self, day: Date, cx: &mut Context<Self>) {
+        self.nav.day = day;
+        self.open_wiki(&crate::date_name(day), cx);
+        cx.notify();
+    }
+
+    /// Le mois du jour choisi : une case par jour, marquée s'il a sa note. Les flèches du
+    /// clavier changent de jour, Page haut et bas de mois, Entrée ouvre la note.
+    fn render_calendar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let t = self.theme;
+        let (year, month, chosen) = self.nav.day;
+        // La semaine commence le lundi en français, le dimanche en anglais.
+        let monday = tr("sunday", "monday") == "monday";
+        let (lead, days) = markdown::month(year, month, monday);
+        let names: HashSet<&str> = self.notes.iter().map(|n| n.name.as_str()).collect();
+        let (today, open) = (crate::today(), self.path.as_deref().map(vault::stem));
+        const MONTHS: [(&str, &str); 12] = [
+            ("January", "janvier"), ("February", "février"), ("March", "mars"), ("April", "avril"), ("May", "mai"), ("June", "juin"),
+            ("July", "juillet"), ("August", "août"), ("September", "septembre"), ("October", "octobre"), ("November", "novembre"), ("December", "décembre"),
+        ];
+        let (en, fr) = MONTHS[month as usize - 1];
+        let step = |id: &'static str, icon: &'static str, by: i32, cx: &mut Context<Self>| {
+            button(id, icon, false, t).on_click(cx.listener(move |this, _, _, cx| this.day_step(0, by, cx)))
+        };
+        let head = div()
+            .flex()
+            .items_center()
+            .child(div().flex_1().pl_1().child(format!("{} {year}", tr(en, fr))))
+            .child(step("month-prev", "chevron-left.svg", -1, cx))
+            .child(step("month-next", "chevron-right.svg", 1, cx));
+        let cell = || div().w(px(32.)).h(px(30.)).flex().items_center().justify_center();
+        let initials = if monday { tr("MTWTFSS", "LMMJVSD") } else { tr("SMTWTFS", "DLMMJVS") };
+        let week = initials.chars().map(|c| cell().text_color(t.dim).text_size(px(11.)).child(c.to_string()));
+        let blanks = (0..lead).map(|_| cell().into_any_element());
+        let cells = (1..=days).map(|day| {
+            let date = (year, month, day);
+            let name = crate::date_name(date);
+            let has = names.contains(name.as_str());
+            cell()
+                .id(("day", day as usize))
+                .rounded(px(6.))
+                .cursor_pointer()
+                .text_color(if has { t.text } else { t.dim })
+                .when(has, |d| d.font_weight(gpui::FontWeight::BOLD))
+                .when(open.as_deref() == Some(name.as_str()), |d| d.text_color(t.accent))
+                .when(date == today, |d| d.border_1().border_color(t.accent.opacity(0.6)))
+                .when(day == chosen, |d| d.bg(t.selection))
+                .hover(|s| s.bg(t.code_bg))
+                .child(day.to_string())
+                .on_click(cx.listener(move |this, _, _, cx| this.open_day(date, cx)))
+                .into_any_element()
+        });
+        div()
+            .flex_1()
+            .min_h_0()
+            .px_2()
+            .text_size(px(13.))
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(head)
+            .child(div().w(px(224.)).flex().flex_wrap().children(week).children(blanks).children(cells))
+    }
+
     fn nav_step(&mut self, down: bool, cx: &mut Context<Self>) {
+        if self.nav.mode == Mode::Calendar {
+            return self.day_step(if down { 7 } else { -7 }, 0, cx);
+        }
         let last = self.nav.rows.len().saturating_sub(1);
         let ix = match self.selected_row() {
             Some(ix) if down => (ix + 1).min(last),
@@ -578,6 +660,9 @@ impl Shell {
 
     /// Gauche/droite dans l'arbre : replier ou déplier, sinon remonter ou descendre.
     fn nav_fold(&mut self, unfold: bool, cx: &mut Context<Self>) {
+        if self.nav.mode == Mode::Calendar {
+            return self.day_step(if unfold { 1 } else { -1 }, 0, cx);
+        }
         let Some(ix) = self.selected_row() else {
             return self.nav_step(true, cx);
         };
@@ -1289,6 +1374,7 @@ impl Shell {
             .child(mode_button("nav-graph", "graph.svg", Mode::Graph))
             .child(mode_button("nav-tags", "tag.svg", Mode::Tags))
             .child(mode_button("nav-links", "backlink.svg", Mode::Links))
+            .child(mode_button("nav-calendar", "i-calendar.svg", Mode::Calendar))
             .child(div().w(px(16.)).h(px(1.)).my_1().bg(t.border))
             .child(
                 button("nav-search", "search.svg", false, t)
@@ -1327,6 +1413,7 @@ impl Shell {
             (Mode::Tree, Some(root)) => vault::stem(root),
             (Mode::Graph, _) => tr("Graph", "Graphe").to_string(),
             (Mode::Tags, _) => "Tags".to_string(),
+            (Mode::Calendar, _) => tr("Calendar", "Calendrier").to_string(),
             (Mode::Links, _) => {
                 let name = self.nav.anchor.as_deref().map(vault::stem).unwrap_or_default();
                 format!("{} {name}", tr("Links to", "Liens vers"))
@@ -1413,12 +1500,17 @@ impl Shell {
             .on_action(cx.listener(|this, _: &Next, _, cx| this.nav_step(true, cx)))
             .on_action(cx.listener(|this, _: &Fold, _, cx| this.nav_fold(false, cx)))
             .on_action(cx.listener(|this, _: &Unfold, _, cx| this.nav_fold(true, cx)))
+            .on_action(cx.listener(|this, _: &PrevMonth, _, cx| this.day_step(0, -1, cx)))
+            .on_action(cx.listener(|this, _: &NextMonth, _, cx| this.day_step(0, 1, cx)))
             .on_action(cx.listener(|this, _: &Open, window, cx| {
+                if this.nav.mode == Mode::Calendar {
+                    return this.open_day(this.nav.day, cx);
+                }
                 if let Some(ix) = this.selected_row() {
                     this.nav_activate(ix, window, cx)
                 }
             }))
-            .when(mode != Mode::Graph, |d| {
+            .when(!matches!(mode, Mode::Graph | Mode::Calendar), |d| {
                 d.on_action(cx.listener(|this, _: &Rename, window, cx| {
                     this.menu_do(Do::Rename, this.nav.sel.clone(), window, cx)
                 }))
@@ -1442,6 +1534,7 @@ impl Shell {
             .child(header)
             .map(|d| match mode {
                 Mode::Graph => d.child(div().flex_1().min_h_0().child(self.graph.clone())),
+                Mode::Calendar => d.child(self.render_calendar(cx)),
                 _ => d.child(list),
             });
         // Poignée de 5 px autour d'un trait de 1 px ; double-clic : largeur d'origine.

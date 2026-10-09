@@ -149,6 +149,23 @@ pub fn day_of(days: i64) -> Date {
     (year as i32, month as u32, (of_year - (153 * shifted + 2) / 5 + 1) as u32)
 }
 
+/// Le mois de `year` : le rang dans la semaine de son premier jour (0 : le premier jour de la
+/// semaine, un lundi si `monday`, sinon un dimanche) et son nombre de jours.
+pub fn month(year: i32, month: u32, monday: bool) -> (u32, u32) {
+    let first = day_number((year, month, 1));
+    let next = if month == 12 { (year + 1, 1, 1) } else { (year, month + 1, 1) };
+    // Le 1er janvier 1970 était un jeudi : lundi vaut 0.
+    let weekday = (first + 3 + i64::from(!monday)).rem_euclid(7);
+    (weekday as u32, (day_number(next) - first) as u32)
+}
+
+/// Le même jour `by` mois plus tard (ou plus tôt), ramené dans le mois d'arrivée.
+pub fn add_months((year, month_, day): Date, by: i32) -> Date {
+    let months = year * 12 + month_ as i32 - 1 + by;
+    let (year, month_) = (months.div_euclid(12), months.rem_euclid(12) as u32 + 1);
+    (year, month_, day.min(month(year, month_, true).1))
+}
+
 /// Les jours qu'on nomme après `@` : (anglais, français), du lundi au dimanche après les trois
 /// jours relatifs.
 const DAYS: [(&str, &str); 10] = [
@@ -1058,6 +1075,9 @@ mod tests {
         let today = (2026, 10, 9);
         assert_eq!((day_number((1970, 1, 1)), day_number((2000, 3, 1)), day_of(day_number((2024, 2, 29)))), (0, 11_017, (2024, 2, 29)));
         assert_eq!(day_of(day_number((2026, 12, 31)) + 1), (2027, 1, 1));
+        // Octobre 2026 commence un jeudi et a 31 jours ; février 2024 en a 29.
+        assert_eq!((month(2026, 10, true), month(2026, 10, false), month(2024, 2, true)), ((3, 31), (4, 31), (3, 29)));
+        assert_eq!((add_months((2026, 1, 31), 1), add_months((2026, 12, 5), 1), add_months((2026, 1, 5), -1)), ((2026, 2, 28), (2027, 1, 5), (2025, 12, 5)));
         let found = |q: &str| dates(q, today).into_iter().map(|(_, fr, date)| (fr, date)).collect::<Vec<_>>();
         assert_eq!(found("").len(), 10);
         assert_eq!(found("dem"), [("demain", (2026, 10, 10))]);

@@ -266,6 +266,7 @@ impl AssetSource for Assets {
                 r#"<circle cx="8" cy="8" r="5.5"/><path d="M6.4 6.6A1.6 1.6 0 1 1 8 8.4V9.2M8 11.2V11.3"/>"#
             }
             "chevron-right.svg" => r#"<path d="M6.5 4.5L10 8L6.5 11.5"/>"#,
+            "chevron-left.svg" => r#"<path d="M9.5 4.5L6 8L9.5 11.5"/>"#,
             "chevron-down.svg" => r#"<path d="M4.5 6.5L8 10L11.5 6.5"/>"#,
             "graph.svg" => {
                 r#"<circle cx="4" cy="11.5" r="1.7"/><circle cx="11.5" cy="4.5" r="1.7"/><circle cx="12" cy="12" r="1.3"/><path d="M5.3 10.3L10.2 5.7M11.6 6.2L11.9 10.7"/>"#
@@ -1825,6 +1826,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
             vec![
                 (format!("{} / R / G / T", m("E")), tr("Vault tree / recent notes / graph / tags", "Arbre du coffre / notes récentes / graphe / tags")),
                 (m("L"), tr("Backlinks: the notes that link to this one", "Rétroliens : les notes qui mènent à celle-ci")),
+                (m("Shift+J"), tr("Calendar: arrows, Page Up/Down for the month, Enter opens the day", "Calendrier : flèches, Page haut/bas pour le mois, Entrée ouvre le jour")),
                 (tr("A picture", "Une image").into(), tr("Shown in place of the note; a square in the graph", "Affichée à la place de la note ; un carré dans le graphe")),
                 (tr("A .csv or .tsv", "Un .csv ou .tsv").into(), tr("A grid in place of the note; not in the graph", "Une grille à la place de la note ; absent du graphe")),
                 (m("M"), tr("Panel on the whole window", "Panneau en pleine fenêtre")),
@@ -2415,6 +2417,9 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &nav::ShowTags, window, cx| {
                 this.show_nav(Mode::Tags, false, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &nav::ShowCalendar, window, cx| {
+                this.show_nav(Mode::Calendar, false, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &nav::ShowLinks, window, cx| {
                 this.show_nav(Mode::Links, false, window, cx)
             }))
@@ -2636,6 +2641,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-g", nav::ShowGraph, Some("Shell")),
         KeyBinding::new("secondary-t", nav::ShowTags, Some("Shell")),
         KeyBinding::new("secondary-l", nav::ShowLinks, Some("Shell")),
+        KeyBinding::new("secondary-shift-j", nav::ShowCalendar, Some("Shell")),
         KeyBinding::new("secondary-m", nav::ToggleFull, Some("Shell")),
         KeyBinding::new("tab", graph::Cycle, n),
         KeyBinding::new("secondary-shift-n", nav::NewFolder, Some("Shell")),
@@ -2647,6 +2653,8 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("left", nav::Fold, n),
         KeyBinding::new("right", nav::Unfold, n),
         KeyBinding::new("enter", nav::Open, n),
+        KeyBinding::new("pageup", nav::PrevMonth, n),
+        KeyBinding::new("pagedown", nav::NextMonth, n),
         KeyBinding::new("escape", nav::Close, n),
         KeyBinding::new("up", Prev, p),
         KeyBinding::new("down", Next, p),
@@ -3414,6 +3422,26 @@ mod tests {
         assert!(root.join("Jetée.md").is_file() && !root.join(".trash/Jetée.md").exists());
         assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Jetée") && s.toasts.is_empty()));
         fs::remove_file(root.join("Jetée.md")).unwrap();
+        settle(cx);
+
+        // Calendrier : Ctrl+Maj+J montre le mois ; les flèches changent de jour, Page bas de
+        // mois, Entrée ouvre la note de ce jour, ou la crée.
+        let before = shell.read_with(cx, |s, _| (s.path.clone(), s.nav.mode, s.nav.panel));
+        cx.simulate_keystrokes("secondary-shift-j");
+        assert!(shell.read_with(cx, |s, _| s.nav.mode == Mode::Calendar && s.nav.panel != Panel::Rail));
+        shell.update(cx, |s, _| s.nav.day = (2026, 10, 30));
+        cx.simulate_keystrokes("right down pagedown");
+        assert_eq!(shell.read_with(cx, |s, _| s.nav.day), (2026, 12, 7));
+        cx.simulate_keystrokes("pageup pageup up enter");
+        assert_eq!(shell.read_with(cx, |s, _| s.nav.day), (2026, 9, 30));
+        assert_eq!(text(cx), "# 2026-09-30\n\n");
+        shell.update(cx, |s, cx| {
+            (s.nav.mode, s.nav.panel) = (before.1, before.2);
+            s.open_note(before.0.as_ref().unwrap(), cx);
+        });
+        // Quittée, la note du jour est enregistrée comme toute note qui a un titre.
+        settle(cx);
+        fs::remove_file(root.join("2026-09-30.md")).unwrap();
         settle(cx);
 
         // Terminal : la palette le propose ; les tests n'ouvrent aucune fenêtre, d'où le refus.
