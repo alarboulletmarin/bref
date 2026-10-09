@@ -14,7 +14,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Lists that continue themselves**: `- `, `1. ` and `[] ` start a list, Enter continues it, numbering stays in order.
 - **Slash commands**: type `/` for a heading, a list, a colored panel, a code block, a formula or a table, whose size you pick on a grid. What lands in the note is plain Markdown.
 - **Tables like on the web**: cells wrap inside their column, `Tab` moves from cell to cell, `Enter` adds a row, two `+` buttons add a row or a column, and pasting a table from a web page, a spreadsheet or Markdown just works.
-- **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `#tags` filter the note list.
+- **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `@` suggests days (`@today`, `@tomorrow`, `@monday`, `@2026-10-09`) and links to the daily note of that day. `#tags` filter the note list.
 - **Backlinks**: the notes that link to the open one, each with the line that holds the link.
 - **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons.
 - **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas like Excalidraw's. Each diagram is an SVG file in your vault, shown in your notes.

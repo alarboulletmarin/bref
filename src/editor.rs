@@ -177,6 +177,8 @@ const COMMANDS: &[Command] = &[
 enum Choice<'a> {
     Name(&'a str),
     Command(&'static Command),
+    /// Jour proposé après `@` : son nom anglais et français, sa date.
+    Date(&'static str, &'static str, md::Date),
 }
 
 /// Boutons « + » d'un tableau : sous lui pour une ligne, à sa droite pour une colonne.
@@ -2086,7 +2088,7 @@ impl Editor {
         let c = self.cursor();
         let line = self.line_range(c).start;
         let before = &self.content[line..c];
-        let (start, items) = self.names(before, c).or_else(|| self.commands(before, c, line))?;
+        let (start, items) = self.names(before, c).or_else(|| self.commands(before, c, line)).or_else(|| self.days(before, c, line))?;
         (!items.is_empty() && self.ac_dismissed != Some(start)).then_some((start, items))
     }
 
@@ -2131,6 +2133,19 @@ impl Editor {
         Some((c - query.len(), items.into_iter().map(Choice::Command).collect()))
     }
 
+    /// Après un `@` en début de ligne ou de mot, hors du code : les jours que désigne la suite
+    /// (`@demain`, `@lundi`, `@2026-10-09`). Une adresse `nom@domaine` n'ouvre rien.
+    fn days(&self, before: &str, c: usize, line: usize) -> Option<(usize, Vec<Choice<'_>>)> {
+        let at = before.rfind('@')?;
+        let query = &before[at + 1..];
+        let starts_word = before[..at].chars().next_back().is_none_or(char::is_whitespace);
+        if !starts_word || !query.chars().all(|ch| ch.is_alphanumeric() || matches!(ch, '-' | '\'' | '’')) || self.in_code(line) {
+            return None;
+        }
+        let items = md::dates(query, crate::today()).into_iter().map(|(en, fr, date)| Choice::Date(en, fr, date));
+        Some((c - query.len(), items.collect()))
+    }
+
     fn accept_completion(&mut self, cx: &mut Context<Self>) -> bool {
         let Some((start, items)) = self.completion() else {
             return false;
@@ -2145,6 +2160,11 @@ impl Editor {
                     let end = self.cursor();
                     self.splice(end..end + 2, "", cx);
                 }
+            }
+            // Le jour devient un lien vers sa note du jour, créée à sa première ouverture.
+            Choice::Date(_, _, date) => {
+                self.push_undo(true);
+                self.edit(start - 1..c, &format!("[[{}]]", crate::date_name(date)), cx);
             }
             Choice::Command(&(name, _, _, before, after)) => {
                 let slash = start - 1;
@@ -3644,6 +3664,10 @@ impl Editor {
                     Choice::Command((name, en, fr, ..)) => {
                         write(tr(en, fr), px(12.), t.text);
                         write(&format!("/{name}"), px(186.), t.dim);
+                    }
+                    Choice::Date(en, fr, date) => {
+                        write(tr(en, fr), px(12.), t.text);
+                        write(&crate::date_name(*date), px(186.), t.dim);
                     }
                 }
             }

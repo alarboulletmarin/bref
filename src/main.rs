@@ -1787,6 +1787,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 ("```rust".into(), tr("Code block: colors, copy icon", "Bloc de code : couleurs, icône de copie")),
                 ("---".into(), tr("Divider", "Séparateur")),
                 ("[[".into(), tr("Link to a note", "Lien vers une note")),
+                ("@".into(), tr("Link to the note of a day: @today, @monday, @2026-10-09", "Lien vers la note d'un jour : @demain, @lundi, @2026-10-09")),
                 ("![](image.png)".into(), tr("Picture, under its line", "Image, sous sa ligne")),
                 ("![[".into(), tr("Suggests the pictures and diagrams of the vault", "Propose les images et les schémas du coffre")),
                 (m("V"), tr("Paste text, or a picture", "Coller du texte, ou une image")),
@@ -3756,6 +3757,21 @@ mod tests {
         cx.simulate_keystrokes("shift-right shift-right shift-right secondary-k");
         cx.simulate_input("https://z.fr");
         assert_eq!(text(cx), "[mot](https://z.fr)");
+        // `@` propose des jours : celui qu'on choisit devient un lien vers sa note du jour.
+        // Une adresse e-mail n'ouvre pas la liste.
+        let tomorrow = date_name(markdown::day_of(markdown::day_number(today()) + 1));
+        load(cx, "", 0);
+        cx.simulate_input("voir @dem");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(text(cx), format!("voir [[{tomorrow}]]"));
+        load(cx, "", 0);
+        cx.simulate_input("@2026-11-02");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(text(cx), "[[2026-11-02]]");
+        load(cx, "", 0);
+        cx.simulate_input("a@dem");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(text(cx), "a@dem\n");
         // Sur une adresse nue, Ctrl+K lui fait une place pour son texte.
         load(cx, "voir https://a.b/c ici", 9);
         cx.simulate_keystrokes("secondary-k");

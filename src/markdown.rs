@@ -125,6 +125,71 @@ pub fn classify(line: &str, in_code: bool) -> (Kind, usize) {
     (Kind::Para, 0)
 }
 
+/// Année, mois, jour.
+pub type Date = (i32, u32, u32);
+
+/// Nombre de jours entre le 1er janvier 1970 et cette date du calendrier grégorien.
+pub fn day_number((year, month, day): Date) -> i64 {
+    let y = i64::from(year) - i64::from(month <= 2);
+    let era = y.div_euclid(400);
+    let of_era = y.rem_euclid(400);
+    let of_year = (153 * ((i64::from(month) + 9) % 12) + 2) / 5 + i64::from(day) - 1;
+    era * 146_097 + of_era * 365 + of_era / 4 - of_era / 100 + of_year - 719_468
+}
+
+/// La date du jour numéro `days` : l'inverse de `day_number`.
+pub fn day_of(days: i64) -> Date {
+    let z = days + 719_468;
+    let (era, of_era) = (z.div_euclid(146_097), z.rem_euclid(146_097));
+    let year_of_era = (of_era - of_era / 1_460 + of_era / 36_524 - of_era / 146_096) / 365;
+    let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted = (5 * of_year + 2) / 153;
+    let month = (shifted + 2) % 12 + 1;
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    (year as i32, month as u32, (of_year - (153 * shifted + 2) / 5 + 1) as u32)
+}
+
+/// Les jours qu'on nomme après `@` : (anglais, français), du lundi au dimanche après les trois
+/// jours relatifs.
+const DAYS: [(&str, &str); 10] = [
+    ("today", "aujourd'hui"),
+    ("tomorrow", "demain"),
+    ("yesterday", "hier"),
+    ("monday", "lundi"),
+    ("tuesday", "mardi"),
+    ("wednesday", "mercredi"),
+    ("thursday", "jeudi"),
+    ("friday", "vendredi"),
+    ("saturday", "samedi"),
+    ("sunday", "dimanche"),
+];
+
+/// Les dates que `query` (ce qui suit un `@`) peut désigner à partir d'`today` : les jours dont
+/// le nom anglais ou français commence ainsi, avec leur date, ou la date écrite `2026-10-09`.
+/// Un jour de la semaine est le prochain, jamais aujourd'hui.
+pub fn dates(query: &str, today: Date) -> Vec<(&'static str, &'static str, Date)> {
+    let query = query.to_lowercase().replace('’', "'");
+    let now = day_number(today);
+    let typed = || {
+        let mut parts = query.split('-').map(|p| p.parse::<u32>().ok());
+        let date = (parts.next()??.try_into().ok()?, parts.next()??, parts.next()??);
+        // Une date qui existe : elle survit à l'aller-retour.
+        (parts.next().is_none() && query.len() == 10 && day_of(day_number(date)) == date).then_some(("", "", date))
+    };
+    let named = DAYS.iter().enumerate().filter(|(_, (en, fr))| en.starts_with(&query) || fr.starts_with(&query));
+    let named = named.map(|(i, &(en, fr))| {
+        let ahead = match i {
+            0 => 0,
+            1 => 1,
+            2 => -1,
+            // Le 1er janvier 1970 était un jeudi : lundi vaut 0.
+            _ => (i as i64 - 3 - (now + 3).rem_euclid(7) - 1).rem_euclid(7) + 1,
+        };
+        (en, fr, day_of(now + ahead))
+    });
+    typed().into_iter().chain(named).collect()
+}
+
 /// Une adresse qu'on peut ouvrir : un protocole connu, puis quelque chose, sans espace.
 pub fn is_url(text: &str) -> bool {
     let known = ["http://", "https://", "mailto:", "file://"].iter().any(|p| text.len() > p.len() && text.starts_with(p));
@@ -942,6 +1007,20 @@ mod tests {
         assert_eq!(l[1].1, Link::Tag("projet/x".into()));
         assert_eq!(l[2].1, Link::Url("https://a.b/c".into()));
         assert!(links("a#b et #123").is_empty());
+        // Dates après `@`. Le 9 octobre 2026 est un vendredi.
+        let today = (2026, 10, 9);
+        assert_eq!((day_number((1970, 1, 1)), day_number((2000, 3, 1)), day_of(day_number((2024, 2, 29)))), (0, 11_017, (2024, 2, 29)));
+        assert_eq!(day_of(day_number((2026, 12, 31)) + 1), (2027, 1, 1));
+        let found = |q: &str| dates(q, today).into_iter().map(|(_, fr, date)| (fr, date)).collect::<Vec<_>>();
+        assert_eq!(found("").len(), 10);
+        assert_eq!(found("dem"), [("demain", (2026, 10, 10))]);
+        assert_eq!(found("Aujourd’"), [("aujourd'hui", today)]);
+        assert_eq!(found("yes"), [("hier", (2026, 10, 8))]);
+        assert_eq!(found("vendredi"), [("vendredi", (2026, 10, 16))]);
+        assert_eq!(found("mon"), [("lundi", (2026, 10, 12))]);
+        assert_eq!(found("t").len(), 4);
+        assert_eq!(found("2026-11-02"), [("", (2026, 11, 2))]);
+        assert!(found("2026-02-30").is_empty() && found("2026-1-2").is_empty() && found("zz").is_empty());
         // `[texte](adresse)` : un seul lien, sur toute son étendue ; ni une image, ni un chemin.
         let l = links("lire [la doc](https://a.b/c#d) et ![img](https://a.b/i.png)");
         assert_eq!(l[0], (5..30, Link::Url("https://a.b/c#d".into())));
