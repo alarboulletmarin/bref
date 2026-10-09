@@ -350,6 +350,51 @@ pub fn trash(root: &Path, path: &Path) -> io::Result<()> {
     fs::rename(path, free)
 }
 
+/// Les commandes à essayer, dans l'ordre, pour ouvrir un terminal dans `dir` sous le système
+/// `os` (`std::env::consts::OS`) : le programme et ses arguments. `preferred` est le terminal
+/// que l'utilisateur nomme dans `$TERMINAL`.
+pub fn terminals(os: &str, dir: &str, preferred: Option<&str>) -> Vec<(String, Vec<String>)> {
+    let command = |program: &str, args: &[&str]| (program.to_string(), args.iter().map(|a| a.to_string()).collect());
+    match os {
+        "macos" => vec![command("open", &["-a", "Terminal", dir])],
+        // Windows Terminal s'il est installé, sinon la console de toujours.
+        "windows" => vec![command("wt", &["-d", dir]), command("cmd", &["/c", "start", "cmd"])],
+        // Linux n'a pas de réponse unique. Ceux qui ne font que prévenir une instance déjà
+        // lancée ignorent le dossier courant : il leur est donné en argument.
+        _ => {
+            let mut all: Vec<_> = preferred.iter().map(|p| command(p, &[])).collect();
+            all.extend([
+                command("xdg-terminal-exec", &[]),
+                command("x-terminal-emulator", &[]),
+                command("gnome-terminal", &["--working-directory", dir]),
+                command("ptyxis", &["--new-window", "-d", dir]),
+                command("kgx", &["--working-directory", dir]),
+                command("konsole", &["--workdir", dir]),
+                command("kitty", &[]),
+                command("alacritty", &[]),
+                command("foot", &[]),
+                command("wezterm", &["start", "--cwd", dir]),
+                command("xterm", &[]),
+            ]);
+            all
+        }
+    }
+}
+
+/// Ouvre le terminal du système dans `dir` : le premier de `terminals` qui démarre. Faux si
+/// aucun n'est installé. Les tests n'ouvrent rien.
+pub fn open_terminal(dir: &Path) -> bool {
+    let preferred = env::var("TERMINAL").ok().filter(|t| !t.trim().is_empty());
+    let found = terminals(env::consts::OS, &dir.to_string_lossy(), preferred.as_deref());
+    !cfg!(test)
+        && found.into_iter().any(|(program, args)| {
+            // Sans console pour le lanceur (`cmd /c start`) ; le terminal, lui, ouvre la sienne.
+            let child = crate::update::command(&program).args(args).current_dir(dir).stdin(std::process::Stdio::null()).spawn();
+            // Le terminal fermé, son processus est recueilli : pas de zombie tant que Bref tourne.
+            child.map(|mut child| std::thread::spawn(move || child.wait())).is_ok()
+        })
+}
+
 /// Sauvegarde : tout le coffre (corbeille comprise) dans une archive `<coffre> <date>.tar.gz`
 /// du dossier `dir`, numérotée si le nom est pris. Bloquant : à lancer hors du thread UI.
 // ponytail: le `tar` du système (livré avec Linux, macOS et Windows 10) plutôt qu'une
@@ -603,6 +648,18 @@ mod tests {
         assert_eq!(clean_name(" ../a:b. "), Some("ab".into()));
         assert_eq!(clean_name(" . "), None);
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn picks_the_terminal_of_the_system() {
+        let programs = |os, preferred| terminals(os, "/coffre", preferred).into_iter().map(|(p, _)| p).collect::<Vec<_>>();
+        assert_eq!(terminals("macos", "/coffre", None), [("open".to_string(), vec!["-a".to_string(), "Terminal".into(), "/coffre".into()])]);
+        assert_eq!(programs("windows", Some("kitty")), ["wt", "cmd"]);
+        // `$TERMINAL` passe devant ; sans lui, le choix du bureau d'abord.
+        assert_eq!(programs("linux", Some("foot"))[..2], ["foot", "xdg-terminal-exec"]);
+        assert_eq!(programs("linux", None)[0], "xdg-terminal-exec");
+        let gnome = terminals("linux", "/coffre", None).into_iter().find(|(p, _)| p == "gnome-terminal").unwrap();
+        assert_eq!(gnome.1, ["--working-directory", "/coffre"]);
     }
 
     #[test]

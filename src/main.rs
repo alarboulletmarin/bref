@@ -1509,6 +1509,17 @@ impl Shell {
         self.settle_nav(window, cx);
     }
 
+    /// Ouvre le terminal du système dans le coffre, ou dit qu'il n'en a pas trouvé.
+    fn open_terminal(&mut self, cx: &mut Context<Self>) {
+        let Some(root) = self.vault.clone() else {
+            return;
+        };
+        if !vault::open_terminal(&root) {
+            let hint = tr("No terminal found: name yours in $TERMINAL", "Aucun terminal trouvé : nommer le vôtre dans $TERMINAL");
+            self.say(Tone::Failed, hint, cx);
+        }
+    }
+
     /// Sauvegarde du coffre : demande où la ranger.
     fn choose_backup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
@@ -1658,6 +1669,7 @@ impl Shell {
                 PaletteEvent::Today => this.open_today(cx),
                 PaletteEvent::Trash => this.open_trash(window, cx),
                 PaletteEvent::Backup => this.choose_backup(window, cx),
+                PaletteEvent::Terminal => this.open_terminal(cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
@@ -1690,6 +1702,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (m("N"), tr("New note", "Nouvelle note")),
                 (m("J"), tr("Today's note: open it, or create it", "Note du jour : l'ouvrir, ou la créer")),
                 (m("O"), tr("Change vault", "Changer de coffre")),
+                (format!("{}, « terminal »", m("P")), tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")),
                 (m("Shift+C"), tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
                 (format!("{MOD}+{}", tr("click", "clic")), tr("Open a [[link]], #tag or URL", "Ouvrir un [[lien]], #tag ou URL")),
                 ("F1".into(), tr("This help", "Cette aide")),
@@ -3177,6 +3190,13 @@ mod tests {
         assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Jetée") && s.toasts.is_empty()));
         fs::remove_file(root.join("Jetée.md")).unwrap();
         settle(cx);
+
+        // Terminal : la palette le propose ; les tests n'ouvrent aucune fenêtre, d'où le refus.
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("terminal");
+        cx.simulate_keystrokes("down enter");
+        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.told(Tone::Failed, "$TERMINAL")));
+        shell.update(cx, |s, _| s.toasts.clear());
 
         // Sauvegarde : une archive datée de tout le coffre dans le dossier choisi (la fenêtre de
         // choix n'existe pas dans les tests) ; dans le coffre lui-même, elle est refusée.
