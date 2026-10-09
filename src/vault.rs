@@ -350,6 +350,31 @@ pub fn trash(root: &Path, path: &Path) -> io::Result<()> {
     fs::rename(path, free)
 }
 
+/// Contenu de la corbeille du coffre, du plus récemment modifié au plus ancien.
+pub fn trashed(root: &Path) -> Vec<PathBuf> {
+    let entries = fs::read_dir(root.join(".trash")).into_iter().flatten().flatten();
+    let mut found: Vec<(SystemTime, PathBuf)> =
+        entries.map(|e| (e.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH), e.path())).collect();
+    found.sort_by(|a, b| b.cmp(a));
+    found.into_iter().map(|(_, path)| path).collect()
+}
+
+/// Sort `path` de la corbeille et le remet à la racine du coffre (la corbeille ne retient pas
+/// d'où il venait), sous son nom, numéroté s'il est pris : rien n'est écrasé.
+pub fn restore(root: &Path, path: &Path) -> io::Result<PathBuf> {
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    let extension = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let free = (1..)
+        .map(|n| match n {
+            1 => root.join(format!("{stem}{extension}")),
+            n => root.join(format!("{stem} {n}{extension}")),
+        })
+        .find(|p| !p.exists())
+        .unwrap();
+    fs::rename(path, &free)?;
+    Ok(free)
+}
+
 /// Chemin libre dans `dir` pour un fichier `name.extension` : le nom est suivi
 /// d'un numéro s'il est déjà pris.
 pub fn free_path(dir: &Path, name: &str, extension: &str) -> PathBuf {
@@ -544,6 +569,30 @@ mod tests {
     }
 
     #[test]
+    fn restores_from_the_trash() {
+        let root = env::temp_dir().join(format!("bref-restore-{}", std::process::id()));
+        fs::create_dir_all(root.join("Dossier")).unwrap();
+        assert!(trashed(&root).is_empty());
+        for (name, text) in [("A.md", "premier"), ("Dossier/b.md", "dedans")] {
+            fs::write(root.join(name), text).unwrap();
+        }
+        trash(&root, &root.join("A.md")).unwrap();
+        trash(&root, &root.join("Dossier")).unwrap();
+        // Le nom est repris entre-temps : la note restaurée en prend un autre, rien n'est écrasé.
+        fs::write(root.join("A.md"), "second").unwrap();
+        let mut names: Vec<String> = trashed(&root).iter().map(|p| stem(p)).collect();
+        names.sort();
+        assert_eq!(names, ["A", "Dossier"]);
+        assert_eq!(restore(&root, &root.join(".trash/A.md")).unwrap(), root.join("A 2.md"));
+        assert_eq!(restore(&root, &root.join(".trash/Dossier")).unwrap(), root.join("Dossier"));
+        assert_eq!(fs::read_to_string(root.join("A.md")).unwrap(), "second");
+        assert_eq!(fs::read_to_string(root.join("A 2.md")).unwrap(), "premier");
+        assert_eq!(fs::read_to_string(root.join("Dossier/b.md")).unwrap(), "dedans");
+        assert!(trashed(&root).is_empty());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn ignores_reads_and_hidden_files() {
         use notify::{EventKind, event::{AccessKind, CreateKind}};
         let root = Path::new("/v");
@@ -552,6 +601,7 @@ mod tests {
         assert!(matters(root, &event(created, "a.md")));
         assert!(matters(root, &event(created, "dossier/a.md")));
         assert!(!matters(root, &event(created, ".trash/a.md")));
+
         assert!(!matters(root, &event(created, ".git/objects/ab")));
         assert!(!matters(root, &event(EventKind::Access(AccessKind::Read), "a.md")));
         // Hors du coffre ou sans chemin : dans le doute, on relit.

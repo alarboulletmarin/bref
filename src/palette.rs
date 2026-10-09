@@ -45,6 +45,10 @@ fn install_label(version: &str) -> String {
     format!("{} {version}", tr("Update Bref to", "Mettre à jour Bref vers"))
 }
 
+fn trash_label() -> &'static str {
+    tr("Restore from the trash…", "Restaurer depuis la corbeille…")
+}
+
 fn today_label() -> &'static str {
     tr("Today's note", "Note du jour")
 }
@@ -108,6 +112,8 @@ pub enum PaletteEvent {
     OpenAt(PathBuf, usize, String),
     /// Ouvre ou crée la note du jour.
     Today,
+    /// Liste la corbeille du coffre, pour en restaurer un élément.
+    Trash,
     /// Installe la nouvelle version.
     InstallUpdate,
     /// Texte validé dans un champ de saisie, ou choix validé dans une liste.
@@ -135,6 +141,7 @@ enum Item {
     Install,
     Outline,
     Today,
+    Trash,
     Setting(Setting),
     Table(Pick),
 }
@@ -391,7 +398,7 @@ impl Palette {
                 items.push(item);
             }
         }
-        for (label, item) in [(outline_label(), Item::Outline), (today_label(), Item::Today)] {
+        for (label, item) in [(outline_label(), Item::Outline), (today_label(), Item::Today), (trash_label(), Item::Trash)] {
             if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
                 items.push(item);
             }
@@ -458,6 +465,7 @@ impl Palette {
             Some(Item::Check) => PaletteEvent::CheckUpdate,
             Some(Item::Outline) => PaletteEvent::Outline,
             Some(Item::Today) => PaletteEvent::Today,
+            Some(Item::Trash) => PaletteEvent::Trash,
             Some(Item::Install) => PaletteEvent::InstallUpdate,
             Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
             None => PaletteEvent::Dismiss,
@@ -590,6 +598,7 @@ impl Render for Palette {
                 Item::Check => (check_label().to_string(), String::new()),
                 Item::Outline => (outline_label().to_string(), format!("{}+Shift+O", crate::MOD)),
                 Item::Today => (today_label().to_string(), format!("{}+J", crate::MOD)),
+                Item::Trash => (trash_label().to_string(), String::new()),
                 Item::Install => (install_label(self.installable.as_deref().unwrap_or_default()), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
                 Item::Table(pick) => (pick.label().to_string(), String::new()),

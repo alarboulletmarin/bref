@@ -1446,6 +1446,43 @@ impl Shell {
         self.settle_nav(window, cx);
     }
 
+    /// Corbeille du coffre : la liste de ce qu'elle contient ; Entrée remet l'élément choisi à
+    /// la racine du coffre, où le suivi des fichiers le retrouve.
+    fn open_trash(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.vault.clone() else {
+            return;
+        };
+        let found = vault::trashed(&root);
+        if found.is_empty() {
+            self.notice = Some(tr("The trash is empty", "La corbeille est vide").into());
+            return cx.notify();
+        }
+        let names = found.iter().map(|p| p.file_name().unwrap_or_default().to_string_lossy().into_owned()).collect();
+        let theme = self.theme;
+        let palette = cx.new(|cx| Palette::choose(tr("Restore from the trash", "Restaurer depuis la corbeille"), names, "", theme, cx));
+        cx.subscribe_in(&palette, window, move |this, palette, event, window, cx| {
+            if matches!(event, PaletteEvent::Preview(_)) {
+                return;
+            }
+            let chosen = palette.read(cx).chosen().and_then(|i| found.get(i)).filter(|_| matches!(event, PaletteEvent::Submit(_)));
+            match chosen.map(|path| vault::restore(&root, path)) {
+                Some(Ok(to)) => {
+                    let name = to.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                    this.notice = Some(format!("{} {name}", tr("Restored:", "Restauré :")));
+                }
+                Some(Err(e)) => this.error = Some(format!("{} : {e}", tr("Not restored", "Restauration impossible"))),
+                None => {}
+            }
+            this.palette = None;
+            window.focus(&this.editor.focus_handle(cx));
+            cx.notify();
+        })
+        .detach();
+        window.focus(&palette.focus_handle(cx));
+        self.palette = Some(palette);
+        cx.notify();
+    }
+
     /// Note du jour : la note qui porte la date locale pour nom, où qu'elle soit dans le
     /// coffre ; créée avec cette date pour titre si elle n'existe pas encore.
     fn open_today(&mut self, cx: &mut Context<Self>) {
@@ -1520,6 +1557,7 @@ impl Shell {
                 PaletteEvent::CheckUpdate => this.check_now(cx),
                 PaletteEvent::Outline => this.open_outline(window, cx),
                 PaletteEvent::Today => this.open_today(cx),
+                PaletteEvent::Trash => this.open_trash(window, cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
@@ -3004,6 +3042,25 @@ mod tests {
         for name in ["Fiche 2.md", "Renvoi.md"] {
             fs::remove_file(root.join(name)).unwrap();
         }
+        settle(cx);
+
+        // Corbeille : la palette liste ce qu'elle contient ; Entrée remet la note dans le coffre,
+        // où elle reparaît parmi les notes.
+        fs::write(root.join("Jetée.md"), "# Jetée\n").unwrap();
+        settle(cx);
+        vault::trash(&root, &root.join("Jetée.md")).unwrap();
+        settle(cx);
+        assert!(shell.read_with(cx, |s, _| s.notes.iter().all(|n| n.name != "Jetée")));
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("corbeille");
+        cx.simulate_keystrokes("down enter");
+        cx.simulate_input("jet");
+        cx.simulate_keystrokes("enter");
+        settle(cx);
+        assert!(root.join("Jetée.md").is_file() && !root.join(".trash/Jetée.md").exists());
+        assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Jetée") && s.notice.as_deref() == Some("Restauré : Jetée.md")));
+        shell.update(cx, |s, _| s.notice = None);
+        fs::remove_file(root.join("Jetée.md")).unwrap();
         settle(cx);
 
         // Recherche dans le coffre : Ctrl+Maj+F liste chaque ligne où figure le texte tapé, sans

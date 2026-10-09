@@ -260,7 +260,7 @@ A previewed note only counts as opened, and moves to the top of the recent list,
 - **Several lines at once**: `Ctrl + click` adds a line to the selection or takes it out, `Shift + click` selects everything from the last line chosen. Dragging, duplicating, copying links or paths and moving to the trash then apply to all of them.
 - **Drag and drop**: in the tree, drag a note or a folder onto a folder to move it there, or below the last line to move it to the top of the vault. Nothing is ever overwritten: if the name is taken, the move is refused.
 - **Renaming** a note whose first line is its name rewrites that line too, so both stay in step. The `[[links]]` to it in the other notes follow, see [Notes and vault](#notes-and-vault).
-- **The trash** is the hidden folder `.trash` at the top of the vault: deleting moves the note or the folder there, and never destroys anything. Empty it, or take a note back, with your file manager.
+- **The trash** is the hidden folder `.trash` at the top of the vault: deleting moves the note or the folder there, and never destroys anything. To take something back, type `trash` in the palette: it lists the trash, and `Enter` returns the chosen item to the top of the vault (the trash does not remember where it came from), under another name if its own is taken. Empty the trash with your file manager.
 
 Bref reopens with the panel as you left it.
 
