@@ -1050,6 +1050,10 @@ impl Editor {
 
     /// Passage suivant ou précédent, en repartant de l'autre bout une fois au bord.
     fn find_step(&mut self, forward: bool, cx: &mut Context<Self>) {
+        // F3 sans barre : elle s'ouvre, comme avec Ctrl+F.
+        if self.find.is_none() {
+            return self.open_find(false, cx);
+        }
         self.refresh_find();
         if let Some(find) = &mut self.find
             && let n @ 1.. = find.hits.len()

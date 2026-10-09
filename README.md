@@ -220,7 +220,7 @@ In the palette, type to search; `Enter` opens the selected note. Notes whose nam
 | `Ctrl + Enter` | replace every match; a single `Ctrl + Z` in the note brings them all back |
 | `Esc` | close; the cursor stays on the current match |
 
-Click in the note to edit it while the bar stays open: the matches follow the text, `F3` still moves between them, and `Esc` closes the bar. Regular expressions and replacing across the vault are not there yet.
+Click in the note to edit it while the bar stays open: the matches follow the text, `F3`, `Alt + C` and `Alt + W` still work, and `Esc` closes the bar. With no bar, `F3` opens it. Regular expressions and replacing across the vault are not there yet.
 
 ## Navigation
 

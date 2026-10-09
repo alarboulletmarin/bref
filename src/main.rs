@@ -2408,8 +2408,11 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("escape", FindClose, f),
         KeyBinding::new("backspace", FindErase, f),
         KeyBinding::new("tab", FindSwitch, f),
+        // Aussi quand la barre est ouverte mais que la saisie est revenue à la note.
         KeyBinding::new("alt-c", FindCase, f),
         KeyBinding::new("alt-w", FindWord, f),
+        KeyBinding::new("alt-c", FindCase, e),
+        KeyBinding::new("alt-w", FindWord, e),
         KeyBinding::new("secondary-v", FindPaste, f),
         KeyBinding::new("enter", Newline, e),
         KeyBinding::new("tab", Indent, e),
@@ -3665,6 +3668,16 @@ mod tests {
         assert_eq!(finding(cx), Some(("hiver".into(), 1, 2)));
         cx.simulate_input("x");
         assert_eq!((text(cx), finding(cx)), ("xhiver hiver".into(), Some(("hiver".into(), 1, 2))));
+        // La saisie est dans la note : F3 et les réglages de la barre répondent quand même.
+        cx.simulate_keystrokes("f3");
+        assert_eq!(finding(cx), Some(("hiver".into(), 2, 2)));
+        cx.simulate_keystrokes("alt-w");
+        assert_eq!(finding(cx), Some(("hiver".into(), 1, 1)));
+        cx.simulate_keystrokes("alt-w alt-c alt-c escape");
+        assert_eq!(finding(cx), None);
+        // Sans barre, F3 l'ouvre.
+        cx.simulate_keystrokes("f3");
+        assert!(finding(cx).is_some());
         cx.simulate_keystrokes("escape");
         assert_eq!(finding(cx), None);
 
