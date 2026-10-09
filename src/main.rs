@@ -3572,6 +3572,19 @@ mod tests {
         }
         assert!(gestures > 500);
 
+        // `/meta` (ou `/tags`, `/alias`) pose l'en-tête YAML en tête de note, où qu'on soit, le
+        // curseur entre les crochets des tags ; redemandé, il y ramène sans en poser un second.
+        load(cx, "# Titre\n\ntexte ", "# Titre\n\ntexte ".len());
+        cx.simulate_input("/tags");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("projet");
+        assert_eq!(text(cx), "---\ntags: [projet]\naliases: []\n---\n# Titre\n\ntexte ");
+        cx.simulate_keystrokes("secondary-end");
+        cx.simulate_input("/meta");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("x");
+        assert_eq!(text(cx), "---\ntags: [xprojet]\naliases: []\n---\n# Titre\n\ntexte ");
+
         // En-tête YAML ouvert au clavier : tant qu'il n'est pas fermé, sa première ligne reste une règle.
         load(cx, "---\na: 1\n", 9);
         assert_eq!(kind(cx, 0), Some(markdown::Kind::Rule));

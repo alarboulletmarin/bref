@@ -314,6 +314,7 @@ Type `/` at the start of a line or of a word: a list offers what can be inserted
 | `/table` | a table, after you chose its size |
 | `/link`, `/image` | `[[` or `![[`, and their suggestions |
 | `/date` | today's date (`2026-10-09`), in place |
+| `/meta` (also `/tags`, `/alias`) | a YAML front matter at the top of the note, wherever you are, with the cursor between the brackets of `tags: []`; if the note has one, the cursor goes there |
 
 ### Tables
 

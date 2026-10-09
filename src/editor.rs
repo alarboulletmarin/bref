@@ -156,6 +156,7 @@ const COMMANDS: &[Command] = &[
     ("todo", "Task", "Tâche à cocher", "- [ ] ", ""),
     ("table", "Table", "Tableau", "", ""),
     ("date", "Today's date", "Date du jour", "", ""),
+    ("meta", "Front matter: tags, aliases", "En-tête : tags, alias", "", ""),
     ("note", "Panel: note", "Panneau : note", "> [!NOTE]\n> ", ""),
     ("tip", "Panel: tip", "Panneau : astuce", "> [!TIP]\n> ", ""),
     ("important", "Panel: important", "Panneau : important", "> [!IMPORTANT]\n> ", ""),
@@ -2093,6 +2094,18 @@ impl Editor {
                     self.edit(slash..c, "", cx);
                     self.grid = Some((3, 3));
                     self.grid_typed.clear();
+                    return true;
+                }
+                // L'en-tête YAML se pose en tête de note, où qu'on le demande ; s'il y est déjà,
+                // le curseur y va. Dans les deux cas il attend entre les crochets des tags.
+                if name == "meta" {
+                    self.edit(slash..c, "", cx);
+                    if md::front_matter(&self.content) == 0 {
+                        self.edit(0..0, "---\ntags: []\naliases: []\n---\n", cx);
+                    }
+                    let block = &self.content[..md::front_matter(&self.content)];
+                    let at = block.find("tags: [").map_or("---\n".len(), |i| i + "tags: [".len());
+                    self.move_to(at, cx);
                     return true;
                 }
                 // La date du jour s'écrit là où on la demande.
