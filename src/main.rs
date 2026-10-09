@@ -2217,6 +2217,18 @@ mod tests {
     use super::*;
     use gpui::TestAppContext;
 
+    static CONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Le dossier de config est global au processus (variables d'environnement) : un test qui le déplace sous
+    /// `root` garde le verrou jusqu'à sa fin, pour qu'un autre ne le déplace pas pendant qu'il s'en sert.
+    fn isolated_config(root: &Path) -> std::sync::MutexGuard<'static, ()> {
+        let guard = CONFIG.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
+            unsafe { std::env::set_var(key, root.join(".config")) };
+        }
+        guard
+    }
+
     /// `secondary` = Cmd sur macOS, Ctrl ailleurs, comme dans `bind_keys`.
     /// Parcours complet au clavier : saisie, listes, enregistrement, palette, wikilien.
     #[gpui::test]
@@ -2227,9 +2239,7 @@ mod tests {
         fs::create_dir(root.join("Projets")).unwrap();
         fs::write(root.join("Projets/Plan.md"), "# Plan\n\n[[Courses]]\n").unwrap();
         // La config de test ne doit pas toucher celle de l'utilisateur.
-        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
-            unsafe { std::env::set_var(key, root.join(".config")) };
-        }
+        let _config = isolated_config(&root);
         // Ce qu'une version nommée « encre » a laissé est relu tant que rien n'existe sous le nouveau nom.
         let old = vault::config_dir().join("encre");
         fs::create_dir_all(&old).unwrap();
@@ -3289,9 +3299,7 @@ mod tests {
         let Ok(from) = std::env::var("BREF_CSV_DIR") else { return };
         let root = std::env::temp_dir().join(format!("bref-fuzz-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
-            unsafe { std::env::set_var(key, root.join(".config")) };
-        }
+        let _config = isolated_config(&root);
         let mut files = Vec::new();
         for entry in fs::read_dir(&from).unwrap().flatten() {
             let to = root.join(entry.file_name());
@@ -3372,9 +3380,7 @@ mod tests {
         let Ok(from) = std::env::var("BREF_CSV") else { return };
         let root = std::env::temp_dir().join(format!("bref-convert-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
-            unsafe { std::env::set_var(key, root.join(".config")) };
-        }
+        let _config = isolated_config(&root);
         let file = root.join("gros.csv");
         fs::copy(&from, &file).unwrap();
         cx.update(bind_keys);
@@ -3450,9 +3456,7 @@ mod tests {
     fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
         let root = std::env::temp_dir().join(format!("bref-reuse-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
-            unsafe { std::env::set_var(key, root.join(".config")) };
-        }
+        let _config = isolated_config(&root);
         cx.update(bind_keys);
         cx.update(init_fonts);
         let (shell, cx) = cx.add_window_view({
@@ -3516,9 +3520,7 @@ mod tests {
     fn md_table_scale(cx: &mut TestAppContext) {
         let root = std::env::temp_dir().join(format!("bref-mdscale-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
-            unsafe { std::env::set_var(key, root.join(".config")) };
-        }
+        let _config = isolated_config(&root);
         cx.update(bind_keys);
         cx.update(init_fonts);
         let (shell, cx) = cx.add_window_view({
@@ -3588,9 +3590,7 @@ mod tests {
     fn profile_typing(cx: &mut TestAppContext) {
         let root = std::env::temp_dir().join(format!("bref-profile-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
-            unsafe { std::env::set_var(key, root.join(".config")) };
-        }
+        let _config = isolated_config(&root);
         cx.update(bind_keys);
         cx.update(init_fonts);
         let (shell, cx) = cx.add_window_view({
@@ -3657,9 +3657,7 @@ mod tests {
             let root = std::env::temp_dir().join(format!("bref-scale-{notes}-{}", std::process::id()));
             let _ = fs::remove_dir_all(&root);
             synthetic_vault(&root, notes);
-            for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
-                unsafe { std::env::set_var(key, root.join(".config")) };
-            }
+            let _config = isolated_config(&root);
             vault::save_layout("tree split 260 0");
 
             let start = Instant::now();
@@ -3709,9 +3707,7 @@ mod tests {
     fn bench(cx: &mut TestAppContext) {
         let root = std::env::temp_dir().join(format!("bref-bench-{}", std::process::id()));
         synthetic_vault(&root, 2000);
-        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
-            unsafe { std::env::set_var(key, root.join(".config")) };
-        }
+        let _config = isolated_config(&root);
         vault::save_layout("tree split 260 0");
 
         let start = Instant::now();
