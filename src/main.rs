@@ -28,8 +28,9 @@ use gpui::{
     Animation, AnimationExt, App, Application, AssetSource, Bounds, BoxShadow, ClipboardItem, Context,
     CursorStyle, Decorations, Entity, FocusHandle, Focusable, Hsla, KeyBinding, MouseButton,
     MouseMoveEvent, ObjectFit, PathPromptOptions, Pixels, Point, ResizeEdge, SharedString, Size, TitlebarOptions,
+    Transformation,
     Window, WindowAppearance, WindowBounds, WindowBackgroundAppearance, WindowDecorations,
-    WindowOptions, actions, div, ease_out_quint, hsla, img, point, prelude::*, px, rgb, size, svg,
+    WindowOptions, actions, div, ease_out_quint, hsla, img, percentage, point, prelude::*, px, rgb, size, svg,
 };
 
 use canvas::{Canvas, CanvasEvent};
@@ -254,6 +255,9 @@ impl AssetSource for Assets {
                 r#"<rect x="6" y="6" width="7.5" height="7.5" rx="1.5"/><path d="M10 4A1.5 1.5 0 0 0 8.5 2.5H4A1.5 1.5 0 0 0 2.5 4V8.5A1.5 1.5 0 0 0 4 10"/>"#
             }
             "check.svg" => r#"<path d="M4 8.5L7 11L12 5"/>"#,
+            "info.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 7.5V11M8 5V5.2"/>"#,
+            "alert.svg" => r#"<path d="M8 2.5L14 13H2ZM8 6.5V9.5M8 11.3V11.5"/>"#,
+            "spinner.svg" => r#"<path d="M8 2.5A5.5 5.5 0 1 1 2.5 8"/>"#,
             "tree.svg" => r#"<path d="M3 3.5H10M3 3.5V12H6M3 7.75H6M8.5 7.75H13M8.5 12H13"/>"#,
             "clock.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 5V8L10 9.5"/>"#,
             "search.svg" => r#"<circle cx="7" cy="7" r="3.5"/><path d="M9.7 9.7L12.5 12.5"/>"#,
@@ -384,6 +388,25 @@ impl Theme {
     }
 }
 
+/// Ton d'un message d'état : il choisit son icône, et s'il part de lui-même.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Tone {
+    Info,
+    Done,
+    Failed,
+    /// Opération en cours : reste affiché jusqu'au message qui en donne l'issue.
+    Busy,
+}
+
+struct Toast {
+    id: usize,
+    tone: Tone,
+    text: String,
+}
+
+/// Durée d'affichage d'un message d'état.
+const TOAST: Duration = Duration::from_secs(4);
+
 struct Shell {
     focus: FocusHandle,
     editor: Entity<Editor>,
@@ -425,13 +448,14 @@ struct Shell {
     new_dir: Option<PathBuf>,
     dirty: bool,
     save_gen: usize,
-    error: Option<String>,
+    /// Messages d'état affichés, du plus ancien au plus récent.
+    toasts: Vec<Toast>,
+    /// Numéro du dernier message, pour retirer le bon à l'échéance.
+    toasted: usize,
     /// Version plus récente que celle qui tourne, trouvée sur GitHub.
     update: Option<update::Release>,
     /// Son installation est en cours.
     updating: bool,
-    /// Réponse à un contrôle demandé à la main (« Bref est à jour »…), à la place de la bannière.
-    notice: Option<String>,
     title: String,
     prefs: Prefs,
     theme: Theme,
@@ -493,10 +517,10 @@ impl Shell {
             new_dir: None,
             dirty: false,
             save_gen: 0,
-            error: None,
+            toasts: Vec::new(),
+            toasted: 0,
             update: None,
             updating: false,
-            notice: None,
             title: String::new(),
             prefs,
             theme,
@@ -541,11 +565,44 @@ impl Shell {
         .detach();
     }
 
+    /// Affiche un message d'état, qui part au clic ou après `TOAST`. Il remplace le message
+    /// « en cours », dont il est l'issue.
+    // ponytail: une seule opération « en cours » à la fois ; rendre le numéro du message à
+    // l'appelant le jour où deux opérations longues peuvent se chevaucher.
+    pub fn say(&mut self, tone: Tone, text: impl Into<String>, cx: &mut Context<Self>) {
+        self.toasts.retain(|t| t.tone != Tone::Busy);
+        self.toasted += 1;
+        let id = self.toasted;
+        self.toasts.push(Toast { id, tone, text: text.into() });
+        if tone != Tone::Busy {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(TOAST).await;
+                this.update(cx, |this, cx| {
+                    this.toasts.retain(|t| t.id != id);
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
+        }
+        cx.notify();
+    }
+
+    /// Une réussite retire les erreurs encore affichées.
+    pub fn calm(&mut self) {
+        self.toasts.retain(|t| t.tone != Tone::Failed);
+    }
+
+    /// Un message de ce ton contient `part`.
+    #[cfg(test)]
+    fn told(&self, tone: Tone, part: &str) -> bool {
+        self.toasts.iter().any(|t| t.tone == tone && t.text.contains(part))
+    }
+
     /// Contrôle demandé depuis la palette : interroge GitHub tout de suite, même si la recherche
     /// quotidienne est coupée, et dit ce qu'il en est. Les tests ne sortent pas sur le réseau.
     fn check_now(&mut self, cx: &mut Context<Self>) {
-        self.notice = Some(tr("Checking for updates…", "Recherche d'une mise à jour…").into());
-        cx.notify();
+        self.say(Tone::Busy, tr("Checking for updates…", "Recherche d'une mise à jour…"), cx);
         if cfg!(test) {
             return;
         }
@@ -558,15 +615,15 @@ impl Shell {
 
     /// Suite du contrôle : la bannière si `latest` est plus récente, sinon un mot.
     fn checked(&mut self, latest: Option<update::Release>, cx: &mut Context<Self>) {
-        self.notice = match latest {
-            None => Some(tr("No answer from GitHub: check the connection", "GitHub ne répond pas : vérifier la connexion").into()),
+        match latest {
+            None => self.say(Tone::Failed, tr("No answer from GitHub: check the connection", "GitHub ne répond pas : vérifier la connexion"), cx),
             Some(release) if update::is_new(&release) => {
+                self.toasts.retain(|t| t.tone != Tone::Busy);
                 self.update = Some(release);
-                None
+                cx.notify();
             }
-            Some(_) => Some(format!("{} ({})", tr("Bref is up to date", "Bref est à jour"), env!("CARGO_PKG_VERSION"))),
-        };
-        cx.notify();
+            Some(_) => self.say(Tone::Done, format!("{} ({})", tr("Bref is up to date", "Bref est à jour"), env!("CARGO_PKG_VERSION")), cx),
+        }
     }
 
     /// Télécharge et installe la version trouvée, puis quitte : le nouveau programme se
@@ -579,7 +636,7 @@ impl Shell {
             return;
         }
         self.updating = true;
-        self.error = None;
+        self.calm();
         cx.notify();
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move { update::install(&url, sha256.as_deref()) }).await;
@@ -588,8 +645,7 @@ impl Shell {
                 Ok(()) => cx.quit(),
                 Err(e) => {
                     this.updating = false;
-                    this.error = Some(format!("{} : {e}", tr("Update failed", "Mise à jour impossible")));
-                    cx.notify();
+                    this.say(Tone::Failed, format!("{} : {e}", tr("Update failed", "Mise à jour impossible")), cx);
                 }
             })
             .ok();
@@ -871,7 +927,7 @@ impl Shell {
             .collect();
         if heads.is_empty() {
             self.palette = None;
-            self.notice = Some(tr("This note has no headings", "Cette note n'a pas de titres").into());
+            self.say(Tone::Info, tr("This note has no headings", "Cette note n'a pas de titres"), cx);
             window.focus(&self.editor.focus_handle(cx));
             return cx.notify();
         }
@@ -1004,7 +1060,7 @@ impl Shell {
                 self.h1 = vault::h1_of(&text);
                 self.origin = Some(vault::stem(path));
                 self.path = Some(path.to_path_buf());
-                self.error = None;
+                self.calm();
                 self.editor.update(cx, |e, cx| e.load(text, 0, cx));
                 self.push_dirs(cx);
                 self.nav.reveal(path);
@@ -1012,7 +1068,7 @@ impl Shell {
             }
             Err(e) => {
                 let what = tr("Cannot open", "Impossible d'ouvrir");
-                self.error = Some(format!("{what} {} : {e}", path.display()));
+                self.say(Tone::Failed, format!("{what} {} : {e}", path.display()), cx);
                 false
             }
         }
@@ -1033,11 +1089,11 @@ impl Shell {
                 let sheet = cx.new(|cx| Sheet::new(path.to_path_buf(), loaded, theme, cx));
                 cx.subscribe(&sheet, Self::on_sheet_event).detach();
                 self.sheet = Some((path.to_path_buf(), sheet));
-                self.error = None;
+                self.calm();
             }
             Err(e) => {
                 self.picture = None;
-                self.error = Some(e);
+                self.say(Tone::Failed, e, cx);
             }
         }
         cx.notify();
@@ -1057,7 +1113,7 @@ impl Shell {
 
     fn on_sheet_event(&mut self, _: Entity<Sheet>, event: &SheetEvent, cx: &mut Context<Self>) {
         match event {
-            SheetEvent::Error(message) => self.error = Some(message.clone()),
+            SheetEvent::Error(message) => self.say(Tone::Failed, message.clone(), cx),
             // Un fichier est apparu à côté du tableau : l'arbre le montre.
             SheetEvent::Exported => {
                 if let Some(root) = self.vault.clone() {
@@ -1266,7 +1322,7 @@ impl Shell {
         match vault::save(dir, self.path.as_deref(), self.synced, &content) {
             Ok(path) => {
                 self.dirty = false;
-                self.error = None;
+                self.calm();
                 let (tags, links) = markdown::index(&content);
                 // Le graphe ne change que si la note est nouvelle, renommée ou liée autrement.
                 let known = self.notes.iter().find(|n| Some(&n.path) == self.path.as_ref());
@@ -1298,7 +1354,7 @@ impl Shell {
                 self.refresh_graph(cx);
             }
             Err(e) => {
-                self.error = Some(format!("{} : {e}", tr("Note not saved", "Note non enregistrée")))
+                self.say(Tone::Failed, format!("{} : {e}", tr("Note not saved", "Note non enregistrée")), cx)
             }
         }
         cx.notify();
@@ -1345,7 +1401,10 @@ impl Shell {
             CanvasEvent::Changed => vault::write(path, &canvas.read(cx).diagram().to_svg(diagram::COLORS[0])),
             CanvasEvent::Export => return self.export_png(path.clone(), &canvas, cx),
         };
-        self.error = result.err().map(|e| format!("{} : {e}", tr("Diagram not saved", "Schéma non enregistré")));
+        match result {
+            Ok(()) => self.calm(),
+            Err(e) => self.say(Tone::Failed, format!("{} : {e}", tr("Diagram not saved", "Schéma non enregistré")), cx),
+        }
         cx.notify();
     }
 
@@ -1370,7 +1429,7 @@ impl Shell {
                         this.refresh_graph(cx);
                         canvas.update(cx, |canvas, cx| canvas.exported(cx)).ok();
                     }
-                    Err(e) => this.error = Some(format!("{} : {e}", tr("Picture not saved", "Image non enregistrée"))),
+                    Err(e) => this.say(Tone::Failed, format!("{} : {e}", tr("Picture not saved", "Image non enregistrée")), cx),
                 }
                 cx.notify();
             })
@@ -1420,7 +1479,7 @@ impl Shell {
         });
         match (read, self.diagram_dir()) {
             (Ok(diagram), Some(dir)) => self.add_diagram(&dir, &vault::stem(file), diagram, window, cx),
-            (Err(e), _) => self.error = Some(format!("{} : {e}", tr("Import failed", "Import impossible"))),
+            (Err(e), _) => self.say(Tone::Failed, format!("{} : {e}", tr("Import failed", "Import impossible")), cx),
             _ => {}
         }
         cx.notify();
@@ -1430,8 +1489,7 @@ impl Shell {
     fn add_diagram(&mut self, dir: &Path, name: &str, diagram: Diagram, window: &mut Window, cx: &mut Context<Self>) {
         let path = vault::free_path(dir, name, "svg");
         if let Err(e) = vault::write(&path, &diagram.to_svg(diagram::COLORS[0])) {
-            self.error = Some(format!("{} : {e}", tr("Diagram not saved", "Schéma non enregistré")));
-            return cx.notify();
+            return self.say(Tone::Failed, format!("{} : {e}", tr("Diagram not saved", "Schéma non enregistré")), cx);
         }
         self.images.push(path.clone());
         self.push_names(cx);
@@ -1472,18 +1530,13 @@ impl Shell {
             return;
         };
         self.flush(cx);
-        self.notice = Some(tr("Backing up the vault…", "Sauvegarde du coffre…").into());
-        cx.notify();
+        self.say(Tone::Busy, tr("Backing up the vault…", "Sauvegarde du coffre…"), cx);
         let date = date_name(today());
         cx.spawn(async move |this, cx| {
             let done = cx.background_executor().spawn(async move { vault::backup(&root, &dir, &date) }).await;
-            this.update(cx, |this, cx| {
-                this.notice = None;
-                match done {
-                    Ok(to) => this.notice = Some(format!("{} {}", tr("Backup saved:", "Sauvegarde enregistrée :"), to.display())),
-                    Err(e) => this.error = Some(format!("{} : {e}", tr("Backup failed", "Sauvegarde impossible"))),
-                }
-                cx.notify();
+            this.update(cx, |this, cx| match done {
+                Ok(to) => this.say(Tone::Done, format!("{} {}", tr("Backup saved:", "Sauvegarde enregistrée :"), to.display()), cx),
+                Err(e) => this.say(Tone::Failed, format!("{} : {e}", tr("Backup failed", "Sauvegarde impossible")), cx),
             })
             .ok();
         })
@@ -1498,8 +1551,7 @@ impl Shell {
         };
         let found = vault::trashed(&root);
         if found.is_empty() {
-            self.notice = Some(tr("The trash is empty", "La corbeille est vide").into());
-            return cx.notify();
+            return self.say(Tone::Info, tr("The trash is empty", "La corbeille est vide"), cx);
         }
         let names = found.iter().map(|p| p.file_name().unwrap_or_default().to_string_lossy().into_owned()).collect();
         let theme = self.theme;
@@ -1512,9 +1564,9 @@ impl Shell {
             match chosen.map(|path| vault::restore(&root, path)) {
                 Some(Ok(to)) => {
                     let name = to.file_name().unwrap_or_default().to_string_lossy().into_owned();
-                    this.notice = Some(format!("{} {name}", tr("Restored:", "Restauré :")));
+                    this.say(Tone::Done, format!("{} {name}", tr("Restored:", "Restauré :")), cx);
                 }
-                Some(Err(e)) => this.error = Some(format!("{} : {e}", tr("Not restored", "Restauration impossible"))),
+                Some(Err(e)) => this.say(Tone::Failed, format!("{} : {e}", tr("Not restored", "Restauration impossible")), cx),
                 None => {}
             }
             this.palette = None;
@@ -2001,11 +2053,8 @@ impl Render for Shell {
                 ),
                 (None, _) => note.child(self.editor.clone()).child(copy),
             };
-            let banner = || {
+            let card = || {
                 div()
-                    .absolute()
-                    .bottom_3()
-                    .left_16()
                     .pl_3()
                     .pr_2()
                     .py_1p5()
@@ -2018,20 +2067,45 @@ impl Render for Shell {
                     .items_center()
                     .gap_3()
             };
+            let banner = || card().absolute().bottom_3().left_16();
+            // Messages d'état, empilés au-dessus du compteur de mots : un clic les retire.
+            let toasts = self.toasts.iter().map(|toast| {
+                let id = toast.id;
+                let (icon, color) = match toast.tone {
+                    Tone::Info => ("info.svg", t.dim),
+                    Tone::Done => ("check.svg", rgb(0x3fa46a).into()),
+                    Tone::Failed => ("alert.svg", rgb(0xd9483b).into()),
+                    Tone::Busy => ("spinner.svg", t.dim),
+                };
+                let icon = svg().path(icon).size(px(14.)).flex_none().text_color(color);
+                let icon = match toast.tone {
+                    Tone::Busy => icon
+                        .with_animation(("toast-spin", id), Animation::new(Duration::from_secs(1)).repeat(), |icon, delta| {
+                            icon.with_transformation(Transformation::rotate(percentage(delta)))
+                        })
+                        .into_any_element(),
+                    _ => icon.into_any_element(),
+                };
+                card()
+                    .max_w(px(440.))
+                    .shadow_lg()
+                    .cursor_pointer()
+                    .child(icon)
+                    .child(div().min_w_0().child(toast.text.clone()))
+                    .child(svg().path("close.svg").size(px(14.)).flex_none().text_color(t.dim))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.toasts.retain(|t| t.id != id);
+                            cx.notify();
+                        }),
+                    )
+            });
+            let toasts = div().absolute().bottom(px(54.)).right_4().flex().flex_col().items_end().gap_2().children(toasts);
             body.flex()
                 .child(self.render_nav(cx))
                 .when(self.nav.panel != Panel::Full, |d| d.child(note))
                 .children(self.palette.clone())
-                // Réponse à un contrôle demandé à la main ; un clic la referme.
-                .children(self.notice.clone().filter(|_| self.update.is_none()).map(|message| {
-                    banner().pr_3().cursor_pointer().child(message).on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, _, _, cx| {
-                            this.notice = None;
-                            cx.notify();
-                        }),
-                    )
-                }))
                 .children(self.update.clone().map(|release| {
                     let banner = banner();
                     if self.updating {
@@ -2078,19 +2152,7 @@ impl Render for Shell {
                                 ),
                         )
                 }))
-                .children(self.error.clone().map(|message| {
-                    div()
-                        .absolute()
-                        .bottom_3()
-                        .left_3()
-                        .px_3()
-                        .py_1p5()
-                        .rounded(px(6.))
-                        .bg(rgb(0xb42318))
-                        .text_color(rgb(0xffffff))
-                        .text_size(px(13.))
-                        .child(message)
-                }))
+                .child(toasts)
         };
 
         let content = div()
@@ -2620,23 +2682,23 @@ mod tests {
         cx.simulate_input("mettre à jour");
         cx.simulate_keystrokes("down enter");
         cx.run_until_parked();
-        assert!(shell.read_with(cx, |s, _| !s.updating && s.error.as_deref().is_some_and(|e| e.contains("Mise à jour impossible"))));
-        shell.update(cx, |s, _| (s.update, s.error) = (None, None));
+        assert!(shell.read_with(cx, |s, _| !s.updating && s.told(Tone::Failed, "Mise à jour impossible")));
+        shell.update(cx, |s, _| (s.update, s.toasts) = (None, Vec::new()));
 
         // Contrôle à la main : la palette le lance, puis la réponse dit que Bref est à jour,
         // que GitHub ne répond pas, ou montre la bannière.
         cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("maintenant");
         cx.simulate_keystrokes("down enter");
-        assert!(shell.read_with(cx, |s, _| s.notice.as_deref().is_some_and(|n| n.contains("Recherche"))));
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Busy, "Recherche")));
         let version = |v: &str| Some(update::Release { version: v.into(), ..Default::default() });
         shell.update(cx, |s, cx| s.checked(version(env!("CARGO_PKG_VERSION")), cx));
-        assert!(shell.read_with(cx, |s, _| s.update.is_none() && s.notice.as_deref().is_some_and(|n| n.contains("à jour"))));
+        assert!(shell.read_with(cx, |s, _| s.update.is_none() && s.told(Tone::Done, "à jour") && !s.told(Tone::Busy, "")));
         shell.update(cx, |s, cx| s.checked(None, cx));
-        assert!(shell.read_with(cx, |s, _| s.notice.as_deref().is_some_and(|n| n.contains("GitHub"))));
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Failed, "GitHub")));
         shell.update(cx, |s, cx| s.checked(version("9.9.9"), cx));
-        assert!(shell.read_with(cx, |s, _| s.notice.is_none() && s.update.as_ref().is_some_and(|r| r.version == "9.9.9")));
-        shell.update(cx, |s, _| s.update = None);
+        assert!(shell.read_with(cx, |s, _| !s.told(Tone::Busy, "") && s.update.as_ref().is_some_and(|r| r.version == "9.9.9")));
+        shell.update(cx, |s, _| (s.update, s.toasts) = (None, Vec::new()));
 
         // Wikilien complété puis nouvelle note créée depuis la palette.
         cx.simulate_keystrokes("secondary-end");
@@ -3013,7 +3075,7 @@ mod tests {
         assert!(tagged > 0 && previewed);
         // Un tag n'est pas un fichier : Suppr n'y fait rien.
         cx.simulate_keystrokes("up delete");
-        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.error.is_none()));
+        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && !s.told(Tone::Failed, "")));
 
         // Rétroliens : Ctrl+L liste les notes qui mènent à la note ouverte (lien avec alias, lien
         // dans un tableau). Bas en montre une en aperçu sans que la liste change ; elle suit un
@@ -3106,10 +3168,10 @@ mod tests {
         cx.simulate_keystrokes("down enter");
         cx.simulate_input("jet");
         cx.simulate_keystrokes("enter");
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Done, "Restauré : Jetée.md")));
         settle(cx);
         assert!(root.join("Jetée.md").is_file() && !root.join(".trash/Jetée.md").exists());
-        assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Jetée") && s.notice.as_deref() == Some("Restauré : Jetée.md")));
-        shell.update(cx, |s, _| s.notice = None);
+        assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Jetée") && s.toasts.is_empty()));
         fs::remove_file(root.join("Jetée.md")).unwrap();
         settle(cx);
 
@@ -3121,11 +3183,11 @@ mod tests {
         cx.run_until_parked();
         let saved = fs::read_dir(&out).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect::<Vec<_>>();
         assert!(saved.len() == 1 && saved[0].ends_with(&format!(" {}.tar.gz", date_name(today()))), "{saved:?}");
-        assert!(shell.read_with(cx, |s, _| s.error.is_none() && s.notice.as_deref().is_some_and(|n| n.starts_with("Sauvegarde enregistrée") && n.ends_with(&saved[0]))));
+        assert!(shell.read_with(cx, |s, _| !s.told(Tone::Failed, "") && !s.told(Tone::Busy, "") && s.told(Tone::Done, "Sauvegarde enregistrée") && s.told(Tone::Done, &saved[0])));
         shell.update(cx, |s, cx| s.backup_to(root.join(".trash"), cx));
         cx.run_until_parked();
-        assert!(shell.read_with(cx, |s, _| s.error.as_deref().is_some_and(|e| e.contains("hors du coffre"))));
-        shell.update(cx, |s, _| (s.notice, s.error) = (None, None));
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Failed, "hors du coffre")));
+        shell.update(cx, |s, _| s.toasts.clear());
         fs::remove_dir_all(&out).unwrap();
 
         // Recherche dans le coffre : Ctrl+Maj+F liste chaque ligne où figure le texte tapé, sans
@@ -3617,8 +3679,22 @@ mod tests {
         assert!(caret(cx) == plan.find("## Deux").unwrap() && shell.read_with(cx, |s, _| s.palette.is_none()));
         load(cx, "sans titre", 0);
         cx.simulate_keystrokes("secondary-shift-o");
-        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.notice.as_deref().is_some_and(|n| n.contains("titres"))));
-        shell.update(cx, |s, _| s.notice = None);
+        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.told(Tone::Info, "titres")));
+        // Messages d'état : un clic retire celui qu'il vise, les autres partent seuls après quatre
+        // secondes ; celui d'une opération en cours reste, jusqu'au message qui en donne l'issue.
+        shell.update(cx, |s, cx| s.say(Tone::Busy, "En cours", cx));
+        let view = cx.update(|window, _| window.viewport_size());
+        cx.simulate_click(point(view.width - px(60.), view.height - px(70.)), gpui::Modifiers::none());
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Info, "titres") && !s.told(Tone::Busy, "")));
+        shell.update(cx, |s, cx| s.say(Tone::Busy, "En cours", cx));
+        cx.executor().advance_clock(TOAST);
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.toasts.len() == 1 && s.told(Tone::Busy, "En cours")));
+        shell.update(cx, |s, cx| s.say(Tone::Done, "Fini", cx));
+        assert!(shell.read_with(cx, |s, _| s.toasts.len() == 1 && s.told(Tone::Done, "Fini")));
+        cx.executor().advance_clock(TOAST);
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.toasts.is_empty()));
 
         // Recherche dans la note : Ctrl+F, la frappe montre le premier passage, Entrée et
         // Maj+Entrée tournent en boucle, Alt+C tient compte de la casse, Alt+W des mots entiers.
@@ -3751,7 +3827,7 @@ mod tests {
         shell.update(cx, |s, cx| s.export_png(file.clone(), &canvas, cx));
         cx.run_until_parked();
         assert!(fs::read(file.with_extension("png")).unwrap().starts_with(b"\x89PNG"));
-        assert!(shell.read_with(cx, |s, _| s.images.contains(&file.with_extension("png")) && s.error.is_none()));
+        assert!(shell.read_with(cx, |s, _| s.images.contains(&file.with_extension("png")) && !s.told(Tone::Failed, "")));
 
         // Le bouton « nouvelle note » de l'arbre range à la racine du coffre, même avec un dossier sélectionné.
         shell.update_in(cx, |s, _, cx| {

@@ -17,7 +17,7 @@ use gpui::{
 };
 
 use crate::{
-    Shell, Theme, graph,
+    Shell, Theme, Tone, graph,
     palette::{Palette, PaletteEvent, Setting},
     tr,
     vault::{self, Note},
@@ -637,7 +637,7 @@ impl Shell {
                     Some(name) => format!("{} « {} »", tr("Folder name, in", "Nom du dossier, dans"), name.to_string_lossy()),
                     None => tr("Folder name", "Nom du dossier").to_string(),
                 };
-                self.ask(label, "", window, cx, move |this, name, _| {
+                self.ask(label, "", window, cx, move |this, name, cx| {
                     let new = dir.join(name);
                     match fs::create_dir(&new) {
                         Ok(()) => {
@@ -645,7 +645,7 @@ impl Shell {
                             this.dirs.push(new.clone());
                             this.nav.reveal(&new);
                         }
-                        Err(e) => this.fail(tr("Folder not created", "Dossier non créé"), e),
+                        Err(e) => this.fail(tr("Folder not created", "Dossier non créé"), e, cx),
                     }
                 });
             }
@@ -683,7 +683,7 @@ impl Shell {
                                 this.reload(cx);
                             }
                         }
-                        Err(e) => this.fail(tr("Not renamed", "Renommage impossible"), e),
+                        Err(e) => this.fail(tr("Not renamed", "Renommage impossible"), e, cx),
                     }
                 });
             }
@@ -718,7 +718,7 @@ impl Shell {
                     let twin = vault::free_path(path.parent().unwrap_or(&root), &vault::stem(path), &extension);
                     match fs::copy(path, &twin) {
                         Ok(_) => last = Some(twin),
-                        Err(e) => return self.fail(tr("Not duplicated", "Duplication impossible"), e),
+                        Err(e) => return self.fail(tr("Not duplicated", "Duplication impossible"), e, cx),
                     }
                 }
                 if let Some(twin) = last {
@@ -747,8 +747,8 @@ impl Shell {
         !self.dirs.iter().any(|d| self.nav.open.contains(d))
     }
 
-    fn fail(&mut self, what: &str, e: std::io::Error) {
-        self.error = Some(format!("{what} : {e}"));
+    fn fail(&mut self, what: &str, e: std::io::Error, cx: &mut Context<Self>) {
+        self.say(Tone::Failed, format!("{what} : {e}"), cx);
     }
 
     /// Demande un nom dans un champ de saisie, puis appelle `then` avec ce nom nettoyé.
@@ -800,7 +800,7 @@ impl Shell {
                 self.nav.open.insert(dir.to_path_buf());
                 self.relocate(from, &to, false, cx);
             }
-            Err(e) => self.fail(tr("Not moved", "Déplacement impossible"), e),
+            Err(e) => self.fail(tr("Not moved", "Déplacement impossible"), e, cx),
         }
     }
 
@@ -841,7 +841,7 @@ impl Shell {
     fn trash(&mut self, root: &Path, path: &Path, cx: &mut Context<Self>) {
         self.flush(cx);
         if let Err(e) = vault::trash(root, path) {
-            return self.fail(tr("Not moved to the trash", "Mise à la corbeille impossible"), e);
+            return self.fail(tr("Not moved to the trash", "Mise à la corbeille impossible"), e, cx);
         }
         let gone = |p: &PathBuf| p.starts_with(path);
         self.notes.retain(|n| !gone(&n.path));
@@ -864,7 +864,7 @@ impl Shell {
         if let Some(root) = &self.vault {
             vault::save_config(root, &self.recent);
         }
-        self.error = None;
+        self.calm();
         self.push_names(cx);
         self.graph_stale = true;
         self.refresh_graph(cx);
