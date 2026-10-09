@@ -42,21 +42,24 @@ pub fn image_name(path: &Path) -> String {
 /// Rétroliens : les notes dont un `[[wikilien]]` vise la note `target`, par ordre de nom. Comme
 /// pour les arêtes, quand deux notes portent le même nom, le lien vise la première.
 pub fn backlinks<'a>(notes: &'a [Note], target: &Path) -> Vec<&'a Note> {
-    let Some(key) = notes.iter().find(|note| note.path == target).map(|note| note.name.to_lowercase()) else {
+    let Some(aimed) = notes.iter().find(|note| note.path == target) else {
         return Vec::new();
     };
+    let key = aimed.name.to_lowercase();
     if notes.iter().find(|note| note.name.to_lowercase() == key).is_some_and(|first| first.path != target) {
         return Vec::new();
     }
-    let mut found: Vec<&Note> = notes.iter().filter(|note| note.path != target && note.links.contains(&key)).collect();
+    let reaches = |note: &&Note| note.path != target && note.links.iter().any(|link| aimed.answers(link));
+    let mut found: Vec<&Note> = notes.iter().filter(reaches).collect();
     found.sort_by_cached_key(|note| note.name.to_lowercase());
     found
 }
 
-/// Première ligne de `body` qui porte un wikilien vers la note nommée `key` (en minuscules).
-pub fn link_line<'a>(body: &'a str, key: &str) -> Option<&'a str> {
+/// Première ligne de `body` qui porte un wikilien vers la note `aimed` (son nom ou un alias).
+pub fn link_line<'a>(body: &'a str, aimed: &Note) -> Option<&'a str> {
     body.lines().find(|line| {
-        crate::markdown::links(line).iter().any(|(_, link)| matches!(link, crate::markdown::Link::Wiki(name) if name.to_lowercase() == key))
+        let links = crate::markdown::links(line);
+        links.iter().any(|(_, link)| matches!(link, crate::markdown::Link::Wiki(name) if aimed.answers(&name.to_lowercase())))
     })
 }
 
@@ -66,6 +69,12 @@ pub fn edges(notes: &[Note], images: &[PathBuf]) -> Vec<(usize, usize)> {
     let mut by_name: HashMap<String, usize> = HashMap::new();
     for (i, note) in notes.iter().enumerate() {
         by_name.entry(note.name.to_lowercase()).or_insert(i);
+    }
+    // Un alias ne prend pas la place d'un nom.
+    for (i, note) in notes.iter().enumerate() {
+        for alias in &note.aliases {
+            by_name.entry(alias.to_lowercase()).or_insert(i);
+        }
     }
     for (i, image) in images.iter().enumerate() {
         by_name.entry(image_name(image).to_lowercase()).or_insert(notes.len() + i);
@@ -583,6 +592,7 @@ mod tests {
             path: PathBuf::from(format!("/v/{name}.md")),
             tags: Vec::new(),
             links: links.iter().map(|l| l.to_string()).collect(),
+            aliases: Vec::new(),
             mtime: SystemTime::UNIX_EPOCH,
             body: "".into(),
         }
@@ -599,9 +609,15 @@ mod tests {
         // Une seconde note du même nom : les liens visent la première.
         assert!(names("/v/sous/Cible.md").is_empty() && names("/v/absente.md").is_empty());
         let body = "# A\n[[autre]] et [[Cible]]x\n| t | [[cible|alias]] |\n";
-        assert_eq!(link_line(body, "cible"), Some("[[autre]] et [[Cible]]x"));
-        assert_eq!(link_line("un [[Cible|alias]] là", "cible"), Some("un [[Cible|alias]] là"));
-        assert_eq!(link_line(body, "cib"), None);
+        assert_eq!(link_line(body, &notes[0]), Some("[[autre]] et [[Cible]]x"));
+        assert_eq!(link_line("un [[Cible|alias]] là", &notes[0]), Some("un [[Cible|alias]] là"));
+        assert_eq!(link_line(body, &notes[1]), None);
+        // Un alias de l'en-tête YAML vaut le nom : rétrolien, ligne du lien et arête du graphe.
+        let mut notes = vec![note("Appli", &[]), note("Journal", &["bref app"])];
+        notes[0].aliases = vec!["Bref App".into()];
+        assert_eq!(backlinks(&notes, Path::new("/v/Appli.md")).len(), 1);
+        assert_eq!(link_line("vu [[bref app]]", &notes[0]), Some("vu [[bref app]]"));
+        assert_eq!(edges(&notes, &[]), [(0, 1)]);
     }
 
     #[test]

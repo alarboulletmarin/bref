@@ -426,7 +426,15 @@ fn file_name(path: &str) -> &str {
 /// Tags et wikiliens (en minuscules) d'une note entière, hors blocs de code, dédupliqués.
 /// Les images affichées y figurent par leur nom de fichier.
 pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
-    let (mut tags, mut wikis) = (Vec::new(), Vec::new());
+    // Les tags de l'en-tête (`tags: [a, b]`) valent ceux du texte, avec ou sans `#`.
+    let mut tags: Vec<String> = Vec::new();
+    for tag in front_values(text, "tags") {
+        let tag = tag.trim_start_matches('#').to_string();
+        if !tag.is_empty() && !tags.contains(&tag) {
+            tags.push(tag);
+        }
+    }
+    let mut wikis = Vec::new();
     let mut in_code = false;
     for line in text[front_matter(text)..].lines() {
         if is_fence(line) {
@@ -785,6 +793,29 @@ pub fn front_matter(text: &str) -> usize {
     0
 }
 
+/// Valeurs de la clé `key` de l'en-tête YAML, guillemets retirés : liste en ligne (`[a, b]`),
+/// valeurs séparées par des virgules, ou liste à tirets sur les lignes suivantes.
+// ponytail: lu à la main, pour les deux clés dont l'app se sert ; ni YAML imbriqué ni clé
+// indentée. Une bibliothèque YAML si d'autres clés ou des valeurs plus riches sont à lire.
+pub fn front_values(text: &str, key: &str) -> Vec<String> {
+    let clean = |value: &str| value.trim().trim_matches(['"', '\'']).trim().to_string();
+    let mut lines = text[..front_matter(text)].lines().skip(1);
+    let Some(rest) = lines.find_map(|line| Some(line.strip_prefix(key)?.strip_prefix(':')?.trim())) else {
+        return Vec::new();
+    };
+    let values: Vec<String> = match rest.is_empty() {
+        true => lines.map_while(|line| line.trim_start().strip_prefix("- ")).map(clean).collect(),
+        false => rest.strip_prefix('[').and_then(|list| list.strip_suffix(']')).unwrap_or(rest).split(',').map(clean).collect(),
+    };
+    values.into_iter().filter(|value| !value.is_empty()).collect()
+}
+
+/// Autres noms de la note, donnés par la clé `aliases` de son en-tête : un `[[lien]]` peut la
+/// viser par l'un d'eux.
+pub fn aliases(text: &str) -> Vec<String> {
+    front_values(text, "aliases")
+}
+
 /// Titres du texte : niveau (1 à 6), intitulé, début de leur ligne. Une ligne de bloc de code
 /// n'est pas un titre, une ligne de l'en-tête YAML non plus ; comme à l'écran, un ``` sans
 /// clôture n'ouvre pas de bloc.
@@ -980,6 +1011,13 @@ mod tests {
         assert_eq!(index(&linked), (vec!["oui".to_string()], vec!["vieux".to_string()]));
         assert_eq!(relink(&linked, "vieux", "Neuf").unwrap(), "---\nvoir: \"[[Vieux]]\" #non\n---\n[[Neuf]] #oui\n");
         assert_eq!(relink("---\nvoir: \"[[Vieux]]\"\n---\nrien\n", "vieux", "Neuf"), None);
+        // Tags et alias de l'en-tête, sous leurs trois écritures.
+        let inline = "---\ntags: [projet, \"#idée\", projet]\naliases: Bref app, 'Bref'\ntagsx: [non]\n---\n#corps #projet\n";
+        assert_eq!(index(inline).0, ["projet", "idée", "corps"]);
+        assert_eq!(aliases(inline), ["Bref app", "Bref"]);
+        let dashes = "---\naliases:\n  - \"Un nom\"\n  - Autre\ntags:\n- a\n---\n";
+        assert_eq!((aliases(dashes), index(dashes).0), (vec!["Un nom".to_string(), "Autre".to_string()], vec!["a".to_string()]));
+        assert!(aliases("aliases: [hors bloc]\n").is_empty() && aliases("---\naliases:\n---\n").is_empty());
     }
 
     #[test]

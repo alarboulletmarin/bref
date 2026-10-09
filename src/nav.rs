@@ -424,7 +424,7 @@ impl Shell {
                 note.tags.hash(&mut hasher);
             }
             if self.nav.mode == Mode::Links {
-                note.links.hash(&mut hasher);
+                (&note.links, &note.aliases).hash(&mut hasher);
             }
         }
         hasher.finish()
@@ -1023,7 +1023,8 @@ impl Shell {
                 let links = self.nav.mode == Mode::Links;
                 let detail = match self.nav.anchor.as_ref().filter(|_| links) {
                     Some(target) => {
-                        let line = self.notes.iter().find(|n| n.path == row.path).and_then(|n| graph::link_line(&n.body, &vault::stem(target).to_lowercase()));
+                        let note = |path: &Path| self.notes.iter().find(|n| n.path == path);
+                        let line = note(target).zip(note(&row.path)).and_then(|(aimed, from)| graph::link_line(&from.body, aimed));
                         line.map(|line| line.trim().to_string()).unwrap_or_default()
                     }
                     None => detail,
@@ -1369,6 +1370,7 @@ mod tests {
             path: root.join(rel),
             tags: Vec::new(),
             links: Vec::new(),
+            aliases: Vec::new(),
             mtime: SystemTime::UNIX_EPOCH,
             body: "".into(),
         };

@@ -892,7 +892,8 @@ impl Shell {
     }
 
     fn push_names(&mut self, cx: &mut Context<Self>) {
-        let names = self.notes.iter().map(|n| n.name.clone()).collect();
+        // Les alias se proposent après `[[` comme des noms.
+        let names = self.notes.iter().map(|n| n.name.clone()).chain(self.notes.iter().flat_map(|n| n.aliases.clone())).collect();
         self.editor.update(cx, |e, _| {
             e.set_notes(names);
             e.set_images(&vault::pictures(&self.images));
@@ -1234,6 +1235,7 @@ impl Shell {
                         name: vault::stem(&path),
                         tags,
                         links,
+                        aliases: markdown::aliases(&content),
                         mtime: SystemTime::now(),
                         path: path.clone(),
                         body: Arc::from(content),
@@ -1402,7 +1404,9 @@ impl Shell {
 
     fn open_wiki(&mut self, name: &str, cx: &mut Context<Self>) {
         let wanted = name.to_lowercase();
-        match self.notes.iter().find(|n| n.name.to_lowercase() == wanted) {
+        // Par son nom d'abord, sinon par un alias de son en-tête YAML.
+        let named = self.notes.iter().find(|n| n.name.to_lowercase() == wanted);
+        match named.or_else(|| self.notes.iter().find(|n| n.answers(&wanted))) {
             Some(note) => self.open_note(&note.path.clone(), cx),
             None => self.new_note(format!("# {name}\n\n"), cx),
         }
@@ -2905,6 +2909,21 @@ mod tests {
         shell.update(cx, |s, cx| s.open_note(&root.join("Renvoi.md"), cx));
         settle(cx);
         assert_eq!(fs::read_to_string(root.join("Renvoi.md")).unwrap(), format!("{meta}# Renvoi\n\n[[Fiche 2]]\n"));
+        // Ses tags valent ceux du texte ; ses alias se proposent après `[[`, et un lien écrit
+        // avec l'un d'eux ouvre la note au lieu d'en créer une.
+        fs::write(root.join("Appli.md"), "---\ntags:\n  - enyaml\naliases: [Bref app]\n---\n# Appli\n").unwrap();
+        settle(cx);
+        assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Appli" && n.tags == ["enyaml"] && n.aliases == ["Bref app"])));
+        let count = shell.read_with(cx, |s, _| s.notes.len());
+        cx.simulate_keystrokes("secondary-end enter");
+        cx.simulate_input("[[bref a");
+        cx.simulate_keystrokes("enter");
+        assert!(text(cx).ends_with("[[Bref app]]"));
+        shell.update(cx, |s, cx| s.open_wiki("bref APP", cx));
+        settle(cx);
+        assert!(shell.read_with(cx, |s, _| s.path.as_deref() == Some(&*root.join("Appli.md")) && s.notes.len() == count));
+        fs::remove_file(root.join("Appli.md")).unwrap();
+        shell.update(cx, |s, cx| s.open_note(&root.join("Renvoi.md"), cx));
         // Le bloc ouvert au clavier : tant qu'il n'est pas fermé, sa première ligne reste une règle.
         shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load("---\na: 1\n".into(), 9, cx)));
         cx.run_until_parked();
