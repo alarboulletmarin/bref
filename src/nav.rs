@@ -65,6 +65,8 @@ pub struct Menu {
     pub target: Option<PathBuf>,
     /// Clic droit dans la note et non dans l'arbre : le lien visé, s'il y en a un.
     pub text: Option<Option<Link>>,
+    /// Ce clic droit dans la note vise un commentaire.
+    pub commented: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1028,7 +1030,7 @@ impl Shell {
             groups[2].push((tr("Bold", "Gras"), Do::Bold));
             groups[2].push((tr("Italic", "Italique"), Do::Italic));
             groups[2].push((if web { tr("Edit the link", "Modifier le lien") } else { tr("Make a link", "Faire un lien") }, Do::Link));
-            groups[2].push((tr("Comment, or resolve the comment", "Commenter, ou résoudre le commentaire"), Do::Comment));
+            groups[2].push((if menu.commented { tr("Resolve the comment", "Résoudre le commentaire") } else { tr("Comment", "Commenter") }, Do::Comment));
         } else {
             if !is_dir && !many {
                 groups[0].push((tr("Open", "Ouvrir"), Do::Open));
@@ -1085,7 +1087,8 @@ impl Shell {
                 .rounded(px(5.))
                 .hover(|s| s.bg(t.selection))
                 .when(matches!(what, Do::Trash), |d| d.text_color(t.accent))
-                .child(label)
+                // Un libellé plus long que le menu est coupé, jamais débordant.
+                .child(div().min_w_0().truncate().child(label))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {
@@ -1395,7 +1398,7 @@ impl Shell {
                                 }
                                 // Un tag n'a pas de menu.
                                 if this.vault.as_ref().is_some_and(|root| target.starts_with(root)) {
-                                    this.menu = Some(Menu { at: e.position, target: Some(target.clone()), text: None });
+                                    this.menu = Some(Menu { at: e.position, target: Some(target.clone()), text: None, commented: false });
                                 }
                                 window.focus(&this.nav.focus);
                                 cx.stop_propagation();
@@ -1565,7 +1568,7 @@ impl Shell {
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(|this, e: &MouseDownEvent, _, cx| {
-                        this.menu = Some(Menu { at: e.position, target: None, text: None });
+                        this.menu = Some(Menu { at: e.position, target: None, text: None, commented: false });
                         cx.notify();
                     }),
                 )

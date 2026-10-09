@@ -215,8 +215,8 @@ pub enum EditorEvent {
     Open(Link),
     /// Remplacer dans tout le coffre ce que la barre de recherche cherche.
     Swap(md::Swap),
-    /// Clic droit dans la note : où, et le lien qui s'y trouve.
-    Menu(Point<Pixels>, Option<Link>),
+    /// Clic droit dans la note : où, le lien qui s'y trouve, et s'il vise un commentaire.
+    Menu(Point<Pixels>, Option<Link>, bool),
 }
 
 /// Ce dont la mise en page dépend, en dehors du texte : si rien n'a changé, on la garde.
@@ -2374,7 +2374,9 @@ impl Editor {
         }
         let lr = self.line_range(i);
         let link = md::links(&self.content[lr.clone()]).into_iter().find(|(r, _)| (r.start..=r.end).contains(&(i - lr.start)));
-        cx.emit(EditorEvent::Menu(e.position, link.map(|(_, link)| link)));
+        let col = i - lr.start;
+        let commented = md::comments(&self.content[lr]).iter().any(|(whole, ..)| (whole.start..=whole.end).contains(&col));
+        cx.emit(EditorEvent::Menu(e.position, link.map(|(_, link)| link), commented));
     }
 
     /// Mot (ou ligne entière) autour de l'octet `i`.

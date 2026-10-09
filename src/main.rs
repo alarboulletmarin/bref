@@ -1571,8 +1571,8 @@ impl Shell {
             }
             EditorEvent::Open(link) => self.follow(link, window, cx),
             EditorEvent::Swap(swap) => self.replace_in_vault(swap.clone(), window, cx),
-            EditorEvent::Menu(at, link) => {
-                self.menu = Some(nav::Menu { at: *at, target: None, text: Some(link.clone()) });
+            EditorEvent::Menu(at, link, commented) => {
+                self.menu = Some(nav::Menu { at: *at, target: None, text: Some(link.clone()), commented: *commented });
                 cx.notify();
             }
         }
@@ -3199,7 +3199,7 @@ mod tests {
         // Une icône, choisie dans la grille du menu, suit la note qu'on renomme ; elle est
         // retenue dans un fichier du coffre.
         shell.update_in(cx, |s, window, cx| {
-            s.menu = Some(nav::Menu { at: point(px(300.), px(200.)), target: Some(root.join("Test.md")), text: None });
+            s.menu = Some(nav::Menu { at: point(px(300.), px(200.)), target: Some(root.join("Test.md")), text: None, commented: false });
             s.menu_do(nav::Do::Icon, Some(root.join("Test.md")), window, cx)
         });
         cx.run_until_parked();
@@ -4227,7 +4227,7 @@ mod tests {
         assert!(text(cx).contains(" !") && text(cx).replace(" !", "") == "voir [la doc](https://a.b/c) ici");
         let link = Link::Url("https://a.b/c".into());
         shell.update_in(cx, |s, window, cx| {
-            s.menu = Some(nav::Menu { at: point(px(0.), px(0.)), target: None, text: Some(Some(link)) });
+            s.menu = Some(nav::Menu { at: point(px(0.), px(0.)), target: None, text: Some(Some(link)), commented: false });
             s.menu_do(nav::Do::CopyAddress, None, window, cx)
         });
         assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("https://a.b/c"));
