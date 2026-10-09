@@ -260,6 +260,8 @@ pub struct Sheet {
     /// Cellule active, et ancre de la sélection (qui va de l'une à l'autre).
     cursor: (usize, usize),
     anchor: (usize, usize),
+    /// Sélections gardées par Ctrl+clic (ancre, curseur), en plus de celle en cours.
+    more: Vec<((usize, usize), (usize, usize))>,
     edit: Option<Draft>,
     /// Largeur de chaque colonne, et abscisse de son bord gauche (une de plus, pour le total).
     widths: Vec<f32>,
@@ -297,6 +299,7 @@ impl Sheet {
             stamp: loaded.stamp,
             cursor: (0, 0),
             anchor: (0, 0),
+            more: Vec::new(),
             edit: None,
             widths: Vec::new(),
             xs: Vec::new(),
@@ -515,6 +518,7 @@ impl Sheet {
         let (rows, cols) = (self.table.rows().max(1), self.cols());
         let fit = |(r, c): (usize, usize)| (r.min(rows - 1), c.min(cols - 1));
         (self.cursor, self.anchor) = (fit(self.cursor), fit(self.anchor));
+        self.more.iter_mut().for_each(|(a, b)| (*a, *b) = (fit(*a), fit(*b)));
         let (mx, my) = self.max_scroll();
         self.scroll = (self.scroll.0.clamp(0., mx), self.scroll.1.clamp(0., my));
     }
@@ -574,16 +578,29 @@ impl Sheet {
 
     // ----- Sélection -----
 
-    /// Lignes et colonnes de la sélection.
+    /// Lignes et colonnes de la sélection en cours : celle où l'on tape, colle et étend.
     fn selection(&self) -> (Range<usize>, Range<usize>) {
-        let ((r0, c0), (r1, c1)) = (self.anchor, self.cursor);
+        Self::span(self.anchor, self.cursor)
+    }
+
+    fn span((r0, c0): (usize, usize), (r1, c1): (usize, usize)) -> (Range<usize>, Range<usize>) {
         (r0.min(r1)..r0.max(r1) + 1, c0.min(c1)..c0.max(c1) + 1)
+    }
+
+    /// Toutes les sélections, de haut en bas : celles gardées par Ctrl+clic et celle en cours.
+    /// Copier, couper, effacer et supprimer des lignes les prennent toutes.
+    fn selections(&self) -> Vec<(Range<usize>, Range<usize>)> {
+        let mut all: Vec<_> = self.more.iter().map(|&(a, b)| Self::span(a, b)).chain([self.selection()]).collect();
+        all.sort_by_key(|(rows, cols)| (rows.start, cols.start));
+        all.dedup();
+        all
     }
 
     fn select_to(&mut self, to: (usize, usize), extend: bool, cx: &mut Context<Self>) {
         self.cursor = to;
         if !extend {
             self.anchor = to;
+            self.more.clear();
         }
         self.show(to);
         cx.notify();
@@ -704,9 +721,11 @@ impl Sheet {
 
     /// Vide les cellules de la sélection.
     fn clear(&mut self, cx: &mut Context<Self>) {
-        let (rows, cols) = self.selection();
-        let cells: Vec<_> = rows
-            .flat_map(|r| cols.clone().map(move |c| (r, c)))
+        // Deux sélections peuvent se recouvrir : chaque cellule une seule fois.
+        let all: std::collections::BTreeSet<(usize, usize)> =
+            self.selections().into_iter().flat_map(|(rows, cols)| rows.flat_map(move |r| cols.clone().map(move |c| (r, c)))).collect();
+        let cells: Vec<_> = all
+            .into_iter()
             .filter(|&(r, c)| !self.table.cell(r, c).is_empty())
             .map(|(r, c)| (r, c, String::new()))
             .collect();
@@ -717,6 +736,7 @@ impl Sheet {
 
     fn insert_rows(&mut self, below: bool, cx: &mut Context<Self>) {
         self.finish(cx);
+        self.more.clear();
         let (rows, _) = self.selection();
         let at = if below { rows.end } else { rows.start };
         self.commit(vec![Change::Insert(at, vec![Vec::new()])], cx);
@@ -725,11 +745,21 @@ impl Sheet {
 
     fn delete_rows(&mut self, cx: &mut Context<Self>) {
         self.finish(cx);
-        let (rows, _) = self.selection();
-        let mut changes = vec![Change::Remove(rows.clone())];
+        // Les lignes de toutes les sélections, regroupées en plages et retirées du bas vers le
+        // haut : chaque retrait laisse en place les lignes qui restent à retirer.
+        let rows: std::collections::BTreeSet<usize> = self.selections().into_iter().flat_map(|(rows, _)| rows).collect();
+        let mut ranges: Vec<Range<usize>> = Vec::new();
+        for r in rows.iter().copied() {
+            match ranges.last_mut() {
+                Some(last) if last.end == r => last.end = r + 1,
+                _ => ranges.push(r..r + 1),
+            }
+        }
+        let mut changes: Vec<Change> = ranges.into_iter().rev().map(Change::Remove).collect();
         if rows.len() >= self.table.rows() {
             changes.push(Change::Insert(0, vec![Vec::new()]));
         }
+        self.more.clear();
         self.commit(changes, cx);
     }
 
@@ -763,8 +793,11 @@ impl Sheet {
         if let Some(edit) = &self.edit {
             return cx.write_to_clipboard(ClipboardItem::new_string(edit.text.clone()));
         }
-        let (rows, cols) = self.selection();
-        self.copy_range(rows, cols, Style::Tsv, cx);
+        // Plusieurs sélections : leurs blocs l'un sous l'autre, de haut en bas.
+        let blocks: Vec<String> =
+            self.selections().into_iter().map(|(rows, cols)| self.table.text_range(rows, cols, Style::Tsv)).collect();
+        cx.write_to_clipboard(ClipboardItem::new_string(blocks.join("\n")));
+        self.flash(cx);
     }
 
     /// « Copier le tableau en… » : la sélection, ou tout le tableau si elle tient dans une cellule.
@@ -821,6 +854,7 @@ impl Sheet {
             .collect();
         changes.push(Change::Set(cells));
         self.commit(changes, cx);
+        self.more.clear();
         (self.anchor, self.cursor) = ((top, left), (top + height - 1, left + width.max(1) - 1));
         self.show(self.cursor);
     }
@@ -845,7 +879,21 @@ impl Sheet {
         window.focus(&self.focus);
         self.finish(cx);
         let extend = e.modifiers.shift;
-        match self.hit(e.position) {
+        let hit = self.hit(e.position);
+        // Ctrl+clic sur une cellule, une ligne ou une colonne : ce qui est sélectionné le reste,
+        // une autre sélection commence. Un clic simple ne garde que la sienne.
+        let adding = e.modifiers.secondary();
+        let mut kept = std::mem::take(&mut self.more);
+        match hit {
+            Hit::Cell(..) | Hit::Row(_) | Hit::Col(_) if adding && !extend => kept.push((self.anchor, self.cursor)),
+            Hit::Bar(_) => {}
+            _ if adding || extend => {}
+            _ => kept.clear(),
+        }
+        if matches!(hit, Hit::Corner) {
+            kept.clear();
+        }
+        match hit {
             Hit::Cell(r, c) => {
                 self.drag = Drag::Cells;
                 self.select_to((r, c), extend, cx);
@@ -872,6 +920,7 @@ impl Sheet {
                 self.drag_bar(e.position, vertical, cx);
             }
         }
+        self.more = kept;
     }
 
     fn drag_to(&mut self, e: &MouseMoveEvent, cx: &mut Context<Self>) {
@@ -933,6 +982,7 @@ impl Sheet {
 
     fn select_all(&mut self, cx: &mut Context<Self>) {
         self.finish(cx);
+        self.more.clear();
         (self.anchor, self.cursor) = ((self.last_row(), self.cols() - 1), (0, 0));
         cx.notify();
     }
@@ -1055,7 +1105,7 @@ impl Sheet {
     }
 
     /// Une ligne de cellules, de la colonne `cols.start` à `cols.end` exclue.
-    fn render_row(&self, row: usize, cols: Range<usize>, selected: &(Range<usize>, Range<usize>), head: bool) -> gpui::Div {
+    fn render_row(&self, row: usize, cols: Range<usize>, selected: &[(Range<usize>, Range<usize>)], head: bool) -> gpui::Div {
         let t = self.theme;
         let editing = self.edit.is_some();
         let size = px(self.text_px());
@@ -1072,7 +1122,7 @@ impl Sheet {
                     text.truncate(text.char_indices().nth(200).map_or(text.len(), |(i, _)| i));
                 }
                 let text = if text.contains(['\n', '\r']) { text.replace(['\r', '\n'], "↵") } else { text };
-                let inside = selected.0.contains(&row) && selected.1.contains(&c);
+                let inside = selected.iter().any(|(rows, cols)| rows.contains(&row) && cols.contains(&c));
                 div()
                     .relative()
                     .flex_none()
@@ -1154,14 +1204,14 @@ impl Render for Sheet {
         // Les colonnes et les lignes qui débordent de la vue ne sont pas construites.
         let (lines, columns) = self.visible(window.viewport_size());
         let (r0, r1, c0, c1) = (lines.start, lines.end, columns.start, columns.end);
-        let selected = self.selection();
+        let selected = self.selections();
 
         let head = if self.format.header {
             self.render_row(0, c0..c1, &selected, true)
         } else {
             div().absolute().top(px(0.)).left(px(0.)).h(px(ROW)).flex().text_size(px(self.text_px())).child(div().flex_none().w(px(self.xs[c0]))).children(
                 (c0..c1).map(|c| {
-                    let inside = selected.1.contains(&c);
+                    let inside = selected.iter().any(|(_, cols)| cols.contains(&c));
                     div()
                         .flex_none()
                         .w(px(self.widths[c]))
@@ -1192,7 +1242,7 @@ impl Render for Sheet {
             .children(self.edit.as_ref().map(|edit| self.render_edit(edit)));
 
         let number = |r: usize, y: f32| {
-            let inside = selected.0.contains(&r);
+            let inside = selected.iter().any(|(rows, _)| rows.contains(&r));
             div()
                 .absolute()
                 .top(px(y))
@@ -1369,6 +1419,20 @@ impl Render for Sheet {
 impl Sheet {
     pub fn table(&self) -> &Table {
         &self.table
+    }
+
+    /// Milieu de la cellule (`r`, `c`) à l'écran.
+    #[cfg(test)]
+    pub fn spot(&self, r: usize, c: usize) -> Point<Pixels> {
+        let x = GUTTER + (self.xs[c] + self.xs[c + 1]) / 2. - self.scroll.0;
+        let y = ROW + (r - self.first()) as f32 * ROW + ROW / 2. - self.scroll.1;
+        self.body.origin + gpui::point(px(x), px(y))
+    }
+
+    /// Toutes les sélections (lignes, colonnes), de haut en bas.
+    #[cfg(test)]
+    pub fn picked(&self) -> Vec<(Range<usize>, Range<usize>)> {
+        self.selections()
     }
 
     /// Défilement de la vue (x, y), et sélection (lignes, colonnes).

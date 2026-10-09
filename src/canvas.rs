@@ -162,6 +162,12 @@ impl Canvas {
     }
 
     /// Position à l'écran d'un point du schéma.
+    /// Nombre de formes et de flèches sélectionnées.
+    #[cfg(test)]
+    pub fn picked(&self) -> usize {
+        self.selected.len()
+    }
+
     pub fn spot(&self, x: f32, y: f32) -> Point<Pixels> {
         let o = self.bounds.origin;
         point(o.x + px(self.pan.0 + x * self.zoom), o.y + px(self.pan.1 + y * self.zoom))
@@ -415,7 +421,8 @@ impl Canvas {
                         drag
                     }
                     (None, Some(id)) => {
-                        if e.modifiers.shift {
+                        // Maj+clic ou Ctrl+clic : la forme rejoint la sélection, ou la quitte.
+                        if e.modifiers.shift || e.modifiers.secondary() {
                             match self.selected.iter().position(|s| *s == id) {
                                 Some(i) => drop(self.selected.remove(i)),
                                 None => self.selected.push(id),
@@ -438,7 +445,7 @@ impl Canvas {
                         Drag::None
                     }
                     (None, None) => {
-                        if !e.modifiers.shift {
+                        if !(e.modifiers.shift || e.modifiers.secondary()) {
                             self.selected.clear();
                         }
                         Drag::Marquee { from: p, to: p }

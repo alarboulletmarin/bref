@@ -1664,6 +1664,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 ("A / L / V".into(), tr("Arrow / line, held by the shapes they join / select", "Flèche / trait, accrochés aux formes reliées / sélection")),
                 (tr("Enter, double click", "Entrée, double-clic").into(), tr("Write in the shape or on the arrow; Esc when done", "Écrire dans la forme ou sur la flèche ; Échap pour finir")),
                 ("---".into(), tr("Alone on a line of a box: a compartment (UML class)", "Seul sur une ligne d'une boîte : un compartiment (classe UML)")),
+                (format!("Shift+{0} / {1}", tr("click", "clic"), m(tr("click", "clic"))), tr("Add a shape to the selection, or take it out", "Ajouter une forme à la sélection, ou l'en retirer")),
                 (format!("{} / {} / {}", tr("Del", "Suppr"), m("D"), m("Z")), tr("Remove / duplicate / undo", "Retirer / dupliquer / annuler")),
                 (tr("Edge of a shape", "Bord d'une forme").into(), tr("An arrow end dropped there stays there; in the middle, it follows the other end", "Un bout de flèche lâché là y reste ; au milieu, il suit l'autre bout")),
                 (tr("Wheel / + - 0", "Molette / + - 0").into(), tr("Move the view / zoom in, out, fit all", "Déplacer la vue / zoomer, dézoomer, tout cadrer")),
@@ -1676,6 +1677,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
             vec![
                 (".csv .tsv".into(), tr("Opens in a grid; encoding and delimiter are detected, written straight into the file", "S'ouvre dans une grille ; encodage et délimiteur sont devinés, écrit directement dans le fichier")),
                 (tr("Arrows, Tab", "Flèches, Tab").into(), tr("Move; with Shift (or drag), select a range; click a row number or a header", "Se déplacer ; avec Maj (ou en glissant), sélectionner une plage ; clic sur un numéro ou un en-tête")),
+                (m(tr("click", "clic")), tr("Add another selection: copy, cut, empty or remove their rows together", "Ajouter une autre sélection : les copier, couper, vider ou retirer leurs lignes ensemble")),
                 (tr("Type, Enter, F2", "Taper, Entrée, F2").into(), tr("Replace the cell / validate and go down / open the cell; Esc cancels", "Remplacer la cellule / valider et descendre / ouvrir la cellule ; Échap annule")),
                 (format!("{} / {} / {}", m("C"), m("X"), m("V")), tr("Copy as tab-separated text / cut / paste cells from a spreadsheet, Markdown or CSV", "Copier en texte à tabulations / couper / coller des cellules d'un tableur, de Markdown ou de CSV")),
                 (format!("{} / {}", m("Enter"), m("Delete")), tr("Insert a row (with Shift: above) / remove the selected rows", "Insérer une ligne (avec Maj : au-dessus) / retirer les lignes sélectionnées")),
@@ -3214,6 +3216,16 @@ mod tests {
         assert_eq!(saved().shapes[1].y, 100.);
         cx.simulate_keystrokes("secondary-z");
         assert_eq!(saved().shapes[1].y, 0.);
+        // Ctrl+clic ajoute une forme à la sélection ; un second l'en retire.
+        let click = |cx: &mut gpui::VisualTestContext, at: (f32, f32), held: gpui::Modifiers| {
+            let at = canvas.read_with(cx, |c, _| c.spot(at.0, at.1));
+            cx.simulate_click(at, held);
+        };
+        click(cx, (20., 50.), gpui::Modifiers::none());
+        click(cx, (350., 40.), gpui::Modifiers::secondary_key());
+        assert_eq!(canvas.read_with(cx, |c, _| c.picked()), 2);
+        click(cx, (350., 40.), gpui::Modifiers::secondary_key());
+        assert_eq!(canvas.read_with(cx, |c, _| c.picked()), 1);
         // Suppr retire la forme sélectionnée, et la flèche qui y tenait.
         drag(cx, (350., 40.), (350., 40.));
         cx.simulate_keystrokes("delete");
@@ -3787,6 +3799,23 @@ mod tests {
         );
         sheet.update(cx, |sheet, cx| sheet.export(table::Style::Json, cx));
         assert!(root.join("data.json").is_file());
+        // Ctrl+clic : une seconde sélection s'ajoute à la première. Copier prend les deux, l'une
+        // sous l'autre ; effacer aussi, en une seule annulation ; un clic simple ne garde que la sienne.
+        cx.run_until_parked();
+        let spot = |cx: &mut gpui::VisualTestContext, r, c| sheet.read_with(cx, |sheet, _| sheet.spot(r, c));
+        let picked = |cx: &mut gpui::VisualTestContext| sheet.read_with(cx, |sheet, _| sheet.picked());
+        let (first, second) = (spot(cx, 1, 0), spot(cx, 2, 1));
+        cx.simulate_click(first, gpui::Modifiers::none());
+        cx.simulate_click(second, gpui::Modifiers::secondary_key());
+        assert_eq!(picked(cx), [(1..2, 0..1), (2..3, 1..2)]);
+        cx.simulate_keystrokes("secondary-c");
+        assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("Anaïs\n27"));
+        cx.simulate_keystrokes("delete");
+        assert_eq!((cell(cx, 1, 0), cell(cx, 2, 1), cell(cx, 1, 1)), (String::new(), String::new(), "32".to_string()));
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!((cell(cx, 1, 0), cell(cx, 2, 1)), ("Anaïs".to_string(), "27".to_string()));
+        cx.simulate_click(first, gpui::Modifiers::none());
+        assert_eq!(picked(cx), [(1..2, 0..1)]);
         // Sélectionner une colonne, une ligne ou tout ne fait pas défiler la vue (elle ne saute pas à la dernière ligne).
         let long = root.join("long.csv");
         fs::write(&long, (0..400).map(|i| format!("{i};a{i};b{i};c{i}\n")).collect::<String>()).unwrap();
