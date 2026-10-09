@@ -8,6 +8,7 @@ mod figure;
 mod graph;
 mod grid;
 mod import;
+mod kanban;
 mod markdown;
 mod nav;
 mod palette;
@@ -255,6 +256,7 @@ impl AssetSource for Assets {
                 r#"<rect x="6" y="6" width="7.5" height="7.5" rx="1.5"/><path d="M10 4A1.5 1.5 0 0 0 8.5 2.5H4A1.5 1.5 0 0 0 2.5 4V8.5A1.5 1.5 0 0 0 4 10"/>"#
             }
             "check.svg" => r#"<path d="M4 8.5L7 11L12 5"/>"#,
+            "board.svg" => r#"<rect x="2.5" y="3" width="3" height="10" rx="0.8"/><rect x="6.5" y="3" width="3" height="7" rx="0.8"/><rect x="10.5" y="3" width="3" height="4.5" rx="0.8"/>"#,
             "info.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 7.5V11M8 5V5.2"/>"#,
             "alert.svg" => r#"<path d="M8 2.5L14 13H2ZM8 6.5V9.5M8 11.3V11.5"/>"#,
             "spinner.svg" => r#"<path d="M8 2.5A5.5 5.5 0 1 1 2.5 8"/>"#,
@@ -501,6 +503,10 @@ struct Shell {
     new_dir: Option<PathBuf>,
     dirty: bool,
     save_gen: usize,
+    /// Notes en tableau kanban dont on a demandé le texte.
+    board_off: std::collections::HashSet<PathBuf>,
+    /// Le tableau reçoit la saisie à la place de la note qu'il cache.
+    board_focus: FocusHandle,
     /// Page liste affichée à la place de la note : le dossier, la colonne qui la trie (0 : le
     /// nom de la note) et si c'est à rebours.
     listing: Option<(PathBuf, usize, bool)>,
@@ -582,6 +588,8 @@ impl Shell {
             new_dir: None,
             dirty: false,
             save_gen: 0,
+            board_off: Default::default(),
+            board_focus: cx.focus_handle(),
             listing: None,
             swapped: Vec::new(),
             icons: Default::default(),
@@ -1993,6 +2001,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 ("```rust".into(), tr("Code block: colors, copy icon", "Bloc de code : couleurs, icône de copie")),
                 ("---".into(), tr("Divider", "Séparateur")),
                 ("[[".into(), tr("Link to a note", "Lien vers une note")),
+                ("kanban: true".into(), tr("In the front matter (/meta): the note opens as a board, one column per ## heading", "Dans l'en-tête (/meta) : la note s'ouvre en tableau, une colonne par titre ##")),
                 ("@".into(), tr("Link to the note of a day: @today, @monday, @2026-10-09", "Lien vers la note d'un jour : @demain, @lundi, @2026-10-09")),
                 ("![](image.png)".into(), tr("Picture, under its line", "Image, sous sa ligne")),
                 ("![[".into(), tr("Suggests the pictures and diagrams of the vault", "Propose les images et les schémas du coffre")),
@@ -2262,7 +2271,7 @@ impl Render for Shell {
             // clic mène au commentaire, prêt à être retouché ; la coche le résout.
             // ponytail: la note est relue à chaque rendu (une recherche de `{==`) ; garder la
             // liste d'une version du texte à l'autre si de très longues notes en pâtissent.
-            let said: Vec<(String, String, usize)> = match self.picture.is_none() && self.listing.is_none() {
+            let said: Vec<(String, String, usize)> = match self.picture.is_none() && self.listing.is_none() && !self.board_shown(cx) {
                 true => markdown::all_comments(self.editor.read(cx).text()).into_iter().map(|(noted, said, at)| (noted.into(), said.into(), at)).collect(),
                 false => Vec::new(),
             };
@@ -2281,7 +2290,24 @@ impl Render for Shell {
                         cx.notify();
                     }))
             });
-            self.editor.update(cx, |e, _| e.corner = 1 + talk.is_some() as usize);
+            // Une note qui est un tableau kanban : son bouton passe du tableau au texte. Le
+            // tableau cache la note, qui ne doit plus recevoir la frappe.
+            let board = self.board_shown(cx);
+            if board && self.editor.focus_handle(cx).is_focused(window) {
+                window.focus(&self.board_focus);
+            }
+            let boards = kanban::is_board(self.editor.read(cx).text()) && self.picture.is_none() && self.listing.is_none();
+            let flip = boards.then(|| {
+                nav::button("board-toggle", "board.svg", board, t)
+                    .absolute()
+                    .bottom_4()
+                    .right(px(if board { 16. } else { 50. + 34. * talk.is_some() as usize as f32 }))
+                    .size(px(30.))
+                    .rounded(px(8.))
+                    .occlude()
+                    .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
+            });
+            self.editor.update(cx, |e, _| e.corner = 1 + talk.is_some() as usize + boards as usize);
             let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at))| {
                 let at = *at;
                 let inside = at + noted.len() + 9;
@@ -2367,6 +2393,7 @@ impl Render for Shell {
             let listing = self.listing.is_some().then(|| self.render_listing(cx));
             let note = match (&self.picture, &self.drawing) {
                 _ if listing.is_some() => note.children(listing),
+                _ if board => note.child(self.render_board(cx)).children(flip),
                 (Some(_), _) if self.sheet.is_some() => {
                     let (_, sheet) = self.sheet.clone().unwrap();
                     sheet.update(cx, |sheet, _| sheet.sync(t, client));
@@ -2379,7 +2406,7 @@ impl Render for Shell {
                 (Some(path), None) => note.p_6().flex().items_center().justify_center().child(
                     img(path.clone()).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
                 ),
-                (None, _) => note.child(self.editor.clone()).child(copy).children(talk),
+                (None, _) => note.child(self.editor.clone()).child(copy).children(talk).children(flip),
             };
             let card = || {
                 div()
@@ -4154,6 +4181,24 @@ mod tests {
         cx.simulate_keystrokes("shift-right shift-right shift-right secondary-k");
         cx.simulate_input("https://z.fr");
         assert_eq!(text(cx), "[mot](https://z.fr)");
+        // Kanban : une note dont l'en-tête dit `kanban` s'ouvre en tableau, une colonne par
+        // titre `##`. Déplacer ou cocher une carte réécrit sa ligne, et s'annule ; « + » mène au
+        // texte pour écrire la carte ; le bouton du coin passe du tableau au texte.
+        load(cx, "---\nkanban: true\n---\n## À faire\n- [ ] Écrire\n- [ ] Relire\n## Fait\n", 0);
+        cx.run_until_parked();
+        let on_board = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| shell.read(cx).board_focus.is_focused(window));
+        assert!(shell.read_with(cx, |s, cx| s.board_shown(cx)) && on_board(cx));
+        shell.update(cx, |s, cx| s.board_edit(|text| kanban::move_card(text, (0, 0), (1, usize::MAX)), cx));
+        assert_eq!(text(cx), "---\nkanban: true\n---\n## À faire\n- [ ] Relire\n## Fait\n- [ ] Écrire\n");
+        shell.update(cx, |s, cx| s.board_edit(|text| kanban::tick(text, (1, 0)), cx));
+        assert!(text(cx).ends_with("## Fait\n- [x] Écrire\n"));
+        // Le bouton du coin : en tableau, il est seul en bas à droite.
+        let corner = cx.update(|window, _| window.viewport_size());
+        cx.simulate_click(point(corner.width - px(31.), corner.height - px(31.)), gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, cx| !s.board_shown(cx)) && !on_board(cx));
+        cx.simulate_keystrokes("secondary-z secondary-z");
+        assert_eq!(text(cx), "---\nkanban: true\n---\n## À faire\n- [ ] Écrire\n- [ ] Relire\n## Fait\n");
         // Plusieurs curseurs : Ctrl+D prend le mot, puis ses occurrences suivantes ; la frappe,
         // l'effacement et les déplacements valent pour tous, un seul Ctrl+Z défait le tout,
         // Échap revient à un curseur. Alt+clic en pose un de plus.

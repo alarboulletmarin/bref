@@ -2002,6 +2002,16 @@ impl Editor {
         self.move_to(sel.start + at, cx);
     }
 
+    /// Remplace tout le texte, comme une frappe : une étape d'annulation, la note est à enregistrer.
+    pub fn rewrite(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.more.clear();
+        // Une seule étape : `splice` en poserait une seconde pour un texte de plusieurs lignes.
+        self.push_undo(true);
+        self.held = true;
+        self.splice(0..self.content.len(), text, cx);
+        self.held = false;
+    }
+
     /// Résout le commentaire qui commence à l'octet `at`.
     pub fn resolve_comment(&mut self, at: usize, cx: &mut Context<Self>) {
         self.move_to(self.clamp(at), cx);
