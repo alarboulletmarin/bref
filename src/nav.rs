@@ -1183,6 +1183,15 @@ impl Shell {
                     .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
             )
             .child(div().flex_1().w_full().when(!self.nav.logo, |d| d.map(crate::drag_window)))
+            // Corbeille du coffre (ce qu'elle contient, pour le reprendre) et sauvegarde.
+            .child(
+                button("nav-trash", "trash.svg", false, t)
+                    .on_click(cx.listener(|this, _, window, cx| this.open_trash(window, cx))),
+            )
+            .child(
+                button("nav-backup", "archive.svg", false, t)
+                    .on_click(cx.listener(|this, _, window, cx| this.choose_backup(window, cx))),
+            )
             .child(button("nav-theme", "theme.svg", false, t).on_click(cx.listener(
                 |this, _, window, cx| this.choose_setting(Setting::Theme, window, cx),
             )))
