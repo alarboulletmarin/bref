@@ -619,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "bref"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "embed-resource",
  "gpui",
