@@ -39,6 +39,27 @@ pub fn image_name(path: &Path) -> String {
     path.file_name().unwrap_or_default().to_string_lossy().into_owned()
 }
 
+/// Rétroliens : les notes dont un `[[wikilien]]` vise la note `target`, par ordre de nom. Comme
+/// pour les arêtes, quand deux notes portent le même nom, le lien vise la première.
+pub fn backlinks<'a>(notes: &'a [Note], target: &Path) -> Vec<&'a Note> {
+    let Some(key) = notes.iter().find(|note| note.path == target).map(|note| note.name.to_lowercase()) else {
+        return Vec::new();
+    };
+    if notes.iter().find(|note| note.name.to_lowercase() == key).is_some_and(|first| first.path != target) {
+        return Vec::new();
+    }
+    let mut found: Vec<&Note> = notes.iter().filter(|note| note.path != target && note.links.contains(&key)).collect();
+    found.sort_by_cached_key(|note| note.name.to_lowercase());
+    found
+}
+
+/// Première ligne de `body` qui porte un wikilien vers la note nommée `key` (en minuscules).
+pub fn link_line<'a>(body: &'a str, key: &str) -> Option<&'a str> {
+    body.lines().find(|line| {
+        crate::markdown::links(line).iter().any(|(_, link)| matches!(link, crate::markdown::Link::Wiki(name) if name.to_lowercase() == key))
+    })
+}
+
 /// Arêtes `(i, j)`, `i < j`, sans doublon : les wikiliens qui visent une note du
 /// coffre, et les images affichées. Les images sont numérotées après les notes.
 pub fn edges(notes: &[Note], images: &[PathBuf]) -> Vec<(usize, usize)> {
@@ -565,6 +586,22 @@ mod tests {
             mtime: SystemTime::UNIX_EPOCH,
             body: "".into(),
         }
+    }
+
+    #[test]
+    fn lists_backlinks() {
+        let mut notes = vec![note("Cible", &[]), note("b", &["cible"]), note("A", &["cible", "b"]), note("Seule", &["cible"])];
+        notes[3].path = PathBuf::from("/v/sous/Cible.md");
+        notes[3].name = "Cible".into();
+        let names = |target: &str| backlinks(&notes, Path::new(target)).iter().map(|n| n.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names("/v/Cible.md"), ["A", "b", "Cible"]);
+        assert_eq!(names("/v/b.md"), ["A"]);
+        // Une seconde note du même nom : les liens visent la première.
+        assert!(names("/v/sous/Cible.md").is_empty() && names("/v/absente.md").is_empty());
+        let body = "# A\n[[autre]] et [[Cible]]x\n| t | [[cible|alias]] |\n";
+        assert_eq!(link_line(body, "cible"), Some("[[autre]] et [[Cible]]x"));
+        assert_eq!(link_line("un [[Cible|alias]] là", "cible"), Some("un [[Cible|alias]] là"));
+        assert_eq!(link_line(body, "cib"), None);
     }
 
     #[test]

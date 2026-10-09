@@ -15,6 +15,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Slash commands**: type `/` for a heading, a list, a colored panel, a code block, a formula or a table, whose size you pick on a grid. What lands in the note is plain Markdown.
 - **Tables like on the web**: cells wrap inside their column, `Tab` moves from cell to cell, `Enter` adds a row, two `+` buttons add a row or a column, and pasting a table from a web page, a spreadsheet or Markdown just works.
 - **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `#tags` filter the note list.
+- **Backlinks**: the notes that link to the open one, each with the line that holds the link.
 - **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons.
 - **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas like Excalidraw's. Each diagram is an SVG file in your vault, shown in your notes.
 - **CSV and TSV files, edited in place**: a `.csv` or `.tsv` in the vault opens in a grid. The encoding (UTF-8, UTF-16, ISO-8859-1, Windows-1252) and the delimiter (comma, semicolon, tab, pipe…) are detected and can be changed; select cells with the keyboard or the mouse, copy, paste, export, and what you change is written straight into the file. A million rows are parsed in under a tenth of a second on the author's machine.
@@ -220,7 +221,7 @@ Click in the note to edit it while the bar stays open: the matches follow the te
 
 ## Navigation
 
-A rail of icons stays on the left of the window. It opens a panel beside the note, in one of four views:
+A rail of icons stays on the left of the window. It opens a panel beside the note, in one of five views:
 
 | View | Key | Shows |
 |---|---|---|
@@ -228,8 +229,11 @@ A rail of icons stays on the left of the window. It opens a panel beside the not
 | Recent | `Ctrl + R` | every note, from the most to the least recently opened |
 | Graph | `Ctrl + G` | one dot per note, one line per `[[link]]` between two notes |
 | Tags | `Ctrl + T` | every `#tag` of the vault with its number of notes; unfold a tag to see them |
+| Backlinks | `Ctrl + L` | the notes that link to the open note, each with the line that holds the link |
 
-The same keys work in the four views:
+Backlinks follow the note you open, not the one you preview while moving through the list, so you can look at each linking note in turn. Links written with an alias (`[[Note|alias]]`) and links inside tables count.
+
+The same keys work in the five views:
 
 | Key | Action |
 |---|---|

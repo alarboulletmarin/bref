@@ -23,7 +23,7 @@ use crate::{
     vault::{self, Note},
 };
 
-actions!(nav, [ShowTree, ShowRecent, ShowGraph, ShowTags, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Duplicate, Trash]);
+actions!(nav, [ShowTree, ShowRecent, ShowGraph, ShowTags, ShowLinks, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Duplicate, Trash]);
 
 pub const RAIL: Pixels = px(40.);
 const ROW: Pixels = px(26.);
@@ -35,6 +35,8 @@ pub enum Mode {
     Recent,
     Graph,
     Tags,
+    /// Rétroliens : les notes qui mènent à la note ouverte.
+    Links,
 }
 
 /// Place du panneau : replié sur son rail, à côté de la note, ou seul.
@@ -113,6 +115,9 @@ pub struct Nav {
     /// Sélection multiple (Ctrl+clic, Maj+clic) ; vide tant qu'une seule ligne
     /// est choisie. `sel` est alors la ligne d'où Maj+clic étend.
     pub marked: HashSet<PathBuf>,
+    /// Note dont le panneau montre les rétroliens : la dernière ouverte, pas celle qu'on
+    /// parcourt en aperçu, sinon la liste changerait sous la sélection.
+    pub anchor: Option<PathBuf>,
     /// Dossiers dépliés.
     pub open: HashSet<PathBuf>,
     /// Lignes de la dernière frame, et l'empreinte de ce dont elles sont tirées.
@@ -140,6 +145,7 @@ impl Nav {
                 Some("recent") => Mode::Recent,
                 Some("graph") => Mode::Graph,
                 Some("tags") => Mode::Tags,
+                Some("links") => Mode::Links,
                 _ => Mode::Tree,
             },
             panel: match words.next() {
@@ -152,6 +158,7 @@ impl Nav {
             dragging: false,
             sel: None,
             marked: HashSet::new(),
+            anchor: None,
             open: HashSet::new(),
             rows: Vec::new(),
             rows_from: 0,
@@ -169,6 +176,7 @@ impl Nav {
             Mode::Recent => "recent",
             Mode::Graph => "graph",
             Mode::Tags => "tags",
+            Mode::Links => "links",
         };
         let panel = match self.panel {
             Panel::Rail => "rail",
@@ -404,6 +412,9 @@ impl Shell {
         let mut hasher = DefaultHasher::new();
         let open = self.nav.open.iter().map(|dir| BuildHasherDefault::<DefaultHasher>::default().hash_one(dir)).fold(0u64, u64::wrapping_add);
         (self.nav.mode, self.nav.panel == Panel::Rail, &self.vault, &self.dirs, &self.images, open).hash(&mut hasher);
+        if self.nav.mode == Mode::Links {
+            self.nav.anchor.hash(&mut hasher);
+        }
         if self.nav.mode == Mode::Recent {
             self.recent.hash(&mut hasher);
         }
@@ -411,6 +422,9 @@ impl Shell {
             (&note.path, &note.name).hash(&mut hasher);
             if self.nav.mode == Mode::Tags {
                 note.tags.hash(&mut hasher);
+            }
+            if self.nav.mode == Mode::Links {
+                note.links.hash(&mut hasher);
             }
         }
         hasher.finish()
@@ -424,6 +438,10 @@ impl Shell {
             Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.images, &self.nav.open),
             Mode::Graph => Vec::new(),
             Mode::Tags => tag_rows(&self.notes, &self.nav.open),
+            Mode::Links => (self.nav.anchor.iter())
+                .flat_map(|target| graph::backlinks(&self.notes, target))
+                .map(|n| Row { path: n.path.clone(), name: n.name.clone(), depth: 0, dir: None })
+                .collect(),
             Mode::Recent => self
                 .by_recency()
                 .into_iter()
@@ -1001,7 +1019,16 @@ impl Shell {
                     }
                     _ => detail,
                 };
-                let foldable = self.nav.mode != Mode::Recent;
+                // Sous les rétroliens, la ligne de la note qui porte le lien.
+                let links = self.nav.mode == Mode::Links;
+                let detail = match self.nav.anchor.as_ref().filter(|_| links) {
+                    Some(target) => {
+                        let line = self.notes.iter().find(|n| n.path == row.path).and_then(|n| graph::link_line(&n.body, &vault::stem(target).to_lowercase()));
+                        line.map(|line| line.trim().to_string()).unwrap_or_default()
+                    }
+                    None => detail,
+                };
+                let foldable = !matches!(self.nav.mode, Mode::Recent | Mode::Links);
                 let chevron = match row.dir {
                     Some(true) => "chevron-down.svg",
                     Some(false) => "chevron-right.svg",
@@ -1025,15 +1052,15 @@ impl Shell {
                         })
                         .child(
                             div()
-                                .flex_1()
                                 .truncate()
+                                // La ligne du lien prend la place : le nom se contente du tiers.
+                                .map(|d| if links { d.flex_none().max_w(gpui::relative(0.35)) } else { d.flex_1() })
                                 .when(current, |d| d.text_color(t.accent))
                                 .child(row.name.clone()),
                         )
                         .child(
                             div()
-                                .flex_none()
-                                .max_w(px(110.))
+                                .map(|d| if links { d.flex_1().min_w_0() } else { d.flex_none().max_w(px(110.)) })
                                 .truncate()
                                 .text_size(px(11.5))
                                 .text_color(t.dim)
@@ -1109,6 +1136,9 @@ impl Shell {
         let t = self.theme;
         let (mode, panel) = (self.nav.mode, self.nav.panel);
         let unfolded = panel != Panel::Rail;
+        if !self.preview {
+            self.nav.anchor = self.path.clone();
+        }
         let source = self.rows_source();
         if source != self.nav.rows_from {
             self.nav.rows = if unfolded { self.nav_rows() } else { Vec::new() };
@@ -1141,6 +1171,7 @@ impl Shell {
             .child(mode_button("nav-recent", "clock.svg", Mode::Recent))
             .child(mode_button("nav-graph", "graph.svg", Mode::Graph))
             .child(mode_button("nav-tags", "tag.svg", Mode::Tags))
+            .child(mode_button("nav-links", "backlink.svg", Mode::Links))
             .child(div().w(px(16.)).h(px(1.)).my_1().bg(t.border))
             .child(
                 button("nav-search", "search.svg", false, t)
@@ -1170,6 +1201,10 @@ impl Shell {
             (Mode::Tree, Some(root)) => vault::stem(root),
             (Mode::Graph, _) => tr("Graph", "Graphe").to_string(),
             (Mode::Tags, _) => "Tags".to_string(),
+            (Mode::Links, _) => {
+                let name = self.nav.anchor.as_deref().map(vault::stem).unwrap_or_default();
+                format!("{} {name}", tr("Links to", "Liens vers"))
+            }
             _ => tr("Recent", "Récents").to_string(),
         };
         let header = div()

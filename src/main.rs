@@ -223,6 +223,7 @@ impl AssetSource for Assets {
                 r#"<circle cx="4" cy="11.5" r="1.7"/><circle cx="11.5" cy="4.5" r="1.7"/><circle cx="12" cy="12" r="1.3"/><path d="M5.3 10.3L10.2 5.7M11.6 6.2L11.9 10.7"/>"#
             }
             "tag.svg" => r#"<path d="M6.5 3L5 13M11 3L9.5 13M3.5 6H13M3 10H12.5"/>"#,
+            "backlink.svg" => r#"<path d="M13 4.5H8.5A3 3 0 0 0 5.5 7.5V11.5M3 9L5.5 11.5L8 9"/>"#,
             "code.svg" => r#"<path d="M5.5 4.5L2.5 8L5.5 11.5M10.5 4.5L13.5 8L10.5 11.5"/>"#,
             "heart.svg" => {
                 r#"<path d="M8 13C3.5 9.8 2.5 7.6 2.5 5.9A2.6 2.6 0 0 1 8 4.9A2.6 2.6 0 0 1 13.5 5.9C13.5 7.6 12.5 9.8 8 13Z"/>"#
@@ -1485,6 +1486,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
             "Navigation",
             vec![
                 (format!("{} / R / G / T", m("E")), tr("Vault tree / recent notes / graph / tags", "Arbre du coffre / notes récentes / graphe / tags")),
+                (m("L"), tr("Backlinks: the notes that link to this one", "Rétroliens : les notes qui mènent à celle-ci")),
                 (tr("A picture", "Une image").into(), tr("Shown in place of the note; a square in the graph", "Affichée à la place de la note ; un carré dans le graphe")),
                 (tr("A .csv or .tsv", "Un .csv ou .tsv").into(), tr("A grid in place of the note; not in the graph", "Une grille à la place de la note ; absent du graphe")),
                 (m("M"), tr("Panel on the whole window", "Panneau en pleine fenêtre")),
@@ -1972,6 +1974,9 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &nav::ShowTags, window, cx| {
                 this.show_nav(Mode::Tags, false, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &nav::ShowLinks, window, cx| {
+                this.show_nav(Mode::Links, false, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &nav::ToggleFull, window, cx| this.toggle_full(window, cx)))
             // Séparateur du panneau : il suit le pointeur tant que le bouton est tenu.
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
@@ -2179,6 +2184,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-r", nav::ShowRecent, Some("Shell")),
         KeyBinding::new("secondary-g", nav::ShowGraph, Some("Shell")),
         KeyBinding::new("secondary-t", nav::ShowTags, Some("Shell")),
+        KeyBinding::new("secondary-l", nav::ShowLinks, Some("Shell")),
         KeyBinding::new("secondary-m", nav::ToggleFull, Some("Shell")),
         KeyBinding::new("tab", graph::Cycle, n),
         KeyBinding::new("secondary-shift-n", nav::NewFolder, Some("Shell")),
@@ -2841,6 +2847,46 @@ mod tests {
         // Un tag n'est pas un fichier : Suppr n'y fait rien.
         cx.simulate_keystrokes("up delete");
         assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.error.is_none()));
+
+        // Rétroliens : Ctrl+L liste les notes qui mènent à la note ouverte (lien avec alias, lien
+        // dans un tableau). Bas en montre une en aperçu sans que la liste change ; elle suit un
+        // lien retiré ; Entrée ouvre la note, et la liste devient la sienne.
+        let was = shell.read_with(cx, |s, _| s.path.clone()).unwrap();
+        fs::write(root.join("Cible.md"), "# Cible\n").unwrap();
+        fs::write(root.join("Source A.md"), "# Source A\n\nvoir [[Cible|la cible]] ici\n").unwrap();
+        fs::write(root.join("Source B.md"), "# Source B\n\n| a | [[cible]] |\n").unwrap();
+        let settle = |cx: &mut gpui::VisualTestContext| {
+            for _ in 0..2 {
+                cx.executor().advance_clock(Duration::from_secs(3));
+                cx.run_until_parked();
+            }
+        };
+        settle(cx);
+        shell.update(cx, |s, cx| s.open_note(&root.join("Cible.md"), cx));
+        cx.simulate_keystrokes("secondary-l");
+        cx.run_until_parked();
+        let rows = |cx: &mut gpui::VisualTestContext| {
+            shell.read_with(cx, |s, _| s.nav.rows.iter().map(|r| r.name.clone()).collect::<Vec<_>>())
+        };
+        assert_eq!(rows(cx), ["Source A", "Source B"]);
+        assert!(vault::load_layout().starts_with("links split"));
+        cx.simulate_keystrokes("down");
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.path.as_ref().is_some_and(|p| p.to_string_lossy().contains("Source"))));
+        assert_eq!(rows(cx), ["Source A", "Source B"]);
+        fs::write(root.join("Source B.md"), "# Source B\n").unwrap();
+        settle(cx);
+        assert_eq!(rows(cx), ["Source A"]);
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.path.as_deref() == Some(&*root.join("Source A.md"))) && rows(cx).is_empty());
+        for name in ["Cible.md", "Source A.md", "Source B.md"] {
+            fs::remove_file(root.join(name)).unwrap();
+        }
+        shell.update(cx, |s, cx| s.open_note(&was, cx));
+        settle(cx);
+        cx.simulate_keystrokes("secondary-t");
+        cx.run_until_parked();
 
         // Schéma : Ctrl+Maj+D en crée un à côté de la note. Une lettre choisit la
         // forme, glisser la pose ; Entrée écrit dedans ; une flèche tirée d'une
