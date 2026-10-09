@@ -2,6 +2,7 @@
 
 use std::ops::Range;
 
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -763,6 +764,12 @@ pub fn format_table(rows: &[Vec<String>], indent: &str) -> String {
     text
 }
 
+/// Nombre de mots et de caractères du texte, tel qu'il est écrit : les marques du Markdown
+/// comptent comme des caractères, les fins de ligne non.
+pub fn counts(text: &str) -> (usize, usize) {
+    (text.unicode_words().count(), text.graphemes(true).filter(|g| !matches!(*g, "\n" | "\r\n")).count())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -873,6 +880,13 @@ mod tests {
         assert_eq!(on_enter("- ", 2, false), Enter::Clear);
         assert_eq!(on_enter("  x", 3, false), Enter::Insert("\n  ".into()));
         assert_eq!(on_enter("- a", 3, true), Enter::Insert("\n".into()));
+    }
+
+    #[test]
+    fn counts_words_and_characters() {
+        assert_eq!(counts(""), (0, 0));
+        assert_eq!(counts("# Été\n\nl'idée, **déjà** 2 fois\n"), (5, 28));
+        assert_eq!(counts("👨‍👩‍👧 ok"), (1, 4));
     }
 
     #[test]

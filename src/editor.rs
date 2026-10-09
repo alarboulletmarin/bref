@@ -611,6 +611,8 @@ pub struct Editor {
     /// (thème, images) : tant qu'il et le reste de `LayoutKey` ne bougent pas, la mise
     /// en page est reprise telle quelle, pour un simple défilement.
     version: u64,
+    /// Compteur du bas de page, gardé tant que le texte et la sélection ne bougent pas.
+    counted: Option<((u64, Range<usize>), String)>,
     /// Change quand tout est à refaire (autre note, thème, images) : rien n'est repris.
     epoch: u64,
     dmg: Option<Damage>,
@@ -686,6 +688,7 @@ impl Editor {
             theme,
             rows: Vec::new(),
             version: 0,
+            counted: None,
             epoch: 0,
             dmg: None,
             laid: None,
@@ -805,6 +808,32 @@ impl Editor {
     #[cfg(test)]
     pub fn layouts(&self) -> (usize, usize, usize) {
         self.counts
+    }
+
+    /// Compteur du bas de page : mots, caractères et temps de lecture de la note, ou mots et
+    /// caractères de la sélection. Recompté seulement quand le texte ou la sélection changent.
+    pub fn counts(&mut self) -> String {
+        let key = (self.version, self.sel.clone());
+        if let Some((_, label)) = self.counted.as_ref().filter(|(known, _)| *known == key) {
+            return label.clone();
+        }
+        let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+        let both = |(words, chars): (usize, usize)| {
+            format!(
+                "{} · {}",
+                plural(words, tr("word", "mot"), tr("words", "mots")),
+                plural(chars, tr("character", "caractère"), tr("characters", "caractères"))
+            )
+        };
+        let label = if self.sel.is_empty() {
+            let (words, chars) = md::counts(&self.content);
+            // 200 mots à la minute, arrondi au-dessus.
+            format!("{} · {} {}", both((words, chars)), words.div_ceil(200), tr("min read", "min de lecture"))
+        } else {
+            format!("{} {}", tr("Selection:", "Sélection :"), both(md::counts(&self.content[self.sel.clone()])))
+        };
+        self.counted = Some((key, label.clone()));
+        label
     }
 
     /// Lignes de tirets de tableau qu'on ne voit pas.
@@ -3344,6 +3373,20 @@ impl EntityInputHandler for Editor {
 
 impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // À gauche de l'icône de copie que la fenêtre pose dans le coin.
+        let counts = div()
+            .absolute()
+            .bottom_4()
+            .right(px(46.))
+            .h(px(30.))
+            .px_2()
+            .rounded(px(8.))
+            .flex()
+            .items_center()
+            .bg(self.theme.bg)
+            .text_size(px(12.))
+            .text_color(self.theme.dim)
+            .child(self.counts());
         macro_rules! motions {
             ($el:expr, $($action:ident => $motion:ident, $select:expr;)*) => {
                 $el$(.on_action(cx.listener(|this, _: &$action, _, cx| {
@@ -3353,6 +3396,7 @@ impl Render for Editor {
         }
         let el = div()
             .size_full()
+            .relative()
             .key_context("Editor")
             .track_focus(&self.focus)
             .cursor(CursorStyle::IBeam);
@@ -3404,6 +3448,7 @@ impl Render for Editor {
         .on_mouse_move(cx.listener(Self::mouse_move))
         .on_scroll_wheel(cx.listener(Self::scroll))
         .child(EditorElement(cx.entity()))
+        .child(counts)
     }
 }
 

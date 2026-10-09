@@ -2306,6 +2306,12 @@ mod tests {
         };
 
         cx.simulate_input("# Test");
+        // Bas de page : le compteur suit la frappe, puis ne compte que la sélection.
+        let counts = |cx: &mut gpui::VisualTestContext| shell.update(cx, |s, cx| s.editor.update(cx, |e, _| e.counts()));
+        assert_eq!(counts(cx), "1 mot · 6 caractères · 1 min de lecture");
+        cx.simulate_keystrokes("shift-left shift-left");
+        assert_eq!(counts(cx), "Sélection : 1 mot · 2 caractères");
+        cx.simulate_keystrokes("right");
         cx.simulate_keystrokes("enter");
         cx.simulate_input("1. un");
         cx.simulate_keystrokes("enter");
