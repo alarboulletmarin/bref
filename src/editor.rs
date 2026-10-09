@@ -1866,6 +1866,12 @@ impl Editor {
         self.move_to(sel.start + at, cx);
     }
 
+    /// Résout le commentaire qui commence à l'octet `at`.
+    pub fn resolve_comment(&mut self, at: usize, cx: &mut Context<Self>) {
+        self.move_to(self.clamp(at), cx);
+        self.comment(cx);
+    }
+
     /// Commente la sélection, ou la ligne sans elle : `{==texte==}{>>…<<}`, le curseur dans le
     /// commentaire à écrire. Sur un commentaire, le résout : le balisage part, le texte reste.
     fn comment(&mut self, cx: &mut Context<Self>) {

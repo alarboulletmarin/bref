@@ -451,6 +451,8 @@ struct Shell {
     new_dir: Option<PathBuf>,
     dirty: bool,
     save_gen: usize,
+    /// Le panneau des commentaires a été refermé : il attend qu'on le redemande.
+    comments_shut: bool,
     /// Messages d'état affichés, du plus ancien au plus récent.
     toasts: Vec<Toast>,
     /// Numéro du dernier message, pour retirer le bon à l'échéance.
@@ -520,6 +522,7 @@ impl Shell {
             new_dir: None,
             dirty: false,
             save_gen: 0,
+            comments_shut: false,
             toasts: Vec::new(),
             toasted: 0,
             update: None,
@@ -930,6 +933,7 @@ impl Shell {
     /// Les commentaires de la note, dans la même liste que son plan : le texte commenté, puis
     /// ce qu'on en dit.
     pub fn open_comments(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.comments_shut = false;
         let said = markdown::all_comments(self.editor.read(cx).text())
             .into_iter()
             .map(|(noted, said, at)| (format!("{noted} — {said}"), at))
@@ -1828,7 +1832,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (m("K"), tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
                 (m("V"), tr("An address pasted over a selection makes it a link", "Une adresse collée sur une sélection en fait un lien")),
                 (m("Shift+M"), tr("Comment the selection or the line; on a comment, resolve it", "Commenter la sélection ou la ligne ; sur un commentaire, le résoudre")),
-                (format!("{} › {}", m("P"), tr("comments", "commentaires")), tr("List the comments of the note, jump to one", "Lister les commentaires de la note, aller à l'un d'eux")),
+                (format!("{} › {}", m("P"), tr("comments", "commentaires")), tr("Comments: show their panel, jump to one", "Commentaires : montrer leur panneau, aller à l'un d'eux")),
                 (tr("Right click", "Clic droit").into(), tr("Menu of the note: link, comment, cut, copy, paste, bold, italic", "Menu de la note : lien, commentaire, couper, copier, coller, gras, italique")),
                 (format!("{} / {}", m("Z"), m("Shift+Z")), tr("Undo / redo", "Annuler / rétablir")),
                 (format!("{word}+{}", tr("Left / Right", "Gauche / Droite")), tr("Move by word", "Se déplacer par mot")),
@@ -2104,6 +2108,74 @@ impl Render for Shell {
                 ),
                 (None, _) => note.child(self.editor.clone()).child(copy),
             };
+            // Commentaires de la note, à sa droite : le texte commenté, puis ce qu'on en dit. Un
+            // clic mène au commentaire, prêt à être retouché ; la coche le résout.
+            // ponytail: la note est relue à chaque rendu (une recherche de `{==`) ; garder la
+            // liste d'une version du texte à l'autre si de très longues notes en pâtissent.
+            let said = match self.picture.is_none() && !self.comments_shut {
+                true => markdown::all_comments(self.editor.read(cx).text()),
+                false => Vec::new(),
+            };
+            let cards = said.iter().enumerate().map(|(i, &(noted, said, at))| {
+                let inside = at + noted.len() + 9;
+                div()
+                    .id(("comment", i))
+                    .p_2()
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(t.border)
+                    .bg(t.bg)
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .cursor_pointer()
+                    .hover(|s| s.border_color(t.accent.opacity(0.6)))
+                    .child(
+                        div()
+                            .flex()
+                            .items_start()
+                            .gap_1()
+                            .child(div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(noted.to_string()))
+                            .child(nav::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.editor.update(cx, |e, cx| e.resolve_comment(at, cx));
+                                window.focus(&this.editor.focus_handle(cx));
+                            }))),
+                    )
+                    .child(div().text_color(if said.is_empty() { t.dim } else { t.text }).child(match said.is_empty() {
+                        true => tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string(),
+                        false => said.to_string(),
+                    }))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.editor.update(cx, |e, cx| e.jump(inside, false, cx));
+                        window.focus(&this.editor.focus_handle(cx));
+                    }))
+            });
+            let comments = (!said.is_empty()).then(|| {
+                let title = format!("{} ({})", tr("Comments", "Commentaires"), said.len());
+                let shut = nav::button("comments-shut", "close.svg", false, t).on_click(cx.listener(|this, _, _, cx| {
+                    this.comments_shut = true;
+                    cx.notify();
+                }));
+                div()
+                    .id("comments")
+                    .w(px(270.))
+                    .flex_none()
+                    .h_full()
+                    .pt(px(48.))
+                    .px_3()
+                    .pb_3()
+                    .border_l_1()
+                    .border_color(t.border)
+                    .bg(t.panel)
+                    .text_size(px(13.))
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .overflow_y_scroll()
+                    .child(div().flex().items_center().child(div().flex_1().text_color(t.dim).child(title)).child(shut))
+                    .children(cards)
+            });
             let card = || {
                 div()
                     .pl_3()
@@ -2155,7 +2227,7 @@ impl Render for Shell {
             let toasts = div().absolute().bottom(px(54.)).right_4().flex().flex_col().items_end().gap_2().children(toasts);
             body.flex()
                 .child(self.render_nav(cx))
-                .when(self.nav.panel != Panel::Full, |d| d.child(note))
+                .when(self.nav.panel != Panel::Full, |d| d.child(note).children(comments))
                 .children(self.palette.clone())
                 .children(self.update.clone().map(|release| {
                     let banner = banner();
@@ -3787,12 +3859,22 @@ mod tests {
         cx.simulate_keystrokes("down secondary-shift-m");
         cx.simulate_input("ok");
         assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\n{==fin==}{>>ok<<}");
+        // Le panneau, à droite de la note : un clic sur une carte mène dans son commentaire,
+        // sa coche le résout ; refermé, il revient quand la palette liste les commentaires.
+        cx.run_until_parked();
+        let view = cx.update(|window, _| window.viewport_size());
+        cx.simulate_click(point(view.width - px(150.), px(125.)), gpui::Modifiers::none());
+        assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).position() == 17));
+        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.resolve_comment(34, cx)));
+        assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\nfin");
+        cx.simulate_keystrokes("secondary-z");
+        shell.update(cx, |s, _| s.comments_shut = true);
         cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("commentaires");
         cx.simulate_keystrokes("down enter");
         cx.simulate_input("revoir");
         cx.simulate_keystrokes("enter");
-        assert!(shell.read_with(cx, |s, cx| s.palette.is_none() && s.editor.read(cx).position() == 5));
+        assert!(shell.read_with(cx, |s, cx| s.palette.is_none() && !s.comments_shut && s.editor.read(cx).position() == 5));
         cx.simulate_keystrokes("secondary-shift-m");
         assert_eq!(text(cx), "- un mot ici\n{==fin==}{>>ok<<}");
         cx.simulate_keystrokes("secondary-z");

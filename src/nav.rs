@@ -324,7 +324,7 @@ pub fn tag_rows(notes: &[Note], open: &HashSet<PathBuf>) -> Vec<Row> {
 }
 
 /// Bouton icône du rail et des en-têtes de panneau.
-pub fn button(id: &'static str, icon: &'static str, active: bool, t: Theme) -> Stateful<Div> {
+pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, t: Theme) -> Stateful<Div> {
     div()
         .id(id)
         .size(px(28.))
