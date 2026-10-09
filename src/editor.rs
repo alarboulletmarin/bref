@@ -3855,19 +3855,23 @@ impl Editor {
                     let hl = Bounds::new(point(at.x + px(4.), y), size(px(272.), item_h));
                     window.paint_quad(fill(hl, t.selection).corner_radii(px(5.)));
                 }
-                let mut write = |text: &str, x: Pixels, color| {
-                    label(text, color, window).paint(point(at.x + x, y + px(4.)), px(20.), window, cx).ok();
+                // Le libellé à gauche, sa précision à droite, calée sur le bord : un libellé trop
+                // long est coupé avant elle, jamais dessiné dessous.
+                let mut write = |text: &str, detail: &str| {
+                    let detail = label(detail, t.dim, window);
+                    let right = at.x + panel.width - px(12.) - detail.width;
+                    let room = right - at.x - px(24.);
+                    let (mut cut, mut main) = (text.to_string(), label(text, t.text, window));
+                    while main.width > room && cut.pop().is_some() {
+                        main = label(&format!("{}…", cut.trim_end()), t.text, window);
+                    }
+                    main.paint(point(at.x + px(12.), y + px(4.)), px(20.), window, cx).ok();
+                    detail.paint(point(right, y + px(4.)), px(20.), window, cx).ok();
                 };
                 match choice {
-                    Choice::Name(name) => write(&name.chars().take(36).collect::<String>(), px(12.), t.text),
-                    Choice::Command((name, en, fr, ..)) => {
-                        write(tr(en, fr), px(12.), t.text);
-                        write(&format!("/{name}"), px(186.), t.dim);
-                    }
-                    Choice::Date(en, fr, date) => {
-                        write(tr(en, fr), px(12.), t.text);
-                        write(&crate::date_name(*date), px(186.), t.dim);
-                    }
+                    Choice::Name(name) => write(name, ""),
+                    Choice::Command((name, en, fr, ..)) => write(tr(en, fr), &format!("/{name}")),
+                    Choice::Date(en, fr, date) => write(tr(en, fr), &crate::date_name(*date)),
                 }
             }
         }
