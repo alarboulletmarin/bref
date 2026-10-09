@@ -1,6 +1,6 @@
 # Maintainer: Andrea Larboullet Marin <a.larboulletmarin@gmail.com>
 pkgname=bref
-pkgver=0.2.2
+pkgver=0.2.3
 pkgrel=1
 pkgdesc="Fast, minimal Markdown note-taking app"
 arch=('x86_64' 'aarch64')
