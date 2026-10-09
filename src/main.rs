@@ -505,6 +505,8 @@ struct Shell {
     save_gen: usize,
     /// Notes en tableau kanban dont on a demandé le texte.
     board_off: std::collections::HashSet<PathBuf>,
+    /// Ce qu'on écrit dans le tableau, et son champ de saisie.
+    board_field: Option<(kanban::Slot, Entity<kanban::Field>)>,
     /// Le tableau reçoit la saisie à la place de la note qu'il cache.
     board_focus: FocusHandle,
     /// Page liste affichée à la place de la note : le dossier, la colonne qui la trie (0 : le
@@ -589,6 +591,7 @@ impl Shell {
             dirty: false,
             save_gen: 0,
             board_off: Default::default(),
+            board_field: None,
             board_focus: cx.focus_handle(),
             listing: None,
             swapped: Vec::new(),
@@ -1888,6 +1891,7 @@ impl Shell {
                 PaletteEvent::Outline => this.open_outline(window, cx),
                 PaletteEvent::Comments => this.open_comments(window, cx),
                 PaletteEvent::UndoSwap => this.undo_swap(cx),
+                PaletteEvent::NewBoard => this.new_note(kanban::new_board(), cx),
                 PaletteEvent::Today => this.open_today(cx),
                 PaletteEvent::Trash => this.open_trash(window, cx),
                 PaletteEvent::Backup => this.choose_backup(window, cx),
@@ -2001,7 +2005,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 ("```rust".into(), tr("Code block: colors, copy icon", "Bloc de code : couleurs, icône de copie")),
                 ("---".into(), tr("Divider", "Séparateur")),
                 ("[[".into(), tr("Link to a note", "Lien vers une note")),
-                ("kanban: true".into(), tr("In the front matter (/meta): the note opens as a board, one column per ## heading", "Dans l'en-tête (/meta) : la note s'ouvre en tableau, une colonne par titre ##")),
+                (format!("{} › kanban", m("P")), tr("New kanban board: cards you type, drag and tick; double click to rewrite", "Nouveau tableau kanban : des cartes à écrire, glisser et cocher ; double-clic pour réécrire")),
                 ("@".into(), tr("Link to the note of a day: @today, @monday, @2026-10-09", "Lien vers la note d'un jour : @demain, @lundi, @2026-10-09")),
                 ("![](image.png)".into(), tr("Picture, under its line", "Image, sous sa ligne")),
                 ("![[".into(), tr("Suggests the pictures and diagrams of the vault", "Propose les images et les schémas du coffre")),
@@ -2281,7 +2285,7 @@ impl Render for Shell {
                 nav::button("comments-toggle", "i-chat.svg", !self.comments_shut, t)
                     .absolute()
                     .bottom_4()
-                    .right(px(50.))
+                    .right(px(if kanban::is_board(self.editor.read(cx).text()) { 84. } else { 50. }))
                     .size(px(30.))
                     .rounded(px(8.))
                     .occlude()
@@ -2296,12 +2300,20 @@ impl Render for Shell {
             if board && self.editor.focus_handle(cx).is_focused(window) {
                 window.focus(&self.board_focus);
             }
+            if !board {
+                self.board_field = None;
+                // Le tableau quitté (une autre note s'ouvre), la saisie revient à la note.
+                if self.board_focus.is_focused(window) {
+                    window.focus(&self.editor.focus_handle(cx));
+                }
+            }
             let boards = kanban::is_board(self.editor.read(cx).text()) && self.picture.is_none() && self.listing.is_none();
             let flip = boards.then(|| {
                 nav::button("board-toggle", "board.svg", board, t)
                     .absolute()
                     .bottom_4()
-                    .right(px(if board { 16. } else { 50. + 34. * talk.is_some() as usize as f32 }))
+                    // Toujours à la même place, tableau ou texte : à gauche de la copie.
+                    .right(px(50.))
                     .size(px(30.))
                     .rounded(px(8.))
                     .occlude()
@@ -4181,24 +4193,55 @@ mod tests {
         cx.simulate_keystrokes("shift-right shift-right shift-right secondary-k");
         cx.simulate_input("https://z.fr");
         assert_eq!(text(cx), "[mot](https://z.fr)");
-        // Kanban : une note dont l'en-tête dit `kanban` s'ouvre en tableau, une colonne par
-        // titre `##`. Déplacer ou cocher une carte réécrit sa ligne, et s'annule ; « + » mène au
-        // texte pour écrire la carte ; le bouton du coin passe du tableau au texte.
-        load(cx, "---\nkanban: true\n---\n## À faire\n- [ ] Écrire\n- [ ] Relire\n## Fait\n", 0);
+        // Kanban : la palette crée un tableau, qui s'ouvre avec ses trois colonnes. Tout s'y
+        // écrit sur place : « + » ouvre une carte, Entrée la valide et en rouvre une, Échap
+        // arrête ; un double-clic réécrit une carte ou un titre. Déplacer ou cocher une carte
+        // réécrit sa ligne. Rien ne fait quitter le tableau, sauf son bouton.
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("tableau kanban");
+        cx.simulate_keystrokes("down enter");
         cx.run_until_parked();
         let on_board = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| shell.read(cx).board_focus.is_focused(window));
         assert!(shell.read_with(cx, |s, cx| s.board_shown(cx)) && on_board(cx));
-        shell.update(cx, |s, cx| s.board_edit(|text| kanban::move_card(text, (0, 0), (1, usize::MAX)), cx));
-        assert_eq!(text(cx), "---\nkanban: true\n---\n## À faire\n- [ ] Relire\n## Fait\n- [ ] Écrire\n");
-        shell.update(cx, |s, cx| s.board_edit(|text| kanban::tick(text, (1, 0)), cx));
-        assert!(text(cx).ends_with("## Fait\n- [x] Écrire\n"));
-        // Le bouton du coin : en tableau, il est seul en bas à droite.
+        assert_eq!(text(cx), "---\nkanban: true\n---\n# Tableau\n\n## À faire\n\n## En cours\n\n## Fait\n");
+        shell.update_in(cx, |s, window, cx| s.board_write(kanban::Slot::New(0), window, cx));
+        cx.simulate_input("Écrire");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("Relire");
+        cx.simulate_keystrokes("backspace enter escape");
+        cx.run_until_parked();
+        assert!(text(cx).contains("## À faire\n- [ ] Écrire\n- [ ] Relir\n\n## En cours") && shell.read_with(cx, |s, cx| s.board_field.is_none() && s.board_shown(cx)) && on_board(cx));
+        shell.update_in(cx, |s, window, cx| s.board_write(kanban::Slot::Card(0, 1), window, cx));
+        cx.simulate_input("e");
+        cx.simulate_keystrokes("enter");
+        shell.update_in(cx, |s, window, cx| s.board_write(kanban::Slot::Column(1), window, cx));
+        cx.simulate_input(" de route");
+        // Ouvrir un autre champ valide celui qu'on écrivait.
+        shell.update_in(cx, |s, window, cx| s.board_write(kanban::Slot::NewColumn, window, cx));
+        cx.simulate_input("Plus tard");
+        cx.simulate_keystrokes("enter");
+        assert!(text(cx).contains("- [ ] Relire\n\n## En cours de route\n") && text(cx).ends_with("## Fait\n\n## Plus tard\n"));
+        shell.update(cx, |s, cx| s.board_edit(|text| kanban::move_card(text, (0, 0), (2, usize::MAX)), cx));
+        shell.update(cx, |s, cx| s.board_edit(|text| kanban::tick(text, (2, 0)), cx));
+        assert!(text(cx).contains("## À faire\n- [ ] Relire\n") && text(cx).contains("## Fait\n- [x] Écrire\n"));
+        // Le bouton du coin, à gauche de la copie dans le texte comme dans le tableau.
         let corner = cx.update(|window, _| window.viewport_size());
-        cx.simulate_click(point(corner.width - px(31.), corner.height - px(31.)), gpui::Modifiers::none());
+        cx.simulate_click(point(corner.width - px(65.), corner.height - px(31.)), gpui::Modifiers::none());
         cx.run_until_parked();
         assert!(shell.read_with(cx, |s, cx| !s.board_shown(cx)) && !on_board(cx));
+        // Un geste du tableau, une étape d'annulation.
         cx.simulate_keystrokes("secondary-z secondary-z");
-        assert_eq!(text(cx), "---\nkanban: true\n---\n## À faire\n- [ ] Écrire\n- [ ] Relire\n## Fait\n");
+        assert!(text(cx).contains("## À faire\n- [ ] Écrire\n- [ ] Relire\n"));
+        cx.simulate_click(point(corner.width - px(65.), corner.height - px(31.)), gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, cx| s.board_shown(cx)));
+        let board_file = shell.read_with(cx, |s, _| s.path.clone());
+        shell.update(cx, |s, cx| s.open_note(&here, cx));
+        settle(cx);
+        for file in board_file.into_iter().chain([root.join("Tableau.md")]) {
+            fs::remove_file(file).ok();
+        }
+        settle(cx);
         // Plusieurs curseurs : Ctrl+D prend le mot, puis ses occurrences suivantes ; la frappe,
         // l'effacement et les déplacements valent pour tous, un seul Ctrl+Z défait le tout,
         // Échap revient à un curseur. Alt+clic en pose un de plus.

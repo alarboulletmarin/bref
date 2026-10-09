@@ -61,6 +61,10 @@ fn today_label() -> &'static str {
     tr("Today's note", "Note du jour")
 }
 
+fn board_label() -> &'static str {
+    tr("New kanban board", "Nouveau tableau kanban")
+}
+
 fn undo_swap_label() -> &'static str {
     tr("Undo the replacement in the vault", "Annuler le remplacement dans le coffre")
 }
@@ -128,6 +132,8 @@ pub enum PaletteEvent {
     Comments,
     /// Défait le dernier remplacement dans tout le coffre.
     UndoSwap,
+    /// Crée une note qui s'ouvre en tableau kanban.
+    NewBoard,
     /// Ligne choisie dans la recherche du coffre : la note, le rang de la ligne, le texte cherché.
     OpenAt(PathBuf, usize, String),
     /// Ouvre ou crée la note du jour.
@@ -166,6 +172,7 @@ enum Item {
     Outline,
     Comments,
     UndoSwap,
+    Board,
     Today,
     Trash,
     Backup,
@@ -426,7 +433,7 @@ impl Palette {
                 items.push(item);
             }
         }
-        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (undo_swap_label(), Item::UndoSwap), (today_label(), Item::Today), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (terminal_label(), Item::Terminal)] {
+        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (undo_swap_label(), Item::UndoSwap), (board_label(), Item::Board), (today_label(), Item::Today), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (terminal_label(), Item::Terminal)] {
             if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
                 items.push(item);
             }
@@ -494,6 +501,7 @@ impl Palette {
             Some(Item::Outline) => PaletteEvent::Outline,
             Some(Item::Comments) => PaletteEvent::Comments,
             Some(Item::UndoSwap) => PaletteEvent::UndoSwap,
+            Some(Item::Board) => PaletteEvent::NewBoard,
             Some(Item::Today) => PaletteEvent::Today,
             Some(Item::Trash) => PaletteEvent::Trash,
             Some(Item::Backup) => PaletteEvent::Backup,
@@ -631,6 +639,7 @@ impl Render for Palette {
                 Item::Outline => (outline_label().to_string(), format!("{}+Shift+O", crate::MOD)),
                 Item::Comments => (comments_label().to_string(), String::new()),
                 Item::UndoSwap => (undo_swap_label().to_string(), String::new()),
+                Item::Board => (board_label().to_string(), String::new()),
                 Item::Today => (today_label().to_string(), format!("{}+J", crate::MOD)),
                 Item::Trash => (trash_label().to_string(), String::new()),
                 Item::Backup => (backup_label().to_string(), String::new()),
