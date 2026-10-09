@@ -282,7 +282,7 @@ pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
 
-actions!(app, [OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -775,8 +775,7 @@ impl Shell {
                 if setting == Setting::Font { &self.prefs.font } else { &self.prefs.mono },
             ),
         };
-        // ponytail: la liste montre 14 choix sans défiler ; le choix en cours remonte
-        // en tête pour rester visible. Une liste défilante si le filtre ne suffit plus.
+        // Le choix en cours remonte en tête, juste sous « Par défaut ».
         if let Some(i) = options.iter().position(|o| o == current) {
             let chosen = options.remove(i);
             options.insert(0, chosen);
@@ -803,6 +802,47 @@ impl Shell {
                 vault::save_settings(&this.prefs.to_text());
             }
             this.restyle(window, cx);
+        })
+        .detach();
+        window.focus(&palette.focus_handle(cx));
+        self.palette = Some(palette);
+        cx.notify();
+    }
+
+    /// Plan de la note, comme celui de Zed : la liste de ses titres, celui de la section en
+    /// cours présélectionné. Le titre parcouru se montre en aperçu, Entrée y laisse le curseur,
+    /// Échap le remet où il était.
+    pub fn open_outline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_none() || self.picture.is_some() {
+            return;
+        }
+        let editor = self.editor.read(cx);
+        let before = editor.position();
+        let heads: Vec<(String, usize)> = markdown::headings(editor.text())
+            .into_iter()
+            .map(|(level, title, at)| (format!("{}{title}", "  ".repeat(level as usize - 1)), at))
+            .collect();
+        if heads.is_empty() {
+            self.palette = None;
+            self.notice = Some(tr("This note has no headings", "Cette note n'a pas de titres").into());
+            window.focus(&self.editor.focus_handle(cx));
+            return cx.notify();
+        }
+        let current = heads.iter().rposition(|(_, at)| *at <= before).unwrap_or(0);
+        let (theme, options) = (self.theme, heads.iter().map(|(label, _)| label.clone()).collect());
+        let palette = cx.new(|cx| Palette::choose(tr("Outline", "Plan"), options, "", theme, cx).select(current));
+        cx.subscribe_in(&palette, window, move |this, palette, event, window, cx| {
+            let to = match event {
+                PaletteEvent::Preview(_) | PaletteEvent::Submit(_) => palette.read(cx).chosen().and_then(|i| heads.get(i)),
+                _ => None,
+            };
+            let (at, top) = to.map_or((before, false), |(_, at)| (*at, true));
+            this.editor.update(cx, |e, cx| e.jump(at, top, cx));
+            if !matches!(event, PaletteEvent::Preview(_)) {
+                this.palette = None;
+                window.focus(&this.editor.focus_handle(cx));
+            }
+            cx.notify();
         })
         .detach();
         window.focus(&palette.focus_handle(cx));
@@ -1405,6 +1445,7 @@ impl Shell {
                 PaletteEvent::Setting(setting) => this.choose_setting(*setting, window, cx),
                 PaletteEvent::ToggleUpdates => this.toggle_updates(cx),
                 PaletteEvent::CheckUpdate => this.check_now(cx),
+                PaletteEvent::Outline => this.open_outline(window, cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
@@ -1432,6 +1473,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (tr("Enter / Shift+Enter", "Entrée / Maj+Entrée").into(), tr("Search bar: next / previous match (F3 too)", "Barre de recherche : passage suivant / précédent (F3 aussi)")),
                 ("Alt+C / Alt+W / Tab".into(), tr("Search bar: match case / whole words / replace field", "Barre de recherche : casse / mots entiers / champ de remplacement")),
                 (m(tr("Enter", "Entrée")), tr("Search bar: replace all (Enter: this match)", "Barre de recherche : tout remplacer (Entrée : ce passage)")),
+                (m("Shift+O"), tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")),
                 (m("N"), tr("New note", "Nouvelle note")),
                 (m("O"), tr("Change vault", "Changer de coffre")),
                 (m("Shift+C"), tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
@@ -1955,6 +1997,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &sheet::PickExport, window, cx| this.choose_table(Pick::Export, window, cx)))
             .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
+            .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
             .on_action(cx.listener(|this, _: &ChooseTheme, window, cx| {
                 this.choose_setting(Setting::Theme, window, cx)
             }))
@@ -2074,6 +2117,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-/", ToggleHelp, None),
         KeyBinding::new("escape", CloseHelp, Some("Shell")),
         KeyBinding::new("secondary-k secondary-t", ChooseTheme, None),
+        KeyBinding::new("secondary-shift-o", Outline, None),
         KeyBinding::new("secondary-=", ZoomIn, None),
         KeyBinding::new("secondary-+", ZoomIn, None),
         KeyBinding::new("secondary--", ZoomOut, None),
@@ -3188,6 +3232,29 @@ mod tests {
             }
         }
         assert!(gestures > 500);
+
+        // Plan de la note : Ctrl+Maj+O liste les titres, celui de la section en cours
+        // présélectionné. Le titre parcouru reçoit le curseur en aperçu (deux titres de même nom
+        // restent distincts, celui du bloc de code n'en est pas un), Échap le rend, Entrée l'y laisse.
+        let plan = "# Un\n\ntexte\n\n## Deux\n\n```\n# code\n```\n\n## Deux\n\nfin\n";
+        load(cx, plan, plan.find("texte").unwrap());
+        let caret = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).position());
+        cx.simulate_keystrokes("secondary-shift-o down");
+        assert_eq!(caret(cx), plan.find("## Deux").unwrap());
+        cx.simulate_keystrokes("down");
+        assert_eq!(caret(cx), plan.rfind("## Deux").unwrap());
+        cx.simulate_keystrokes("down");
+        assert_eq!(caret(cx), 0);
+        cx.simulate_keystrokes("escape");
+        assert_eq!(caret(cx), plan.find("texte").unwrap());
+        cx.simulate_keystrokes("secondary-shift-o");
+        cx.simulate_input("deux");
+        cx.simulate_keystrokes("enter");
+        assert!(caret(cx) == plan.find("## Deux").unwrap() && shell.read_with(cx, |s, _| s.palette.is_none()));
+        load(cx, "sans titre", 0);
+        cx.simulate_keystrokes("secondary-shift-o");
+        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.notice.as_deref().is_some_and(|n| n.contains("titres"))));
+        shell.update(cx, |s, _| s.notice = None);
 
         // Recherche dans la note : Ctrl+F, la frappe montre le premier passage, Entrée et
         // Maj+Entrée tournent en boucle, Alt+C tient compte de la casse, Alt+W des mots entiers.

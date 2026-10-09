@@ -172,6 +172,7 @@ The bottom right of the note shows its number of words and characters and its re
 |---|---|
 | `Ctrl + P` | palette: find a note by name or text, create one, filter by `#tag` |
 | `Ctrl + F`, `Ctrl + H` | [find in the note](#find-and-replace), find and replace |
+| `Ctrl + Shift + O` | outline: the headings of the note, to jump to one (also `Outline of the note` in the palette) |
 | `Ctrl + N` | new note |
 | `Ctrl + E`, `Ctrl + R`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |
 | `Ctrl + M` | navigation panel on the whole window, and back |
@@ -197,6 +198,10 @@ In the palette, type to search; `Enter` opens the selected note. Notes whose nam
 | `Ctrl + Home` `End` | start, end of the note |
 | `Ctrl + A` `C` `X` `V` | select all, copy, cut, paste |
 | Double click, triple click | select a word, a line; keep dragging to extend by words, by lines |
+
+### Outline
+
+`Ctrl + Shift + O` lists the headings of the note, indented by level, with the section the cursor is in selected. Type to filter; `↑` `↓` show each heading in place as you move, `Enter` leaves the cursor there, `Esc` puts it back where it was. Headings inside code blocks are not listed.
 
 ### Find and replace
 

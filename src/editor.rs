@@ -675,6 +675,8 @@ pub struct Editor {
     viewport: Bounds<Pixels>,
     scroll_y: Pixels,
     reveal: bool,
+    /// Avec `reveal` : la ligne du curseur se place en haut de la vue (saut vers un titre).
+    reveal_top: bool,
     find: Option<Finder>,
 }
 
@@ -744,6 +746,7 @@ impl Editor {
             viewport: Bounds::default(),
             scroll_y: px(0.),
             reveal: false,
+            reveal_top: false,
             find: None,
         }
     }
@@ -874,6 +877,18 @@ impl Editor {
         };
         self.counted = Some((key, label.clone()));
         label
+    }
+
+    /// Position du curseur dans le texte.
+    pub fn position(&self) -> usize {
+        self.cursor()
+    }
+
+    /// Place le curseur à `at` ; avec `top`, sa ligne monte en haut de la vue (un titre garde
+    /// sa section sous lui), sinon elle défile juste assez pour se voir.
+    pub fn jump(&mut self, at: usize, top: bool, cx: &mut Context<Self>) {
+        self.move_to(self.clamp(at), cx);
+        self.reveal_top = top;
     }
 
     /// Recherche, numéro du passage courant (à partir de 1) et nombre de passages.
@@ -3235,13 +3250,14 @@ impl Editor {
     fn place(&mut self, bounds: Bounds<Pixels>, window: &mut Window, _: &mut App) {
         let (cursor, width) = (self.cursor(), self.width);
         let reveal = std::mem::take(&mut self.reveal);
+        let to_top = std::mem::take(&mut self.reveal_top);
         if reveal {
             let c = self.cursor();
             if let Some(r) = self.row_at(c) {
                 let row = &self.rows[r];
                 let top = TOP + row.y + row.pad + row.pos(c - row.start).y;
                 let margin = px(24.);
-                if top - self.scroll_y < margin {
+                if to_top || top - self.scroll_y < margin {
                     self.scroll_y = top - margin;
                 } else if top + row.lh - self.scroll_y > bounds.size.height - margin {
                     self.scroll_y = top + row.lh - bounds.size.height + margin;

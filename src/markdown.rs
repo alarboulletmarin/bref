@@ -764,6 +764,26 @@ pub fn format_table(rows: &[Vec<String>], indent: &str) -> String {
     text
 }
 
+/// Titres du texte : niveau (1 à 6), intitulé, début de leur ligne. Une ligne de bloc de code
+/// n'est pas un titre ; comme à l'écran, un ``` sans clôture n'ouvre pas de bloc.
+pub fn headings(text: &str) -> Vec<(u8, &str, usize)> {
+    let fences = text.lines().filter(|line| is_fence(line)).count();
+    let (mut seen, mut in_code, mut at, mut found) = (0, false, 0, Vec::new());
+    for line in text.split('\n') {
+        if is_fence(line) {
+            seen += 1;
+            in_code = !in_code && seen < fences;
+        } else if !in_code
+            && let (Kind::Heading(_), marker) = classify(line, false)
+        {
+            let level = line.trim_start().bytes().take_while(|&b| b == b'#').count() as u8;
+            found.push((level, line[marker..].trim(), at));
+        }
+        at += line.len() + 1;
+    }
+    found
+}
+
 /// Passages de `text` qui valent `query`, sans chevauchement. `case` : la casse compte ;
 /// `word` : le passage ne touche ni lettre ni chiffre. Le texte est celui du fichier : les
 /// marques du Markdown se cherchent comme le reste.
@@ -918,6 +938,17 @@ mod tests {
         assert_eq!(on_enter("- ", 2, false), Enter::Clear);
         assert_eq!(on_enter("  x", 3, false), Enter::Insert("\n  ".into()));
         assert_eq!(on_enter("- a", 3, true), Enter::Insert("\n".into()));
+    }
+
+    #[test]
+    fn lists_headings() {
+        let text = "# Un\ntexte #pas\n\n### Trois ##\n```\n# code\n```\n| # | t |\n#serré\n## Deux\n```\n# après un bloc jamais fermé\n";
+        let third = text.find("###").unwrap();
+        assert_eq!(
+            headings(text),
+            [(1, "Un", 0), (3, "Trois ##", third), (2, "Deux", text.find("## Deux").unwrap()), (1, "après un bloc jamais fermé", text.rfind("# ").unwrap())]
+        );
+        assert!(headings("```\n# a\n```\n```\n# b\n```").is_empty());
     }
 
     #[test]

@@ -45,6 +45,10 @@ fn install_label(version: &str) -> String {
     format!("{} {version}", tr("Update Bref to", "Mettre à jour Bref vers"))
 }
 
+fn outline_label() -> &'static str {
+    tr("Outline of the note", "Plan de la note")
+}
+
 fn help_label() -> &'static str {
     tr("Keyboard shortcuts, about", "Raccourcis clavier, à propos")
 }
@@ -94,6 +98,8 @@ pub enum PaletteEvent {
     ToggleUpdates,
     /// Cherche tout de suite une nouvelle version.
     CheckUpdate,
+    /// Liste des titres de la note.
+    Outline,
     /// Installe la nouvelle version.
     InstallUpdate,
     /// Texte validé dans un champ de saisie, ou choix validé dans une liste.
@@ -117,6 +123,7 @@ enum Item {
     Updates,
     Check,
     Install,
+    Outline,
     Setting(Setting),
     Table(Pick),
 }
@@ -246,6 +253,20 @@ impl Palette {
         this
     }
 
+    /// Présélectionne le choix de rang `index` (deux choix peuvent porter le même nom).
+    pub fn select(mut self, index: usize) -> Self {
+        self.selected = index.min(self.items.len().saturating_sub(1));
+        self
+    }
+
+    /// Rang, dans la liste donnée à `choose`, du choix sélectionné.
+    pub fn chosen(&self) -> Option<usize> {
+        match self.items.get(self.selected) {
+            Some(Item::Note(i)) if self.choices => Some(*i),
+            _ => None,
+        }
+    }
+
     pub fn set_theme(&mut self, theme: Theme, cx: &mut Context<Self>) {
         self.theme = theme;
         cx.notify();
@@ -303,7 +324,6 @@ impl Palette {
             items
         };
         if self.choices {
-            items.truncate(14);
             self.items = items;
             self.selected = 0;
             return;
@@ -323,6 +343,9 @@ impl Palette {
             if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
                 items.push(item);
             }
+        }
+        if !q.is_empty() && fuzzy(&q, &outline_label().to_lowercase()).is_some() {
+            items.push(Item::Outline);
         }
         if let Some(version) = &self.installable
             && !q.is_empty()
@@ -383,6 +406,7 @@ impl Palette {
             Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
             Some(Item::Check) => PaletteEvent::CheckUpdate,
+            Some(Item::Outline) => PaletteEvent::Outline,
             Some(Item::Install) => PaletteEvent::InstallUpdate,
             Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
             None => PaletteEvent::Dismiss,
@@ -483,7 +507,9 @@ impl Render for Palette {
         )
         .size_0();
 
-        let rows = self.items.iter().enumerate().map(|(i, item)| {
+        // Une liste de choix montre 14 lignes à la fois, autour du choix sélectionné.
+        let first = self.selected.saturating_sub(6).min(self.items.len().saturating_sub(14));
+        let rows = self.items.iter().enumerate().skip(first).take(14).map(|(i, item)| {
             let (label, detail) = match item {
                 Item::Note(n) => {
                     let e = &self.entries[*n];
@@ -507,6 +533,7 @@ impl Render for Palette {
                 Item::Import => (import_label().to_string(), String::new()),
                 Item::Updates => (updates_label(self.updates.unwrap_or(true)).to_string(), String::new()),
                 Item::Check => (check_label().to_string(), String::new()),
+                Item::Outline => (outline_label().to_string(), format!("{}+Shift+O", crate::MOD)),
                 Item::Install => (install_label(self.installable.as_deref().unwrap_or_default()), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
                 Item::Table(pick) => (pick.label().to_string(), String::new()),
