@@ -14,6 +14,8 @@ mermaid-rs-renderer = { version = "0.3.1", default-features = false }
 # Le système signale les changements du coffre (inotify, FSEvents…). La 7 et non la 8 : celle-ci
 # exige bitflags 2.11 (via kqueue-sys) et ferait bouger le Cargo.lock de GPUI.
 notify = "7"
+# Déjà tirée par gpui, à la même version : expressions régulières de la recherche.
+regex = "1.12.2"
 # Déjà tirées par gpui, aux mêmes versions : import et export des schémas.
 resvg = { version = "0.45.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 roxmltree = "0.20.0"

@@ -87,6 +87,7 @@ actions!(
         FindSwitch,
         FindCase,
         FindWord,
+        FindRegex,
         FindPaste,
         ReplaceAll,
     ]
@@ -107,11 +108,13 @@ struct Finder {
     active: bool,
     case: bool,
     word: bool,
+    /// La recherche est une expression régulière.
+    regex: bool,
     hits: Vec<Range<usize>>,
     /// Passage courant dans `hits`.
     at: usize,
     /// Texte et réglages pour lesquels `hits` a été calculé.
-    key: Option<(u64, String, bool, bool)>,
+    key: Option<(u64, String, bool, bool, bool)>,
 }
 
 const TOP: Pixels = px(20.);
@@ -1035,11 +1038,11 @@ impl Editor {
         let Some(find) = &mut self.find else {
             return false;
         };
-        let key = (version, find.query.clone(), find.case, find.word);
+        let key = (version, find.query.clone(), find.case, find.word, find.regex);
         if find.key.as_ref() == Some(&key) {
             return false;
         }
-        find.hits = md::find(&self.content, &find.query, find.case, find.word);
+        find.hits = md::replacements(&self.content, &find.query, "", find.case, find.word, find.regex).into_iter().map(|(hit, _)| hit).collect();
         find.at = find.hits.iter().position(|hit| hit.start >= from).unwrap_or(0);
         find.key = Some(key);
         true
@@ -1076,8 +1079,9 @@ impl Editor {
     /// saisie est dans le champ « Remplacer ».
     fn find_enter(&mut self, cx: &mut Context<Self>) {
         self.refresh_find();
-        let current = self.find.as_ref().filter(|find| find.on_with).and_then(|find| Some((find.hits.get(find.at)?.clone(), find.with.clone()?)));
-        let Some((hit, with)) = current else {
+        let current = self.find.as_ref().filter(|find| find.on_with).and_then(|find| Some((find.hits.get(find.at)?.clone(), self.replacements()?)));
+        // Le texte qui remplace ce passage : les groupes d'une expression régulière en font partie.
+        let Some((hit, with)) = current.and_then(|(hit, all)| Some((hit.clone(), all.into_iter().find(|(range, _)| *range == hit)?.1))) else {
             return self.find_step(true, cx);
         };
         self.edit(hit, &with, cx);
@@ -1086,20 +1090,26 @@ impl Editor {
         self.show_hit(cx);
     }
 
+    /// Les passages trouvés et ce qui remplace chacun ; `None` sans champ « Remplacer ».
+    fn replacements(&self) -> Option<Vec<(Range<usize>, String)>> {
+        let find = self.find.as_ref()?;
+        Some(md::replacements(&self.content, &find.query, find.with.as_ref()?, find.case, find.word, find.regex))
+    }
+
     /// Remplace tous les passages d'un coup : une seule étape d'annulation.
     fn replace_all(&mut self, cx: &mut Context<Self>) {
         self.refresh_find();
-        let Some((hits, with)) = self.find.as_ref().and_then(|find| Some((find.hits.clone(), find.with.clone()?))) else {
+        let Some(hits) = self.replacements() else {
             return;
         };
-        let Some(first) = hits.first().map(|hit| hit.start) else {
+        let Some(first) = hits.first().map(|(hit, _)| hit.start) else {
             return;
         };
         let mut text = String::with_capacity(self.content.len());
         let mut done = 0;
-        for hit in &hits {
+        for (hit, with) in &hits {
             text.push_str(&self.content[done..hit.start]);
-            text.push_str(&with);
+            text.push_str(with);
             done = hit.end;
         }
         text.push_str(&self.content[done..]);
@@ -1178,10 +1188,10 @@ impl Editor {
                 cx.notify();
             })
         };
-        let flip = |word: bool| {
+        let flip = |which: u8| {
             cx.listener(move |this, _: &MouseDownEvent, _, cx| {
                 if let Some(find) = &mut this.find {
-                    *(if word { &mut find.word } else { &mut find.case }) ^= true;
+                    *[&mut find.case, &mut find.word, &mut find.regex][which as usize] ^= true;
                 }
                 this.find_changed(cx);
             })
@@ -1209,8 +1219,9 @@ impl Editor {
             .gap_1p5()
             .child(field(&find.query, tr("Find", "Chercher"), find.active && !find.on_with, find.fresh).on_mouse_down(MouseButton::Left, pick(false)))
             .child(div().flex_none().text_size(px(12.)).text_color(t.dim).child(count))
-            .child(toggle("Aa", find.case).on_mouse_down(MouseButton::Left, flip(false)))
-            .child(toggle("\u{201c}ab\u{201d}", find.word).on_mouse_down(MouseButton::Left, flip(true)));
+            .child(toggle("Aa", find.case).on_mouse_down(MouseButton::Left, flip(0)))
+            .child(toggle("\u{201c}ab\u{201d}", find.word).on_mouse_down(MouseButton::Left, flip(1)))
+            .child(toggle(".*", find.regex).on_mouse_down(MouseButton::Left, flip(2)));
         let second = find.with.as_ref().map(|with| {
             div().flex().child(
                 field(with, tr("Replace with", "Remplacer par"), find.active && find.on_with, false)
@@ -3938,6 +3949,12 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &FindWord, _, cx| {
             if let Some(find) = &mut this.find {
                 find.word ^= true;
+            }
+            this.find_changed(cx);
+        }))
+        .on_action(cx.listener(|this, _: &FindRegex, _, cx| {
+            if let Some(find) = &mut this.find {
+                find.regex ^= true;
             }
             this.find_changed(cx);
         }))

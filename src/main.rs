@@ -1809,7 +1809,8 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (format!("{} / {}", m("F"), m("H")), tr("Find in the note / find and replace", "Chercher dans la note / chercher et remplacer")),
                 (m("Shift+F"), tr("Search the text of the whole vault, line by line", "Chercher dans le texte de tout le coffre, ligne par ligne")),
                 (tr("Enter / Shift+Enter", "Entrée / Maj+Entrée").into(), tr("Search bar: next / previous match (F3 too)", "Barre de recherche : passage suivant / précédent (F3 aussi)")),
-                ("Alt+C / Alt+W / Tab".into(), tr("Search bar: match case / whole words / replace field", "Barre de recherche : casse / mots entiers / champ de remplacement")),
+                ("Alt+C / Alt+W / Alt+R".into(), tr("Search bar: match case / whole words / regular expression ($1 in the replacement)", "Barre de recherche : casse / mots entiers / expression régulière ($1 dans le remplacement)")),
+                ("Tab".into(), tr("Search bar: replace field", "Barre de recherche : champ de remplacement")),
                 (m(tr("Enter", "Entrée")), tr("Search bar: replace all (Enter: this match)", "Barre de recherche : tout remplacer (Entrée : ce passage)")),
                 (m("Shift+O"), tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")),
                 (m("N"), tr("New note", "Nouvelle note")),
@@ -2706,6 +2707,8 @@ fn bind_keys(cx: &mut App) {
         // Aussi quand la barre est ouverte mais que la saisie est revenue à la note.
         KeyBinding::new("alt-c", FindCase, f),
         KeyBinding::new("alt-w", FindWord, f),
+        KeyBinding::new("alt-r", FindRegex, f),
+        KeyBinding::new("alt-r", FindRegex, e),
         KeyBinding::new("alt-c", FindCase, e),
         KeyBinding::new("alt-w", FindWord, e),
         KeyBinding::new("secondary-v", FindPaste, f),
@@ -4134,6 +4137,21 @@ mod tests {
         cx.simulate_keystrokes("f3");
         assert!(finding(cx).is_some());
         cx.simulate_keystrokes("escape");
+        assert_eq!(finding(cx), None);
+        // Expression régulière : Alt+R ; le remplacement reprend ses groupes.
+        load(cx, "le chat, le chien", 0);
+        cx.simulate_keystrokes("secondary-h");
+        cx.simulate_input(r"le (\w+)");
+        assert_eq!(finding(cx), Some((r"le (\w+)".into(), 0, 0)));
+        cx.simulate_keystrokes("alt-r");
+        assert_eq!(finding(cx), Some((r"le (\w+)".into(), 1, 2)));
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("$1 !");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(text(cx), "chat !, le chien");
+        cx.simulate_keystrokes("secondary-enter");
+        assert_eq!(text(cx), "chat !, chien !");
+        cx.simulate_keystrokes("alt-r escape");
         assert_eq!(finding(cx), None);
 
         // Cases à cocher : dans le texte comme dans un tableau, un clic les coche, Ctrl+Entrée aussi.

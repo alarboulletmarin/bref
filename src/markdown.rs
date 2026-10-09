@@ -1029,6 +1029,27 @@ pub fn find(text: &str, query: &str, case: bool, word: bool) -> Vec<Range<usize>
     found
 }
 
+/// Les passages de `text` que désigne `query`, et le texte qui remplace chacun. Avec `regex`,
+/// `query` est une expression régulière (`^` et `$` valent pour chaque ligne) et `with` peut
+/// reprendre ses groupes (`$1`, `${nom}`) ; une expression mal écrite ne trouve rien.
+pub fn replacements(text: &str, query: &str, with: &str, case: bool, word: bool, regex: bool) -> Vec<(Range<usize>, String)> {
+    if !regex {
+        return find(text, query, case, word).into_iter().map(|hit| (hit, with.to_string())).collect();
+    }
+    let pattern = if word { format!(r"\b(?:{query})\b") } else { query.to_string() };
+    let Ok(pattern) = regex::RegexBuilder::new(&pattern).case_insensitive(!case).multi_line(true).build() else {
+        return Vec::new();
+    };
+    let found = pattern.captures_iter(text).filter(|groups| !groups[0].is_empty());
+    found
+        .map(|groups| {
+            let mut put = String::new();
+            groups.expand(with, &mut put);
+            (groups.get(0).map_or(0..0, |all| all.range()), put)
+        })
+        .collect()
+}
+
 /// Nombre de mots et de caractères du texte, tel qu'il est écrit : les marques du Markdown
 /// comptent comme des caractères, les fins de ligne non.
 pub fn counts(text: &str) -> (usize, usize) {
@@ -1063,6 +1084,14 @@ mod tests {
         assert_eq!(l[1].1, Link::Tag("projet/x".into()));
         assert_eq!(l[2].1, Link::Url("https://a.b/c".into()));
         assert!(links("a#b et #123").is_empty());
+        // Remplacements : le texte tel quel, ou une expression régulière et ses groupes.
+        let put = |query: &str, with: &str, word, regex| replacements("Le chat, le chien.\nle rat", query, with, false, word, regex);
+        assert_eq!(put("le", "un", true, false), [(0..2, "un".to_string()), (9..11, "un".into()), (19..21, "un".into())]);
+        assert_eq!(put(r"le (\w+)", "$1 (le)", false, true), [(0..7, "chat (le)".to_string()), (9..17, "chien (le)".into()), (19..25, "rat (le)".into())]);
+        assert_eq!(put("^le", "x", false, true).len(), 2);
+        assert_eq!(put("ch|ra", "", true, true), []);
+        assert!(put("(", "", false, true).is_empty() && put("x*", "", false, true).is_empty());
+        assert_eq!(replacements("A a", "a", "b", true, false, true), [(2..3, "b".to_string())]);
         // Commentaires : le texte, le commentaire, et où commence le tout ; pas dans le code.
         let line = "un {==mot **fort**==}{>>à revoir<<} et {==deux==}{>><<} {==seul==}";
         assert_eq!(comments(line), [(3..36, 6..18, 24..33), (40..56, 43..47, 53..53)]);

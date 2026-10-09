@@ -627,6 +627,7 @@ dependencies = [
  "libc",
  "mermaid-rs-renderer",
  "notify",
+ "regex",
  "resvg",
  "roxmltree",
  "serde_json",
