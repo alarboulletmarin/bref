@@ -1387,9 +1387,20 @@ impl Shell {
                 })
                 .detach();
             }
-            EditorEvent::Open(Link::Url(url)) => cx.open_url(url),
-            EditorEvent::Open(Link::Tag(tag)) => self.open_palette(&format!("#{tag}"), window, cx),
-            EditorEvent::Open(Link::Wiki(name)) => self.open_wiki(name, cx),
+            EditorEvent::Open(link) => self.follow(link, window, cx),
+            EditorEvent::Menu(at, link) => {
+                self.menu = Some(nav::Menu { at: *at, target: None, text: Some(link.clone()) });
+                cx.notify();
+            }
+        }
+    }
+
+    /// Suit un lien de la note : l'adresse dans le navigateur, le tag dans la palette, la note.
+    pub fn follow(&mut self, link: &Link, window: &mut Window, cx: &mut Context<Self>) {
+        match link {
+            Link::Url(url) => cx.open_url(url),
+            Link::Tag(tag) => self.open_palette(&format!("#{tag}"), window, cx),
+            Link::Wiki(name) => self.open_wiki(name, cx),
         }
     }
 
@@ -1797,6 +1808,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (format!("{} / {}", m("B"), m("I")), tr("Bold / italic", "Gras / italique")),
                 (m("K"), tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
                 (m("V"), tr("An address pasted over a selection makes it a link", "Une adresse collée sur une sélection en fait un lien")),
+                (tr("Right click", "Clic droit").into(), tr("Menu of the note: link, cut, copy, paste, bold, italic", "Menu de la note : lien, couper, copier, coller, gras, italique")),
                 (format!("{} / {}", m("Z"), m("Shift+Z")), tr("Undo / redo", "Annuler / rétablir")),
                 (format!("{word}+{}", tr("Left / Right", "Gauche / Droite")), tr("Move by word", "Se déplacer par mot")),
             ],
@@ -2253,6 +2265,11 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &ZoomReset, window, cx| this.resize_text(None, window, cx)))
             .on_action(cx.listener(|this, _: &ToggleHelp, window, cx| {
                 this.set_help(!this.help, window, cx)
+            }))
+            // Échap dans la note, quand elle n'a rien à fermer : le menu du clic droit.
+            .on_action(cx.listener(|this, _: &editor::Cancel, _, cx| {
+                this.menu = None;
+                cx.notify();
             }))
             .on_action(cx.listener(|this, _: &CloseHelp, window, cx| {
                 if this.help {
@@ -3739,6 +3756,30 @@ mod tests {
         cx.simulate_keystrokes("shift-right shift-right shift-right secondary-k");
         cx.simulate_input("https://z.fr");
         assert_eq!(text(cx), "[mot](https://z.fr)");
+        // Sur une adresse nue, Ctrl+K lui fait une place pour son texte.
+        load(cx, "voir https://a.b/c ici", 9);
+        cx.simulate_keystrokes("secondary-k");
+        cx.simulate_input("la doc");
+        assert_eq!(text(cx), "voir [la doc](https://a.b/c) ici");
+        // Clic droit dans la note : son menu ; Échap le referme. Ses entrées font ce que fait
+        // le clavier, et celles d'un lien agissent sur le lien visé.
+        let view = cx.update(|window, _| window.viewport_size());
+        cx.simulate_mouse_down(point(view.width / 2., view.height / 2.), MouseButton::Right, gpui::Modifiers::none());
+        assert!(shell.read_with(cx, |s, _| s.menu.as_ref().is_some_and(|m| m.text == Some(None))));
+        cx.simulate_keystrokes("escape");
+        assert!(shell.read_with(cx, |s, _| s.menu.is_none()));
+        cx.simulate_mouse_down(point(view.width / 2., view.height / 2.), MouseButton::Right, gpui::Modifiers::none());
+        cx.write_to_clipboard(ClipboardItem::new_string(" !".into()));
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Paste, None, window, cx));
+        cx.run_until_parked();
+        // Collé là où le clic a posé le curseur.
+        assert!(text(cx).contains(" !") && text(cx).replace(" !", "") == "voir [la doc](https://a.b/c) ici");
+        let link = Link::Url("https://a.b/c".into());
+        shell.update_in(cx, |s, window, cx| {
+            s.menu = Some(nav::Menu { at: point(px(0.), px(0.)), target: None, text: Some(Some(link)) });
+            s.menu_do(nav::Do::CopyAddress, None, window, cx)
+        });
+        assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("https://a.b/c"));
         // Sans sélection, et une adresse dans le presse-papiers : il ne manque que le texte.
         load(cx, "", 0);
         cx.write_to_clipboard(ClipboardItem::new_string("https://a.b".into()));

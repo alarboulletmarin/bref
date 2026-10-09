@@ -206,6 +206,8 @@ enum Motion {
 pub enum EditorEvent {
     Changed,
     Open(Link),
+    /// Clic droit dans la note : où, et le lien qui s'y trouve.
+    Menu(Point<Pixels>, Option<Link>),
 }
 
 /// Ce dont la mise en page dépend, en dehors du texte : si rien n'a changé, on la garde.
@@ -1830,12 +1832,16 @@ impl Editor {
         let lr = self.line_range(self.sel.start);
         let (line, col) = (&self.content[lr.clone()], self.sel.start - lr.start);
         let on = md::links(line).into_iter().find(|(r, _)| (r.start..=r.end).contains(&col));
-        if let Some((r, _)) = on
+        if let Some((r, _)) = &on
             && let Some((_, url)) = md::web_link(&line[r.start..])
         {
             let at = lr.start + r.start;
             self.move_to(at + url.start, cx);
             return self.select_to(at + url.end, cx);
+        }
+        // Sur une adresse nue : c'est elle qui devient le lien.
+        if let Some((r, md::Link::Url(_))) = on.filter(|_| self.sel.is_empty()) {
+            self.sel = lr.start + r.start..lr.start + r.end;
         }
         let sel = self.sel.clone();
         // Une adresse sélectionnée garde sa place : il lui manque son texte.
@@ -2276,6 +2282,18 @@ impl Editor {
                 }
             }
         }
+    }
+
+    /// Clic droit : le menu de la note. Hors de la sélection, le curseur vient d'abord sous
+    /// le pointeur, pour que « Coller » et « Lien » agissent là où l'on a cliqué.
+    fn menu_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let i = self.index_at(e.position);
+        if !(self.sel.start..=self.sel.end).contains(&i) {
+            self.move_to(i, cx);
+        }
+        let lr = self.line_range(i);
+        let link = md::links(&self.content[lr.clone()]).into_iter().find(|(r, _)| (r.start..=r.end).contains(&(i - lr.start)));
+        cx.emit(EditorEvent::Menu(e.position, link.map(|(_, link)| link)));
     }
 
     /// Mot (ou ligne entière) autour de l'octet `i`.
@@ -3877,9 +3895,13 @@ impl Render for Editor {
             } else if let Some((start, _)) = this.completion() {
                 this.ac_dismissed = Some(start);
                 cx.notify();
+            } else {
+                // Rien à fermer ici : à la fenêtre de voir (son menu).
+                cx.propagate();
             }
         }))
         .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
+        .on_mouse_down(MouseButton::Right, cx.listener(Self::menu_down))
         .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
         .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
         .on_mouse_move(cx.listener(Self::mouse_move))

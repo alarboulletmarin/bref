@@ -11,13 +11,14 @@ use std::{
 };
 
 use gpui::{
-    Animation, AnimationExt, ClickEvent, ClipboardItem, Context, CursorStyle, Div, FocusHandle, Focusable, MouseButton,
+    Action, Animation, AnimationExt, ClickEvent, ClipboardItem, Context, CursorStyle, Div, FocusHandle, Focusable, MouseButton,
     MouseDownEvent, Pixels, Point, ScrollStrategy, Stateful, UniformListScrollHandle, Window,
     actions, div, ease_out_quint, point, prelude::*, px, svg, uniform_list,
 };
 
 use crate::{
-    Shell, Theme, Tone, graph,
+    Shell, Theme, Tone, editor, graph,
+    markdown::Link,
     palette::{Palette, PaletteEvent, Setting},
     tr,
     vault::{self, Note},
@@ -58,8 +59,10 @@ pub struct Row {
 
 /// Menu contextuel : où il s'ouvre et la ligne visée (`None` : le coffre lui-même).
 pub struct Menu {
-    at: Point<Pixels>,
-    target: Option<PathBuf>,
+    pub at: Point<Pixels>,
+    pub target: Option<PathBuf>,
+    /// Clic droit dans la note et non dans l'arbre : le lien visé, s'il y en a un.
+    pub text: Option<Option<Link>>,
 }
 
 #[derive(Clone, Copy)]
@@ -75,6 +78,15 @@ pub enum Do {
     CopyPath,
     CopyRelative,
     Reveal,
+    // Menu de la note.
+    Cut,
+    Copy,
+    Paste,
+    Bold,
+    Italic,
+    Link,
+    OpenLink,
+    CopyAddress,
 }
 
 /// Ligne de l'arbre en cours de glisser-déposer ; dessinée sous le pointeur.
@@ -598,8 +610,24 @@ impl Shell {
 
     /// Exécute une entrée du menu contextuel sur `target` (`None` : le coffre).
     pub fn menu_do(&mut self, what: Do, target: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
-        self.menu = None;
+        let link = self.menu.take().and_then(|menu| menu.text).flatten();
         cx.notify();
+        // Menu de la note : les gestes de l'éditeur, comme au clavier, et le lien visé.
+        let action: Option<Box<dyn Action>> = match (what, link) {
+            (Do::Cut, _) => Some(Box::new(editor::Cut)),
+            (Do::Copy, _) => Some(Box::new(editor::Copy)),
+            (Do::Paste, _) => Some(Box::new(editor::Paste)),
+            (Do::Bold, _) => Some(Box::new(editor::Bold)),
+            (Do::Italic, _) => Some(Box::new(editor::Italic)),
+            (Do::Link, _) => Some(Box::new(editor::InsertLink)),
+            (Do::OpenLink, Some(link)) => return self.follow(&link, window, cx),
+            (Do::CopyAddress, Some(Link::Url(url))) => return cx.write_to_clipboard(ClipboardItem::new_string(url)),
+            _ => None,
+        };
+        if let Some(action) = action {
+            window.focus(&self.editor.focus_handle(cx));
+            return window.dispatch_action(action, cx);
+        }
         let Some(root) = self.vault.clone() else {
             return;
         };
@@ -880,32 +908,48 @@ impl Shell {
         let many = menu.target.as_ref().is_some_and(|p| self.nav.marked.contains(p)) && self.nav.marked.len() > 1;
         // Groupes d'entrées ; un trait sépare ceux qui en ont.
         let mut groups: Vec<Vec<(&'static str, Do)>> = vec![Vec::new(); 4];
-        if !is_dir && !many {
-            groups[0].push((tr("Open", "Ouvrir"), Do::Open));
-        }
-        if tree && !many {
-            groups[1].push((tr("New note here", "Nouvelle note ici"), Do::NewNote));
-            groups[1].push((tr("New diagram here", "Nouveau schéma ici"), Do::NewDiagram));
-            groups[1].push((tr("New folder", "Nouveau dossier"), Do::NewFolder));
-        }
-        if !is_dir || many {
-            groups[2].push((tr("Copy the [[link]]", "Copier le [[lien]]"), Do::CopyLink));
-        }
-        groups[2].push((tr("Copy path", "Copier le chemin"), Do::CopyPath));
-        if menu.target.is_some() {
-            groups[2].push((tr("Copy relative path", "Copier le chemin relatif"), Do::CopyRelative));
-        }
-        if !many {
-            groups[2].push((tr("Reveal in file explorer", "Afficher dans l'explorateur"), Do::Reveal));
-        }
-        if menu.target.is_some() {
+        if let Some(link) = &menu.text {
+            let web = matches!(link, Some(Link::Url(_)));
+            if link.is_some() {
+                groups[0].push((tr("Open the link", "Ouvrir le lien"), Do::OpenLink));
+            }
+            if web {
+                groups[0].push((tr("Copy the address", "Copier l'adresse"), Do::CopyAddress));
+            }
+            groups[1].push((tr("Cut", "Couper"), Do::Cut));
+            groups[1].push((tr("Copy", "Copier"), Do::Copy));
+            groups[1].push((tr("Paste", "Coller"), Do::Paste));
+            groups[2].push((tr("Bold", "Gras"), Do::Bold));
+            groups[2].push((tr("Italic", "Italique"), Do::Italic));
+            groups[2].push((if web { tr("Edit the link", "Modifier le lien") } else { tr("Make a link", "Faire un lien") }, Do::Link));
+        } else {
+            if !is_dir && !many {
+                groups[0].push((tr("Open", "Ouvrir"), Do::Open));
+            }
+            if tree && !many {
+                groups[1].push((tr("New note here", "Nouvelle note ici"), Do::NewNote));
+                groups[1].push((tr("New diagram here", "Nouveau schéma ici"), Do::NewDiagram));
+                groups[1].push((tr("New folder", "Nouveau dossier"), Do::NewFolder));
+            }
             if !is_dir || many {
-                groups[3].push((tr("Duplicate", "Dupliquer"), Do::Duplicate));
+                groups[2].push((tr("Copy the [[link]]", "Copier le [[lien]]"), Do::CopyLink));
+            }
+            groups[2].push((tr("Copy path", "Copier le chemin"), Do::CopyPath));
+            if menu.target.is_some() {
+                groups[2].push((tr("Copy relative path", "Copier le chemin relatif"), Do::CopyRelative));
             }
             if !many {
-                groups[3].push((tr("Rename", "Renommer"), Do::Rename));
+                groups[2].push((tr("Reveal in file explorer", "Afficher dans l'explorateur"), Do::Reveal));
             }
-            groups[3].push((tr("Move to the trash", "Mettre à la corbeille"), Do::Trash));
+            if menu.target.is_some() {
+                if !is_dir || many {
+                    groups[3].push((tr("Duplicate", "Dupliquer"), Do::Duplicate));
+                }
+                if !many {
+                    groups[3].push((tr("Rename", "Renommer"), Do::Rename));
+                }
+                groups[3].push((tr("Move to the trash", "Mettre à la corbeille"), Do::Trash));
+            }
         }
         groups.retain(|g| !g.is_empty());
         let count: usize = groups.iter().map(Vec::len).sum();
@@ -1107,7 +1151,7 @@ impl Shell {
                                 }
                                 // Un tag n'a pas de menu.
                                 if this.vault.as_ref().is_some_and(|root| target.starts_with(root)) {
-                                    this.menu = Some(Menu { at: e.position, target: Some(target.clone()) });
+                                    this.menu = Some(Menu { at: e.position, target: Some(target.clone()), text: None });
                                 }
                                 window.focus(&this.nav.focus);
                                 cx.stop_propagation();
@@ -1275,7 +1319,7 @@ impl Shell {
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(|this, e: &MouseDownEvent, _, cx| {
-                        this.menu = Some(Menu { at: e.position, target: None });
+                        this.menu = Some(Menu { at: e.position, target: None, text: None });
                         cx.notify();
                     }),
                 )

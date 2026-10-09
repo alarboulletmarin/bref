@@ -187,6 +187,7 @@ The bottom right of the note shows its number of words and characters; with a se
 | `Ctrl + Shift + C` | copy the code block the cursor is in, otherwise the whole note (also the icon at the bottom right, for the note) |
 | `Ctrl + click` | open a `[[link]]`, a `#tag`, a URL or a `[text](address)` link |
 | `Ctrl + V` | over a selection, a pasted address makes it a link |
+| Right click | in a note, a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, make or edit a link |
 | `F1`, `Ctrl + /` | the list of shortcuts, inside the app; at its foot, the version of Bref and links to its source and to its Ko-fi page |
 | `Ctrl + Q` | quit |
 
