@@ -1,6 +1,6 @@
 pkgbase = bref
 	pkgdesc = Fast, minimal Markdown note-taking app
-	pkgver = 0.2.6
+	pkgver = 0.2.7
 	pkgrel = 1
 	url = https://github.com/alarboulletmarin/bref
 	arch = x86_64
@@ -18,7 +18,7 @@ pkgbase = bref
 	conflicts = encre
 	replaces = encre
 	options = !debug
-	source = bref-0.2.6.tar.gz::https://github.com/alarboulletmarin/bref/archive/refs/tags/v0.2.6.tar.gz
-	sha256sums = c1aed7c10818c4d0a9279add71e89f410f8b360e785d4cded7c004aff9c10079
+	source = bref-0.2.7.tar.gz::https://github.com/alarboulletmarin/bref/archive/refs/tags/v0.2.7.tar.gz
+	sha256sums = e341381c455d467c74339d3e3a46319e948576c7f164295d8e46c78245f8b28b
 
 pkgname = bref
