@@ -1428,6 +1428,10 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
             "Notes",
             vec![
                 (m("P"), tr("Find by name or text, create, filter by #tag", "Chercher par nom ou texte, créer, filtrer par #tag")),
+                (format!("{} / {}", m("F"), m("H")), tr("Find in the note / find and replace", "Chercher dans la note / chercher et remplacer")),
+                (tr("Enter / Shift+Enter", "Entrée / Maj+Entrée").into(), tr("Search bar: next / previous match (F3 too)", "Barre de recherche : passage suivant / précédent (F3 aussi)")),
+                ("Alt+C / Alt+W / Tab".into(), tr("Search bar: match case / whole words / replace field", "Barre de recherche : casse / mots entiers / champ de remplacement")),
+                (m(tr("Enter", "Entrée")), tr("Search bar: replace all (Enter: this match)", "Barre de recherche : tout remplacer (Entrée : ce passage)")),
                 (m("N"), tr("New note", "Nouvelle note")),
                 (m("O"), tr("Change vault", "Changer de coffre")),
                 (m("Shift+C"), tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
@@ -2055,6 +2059,7 @@ fn bind_keys(cx: &mut App) {
     use palette::{Confirm, DeleteChar, Dismiss, Next, Prev};
     let e = Some("Editor");
     let p = Some("Palette");
+    let f = Some("Find");
     let n = Some("Nav");
     let c = Some("Canvas");
     let sh = Some("Sheet");
@@ -2174,6 +2179,24 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-shift-home", SelectDocStart, e),
         KeyBinding::new("secondary-shift-end", SelectDocEnd, e),
         KeyBinding::new("secondary-a", SelectAll, e),
+        // Recherche dans la note : la barre a son propre contexte tant qu'elle reçoit la saisie.
+        KeyBinding::new("secondary-f", Find, e),
+        KeyBinding::new("secondary-f", Find, f),
+        KeyBinding::new("secondary-h", FindReplace, e),
+        KeyBinding::new("secondary-h", FindReplace, f),
+        KeyBinding::new("f3", FindNext, e),
+        KeyBinding::new("shift-f3", FindPrev, e),
+        KeyBinding::new("f3", FindNext, f),
+        KeyBinding::new("shift-f3", FindPrev, f),
+        KeyBinding::new("enter", FindEnter, f),
+        KeyBinding::new("shift-enter", FindPrev, f),
+        KeyBinding::new("secondary-enter", ReplaceAll, f),
+        KeyBinding::new("escape", FindClose, f),
+        KeyBinding::new("backspace", FindErase, f),
+        KeyBinding::new("tab", FindSwitch, f),
+        KeyBinding::new("alt-c", FindCase, f),
+        KeyBinding::new("alt-w", FindWord, f),
+        KeyBinding::new("secondary-v", FindPaste, f),
         KeyBinding::new("enter", Newline, e),
         KeyBinding::new("tab", Indent, e),
         KeyBinding::new("shift-tab", Outdent, e),
@@ -3165,6 +3188,57 @@ mod tests {
             }
         }
         assert!(gestures > 500);
+
+        // Recherche dans la note : Ctrl+F, la frappe montre le premier passage, Entrée et
+        // Maj+Entrée tournent en boucle, Alt+C tient compte de la casse, Alt+W des mots entiers.
+        load(cx, "Été, été.\n\n| a | étés |\n| - | ---- |\n| b | ÉTÉ  |\n", 0);
+        let finding = |cx: &mut gpui::VisualTestContext| {
+            shell.read_with(cx, |s, cx| s.editor.read(cx).finding().map(|(query, at, n)| (query.to_string(), at, n)))
+        };
+        let span = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).span());
+        cx.simulate_keystrokes("secondary-f");
+        cx.simulate_input("étéx");
+        assert_eq!(finding(cx), Some(("étéx".into(), 0, 0)));
+        cx.simulate_keystrokes("backspace");
+        assert_eq!((finding(cx), span(cx)), (Some(("été".into(), 1, 4)), 0.."Été".len()));
+        cx.simulate_keystrokes("enter enter enter enter");
+        assert_eq!(finding(cx), Some(("été".into(), 1, 4)));
+        cx.simulate_keystrokes("shift-enter");
+        assert_eq!(finding(cx), Some(("été".into(), 4, 4)));
+        cx.simulate_keystrokes("alt-c");
+        assert_eq!(finding(cx), Some(("été".into(), 1, 2)));
+        cx.simulate_keystrokes("alt-w");
+        assert_eq!((finding(cx), span(cx)), (Some(("été".into(), 1, 1)), "Été, ".len().."Été, été".len()));
+        cx.simulate_keystrokes("alt-c alt-w");
+        assert_eq!(finding(cx), Some(("été".into(), 2, 4)));
+        // Remplacer : Ctrl+H ouvre le second champ, Tab y passe, Entrée remplace le passage
+        // courant, Ctrl+Entrée tous les autres ; Échap ferme, et un seul Ctrl+Z les rend tous.
+        cx.simulate_keystrokes("secondary-h tab");
+        cx.simulate_input("hiver");
+        cx.simulate_keystrokes("enter");
+        assert!(text(cx).starts_with("Été, hiver.\n"));
+        assert_eq!(finding(cx), Some(("été".into(), 2, 3)));
+        cx.simulate_keystrokes("secondary-enter");
+        assert!(text(cx).starts_with("hiver, hiver.\n") && text(cx).contains("hivers") && !text(cx).to_lowercase().contains("été"));
+        assert_eq!(finding(cx), Some(("été".into(), 0, 0)));
+        cx.simulate_keystrokes("escape");
+        assert_eq!(finding(cx), None);
+        cx.simulate_keystrokes("secondary-z");
+        assert!(text(cx).starts_with("Été, hiver.\n") && text(cx).contains("ÉTÉ"));
+        // La sélection (ici le passage que l'annulation a rendu) devient la recherche ; la
+        // première frappe la remplace. Barre ouverte, saisie rendue à la note : les passages
+        // suivent le texte, Échap ferme.
+        cx.simulate_keystrokes("secondary-f");
+        assert!(finding(cx).is_some_and(|(query, ..)| query.to_lowercase().starts_with("été")));
+        cx.simulate_input("hiver");
+        assert_eq!(finding(cx), Some(("hiver".into(), 1, 1)));
+        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load("hiver hiver".into(), 0, cx)));
+        cx.run_until_parked();
+        assert_eq!(finding(cx), Some(("hiver".into(), 1, 2)));
+        cx.simulate_input("x");
+        assert_eq!((text(cx), finding(cx)), ("xhiver hiver".into(), Some(("hiver".into(), 1, 2))));
+        cx.simulate_keystrokes("escape");
+        assert_eq!(finding(cx), None);
 
         // Cases à cocher : dans le texte comme dans un tableau, un clic les coche, Ctrl+Entrée aussi.
         let boxed = "avant [ ] fait [x] fin\n\n| Tâche | Fait |\n| ----- | ---- |\n| a     | [ ]  |\n| b     |      |\n";

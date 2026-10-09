@@ -75,8 +75,42 @@ actions!(
         Undo,
         Redo,
         Cancel,
+        Find,
+        FindReplace,
+        FindNext,
+        FindPrev,
+        FindEnter,
+        FindClose,
+        FindErase,
+        FindSwitch,
+        FindCase,
+        FindWord,
+        FindPaste,
+        ReplaceAll,
     ]
 );
+
+/// Recherche dans la note : la barre, ses réglages et les passages trouvés.
+#[derive(Default)]
+struct Finder {
+    query: String,
+    /// Texte de remplacement ; `None` tant que la ligne « Remplacer » est fermée.
+    with: Option<String>,
+    /// La recherche vient de la sélection : elle est comme sélectionnée, la première frappe
+    /// la remplace.
+    fresh: bool,
+    /// La saisie va au champ de remplacement.
+    on_with: bool,
+    /// La barre reçoit la saisie ; un clic dans la note la lui reprend sans la fermer.
+    active: bool,
+    case: bool,
+    word: bool,
+    hits: Vec<Range<usize>>,
+    /// Passage courant dans `hits`.
+    at: usize,
+    /// Texte et réglages pour lesquels `hits` a été calculé.
+    key: Option<(u64, String, bool, bool)>,
+}
 
 const TOP: Pixels = px(20.);
 const MAX_WIDTH: Pixels = px(720.);
@@ -641,6 +675,7 @@ pub struct Editor {
     viewport: Bounds<Pixels>,
     scroll_y: Pixels,
     reveal: bool,
+    find: Option<Finder>,
 }
 
 impl EventEmitter<EditorEvent> for Editor {}
@@ -709,6 +744,7 @@ impl Editor {
             viewport: Bounds::default(),
             scroll_y: px(0.),
             reveal: false,
+            find: None,
         }
     }
 
@@ -732,6 +768,10 @@ impl Editor {
         self.table_x.clear();
         self.selecting = false;
         self.reveal = true;
+        // Une autre note : la barre reste, la saisie revient au texte.
+        if let Some(find) = &mut self.find {
+            find.active = false;
+        }
         cx.notify();
     }
 
@@ -836,6 +876,13 @@ impl Editor {
         label
     }
 
+    /// Recherche, numéro du passage courant (à partir de 1) et nombre de passages.
+    #[cfg(test)]
+    pub fn finding(&self) -> Option<(&str, usize, usize)> {
+        let find = self.find.as_ref()?;
+        Some((&find.query, if find.hits.is_empty() { 0 } else { find.at + 1 }, find.hits.len()))
+    }
+
     /// Lignes de tirets de tableau qu'on ne voit pas.
     #[cfg(test)]
     pub fn hidden_rows(&self) -> usize {
@@ -919,6 +966,214 @@ impl Editor {
         self.goal_x = None;
         self.reveal = true;
         cx.notify();
+    }
+
+    // ----- Recherche dans la note -----
+
+    /// Ouvre la barre de recherche, ou lui rend la saisie ; `replace` montre aussi la ligne
+    /// « Remplacer ». Une sélection tenue sur une ligne devient la recherche.
+    fn open_find(&mut self, replace: bool, cx: &mut Context<Self>) {
+        let picked = Some(&self.content[self.sel.clone()]).filter(|s| !s.is_empty() && !s.contains('\n'));
+        let picked = picked.map(String::from);
+        let find = self.find.get_or_insert_with(Finder::default);
+        find.active = true;
+        find.on_with = false;
+        if let Some(picked) = picked {
+            (find.query, find.fresh) = (picked, true);
+        }
+        if replace {
+            find.with.get_or_insert_with(String::new);
+        }
+        self.refresh_find();
+        cx.notify();
+    }
+
+    /// Refait la liste des passages si le texte, la recherche ou ses réglages ont changé (et
+    /// le dit) ; le passage courant est alors le premier à partir du curseur.
+    fn refresh_find(&mut self) -> bool {
+        let (version, from) = (self.version, self.sel.start);
+        let Some(find) = &mut self.find else {
+            return false;
+        };
+        let key = (version, find.query.clone(), find.case, find.word);
+        if find.key.as_ref() == Some(&key) {
+            return false;
+        }
+        find.hits = md::find(&self.content, &find.query, find.case, find.word);
+        find.at = find.hits.iter().position(|hit| hit.start >= from).unwrap_or(0);
+        find.key = Some(key);
+        true
+    }
+
+    /// Sélectionne le passage courant et le fait défiler à l'écran.
+    fn show_hit(&mut self, cx: &mut Context<Self>) {
+        if let Some(hit) = self.find.as_ref().and_then(|find| find.hits.get(find.at).cloned()) {
+            self.sel = hit;
+            self.reversed = false;
+            self.goal_x = None;
+            self.grid = None;
+            self.reveal = true;
+        }
+        cx.notify();
+    }
+
+    /// Passage suivant ou précédent, en repartant de l'autre bout une fois au bord.
+    fn find_step(&mut self, forward: bool, cx: &mut Context<Self>) {
+        self.refresh_find();
+        if let Some(find) = &mut self.find
+            && let n @ 1.. = find.hits.len()
+        {
+            find.at = if forward { (find.at + 1) % n } else { (find.at + n - 1) % n };
+        }
+        self.show_hit(cx);
+    }
+
+    /// Entrée dans la barre : passage suivant, ou remplacement du passage courant quand la
+    /// saisie est dans le champ « Remplacer ».
+    fn find_enter(&mut self, cx: &mut Context<Self>) {
+        self.refresh_find();
+        let current = self.find.as_ref().filter(|find| find.on_with).and_then(|find| Some((find.hits.get(find.at)?.clone(), find.with.clone()?)));
+        let Some((hit, with)) = current else {
+            return self.find_step(true, cx);
+        };
+        self.edit(hit, &with, cx);
+        self.realign(cx);
+        self.refresh_find();
+        self.show_hit(cx);
+    }
+
+    /// Remplace tous les passages d'un coup : une seule étape d'annulation.
+    fn replace_all(&mut self, cx: &mut Context<Self>) {
+        self.refresh_find();
+        let Some((hits, with)) = self.find.as_ref().and_then(|find| Some((find.hits.clone(), find.with.clone()?))) else {
+            return;
+        };
+        let Some(first) = hits.first().map(|hit| hit.start) else {
+            return;
+        };
+        let mut text = String::with_capacity(self.content.len());
+        let mut done = 0;
+        for hit in &hits {
+            text.push_str(&self.content[done..hit.start]);
+            text.push_str(&with);
+            done = hit.end;
+        }
+        text.push_str(&self.content[done..]);
+        self.last_edit = None;
+        self.splice(0..self.content.len(), &text, cx);
+        self.sel = first..first;
+        self.reversed = false;
+        self.refresh_find();
+    }
+
+    /// Champ de la barre qui reçoit la saisie.
+    fn find_field(&mut self) -> Option<&mut String> {
+        let find = self.find.as_mut()?;
+        if find.on_with {
+            return find.with.as_mut();
+        }
+        if std::mem::take(&mut find.fresh) {
+            find.query.clear();
+        }
+        Some(&mut find.query)
+    }
+
+    // ponytail: comme la palette, la saisie de la barre se réduit à « ajouter à la fin » (pas
+    // de curseur mobile ni de composition IME) ; à remplacer par un vrai champ de texte si
+    // les recherches s'allongent.
+    fn find_type(&mut self, text: &str, cx: &mut Context<Self>) {
+        if let Some(field) = self.find_field() {
+            field.extend(text.chars().filter(|c| !c.is_control()));
+        }
+        self.find_changed(cx);
+    }
+
+    fn find_erase(&mut self, cx: &mut Context<Self>) {
+        if let Some(field) = self.find_field() {
+            let last = field.graphemes(true).next_back().map_or(0, str::len);
+            field.truncate(field.len() - last);
+        }
+        self.find_changed(cx);
+    }
+
+    /// Après un changement de la recherche ou de ses réglages : le premier passage se montre.
+    fn find_changed(&mut self, cx: &mut Context<Self>) {
+        if self.refresh_find() { self.show_hit(cx) } else { cx.notify() }
+    }
+
+    /// La barre de recherche, en haut à droite de la note (sous les boutons de la fenêtre).
+    fn find_bar(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
+        let (t, find) = (self.theme, self.find.as_ref()?);
+        let field = |text: &str, hint: &'static str, on: bool, fresh: bool| {
+            let caret = on.then(|| div().flex_none().w(px(1.)).h(px(15.)).bg(t.text));
+            let shown = match text.is_empty() {
+                true => div().text_color(t.dim).child(hint),
+                false => div().when(fresh, |d| d.bg(t.selection)).child(text.to_string()),
+            };
+            let field = div().flex_1().min_w_0().h(px(26.)).px_2().rounded(px(6.)).border_1().bg(t.bg);
+            let field = field.border_color(if on { t.accent } else { t.border }).flex().items_center().overflow_hidden();
+            match text.is_empty() {
+                true => field.children(caret).child(shown),
+                false => field.child(shown).children(caret),
+            }
+        };
+        let toggle = |label: &'static str, on: bool| {
+            let toggle = div().flex_none().h(px(26.)).px_1p5().rounded(px(6.)).flex().items_center().cursor_pointer();
+            toggle.text_color(if on { t.accent } else { t.dim }).when(on, |d| d.bg(t.selection)).child(label)
+        };
+        let count = match (find.query.is_empty(), find.hits.len()) {
+            (true, _) => String::new(),
+            (false, 0) => tr("No results", "Aucun résultat").into(),
+            (false, n) => format!("{} / {n}", find.at + 1),
+        };
+        let pick = |on_with: bool| {
+            cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+                if let Some(find) = &mut this.find {
+                    (find.active, find.on_with) = (true, on_with);
+                }
+                cx.notify();
+            })
+        };
+        let flip = |word: bool| {
+            cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+                if let Some(find) = &mut this.find {
+                    *(if word { &mut find.word } else { &mut find.case }) ^= true;
+                }
+                this.find_changed(cx);
+            })
+        };
+        let bar = div()
+            .absolute()
+            .top(px(52.))
+            .right_4()
+            .w(px(340.))
+            .p_1p5()
+            .rounded(px(8.))
+            .bg(t.panel)
+            .border_1()
+            .border_color(t.border)
+            .text_size(px(13.))
+            .text_color(t.text)
+            .cursor(CursorStyle::Arrow)
+            .flex()
+            .flex_col()
+            .gap_1p5()
+            .occlude();
+        let first = div()
+            .flex()
+            .items_center()
+            .gap_1p5()
+            .child(field(&find.query, tr("Find", "Chercher"), find.active && !find.on_with, find.fresh).on_mouse_down(MouseButton::Left, pick(false)))
+            .child(div().flex_none().text_size(px(12.)).text_color(t.dim).child(count))
+            .child(toggle("Aa", find.case).on_mouse_down(MouseButton::Left, flip(false)))
+            .child(toggle("\u{201c}ab\u{201d}", find.word).on_mouse_down(MouseButton::Left, flip(true)));
+        let second = find.with.as_ref().map(|with| {
+            div().flex().child(
+                field(with, tr("Replace with", "Remplacer par"), find.active && find.on_with, false)
+                    .on_mouse_down(MouseButton::Left, pick(true)),
+            )
+        });
+        Some(bar.child(first).children(second))
     }
 
     // ponytail: chaque étape d'annulation (200 max) recopie une fois la note pour
@@ -1845,6 +2100,9 @@ impl Editor {
     }
 
     fn mouse_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(find) = &mut self.find {
+            find.active = false;
+        }
         // Bouton de copie, à droite de l'ouverture d'un bloc de code.
         if let Some(start) = self.copy_at(e.position)
             && let Some(block) = md::code_block(&self.content, self.line_range(start).end + 1)
@@ -3110,15 +3368,16 @@ impl Editor {
                 if let Some(grid) = &row.grid {
                     grid.paint_back(table_top, row.height - row.gap, &t, window);
                 }
-                if !sel.is_empty() && sel.start <= end && sel.end > row.start {
-                    let a = row.pos(sel.start.max(row.start) - row.start);
-                    let b = row.pos(sel.end.min(end) - row.start);
-                    let tail = if sel.end > end { px(6.) } else { px(0.) };
+                // Fond d'un passage du texte sur cette ligne : la sélection, les passages trouvés.
+                let mark = |range: &Range<usize>, color: Hsla, window: &mut Window| {
+                    let a = row.pos(range.start.max(row.start) - row.start);
+                    let b = row.pos(range.end.min(end) - row.start);
+                    let tail = if range.end > end { px(6.) } else { px(0.) };
                     let mut rect = |x: Pixels, y: Pixels, w: Pixels, h: Pixels| {
-                        window.paint_quad(fill(block(x, text_top + y, w, h), t.selection))
+                        window.paint_quad(fill(block(x, text_top + y, w, h), color))
                     };
                     if let Some(grid) = &row.grid {
-                        for (x, y, w) in grid.spans(sel.start.max(row.start) - row.start, sel.end.min(end) - row.start, row.lh) {
+                        for (x, y, w) in grid.spans(range.start.max(row.start) - row.start, range.end.min(end) - row.start, row.lh) {
                             rect(x - row.dx, y, w, row.lh);
                         }
                     } else if a.y == b.y {
@@ -3127,6 +3386,15 @@ impl Editor {
                         rect(a.x, a.y, w - a.x, row.lh);
                         rect(px(0.), a.y + row.lh, w, b.y - a.y - row.lh);
                         rect(px(0.), b.y, b.x + tail, row.lh);
+                    }
+                };
+                if !sel.is_empty() && sel.start <= end && sel.end > row.start {
+                    mark(sel, t.selection, window);
+                }
+                if let Some(find) = &self.find {
+                    let from = find.hits.partition_point(|hit| hit.end <= row.start);
+                    for (i, hit) in find.hits.iter().enumerate().skip(from).take_while(|(_, hit)| hit.start < end) {
+                        mark(hit, t.accent.opacity(if i == find.at { 0.45 } else { 0.2 }), window);
                     }
                 }
                 if let Some(grid) = &row.grid {
@@ -3286,6 +3554,9 @@ impl EntityInputHandler for Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.find.as_ref().is_some_and(|find| find.active) {
+            return self.find_type(text, cx);
+        }
         if range_utf16.is_none() && self.marked.is_none() {
             self.clear_cells(cx);
         }
@@ -3323,6 +3594,9 @@ impl EntityInputHandler for Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.find.as_ref().is_some_and(|find| find.active) {
+            return;
+        }
         let range = range_utf16
             .map(|r| self.range_from_utf16(&r))
             .or(self.marked.clone())
@@ -3387,6 +3661,10 @@ impl Render for Editor {
             .text_size(px(12.))
             .text_color(self.theme.dim)
             .child(self.counts());
+        // Avant le dessin : les passages suivent une note modifiée pendant que la barre est ouverte.
+        self.refresh_find();
+        let finding = self.find.as_ref().is_some_and(|find| find.active);
+        let find_bar = self.find_bar(cx);
         macro_rules! motions {
             ($el:expr, $($action:ident => $motion:ident, $select:expr;)*) => {
                 $el$(.on_action(cx.listener(|this, _: &$action, _, cx| {
@@ -3397,7 +3675,8 @@ impl Render for Editor {
         let el = div()
             .size_full()
             .relative()
-            .key_context("Editor")
+            // Barre de recherche en saisie : ses touches, et non celles du texte.
+            .key_context(if finding { "Find" } else { "Editor" })
             .track_focus(&self.focus)
             .cursor(CursorStyle::IBeam);
         motions!(el,
@@ -3434,7 +3713,45 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))
         .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
         .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
+        .on_action(cx.listener(|this, _: &Find, _, cx| this.open_find(false, cx)))
+        .on_action(cx.listener(|this, _: &FindReplace, _, cx| this.open_find(true, cx)))
+        .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_step(true, cx)))
+        .on_action(cx.listener(|this, _: &FindEnter, _, cx| this.find_enter(cx)))
+        .on_action(cx.listener(|this, _: &FindPrev, _, cx| this.find_step(false, cx)))
+        .on_action(cx.listener(|this, _: &FindClose, _, cx| {
+            this.find = None;
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &FindErase, _, cx| this.find_erase(cx)))
+        .on_action(cx.listener(|this, _: &FindSwitch, _, cx| {
+            if let Some(find) = &mut this.find {
+                find.on_with = !find.on_with && find.with.is_some();
+            }
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &FindCase, _, cx| {
+            if let Some(find) = &mut this.find {
+                find.case ^= true;
+            }
+            this.find_changed(cx);
+        }))
+        .on_action(cx.listener(|this, _: &FindWord, _, cx| {
+            if let Some(find) = &mut this.find {
+                find.word ^= true;
+            }
+            this.find_changed(cx);
+        }))
+        .on_action(cx.listener(|this, _: &FindPaste, _, cx| {
+            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+                this.find_type(text.lines().next().unwrap_or_default(), cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &ReplaceAll, _, cx| this.replace_all(cx)))
         .on_action(cx.listener(|this, _: &Cancel, _, cx| {
+            // Barre ouverte mais saisie dans la note : Échap la ferme d'abord.
+            if this.find.take().is_some() {
+                return cx.notify();
+            }
             if this.grid.take().is_some() {
                 cx.notify();
             } else if let Some((start, _)) = this.completion() {
@@ -3449,6 +3766,7 @@ impl Render for Editor {
         .on_scroll_wheel(cx.listener(Self::scroll))
         .child(EditorElement(cx.entity()))
         .child(counts)
+        .children(find_bar)
     }
 }
 

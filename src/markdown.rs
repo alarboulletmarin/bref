@@ -764,6 +764,44 @@ pub fn format_table(rows: &[Vec<String>], indent: &str) -> String {
     text
 }
 
+/// Passages de `text` qui valent `query`, sans chevauchement. `case` : la casse compte ;
+/// `word` : le passage ne touche ni lettre ni chiffre. Le texte est celui du fichier : les
+/// marques du Markdown se cherchent comme le reste.
+pub fn find(text: &str, query: &str, case: bool, word: bool) -> Vec<Range<usize>> {
+    let fold = |c: char| -> Vec<char> { if case { vec![c] } else { c.to_lowercase().collect() } };
+    let query: Vec<char> = query.chars().flat_map(fold).collect();
+    // Longueur du passage qui commence `rest` et vaut la recherche, s'il y en a un.
+    let matched = |rest: &str| -> Option<usize> {
+        let mut k = 0;
+        for (i, c) in rest.char_indices() {
+            if k == query.len() {
+                return Some(i);
+            }
+            for folded in fold(c) {
+                if query.get(k) != Some(&folded) {
+                    return None;
+                }
+                k += 1;
+            }
+        }
+        (k == query.len()).then_some(rest.len())
+    };
+    let inside = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+    let mut found = Vec::new();
+    let mut at = 0;
+    while !query.is_empty() && at < text.len() {
+        let step = text[at..].chars().next().map_or(1, char::len_utf8);
+        match matched(&text[at..]) {
+            Some(len) if !word || !(inside(text[..at].chars().next_back()) || inside(text[at + len..].chars().next())) => {
+                found.push(at..at + len);
+                at += len.max(step);
+            }
+            _ => at += step,
+        }
+    }
+    found
+}
+
 /// Nombre de mots et de caractères du texte, tel qu'il est écrit : les marques du Markdown
 /// comptent comme des caractères, les fins de ligne non.
 pub fn counts(text: &str) -> (usize, usize) {
@@ -880,6 +918,19 @@ mod tests {
         assert_eq!(on_enter("- ", 2, false), Enter::Clear);
         assert_eq!(on_enter("  x", 3, false), Enter::Insert("\n  ".into()));
         assert_eq!(on_enter("- a", 3, true), Enter::Insert("\n".into()));
+    }
+
+    #[test]
+    fn finds_passages() {
+        let text = "Été, été. L'ÉTÉ d'**été**\nétés";
+        assert_eq!(find(text, "été", false, false).len(), 5);
+        assert_eq!(find(text, "été", true, false).len(), 3);
+        assert_eq!(find(text, "été", false, true).len(), 4);
+        assert_eq!(find(text, "**été**", true, true), [text.find("**").unwrap()..text.find('\n').unwrap()]);
+        assert_eq!(find("aaaa", "aa", true, false), [0..2, 2..4]);
+        assert!(find(text, "", false, false).is_empty() && find("", "a", false, false).is_empty());
+        // Une lettre qui s'allonge en minuscules (« İ » : deux caractères) ne décale rien.
+        assert_eq!(find("İstanbul", "stan", false, false), ["İ".len().."İstan".len()]);
     }
 
     #[test]

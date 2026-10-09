@@ -171,6 +171,7 @@ The bottom right of the note shows its number of words and characters and its re
 | Key | Action |
 |---|---|
 | `Ctrl + P` | palette: find a note by name or text, create one, filter by `#tag` |
+| `Ctrl + F`, `Ctrl + H` | [find in the note](#find-and-replace), find and replace |
 | `Ctrl + N` | new note |
 | `Ctrl + E`, `Ctrl + R`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |
 | `Ctrl + M` | navigation panel on the whole window, and back |
@@ -196,6 +197,21 @@ In the palette, type to search; `Enter` opens the selected note. Notes whose nam
 | `Ctrl + Home` `End` | start, end of the note |
 | `Ctrl + A` `C` `X` `V` | select all, copy, cut, paste |
 | Double click, triple click | select a word, a line; keep dragging to extend by words, by lines |
+
+### Find and replace
+
+`Ctrl + F` opens a search bar at the top right of the note. Matches are highlighted as you type, the current one more strongly, with its rank (`3 / 12`). The search runs on the text of the file, so Markdown markers (`**`, `[[`) can be searched too, and it works inside tables and code blocks. A selection held on one line becomes the search; the first key typed replaces it.
+
+| Key | In the search bar |
+|---|---|
+| `Enter`, `Shift + Enter` (or `F3`, `Shift + F3`) | next, previous match, wrapping around |
+| `Alt + C`, `Alt + W` | match case, whole words (also the `Aa` and `“ab”` buttons) |
+| `Ctrl + H` | show the *Replace with* field; `Tab` moves between the two fields |
+| `Enter` in *Replace with* | replace the current match and go to the next |
+| `Ctrl + Enter` | replace every match; a single `Ctrl + Z` in the note brings them all back |
+| `Esc` | close; the cursor stays on the current match |
+
+Click in the note to edit it while the bar stays open: the matches follow the text, `F3` still moves between them, and `Esc` closes the bar. Regular expressions and replacing across the vault are not there yet.
 
 ## Navigation
 
