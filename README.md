@@ -185,6 +185,8 @@ The bottom right of the note shows its number of words and characters; with a se
 | `Ctrl + M` | navigation panel on the whole window, and back |
 | `Ctrl + Shift + D` | new [diagram](#diagrams) |
 | `Ctrl + O` | change vault |
+| `Ctrl + D` | select the word under the cursor; again, add a cursor on its next occurrence. What you type, delete or move then applies to every cursor, and one undo undoes it for all. `Esc` goes back to one cursor |
+| `Alt + click` | add a cursor where you click (not in a table) |
 | `Ctrl + K` | make the selection a link, `[text](address)`; on a link, select its address to change it |
 | `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` | bigger, smaller, default text size |
 | `Ctrl + Shift + C` | copy the code block the cursor is in, otherwise the whole note (also the icon at the bottom right, for the note) |

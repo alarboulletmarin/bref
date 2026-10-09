@@ -69,6 +69,7 @@ actions!(
         ToggleTask,
         Bold,
         Italic,
+        SelectNext,
         InsertLink,
         Comment,
         Copy,
@@ -604,6 +605,11 @@ pub struct Editor {
     content: String,
     sel: Range<usize>,
     reversed: bool,
+    /// Les autres curseurs (Alt+clic, occurrence suivante) : leur sélection, et si elle est à
+    /// rebours. Ce que fait le curseur principal, ils le font aussi (voir `each`).
+    more: Vec<(Range<usize>, bool)>,
+    /// Les curseurs suivants rejouent le geste du premier : une seule étape d'annulation.
+    held: bool,
     marked: Option<Range<usize>>,
     selecting: bool,
     /// Mot ou ligne saisi par un double ou triple clic (et s'il s'agit d'une ligne) :
@@ -711,6 +717,8 @@ impl Editor {
             content: String::new(),
             sel: 0..0,
             reversed: false,
+            more: Vec::new(),
+            held: false,
             marked: None,
             selecting: false,
             anchor: None,
@@ -780,6 +788,7 @@ impl Editor {
         self.content = text;
         self.sel = cursor..cursor;
         self.reversed = false;
+        self.more.clear();
         self.marked = None;
         self.undo = History::default();
         self.redo = History::default();
@@ -907,6 +916,7 @@ impl Editor {
     /// Place le curseur à `at` ; avec `top`, sa ligne monte en haut de la vue (un titre garde
     /// sa section sous lui), sinon elle défile juste assez pour se voir.
     pub fn jump(&mut self, at: usize, top: bool, cx: &mut Context<Self>) {
+        self.more.clear();
         self.move_to(self.clamp(at), cx);
         self.reveal_top = top;
     }
@@ -1056,6 +1066,7 @@ impl Editor {
         if let Some(hit) = self.find.as_ref().and_then(|find| find.hits.get(find.at).cloned()) {
             self.sel = hit;
             self.reversed = false;
+            self.more.clear();
             self.goal_x = None;
             self.grid = None;
             self.reveal = true;
@@ -1257,7 +1268,7 @@ impl Editor {
         let stale = self
             .last_edit
             .is_none_or(|t| t.elapsed() > Duration::from_millis(600));
-        if boundary || stale {
+        if (boundary || stale) && !self.held {
             self.undo.push(self.content.clone(), self.sel.clone());
         }
         self.redo = History::default();
@@ -1301,7 +1312,97 @@ impl Editor {
             }
         };
         self.sel = map(self.sel.start)..map(self.sel.end);
+        // Les autres curseurs suivent le texte : c'est ici, et ici seulement, qu'il change.
+        self.more.iter_mut().for_each(|(sel, _)| *sel = map(sel.start)..map(sel.end));
         self.changed(cx);
+    }
+
+    // ----- Plusieurs curseurs -----
+
+    /// Fait faire `act` à chaque curseur : chacun devient à son tour le curseur principal,
+    /// pendant que `splice` tient les autres à leur place. Le tout ne fait qu'une étape
+    /// d'annulation, celle du premier.
+    // ponytail: la colonne visée par Haut et Bas (`goal_x`) n'est pas gardée par curseur : elle
+    // est recalculée à chaque pas. La retenir par curseur si la dérive gêne sur des lignes
+    // de longueurs inégales.
+    fn each(&mut self, cx: &mut Context<Self>, act: impl Fn(&mut Self, &mut Context<Self>)) {
+        if self.more.is_empty() {
+            return act(self, cx);
+        }
+        self.goal_x = None;
+        act(self, cx);
+        self.held = true;
+        for i in 0..self.more.len() {
+            // Un geste qui ramène à un seul curseur (une note rechargée) arrête la ronde.
+            if i >= self.more.len() {
+                break;
+            }
+            let swap = |this: &mut Self| {
+                std::mem::swap(&mut this.sel, &mut this.more[i].0);
+                std::mem::swap(&mut this.reversed, &mut this.more[i].1);
+            };
+            swap(self);
+            self.goal_x = None;
+            act(self, cx);
+            if i < self.more.len() {
+                swap(self);
+            }
+        }
+        self.held = false;
+        self.goal_x = None;
+        self.tidy();
+        cx.notify();
+    }
+
+    /// Nombre de curseurs, le principal compris.
+    #[cfg(test)]
+    pub fn cursors(&self) -> usize {
+        self.more.len() + 1
+    }
+
+    /// Range les autres curseurs dans l'ordre du texte, et retire ceux qui en touchent un autre.
+    fn tidy(&mut self) {
+        self.more.sort_by_key(|(sel, _)| sel.start);
+        let (mut kept, main): (Vec<(Range<usize>, bool)>, _) = (Vec::new(), self.sel.clone());
+        let touch = |a: &Range<usize>, b: &Range<usize>| a.start <= b.end && b.start <= a.end;
+        for cursor in std::mem::take(&mut self.more) {
+            if !touch(&cursor.0, &main) && kept.last().is_none_or(|last| !touch(&last.0, &cursor.0)) {
+                kept.push(cursor);
+            }
+        }
+        self.more = kept;
+    }
+
+    /// Alt+clic : un curseur de plus à l'octet `at`, qui devient le principal. Pas dans un
+    /// tableau, qui a ses propres gestes.
+    fn add_cursor(&mut self, at: usize, cx: &mut Context<Self>) {
+        if self.table_at(at).is_some() || self.table_at(self.sel.start).is_some() {
+            return self.move_to(at, cx);
+        }
+        self.more.push((self.sel.clone(), self.reversed));
+        self.move_to(at, cx);
+        self.tidy();
+    }
+
+    /// Sélectionne le mot sous le curseur ; puis, à chaque appel, l'occurrence suivante de la
+    /// sélection reçoit un curseur de plus (elle se cherche en boucle, la casse compte).
+    fn select_next(&mut self, cx: &mut Context<Self>) {
+        if self.sel.is_empty() {
+            let word = self.unit_at(self.sel.start, false);
+            self.move_to(word.start, cx);
+            return self.select_to(word.end, cx);
+        }
+        let text = self.content[self.sel.clone()].to_string();
+        let taken = |at: usize| self.sel.start == at || self.more.iter().any(|(sel, _)| sel.start == at);
+        let after = self.content[self.sel.end..].match_indices(&text).map(|(i, _)| i + self.sel.end);
+        let before = self.content[..self.sel.start].match_indices(&text).map(|(i, _)| i);
+        let Some(at) = after.chain(before).find(|at| !taken(*at)) else {
+            return;
+        };
+        self.more.push((self.sel.clone(), self.reversed));
+        self.move_to(at, cx);
+        self.select_to(at + text.len(), cx);
+        self.tidy();
     }
 
     /// Remplace `range` par `text` et place le curseur juste après.
@@ -1318,6 +1419,7 @@ impl Editor {
             self.content = text;
             self.sel = cursor..cursor;
             self.reversed = false;
+            self.more.clear();
             self.changed(cx);
         }
     }
@@ -1335,6 +1437,7 @@ impl Editor {
         to.push(std::mem::replace(&mut self.content, text), self.sel.clone());
         self.sel = sel;
         self.reversed = false;
+        self.more.clear();
         self.last_edit = None;
         self.changed(cx);
     }
@@ -2143,7 +2246,7 @@ impl Editor {
 
     /// Début de la requête (après `[[` ou `/`) et ce qui lui correspond.
     fn completion(&self) -> Option<(usize, Vec<Choice<'_>>)> {
-        if !self.sel.is_empty() {
+        if !self.sel.is_empty() || !self.more.is_empty() {
             return None;
         }
         let c = self.cursor();
@@ -2327,6 +2430,11 @@ impl Editor {
             return self.set_table(range, &rows, cell, cx);
         }
         let i = self.index_at(e.position);
+        if e.modifiers.alt {
+            return self.add_cursor(i, cx);
+        }
+        // Un clic ordinaire revient à un seul curseur.
+        self.more.clear();
         let lr = self.line_range(i);
         let line = &self.content[lr.clone()];
         let col = i - lr.start;
@@ -3611,6 +3719,9 @@ impl Editor {
                 if !sel.is_empty() && sel.start <= end && sel.end > row.start {
                     mark(sel, t.selection, window);
                 }
+                for (other, _) in self.more.iter().filter(|(other, _)| !other.is_empty() && other.start <= end && other.end > row.start) {
+                    mark(other, t.selection, window);
+                }
                 // Le texte qui porte un commentaire est surligné.
                 if !matches!(row.kind, Kind::Code | Kind::Fence) {
                     for (_, noted, _) in md::comments(&self.content[row.start..end]) {
@@ -3633,6 +3744,15 @@ impl Editor {
                     let p = row.pos(cursor - row.start);
                     let caret = block(p.x, text_top + p.y + row.lh * 0.14, px(2.), row.lh * 0.72);
                     window.paint_quad(fill(caret, t.accent));
+                }
+                // Les autres curseurs, quand la note a la saisie.
+                for (other, back) in self.more.iter().filter(|_| focused && row.grid.is_none()) {
+                    let at = if *back { other.start } else { other.end };
+                    if other.is_empty() && (row.start..=end).contains(&at) {
+                        let p = row.pos(at - row.start);
+                        let caret = block(p.x, text_top + p.y + row.lh * 0.14, px(2.), row.lh * 0.72);
+                        window.paint_quad(fill(caret, t.accent));
+                    }
                 }
             });
             if let Some((image, s)) = &row.image {
@@ -3787,6 +3907,10 @@ impl EntityInputHandler for Editor {
         if self.find.as_ref().is_some_and(|find| find.active) {
             return self.find_type(text, cx);
         }
+        // Plusieurs curseurs : chacun reçoit le texte, à la place de sa sélection.
+        if !self.more.is_empty() && range_utf16.is_none() && self.marked.is_none() {
+            return self.each(cx, |this, cx| this.edit(this.sel.clone(), text, cx));
+        }
         if range_utf16.is_none() && self.marked.is_none() {
             self.clear_cells(cx);
         }
@@ -3898,7 +4022,7 @@ impl Render for Editor {
         macro_rules! motions {
             ($el:expr, $($action:ident => $motion:ident, $select:expr;)*) => {
                 $el$(.on_action(cx.listener(|this, _: &$action, _, cx| {
-                    this.go(Motion::$motion, $select, cx)
+                    this.each(cx, |this, cx| this.go(Motion::$motion, $select, cx))
                 })))*
             };
         }
@@ -3921,28 +4045,30 @@ impl Render for Editor {
             SelectHome => Home, true; SelectEnd => End, true;
             SelectDocStart => DocStart, true; SelectDocEnd => DocEnd, true;
         )
-        .on_action(cx.listener(|this, _: &Backspace, _, cx| this.delete(Motion::Left, cx)))
-        .on_action(cx.listener(|this, _: &Delete, _, cx| this.delete(Motion::Right, cx)))
-        .on_action(cx.listener(|this, _: &DeleteWordLeft, _, cx| this.delete(Motion::WordLeft, cx)))
-        .on_action(cx.listener(|this, _: &DeleteWordRight, _, cx| this.delete(Motion::WordRight, cx)))
+        .on_action(cx.listener(|this, _: &Backspace, _, cx| this.each(cx, |this, cx| this.delete(Motion::Left, cx))))
+        .on_action(cx.listener(|this, _: &Delete, _, cx| this.each(cx, |this, cx| this.delete(Motion::Right, cx))))
+        .on_action(cx.listener(|this, _: &DeleteWordLeft, _, cx| this.each(cx, |this, cx| this.delete(Motion::WordLeft, cx))))
+        .on_action(cx.listener(|this, _: &DeleteWordRight, _, cx| this.each(cx, |this, cx| this.delete(Motion::WordRight, cx))))
+        .on_action(cx.listener(|this, _: &SelectNext, _, cx| this.select_next(cx)))
         .on_action(cx.listener(|this, _: &SelectAll, _, cx| {
+            this.more.clear();
             this.move_to(0, cx);
             this.select_to(this.content.len(), cx);
         }))
-        .on_action(cx.listener(|this, _: &Newline, _, cx| this.newline(cx)))
+        .on_action(cx.listener(|this, _: &Newline, _, cx| this.each(cx, |this, cx| this.newline(cx))))
         .on_action(cx.listener(|this, _: &Indent, _, cx| this.shift_lines(true, cx)))
         .on_action(cx.listener(|this, _: &Outdent, _, cx| this.shift_lines(false, cx)))
         .on_action(cx.listener(|this, _: &ToggleTask, _, cx| this.toggle_task(cx)))
         .on_action(cx.listener(|this, _: &AlignLeft, _, cx| this.align(":--", cx)))
         .on_action(cx.listener(|this, _: &AlignCenter, _, cx| this.align(":-:", cx)))
         .on_action(cx.listener(|this, _: &AlignRight, _, cx| this.align("--:", cx)))
-        .on_action(cx.listener(|this, _: &Bold, _, cx| this.wrap("**", cx)))
-        .on_action(cx.listener(|this, _: &Italic, _, cx| this.wrap("*", cx)))
+        .on_action(cx.listener(|this, _: &Bold, _, cx| this.each(cx, |this, cx| this.wrap("**", cx))))
+        .on_action(cx.listener(|this, _: &Italic, _, cx| this.each(cx, |this, cx| this.wrap("*", cx))))
         .on_action(cx.listener(|this, _: &InsertLink, _, cx| this.link(cx)))
         .on_action(cx.listener(|this, _: &Comment, _, cx| this.comment(cx)))
         .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(false, cx)))
         .on_action(cx.listener(|this, _: &Cut, _, cx| this.copy(true, cx)))
-        .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))
+        .on_action(cx.listener(|this, _: &Paste, _, cx| this.each(cx, |this, cx| this.paste(cx))))
         .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
         .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
         .on_action(cx.listener(|this, _: &Find, _, cx| this.open_find(false, cx)))
@@ -3989,6 +4115,11 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &Cancel, _, cx| {
             // Barre ouverte mais saisie dans la note : Échap la ferme d'abord.
             if this.find.take().is_some() {
+                return cx.notify();
+            }
+            // Plusieurs curseurs : Échap revient à un seul.
+            if !this.more.is_empty() {
+                this.more.clear();
                 return cx.notify();
             }
             if this.grid.take().is_some() {

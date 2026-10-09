@@ -2013,6 +2013,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (tr("Pasting a table", "Coller un tableau").into(), tr("Spreadsheet cells or Markdown fill the grid, or become a table", "Des cellules de tableur ou du Markdown remplissent la grille, ou deviennent un tableau")),
                 (m(tr("Enter", "Entrée")), tr("Check / uncheck a task or a [ ] box; in a table cell, add one", "Cocher / décocher une tâche ou une case [ ] ; dans une cellule, en ajouter une")),
                 (format!("{} / {}", m("B"), m("I")), tr("Bold / italic", "Gras / italique")),
+                (format!("{} / Alt+{}", m("D"), tr("click", "clic")), tr("Several cursors: select the word, then its next occurrence / add a cursor (Esc: back to one)", "Plusieurs curseurs : prendre le mot, puis son occurrence suivante / poser un curseur (Échap : un seul)")),
                 (m("K"), tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
                 (m("V"), tr("An address pasted over a selection makes it a link", "Une adresse collée sur une sélection en fait un lien")),
                 (m("Shift+M"), tr("Comment the selection or the line; on a comment, resolve it", "Commenter la sélection ou la ligne ; sur un commentaire, le résoudre")),
@@ -2828,6 +2829,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-b", Bold, e),
         KeyBinding::new("secondary-i", Italic, e),
         KeyBinding::new("secondary-k", InsertLink, e),
+        KeyBinding::new("secondary-d", SelectNext, e),
         KeyBinding::new("secondary-shift-m", Comment, e),
         KeyBinding::new("secondary-c", Copy, e),
         KeyBinding::new("secondary-x", Cut, e),
@@ -4152,6 +4154,39 @@ mod tests {
         cx.simulate_keystrokes("shift-right shift-right shift-right secondary-k");
         cx.simulate_input("https://z.fr");
         assert_eq!(text(cx), "[mot](https://z.fr)");
+        // Plusieurs curseurs : Ctrl+D prend le mot, puis ses occurrences suivantes ; la frappe,
+        // l'effacement et les déplacements valent pour tous, un seul Ctrl+Z défait le tout,
+        // Échap revient à un curseur. Alt+clic en pose un de plus.
+        let cursors = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).cursors());
+        load(cx, "un chat\nun chien\nun rat", 0);
+        cx.simulate_keystrokes("secondary-d secondary-d secondary-d");
+        assert_eq!(cursors(cx), 3);
+        cx.simulate_keystrokes("secondary-d");
+        assert_eq!(cursors(cx), 3);
+        cx.simulate_input("le");
+        assert_eq!(text(cx), "le chat\nle chien\nle rat");
+        cx.simulate_keystrokes("end");
+        cx.simulate_input("s !");
+        cx.simulate_keystrokes("backspace backspace home delete");
+        assert_eq!((text(cx), cursors(cx)), ("e chats\ne chiens\ne rats".to_string(), 3));
+        cx.simulate_keystrokes("shift-end secondary-b");
+        assert_eq!(text(cx), "**e chats**\n**e chiens**\n**e rats**");
+        // Une étape d'annulation défait le geste pour les trois curseurs à la fois.
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!((text(cx), cursors(cx)), ("le chats\nle chiens\nle rats".to_string(), 1));
+        load(cx, "un chat\nun chien\nun rat", 0);
+        cx.simulate_keystrokes("secondary-d secondary-d escape");
+        assert_eq!(cursors(cx), 1);
+        cx.simulate_input("X");
+        // Le dernier curseur posé reste : celui de la deuxième occurrence.
+        assert_eq!(text(cx), "un chat\nX chien\nun rat");
+        load(cx, "ab\ncd", 0);
+        let middle = cx.update(|window, _| window.viewport_size());
+        cx.simulate_mouse_down(point(middle.width / 2., middle.height / 2.), MouseButton::Left, gpui::Modifiers { alt: true, ..Default::default() });
+        cx.simulate_mouse_up(point(middle.width / 2., middle.height / 2.), MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_input("X");
+        assert_eq!((text(cx).matches('X').count(), cursors(cx)), (2, 2));
+        cx.simulate_keystrokes("escape");
         // Commentaires : Ctrl+Maj+M commente la sélection (sans elle, la ligne, après sa puce),
         // la palette les liste et y mène, le même raccourci sur un commentaire le résout.
         load(cx, "- un mot ici\nfin", 5);
