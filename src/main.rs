@@ -1446,6 +1446,48 @@ impl Shell {
         self.settle_nav(window, cx);
     }
 
+    /// Sauvegarde du coffre : demande où la ranger.
+    fn choose_backup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some(tr("Save the backup here", "Enregistrer la sauvegarde ici").into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(Ok(Some(paths))) = paths.await
+                && let Some(dir) = paths.into_iter().next()
+            {
+                this.update(cx, |this, cx| this.backup_to(dir, cx)).ok();
+            }
+        })
+        .detach();
+    }
+
+    /// Écrit dans `dir`, en tâche de fond, l'archive datée de tout le coffre, puis dit où elle est.
+    fn backup_to(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
+        let Some(root) = self.vault.clone() else {
+            return;
+        };
+        self.flush(cx);
+        self.notice = Some(tr("Backing up the vault…", "Sauvegarde du coffre…").into());
+        cx.notify();
+        let date = date_name(today());
+        cx.spawn(async move |this, cx| {
+            let done = cx.background_executor().spawn(async move { vault::backup(&root, &dir, &date) }).await;
+            this.update(cx, |this, cx| {
+                this.notice = None;
+                match done {
+                    Ok(to) => this.notice = Some(format!("{} {}", tr("Backup saved:", "Sauvegarde enregistrée :"), to.display())),
+                    Err(e) => this.error = Some(format!("{} : {e}", tr("Backup failed", "Sauvegarde impossible"))),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     /// Corbeille du coffre : la liste de ce qu'elle contient ; Entrée remet l'élément choisi à
     /// la racine du coffre, où le suivi des fichiers le retrouve.
     fn open_trash(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1558,6 +1600,7 @@ impl Shell {
                 PaletteEvent::Outline => this.open_outline(window, cx),
                 PaletteEvent::Today => this.open_today(cx),
                 PaletteEvent::Trash => this.open_trash(window, cx),
+                PaletteEvent::Backup => this.choose_backup(window, cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
@@ -3062,6 +3105,21 @@ mod tests {
         shell.update(cx, |s, _| s.notice = None);
         fs::remove_file(root.join("Jetée.md")).unwrap();
         settle(cx);
+
+        // Sauvegarde : une archive datée de tout le coffre dans le dossier choisi (la fenêtre de
+        // choix n'existe pas dans les tests) ; dans le coffre lui-même, elle est refusée.
+        let out = root.with_file_name(format!("{}-sauvegardes", vault::stem(&root)));
+        fs::create_dir_all(&out).unwrap();
+        shell.update(cx, |s, cx| s.backup_to(out.clone(), cx));
+        cx.run_until_parked();
+        let saved = fs::read_dir(&out).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect::<Vec<_>>();
+        assert!(saved.len() == 1 && saved[0].ends_with(&format!(" {}.tar.gz", date_name(today()))), "{saved:?}");
+        assert!(shell.read_with(cx, |s, _| s.error.is_none() && s.notice.as_deref().is_some_and(|n| n.starts_with("Sauvegarde enregistrée") && n.ends_with(&saved[0]))));
+        shell.update(cx, |s, cx| s.backup_to(root.join(".trash"), cx));
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.error.as_deref().is_some_and(|e| e.contains("hors du coffre"))));
+        shell.update(cx, |s, _| (s.notice, s.error) = (None, None));
+        fs::remove_dir_all(&out).unwrap();
 
         // Recherche dans le coffre : Ctrl+Maj+F liste chaque ligne où figure le texte tapé, sans
         // la casse ; Entrée ouvre la note, le passage sélectionné.

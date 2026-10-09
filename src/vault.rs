@@ -350,6 +350,43 @@ pub fn trash(root: &Path, path: &Path) -> io::Result<()> {
     fs::rename(path, free)
 }
 
+/// Sauvegarde : tout le coffre (corbeille comprise) dans une archive `<coffre> <date>.tar.gz`
+/// du dossier `dir`, numérotée si le nom est pris. Bloquant : à lancer hors du thread UI.
+// ponytail: le `tar` du système (livré avec Linux, macOS et Windows 10) plutôt qu'une
+// bibliothèque d'archives en dépendance ; écrire un `.zip` nous-mêmes si le `.tar.gz` gêne
+// sous Windows.
+pub fn backup(root: &Path, dir: &Path, date: &str) -> io::Result<PathBuf> {
+    let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
+        return Err(io::Error::other(tr("this vault has no parent folder", "ce coffre n'a pas de dossier parent")));
+    };
+    // Dans le coffre, l'archive se contiendrait elle-même.
+    if dir.starts_with(root) {
+        return Err(io::Error::other(tr("choose a folder outside the vault", "choisir un dossier hors du coffre")));
+    }
+    let to = free_path(dir, &format!("{} {date}", name.to_string_lossy()), "tar.gz");
+    // L'archive est nommée depuis `dir` : le `tar` de Git pour Windows prendrait `C:\…` pour
+    // une machine distante.
+    let status = crate::update::command("tar")
+        .current_dir(dir)
+        .arg("-czf")
+        .arg(to.file_name().unwrap_or_default())
+        .arg("-C")
+        .arg(parent)
+        .arg(name)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    match status {
+        Ok(status) if status.success() => Ok(to),
+        failed => {
+            // Une archive incomplète ne doit pas passer pour une sauvegarde.
+            let _ = fs::remove_file(&to);
+            Err(failed.err().unwrap_or_else(|| io::Error::other(tr("tar failed", "tar a échoué"))))
+        }
+    }
+}
+
 /// Contenu de la corbeille du coffre, du plus récemment modifié au plus ancien.
 pub fn trashed(root: &Path) -> Vec<PathBuf> {
     let entries = fs::read_dir(root.join(".trash")).into_iter().flatten().flatten();
@@ -566,6 +603,27 @@ mod tests {
         assert_eq!(clean_name(" ../a:b. "), Some("ab".into()));
         assert_eq!(clean_name(" . "), None);
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn backs_up_the_vault() {
+        let base = env::temp_dir().join(format!("bref-backup-{}", std::process::id()));
+        let (root, out) = (base.join("Mon coffre"), base.join("sauvegardes"));
+        fs::create_dir_all(root.join(".trash")).unwrap();
+        fs::create_dir_all(&out).unwrap();
+        fs::write(root.join("A.md"), "# A\n").unwrap();
+        fs::write(root.join(".trash/Vieux.md"), "jeté").unwrap();
+        let first = backup(&root, &out, "2026-10-09").unwrap();
+        assert_eq!(first, out.join("Mon coffre 2026-10-09.tar.gz"));
+        // Le même jour : une seconde archive, la première reste.
+        assert_eq!(backup(&root, &out, "2026-10-09").unwrap(), out.join("Mon coffre 2026-10-09 2.tar.gz"));
+        let listed = crate::update::command("tar").current_dir(&out).arg("-tzf").arg(first.file_name().unwrap()).output().unwrap();
+        let listed = String::from_utf8_lossy(&listed.stdout).replace('\\', "/");
+        assert!(listed.contains("Mon coffre/A.md") && listed.contains("Mon coffre/.trash/Vieux.md"), "{listed}");
+        // Dans le coffre, l'archive se contiendrait elle-même : refusé, rien n'est écrit.
+        assert!(backup(&root, &root.join(".trash"), "2026-10-09").is_err());
+        assert_eq!(fs::read_dir(root.join(".trash")).unwrap().count(), 1);
+        fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

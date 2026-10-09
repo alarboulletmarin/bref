@@ -183,7 +183,7 @@ fn fetch() -> Option<Release> {
 }
 
 /// Un processus sans fenêtre de console (l'app n'en a pas sous Windows : sinon elle clignote).
-fn command(program: impl AsRef<OsStr>) -> Command {
+pub fn command(program: impl AsRef<OsStr>) -> Command {
     #[allow(unused_mut)]
     let mut command = Command::new(program);
     #[cfg(windows)]
