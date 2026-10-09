@@ -501,6 +501,9 @@ struct Shell {
     new_dir: Option<PathBuf>,
     dirty: bool,
     save_gen: usize,
+    /// Dernier remplacement dans le coffre, pour le défaire : chaque note réécrite, son texte
+    /// d'avant et celui d'après.
+    swapped: Vec<(PathBuf, Arc<str>, String)>,
     /// Icônes des notes, fichiers et dossiers du coffre (voir `vault::load_icons`).
     icons: std::collections::HashMap<PathBuf, String>,
     /// Grille de choix d'une icône : où elle s'ouvre, et pour quel élément.
@@ -576,6 +579,7 @@ impl Shell {
             new_dir: None,
             dirty: false,
             save_gen: 0,
+            swapped: Vec::new(),
             icons: Default::default(),
             icon_pick: None,
             comments_shut: false,
@@ -1370,6 +1374,94 @@ impl Shell {
         open_rewritten
     }
 
+    /// Remplacement dans tout le coffre : compte d'abord, et n'écrit qu'une fois le compte
+    /// accepté. Chaque note réécrite est gardée telle qu'elle était, pour tout défaire.
+    fn replace_in_vault(&mut self, swap: markdown::Swap, window: &mut Window, cx: &mut Context<Self>) {
+        // La note ouverte est d'abord enregistrée : le remplacement part de ce qui est à l'écran.
+        self.flush(cx);
+        let found: Vec<(PathBuf, String, usize)> = (self.notes.iter())
+            .filter_map(|note| markdown::swap(&note.body, &swap).map(|(text, count)| (note.path.clone(), text, count)))
+            .collect();
+        let count: usize = found.iter().map(|(.., count)| count).sum();
+        if count == 0 {
+            return self.say(Tone::Info, tr("Nothing to replace in the vault", "Rien à remplacer dans le coffre"), cx);
+        }
+        let title = format!("{} {count} · notes : {}", tr("Matches:", "Passages :"), found.len());
+        let options = vec![tr("Replace them all", "Tout remplacer").to_string(), tr("Cancel", "Annuler").to_string()];
+        let theme = self.theme;
+        let palette = cx.new(|cx| Palette::choose(&title, options, "", theme, cx));
+        cx.subscribe_in(&palette, window, move |this, palette, event, window, cx| {
+            if matches!(event, PaletteEvent::Preview(_)) {
+                return;
+            }
+            let agreed = matches!(event, PaletteEvent::Submit(_)) && palette.read(cx).chosen() == Some(0);
+            this.palette = None;
+            window.focus(&this.editor.focus_handle(cx));
+            if agreed {
+                this.swap_notes(found.clone(), cx);
+            }
+            cx.notify();
+        })
+        .detach();
+        window.focus(&palette.focus_handle(cx));
+        self.palette = Some(palette);
+        cx.notify();
+    }
+
+    /// Écrit le nouveau texte de chaque note, et retient l'ancien.
+    fn swap_notes(&mut self, found: Vec<(PathBuf, String, usize)>, cx: &mut Context<Self>) {
+        self.swapped.clear();
+        let mut count = 0;
+        for (path, text, hits) in found {
+            let Some(note) = self.notes.iter_mut().find(|note| note.path == path) else {
+                continue;
+            };
+            if let Err(e) = vault::write(&path, &text) {
+                self.say(Tone::Failed, format!("{} {} : {e}", tr("Not rewritten:", "Non réécrite :"), path.display()), cx);
+                continue;
+            }
+            count += hits;
+            (note.tags, note.links) = markdown::index(&text);
+            self.swapped.push((path, std::mem::replace(&mut note.body, Arc::from(text.as_str())), text));
+        }
+        self.after_swap(cx);
+        let done = format!("{} {count} · notes : {} ({})", tr("Replaced:", "Remplacés :"), self.swapped.len(), tr("the palette can undo it", "la palette peut l'annuler"));
+        self.say(Tone::Done, done, cx);
+    }
+
+    /// Défait le dernier remplacement dans le coffre : chaque note retrouve son texte d'avant,
+    /// sauf celles qui ont changé depuis, laissées telles quelles.
+    fn undo_swap(&mut self, cx: &mut Context<Self>) {
+        self.flush(cx);
+        let (mut back, mut kept) = (0, 0);
+        for (path, old, new) in std::mem::take(&mut self.swapped) {
+            let same = fs::read_to_string(&path).is_ok_and(|now| now == new);
+            if same && vault::write(&path, &old).is_ok() {
+                if let Some(note) = self.notes.iter_mut().find(|note| note.path == path) {
+                    (note.tags, note.links) = markdown::index(&old);
+                    note.body = old;
+                }
+                back += 1;
+            } else {
+                kept += 1;
+            }
+        }
+        self.after_swap(cx);
+        let mut done = format!("{} {back}", tr("Notes restored:", "Notes rétablies :"));
+        if kept > 0 {
+            done += &format!(" · {} {kept}", tr("changed since, left as they are:", "modifiées depuis, laissées telles quelles :"));
+        }
+        self.say(if back + kept == 0 { Tone::Info } else { Tone::Done }, if back + kept == 0 { tr("No replacement to undo", "Aucun remplacement à annuler").to_string() } else { done }, cx);
+    }
+
+    /// Après une réécriture de notes : celle qui est ouverte est relue, le graphe suit.
+    fn after_swap(&mut self, cx: &mut Context<Self>) {
+        self.graph_stale = true;
+        self.refresh_graph(cx);
+        self.reload(cx);
+        cx.notify();
+    }
+
     /// Relit depuis le disque la note affichée, réécrite en dehors de l'éditeur.
     fn reload(&mut self, cx: &mut Context<Self>) {
         if let Some(path) = self.path.clone() {
@@ -1471,6 +1563,7 @@ impl Shell {
                 .detach();
             }
             EditorEvent::Open(link) => self.follow(link, window, cx),
+            EditorEvent::Swap(swap) => self.replace_in_vault(swap.clone(), window, cx),
             EditorEvent::Menu(at, link) => {
                 self.menu = Some(nav::Menu { at: *at, target: None, text: Some(link.clone()) });
                 cx.notify();
@@ -1779,6 +1872,7 @@ impl Shell {
                 PaletteEvent::CheckUpdate => this.check_now(cx),
                 PaletteEvent::Outline => this.open_outline(window, cx),
                 PaletteEvent::Comments => this.open_comments(window, cx),
+                PaletteEvent::UndoSwap => this.undo_swap(cx),
                 PaletteEvent::Today => this.open_today(cx),
                 PaletteEvent::Trash => this.open_trash(window, cx),
                 PaletteEvent::Backup => this.choose_backup(window, cx),
@@ -1811,6 +1905,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (tr("Enter / Shift+Enter", "Entrée / Maj+Entrée").into(), tr("Search bar: next / previous match (F3 too)", "Barre de recherche : passage suivant / précédent (F3 aussi)")),
                 ("Alt+C / Alt+W / Alt+R".into(), tr("Search bar: match case / whole words / regular expression ($1 in the replacement)", "Barre de recherche : casse / mots entiers / expression régulière ($1 dans le remplacement)")),
                 ("Tab".into(), tr("Search bar: replace field", "Barre de recherche : champ de remplacement")),
+                (m(tr("Shift+Enter", "Maj+Entrée")), tr("Search bar: replace in the whole vault, after showing the count", "Barre de recherche : remplacer dans tout le coffre, après en avoir montré le compte")),
                 (m(tr("Enter", "Entrée")), tr("Search bar: replace all (Enter: this match)", "Barre de recherche : tout remplacer (Entrée : ce passage)")),
                 (m("Shift+O"), tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")),
                 (m("N"), tr("New note", "Nouvelle note")),
@@ -2701,6 +2796,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", FindEnter, f),
         KeyBinding::new("shift-enter", FindPrev, f),
         KeyBinding::new("secondary-enter", ReplaceAll, f),
+        KeyBinding::new("secondary-shift-enter", ReplaceInVault, f),
         KeyBinding::new("escape", FindClose, f),
         KeyBinding::new("backspace", FindErase, f),
         KeyBinding::new("tab", FindSwitch, f),
@@ -3425,6 +3521,40 @@ mod tests {
         assert!(root.join("Jetée.md").is_file() && !root.join(".trash/Jetée.md").exists());
         assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Jetée") && s.toasts.is_empty()));
         fs::remove_file(root.join("Jetée.md")).unwrap();
+        settle(cx);
+
+        // Remplacer dans tout le coffre, depuis la barre de recherche : le compte d'abord, puis
+        // les notes sont réécrites ; la palette défait le tout, sauf ce qui a changé depuis.
+        let here = shell.read_with(cx, |s, _| s.path.clone().unwrap());
+        fs::write(root.join("Zoo A.md"), "# Zoo A\n\nle zèbre court").unwrap();
+        fs::write(root.join("Zoo B.md"), "# Zoo B\n\nun zèbre, deux Zèbres").unwrap();
+        settle(cx);
+        shell.update(cx, |s, cx| s.open_note(&root.join("Zoo A.md"), cx));
+        cx.simulate_keystrokes("secondary-h");
+        cx.simulate_input("zèbre");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("okapi");
+        cx.simulate_keystrokes("secondary-shift-enter");
+        assert!(shell.read_with(cx, |s, _| s.palette.is_some()));
+        assert_eq!(fs::read_to_string(root.join("Zoo B.md")).unwrap(), "# Zoo B\n\nun zèbre, deux Zèbres");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(fs::read_to_string(root.join("Zoo B.md")).unwrap(), "# Zoo B\n\nun okapi, deux okapis");
+        assert_eq!(text(cx), "# Zoo A\n\nle okapi court");
+        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.told(Tone::Done, "Remplacés : 3 · notes : 2")));
+        cx.simulate_keystrokes("escape");
+        fs::write(root.join("Zoo B.md"), "# Zoo B\n\nautre chose").unwrap();
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("annuler le remplacement");
+        cx.simulate_keystrokes("down enter");
+        assert_eq!(text(cx), "# Zoo A\n\nle zèbre court");
+        assert_eq!(fs::read_to_string(root.join("Zoo B.md")).unwrap(), "# Zoo B\n\nautre chose");
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Done, "Notes rétablies : 1 · modifiées depuis, laissées telles quelles : 1")));
+        shell.update(cx, |s, cx| {
+            s.toasts.clear();
+            s.open_note(&here, cx)
+        });
+        fs::remove_file(root.join("Zoo A.md")).unwrap();
+        fs::remove_file(root.join("Zoo B.md")).unwrap();
         settle(cx);
 
         // Calendrier : Ctrl+Maj+J montre le mois ; les flèches changent de jour, Page bas de

@@ -1050,6 +1050,29 @@ pub fn replacements(text: &str, query: &str, with: &str, case: bool, word: bool,
         .collect()
 }
 
+/// Ce qu'on cherche et par quoi on le remplace, avec les réglages de la barre de recherche.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Swap {
+    pub query: String,
+    pub with: String,
+    pub case: bool,
+    pub word: bool,
+    pub regex: bool,
+}
+
+/// `text` une fois tous ses passages remplacés, et leur nombre ; `None` s'il n'y en a aucun.
+pub fn swap(text: &str, swap: &Swap) -> Option<(String, usize)> {
+    let hits = replacements(text, &swap.query, &swap.with, swap.case, swap.word, swap.regex);
+    let (mut put, mut done) = (String::with_capacity(text.len()), 0);
+    for (hit, with) in &hits {
+        put.push_str(&text[done..hit.start]);
+        put.push_str(with);
+        done = hit.end;
+    }
+    put.push_str(&text[done..]);
+    (!hits.is_empty()).then_some((put, hits.len()))
+}
+
 /// Nombre de mots et de caractères du texte, tel qu'il est écrit : les marques du Markdown
 /// comptent comme des caractères, les fins de ligne non.
 pub fn counts(text: &str) -> (usize, usize) {
@@ -1092,6 +1115,9 @@ mod tests {
         assert_eq!(put("ch|ra", "", true, true), []);
         assert!(put("(", "", false, true).is_empty() && put("x*", "", false, true).is_empty());
         assert_eq!(replacements("A a", "a", "b", true, false, true), [(2..3, "b".to_string())]);
+        let all = Swap { query: "le".into(), with: "un".into(), case: false, word: true, regex: false };
+        assert_eq!(swap("Le chat, le chien.", &all), Some(("un chat, un chien.".into(), 2)));
+        assert_eq!(swap("rien", &all), None);
         // Commentaires : le texte, le commentaire, et où commence le tout ; pas dans le code.
         let line = "un {==mot **fort**==}{>>à revoir<<} et {==deux==}{>><<} {==seul==}";
         assert_eq!(comments(line), [(3..36, 6..18, 24..33), (40..56, 43..47, 53..53)]);

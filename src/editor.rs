@@ -88,6 +88,7 @@ actions!(
         FindCase,
         FindWord,
         FindRegex,
+        ReplaceInVault,
         FindPaste,
         ReplaceAll,
     ]
@@ -212,6 +213,8 @@ enum Motion {
 pub enum EditorEvent {
     Changed,
     Open(Link),
+    /// Remplacer dans tout le coffre ce que la barre de recherche cherche.
+    Swap(md::Swap),
     /// Clic droit dans la note : où, et le lien qui s'y trouve.
     Menu(Point<Pixels>, Option<Link>),
 }
@@ -1096,6 +1099,16 @@ impl Editor {
         Some(md::replacements(&self.content, &find.query, find.with.as_ref()?, find.case, find.word, find.regex))
     }
 
+    /// Demande à la fenêtre de remplacer dans tout le coffre : la recherche, le remplacement et
+    /// les réglages de la barre.
+    fn replace_in_vault(&mut self, cx: &mut Context<Self>) {
+        if let Some(find) = self.find.as_ref().filter(|find| !find.query.is_empty())
+            && let Some(with) = find.with.clone()
+        {
+            cx.emit(EditorEvent::Swap(md::Swap { query: find.query.clone(), with, case: find.case, word: find.word, regex: find.regex }));
+        }
+    }
+
     /// Remplace tous les passages d'un coup : une seule étape d'annulation.
     fn replace_all(&mut self, cx: &mut Context<Self>) {
         self.refresh_find();
@@ -1223,10 +1236,16 @@ impl Editor {
             .child(toggle("\u{201c}ab\u{201d}", find.word).on_mouse_down(MouseButton::Left, flip(1)))
             .child(toggle(".*", find.regex).on_mouse_down(MouseButton::Left, flip(2)));
         let second = find.with.as_ref().map(|with| {
-            div().flex().child(
-                field(with, tr("Replace with", "Remplacer par"), find.active && find.on_with, false)
-                    .on_mouse_down(MouseButton::Left, pick(true)),
-            )
+            let everywhere = cx.listener(|this, _: &MouseDownEvent, _, cx| this.replace_in_vault(cx));
+            div()
+                .flex()
+                .items_center()
+                .gap_1p5()
+                .child(
+                    field(with, tr("Replace with", "Remplacer par"), find.active && find.on_with, false)
+                        .on_mouse_down(MouseButton::Left, pick(true)),
+                )
+                .child(toggle(tr("Vault…", "Coffre…"), false).on_mouse_down(MouseButton::Left, everywhere))
         });
         Some(bar.child(first).children(second))
     }
@@ -3964,6 +3983,7 @@ impl Render for Editor {
             }
         }))
         .on_action(cx.listener(|this, _: &ReplaceAll, _, cx| this.replace_all(cx)))
+        .on_action(cx.listener(|this, _: &ReplaceInVault, _, cx| this.replace_in_vault(cx)))
         .on_action(cx.listener(|this, _: &Cancel, _, cx| {
             // Barre ouverte mais saisie dans la note : Échap la ferme d'abord.
             if this.find.take().is_some() {

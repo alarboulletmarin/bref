@@ -220,13 +220,14 @@ In the palette, type to search; `Enter` opens the selected note. Notes whose nam
 |---|---|
 | `Enter`, `Shift + Enter` (or `F3`, `Shift + F3`) | next, previous match, wrapping around |
 | `Alt + C`, `Alt + W` | match case, whole words (also the `Aa` and `“ab”` buttons) |
+| `Ctrl + Shift + Enter` | replace across the whole vault (also the `Vault…` button), with the same options: Bref first shows how many matches in how many notes, and writes nothing until you accept. `Undo the replacement in the vault` in the palette puts every note back, except those changed since |
 | `Alt + R` | regular expression (also the `.*` button): `^` and `$` are the ends of each line, and the replacement can reuse the groups, `$1` |
 | `Ctrl + H` | show the *Replace with* field; `Tab` moves between the two fields |
 | `Enter` in *Replace with* | replace the current match and go to the next |
 | `Ctrl + Enter` | replace every match; a single `Ctrl + Z` in the note brings them all back |
 | `Esc` | close; the cursor stays on the current match |
 
-Click in the note to edit it while the bar stays open: the matches follow the text, `F3`, `Alt + C` and `Alt + W` still work, and `Esc` closes the bar. With no bar, `F3` opens it. Replacing across the vault is not there yet.
+Click in the note to edit it while the bar stays open: the matches follow the text, `F3`, `Alt + C` and `Alt + W` still work, and `Esc` closes the bar. With no bar, `F3` opens it.
 
 ## Navigation
 
