@@ -655,6 +655,8 @@ pub struct Editor {
     version: u64,
     /// Compteur du bas de page, gardé tant que le texte et la sélection ne bougent pas.
     counted: Option<((u64, Range<usize>), String)>,
+    /// Nombre de boutons que la fenêtre pose dans le coin, à droite du compteur.
+    pub corner: usize,
     /// Change quand tout est à refaire (autre note, thème, images) : rien n'est repris.
     epoch: u64,
     dmg: Option<Damage>,
@@ -734,6 +736,7 @@ impl Editor {
             rows: Vec::new(),
             version: 0,
             counted: None,
+            corner: 1,
             epoch: 0,
             dmg: None,
             laid: None,
@@ -3842,11 +3845,11 @@ impl EntityInputHandler for Editor {
 
 impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // À gauche de l'icône de copie que la fenêtre pose dans le coin.
+        // À gauche des boutons que la fenêtre pose dans le coin (copie, commentaires).
         let counts = div()
             .absolute()
             .bottom_4()
-            .right(px(46.))
+            .right(px(12. + 34. * self.corner as f32))
             .h(px(30.))
             .px_2()
             .rounded(px(8.))

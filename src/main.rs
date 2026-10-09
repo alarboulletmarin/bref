@@ -2152,50 +2152,32 @@ impl Render for Shell {
                 )))
         } else {
             // Copie de toute la note : simple icône flottante, hors de la barre de titre.
-            let copy = icon_button("copy-all", if self.copied { "check.svg" } else { "copy.svg" })
-                .absolute()
-                .bottom_4()
-                .right_4()
-                .size(px(30.))
-                .rounded(px(8.))
-                .occlude()
-                .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
-            // L'image choisie dans le panneau ; elle s'efface dès que la note reprend la main.
-            if self.editor.focus_handle(cx).is_focused(window) {
-                self.picture = None;
-            }
-            if self.drawing.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
-                self.drawing = None;
-            }
-            let note = div().flex_1().min_w_0().h_full().relative();
-            if self.sheet.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
-                self.flush_sheet(cx);
-                self.sheet = None;
-            }
-            let note = match (&self.picture, &self.drawing) {
-                (Some(_), _) if self.sheet.is_some() => {
-                    let (_, sheet) = self.sheet.clone().unwrap();
-                    sheet.update(cx, |sheet, _| sheet.sync(t, client));
-                    note.child(sheet)
-                }
-                (Some(_), Some((_, canvas))) => {
-                    canvas.update(cx, |canvas, _| canvas.sync(t));
-                    note.child(canvas.clone())
-                }
-                (Some(path), None) => note.p_6().flex().items_center().justify_center().child(
-                    img(path.clone()).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
-                ),
-                (None, _) => note.child(self.editor.clone()).child(copy),
-            };
             // Commentaires de la note, à sa droite : le texte commenté, puis ce qu'on en dit. Un
             // clic mène au commentaire, prêt à être retouché ; la coche le résout.
             // ponytail: la note est relue à chaque rendu (une recherche de `{==`) ; garder la
             // liste d'une version du texte à l'autre si de très longues notes en pâtissent.
-            let said = match self.picture.is_none() && !self.comments_shut {
-                true => markdown::all_comments(self.editor.read(cx).text()),
+            let said: Vec<(String, String, usize)> = match self.picture.is_none() {
+                true => markdown::all_comments(self.editor.read(cx).text()).into_iter().map(|(noted, said, at)| (noted.into(), said.into(), at)).collect(),
                 false => Vec::new(),
             };
-            let cards = said.iter().enumerate().map(|(i, &(noted, said, at))| {
+            // Leur bouton, à gauche de celui de la copie, ouvre et referme le panneau ; le
+            // compteur de mots de la note lui laisse la place.
+            let talk = (!said.is_empty()).then(|| {
+                nav::button("comments-toggle", "i-chat.svg", !self.comments_shut, t)
+                    .absolute()
+                    .bottom_4()
+                    .right(px(50.))
+                    .size(px(30.))
+                    .rounded(px(8.))
+                    .occlude()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.comments_shut = !this.comments_shut;
+                        cx.notify();
+                    }))
+            });
+            self.editor.update(cx, |e, _| e.corner = 1 + talk.is_some() as usize);
+            let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at))| {
+                let at = *at;
                 let inside = at + noted.len() + 9;
                 div()
                     .id(("comment", i))
@@ -2230,7 +2212,7 @@ impl Render for Shell {
                         window.focus(&this.editor.focus_handle(cx));
                     }))
             });
-            let comments = (!said.is_empty()).then(|| {
+            let comments = (!said.is_empty() && !self.comments_shut).then(|| {
                 let title = format!("{} ({})", tr("Comments", "Commentaires"), said.len());
                 let shut = nav::button("comments-shut", "close.svg", false, t).on_click(cx.listener(|this, _, _, cx| {
                     this.comments_shut = true;
@@ -2255,6 +2237,41 @@ impl Render for Shell {
                     .child(div().flex().items_center().child(div().flex_1().text_color(t.dim).child(title)).child(shut))
                     .children(cards)
             });
+            let copy = icon_button("copy-all", if self.copied { "check.svg" } else { "copy.svg" })
+                .absolute()
+                .bottom_4()
+                .right_4()
+                .size(px(30.))
+                .rounded(px(8.))
+                .occlude()
+                .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
+            // L'image choisie dans le panneau ; elle s'efface dès que la note reprend la main.
+            if self.editor.focus_handle(cx).is_focused(window) {
+                self.picture = None;
+            }
+            if self.drawing.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
+                self.drawing = None;
+            }
+            let note = div().flex_1().min_w_0().h_full().relative();
+            if self.sheet.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
+                self.flush_sheet(cx);
+                self.sheet = None;
+            }
+            let note = match (&self.picture, &self.drawing) {
+                (Some(_), _) if self.sheet.is_some() => {
+                    let (_, sheet) = self.sheet.clone().unwrap();
+                    sheet.update(cx, |sheet, _| sheet.sync(t, client));
+                    note.child(sheet)
+                }
+                (Some(_), Some((_, canvas))) => {
+                    canvas.update(cx, |canvas, _| canvas.sync(t));
+                    note.child(canvas.clone())
+                }
+                (Some(path), None) => note.p_6().flex().items_center().justify_center().child(
+                    img(path.clone()).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
+                ),
+                (None, _) => note.child(self.editor.clone()).child(copy).children(talk),
+            };
             let card = || {
                 div()
                     .pl_3()
@@ -3962,7 +3979,12 @@ mod tests {
         shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.resolve_comment(34, cx)));
         assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\nfin");
         cx.simulate_keystrokes("secondary-z");
-        shell.update(cx, |s, _| s.comments_shut = true);
+        // Le bouton du coin, à gauche de la copie, referme le panneau (et le rouvre).
+        cx.run_until_parked();
+        let corner = cx.update(|window, _| window.viewport_size());
+        let closed = shell.read_with(cx, |s, _| s.comments_shut);
+        cx.simulate_click(point(corner.width - px(270. + 65.), corner.height - px(31.)), gpui::Modifiers::none());
+        assert!(!closed && shell.read_with(cx, |s, _| s.comments_shut));
         cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("commentaires");
         cx.simulate_keystrokes("down enter");
