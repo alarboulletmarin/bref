@@ -1,0 +1,21 @@
+name: Feature request
+description: An idea for Bref
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Bref aims to stay fast and minimal, so many ideas are declined. Describing the need rather than the solution helps the most.
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What you are trying to do, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposal
+      description: What you imagine. Mention what should stay out of scope.
+  - type: textarea
+    attributes:
+      label: Alternatives
+      description: How you work around it today, or how other apps do it.

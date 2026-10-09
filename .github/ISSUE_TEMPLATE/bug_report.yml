@@ -1,0 +1,42 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a note that contains…
+        2. Press…
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Bref version
+      description: Shown at the bottom of the help panel.
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: System
+      options:
+        - Linux (Wayland)
+        - Linux (X11)
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: How Bref was installed
+      placeholder: Arch package, installer, zip, dmg, built from source…
+  - type: textarea
+    attributes:
+      label: Anything else
+      description: A note or a file that triggers the problem, a message shown by the app.
