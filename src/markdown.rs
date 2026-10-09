@@ -933,6 +933,35 @@ pub fn front_values(text: &str, key: &str) -> Vec<String> {
     values.into_iter().filter(|value| !value.is_empty()).collect()
 }
 
+/// Clés de l'en-tête YAML, dans l'ordre où elles sont écrites.
+pub fn front_keys(text: &str) -> Vec<&str> {
+    let lines = text[..front_matter(text)].lines().skip(1);
+    let keys = lines.filter_map(|line| line.split_once(':')).map(|(key, _)| key);
+    keys.filter(|key| !key.is_empty() && !key.starts_with([' ', '\t', '-', '#'])).collect()
+}
+
+/// Table de notes : une colonne par clé de leurs en-têtes, dans l'ordre où elles apparaissent,
+/// et pour chaque note ses valeurs (plusieurs valeurs : séparées par des virgules).
+pub fn list_table(notes: &[&str]) -> (Vec<String>, Vec<Vec<String>>) {
+    let mut keys: Vec<String> = Vec::new();
+    for key in notes.iter().flat_map(|text| front_keys(text)) {
+        if !keys.iter().any(|known| known == key) {
+            keys.push(key.to_string());
+        }
+    }
+    let rows = notes.iter().map(|text| keys.iter().map(|key| front_values(text, key).join(", ")).collect()).collect();
+    (keys, rows)
+}
+
+/// Ordre de deux cellules d'une table : les nombres par leur valeur, le reste sans la casse ;
+/// une cellule vide vient après les autres.
+pub fn cell_order(a: &str, b: &str) -> std::cmp::Ordering {
+    match (a.trim().replace(',', ".").parse::<f64>(), b.trim().replace(',', ".").parse::<f64>()) {
+        (Ok(x), Ok(y)) => x.total_cmp(&y),
+        _ => a.is_empty().cmp(&b.is_empty()).then_with(|| a.to_lowercase().cmp(&b.to_lowercase())),
+    }
+}
+
 /// Autres noms de la note, donnés par la clé `aliases` de son en-tête : un `[[lien]]` peut la
 /// viser par l'un d'eux.
 pub fn aliases(text: &str) -> Vec<String> {
@@ -1107,6 +1136,14 @@ mod tests {
         assert_eq!(l[1].1, Link::Tag("projet/x".into()));
         assert_eq!(l[2].1, Link::Url("https://a.b/c".into()));
         assert!(links("a#b et #123").is_empty());
+        // Page liste : les clés des en-têtes font les colonnes, dans leur ordre d'apparition.
+        let (dune, emma) = ("---\nauteur: Herbert\nnote: 9\ntags: [sf, désert]\n---\n# Dune", "---\nnote: 10\nlu: oui\n---\n");
+        assert_eq!(front_keys(dune), ["auteur", "note", "tags"]);
+        let (keys, rows) = list_table(&[dune, emma, "# Sans en-tête"]);
+        assert_eq!(keys, ["auteur", "note", "tags", "lu"]);
+        assert_eq!(rows, [vec!["Herbert", "9", "sf, désert", ""], vec!["", "10", "", "oui"], vec![""; 4]]);
+        use std::cmp::Ordering::{Greater, Less};
+        assert_eq!((cell_order("9", "10"), cell_order("b", "A"), cell_order("", "z"), cell_order("1,5", "1.25")), (Less, Greater, Greater, Greater));
         // Remplacements : le texte tel quel, ou une expression régulière et ses groupes.
         let put = |query: &str, with: &str, word, regex| replacements("Le chat, le chien.\nle rat", query, with, false, word, regex);
         assert_eq!(put("le", "un", true, false), [(0..2, "un".to_string()), (9..11, "un".into()), (19..21, "un".into())]);

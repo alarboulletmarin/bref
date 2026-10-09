@@ -82,6 +82,8 @@ pub enum Do {
     Reveal,
     /// Ouvre la grille des icônes pour la ligne visée.
     Icon,
+    /// Montre le dossier visé en page liste.
+    List,
     // Menu de la note.
     Cut,
     Copy,
@@ -731,6 +733,10 @@ impl Shell {
             return;
         }
         let is_dir = target.as_ref().is_none_or(|t| self.dirs.contains(t));
+        if let Do::List = what {
+            self.listing = Some((target.unwrap_or(root), 0, false));
+            return window.focus(&self.nav.focus);
+        }
         // Dossier visé : la cible elle-même, ou celui qui contient la note.
         let dir = match &target {
             Some(t) if is_dir => t.clone(),
@@ -1042,6 +1048,9 @@ impl Shell {
             if !many {
                 groups[2].push((tr("Reveal in file explorer", "Afficher dans l'explorateur"), Do::Reveal));
             }
+            if is_dir && !many && tree {
+                groups[0].push((tr("Show as a list", "Afficher en liste"), Do::List));
+            }
             if menu.target.is_some() {
                 if !is_dir || many {
                     groups[3].push((tr("Duplicate", "Dupliquer"), Do::Duplicate));
@@ -1127,6 +1136,84 @@ impl Shell {
                         ),
                 ),
         )
+    }
+
+    /// Page liste : les colonnes (« Note », puis les clés des en-têtes) et, triées, les notes du
+    /// dossier avec leurs cellules.
+    pub fn listed(&self) -> Option<(Vec<String>, Vec<(PathBuf, Vec<String>)>)> {
+        let (dir, by, back) = self.listing.as_ref()?;
+        let inside: Vec<&Note> = self.notes.iter().filter(|note| note.path.starts_with(dir)).collect();
+        let bodies: Vec<&str> = inside.iter().map(|note| &*note.body).collect();
+        let (mut keys, cells) = markdown::list_table(&bodies);
+        keys.insert(0, "Note".to_string());
+        let named = |(note, mut cells): (&&Note, Vec<String>)| {
+            cells.insert(0, note.name.clone());
+            (note.path.clone(), cells)
+        };
+        let mut rows: Vec<(PathBuf, Vec<String>)> = inside.iter().zip(cells).map(named).collect();
+        let by = (*by).min(keys.len() - 1);
+        rows.sort_by(|a, b| markdown::cell_order(&a.1[by], &b.1[by]).then_with(|| markdown::cell_order(&a.1[0], &b.1[0])));
+        if *back {
+            rows.reverse();
+        }
+        Some((keys, rows))
+    }
+
+    /// Trie la page liste par cette colonne ; la redemander inverse l'ordre.
+    pub fn sort_listing(&mut self, col: usize, cx: &mut Context<Self>) {
+        if let Some((_, by, back)) = &mut self.listing {
+            (*back, *by) = (*by == col && !*back, col);
+        }
+        cx.notify();
+    }
+
+    /// La page liste, à la place de la note : un clic sur un titre de colonne trie, un clic
+    /// sur une ligne ouvre la note.
+    // ponytail: lecture seule (une valeur se change dans la note) et toutes les lignes sont
+    // dessinées ; passer par la grille de `sheet.rs` pour éditer les cellules et virtualiser
+    // un dossier de milliers de notes.
+    pub fn render_listing(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let t = self.theme;
+        let (keys, rows) = self.listed().unwrap_or_default();
+        let (dir, by, back) = self.listing.clone().unwrap_or_default();
+        let cell = |first: bool| div().map(|d| if first { d.w(px(220.)) } else { d.w(px(150.)) }).flex_none().px_2().truncate();
+        let head = keys.iter().enumerate().map(|(i, key)| {
+            let arrow = if i != by { "" } else if back { " ↓" } else { " ↑" };
+            cell(i == 0)
+                .id(("list-head", i))
+                .cursor_pointer()
+                .text_color(if i == by { t.accent } else { t.dim })
+                .child(format!("{key}{arrow}"))
+                .on_click(cx.listener(move |this, _, _, cx| this.sort_listing(i, cx)))
+        });
+        let lines = rows.into_iter().enumerate().map(|(i, (path, cells))| {
+            div()
+                .id(("list-row", i))
+                .h(ROW)
+                .flex()
+                .items_center()
+                .rounded(px(5.))
+                .cursor_pointer()
+                .hover(|s| s.bg(t.code_bg))
+                .children(cells.into_iter().enumerate().map(|(c, text)| cell(c == 0).when(c > 0, |d| d.text_color(t.dim)).child(text)))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.open_note(&path, cx);
+                    window.focus(&this.editor.focus_handle(cx));
+                }))
+        });
+        div()
+            .id("listing")
+            .size_full()
+            .pt(px(48.))
+            .px_6()
+            .pb_4()
+            .text_size(px(13.))
+            .flex()
+            .flex_col()
+            .overflow_scroll()
+            .child(div().pb_3().px_2().text_size(px(20.)).font_weight(gpui::FontWeight::BOLD).child(vault::stem(&dir)))
+            .child(div().h(ROW).flex().items_center().border_b_1().border_color(t.border).children(head))
+            .children(lines)
     }
 
     /// Grille des icônes, ouverte depuis le menu : un clic donne l'icône, la croix la retire,

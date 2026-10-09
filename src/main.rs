@@ -501,6 +501,9 @@ struct Shell {
     new_dir: Option<PathBuf>,
     dirty: bool,
     save_gen: usize,
+    /// Page liste affichée à la place de la note : le dossier, la colonne qui la trie (0 : le
+    /// nom de la note) et si c'est à rebours.
+    listing: Option<(PathBuf, usize, bool)>,
     /// Dernier remplacement dans le coffre, pour le défaire : chaque note réécrite, son texte
     /// d'avant et celui d'après.
     swapped: Vec<(PathBuf, Arc<str>, String)>,
@@ -579,6 +582,7 @@ impl Shell {
             new_dir: None,
             dirty: false,
             save_gen: 0,
+            listing: None,
             swapped: Vec::new(),
             icons: Default::default(),
             icon_pick: None,
@@ -1116,6 +1120,7 @@ impl Shell {
 
     /// Charge la note dans l'éditeur ; faux si le fichier est illisible.
     fn load_note(&mut self, path: &Path, cx: &mut Context<Self>) -> bool {
+        self.listing = None;
         if vault::is_table(path) {
             return self.open_table(path, cx);
         }
@@ -1323,6 +1328,7 @@ impl Shell {
 
     fn new_note(&mut self, text: String, cx: &mut Context<Self>) {
         self.leave(cx);
+        self.listing = None;
         self.picture = None;
         self.path = None;
         self.origin = None;
@@ -1465,9 +1471,10 @@ impl Shell {
     /// Relit depuis le disque la note affichée, réécrite en dehors de l'éditeur.
     fn reload(&mut self, cx: &mut Context<Self>) {
         if let Some(path) = self.path.clone() {
-            let preview = self.preview;
+            // Relire n'est pas ouvrir : l'aperçu reste un aperçu, la page liste reste affichée.
+            let (preview, listing) = (self.preview, self.listing.take());
             self.load_note(&path, cx);
-            self.preview = preview;
+            (self.preview, self.listing) = (preview, listing);
         }
     }
 
@@ -1932,7 +1939,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 ("Alt + drag".into(), tr("Move the window from anywhere (Linux)", "Déplacer la fenêtre depuis n'importe où (Linux)")),
                 (format!("F2 / {} / {}", m("D"), tr("Delete", "Suppr")), tr("Rename / duplicate / move to the trash", "Renommer / dupliquer / mettre à la corbeille")),
                 (format!("{} / Shift+{}", m(tr("click", "clic")), tr("click", "clic")), tr("Select several rows: move, duplicate, trash them together", "Sélectionner plusieurs lignes : les déplacer, dupliquer, jeter ensemble")),
-                (tr("Right click", "Clic droit").into(), tr("Copy the link or the path, set an icon, reveal in the file explorer…", "Copier le lien ou le chemin, donner une icône, afficher dans l'explorateur…")),
+                (tr("Right click", "Clic droit").into(), tr("Copy the link or the path, set an icon, show a folder as a list…", "Copier le lien ou le chemin, donner une icône, afficher un dossier en liste…")),
                 (tr("Drag a node", "Glisser un nœud").into(), tr("Move it in the graph, linked notes follow", "Le déplacer dans le graphe, les notes liées suivent")),
             ],
         ),
@@ -2254,7 +2261,7 @@ impl Render for Shell {
             // clic mène au commentaire, prêt à être retouché ; la coche le résout.
             // ponytail: la note est relue à chaque rendu (une recherche de `{==`) ; garder la
             // liste d'une version du texte à l'autre si de très longues notes en pâtissent.
-            let said: Vec<(String, String, usize)> = match self.picture.is_none() {
+            let said: Vec<(String, String, usize)> = match self.picture.is_none() && self.listing.is_none() {
                 true => markdown::all_comments(self.editor.read(cx).text()).into_iter().map(|(noted, said, at)| (noted.into(), said.into(), at)).collect(),
                 false => Vec::new(),
             };
@@ -2346,6 +2353,7 @@ impl Render for Shell {
             // L'image choisie dans le panneau ; elle s'efface dès que la note reprend la main.
             if self.editor.focus_handle(cx).is_focused(window) {
                 self.picture = None;
+                self.listing = None;
             }
             if self.drawing.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
                 self.drawing = None;
@@ -2355,7 +2363,9 @@ impl Render for Shell {
                 self.flush_sheet(cx);
                 self.sheet = None;
             }
+            let listing = self.listing.is_some().then(|| self.render_listing(cx));
             let note = match (&self.picture, &self.drawing) {
+                _ if listing.is_some() => note.children(listing),
                 (Some(_), _) if self.sheet.is_some() => {
                     let (_, sheet) = self.sheet.clone().unwrap();
                     sheet.update(cx, |sheet, _| sheet.sync(t, client));
@@ -3555,6 +3565,26 @@ mod tests {
         });
         fs::remove_file(root.join("Zoo A.md")).unwrap();
         fs::remove_file(root.join("Zoo B.md")).unwrap();
+        settle(cx);
+
+        // Page liste : un dossier montré en table de ses notes, une colonne par clé de leurs
+        // en-têtes ; un clic sur une colonne trie, la note choisie s'ouvre.
+        fs::create_dir_all(root.join("Livres")).unwrap();
+        fs::write(root.join("Livres/Dune.md"), "---\nauteur: Herbert\nnote: 9\n---\n# Dune\n").unwrap();
+        fs::write(root.join("Livres/Emma.md"), "---\nauteur: Austen\nnote: 10\n---\n# Emma\n").unwrap();
+        settle(cx);
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::List, Some(root.join("Livres")), window, cx));
+        let listed = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.listed().map(|(keys, rows)| (keys, rows.into_iter().map(|(_, cells)| cells[0].clone()).collect::<Vec<_>>())));
+        assert_eq!(listed(cx), Some((vec!["Note".to_string(), "auteur".into(), "note".into()], vec!["Dune".to_string(), "Emma".into()])));
+        shell.update(cx, |s, cx| s.sort_listing(1, cx));
+        assert_eq!(listed(cx).unwrap().1, ["Emma", "Dune"]);
+        shell.update(cx, |s, cx| s.sort_listing(2, cx));
+        shell.update(cx, |s, cx| s.sort_listing(2, cx));
+        assert_eq!(listed(cx).unwrap().1, ["Emma", "Dune"]);
+        shell.update(cx, |s, cx| s.open_note(&root.join("Livres/Dune.md"), cx));
+        assert!(shell.read_with(cx, |s, _| s.listing.is_none()) && text(cx).ends_with("# Dune\n"));
+        shell.update(cx, |s, cx| s.open_note(&here, cx));
+        fs::remove_dir_all(root.join("Livres")).unwrap();
         settle(cx);
 
         // Calendrier : Ctrl+Maj+J montre le mois ; les flèches changent de jour, Page bas de
