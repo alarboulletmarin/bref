@@ -11,6 +11,8 @@ mod import;
 mod markdown;
 mod nav;
 mod palette;
+mod sheet;
+mod table;
 mod update;
 mod vault;
 
@@ -37,6 +39,8 @@ use graph::{Graph, GraphEvent};
 use markdown::Link;
 use nav::{Mode, Nav, Panel};
 use palette::{Entry, Palette, PaletteEvent, Setting};
+use sheet::{Pick, Sheet, SheetEvent};
+use table::{Encoding, Format, Style};
 use vault::Note;
 
 /// Touche des raccourcis, telle qu'affichée : Cmd sur macOS, Ctrl ailleurs.
@@ -243,6 +247,9 @@ impl AssetSource for Assets {
             "d-head-end.svg" => r#"<path d="M2.5 8H13M9.5 4.5L13 8L9.5 11.5"/>"#,
             "export.svg" => r#"<path d="M8 2.5V10M5 7L8 10L11 7M3 13H13"/>"#,
             "target.svg" => r#"<circle cx="8" cy="8" r="2"/><path d="M8 2.5V5M8 11V13.5M2.5 8H5M11 8H13.5"/>"#,
+            "file-plus.svg" => {
+                r#"<path d="M4 2.5H9L12.5 6V12.5A1 1 0 0 1 11.5 13.5H4.5A1 1 0 0 1 3.5 12.5V3.5A1 1 0 0 1 4.5 2.5Z"/><path d="M8 7.7V11M6.4 9.35H9.6"/>"#
+            }
             "folder-plus.svg" => {
                 r#"<path d="M2.5 4.5A1 1 0 0 1 3.5 3.5H6.5L8 5H12.5A1 1 0 0 1 13.5 6V11.5A1 1 0 0 1 12.5 12.5H3.5A1 1 0 0 1 2.5 11.5Z"/><path d="M8 7.2V10.4M6.4 8.8H9.6"/>"#
             }
@@ -342,12 +349,14 @@ struct Shell {
     notes: Vec<Note>,
     /// Dossiers du coffre, y compris ceux qui ne contiennent aucune note.
     dirs: Vec<PathBuf>,
-    /// Images du coffre.
+    /// Fichiers du coffre qui ne sont pas des notes : images et tableaux (CSV, TSV).
     images: Vec<PathBuf>,
     /// Image affichée à la place de la note, choisie dans l'arbre ou le graphe.
     picture: Option<PathBuf>,
     /// Schéma ouvert dans son canevas, quand l'image affichée en est un.
     drawing: Option<(PathBuf, Entity<Canvas>)>,
+    /// Tableau ouvert dans sa grille, quand le fichier affiché en est un.
+    sheet: Option<(PathBuf, Entity<Sheet>)>,
     /// Menu contextuel de l'arbre, s'il est ouvert.
     menu: Option<nav::Menu>,
     /// Notes ouvertes, de la plus récente à la plus ancienne.
@@ -424,6 +433,7 @@ impl Shell {
             images: Vec::new(),
             picture: None,
             drawing: None,
+            sheet: None,
             menu: None,
             recent: Vec::new(),
             path: None,
@@ -643,6 +653,10 @@ impl Shell {
             // Ni nom, ni tag, ni lien n'ont changé, mais le texte peut avoir : la recherche le suit.
             self.notes = notes;
         }
+        // Le tableau affiché a été réécrit ailleurs : il est relu s'il n'attend rien ici.
+        if let Some((_, sheet)) = &self.sheet {
+            sheet.update(cx, |sheet, cx| sheet.reload_if_changed(cx));
+        }
         // La note affichée a été réécrite ailleurs : on la relit. Sans modification
         // en attente ici (l'appelant s'en assure), rien n'est perdu.
         if let Some(path) = &self.path
@@ -809,7 +823,7 @@ impl Shell {
         let names = self.notes.iter().map(|n| n.name.clone()).collect();
         self.editor.update(cx, |e, _| {
             e.set_notes(names);
-            e.set_images(&self.images);
+            e.set_images(&vault::pictures(&self.images));
         });
     }
 
@@ -842,6 +856,9 @@ impl Shell {
 
     /// Charge la note dans l'éditeur ; faux si le fichier est illisible.
     fn load_note(&mut self, path: &Path, cx: &mut Context<Self>) -> bool {
+        if vault::is_table(path) {
+            return self.open_table(path, cx);
+        }
         // Une image prend la place de la note, qui reste chargée dessous.
         if vault::is_image(path) {
             self.picture = Some(path.to_path_buf());
@@ -882,6 +899,121 @@ impl Shell {
         }
     }
 
+    /// Un tableau prend la place de la note, comme une image ; la note reste chargée dessous.
+    fn open_table(&mut self, path: &Path, cx: &mut Context<Self>) -> bool {
+        self.picture = Some(path.to_path_buf());
+        if self.sheet.as_ref().is_some_and(|(open, _)| open == path) {
+            cx.notify();
+            return false;
+        }
+        self.flush_sheet(cx);
+        self.sheet = None;
+        match sheet::load(path, None) {
+            Ok(loaded) => {
+                let theme = self.theme;
+                let sheet = cx.new(|cx| Sheet::new(path.to_path_buf(), loaded, theme, cx));
+                cx.subscribe(&sheet, Self::on_sheet_event).detach();
+                self.sheet = Some((path.to_path_buf(), sheet));
+                self.error = None;
+            }
+            Err(e) => {
+                self.picture = None;
+                self.error = Some(e);
+            }
+        }
+        cx.notify();
+        false
+    }
+
+    /// Le tableau affiché, s'il y en a un.
+    fn shown_sheet(&self) -> Option<Entity<Sheet>> {
+        self.sheet.as_ref().filter(|(path, _)| self.picture.as_ref() == Some(path)).map(|(_, s)| s.clone())
+    }
+
+    fn flush_sheet(&mut self, cx: &mut Context<Self>) {
+        if let Some((_, sheet)) = &self.sheet {
+            sheet.update(cx, |sheet, cx| sheet.flush(cx));
+        }
+    }
+
+    fn on_sheet_event(&mut self, _: Entity<Sheet>, event: &SheetEvent, cx: &mut Context<Self>) {
+        match event {
+            SheetEvent::Error(message) => self.error = Some(message.clone()),
+            // Un fichier est apparu à côté du tableau : l'arbre le montre.
+            SheetEvent::Exported => {
+                if let Some(root) = self.vault.clone() {
+                    let (notes, dirs, images) = vault::rescan(&root, &self.notes);
+                    self.sync(notes, dirs, images, cx);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Liste de choix d'un réglage du tableau affiché (délimiteur, encodage, copie, export).
+    fn choose_table(&mut self, pick: Pick, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(sheet) = self.shown_sheet() else {
+            return;
+        };
+        if pick == Pick::Header {
+            return sheet.update(cx, |sheet, cx| sheet.toggle_header(cx));
+        }
+        let auto = tr("Detect automatically", "Détecter automatiquement");
+        let format = sheet.read(cx).format();
+        let styles = [
+            ("TSV", Style::Tsv),
+            ("CSV", Style::Csv(format.delimiter)),
+            ("Markdown", Style::Markdown),
+            ("JSON", Style::Json),
+        ];
+        let (options, current): (Vec<String>, String) = match pick {
+            Pick::Delimiter => (
+                std::iter::once(auto.to_string()).chain(table::DELIMITERS.map(sheet::delimiter_option)).collect(),
+                sheet::delimiter_option(format.delimiter),
+            ),
+            Pick::Encoding => (
+                std::iter::once(auto.to_string()).chain(table::Encoding::ALL.map(|e| e.label().to_string())).collect(),
+                format.encoding.label().to_string(),
+            ),
+            _ => (styles.iter().map(|(name, _)| name.to_string()).collect(), styles[0].0.to_string()),
+        };
+        let theme = self.theme;
+        let palette = cx.new(|cx| Palette::choose(pick.label(), options, &current, theme, cx));
+        cx.subscribe_in(&palette, window, move |this, _, event, window, cx| {
+            let PaletteEvent::Submit(name) = event else {
+                // Pas d'aperçu pour un tableau : seul le choix validé compte.
+                if !matches!(event, PaletteEvent::Preview(_)) {
+                    this.palette = None;
+                    window.focus(&sheet.focus_handle(cx));
+                    cx.notify();
+                }
+                return;
+            };
+            this.palette = None;
+            window.focus(&sheet.focus_handle(cx));
+            let style = styles.iter().find(|(label, _)| label == name).map(|&(_, style)| style);
+            sheet.update(cx, |sheet, cx| match pick {
+                Pick::Delimiter | Pick::Encoding if name == auto => sheet.reformat(None, cx),
+                Pick::Delimiter => {
+                    let delimiter = table::DELIMITERS.into_iter().find(|&d| sheet::delimiter_option(d) == *name);
+                    sheet.reformat(delimiter.map(|delimiter| Format { delimiter, ..format }), cx)
+                }
+                Pick::Encoding => {
+                    let encoding = Encoding::from_label(name);
+                    sheet.reformat(encoding.map(|encoding| Format { encoding, ..format }), cx)
+                }
+                Pick::CopyAs => style.into_iter().for_each(|style| sheet.copy_as(style, cx)),
+                Pick::Export => style.into_iter().for_each(|style| sheet.export(style, cx)),
+                Pick::Header => {}
+            });
+            cx.notify();
+        })
+        .detach();
+        window.focus(&palette.focus_handle(cx));
+        self.palette = Some(palette);
+        cx.notify();
+    }
+
     fn open_note(&mut self, path: &Path, cx: &mut Context<Self>) {
         if self.load_note(path, cx) {
             self.preview = false;
@@ -912,11 +1044,16 @@ impl Shell {
 
     /// Nouvelle note, rangée dans le dossier sélectionné quand l'arbre est affiché.
     fn new_note_here(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.new_note_in(self.nav.target_dir(), window, cx);
+    }
+
+    /// Nouvelle note rangée dans `dir` ; `None` : à la racine du coffre.
+    fn new_note_in(&mut self, dir: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() {
             return;
         }
         self.new_note(String::new(), cx);
-        self.new_dir = self.nav.target_dir();
+        self.new_dir = dir;
         if self.nav.panel == Panel::Full {
             self.nav.panel = Panel::Split;
         }
@@ -990,6 +1127,7 @@ impl Shell {
     // ponytail: écriture synchrone sur le thread UI (quelques Ko, < 1 ms) ;
     // passer en tâche de fond si les notes deviennent très grosses.
     fn flush(&mut self, cx: &mut Context<Self>) {
+        self.flush_sheet(cx);
         let Some(root) = self.vault.clone() else {
             return;
         };
@@ -1219,7 +1357,8 @@ impl Shell {
         let theme = self.theme;
         let updates = self.prefs.updates;
         let installable = self.update.as_ref().filter(|r| r.asset.is_some()).map(|r| r.version.clone());
-        let palette = cx.new(|cx| Palette::new(entries, query, theme, cx).with_updates(updates, installable));
+        let table = self.shown_sheet().is_some();
+        let palette = cx.new(|cx| Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table));
         cx.subscribe_in(&palette, window, |this, _, event, window, cx| {
             this.palette = None;
             window.focus(&this.editor.focus_handle(cx));
@@ -1229,6 +1368,8 @@ impl Shell {
                 PaletteEvent::ChangeVault => this.choose_vault(window, cx),
                 PaletteEvent::Help => this.set_help(true, window, cx),
                 PaletteEvent::NewDiagram => this.new_diagram(window, cx),
+                PaletteEvent::NewFolder => this.new_folder(window, cx),
+                PaletteEvent::Table(pick) => this.choose_table(*pick, window, cx),
                 PaletteEvent::ImportDiagram => this.import_diagram(window, cx),
                 PaletteEvent::Setting(setting) => this.choose_setting(*setting, window, cx),
                 PaletteEvent::ToggleUpdates => this.toggle_updates(cx),
@@ -1270,7 +1411,8 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (m("M"), tr("Panel on the whole window", "Panneau en pleine fenêtre")),
                 (tr("Arrows / Tab", "Flèches / Tab").into(), tr("Select and preview / linked notes (graph)", "Sélectionner en aperçu / notes liées (graphe)")),
                 (tr("Enter / Esc", "Entrée / Échap").into(), tr("Open the note / back to the note", "Ouvrir la note / revenir à la note")),
-                (m("Shift+N"), tr("New folder", "Nouveau dossier")),
+                (m("Shift+N"), tr("New folder (also in the palette)", "Nouveau dossier (aussi dans la palette)")),
+                ("Alt + drag".into(), tr("Move the window from anywhere (Linux)", "Déplacer la fenêtre depuis n'importe où (Linux)")),
                 (format!("F2 / {} / {}", m("D"), tr("Delete", "Suppr")), tr("Rename / duplicate / move to the trash", "Renommer / dupliquer / mettre à la corbeille")),
                 (format!("{} / Shift+{}", m(tr("click", "clic")), tr("click", "clic")), tr("Select several rows: move, duplicate, trash them together", "Sélectionner plusieurs lignes : les déplacer, dupliquer, jeter ensemble")),
                 (tr("Right click", "Clic droit").into(), tr("Copy the link or the path, reveal in the file explorer…", "Copier le lien ou le chemin, afficher dans l'explorateur…")),
@@ -1290,6 +1432,17 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (tr("Wheel / + - 0", "Molette / + - 0").into(), tr("Move the view / zoom in, out, fit all", "Déplacer la vue / zoomer, dézoomer, tout cadrer")),
                 ("![](Schéma.svg)".into(), tr("Show the diagram in a note", "Afficher le schéma dans une note")),
                 (format!("{} › import", m("P")), tr("Bring in an Excalidraw or draw.io file", "Reprendre un fichier Excalidraw ou draw.io")),
+            ],
+        ),
+        (
+            tr("CSV tables", "Tableaux CSV"),
+            vec![
+                (".csv .tsv".into(), tr("Opens in a grid; encoding and delimiter are detected, written straight into the file", "S'ouvre dans une grille ; encodage et délimiteur sont devinés, écrit directement dans le fichier")),
+                (tr("Arrows, Tab", "Flèches, Tab").into(), tr("Move; with Shift (or drag), select a range; click a row number or a header", "Se déplacer ; avec Maj (ou en glissant), sélectionner une plage ; clic sur un numéro ou un en-tête")),
+                (tr("Type, Enter, F2", "Taper, Entrée, F2").into(), tr("Replace the cell / validate and go down / open the cell; Esc cancels", "Remplacer la cellule / valider et descendre / ouvrir la cellule ; Échap annule")),
+                (format!("{} / {} / {}", m("C"), m("X"), m("V")), tr("Copy as tab-separated text / cut / paste cells from a spreadsheet, Markdown or CSV", "Copier en texte à tabulations / couper / coller des cellules d'un tableur, de Markdown ou de CSV")),
+                (format!("{} / {}", m("Enter"), m("Delete")), tr("Insert a row (with Shift: above) / remove the selected rows", "Insérer une ligne (avec Maj : au-dessus) / retirer les lignes sélectionnées")),
+                (format!("{} › table", m("P")), tr("Delimiter, encoding, header row, copy as…, export (CSV, TSV, Markdown, JSON)", "Délimiteur, encodage, en-tête, copier en…, exporter (CSV, TSV, Markdown, JSON)")),
             ],
         ),
         (
@@ -1493,8 +1646,9 @@ impl Render for Shell {
         let controls = window.window_controls();
         // Pastille flottante en haut à droite de la note : un fond et un bord fins la
         // distinguent du texte, ni flou ni transparence. Elle sert aussi de poignée de
-        // déplacement. ponytail: seule la pastille déplace la fenêtre, une bande
-        // transparente sur le haut de la note gênerait les premières lignes.
+        // déplacement, comme l'en-tête du panneau, le vide du rail et la barre du tableau ;
+        // Alt + glisser déplace depuis n'importe où. ponytail: pas de bande transparente
+        // sur le haut de la note, elle gênerait les premières lignes.
         let pill = div()
             .absolute()
             .top_2()
@@ -1515,14 +1669,7 @@ impl Render for Shell {
                 spread_radius: px(0.),
             }])
             .occlude()
-            .on_mouse_down(MouseButton::Left, |e, window, _| {
-                if e.click_count == 2 {
-                    window.zoom_window()
-                } else {
-                    window.start_window_move()
-                }
-            })
-            .on_mouse_down(MouseButton::Right, |e, window, _| window.show_window_menu(e.position))
+            .map(drag_window)
             .when(controls.minimize, |d| {
                 d.child(icon_button("minimize", "minimize.svg").on_click(|_, window, _| window.minimize_window()))
             })
@@ -1594,7 +1741,16 @@ impl Render for Shell {
                 self.drawing = None;
             }
             let note = div().flex_1().min_w_0().h_full().relative();
+            if self.sheet.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
+                self.flush_sheet(cx);
+                self.sheet = None;
+            }
             let note = match (&self.picture, &self.drawing) {
+                (Some(_), _) if self.sheet.is_some() => {
+                    let (_, sheet) = self.sheet.clone().unwrap();
+                    sheet.update(cx, |sheet, _| sheet.sync(t, client));
+                    note.child(sheet)
+                }
                 (Some(_), Some((_, canvas))) => {
                     canvas.update(cx, |canvas, _| canvas.sync(t));
                     note.child(canvas.clone())
@@ -1742,6 +1898,11 @@ impl Render for Shell {
                     }
                 }),
             )
+            .on_action(cx.listener(|this, _: &sheet::PickDelimiter, window, cx| this.choose_table(Pick::Delimiter, window, cx)))
+            .on_action(cx.listener(|this, _: &sheet::PickEncoding, window, cx| this.choose_table(Pick::Encoding, window, cx)))
+            .on_action(cx.listener(|this, _: &sheet::PickHeader, window, cx| this.choose_table(Pick::Header, window, cx)))
+            .on_action(cx.listener(|this, _: &sheet::PickCopyAs, window, cx| this.choose_table(Pick::CopyAs, window, cx)))
+            .on_action(cx.listener(|this, _: &sheet::PickExport, window, cx| this.choose_table(Pick::Export, window, cx)))
             .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
             .on_action(cx.listener(|this, _: &ChooseTheme, window, cx| {
@@ -1767,6 +1928,16 @@ impl Render for Shell {
         // La marge transparente porte l'ombre et sert de poignée de redimensionnement.
         div()
             .size_full()
+            // Alt + glisser, n'importe où : déplace la fenêtre (la phase de capture passe
+            // avant l'éditeur, qui n'utilise pas Alt avec la souris).
+            .when(client, |d| {
+                d.capture_any_mouse_down(|e, window, cx| {
+                    if e.button == MouseButton::Left && e.modifiers.alt {
+                        window.start_window_move();
+                        cx.stop_propagation();
+                    }
+                })
+            })
             .when(framed, |d| {
                 d.p(SHADOW)
                     .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
@@ -1801,6 +1972,20 @@ impl Render for Shell {
     }
 }
 
+/// Fait d'un élément une poignée de la fenêtre, là où l'app dessine sa barre de titre
+/// (Linux) : glisser la déplace, double-clic l'agrandit, clic droit ouvre le menu du système.
+pub fn drag_window<E: InteractiveElement>(element: E) -> E {
+    element
+        .on_mouse_down(MouseButton::Left, |e, window, _| {
+            if e.click_count == 2 {
+                window.zoom_window()
+            } else {
+                window.start_window_move()
+            }
+        })
+        .on_mouse_down(MouseButton::Right, |e, window, _| window.show_window_menu(e.position))
+}
+
 /// Bord ou coin de fenêtre sous le pointeur, dans une marge de quelques pixels.
 fn resize_edge(pos: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeEdge> {
     let m = SHADOW;
@@ -1826,6 +2011,7 @@ fn bind_keys(cx: &mut App) {
     let p = Some("Palette");
     let n = Some("Nav");
     let c = Some("Canvas");
+    let sh = Some("Sheet");
     // `secondary` = Cmd sur macOS, Ctrl ailleurs ; les mots se parcourent avec Alt sur macOS.
     let word = if cfg!(target_os = "macos") { "alt" } else { "ctrl" };
     cx.bind_keys([
@@ -1860,6 +2046,40 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-v", canvas::Paste, c),
         KeyBinding::new("enter", canvas::Confirm, c),
         KeyBinding::new("escape", canvas::Cancel, c),
+        // Tableau (CSV, TSV) : flèches, sélection avec Maj, saisie, presse-papiers, annuler.
+        KeyBinding::new("left", sheet::Left, sh),
+        KeyBinding::new("right", sheet::Right, sh),
+        KeyBinding::new("up", sheet::Up, sh),
+        KeyBinding::new("down", sheet::Down, sh),
+        KeyBinding::new("shift-left", sheet::ExtendLeft, sh),
+        KeyBinding::new("shift-right", sheet::ExtendRight, sh),
+        KeyBinding::new("shift-up", sheet::ExtendUp, sh),
+        KeyBinding::new("shift-down", sheet::ExtendDown, sh),
+        KeyBinding::new("pageup", sheet::PageUp, sh),
+        KeyBinding::new("pagedown", sheet::PageDown, sh),
+        KeyBinding::new("home", sheet::RowStart, sh),
+        KeyBinding::new("end", sheet::RowEnd, sh),
+        KeyBinding::new("secondary-home", sheet::Origin, sh),
+        KeyBinding::new("secondary-end", sheet::Corner, sh),
+        KeyBinding::new("secondary-up", sheet::FirstRow, sh),
+        KeyBinding::new("secondary-down", sheet::LastRow, sh),
+        KeyBinding::new("tab", sheet::Next, sh),
+        KeyBinding::new("shift-tab", sheet::Previous, sh),
+        KeyBinding::new("enter", sheet::Enter, sh),
+        KeyBinding::new("f2", sheet::Edit, sh),
+        KeyBinding::new("escape", sheet::Cancel, sh),
+        KeyBinding::new("backspace", sheet::Backspace, sh),
+        KeyBinding::new("delete", sheet::Delete, sh),
+        KeyBinding::new("secondary-c", sheet::Copy, sh),
+        KeyBinding::new("secondary-x", sheet::Cut, sh),
+        KeyBinding::new("secondary-v", sheet::Paste, sh),
+        KeyBinding::new("secondary-a", sheet::SelectAll, sh),
+        KeyBinding::new("secondary-z", sheet::Undo, sh),
+        KeyBinding::new("secondary-shift-z", sheet::Redo, sh),
+        KeyBinding::new("secondary-y", sheet::Redo, sh),
+        KeyBinding::new("secondary-enter", sheet::InsertBelow, sh),
+        KeyBinding::new("secondary-shift-enter", sheet::InsertAbove, sh),
+        KeyBinding::new("secondary-delete", sheet::DeleteRows, sh),
         KeyBinding::new("secondary-e", nav::ShowTree, Some("Shell")),
         KeyBinding::new("secondary-r", nav::ShowRecent, Some("Shell")),
         KeyBinding::new("secondary-g", nav::ShowGraph, Some("Shell")),
@@ -2941,6 +3161,423 @@ mod tests {
         assert!(fs::read(file.with_extension("png")).unwrap().starts_with(b"\x89PNG"));
         assert!(shell.read_with(cx, |s, _| s.images.contains(&file.with_extension("png")) && s.error.is_none()));
 
+        // Le bouton « nouvelle note » de l'arbre range à la racine du coffre, même avec un dossier sélectionné.
+        shell.update_in(cx, |s, _, cx| {
+            s.nav.panel = Panel::Split;
+            s.nav.mode = Mode::Tree;
+            s.nav.sel = Some(root.join("Projets"));
+            s.flush(cx);
+        });
+        shell.update_in(cx, |s, window, cx| s.new_note_in(None, window, cx));
+        cx.simulate_input("# Racine");
+        shell.update(cx, |s, cx| s.flush(cx));
+        assert!(root.join("Racine.md").is_file() && !root.join("Projets/Racine.md").exists());
+
+        // Ctrl+P : « Nouveau dossier » ouvre le champ de saisie du nom, le dossier naît dans le coffre.
+        shell.update(cx, |s, _| s.nav.sel = None);
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("nouveau dossier");
+        cx.simulate_keystrokes("down enter");
+        cx.simulate_input("Archives");
+        cx.simulate_keystrokes("enter");
+        assert!(root.join("Archives").is_dir(), "dossier créé depuis la palette");
+
+        // Tableau : un CSV en Windows-1252 séparé par « ; » s'ouvre dans une grille, s'édite et se réécrit
+        // dans le même encodage, les lignes intactes octet pour octet.
+        let csv = root.join("data.csv");
+        fs::write(&csv, b"nom;age\nAna\xefs;31\nBob;27\n").unwrap();
+        shell.update(cx, |s, cx| {
+            let (notes, dirs, images) = vault::scan(&root);
+            s.sync(notes, dirs, images, cx);
+            s.open_note(&csv, cx);
+        });
+        let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("le tableau est affiché"));
+        let format = sheet.read_with(cx, |sheet, _| sheet.format());
+        assert_eq!((format.delimiter, format.encoding, format.header), (b';', table::Encoding::Windows1252, true));
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cell(1, 0).to_string()), "Anaïs");
+        // Au premier affichage la vue n'est pas encore mesurée, et GPUI ne redessine pas pour un `notify`
+        // fait pendant le dessin : la grille doit déjà montrer toute la fenêtre, pas quelques cellules.
+        let (lines, columns) = sheet.update(cx, |sheet, _| sheet.unmeasured());
+        assert_eq!((lines, columns), (1..3, 0..2));
+        shell.update_in(cx, |s, window, cx| {
+            let sheet = s.shown_sheet().unwrap();
+            window.focus(&sheet.focus_handle(cx));
+        });
+        let cell = |cx: &mut gpui::VisualTestContext, r, c| sheet.read_with(cx, |sheet, _| sheet.table().cell(r, c).to_string());
+        // Taper remplace la cellule, Entrée valide et descend.
+        cx.simulate_keystrokes("down right");
+        cx.simulate_input("32");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(cell(cx, 1, 1), "32");
+        // Maj + flèches sélectionne une plage ; Ctrl+C la copie en TSV, Ctrl+V la colle ailleurs.
+        cx.simulate_keystrokes("up shift-left shift-down");
+        cx.simulate_keystrokes("secondary-c");
+        assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("Anaïs\t32\nBob\t27"));
+        cx.simulate_keystrokes("down");
+        cx.simulate_keystrokes("secondary-v");
+        // Collée au coin de la sélection (ligne 2), la grille ajoute la ligne qui manque.
+        assert_eq!((cell(cx, 2, 0), cell(cx, 3, 1)), ("Anaïs".into(), "27".into()));
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().rows()), 4);
+        // Annuler défait le collage d'un coup, lignes ajoutées comprises.
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().rows()), 3);
+        // L'écriture suit après un court délai ; seule la ligne touchée a changé.
+        cx.executor().advance_clock(Duration::from_secs(1));
+        cx.run_until_parked();
+        assert_eq!(fs::read(&csv).unwrap(), b"nom;age\nAna\xefs;32\nBob;27\n");
+        // Une copie en Markdown se colle dans une note ; l'export crée un fichier à côté du tableau.
+        // Sur une seule cellule, ils prennent tout le tableau.
+        cx.simulate_keystrokes("secondary-home");
+        sheet.update(cx, |sheet, cx| sheet.copy_as(table::Style::Markdown, cx));
+        assert_eq!(
+            cx.read_from_clipboard().and_then(|c| c.text()).as_deref().map(|t| t.lines().next().unwrap_or("").to_string()),
+            Some("| nom | age |".to_string())
+        );
+        sheet.update(cx, |sheet, cx| sheet.export(table::Style::Json, cx));
+        assert!(root.join("data.json").is_file());
+        // Sélectionner une colonne, une ligne ou tout ne fait pas défiler la vue (elle ne saute pas à la dernière ligne).
+        let long = root.join("long.csv");
+        fs::write(&long, (0..400).map(|i| format!("{i};a{i};b{i};c{i}\n")).collect::<String>()).unwrap();
+        shell.update(cx, |s, cx| {
+            let (notes, dirs, images) = vault::scan(&root);
+            s.sync(notes, dirs, images, cx);
+            s.open_note(&long, cx);
+        });
+        cx.run_until_parked();
+        let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
+        sheet.update(cx, |sheet, _| sheet.scroll_by(0., 2000.));
+        let before = sheet.read_with(cx, |sheet, _| sheet.view_state().0);
+        assert!(before.1 > 1000., "la vue est bien descendue : {before:?}");
+        for (what, n, cells) in [("col", 2, (0..400, 2..3)), ("row", 300, (300..301, 0..4)), ("all", 0, (0..400, 0..4))] {
+            sheet.update(cx, |sheet, cx| sheet.pick(what, n, cx));
+            let (scroll, selected) = sheet.read_with(cx, |sheet, _| sheet.view_state());
+            assert_eq!((scroll, selected), (before, cells), "{what}");
+        }
+        shell.update(cx, |s, cx| s.open_note(&csv, cx));
+        cx.run_until_parked();
+        let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
+
+        // Changer de délimiteur relit le fichier ainsi, et le choix est retenu.
+        sheet.update(cx, |sheet, cx| sheet.reformat(Some(table::Format { delimiter: b',', ..sheet.format() }), cx));
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cols()), 1);
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cell(0, 0).to_string()), "nom;age");
+        shell.update(cx, |s, cx| {
+            s.open_note(&root.join("Racine.md"), cx);
+        });
+        shell.update(cx, |s, cx| s.open_note(&csv, cx));
+        let delimiter = shell.read_with(cx, |s, cx| s.shown_sheet().unwrap().read(cx).format().delimiter);
+        assert_eq!(delimiter, b',');
+
+        // Dans une note, des cellules de tableau sélectionnées se copient en TSV, que les tableurs collent.
+        shell.update_in(cx, |s, window, cx| {
+            s.new_note("| a | b |\n| --- | --- |\n| 1 | 2 |\n".into(), cx);
+            window.focus(&s.editor.focus_handle(cx));
+        });
+        cx.simulate_keystrokes("secondary-a secondary-c");
+        assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("a\tb\n1\t2"));
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Ouvre chaque fichier du dossier `BREF_CSV_DIR` dans le tableau (copié, rien n'est modifié chez
+    /// l'utilisateur), chronomètre l'ouverture, puis enchaîne des gestes au hasard : un plantage se voit ici.
+    /// `BREF_CSV_DIR=<dossier> cargo test --release --locked sheet_fuzz -- --ignored --nocapture`.
+    #[gpui::test]
+    #[ignore]
+    fn sheet_fuzz(cx: &mut TestAppContext) {
+        let Ok(from) = std::env::var("BREF_CSV_DIR") else { return };
+        let root = std::env::temp_dir().join(format!("bref-fuzz-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
+            unsafe { std::env::set_var(key, root.join(".config")) };
+        }
+        let mut files = Vec::new();
+        for entry in fs::read_dir(&from).unwrap().flatten() {
+            let to = root.join(entry.file_name());
+            fs::copy(entry.path(), &to).unwrap();
+            if vault::is_table(&to) {
+                files.push(to);
+            }
+        }
+        files.sort();
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        let mut seed = 0x2545F4914F6CDD1Du64;
+        let mut next = move |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        let keys = "left right up down shift-left shift-right shift-up shift-down pageup pagedown home end secondary-home secondary-end secondary-up secondary-down tab shift-tab enter f2 escape backspace delete secondary-c secondary-x secondary-v secondary-a secondary-z secondary-shift-z secondary-enter secondary-shift-enter secondary-delete".split(' ').collect::<Vec<_>>();
+        let texts = ["a", "é", "x y", "€", "☃", "😀e\u{301}", ",", "\"", "12"];
+        for file in files {
+            let start = Instant::now();
+            shell.update_in(cx, |s, window, cx| {
+                s.open_note(&file, cx);
+                if let Some(sheet) = s.shown_sheet() {
+                    window.focus(&sheet.focus_handle(cx));
+                }
+            });
+            cx.run_until_parked();
+            println!("{:?} : ouverture + affichage {:?}", file.file_name().unwrap(), start.elapsed());
+            let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("tableau affiché"));
+            let mut worst = Duration::ZERO;
+            for step in 0..600 {
+                let begin = Instant::now();
+                match next(10) {
+                    0..=4 => cx.simulate_keystrokes(keys[next(keys.len())]),
+                    5 | 6 => cx.simulate_input(texts[next(texts.len())]),
+                    7 => {
+                        let at = point(px(330. + next(520) as f32), px(60. + next(640) as f32));
+                        let mods = if next(2) == 0 { gpui::Modifiers::none() } else { gpui::Modifiers::shift() };
+                        cx.simulate_mouse_down(at, gpui::MouseButton::Left, mods);
+                        let to = point(px(330. + next(520) as f32), px(60. + next(640) as f32));
+                        cx.simulate_mouse_move(to, gpui::MouseButton::Left, mods);
+                        cx.simulate_mouse_up(to, gpui::MouseButton::Left, mods);
+                    }
+                    8 => cx.simulate_event(gpui::ScrollWheelEvent {
+                        position: point(px(700.), px(300.)),
+                        delta: gpui::ScrollDelta::Pixels(point(px(next(200) as f32 - 100.), px(next(4000) as f32 - 2000.))),
+                        ..Default::default()
+                    }),
+                    _ => match next(5) {
+                        0 => sheet.update(cx, |s, cx| s.toggle_header(cx)),
+                        1 => sheet.update(cx, |s, cx| s.copy_as(table::Style::Json, cx)),
+                        2 => sheet.update(cx, |s, cx| s.reformat(Some(table::Format { delimiter: table::DELIMITERS[next(6)], ..s.format() }), cx)),
+                        3 => sheet.update(cx, |s, cx| s.export(table::Style::Markdown, cx)),
+                        _ => sheet.update(cx, |s, cx| s.reformat(Some(table::Format { encoding: table::Encoding::ALL[next(6)], ..s.format() }), cx)),
+                    },
+                }
+                cx.run_until_parked();
+                worst = worst.max(begin.elapsed());
+                assert!(step < 10_000);
+            }
+            println!("   geste le plus lent : {worst:?}");
+        }
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Un gros CSV transformé : copie et export dans chaque format, ouverture de la note Markdown obtenue,
+    /// collage du texte dans une note. `BREF_CSV=<fichier> cargo test --release --locked sheet_convert -- --ignored --nocapture`.
+    #[gpui::test]
+    #[ignore]
+    fn sheet_convert(cx: &mut TestAppContext) {
+        let Ok(from) = std::env::var("BREF_CSV") else { return };
+        let root = std::env::temp_dir().join(format!("bref-convert-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
+            unsafe { std::env::set_var(key, root.join(".config")) };
+        }
+        let file = root.join("gros.csv");
+        fs::copy(&from, &file).unwrap();
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        shell.update_in(cx, |s, window, cx| {
+            s.open_note(&file, cx);
+            window.focus(&s.shown_sheet().unwrap().focus_handle(cx));
+        });
+        cx.run_until_parked();
+        let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
+        cx.simulate_keystrokes("secondary-a");
+        for (name, style) in [("TSV", table::Style::Tsv), ("CSV", table::Style::Csv(b',')), ("Markdown", table::Style::Markdown), ("JSON", table::Style::Json)] {
+            let start = Instant::now();
+            sheet.update(cx, |s, cx| s.copy_as(style, cx));
+            let copied = start.elapsed();
+            let len = cx.read_from_clipboard().and_then(|c| c.text()).map_or(0, |t| t.len());
+            let start = Instant::now();
+            sheet.update(cx, |s, cx| s.export(style, cx));
+            cx.run_until_parked();
+            println!("{name:9} copie {copied:?} ({} Mo) · export {:?}", len >> 20, start.elapsed());
+        }
+        let exported = root.join(format!("gros{}.md", tr(" (selection)", " (sélection)")));
+        println!("note exportée : {} Mo", fs::metadata(&exported).map_or(0, |m| m.len()) >> 20);
+        let start = Instant::now();
+        shell.update(cx, |s, cx| {
+            let (notes, dirs, images) = vault::scan(&root);
+            s.sync(notes, dirs, images, cx);
+        });
+        println!("rescan du coffre avec cette note : {:?}", start.elapsed());
+        let start = Instant::now();
+        shell.update_in(cx, |s, window, cx| {
+            s.open_note(&exported, cx);
+            window.focus(&s.editor.focus_handle(cx));
+        });
+        cx.run_until_parked();
+        println!("ouverture de la note Markdown : {:?}", start.elapsed());
+        let start = Instant::now();
+        cx.simulate_input("a");
+        cx.run_until_parked();
+        println!("une frappe dedans : {:?}", start.elapsed());
+        let start = Instant::now();
+        cx.simulate_keystrokes("down");
+        cx.run_until_parked();
+        println!("flèche bas dedans : {:?}", start.elapsed());
+        // Coller le TSV d'un gros tableau dans une note neuve.
+        let tsv: String = (0..300_000).map(|i| format!("{i}\tProduit {}\t{}\n", i % 977, i % 99)).collect();
+        cx.write_to_clipboard(ClipboardItem::new_string(tsv));
+        shell.update_in(cx, |s, window, cx| {
+            s.new_note(String::new(), cx);
+            window.focus(&s.editor.focus_handle(cx));
+        });
+        let start = Instant::now();
+        cx.simulate_keystrokes("secondary-v");
+        cx.run_until_parked();
+        println!("coller 300 000 lignes de TSV dans une note : {:?}", start.elapsed());
+        for what in ["a", "down", "up", "enter"] {
+            let start = Instant::now();
+            if what.len() == 1 { cx.simulate_input(what) } else { cx.simulate_keystrokes(what) }
+            cx.run_until_parked();
+            println!("   dans la note collée, {what:6} : {:?}", start.elapsed());
+        }
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Des milliers de modifications au hasard sur des notes variées : chaque mise en page reprise est
+    /// comparée (dans `Editor::layout`, en test) à une mise en page complète.
+    #[gpui::test]
+    fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-reuse-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
+            unsafe { std::env::set_var(key, root.join(".config")) };
+        }
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        let mut seed = std::env::var("BREF_FUZZ_SEED").ok().and_then(|n| n.parse().ok()).unwrap_or(0x9E3779B97F4A7C15u64);
+        let steps: usize = std::env::var("BREF_FUZZ_STEPS").ok().and_then(|n| n.parse().ok()).unwrap_or(250);
+        let mut next = move |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        let table = |rows: usize| {
+            let body: String = (0..rows).map(|i| format!("| {i} | produit {} | note, {i} |\n", i % 7)).collect();
+            format!("| id | produit | note |\n| --- | --- | --- |\n{body}")
+        };
+        let docs = [
+            format!("# Titre\n\nUn paragraphe.\n\n- liste un\n- liste deux\n\n> [!NOTE]\n> une note\n> suite\n\n{}\ntexte après\n\n1. un\n2. deux\n", table(6)),
+            format!("# Gros\n\navant\n\n{}\naprès\n\n> citation\n\n- fin\n", table(grid::BIG + 40)),
+            "# Code\n\n```rust\nfn main() {}\n```\n\ntexte\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n".to_string(),
+            "texte seul\n\n---\n\n## deux\n\n- [ ] tâche\n- [x] faite\n".to_string(),
+        ];
+        let pieces = ["a", "é", " ", "| x | y |", "> [!NOTE]", "> q", "```", "- ", "1. ", "# ", "$$", "---", "![](x.png)", "|", "texte", "\n", "\n\n"];
+        let keys = ["enter", "backspace", "delete", "left", "right", "up", "down", "home", "end", "tab"];
+        let (mut full, mut reused, mut inside) = (0, 0, 0);
+        for (n, doc) in docs.into_iter().enumerate() {
+            let len = doc.len();
+            // Un ``` ou un `$$` tapé change le contexte de tout ce qui suit : sur le gros tableau, on les évite
+            // pour que le test passe par l'intérieur du tableau.
+            // Sur le gros tableau, on reste à l'intérieur de ses lignes : de quoi ne pas le couper en deux.
+            let pieces: Vec<&str> = if n == 1 { vec!["a", "é", " ", "texte", "x y", "12", ","] } else { pieces.to_vec() };
+            let keys: Vec<&str> = if n == 1 { vec!["left", "right", "up", "down", "end", "backspace"] } else { keys.to_vec() };
+            shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load(doc, len / 2, cx)));
+            cx.run_until_parked();
+            shell.update_in(cx, |s, window, cx| window.focus(&s.editor.focus_handle(cx)));
+            for _ in 0..steps {
+                let size = shell.read_with(cx, |s, cx| s.editor.read(cx).text().len());
+                match next(8) {
+                    0 => {
+                        let at = next(size + 1);
+                        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.place_cursor(at, cx)));
+                    }
+                    1 | 2 => cx.simulate_keystrokes(keys[next(keys.len())]),
+                    _ => cx.simulate_input(pieces[next(pieces.len())]),
+                }
+                cx.run_until_parked();
+            }
+            (full, reused, inside) = shell.read_with(cx, |s, cx| s.editor.read(cx).layouts());
+        }
+        println!("mises en page : {full} complètes, {reused} reprises, dont {inside} dans un très gros tableau");
+        assert!(inside > 20 || steps < 200, "peu de reprises dans un très gros tableau : {inside}");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Coût d'une note qui contient un tableau Markdown de n lignes.
+    #[gpui::test]
+    #[ignore]
+    fn md_table_scale(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-mdscale-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
+            unsafe { std::env::set_var(key, root.join(".config")) };
+        }
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        for n in std::env::var("BREF_ROWS").ok().map_or(vec![500usize, 1000, 2000, 5000, 10000, 20000, 50000], |v| v.split(',').filter_map(|n| n.parse().ok()).collect()) {
+            let rows: String = (0..n).map(|i| format!("| {i} | Produit {} | {} | FR | note, {i} |\n", i % 977, i % 99)).collect();
+            let file = root.join(format!("t{n}.md"));
+            fs::write(&file, format!("| id | produit | qte | pays | commentaire |\n| --- | --- | --- | --- | --- |\n{rows}")).unwrap();
+            let start = Instant::now();
+            shell.update_in(cx, |s, window, cx| {
+                s.open_note(&file, cx);
+                window.focus(&s.editor.focus_handle(cx));
+            });
+            cx.run_until_parked();
+            let opened = start.elapsed();
+            // Au milieu du tableau, loin des lignes qui fixent ses colonnes.
+            shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| {
+                let at = e.text().len() / 2;
+                e.place_cursor(at, cx)
+            }));
+            cx.run_until_parked();
+            let start = Instant::now();
+            cx.simulate_input("a");
+            cx.run_until_parked();
+            println!("{n:6} lignes : ouverture {opened:?} · une frappe {:?}", start.elapsed());
+            let start = Instant::now();
+            for _ in 0..20 {
+                cx.simulate_event(gpui::ScrollWheelEvent {
+                    position: point(px(700.), px(300.)),
+                    delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-40.))),
+                    ..Default::default()
+                });
+                cx.run_until_parked();
+            }
+            println!("         défilement : {:?} par geste", start.elapsed() / 20);
+            if std::env::var("BREF_TYPING").is_ok() {
+                let start = Instant::now();
+                for _ in 0..30 {
+                    cx.simulate_input("a");
+                    cx.run_until_parked();
+                }
+                println!("         30 frappes de suite : {:?} par frappe", start.elapsed() / 30);
+                let start = Instant::now();
+                for _ in 0..30 {
+                    cx.simulate_input(" ");
+                    cx.run_until_parked();
+                }
+                println!("         30 espaces de suite : {:?} par espace", start.elapsed() / 30);
+                let start = Instant::now();
+                cx.simulate_keystrokes("secondary-z");
+                cx.run_until_parked();
+                println!("         annuler : {:?}", start.elapsed());
+                let start = Instant::now();
+                shell.update(cx, |s, cx| s.flush(cx));
+                println!("         enregistrement de la note ({} Mo) : {:?}", fs::metadata(&file).map_or(0, |m| m.len()) >> 20, start.elapsed());
+            }
+        }
         fs::remove_dir_all(&root).unwrap();
     }
 

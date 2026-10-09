@@ -11,7 +11,7 @@ use gpui::{
     actions, canvas, div, ease_out_quint, prelude::*, px,
 };
 
-use crate::{Theme, tr};
+use crate::{Theme, sheet::Pick, tr};
 
 fn vault_label() -> &'static str {
     tr("Change vault…", "Changer de coffre…")
@@ -19,6 +19,10 @@ fn vault_label() -> &'static str {
 
 fn diagram_label() -> &'static str {
     tr("New diagram", "Nouveau schéma")
+}
+
+fn folder_label() -> &'static str {
+    tr("New folder", "Nouveau dossier")
 }
 
 fn import_label() -> &'static str {
@@ -77,8 +81,11 @@ pub enum PaletteEvent {
     ChangeVault,
     Help,
     NewDiagram,
+    NewFolder,
     ImportDiagram,
     Setting(Setting),
+    /// Réglage ou geste du tableau affiché.
+    Table(Pick),
     /// Active ou coupe la recherche de nouvelle version.
     ToggleUpdates,
     /// Installe la nouvelle version.
@@ -99,10 +106,12 @@ enum Item {
     Vault,
     Help,
     Diagram,
+    Folder,
     Import,
     Updates,
     Install,
     Setting(Setting),
+    Table(Pick),
 }
 
 pub struct Palette {
@@ -112,13 +121,15 @@ pub struct Palette {
     items: Vec<Item>,
     selected: usize,
     /// Champ de saisie : son libellé. Aucune note n'est alors proposée.
-    prompt: Option<&'static str>,
+    prompt: Option<String>,
     /// Liste de choix : `entries` sont les options, sans création ni commande.
     choices: bool,
     /// La recherche de nouvelle version est active : `None` hors de la palette principale.
     updates: Option<bool>,
     /// Numéro de la nouvelle version que l'app sait installer seule.
     installable: Option<String>,
+    /// Un tableau est affiché : ses réglages se cherchent ici.
+    table: bool,
     theme: Theme,
 }
 
@@ -182,6 +193,7 @@ impl Palette {
             choices: false,
             updates: None,
             installable: None,
+            table: false,
             theme,
         };
         this.refresh();
@@ -196,10 +208,16 @@ impl Palette {
         self
     }
 
+    pub fn with_table(mut self, shown: bool) -> Self {
+        self.table = shown;
+        self.refresh();
+        self
+    }
+
     /// Champ de saisie prérempli avec `text` ; Entrée émet `Submit`.
-    pub fn prompt(label: &'static str, text: &str, theme: Theme, cx: &mut Context<Self>) -> Self {
+    pub fn prompt(label: impl Into<String>, text: &str, theme: Theme, cx: &mut Context<Self>) -> Self {
         Self {
-            prompt: Some(label),
+            prompt: Some(label.into()),
             ..Self::new(Vec::new(), text, theme, cx)
         }
     }
@@ -207,7 +225,7 @@ impl Palette {
     /// Liste de choix filtrable (thème, police), `current` présélectionné :
     /// chaque déplacement émet `Preview`, Entrée émet `Submit`.
     pub fn choose(
-        label: &'static str,
+        label: &str,
         options: Vec<String>,
         current: &str,
         theme: Theme,
@@ -215,7 +233,7 @@ impl Palette {
     ) -> Self {
         let entries =
             options.into_iter().map(|name| Entry { name, ..Entry::default() }).collect();
-        let mut this = Self { prompt: Some(label), choices: true, ..Self::new(entries, "", theme, cx) };
+        let mut this = Self { prompt: Some(label.into()), choices: true, ..Self::new(entries, "", theme, cx) };
         this.refresh();
         this.selected = this.items.iter().position(|i| this.choice(i) == Some(current)).unwrap_or(0);
         this
@@ -294,7 +312,7 @@ impl Palette {
             }
         }
         // Comme les réglages : proposés seulement quand on les cherche.
-        for (label, item) in [(diagram_label(), Item::Diagram), (import_label(), Item::Import)] {
+        for (label, item) in [(diagram_label(), Item::Diagram), (folder_label(), Item::Folder), (import_label(), Item::Import)] {
             if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
                 items.push(item);
             }
@@ -310,6 +328,11 @@ impl Palette {
             && fuzzy(&q, &updates_label(on).to_lowercase()).is_some()
         {
             items.push(Item::Updates);
+        }
+        if self.table && !q.is_empty() {
+            items.extend(
+                Pick::ALL.into_iter().filter(|p| fuzzy(&q, &p.label().to_lowercase()).is_some()).map(Item::Table),
+            );
         }
         // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
         for setting in [Setting::Theme, Setting::Font, Setting::Mono] {
@@ -345,6 +368,8 @@ impl Palette {
             Some(Item::Vault) => PaletteEvent::ChangeVault,
             Some(Item::Help) => PaletteEvent::Help,
             Some(Item::Diagram) => PaletteEvent::NewDiagram,
+            Some(Item::Folder) => PaletteEvent::NewFolder,
+            Some(&Item::Table(pick)) => PaletteEvent::Table(pick),
             Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
             Some(Item::Install) => PaletteEvent::InstallUpdate,
@@ -467,10 +492,12 @@ impl Render for Palette {
                 Item::Vault => (vault_label().to_string(), String::new()),
                 Item::Help => (help_label().to_string(), "F1".into()),
                 Item::Diagram => (diagram_label().to_string(), format!("{}+Shift+D", crate::MOD)),
+                Item::Folder => (folder_label().to_string(), format!("{}+Shift+N", crate::MOD)),
                 Item::Import => (import_label().to_string(), String::new()),
                 Item::Updates => (updates_label(self.updates.unwrap_or(true)).to_string(), String::new()),
                 Item::Install => (install_label(self.installable.as_deref().unwrap_or_default()), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
+                Item::Table(pick) => (pick.label().to_string(), String::new()),
             };
             div()
                 .mx_1()
@@ -548,15 +575,14 @@ impl Render for Palette {
                             .text_size(px(15.))
                             .child(input)
                             .when(self.query.is_empty(), |d| {
-                                d.child(div().text_color(t.dim).child(self.prompt.unwrap_or(tr(
-                                    "Search or create a note, #tag…",
-                                    "Chercher ou créer une note, #tag…",
-                                ))))
+                                d.child(div().text_color(t.dim).child(self.prompt.clone().unwrap_or_else(|| {
+                                    tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into()
+                                })))
                             })
                             .when(!self.query.is_empty(), |d| d.child(self.query.clone()))
                             .child(div().w(px(2.)).h(px(18.)).bg(t.accent))
                             .when(!self.query.is_empty(), |d| {
-                                d.children(self.prompt.map(|label| {
+                                d.children(self.prompt.clone().map(|label| {
                                     div().ml_auto().pl_3().text_size(px(12.)).text_color(t.dim).child(label)
                                 }))
                             }),

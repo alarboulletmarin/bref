@@ -17,6 +17,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `#tags` filter the note list.
 - **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons.
 - **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas like Excalidraw's. Each diagram is an SVG file in your vault, shown in your notes.
+- **CSV and TSV files, edited in place**: a `.csv` or `.tsv` in the vault opens in a grid. The encoding (UTF-8, UTF-16, ISO-8859-1, Windows-1252) and the delimiter (comma, semicolon, tab, pipe…) are detected and can be changed; select cells with the keyboard or the mouse, copy, paste, export, and what you change is written straight into the file. A million rows are parsed in under a tenth of a second on the author's machine.
 - **Keyboard first**: one palette to find, create and switch notes, and a shortcut for every view. No toolbar.
 - **No save button**: notes are written to disk as you type, and named after their first line.
 - **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, IBM Plex Sans and Plex Mono built in (nothing to install), any installed font if you prefer, and the text size you like.
@@ -222,7 +223,8 @@ A previewed note only counts as opened, and moves to the top of the recent list,
 - **Folding**: pressing the key of the view on display, or clicking its icon, folds the panel. The rail stays, with the four views, search, new note and help one click away.
 - **Graph**: drag the background to move around and scroll to zoom. Pointing at a note lights up the notes it is linked to. Drag a note to move it: the notes linked to it follow, the closest ones the most. The target button glides back to the whole graph. With the graph on the whole window, a click only selects: `Enter` or a double click brings the note back.
 - **Folders**: the double-chevron button at the top of the tree folds every folder; when they are all folded, it unfolds them all.
-- **New note from the tree**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line.
+- **New note from the tree**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line. The button to the left of the folder one, at the top of the tree, creates it at the root of the vault instead, whatever is selected.
+- **New folder**: the folder button, `Ctrl + Shift + N`, or `new folder` in the palette. The field says where the folder goes.
 - **Right click** on a line for its menu: open, new note here, new folder, copy the `[[link]]`, the path or the path relative to the vault, reveal in the file explorer, duplicate (`Ctrl + D`), rename, move to the trash. A right click below the last line acts on the vault itself.
 - **Several lines at once**: `Ctrl + click` adds a line to the selection or takes it out, `Shift + click` selects everything from the last line chosen. Dragging, duplicating, copying links or paths and moving to the trash then apply to all of them.
 - **Drag and drop**: in the tree, drag a note or a folder onto a folder to move it there, or below the last line to move it to the top of the vault. Nothing is ever overwritten: if the name is taken, the move is refused.
@@ -291,6 +293,7 @@ Type `/` at the start of a line or of a word: a list offers what can be inserted
 - Arrows move from cell to cell without stopping on the `|`; `Up` and `Down` follow the lines of a wrapped cell, then the cell below. `Backspace` and `Delete` stop at the edge of a cell. Selecting several cells and erasing, cutting or typing empties them without merging the columns.
 - `Ctrl + Shift + L`, `E`, `R` (`Cmd` on macOS) align the column of the cursor left, centered or right.
 - Two `+` buttons appear when the pointer or the cursor is on a table: the one below adds a row, the one on the right adds a column.
+- **Very large tables**: past 1,500 rows (a whole CSV turned into Markdown, for instance) a table is no longer laid out as one block. Its columns are sized from its first 300 rows, cells stop wrapping (what overflows is cut) so every row has the same height, and only the rows near the screen are drawn. A table of 300,000 rows opens in about 40 ms and typing in it takes under 10 ms. `Tab` and `Shift + Tab` still move between cells and `Enter` adds a row under the current one, but the columns of the text are not realigned as you type.
 - A table you type by hand works the same: `| a | b |` then `Tab` is enough, the line of dashes is written for you. A literal `|` in a cell is written `\|` and shown as `|`.
 - Columns of the text are aligned as you type, counting wide characters (ideograms, emoji) as two; a table too wide to stay aligned is written compactly. Only with more columns than the page can show, even at their narrowest, does the table scroll sideways (`Shift + wheel` or a horizontal swipe), following the cursor.
 - To remove a column, delete its cells by hand.
@@ -320,6 +323,21 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
 - **The file** is a plain SVG, saved at each change: it opens in a browser and displays on GitHub. It also carries its own source, which is what Bref reads to keep editing it.
 - **Export**: the button at the right of the bar saves a PNG next to the diagram, dark on white.
 - **Import**: `import` in the palette takes an Excalidraw file (`.excalidraw`) or a draw.io file (`.drawio`, saved without compression: untick *File › Properties › Compressed*). Shapes, texts, arrows and what they hold on to are kept; freehand strokes and pictures are not, and arrows are routed again by Bref.
+
+## CSV and TSV tables
+
+A `.csv` or `.tsv` file of the vault shows in the tree and opens in a grid, in place of the note. The file is read and written directly: there is no import, and the rows you did not touch are written back byte for byte.
+
+- **Detection**: the encoding comes from the byte order mark, else UTF-8 if the file is valid UTF-8, else Windows-1252. The delimiter (`,` `;` tab `|` `:` or space) is the one that splits most lines into the same number of fields, quotes respected. The first row is a header unless it holds numbers.
+- **Settings**: the bar above the grid shows the delimiter, the encoding and the header row; click one, or search `table` in the palette (`Ctrl + P`), to change it. The file is then read again that way, and the choice is kept for that file. *Detect automatically* forgets it.
+- **Moving**: the arrows, `Tab` and `Shift + Tab`, `Page Up` and `Page Down`, `Home` and `End` along the row, ``Ctrl + Home` and `Ctrl + End` to the corners, `Ctrl + Up` and `Ctrl + Down` to the ends of the column. Click a cell, or use the wheel (`Shift` + wheel sideways) and the scroll bars.
+- **Selecting**: `Shift` + arrows, or drag with the mouse. Click a row number or a column header for the whole row or column, the corner or `Ctrl + A` for everything.
+- **Writing**: typing replaces the cell, `Enter` or `F2` opens it as it is, `Enter` validates and goes down, `Tab` validates and goes right, `Esc` cancels. `Delete` empties the selection.
+- **Rows**: `Ctrl + Enter` inserts one below, `Ctrl + Shift + Enter` above, `Ctrl + Delete` removes the selected ones. `Ctrl + Z` and `Ctrl + Shift + Z` undo and redo, a paste in one step.
+- **Copy and paste**: `Ctrl + C` copies the selection as tab-separated text, which spreadsheets and the tables of your notes paste as they are; `Ctrl + X` cuts it. `Ctrl + V` pastes cells from a spreadsheet, a Markdown table or CSV text from the selected cell, adding the rows that are missing; one value fills the whole selection. In a note, selecting cells of a Markdown table and copying gives the same tab-separated text.
+- **Copy as, export**: `copy table as` and `export table` in the palette (or the buttons of the bar) offer TSV, CSV (with the delimiter of the file), Markdown and JSON, for the selection, or the whole table when only one cell is selected. An export is written next to the table, under a name that is still free.
+- **Saved** about half a second after the last change, in the background, atomically, in the encoding and with the line endings of the file. A character the encoding cannot hold (a `€` in ISO-8859-1) is reported and the file is left alone. If another program rewrites the file and nothing waits to be saved, the grid reads it again.
+- **Limits**: files up to 1 GiB, read whole in memory (about the size of the file); no columns to add or remove, no sorting or formulas.
 
 ## Notes and vault
 
@@ -364,7 +382,7 @@ The check is the only network request the app makes until you press Update. It r
 | Linux, other desktops, Wayland or X11 | should work, with the same built-in title bar. Not tested |
 | macOS, Windows | built and tested by CI on every commit, and the downloads are built there too; not used day to day by the author |
 
-- **Linux** needs a working Vulkan driver (Mesa or the vendor one). Bref draws its own title bar, as Zed does: GNOME under Wayland draws none for applications. On macOS and Windows the system title bar is used.
+- **Linux** needs a working Vulkan driver (Mesa or the vendor one). Bref draws its own title bar, as Zed does: GNOME under Wayland draws none for applications. Drag the window by the pill at the top right, by the title of the panel, by the empty part of the rail or of a table's bar (a double click maximizes it), or hold `Alt` and drag from anywhere. On macOS and Windows the system title bar is used.
 - **Language**: French if the system language is French, English otherwise. Bref asks the system (Windows, macOS) or reads `LC_ALL`, `LC_MESSAGES` and `LANG` (Linux, or any system when started from a terminal).
 - **Fonts**: IBM Plex Sans and Plex Mono, built into the app.
 

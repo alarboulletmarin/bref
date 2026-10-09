@@ -119,6 +119,16 @@ pub fn is_image(path: &Path) -> bool {
         .is_some_and(|e| known.iter().any(|k| e.eq_ignore_ascii_case(k)))
 }
 
+/// Le fichier est un tableau (CSV ou TSV) que l'app ouvre dans une grille.
+pub fn is_table(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| ["csv", "tsv"].iter().any(|k| e.eq_ignore_ascii_case(k)))
+}
+
+/// Les images parmi les fichiers du coffre (le graphe et les liens `![[…]]` ignorent les tableaux).
+pub fn pictures(files: &[PathBuf]) -> Vec<PathBuf> {
+    files.iter().filter(|p| is_image(p)).cloned().collect()
+}
+
 /// Vrai la première fois qu'on entre dans ce dossier. Un lien symbolique qui remonte vers un
 /// dossier parent (ou deux liens vers le même) ne doit ni boucler ni dupliquer les notes.
 fn first_visit(visited: &mut HashSet<PathBuf>, dir: &Path) -> bool {
@@ -148,6 +158,9 @@ pub fn fingerprint(root: &Path) -> u64 {
                 seen.push((path, entry.metadata().and_then(|m| m.modified()).ok()));
             } else if is_image(&path) {
                 seen.push((path, None));
+            } else if is_table(&path) {
+                // Un autre programme qui réécrit le tableau ouvert doit se voir.
+                seen.push((path, entry.metadata().and_then(|m| m.modified()).ok()));
             }
         }
     }
@@ -224,7 +237,7 @@ pub fn watch(root: &Path, changed: Arc<Signal>) -> Option<RecommendedWatcher> {
 }
 
 /// Toutes les notes du coffre (récursif, dossiers cachés ignorés), plus récentes
-/// d'abord, tous ses dossiers, même vides, et ses images.
+/// d'abord, tous ses dossiers, même vides, et ses autres fichiers : images et tableaux.
 pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
     rescan(root, &[])
 }
@@ -263,7 +276,7 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
                     }
                 };
                 notes.push(Note { name: stem(&path), tags, links, mtime, path, body });
-            } else if is_image(&path) {
+            } else if is_image(&path) || is_table(&path) {
                 images.push(path);
             }
         }

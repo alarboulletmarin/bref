@@ -348,7 +348,7 @@ impl Shell {
     pub fn refresh_graph(&mut self, cx: &mut Context<Self>) {
         if self.graph_stale && self.nav.panel != Panel::Rail && self.nav.mode == Mode::Graph {
             self.graph_stale = false;
-            self.graph.update(cx, |graph, cx| graph.set_notes(&self.notes, &self.images, cx));
+            self.graph.update(cx, |graph, cx| graph.set_notes(&self.notes, &vault::pictures(&self.images), cx));
         }
     }
 
@@ -533,9 +533,12 @@ impl Shell {
         if self.nav.panel == Panel::Full {
             self.nav.panel = Panel::Split;
         }
-        // Une image s'affiche à la place de la note ; le panneau garde la main.
-        if self.picture.is_none() {
-            window.focus(&self.editor.focus_handle(cx));
+        // Un tableau prend le focus pour qu'on y écrive ; une image s'affiche à la place
+        // de la note, et le panneau garde la main.
+        match self.shown_sheet() {
+            Some(sheet) => window.focus(&sheet.focus_handle(cx)),
+            None if self.picture.is_none() => window.focus(&self.editor.focus_handle(cx)),
+            None => {}
         }
         self.settle_nav(window, cx);
     }
@@ -611,7 +614,11 @@ impl Shell {
                 self.new_diagram(window, cx);
             }
             (Do::NewFolder, _) => {
-                let label = tr("New folder: its name", "Nouveau dossier : son nom");
+                // Le dossier est créé dans celui de la sélection : le champ le dit.
+                let label = match dir.file_name().filter(|_| dir != root) {
+                    Some(name) => format!("{} « {} »", tr("Folder name, in", "Nom du dossier, dans"), name.to_string_lossy()),
+                    None => tr("Folder name", "Nom du dossier").to_string(),
+                };
                 self.ask(label, "", window, cx, move |this, name, _| {
                     let new = dir.join(name);
                     match fs::create_dir(&new) {
@@ -636,8 +643,8 @@ impl Shell {
                     let renamed = if is_dir {
                         let to = path.with_file_name(&name);
                         vault::rename(&path, &to).map(|()| to)
-                    } else if image {
-                        // Une image garde son extension.
+                    } else if image || vault::is_table(&path) {
+                        // Une image ou un tableau garde son extension.
                         let extension = path.extension().unwrap_or_default().to_string_lossy();
                         let to = path.with_file_name(format!("{name}.{extension}"));
                         vault::rename(&path, &to).map(|()| to)
@@ -668,9 +675,11 @@ impl Shell {
             }
             (Do::CopyLink, Some(_)) => {
                 let files = all.iter().filter(|p| !self.dirs.contains(p));
-                let link = |path: &PathBuf| match vault::is_image(path) {
-                    true => format!("![[{}]]", graph::image_name(path)),
-                    false => format!("[[{}]]", vault::stem(path)),
+                let link = |path: &PathBuf| match (vault::is_image(path), vault::is_table(path)) {
+                    (true, _) => format!("![[{}]]", graph::image_name(path)),
+                    // Un tableau n'a pas de lien : son nom de fichier.
+                    (_, true) => graph::image_name(path),
+                    _ => format!("[[{}]]", vault::stem(path)),
                 };
                 copy(files.map(link).collect(), cx);
             }
@@ -727,7 +736,7 @@ impl Shell {
     /// Demande un nom dans un champ de saisie, puis appelle `then` avec ce nom nettoyé.
     fn ask(
         &mut self,
-        label: &'static str,
+        label: impl Into<String>,
         text: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -793,6 +802,11 @@ impl Shell {
         self.picture = self.picture.as_ref().map(shift);
         if let Some((path, _)) = &mut self.drawing {
             *path = shift(path);
+        }
+        if let Some((path, sheet)) = &mut self.sheet {
+            *path = shift(path);
+            let moved = path.clone();
+            sheet.update(cx, |sheet, _| sheet.moved(moved));
         }
         self.recent = self.recent.iter().map(shift).collect();
         self.nav.open = self.nav.open.iter().map(shift).collect();
@@ -1136,7 +1150,7 @@ impl Shell {
                 button("nav-new", "plus.svg", false, t)
                     .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
             )
-            .child(div().flex_1())
+            .child(div().flex_1().w_full().when(!self.nav.logo, |d| d.map(crate::drag_window)))
             .child(button("nav-theme", "theme.svg", false, t).on_click(cx.listener(
                 |this, _, window, cx| this.choose_setting(Setting::Theme, window, cx),
             )))
@@ -1165,14 +1179,29 @@ impl Shell {
             .pr_1()
             .flex()
             .items_center()
-            .child(div().flex_1().truncate().text_size(px(12.)).text_color(t.dim).child(title))
+            .child(
+                div()
+                    .flex_1()
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .truncate()
+                    .text_size(px(12.))
+                    .text_color(t.dim)
+                    .when(!self.nav.logo, |d| d.map(crate::drag_window))
+                    .child(title),
+            )
             .when(mode == Mode::Graph, |d| {
                 d.child(button("nav-center", "target.svg", false, t).on_click(cx.listener(
                     |this, _, _, cx| this.graph.update(cx, |graph, cx| graph.recenter(cx)),
                 )))
             })
             .when(mode == Mode::Tree, |d| {
-                d.child(button("nav-folder", "folder-plus.svg", false, t).on_click(cx.listener(
+                // Une note à la racine du coffre, quelle que soit la sélection.
+                d.child(button("nav-file", "file-plus.svg", false, t).on_click(cx.listener(
+                    |this, _, window, cx| this.new_note_in(None, window, cx),
+                )))
+                .child(button("nav-folder", "folder-plus.svg", false, t).on_click(cx.listener(
                     |this, _, window, cx| this.menu_do(Do::NewFolder, this.nav.sel.clone(), window, cx),
                 )))
                 // Tout replier ; si tout l'est déjà, tout déplier.
