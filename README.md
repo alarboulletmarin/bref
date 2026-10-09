@@ -175,6 +175,7 @@ The bottom right of the note shows its number of words and characters and its re
 | `Ctrl + P` | palette: find a note by name or text, create one, filter by `#tag` |
 | `Ctrl + F`, `Ctrl + H` | [find in the note](#find-and-replace), find and replace |
 | `Ctrl + Shift + O` | outline: the headings of the note, to jump to one (also `Outline of the note` in the palette) |
+| `Ctrl + Shift + F` | search the text of the whole vault: every line that holds what you type, whatever its case; `Enter` opens the note with the match selected |
 | `Ctrl + N` | new note |
 | `Ctrl + J` | today's note: `2026-10-09.md`, opened wherever it is in the vault, or created with the date as its title (also `Today's note` in the palette) |
 | `Ctrl + E`, `Ctrl + R`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |

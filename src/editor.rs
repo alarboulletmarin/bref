@@ -898,6 +898,17 @@ impl Editor {
         self.reveal_top = top;
     }
 
+    /// Résultat de la recherche du coffre : à la ligne de rang `row`, sélectionne le premier
+    /// passage qui vaut `query` (sans la casse) ; à défaut, le curseur va au début de la ligne.
+    pub fn select_in_row(&mut self, row: usize, query: &str, cx: &mut Context<Self>) {
+        let start: usize = self.content.split_inclusive('\n').take(row).map(str::len).sum();
+        let line = self.line_range(start);
+        self.jump(line.start, false, cx);
+        if let Some(hit) = md::find(&self.content[line.clone()], query, false, false).first() {
+            self.sel = line.start + hit.start..line.start + hit.end;
+        }
+    }
+
     /// Recherche, numéro du passage courant (à partir de 1) et nombre de passages.
     #[cfg(test)]
     pub fn finding(&self) -> Option<(&str, usize, usize)> {

@@ -104,6 +104,8 @@ pub enum PaletteEvent {
     CheckUpdate,
     /// Liste des titres de la note.
     Outline,
+    /// Ligne choisie dans la recherche du coffre : la note, le rang de la ligne, le texte cherché.
+    OpenAt(PathBuf, usize, String),
     /// Ouvre ou crée la note du jour.
     Today,
     /// Installe la nouvelle version.
@@ -120,6 +122,8 @@ enum Item {
     Note(usize),
     /// Note dont le texte, et non le nom, répond à la recherche.
     Text(usize),
+    /// Recherche du coffre : une ligne d'une note (son rang) où figure le texte cherché.
+    Line(usize, usize),
     Create,
     Vault,
     Help,
@@ -145,6 +149,8 @@ pub struct Palette {
     prompt: Option<String>,
     /// Liste de choix : `entries` sont les options, sans création ni commande.
     choices: bool,
+    /// Recherche dans le texte du coffre : une ligne trouvée par choix, ni note par son nom ni commande.
+    lines: bool,
     /// La recherche de nouvelle version est active : `None` hors de la palette principale.
     updates: Option<bool>,
     /// Numéro de la nouvelle version que l'app sait installer seule.
@@ -173,7 +179,11 @@ fn snippet(body: &str, lower: &str, word: &str) -> String {
     let Some(at) = lower.find(word) else {
         return String::new();
     };
-    let row = lower[..at].matches('\n').count();
+    snippet_at(body, lower, lower[..at].matches('\n').count(), word)
+}
+
+/// La même, pour la ligne de rang `row`.
+fn snippet_at(body: &str, lower: &str, row: usize, word: &str) -> String {
     let (Some(shown), Some(low)) = (body.lines().nth(row), lower.lines().nth(row)) else {
         return String::new();
     };
@@ -187,6 +197,19 @@ fn snippet(body: &str, lower: &str, word: &str) -> String {
         part.trim(),
         if start + 80 < chars.len() { "…" } else { "" }
     )
+}
+
+/// Rang de chaque ligne du texte (en minuscules) où figure `query`, une fois par ligne.
+fn rows_with(lower: &str, query: &str) -> Vec<usize> {
+    let (mut rows, mut row, mut seen) = (Vec::new(), 0, 0);
+    for (at, _) in lower.match_indices(query) {
+        row += lower[seen..at].matches('\n').count();
+        seen = at;
+        if rows.last() != Some(&row) {
+            rows.push(row);
+        }
+    }
+    rows
 }
 
 /// Score de correspondance : sous-chaîne d'abord, sinon sous-séquence.
@@ -212,6 +235,7 @@ impl Palette {
             selected: 0,
             prompt: None,
             choices: false,
+            lines: false,
             updates: None,
             installable: None,
             table: false,
@@ -260,6 +284,12 @@ impl Palette {
         this
     }
 
+    /// Recherche dans le texte du coffre (comme `Ctrl+Maj+F` de Zed) : chaque ligne où figure
+    /// le texte tapé, sans tenir compte de la casse ; Entrée ouvre la note à cette ligne.
+    pub fn search(entries: Vec<Entry>, theme: Theme, cx: &mut Context<Self>) -> Self {
+        Self { lines: true, ..Self::new(entries, "", theme, cx) }
+    }
+
     /// Présélectionne le choix de rang `index` (deux choix peuvent porter le même nom).
     pub fn select(mut self, index: usize) -> Self {
         self.selected = index.min(self.items.len().saturating_sub(1));
@@ -298,6 +328,16 @@ impl Palette {
             return self.items.clear();
         }
         let q = self.query.trim().to_lowercase();
+        if self.lines {
+            // ponytail: les 200 premières lignes trouvées, notes récentes d'abord, cherchées à
+            // chaque frappe dans tout le texte du coffre ; une recherche en tâche de fond et une
+            // liste complète si les coffres grossissent. Une lettre seule ramènerait tout.
+            let found = (0..self.entries.len()).filter(|_| q.chars().count() >= 2);
+            let found = found.flat_map(|i| rows_with(&self.entries[i].lower, &q).into_iter().map(move |row| Item::Line(i, row)));
+            self.items = found.take(200).collect();
+            self.selected = 0;
+            return;
+        }
         let mut items: Vec<Item> = if let Some(tag) = q.strip_prefix('#') {
             (0..self.entries.len())
                 .filter(|&i| self.entries[i].tags.iter().any(|t| t.starts_with(tag)))
@@ -406,6 +446,7 @@ impl Palette {
         }
         cx.emit(match self.items.get(index) {
             Some(Item::Note(i) | Item::Text(i)) => PaletteEvent::Open(self.entries[*i].path.clone()),
+            Some(&Item::Line(i, row)) => PaletteEvent::OpenAt(self.entries[i].path.clone(), row, self.query.trim().to_string()),
             Some(Item::Create) => PaletteEvent::Create(self.query.trim().to_string()),
             Some(Item::Vault) => PaletteEvent::ChangeVault,
             Some(Item::Help) => PaletteEvent::Help,
@@ -532,6 +573,10 @@ impl Render for Palette {
                     let word = word.split_whitespace().next().unwrap_or_default().to_string();
                     (e.name.clone(), snippet(&e.body, &e.lower, &word))
                 }
+                Item::Line(n, row) => {
+                    let e = &self.entries[*n];
+                    (e.name.clone(), snippet_at(&e.body, &e.lower, *row, &self.query.trim().to_lowercase()))
+                }
                 Item::Create => (
                     format!("{} « {} »", tr("Create", "Créer"), self.query.trim()),
                     tr("new note", "nouvelle note").into(),
@@ -563,13 +608,13 @@ impl Render for Palette {
                 .child(
                     div()
                         .truncate()
-                        .when(matches!(item, Item::Text(_)), |d| d.flex_none().max_w(px(220.)))
+                        .when(matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none().max_w(px(220.)))
                         .child(label),
                 )
                 .child(
                     div()
                         .truncate()
-                        .when(!matches!(item, Item::Text(_)), |d| d.flex_none())
+                        .when(!matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none())
                         .text_color(t.dim)
                         .text_size(px(12.))
                         .child(detail),
@@ -625,8 +670,9 @@ impl Render for Palette {
                             .text_size(px(15.))
                             .child(input)
                             .when(self.query.is_empty(), |d| {
-                                d.child(div().text_color(t.dim).child(self.prompt.clone().unwrap_or_else(|| {
-                                    tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into()
+                                d.child(div().text_color(t.dim).child(self.prompt.clone().unwrap_or_else(|| match self.lines {
+                                    true => tr("Search in the text of the vault…", "Chercher dans le texte du coffre…").into(),
+                                    false => tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into(),
                                 })))
                             })
                             .when(!self.query.is_empty(), |d| d.child(self.query.clone()))
@@ -650,13 +696,22 @@ impl Render for Palette {
 
 #[cfg(test)]
 mod tests {
-    use super::{contains_all, fuzzy, snippet};
+    use super::{contains_all, fuzzy, rows_with, snippet, snippet_at};
 
     #[test]
     fn finds_text_with_all_the_words() {
         let lower = "# courses\n\n- lait et pâtes au citron\n";
         assert!(contains_all(lower, &["pâtes", "citron"]));
         assert!(!contains_all(lower, &["pâtes", "beurre"]));
+    }
+
+    #[test]
+    fn lists_each_line_once() {
+        let body = "Lait, lait\n\nrien\nau LAIT cru\n";
+        let lower = body.to_lowercase();
+        assert_eq!(rows_with(&lower, "lait"), [0, 3]);
+        assert!(rows_with(&lower, "absent").is_empty());
+        assert_eq!(snippet_at(body, &lower, 3, "lait"), "au LAIT cru");
     }
 
     #[test]

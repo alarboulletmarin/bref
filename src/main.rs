@@ -327,7 +327,7 @@ pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
 
-actions!(app, [Today, Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [SearchVault, Today, Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -1465,6 +1465,15 @@ impl Shell {
     }
 
     fn open_palette(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_palette(query, false, window, cx)
+    }
+
+    /// Recherche dans le texte de tout le coffre : la palette, où chaque choix est une ligne.
+    fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_palette("", true, window, cx)
+    }
+
+    fn show_palette(&mut self, query: &str, lines: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() {
             return;
         }
@@ -1486,12 +1495,19 @@ impl Shell {
         let updates = self.prefs.updates;
         let installable = self.update.as_ref().filter(|r| r.asset.is_some()).map(|r| r.version.clone());
         let table = self.shown_sheet().is_some();
-        let palette = cx.new(|cx| Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table));
+        let palette = cx.new(|cx| match lines {
+            true => Palette::search(entries, theme, cx),
+            false => Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table),
+        });
         cx.subscribe_in(&palette, window, |this, _, event, window, cx| {
             this.palette = None;
             window.focus(&this.editor.focus_handle(cx));
             match event {
                 PaletteEvent::Open(path) => this.open_note(path, cx),
+                PaletteEvent::OpenAt(path, row, query) => {
+                    this.open_note(path, cx);
+                    this.editor.update(cx, |e, cx| e.select_in_row(*row, query, cx));
+                }
                 PaletteEvent::Create(name) => this.open_wiki(name, cx),
                 PaletteEvent::ChangeVault => this.choose_vault(window, cx),
                 PaletteEvent::Help => this.set_help(true, window, cx),
@@ -1528,6 +1544,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
             vec![
                 (m("P"), tr("Find by name or text, create, filter by #tag", "Chercher par nom ou texte, créer, filtrer par #tag")),
                 (format!("{} / {}", m("F"), m("H")), tr("Find in the note / find and replace", "Chercher dans la note / chercher et remplacer")),
+                (m("Shift+F"), tr("Search the text of the whole vault, line by line", "Chercher dans le texte de tout le coffre, ligne par ligne")),
                 (tr("Enter / Shift+Enter", "Entrée / Maj+Entrée").into(), tr("Search bar: next / previous match (F3 too)", "Barre de recherche : passage suivant / précédent (F3 aussi)")),
                 ("Alt+C / Alt+W / Tab".into(), tr("Search bar: match case / whole words / replace field", "Barre de recherche : casse / mots entiers / champ de remplacement")),
                 (m(tr("Enter", "Entrée")), tr("Search bar: replace all (Enter: this match)", "Barre de recherche : tout remplacer (Entrée : ce passage)")),
@@ -2062,6 +2079,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
             .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
             .on_action(cx.listener(|this, _: &Today, _, cx| this.open_today(cx)))
+            .on_action(cx.listener(|this, _: &SearchVault, window, cx| this.open_search(window, cx)))
             .on_action(cx.listener(|this, _: &ChooseTheme, window, cx| {
                 this.choose_setting(Setting::Theme, window, cx)
             }))
@@ -2183,6 +2201,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-k secondary-t", ChooseTheme, None),
         KeyBinding::new("secondary-shift-o", Outline, None),
         KeyBinding::new("secondary-j", Today, None),
+        KeyBinding::new("secondary-shift-f", SearchVault, None),
         KeyBinding::new("secondary-=", ZoomIn, None),
         KeyBinding::new("secondary-+", ZoomIn, None),
         KeyBinding::new("secondary--", ZoomOut, None),
@@ -2980,16 +2999,35 @@ mod tests {
         assert!(shell.read_with(cx, |s, _| s.path.as_deref() == Some(&*root.join("Appli.md")) && s.notes.len() == count));
         fs::remove_file(root.join("Appli.md")).unwrap();
         shell.update(cx, |s, cx| s.open_note(&root.join("Renvoi.md"), cx));
-        // Le bloc ouvert au clavier : tant qu'il n'est pas fermé, sa première ligne reste une règle.
-        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load("---\na: 1\n".into(), 9, cx)));
-        cx.run_until_parked();
-        assert_eq!(kind(cx, 0), Some(markdown::Kind::Rule));
-        cx.simulate_input("---");
-        cx.run_until_parked();
-        assert_eq!((kind(cx, 0), kind(cx, 4), kind(cx, 9)), (Some(markdown::Kind::Meta), Some(markdown::Kind::Meta), Some(markdown::Kind::Meta)));
+        shell.update(cx, |s, cx| s.open_note(&was, cx));
+        settle(cx);
         for name in ["Fiche 2.md", "Renvoi.md"] {
             fs::remove_file(root.join(name)).unwrap();
         }
+        settle(cx);
+
+        // Recherche dans le coffre : Ctrl+Maj+F liste chaque ligne où figure le texte tapé, sans
+        // la casse ; Entrée ouvre la note, le passage sélectionné.
+        fs::write(root.join("Recette.md"), "# Recette\n\nfarine\n\ndu Quinoa rouge, quinoa\n").unwrap();
+        fs::write(root.join("Liste.md"), "# Liste\n- quinoa\n").unwrap();
+        settle(cx);
+        cx.simulate_keystrokes("secondary-shift-f");
+        cx.simulate_input("QUINOA");
+        cx.simulate_keystrokes("down enter");
+        settle(cx);
+        let found = shell.read_with(cx, |s, cx| (s.path.clone().unwrap(), s.editor.read(cx).selected().to_lowercase()));
+        assert!(found.0 == root.join("Recette.md") || found.0 == root.join("Liste.md"), "{found:?}");
+        assert_eq!(found.1, "quinoa");
+        cx.simulate_keystrokes("secondary-shift-f");
+        cx.simulate_input("quinoa r");
+        cx.simulate_keystrokes("enter");
+        settle(cx);
+        assert_eq!(shell.read_with(cx, |s, cx| (s.path.clone().unwrap(), s.editor.read(cx).selected().to_string())), (root.join("Recette.md"), "Quinoa r".to_string()));
+        shell.update(cx, |s, cx| s.open_note(&was, cx));
+        for name in ["Recette.md", "Liste.md"] {
+            fs::remove_file(root.join(name)).unwrap();
+        }
+        settle(cx);
 
         // Note du jour : Ctrl+J la crée, nommée et titrée de la date locale ; la seconde fois
         // (ici depuis la palette) c'est la même note qui s'ouvre. `/date` écrit la date.
@@ -3406,6 +3444,13 @@ mod tests {
             }
         }
         assert!(gestures > 500);
+
+        // En-tête YAML ouvert au clavier : tant qu'il n'est pas fermé, sa première ligne reste une règle.
+        load(cx, "---\na: 1\n", 9);
+        assert_eq!(kind(cx, 0), Some(markdown::Kind::Rule));
+        cx.simulate_input("---");
+        cx.run_until_parked();
+        assert_eq!((kind(cx, 0), kind(cx, 4), kind(cx, 9)), (Some(markdown::Kind::Meta), Some(markdown::Kind::Meta), Some(markdown::Kind::Meta)));
 
         // Plan de la note : Ctrl+Maj+O liste les titres, celui de la section en cours
         // présélectionné. Le titre parcouru reçoit le curseur en aperçu (deux titres de même nom
