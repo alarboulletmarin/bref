@@ -1408,6 +1408,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
             vec![
                 (format!("{} / R / G / T", m("E")), tr("Vault tree / recent notes / graph / tags", "Arbre du coffre / notes récentes / graphe / tags")),
                 (tr("A picture", "Une image").into(), tr("Shown in place of the note; a square in the graph", "Affichée à la place de la note ; un carré dans le graphe")),
+                (tr("A .csv or .tsv", "Un .csv ou .tsv").into(), tr("A grid in place of the note; not in the graph", "Une grille à la place de la note ; absent du graphe")),
                 (m("M"), tr("Panel on the whole window", "Panneau en pleine fenêtre")),
                 (tr("Arrows / Tab", "Flèches / Tab").into(), tr("Select and preview / linked notes (graph)", "Sélectionner en aperçu / notes liées (graphe)")),
                 (tr("Enter / Esc", "Entrée / Échap").into(), tr("Open the note / back to the note", "Ouvrir la note / revenir à la note")),

@@ -180,7 +180,7 @@ On macOS, read `Cmd` for `Ctrl`, and `Alt` for `Ctrl` when moving by word.
 | `F1`, `Ctrl + /` | the list of shortcuts, inside the app; at its foot, the version of Bref and links to its source and to its Ko-fi page |
 | `Ctrl + Q` | quit |
 
-In the palette, type to search; `Enter` opens the selected note. Notes whose name matches come first, then the notes whose text contains every word you typed (from two letters), with the line where the first word appears. If no note has that name, the last row creates it. Typing `#` lists the notes carrying a tag.
+In the palette, type to search; `Enter` opens the selected note. Notes whose name matches come first, then the notes whose text contains every word you typed (from two letters), with the line where the first word appears. If no note has that name, the last row creates it. Typing `#` lists the notes carrying a tag. Typing `folder` offers *New folder*, and `table` offers the settings of the CSV table on display (delimiter, encoding, header row, copy as, export); `diagram`, `theme`, `font` and `update` offer theirs too.
 
 | Key | While editing |
 |---|---|
@@ -342,6 +342,7 @@ A `.csv` or `.tsv` file of the vault shows in the tree and opens in a grid, in p
 ## Notes and vault
 
 - A vault is an ordinary folder. Notes in subfolders are found too; hidden folders (`.git`, `.obsidian`…) are ignored. New notes are created at the top of the vault, or in the selected folder when the tree is on display.
+- CSV and TSV files are part of the vault too: the tree lists them with the notes of their folder, and selecting one opens its grid in place of the note (see [CSV and TSV tables](#csv-and-tsv-tables)). They are not in the graph, and a note does not link to them. They can be renamed (they keep their extension), moved, duplicated or trashed like a note.
 - Pictures are part of the vault: the tree lists them under the notes of their folder, and the graph shows them as squares, linked to the notes that display them. Selecting one shows it in place of the note; it can be renamed (the notes that display it follow), moved or trashed like a note.
 - What other programs change in the vault (a sync tool, a script, another editor) is picked up within a second, without restarting: Bref asks the system to report changes (inotify, FSEvents, ReadDirectoryChangesW).
 - A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
@@ -402,7 +403,8 @@ The check is the only network request the app makes until you press Update. It r
 
 ## How it works
 
-- **Editor**: a custom text element drawn directly with GPUI's text system. Each line is classified (heading, list item, quote, code…) and shaped with its own size and style runs; the text itself is never transformed.
+- **Editor**: a custom text element drawn directly with GPUI's text system. Each line is classified (heading, list item, quote, code…) and shaped with its own size and style runs; the text itself is never transformed. The layout is redone only when the text, the width, the theme or the cursor change, and then only for the lines an edit touched (the others are kept and shifted); a table of more than 1,500 rows is laid out light, with cells shaped only near the screen. A test compares every reused layout with a full one on thousands of random edits.
+- **CSV and TSV** (`src/table.rs`, `src/sheet.rs`): the file is decoded once and kept as text with one small index entry per row, so a million rows cost about 12 MB; fields are read on demand, and a row you did not edit is written back as it was. The grid builds only the cells on screen. Encoding and delimiter detection, parsing, writing and the copy and export formats are pure functions with unit tests.
 - **Typing rules** (`src/markdown.rs`): pure functions decide what Enter and Tab do on a line and renumber the list around the cursor. They are unit-tested without any UI.
 - **Vault** (`src/vault.rs`): the note list, its tags and its text are indexed off the UI thread when the vault opens, then kept up to date on each save. Changes made elsewhere are reported by the `notify` crate; the vault is also checked on a slow timer, which becomes the only mechanism when watching is not possible.
 - **Palette**: name matches first (substring, ranked by position, then subsequence; ties keep the most recently opened note first), then notes whose text contains every word, most recent first. The whole text of the vault is kept in memory for that.
@@ -421,7 +423,7 @@ cargo run --release       # what gets installed
 make test                 # cargo test --locked
 ```
 
-The tests include an end-to-end run driven by simulated keystrokes (typing, lists, autosave, palette, links, navigation panel, file operations), using GPUI's test platform: no display needed.
+The tests include an end-to-end run driven by simulated keystrokes (typing, lists, autosave, palette, links, navigation panel, file operations, CSV tables), using GPUI's test platform: no display needed. Ignored benchmarks measure vaults of thousands of notes, CSV files of 300,000 rows and notes with a table of 300,000 rows; run them with `cargo test --release --locked -- --ignored --nocapture`, each one reads its parameters from environment variables named in its doc comment.
 
 `Cargo.lock` started as a copy of the one GPUI 0.2.2 was published with: newer versions of some of its dependencies no longer build together. Update dependencies one at a time.
 
