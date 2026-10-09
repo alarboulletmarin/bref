@@ -1189,7 +1189,7 @@ impl Shell {
                     .on_click(cx.listener(|this, _, window, cx| this.open_trash(window, cx))),
             )
             .child(
-                button("nav-backup", "archive.svg", false, t)
+                button("nav-backup", "backup.svg", false, t)
                     .on_click(cx.listener(|this, _, window, cx| this.choose_backup(window, cx))),
             )
             .child(button("nav-theme", "theme.svg", false, t).on_click(cx.listener(

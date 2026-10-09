@@ -272,7 +272,10 @@ impl AssetSource for Assets {
             }
             "tag.svg" => r#"<path d="M6.5 3L5 13M11 3L9.5 13M3.5 6H13M3 10H12.5"/>"#,
             "trash.svg" => r#"<path d="M3 4.5H13M6.5 4.5V3H9.5V4.5M4.5 4.5L5 13H11L11.5 4.5M6.8 7V10.5M9.2 7V10.5"/>"#,
-            "archive.svg" => r#"<path d="M2.5 3H13.5V6H2.5ZM3.5 6V13H12.5V6M6.5 8.5H9.5"/>"#,
+            // Une flèche vers un disque : une copie mise à l'abri, pas une boîte d'archives.
+            "backup.svg" => {
+                r#"<path d="M8 2V8M5.5 5.5L8 8L10.5 5.5"/><rect x="2.5" y="9.5" width="11" height="4" rx="1"/><path d="M11 11.5H11.2"/>"#
+            }
             "backlink.svg" => r#"<path d="M13 4.5H8.5A3 3 0 0 0 5.5 7.5V11.5M3 9L5.5 11.5L8 9"/>"#,
             "code.svg" => r#"<path d="M5.5 4.5L2.5 8L5.5 11.5M10.5 4.5L13.5 8L10.5 11.5"/>"#,
             "heart.svg" => {
