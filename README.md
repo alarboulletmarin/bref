@@ -14,6 +14,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Lists that continue themselves**: `- `, `1. ` and `[] ` start a list, Enter continues it, numbering stays in order.
 - **Slash commands**: type `/` for a heading, a list, a colored panel, a code block, a formula or a table, whose size you pick on a grid. What lands in the note is plain Markdown.
 - **Tables like on the web**: cells wrap inside their column, `Tab` moves from cell to cell, `Enter` adds a row, two `+` buttons add a row or a column, and pasting a table from a web page, a spreadsheet or Markdown just works.
+- **Comments**: `Ctrl + Shift + M` annotates a word, a line or the line of an image without changing its text. The comment is kept in the note itself as [CriticMarkup](https://criticmarkup.com/), `{==the text==}{>>the comment<<}`, so the file stays plain Markdown: the text is highlighted, the comment follows it, faded. `comments` in the palette lists those of the note and jumps to one.
 - **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `@` suggests days (`@today`, `@tomorrow`, `@monday`, `@2026-10-09`) and links to the daily note of that day. `#tags` filter the note list.
 - **Backlinks**: the notes that link to the open one, each with the line that holds the link.
 - **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons.
@@ -187,7 +188,8 @@ The bottom right of the note shows its number of words and characters; with a se
 | `Ctrl + Shift + C` | copy the code block the cursor is in, otherwise the whole note (also the icon at the bottom right, for the note) |
 | `Ctrl + click` | open a `[[link]]`, a `#tag`, a URL or a `[text](address)` link |
 | `Ctrl + V` | over a selection, a pasted address makes it a link |
-| Right click | in a note, a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, make or edit a link |
+| Right click | in a note, a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, make or edit a link, comment |
+| `Ctrl + Shift + M` | comment the selection (without one, the line); on a comment, resolve it: the markup goes, the text stays |
 | `F1`, `Ctrl + /` | the list of shortcuts, inside the app; at its foot, the version of Bref and links to its source and to its Ko-fi page |
 | `Ctrl + Q` | quit |
 

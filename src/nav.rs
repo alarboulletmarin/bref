@@ -85,6 +85,7 @@ pub enum Do {
     Bold,
     Italic,
     Link,
+    Comment,
     OpenLink,
     CopyAddress,
 }
@@ -620,6 +621,7 @@ impl Shell {
             (Do::Bold, _) => Some(Box::new(editor::Bold)),
             (Do::Italic, _) => Some(Box::new(editor::Italic)),
             (Do::Link, _) => Some(Box::new(editor::InsertLink)),
+            (Do::Comment, _) => Some(Box::new(editor::Comment)),
             (Do::OpenLink, Some(link)) => return self.follow(&link, window, cx),
             (Do::CopyAddress, Some(Link::Url(url))) => return cx.write_to_clipboard(ClipboardItem::new_string(url)),
             _ => None,
@@ -922,6 +924,7 @@ impl Shell {
             groups[2].push((tr("Bold", "Gras"), Do::Bold));
             groups[2].push((tr("Italic", "Italique"), Do::Italic));
             groups[2].push((if web { tr("Edit the link", "Modifier le lien") } else { tr("Make a link", "Faire un lien") }, Do::Link));
+            groups[2].push((tr("Comment, or resolve the comment", "Commenter, ou résoudre le commentaire"), Do::Comment));
         } else {
             if !is_dir && !many {
                 groups[0].push((tr("Open", "Ouvrir"), Do::Open));

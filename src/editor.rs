@@ -70,6 +70,7 @@ actions!(
         Bold,
         Italic,
         InsertLink,
+        Comment,
         Copy,
         Cut,
         Paste,
@@ -1865,6 +1866,27 @@ impl Editor {
         self.move_to(sel.start + at, cx);
     }
 
+    /// Commente la sélection, ou la ligne sans elle : `{==texte==}{>>…<<}`, le curseur dans le
+    /// commentaire à écrire. Sur un commentaire, le résout : le balisage part, le texte reste.
+    fn comment(&mut self, cx: &mut Context<Self>) {
+        let lr = self.line_range(self.sel.start);
+        let (line, col) = (&self.content[lr.clone()], self.sel.start - lr.start);
+        if let Some((whole, noted, _)) = md::comments(line).into_iter().find(|(whole, ..)| (whole.start..=whole.end).contains(&col)) {
+            let kept = line[noted].to_string();
+            self.push_undo(true);
+            return self.edit(lr.start + whole.start..lr.start + whole.end, &kept, cx);
+        }
+        let marker = md::classify(line, false).1;
+        let sel = if self.sel.is_empty() { lr.start + marker..lr.end } else { self.sel.clone() };
+        if sel.is_empty() || sel.end > lr.end || self.in_code(lr.start) {
+            return;
+        }
+        let text = self.content[sel.clone()].to_string();
+        self.push_undo(true);
+        self.edit(sel.clone(), &format!("{{=={text}==}}{{>><<}}"), cx);
+        self.move_to(sel.start + text.len() + 9, cx);
+    }
+
     // ----- Tableaux -----
 
     /// Tableau autour de l'octet `at` : son étendue, ses lignes, et la cellule
@@ -3548,6 +3570,12 @@ impl Editor {
                 if !sel.is_empty() && sel.start <= end && sel.end > row.start {
                     mark(sel, t.selection, window);
                 }
+                // Le texte qui porte un commentaire est surligné.
+                if !matches!(row.kind, Kind::Code | Kind::Fence) {
+                    for (_, noted, _) in md::comments(&self.content[row.start..end]) {
+                        mark(&(row.start + noted.start..row.start + noted.end), t.accent.opacity(0.22), window);
+                    }
+                }
                 if let Some(find) = &self.find {
                     let from = find.hits.partition_point(|hit| hit.end <= row.start);
                     for (i, hit) in find.hits.iter().enumerate().skip(from).take_while(|(_, hit)| hit.start < end) {
@@ -3870,6 +3898,7 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &Bold, _, cx| this.wrap("**", cx)))
         .on_action(cx.listener(|this, _: &Italic, _, cx| this.wrap("*", cx)))
         .on_action(cx.listener(|this, _: &InsertLink, _, cx| this.link(cx)))
+        .on_action(cx.listener(|this, _: &Comment, _, cx| this.comment(cx)))
         .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(false, cx)))
         .on_action(cx.listener(|this, _: &Cut, _, cx| this.copy(true, cx)))
         .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))

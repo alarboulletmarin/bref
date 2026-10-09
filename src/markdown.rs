@@ -351,6 +351,15 @@ pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
             }
         }
     }
+    // Un commentaire : son texte garde ses styles (l'éditeur le surligne), le reste s'efface.
+    for (whole, noted, said) in comments(line) {
+        if whole.start < from || flags[whole.start] & CODE != 0 {
+            continue;
+        }
+        flags[whole.start..noted.start].fill(DIM);
+        flags[noted.end..whole.end].fill(DIM);
+        flags[said].fill(DIM | ITALIC);
+    }
 }
 
 const KEYWORDS: &[&str] = &[
@@ -935,6 +944,36 @@ pub fn headings(text: &str) -> Vec<(u8, &str, usize)> {
     found
 }
 
+/// Commentaires de la ligne, écrits en CriticMarkup `{==texte==}{>>commentaire<<}` : l'étendue
+/// du tout, celle du texte commenté et celle du commentaire.
+pub fn comments(line: &str) -> Vec<(Range<usize>, Range<usize>, Range<usize>)> {
+    let (mut found, mut from) = (Vec::new(), 0);
+    while let Some(open) = line[from..].find("{==").map(|i| i + from) {
+        let Some(mid) = line[open + 3..].find("==}{>>").map(|i| i + open + 3) else { break };
+        let Some(end) = line[mid + 6..].find("<<}").map(|i| i + mid + 6) else { break };
+        found.push((open..end + 3, open + 3..mid, mid + 6..end));
+        from = end + 3;
+    }
+    found
+}
+
+/// Tous les commentaires de la note, hors des blocs de code : le texte commenté, le
+/// commentaire, et l'octet où commence le tout.
+pub fn all_comments(text: &str) -> Vec<(&str, &str, usize)> {
+    let fences = text.lines().filter(|line| is_fence(line)).count();
+    let (mut seen, mut in_code, mut at, mut found) = (0, false, 0, Vec::new());
+    for line in text.split('\n') {
+        if is_fence(line) {
+            seen += 1;
+            in_code = !in_code && seen < fences;
+        } else if !in_code {
+            found.extend(comments(line).into_iter().map(|(whole, noted, said)| (&line[noted], &line[said], at + whole.start)));
+        }
+        at += line.len() + 1;
+    }
+    found
+}
+
 /// Passages de `text` qui valent `query`, sans chevauchement. `case` : la casse compte ;
 /// `word` : le passage ne touche ni lettre ni chiffre. Le texte est celui du fichier : les
 /// marques du Markdown se cherchent comme le reste.
@@ -1007,6 +1046,14 @@ mod tests {
         assert_eq!(l[1].1, Link::Tag("projet/x".into()));
         assert_eq!(l[2].1, Link::Url("https://a.b/c".into()));
         assert!(links("a#b et #123").is_empty());
+        // Commentaires : le texte, le commentaire, et où commence le tout ; pas dans le code.
+        let line = "un {==mot **fort**==}{>>à revoir<<} et {==deux==}{>><<} {==seul==}";
+        assert_eq!(comments(line), [(3..36, 6..18, 24..33), (40..56, 43..47, 53..53)]);
+        assert_eq!(all_comments(&format!("# T\n{line}\n```\n{line}\n```")), [("mot **fort**", "à revoir", 7), ("deux", "", 44)]);
+        let mut flags = vec![0u16; line.len()];
+        inline(line, 0, &mut flags);
+        assert!(flags[3..6].iter().all(|f| *f == DIM) && flags[6] == 0 && flags[12] == BOLD);
+        assert!(flags[18..24].iter().all(|f| *f == DIM) && flags[24..33].iter().all(|f| *f == DIM | ITALIC) && flags[36] == 0);
         // Dates après `@`. Le 9 octobre 2026 est un vendredi.
         let today = (2026, 10, 9);
         assert_eq!((day_number((1970, 1, 1)), day_number((2000, 3, 1)), day_of(day_number((2024, 2, 29)))), (0, 11_017, (2024, 2, 29)));

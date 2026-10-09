@@ -919,24 +919,41 @@ impl Shell {
     /// cours présélectionné. Le titre parcouru se montre en aperçu, Entrée y laisse le curseur,
     /// Échap le remet où il était.
     pub fn open_outline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.vault.is_none() || self.picture.is_some() {
-            return;
-        }
-        let editor = self.editor.read(cx);
-        let before = editor.position();
-        let heads: Vec<(String, usize)> = markdown::headings(editor.text())
+        let heads = markdown::headings(self.editor.read(cx).text())
             .into_iter()
             .map(|(level, title, at)| (format!("{}{title}", "  ".repeat(level as usize - 1)), at))
             .collect();
+        let none = tr("This note has no headings", "Cette note n'a pas de titres");
+        self.open_places(tr("Outline", "Plan"), none, heads, window, cx)
+    }
+
+    /// Les commentaires de la note, dans la même liste que son plan : le texte commenté, puis
+    /// ce qu'on en dit.
+    pub fn open_comments(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let said = markdown::all_comments(self.editor.read(cx).text())
+            .into_iter()
+            .map(|(noted, said, at)| (format!("{noted} — {said}"), at))
+            .collect();
+        let none = tr("This note has no comments", "Cette note n'a pas de commentaires");
+        self.open_places(tr("Comments", "Commentaires"), none, said, window, cx)
+    }
+
+    /// Liste d'endroits de la note (libellé, octet), celui où l'on est présélectionné ; sans
+    /// aucun, `none` le dit.
+    fn open_places(&mut self, title: &str, none: &str, heads: Vec<(String, usize)>, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_none() || self.picture.is_some() {
+            return;
+        }
+        let before = self.editor.read(cx).position();
         if heads.is_empty() {
             self.palette = None;
-            self.say(Tone::Info, tr("This note has no headings", "Cette note n'a pas de titres"), cx);
+            self.say(Tone::Info, none, cx);
             window.focus(&self.editor.focus_handle(cx));
             return cx.notify();
         }
         let current = heads.iter().rposition(|(_, at)| *at <= before).unwrap_or(0);
         let (theme, options) = (self.theme, heads.iter().map(|(label, _)| label.clone()).collect());
-        let palette = cx.new(|cx| Palette::choose(tr("Outline", "Plan"), options, "", theme, cx).select(current));
+        let palette = cx.new(|cx| Palette::choose(title, options, "", theme, cx).select(current));
         cx.subscribe_in(&palette, window, move |this, palette, event, window, cx| {
             let to = match event {
                 PaletteEvent::Preview(_) | PaletteEvent::Submit(_) => palette.read(cx).chosen().and_then(|i| heads.get(i)),
@@ -1677,6 +1694,7 @@ impl Shell {
                 PaletteEvent::ToggleUpdates => this.toggle_updates(cx),
                 PaletteEvent::CheckUpdate => this.check_now(cx),
                 PaletteEvent::Outline => this.open_outline(window, cx),
+                PaletteEvent::Comments => this.open_comments(window, cx),
                 PaletteEvent::Today => this.open_today(cx),
                 PaletteEvent::Trash => this.open_trash(window, cx),
                 PaletteEvent::Backup => this.choose_backup(window, cx),
@@ -1809,7 +1827,9 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (format!("{} / {}", m("B"), m("I")), tr("Bold / italic", "Gras / italique")),
                 (m("K"), tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
                 (m("V"), tr("An address pasted over a selection makes it a link", "Une adresse collée sur une sélection en fait un lien")),
-                (tr("Right click", "Clic droit").into(), tr("Menu of the note: link, cut, copy, paste, bold, italic", "Menu de la note : lien, couper, copier, coller, gras, italique")),
+                (m("Shift+M"), tr("Comment the selection or the line; on a comment, resolve it", "Commenter la sélection ou la ligne ; sur un commentaire, le résoudre")),
+                (format!("{} › {}", m("P"), tr("comments", "commentaires")), tr("List the comments of the note, jump to one", "Lister les commentaires de la note, aller à l'un d'eux")),
+                (tr("Right click", "Clic droit").into(), tr("Menu of the note: link, comment, cut, copy, paste, bold, italic", "Menu de la note : lien, commentaire, couper, copier, coller, gras, italique")),
                 (format!("{} / {}", m("Z"), m("Shift+Z")), tr("Undo / redo", "Annuler / rétablir")),
                 (format!("{word}+{}", tr("Left / Right", "Gauche / Droite")), tr("Move by word", "Se déplacer par mot")),
             ],
@@ -2521,6 +2541,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-b", Bold, e),
         KeyBinding::new("secondary-i", Italic, e),
         KeyBinding::new("secondary-k", InsertLink, e),
+        KeyBinding::new("secondary-shift-m", Comment, e),
         KeyBinding::new("secondary-c", Copy, e),
         KeyBinding::new("secondary-x", Cut, e),
         KeyBinding::new("secondary-v", Paste, e),
@@ -3757,6 +3778,31 @@ mod tests {
         cx.simulate_keystrokes("shift-right shift-right shift-right secondary-k");
         cx.simulate_input("https://z.fr");
         assert_eq!(text(cx), "[mot](https://z.fr)");
+        // Commentaires : Ctrl+Maj+M commente la sélection (sans elle, la ligne, après sa puce),
+        // la palette les liste et y mène, le même raccourci sur un commentaire le résout.
+        load(cx, "- un mot ici\nfin", 5);
+        cx.simulate_keystrokes("shift-right shift-right shift-right secondary-shift-m");
+        cx.simulate_input("à revoir");
+        assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\nfin");
+        cx.simulate_keystrokes("down secondary-shift-m");
+        cx.simulate_input("ok");
+        assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\n{==fin==}{>>ok<<}");
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("commentaires");
+        cx.simulate_keystrokes("down enter");
+        cx.simulate_input("revoir");
+        cx.simulate_keystrokes("enter");
+        assert!(shell.read_with(cx, |s, cx| s.palette.is_none() && s.editor.read(cx).position() == 5));
+        cx.simulate_keystrokes("secondary-shift-m");
+        assert_eq!(text(cx), "- un mot ici\n{==fin==}{>>ok<<}");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\n{==fin==}{>>ok<<}");
+        load(cx, "rien", 0);
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("commentaires");
+        cx.simulate_keystrokes("down enter");
+        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.told(Tone::Info, "commentaires")));
+        shell.update(cx, |s, _| s.toasts.clear());
         // `@` propose des jours : celui qu'on choisit devient un lien vers sa note du jour.
         // Une adresse e-mail n'ouvre pas la liste.
         let tomorrow = date_name(markdown::day_of(markdown::day_number(today()) + 1));
