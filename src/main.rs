@@ -102,6 +102,50 @@ fn first_language(list: &str) -> Option<&str> {
         .map(|l| l.trim_end_matches(',').trim_matches('"'))
 }
 
+/// Date du jour à l'heure locale : année, mois, jour. La bibliothèque standard ne donne que l'UTC.
+#[cfg(unix)]
+pub fn today() -> (i32, u32, u32) {
+    // SAFETY: `time` accepte un pointeur nul ; `localtime_r` n'écrit que dans `tm`, qui est à nous.
+    let tm = unsafe {
+        let now = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now, &mut tm);
+        tm
+    };
+    (tm.tm_year + 1900, tm.tm_mon as u32 + 1, tm.tm_mday as u32)
+}
+
+#[cfg(windows)]
+pub fn today() -> (i32, u32, u32) {
+    /// `SYSTEMTIME` de l'API Windows : huit mots de 16 bits.
+    #[repr(C)]
+    #[derive(Default)]
+    #[allow(dead_code)]
+    struct Local {
+        year: u16,
+        month: u16,
+        day_of_week: u16,
+        day: u16,
+        hour: u16,
+        minute: u16,
+        second: u16,
+        millis: u16,
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetLocalTime(time: *mut Local);
+    }
+    let mut now = Local::default();
+    // SAFETY: `GetLocalTime` remplit la structure qu'on lui donne, et n'échoue pas.
+    unsafe { GetLocalTime(&mut now) };
+    (now.year as i32, now.month as u32, now.day as u32)
+}
+
+/// `2026-10-09` : la date telle qu'elle s'écrit dans une note et nomme la note du jour.
+pub fn date_name((year, month, day): (i32, u32, u32)) -> String {
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
 /// Polices installées, relevées au démarrage.
 static FAMILIES: OnceLock<Vec<&'static str>> = OnceLock::new();
 
@@ -283,7 +327,7 @@ pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
 
-actions!(app, [Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [Today, Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -1402,6 +1446,14 @@ impl Shell {
         self.settle_nav(window, cx);
     }
 
+    /// Note du jour : la note qui porte la date locale pour nom, où qu'elle soit dans le
+    /// coffre ; créée avec cette date pour titre si elle n'existe pas encore.
+    fn open_today(&mut self, cx: &mut Context<Self>) {
+        if self.vault.is_some() {
+            self.open_wiki(&date_name(today()), cx);
+        }
+    }
+
     fn open_wiki(&mut self, name: &str, cx: &mut Context<Self>) {
         let wanted = name.to_lowercase();
         // Par son nom d'abord, sinon par un alias de son en-tête YAML.
@@ -1451,6 +1503,7 @@ impl Shell {
                 PaletteEvent::ToggleUpdates => this.toggle_updates(cx),
                 PaletteEvent::CheckUpdate => this.check_now(cx),
                 PaletteEvent::Outline => this.open_outline(window, cx),
+                PaletteEvent::Today => this.open_today(cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
@@ -1480,6 +1533,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (m(tr("Enter", "Entrée")), tr("Search bar: replace all (Enter: this match)", "Barre de recherche : tout remplacer (Entrée : ce passage)")),
                 (m("Shift+O"), tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")),
                 (m("N"), tr("New note", "Nouvelle note")),
+                (m("J"), tr("Today's note: open it, or create it", "Note du jour : l'ouvrir, ou la créer")),
                 (m("O"), tr("Change vault", "Changer de coffre")),
                 (m("Shift+C"), tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
                 (format!("{MOD}+{}", tr("click", "clic")), tr("Open a [[link]], #tag or URL", "Ouvrir un [[lien]], #tag ou URL")),
@@ -2007,6 +2061,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
             .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
+            .on_action(cx.listener(|this, _: &Today, _, cx| this.open_today(cx)))
             .on_action(cx.listener(|this, _: &ChooseTheme, window, cx| {
                 this.choose_setting(Setting::Theme, window, cx)
             }))
@@ -2127,6 +2182,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("escape", CloseHelp, Some("Shell")),
         KeyBinding::new("secondary-k secondary-t", ChooseTheme, None),
         KeyBinding::new("secondary-shift-o", Outline, None),
+        KeyBinding::new("secondary-j", Today, None),
         KeyBinding::new("secondary-=", ZoomIn, None),
         KeyBinding::new("secondary-+", ZoomIn, None),
         KeyBinding::new("secondary--", ZoomOut, None),
@@ -2934,6 +2990,27 @@ mod tests {
         for name in ["Fiche 2.md", "Renvoi.md"] {
             fs::remove_file(root.join(name)).unwrap();
         }
+
+        // Note du jour : Ctrl+J la crée, nommée et titrée de la date locale ; la seconde fois
+        // (ici depuis la palette) c'est la même note qui s'ouvre. `/date` écrit la date.
+        let day = date_name(today());
+        cx.simulate_keystrokes("secondary-j");
+        settle(cx);
+        assert_eq!(fs::read_to_string(root.join(format!("{day}.md"))).unwrap(), format!("# {day}\n\n"));
+        cx.simulate_input("vu le /date");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(text(cx), format!("# {day}\n\nvu le {day}"));
+        settle(cx);
+        shell.update(cx, |s, cx| s.open_note(&was, cx));
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("note du jour");
+        cx.simulate_keystrokes("down enter");
+        settle(cx);
+        assert_eq!(text(cx), format!("# {day}\n\nvu le {day}"));
+        assert!(!root.join(format!("{day} 2.md")).exists());
+        shell.update(cx, |s, cx| s.open_note(&was, cx));
+        fs::remove_file(root.join(format!("{day}.md"))).unwrap();
+        settle(cx);
         shell.update(cx, |s, cx| s.open_note(&was, cx));
         settle(cx);
         cx.simulate_keystrokes("secondary-t");
@@ -4092,6 +4169,19 @@ mod tests {
         // La recherche de nouvelle version est active tant qu'on ne l'a pas coupée.
         assert!(prefs.updates && !Prefs::parse("updates=off\n").updates && Prefs::parse("updates=on").updates);
         assert!(!Prefs::parse(&Prefs::parse("updates=off").to_text()).updates);
+    }
+
+    #[test]
+    fn names_the_day() {
+        assert_eq!(date_name((2026, 1, 2)), "2026-01-02");
+        let (year, month, day) = today();
+        assert!(year >= 2026 && (1..=12).contains(&month) && (1..=31).contains(&day));
+        // La date locale est celle que donne le système (à minuit près, entre les deux lectures).
+        #[cfg(unix)]
+        if let Ok(out) = std::process::Command::new("date").arg("+%F").output() {
+            let system = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            assert!(system == date_name((year, month, day)) || system == date_name(today()));
+        }
     }
 
     #[test]

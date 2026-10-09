@@ -21,6 +21,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **CSV and TSV files, edited in place**: a `.csv` or `.tsv` in the vault opens in a grid. The encoding (UTF-8, UTF-16, ISO-8859-1, Windows-1252) and the delimiter (comma, semicolon, tab, pipe…) are detected and can be changed; select cells with the keyboard or the mouse, copy, paste, export, and what you change is written straight into the file. A million rows are parsed in under a tenth of a second on the author's machine.
 - **Keyboard first**: one palette to find, create and switch notes, and a shortcut for every view. No toolbar.
 - **No save button**: notes are written to disk as you type, and named after their first line.
+- **Daily note**: one key opens the note of the day, or creates it.
 - **Word count**: the bottom of the note shows its words, characters and reading time, or those of the selection.
 - **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, IBM Plex Sans and Plex Mono built in (nothing to install), any installed font if you prefer, and the text size you like.
 - Light and dark, following your system, until you pick a theme. English and French, following the system language.
@@ -175,6 +176,7 @@ The bottom right of the note shows its number of words and characters and its re
 | `Ctrl + F`, `Ctrl + H` | [find in the note](#find-and-replace), find and replace |
 | `Ctrl + Shift + O` | outline: the headings of the note, to jump to one (also `Outline of the note` in the palette) |
 | `Ctrl + N` | new note |
+| `Ctrl + J` | today's note: `2026-10-09.md`, opened wherever it is in the vault, or created with the date as its title (also `Today's note` in the palette) |
 | `Ctrl + E`, `Ctrl + R`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |
 | `Ctrl + M` | navigation panel on the whole window, and back |
 | `Ctrl + Shift + D` | new [diagram](#diagrams) |
@@ -310,6 +312,7 @@ Type `/` at the start of a line or of a word: a list offers what can be inserted
 | `/code`, `/mermaid`, `/math` | a code block, a Mermaid diagram, a formula, with the cursor inside |
 | `/table` | a table, after you chose its size |
 | `/link`, `/image` | `[[` or `![[`, and their suggestions |
+| `/date` | today's date (`2026-10-09`), in place |
 
 ### Tables
 

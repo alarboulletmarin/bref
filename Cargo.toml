@@ -23,6 +23,10 @@ sha2 = "0.10.9"
 unicode-segmentation = "1.13.3"
 unicode-width = "0.2.2"
 
+# Déjà tirée par gpui, à la même version : la date locale, que la bibliothèque standard ignore.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.177"
+
 [dev-dependencies]
 gpui = { version = "0.2.2", features = ["test-support"] }
 

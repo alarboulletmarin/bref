@@ -147,8 +147,6 @@ fn inside(root: &Path, file: &Path) -> bool {
 /// le curseur, texte posé après).
 type Command = (&'static str, &'static str, &'static str, &'static str, &'static str);
 
-// ponytail: pas de `/date` : la bibliothèque standard ne connaît pas le fuseau
-// horaire ; l'ajouter si une dépendance de dates entre un jour dans le projet.
 const COMMANDS: &[Command] = &[
     ("h1", "Heading 1", "Titre 1", "# ", ""),
     ("h2", "Heading 2", "Titre 2", "## ", ""),
@@ -157,6 +155,7 @@ const COMMANDS: &[Command] = &[
     ("num", "Numbered list", "Liste numérotée", "1. ", ""),
     ("todo", "Task", "Tâche à cocher", "- [ ] ", ""),
     ("table", "Table", "Tableau", "", ""),
+    ("date", "Today's date", "Date du jour", "", ""),
     ("note", "Panel: note", "Panneau : note", "> [!NOTE]\n> ", ""),
     ("tip", "Panel: tip", "Panneau : astuce", "> [!TIP]\n> ", ""),
     ("important", "Panel: important", "Panneau : important", "> [!IMPORTANT]\n> ", ""),
@@ -2086,6 +2085,11 @@ impl Editor {
                     self.edit(slash..c, "", cx);
                     self.grid = Some((3, 3));
                     self.grid_typed.clear();
+                    return true;
+                }
+                // La date du jour s'écrit là où on la demande.
+                if name == "date" {
+                    self.edit(slash..c, &crate::date_name(crate::today()), cx);
                     return true;
                 }
                 // Un lien se pose dans la phrase ; tout le reste commence sa ligne.

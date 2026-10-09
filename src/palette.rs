@@ -45,6 +45,10 @@ fn install_label(version: &str) -> String {
     format!("{} {version}", tr("Update Bref to", "Mettre à jour Bref vers"))
 }
 
+fn today_label() -> &'static str {
+    tr("Today's note", "Note du jour")
+}
+
 fn outline_label() -> &'static str {
     tr("Outline of the note", "Plan de la note")
 }
@@ -100,6 +104,8 @@ pub enum PaletteEvent {
     CheckUpdate,
     /// Liste des titres de la note.
     Outline,
+    /// Ouvre ou crée la note du jour.
+    Today,
     /// Installe la nouvelle version.
     InstallUpdate,
     /// Texte validé dans un champ de saisie, ou choix validé dans une liste.
@@ -124,6 +130,7 @@ enum Item {
     Check,
     Install,
     Outline,
+    Today,
     Setting(Setting),
     Table(Pick),
 }
@@ -344,8 +351,10 @@ impl Palette {
                 items.push(item);
             }
         }
-        if !q.is_empty() && fuzzy(&q, &outline_label().to_lowercase()).is_some() {
-            items.push(Item::Outline);
+        for (label, item) in [(outline_label(), Item::Outline), (today_label(), Item::Today)] {
+            if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
+                items.push(item);
+            }
         }
         if let Some(version) = &self.installable
             && !q.is_empty()
@@ -407,6 +416,7 @@ impl Palette {
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
             Some(Item::Check) => PaletteEvent::CheckUpdate,
             Some(Item::Outline) => PaletteEvent::Outline,
+            Some(Item::Today) => PaletteEvent::Today,
             Some(Item::Install) => PaletteEvent::InstallUpdate,
             Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
             None => PaletteEvent::Dismiss,
@@ -534,6 +544,7 @@ impl Render for Palette {
                 Item::Updates => (updates_label(self.updates.unwrap_or(true)).to_string(), String::new()),
                 Item::Check => (check_label().to_string(), String::new()),
                 Item::Outline => (outline_label().to_string(), format!("{}+Shift+O", crate::MOD)),
+                Item::Today => (today_label().to_string(), format!("{}+J", crate::MOD)),
                 Item::Install => (install_label(self.installable.as_deref().unwrap_or_default()), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
                 Item::Table(pick) => (pick.label().to_string(), String::new()),
