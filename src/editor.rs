@@ -173,6 +173,93 @@ pub enum EditorEvent {
     Open(Link),
 }
 
+/// Ce dont la mise en page dépend, en dehors du texte : si rien n'a changé, on la garde.
+#[derive(PartialEq)]
+struct LayoutKey {
+    version: u64,
+    width: u32,
+    size: u32,
+    cursor: usize,
+    marked: Option<Range<usize>>,
+}
+
+/// Ce qui a changé dans le texte depuis la dernière mise en page : ses `prefix` premiers octets
+/// et ses `suffix` derniers sont restés tels quels.
+#[derive(Clone, Copy)]
+struct Damage {
+    old_len: usize,
+    prefix: usize,
+    suffix: usize,
+}
+
+/// La dernière mise en page, pour en reprendre ce qui n'a pas changé.
+struct Laid {
+    epoch: u64,
+    width: u32,
+    size: u32,
+    len: usize,
+    cursor: usize,
+    fences: usize,
+    dollars: usize,
+}
+
+/// Une zone du texte à remettre en page : les lignes de l'ancienne mise en page `old` (indices),
+/// le texte qui les remplace, de `start` à `stop` (octets, `stop` inclus : fin de la dernière ligne).
+struct Region {
+    old: Range<usize>,
+    start: usize,
+    stop: usize,
+    /// Dans un très gros tableau : ses colonnes, le rang de la première ligne dans le tableau et l'octet où
+    /// le tableau commence.
+    big: Option<(Rc<grid::Geometry>, usize, usize)>,
+    /// La zone touche aux premières lignes, qui fixent les colonnes : elles ne doivent pas avoir changé.
+    check: bool,
+}
+
+/// Ce qu'on garde de la mise en page précédente, et ce qu'on refait.
+struct Plan {
+    regions: Vec<Region>,
+    /// Comptes de lignes de clôture et de `$$`, inchangés.
+    fences: usize,
+    dollars: usize,
+    /// Les lignes reprises qui suivent `after` (octets de l'ancien texte) se décalent de `delta`.
+    after: usize,
+    delta: isize,
+}
+
+/// Reprend `count` lignes de l'ancienne mise en page, posées à partir de `y`, leur texte décalé de `delta`.
+fn reuse(old: &mut std::vec::IntoIter<Row>, count: usize, delta: isize, y: &mut Pixels, rows: &mut Vec<Row>) {
+    let mut by = None;
+    for mut row in old.by_ref().take(count) {
+        let by = *by.get_or_insert(*y - row.y);
+        row.start = (row.start as isize + delta) as usize;
+        row.y += by;
+        *y = row.y + row.height;
+        rows.push(row);
+    }
+}
+
+/// Un très gros tableau : ses lignes ne reçoivent leurs cellules que près de l'écran.
+struct BigBlock {
+    /// Indices de ses lignes.
+    rows: Range<usize>,
+    geom: Rc<grid::Geometry>,
+    /// Parties de ses lignes (indices dans le tableau) qui ont leurs cellules.
+    mat: Vec<Range<usize>>,
+    /// Ses lignes viennent d'une autre mise en page : on ne sait plus lesquelles ont leurs cellules.
+    rescan: bool,
+}
+
+/// Un tableau de la note.
+struct TableMeta {
+    /// Octets, de son début au bout de sa dernière ligne.
+    range: Range<usize>,
+    /// Indices de ses lignes.
+    rows: Range<usize>,
+    /// Largeur de sa plus large ligne.
+    wide: Pixels,
+}
+
 /// Une ligne logique mise en page (elle peut occuper plusieurs lignes visuelles).
 struct Row {
     start: usize,
@@ -520,6 +607,33 @@ pub struct Editor {
     theme: Theme,
     // Mise en page de la dernière frame.
     rows: Vec<Row>,
+    /// Change à chaque modification du texte ou de ce qui sert à le mettre en page
+    /// (thème, images) : tant qu'il et le reste de `LayoutKey` ne bougent pas, la mise
+    /// en page est reprise telle quelle, pour un simple défilement.
+    version: u64,
+    /// Change quand tout est à refaire (autre note, thème, images) : rien n'est repris.
+    epoch: u64,
+    dmg: Option<Damage>,
+    laid: Option<Laid>,
+    /// Les tests refont toute la mise en page à chaque fois, pour la comparer à celle qu'on a reprise.
+    force_full: bool,
+    /// Test : comparer chaque mise en page reprise à une mise en page complète.
+    #[cfg(test)]
+    compare: bool,
+    /// Test : mises en page complètes et mises en page reprises.
+    #[cfg(test)]
+    counts: (usize, usize, usize),
+    laid_out: Option<LayoutKey>,
+    /// Une image ou un diagramme se charge encore : la mise en page sera refaite.
+    loading: bool,
+    /// Hauteur totale des lignes, et indices des lignes qui portent un bouton de copie.
+    total_y: Pixels,
+    opening: Vec<usize>,
+    /// Chaque tableau de la note : son étendue, ses lignes et sa largeur.
+    table_meta: Vec<TableMeta>,
+    big: Vec<BigBlock>,
+    /// Empreinte du thème et des polices de la dernière mise en page.
+    big_style: u64,
     origin: Point<Pixels>,
     width: Pixels,
     viewport: Bounds<Pixels>,
@@ -571,6 +685,22 @@ impl Editor {
             thumbs: Vec::new(),
             theme,
             rows: Vec::new(),
+            version: 0,
+            epoch: 0,
+            dmg: None,
+            laid: None,
+            force_full: false,
+            #[cfg(test)]
+            compare: std::env::var("BREF_NO_COMPARE").is_err(),
+            #[cfg(test)]
+            counts: (0, 0, 0),
+            laid_out: None,
+            loading: false,
+            total_y: px(0.),
+            opening: Vec::new(),
+            table_meta: Vec::new(),
+            big: Vec::new(),
+            big_style: 0,
             origin: Point::default(),
             width: MAX_WIDTH,
             viewport: Bounds::default(),
@@ -586,6 +716,8 @@ impl Editor {
     /// Remplace tout le contenu (changement de note) ; curseur à l'octet `cursor`.
     pub fn load(&mut self, text: String, cursor: usize, cx: &mut Context<Self>) {
         let cursor = cursor.min(text.len());
+        self.version += 1;
+        self.epoch += 1;
         self.content = text;
         self.sel = cursor..cursor;
         self.reversed = false;
@@ -601,6 +733,8 @@ impl Editor {
     }
 
     pub fn set_theme(&mut self, theme: Theme, cx: &mut Context<Self>) {
+        self.version += 1;
+        self.epoch += 1;
         self.theme = theme;
         cx.notify();
     }
@@ -613,9 +747,13 @@ impl Editor {
     pub fn set_images(&mut self, images: &[PathBuf]) {
         let named = images.iter().map(|p| (graph::image_name(p).to_lowercase(), p.clone()));
         self.images = named.collect();
+        self.version += 1;
+        self.epoch += 1;
     }
 
     pub fn set_dirs(&mut self, dirs: Vec<PathBuf>) {
+        self.version += 1;
+        self.epoch += 1;
         self.dirs = dirs;
     }
 
@@ -654,6 +792,19 @@ impl Editor {
     #[cfg(test)]
     pub fn caret(&self) -> usize {
         self.cursor()
+    }
+
+    /// Met le curseur à l'octet `at` (le plus proche qui soit valide).
+    #[cfg(test)]
+    pub fn place_cursor(&mut self, at: usize, cx: &mut Context<Self>) {
+        let at = self.clamp(at);
+        self.move_to(at, cx);
+    }
+
+    /// Mises en page complètes et mises en page reprises, depuis le début.
+    #[cfg(test)]
+    pub fn layouts(&self) -> (usize, usize, usize) {
+        self.counts
     }
 
     /// Lignes de tirets de tableau qu'on ne voit pas.
@@ -755,7 +906,18 @@ impl Editor {
         self.last_edit = Some(Instant::now());
     }
 
+    /// À appeler avant de remplacer `range` dans le texte : la mise en page saura ce qui a bougé.
+    fn damaged(&mut self, range: &Range<usize>) {
+        let len = self.content.len();
+        let (prefix, suffix) = (range.start, len - range.end);
+        self.dmg = Some(match self.dmg {
+            None => Damage { old_len: len, prefix, suffix },
+            Some(d) => Damage { prefix: d.prefix.min(prefix), suffix: d.suffix.min(suffix), ..d },
+        });
+    }
+
     fn changed(&mut self, cx: &mut Context<Self>) {
+        self.version += 1;
         self.marked = None;
         self.copied = None;
         self.grid = None;
@@ -769,6 +931,7 @@ impl Editor {
     /// Remplace `range` par `text` en conservant la sélection au mieux.
     fn splice(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
         self.push_undo(text.contains('\n') || text == " ");
+        self.damaged(&range);
         self.content.replace_range(range.clone(), text);
         let map = |p: usize| {
             if p <= range.start {
@@ -793,6 +956,7 @@ impl Editor {
 
     fn renumber(&mut self, cx: &mut Context<Self>) {
         if let Some((text, cursor)) = md::renumber(&self.content, self.cursor()) {
+            self.epoch += 1;
             self.content = text;
             self.sel = cursor..cursor;
             self.reversed = false;
@@ -809,6 +973,7 @@ impl Editor {
         let Some((text, sel)) = from.pop() else {
             return;
         };
+        self.epoch += 1;
         to.push(std::mem::replace(&mut self.content, text), self.sel.clone());
         self.sel = sel;
         self.reversed = false;
@@ -908,10 +1073,15 @@ impl Editor {
     /// La sélection couvre plusieurs cellules d'un tableau (ou des `|`) : le texte de chacune
     /// des cellules qu'elle touche. `None` si elle tient dans une cellule, ou sort du tableau.
     fn selected_cells(&self) -> Option<Vec<Range<usize>>> {
-        if self.sel.is_empty() {
+        self.cells_in(self.sel.clone())
+    }
+
+    /// Comme `selected_cells`, pour la sélection `sel`.
+    fn cells_in(&self, sel: Range<usize>) -> Option<Vec<Range<usize>>> {
+        if sel.is_empty() {
             return None;
         }
-        let (first, last) = (self.line_range(self.sel.start), self.line_range(self.sel.end));
+        let (first, last) = (self.line_range(sel.start), self.line_range(sel.end));
         let (mut found, mut bars, mut line) = (Vec::new(), false, first.clone());
         loop {
             if !self.is_table_line(&line) {
@@ -919,11 +1089,11 @@ impl Editor {
             }
             if !self.is_dash_row(&line) {
                 let text = &self.content[line.clone()];
-                let inside = |at: usize| (self.sel.start..self.sel.end).contains(&at);
+                let inside = |at: usize| (sel.start..sel.end).contains(&at);
                 bars |= md::bars(text).into_iter().any(|bar| inside(line.start + bar));
                 for cell in md::cells(text) {
                     let (from, to) = (line.start + cell.start, line.start + cell.end);
-                    let (from, to) = (from.max(self.sel.start), to.min(self.sel.end));
+                    let (from, to) = (from.max(sel.start), to.min(sel.end));
                     if from < to {
                         found.push(self.off_escape(from, false)..self.off_escape(to, true));
                     }
@@ -946,7 +1116,10 @@ impl Editor {
         let at = ranges.first().map_or(self.sel.start, |r| r.start);
         if !ranges.is_empty() {
             self.push_undo(true);
-            ranges.iter().rev().for_each(|r| self.content.replace_range(r.clone(), ""));
+            for r in ranges.iter().rev() {
+                self.damaged(r);
+                self.content.replace_range(r.clone(), "");
+            }
         }
         self.sel = at..at;
         self.reversed = false;
@@ -1158,6 +1331,19 @@ impl Editor {
         }
         // Dans un tableau : une ligne de plus sous celle du curseur ; sur une
         // dernière ligne restée vide, on la retire et on sort du tableau.
+        // Un très gros tableau n'est pas relu : Entrée y ajoute une ligne vide sous la courante (sous les tirets
+        // quand on est sur l'en-tête), sans toucher au reste.
+        if self.sel.is_empty() && self.in_big(self.cursor()) {
+            let line = self.line_range(self.cursor());
+            let cells = md::cells(&self.content[line.clone()]).len().max(1);
+            let after = match self.row_at(self.cursor()).and_then(|r| self.big.iter().find(|b| b.rows.contains(&r)).map(|b| r - b.rows.start)) {
+                Some(0) if line.end < self.content.len() => self.line_range(line.end + 1).end,
+                _ => line.end,
+            };
+            self.push_undo(true);
+            self.edit(after..after, &format!("\n|{}", " |".repeat(cells)), cx);
+            return self.move_to(after + 3, cx);
+        }
         if let Some((range, mut rows, (r, _))) = self.table_at(self.cursor()) {
             if r >= 2 && r + 1 == rows.len() && rows[r].iter().all(String::is_empty) {
                 rows.pop();
@@ -1226,6 +1412,7 @@ impl Editor {
             })
             .collect();
         self.push_undo(true);
+        self.damaged(&block);
         self.content.replace_range(block.clone(), &shifted.join("\n"));
         let total: isize = deltas.iter().sum();
         let start = (sel.start as isize + deltas[0]).max(block.start as isize) as usize;
@@ -1306,7 +1493,17 @@ impl Editor {
 
     /// Tableau autour de l'octet `at` : son étendue, ses lignes, et la cellule
     /// (ligne, colonne) où se trouve `at`.
+    /// L'octet `at` est dans un très gros tableau (voir `grid::BIG`).
+    fn in_big(&self, at: usize) -> bool {
+        self.row_at(at).is_some_and(|r| self.big.iter().any(|b| b.rows.contains(&r)))
+    }
+
     fn table_at(&self, at: usize) -> Option<(Range<usize>, Vec<Vec<String>>, (usize, usize))> {
+        // ponytail: un très gros tableau (des milliers de lignes) n'est pas relu ni réaligné d'un bloc à chaque
+        // frappe : ni alignement des colonnes, ni ajout de ligne avec Tab ou Entrée. Tab passe à la cellule voisine.
+        if self.in_big(at) {
+            return None;
+        }
         let is_row = |r: &Range<usize>| self.content[r.clone()].trim_start().starts_with('|');
         let line = self.line_range(at);
         if !is_row(&line) || self.in_code(line.start) {
@@ -1380,6 +1577,7 @@ impl Editor {
         // Au plus loin, juste avant le `|` qui ferme la cellule.
         let (start, end) = (md::cells(new)[col].start, md::bars(new)[col + 1]);
         let cursor = at + (start + c.saturating_sub(old)).min(end);
+        self.damaged(&range);
         self.content.replace_range(range, &text);
         self.sel = cursor..cursor;
         self.changed(cx);
@@ -1387,7 +1585,42 @@ impl Editor {
 
     /// Tab et Maj+Tab dans un tableau : cellule suivante ou précédente ; au bout
     /// du tableau, une ligne s'ajoute.
+    /// Tab et Maj+Tab dans un très gros tableau : la cellule voisine, sur la ligne ou sur la voisine,
+    /// sans relire le tableau.
+    fn table_step_big(&mut self, forward: bool, cx: &mut Context<Self>) -> bool {
+        let cursor = self.cursor();
+        let line = self.line_range(cursor);
+        let cells = md::cells(&self.content[line.clone()]);
+        let here = cells.iter().position(|c| line.start + c.end >= cursor).unwrap_or(cells.len().saturating_sub(1));
+        let next = |line: &Range<usize>, first: bool| {
+            let cells = md::cells(&self.content[line.clone()]);
+            let cell = if first { cells.first() } else { cells.last() }?;
+            Some(line.start + cell.start..line.start + cell.end)
+        };
+        let target = match (forward, here) {
+            (true, i) if i + 1 < cells.len() => Some(line.start + cells[i + 1].start..line.start + cells[i + 1].end),
+            (false, i) if i > 0 => Some(line.start + cells[i - 1].start..line.start + cells[i - 1].end),
+            (true, _) if line.end < self.content.len() => {
+                let below = self.line_range(line.end + 1);
+                self.is_table_line(&below).then(|| next(&below, true)).flatten()
+            }
+            (false, _) if line.start > 0 => {
+                let above = self.line_range(line.start - 1);
+                self.is_table_line(&above).then(|| next(&above, false)).flatten()
+            }
+            _ => None,
+        };
+        if let Some(cell) = target {
+            self.move_to(cell.start, cx);
+            self.select_to(cell.end, cx);
+        }
+        true
+    }
+
     fn table_step(&mut self, forward: bool, cx: &mut Context<Self>) -> bool {
+        if self.in_big(self.cursor()) {
+            return self.table_step_big(forward, cx);
+        }
         let Some((range, mut rows, (r, c))) = self.table_at(self.cursor()) else {
             return false;
         };
@@ -1735,13 +1968,30 @@ impl Editor {
 
     // ----- Presse-papiers -----
 
+    /// Cellules sélectionnées d'un tableau, en TSV : les tableurs les collent telles quelles,
+    /// et dans une note, le collage reforme le tableau Markdown.
+    fn cells_text(&self) -> Option<String> {
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        let mut line = None;
+        // Un « tout sélectionner » finit après le dernier retour à la ligne : hors du tableau.
+        let end = self.content[..self.sel.end].trim_end_matches('\n').len().max(self.sel.start);
+        for cell in self.cells_in(self.sel.start..end)? {
+            let start = self.line_range(cell.start).start;
+            if line != Some(start) {
+                rows.push(Vec::new());
+                line = Some(start);
+            }
+            rows.last_mut()?.push(self.content[cell].trim().replace("\\|", "|"));
+        }
+        Some(rows.iter().map(|row| row.join("\t")).collect::<Vec<_>>().join("\n"))
+    }
+
     fn copy(&mut self, cut: bool, cx: &mut Context<Self>) {
         if self.sel.is_empty() {
             return;
         }
-        cx.write_to_clipboard(ClipboardItem::new_string(
-            self.content[self.sel.clone()].to_string(),
-        ));
+        let text = self.cells_text().unwrap_or_else(|| self.content[self.sel.clone()].to_string());
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
         if cut && !self.clear_cells(cx) {
             self.edit(self.sel.clone(), "", cx);
             self.realign(cx);
@@ -1888,27 +2138,274 @@ impl Editor {
 
     // ----- Mise en page et rendu -----
 
-    // ponytail: chaque frame parcourt toutes les lignes (classement, empreinte) et
-    // garde leur mise en forme en mémoire, même hors de l'écran. Ne traiter que le
-    // visible si une note de plusieurs dizaines de milliers de lignes devient lente.
+    /// Les zones à remettre en page, quand le reste de la dernière mise en page peut être repris :
+    /// le texte touché, la ligne où était le curseur et celle où il est, élargies aux blocs qui
+    /// doivent rester entiers (tableau, citation). `None` : tout refaire.
+    fn plan(&self, width: Pixels, cursor: usize) -> Option<Plan> {
+        let laid = self.laid.as_ref()?;
+        let (rows, len) = (&self.rows, self.content.len());
+        if laid.epoch != self.epoch
+            || laid.width != f32::from(width).to_bits()
+            || laid.size != self.theme.size.to_bits()
+            || laid.dollars > 0
+            || self.marked.is_some()
+            || self.loading
+            || rows.is_empty()
+            || self.force_full
+        {
+            return None;
+        }
+        // Texte touché, en octets de l'ancienne mise en page (`p..=q`), et son décalage.
+        let (p, q, delta) = match self.dmg {
+            Some(d) => {
+                let (prefix, suffix) = (d.prefix.min(laid.len), d.suffix.min(laid.len));
+                if d.old_len != laid.len || prefix + suffix > laid.len || prefix + suffix > len {
+                    return None;
+                }
+                (prefix, laid.len - suffix, len as isize - laid.len as isize)
+            }
+            None if len == laid.len => (0, 0, 0),
+            None => return None,
+        };
+        let n = rows.len();
+        let at = |pos: usize| rows.partition_point(|r| r.start <= pos).saturating_sub(1);
+        let mut dirty: Vec<Range<usize>> = Vec::new();
+        if self.dmg.is_some() {
+            let lo = rows.partition_point(|r| r.start + r.len < p);
+            let hi = rows.partition_point(|r| r.start <= q + 1);
+            dirty.push(lo.min(n - 1)..hi.max(lo + 1).min(n));
+        }
+        // Le curseur d'avant et celui d'après : leur ligne ne s'affiche pas pareil.
+        let now = if cursor <= p {
+            cursor
+        } else if (cursor as isize - delta) as usize >= q && cursor as isize - delta >= 0 {
+            (cursor as isize - delta) as usize
+        } else {
+            p
+        };
+        for c in [laid.cursor.min(laid.len), now.min(laid.len)] {
+            dirty.push(at(c)..at(c) + 1);
+        }
+        // Blocs à ne pas couper : un tableau tient en un morceau (sauf l'intérieur d'un très gros),
+        // une citation ne perd pas la teinte de son panneau.
+        let block_of = |i: usize| -> Range<usize> {
+            if let Some(b) = self.big.iter().find(|b| b.rows.contains(&i)) {
+                return b.rows.clone();
+            }
+            let (mut a, mut z) = (i, i + 1);
+            while a > 0 && rows[a - 1].kind == Kind::Table {
+                a -= 1;
+            }
+            while z < n && rows[z].kind == Kind::Table {
+                z += 1;
+            }
+            a..z
+        };
+        let big_of = |i: usize| self.big.iter().find(|b| b.rows.contains(&i));
+        // Octets du nouveau texte d'une zone : le début ne bouge que s'il est après le texte touché ; la
+        // fin, si elle est au bout du texte touché ou après.
+        let touched = self.dmg.is_some();
+        let bounds = |r: &Range<usize>| {
+            let (first, last) = (&rows[r.start], &rows[r.end - 1]);
+            let start = if first.start <= p { first.start } else { (first.start as isize + delta) as usize };
+            let end = last.start + last.len;
+            let stop = if touched && end >= q { (end as isize + delta) as usize } else { end };
+            (start, stop)
+        };
+        loop {
+            dirty.sort_by_key(|r| r.start);
+            let mut merged: Vec<Range<usize>> = Vec::new();
+            for r in dirty.drain(..) {
+                match merged.last_mut() {
+                    Some(last) if r.start <= last.end => last.end = last.end.max(r.end),
+                    _ => merged.push(r),
+                }
+            }
+            let mut grown = false;
+            for r in merged.iter_mut() {
+                let before = r.clone();
+                let whole = |r: &mut Range<usize>, block: Range<usize>| {
+                    r.start = r.start.min(block.start);
+                    r.end = r.end.max(block.end);
+                };
+                for i in before.clone() {
+                    match rows[i].kind {
+                        Kind::Code | Kind::Fence => return None,
+                        Kind::Table => match big_of(i) {
+                            // Dans l'intérieur d'un très gros tableau, une ligne ne dépend pas des autres.
+                            Some(b) if i + 1 < b.rows.end => {}
+                            _ => whole(r, block_of(i)),
+                        },
+                        _ => {}
+                    }
+                }
+                // Un très gros tableau est découpé en lignes indépendantes, hors de ses premières.
+                let inside = |i: usize, j: usize| big_of(i).is_some_and(|b| b.rows.contains(&j) && i + 1 < b.rows.end);
+                if r.start > 0 && rows[r.start - 1].kind == Kind::Table && !inside(r.start, r.start - 1) {
+                    whole(r, block_of(r.start - 1));
+                }
+                // Le nouveau texte peut, lui aussi, se coller à un tableau ou à une citation voisins.
+                let (start, stop) = bounds(r);
+                if start > stop || stop > len {
+                    return None;
+                }
+                let text = &self.content[start..stop];
+                let (first, last) = (text.split('\n').next().unwrap_or(""), text.rsplit('\n').next().unwrap_or(""));
+                if r.end < n && rows[r.end].kind == Kind::Table && md::is_table_line(last) && !inside(r.end - 1, r.end) {
+                    whole(r, block_of(r.end));
+                }
+                let quote = |l: &str| md::classify(l, false).0 == Kind::Quote;
+                if r.start > 0 && rows[r.start - 1].kind == Kind::Quote && quote(first) {
+                    r.start -= 1;
+                }
+                if r.end < n && rows[r.end].kind == Kind::Quote && quote(last) {
+                    r.end += 1;
+                }
+                while r.start > 0 && rows[r.start].kind == Kind::Quote && rows[r.start - 1].kind == Kind::Quote {
+                    r.start -= 1;
+                }
+                while r.end < n && rows[r.end - 1].kind == Kind::Quote && rows[r.end].kind == Kind::Quote {
+                    r.end += 1;
+                }
+                // La ligne qui suit un tableau lui donne sa marge : elle se refait avec lui, qu'il le soit
+                // depuis toujours ou qu'il le devienne.
+                if r.end < n && (rows[r.end - 1].kind == Kind::Table || md::is_table_line(last)) && rows[r.end].kind != Kind::Table {
+                    r.end += 1;
+                }
+                grown |= *r != before;
+            }
+            dirty = merged;
+            if !grown {
+                break;
+            }
+        }
+        let mut regions = Vec::new();
+        for r in dirty {
+            let (start, stop) = bounds(&r);
+            // Dans l'intérieur d'un très gros tableau.
+            let block = big_of(r.start).filter(|b| r.end < b.rows.end);
+            let big = block.map(|b| (b.geom.clone(), r.start - b.rows.start, rows[b.rows.start].start));
+            let check = block.is_some_and(|b| r.start < b.rows.start + grid::SAMPLE);
+            // Le nouveau texte ne doit rien changer au contexte des lignes reprises : ni clôture, ni `$$`,
+            // et, dans un très gros tableau, que des lignes de tableau.
+            if start > stop || stop > len || (stop < len && self.content.as_bytes()[stop] != b'\n') {
+                return None;
+            }
+            let mut lines = 0;
+            for l in self.content[start..stop].split('\n') {
+                lines += 1;
+                if md::is_fence(l) || l.trim() == "$$" || (big.is_some() && !md::is_table_line(l)) {
+                    return None;
+                }
+            }
+            // Un tableau qui repasse sous le seuil se met en page comme un petit : on refait tout.
+            if let Some(b) = block.filter(|_| big.is_some()) && b.rows.len() + lines <= r.len() + grid::BIG {
+                return None;
+            }
+            regions.push(Region { old: r, start, stop, big, check });
+        }
+        Some(Plan { regions, fences: laid.fences, dollars: laid.dollars, after: if touched { q } else { usize::MAX }, delta })
+    }
+
+    /// Ce qui décrit chaque ligne mise en page, pour comparer deux mises en page.
+    #[cfg(test)]
+    #[allow(clippy::type_complexity)]
+    fn signature(&self) -> Vec<(usize, usize, i64, i64, i64, bool, Kind, i64)> {
+        let px = |v: Pixels| (f32::from(v) * 100.).round() as i64;
+        self.rows.iter().map(|r| (r.start, r.len, px(r.y), px(r.height), px(r.pad), r.opens, r.kind, px(r.gap))).collect()
+    }
+
+    /// Chaque image : la mise en page lourde n'est refaite que si le texte, la largeur, le thème
+    /// ou le curseur ont changé ; sinon, seul ce qui dépend du défilement est recalculé.
     fn layout(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
+        let key = LayoutKey {
+            version: self.version,
+            width: f32::from(bounds.size.width).to_bits(),
+            size: self.theme.size.to_bits(),
+            cursor: self.cursor(),
+            marked: self.marked.clone(),
+        };
+        if self.laid_out.as_ref() != Some(&key) {
+            self.laid_out = None;
+            self.relayout(bounds, window, cx);
+            // Les tests refont toute la mise en page à côté, pour y retrouver celle qu'on a reprise.
+            #[cfg(test)]
+            if self.compare && !self.force_full {
+                let reused = self.signature();
+                // Tout tableau de plus de `grid::BIG` lignes est enregistré comme très gros, et lui seul.
+                let mut i = 0;
+                while i < self.rows.len() {
+                    let n = self.rows[i..].iter().take_while(|r| r.kind == Kind::Table).count();
+                    if n > 0 {
+                        let registered = self.big.iter().any(|b| b.rows == (i..i + n));
+                        assert_eq!(registered, n > grid::BIG, "tableau de {n} lignes à la ligne {i}, registre {:?}", self.big.iter().map(|b| b.rows.clone()).collect::<Vec<_>>());
+                    }
+                    i += n.max(1);
+                }
+                let (laid, big, counts) = (self.laid.take(), std::mem::take(&mut self.big), self.counts);
+                self.force_full = true;
+                self.relayout(bounds, window, cx);
+                self.force_full = false;
+                self.counts = counts;
+                assert_eq!(reused.len(), self.rows.len(), "nombre de lignes");
+                // Les positions s'additionnent en flottants : l'ordre des additions change le dernier chiffre.
+                let near = |a: i64, b: i64| (a - b).abs() <= 20;
+                for (i, (a, b)) in reused.iter().zip(self.signature()).enumerate() {
+                    assert!(
+                        a.0 == b.0 && a.1 == b.1 && near(a.2, b.2) && near(a.3, b.3) && near(a.4, b.4) && a.5 == b.5 && a.6 == b.6 && near(a.7, b.7),
+                        "ligne {i} : {a:?} contre {b:?}"
+                    );
+                }
+                let _ = (laid, big);
+            }
+            // Une image qui charge encore change la hauteur de sa ligne : on y reviendra.
+            self.laid_out = (!self.loading).then_some(key);
+        }
+        self.place(bounds, window, cx);
+    }
+
+    // ponytail: la mise en page reprend les lignes qui n'ont pas bougé (`plan`) et ne refait que les zones
+    // touchées. Tout est refait quand le contexte change (thème, autre note, bloc de code ou `$$` touché, texte en
+    // composition) : la frappe dans une note qui contient un bloc de code ou des formules reste proportionnelle à
+    // sa taille. Reprendre le contexte des blocs de code, comme pour les citations, si cela se remarque.
+    fn relayout(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         let t = self.theme;
         let cursor = self.cursor();
+        let width = (bounds.size.width - px(48.)).min(MAX_WIDTH).max(px(120.));
+        let text_system = window.text_system().clone();
+        // Ce qui peut être repris de la mise en page précédente, quand seules quelques lignes ont changé.
+        // Les premières lignes d'un très gros tableau fixent ses colonnes : si elles bougent, on refait tout.
+        let plan = self.plan(width, cursor).filter(|plan| {
+            plan.regions.iter().filter(|r| r.check).all(|r| {
+                let Some((geom, _, start)) = &r.big else { return true };
+                let lines: Vec<(usize, &str)> = self.content[*start..]
+                    .split('\n')
+                    .scan(*start, |at, l| {
+                        let line = (*at, l);
+                        *at += l.len() + 1;
+                        Some(line)
+                    })
+                    .take(grid::SAMPLE)
+                    .collect();
+                let look = grid::Look { theme: &t, style: 0 };
+                lines.iter().all(|(_, l)| md::is_table_line(l))
+                    && grid::geometry(&mut grid::Cache::default(), &text_system, &look, width, &lines).same(geom)
+            })
+        });
         // Un ``` sans clôture n'ouvre pas de bloc : sinon chaque ``` tapé ferait
         // basculer en code, donc remettre en forme, toute la suite de la note. S'il
         // y en a un de trop, c'est celui qu'on est en train de taper, sinon le dernier.
-        let (mut fences, mut dollars) = (0, 0);
-        for l in self.content.split('\n') {
-            fences += md::is_fence(l) as usize;
-            dollars += (l.trim() == "$$") as usize;
-        }
+        let (mut fences, mut dollars) = match &plan {
+            Some(plan) => (plan.fences, plan.dollars),
+            None => md::count_fences_and_dollars(&self.content),
+        };
+        let (fences0, dollars0) = (fences, dollars);
         let typed = self.line_range(cursor);
-        let orphan = (fences % 2 == 1 && md::is_fence(&self.content[typed.clone()]))
+        let orphan = (plan.is_none() && fences % 2 == 1 && md::is_fence(&self.content[typed.clone()]))
             .then_some(typed.start);
         fences -= orphan.is_some() as usize;
         // Une police sans `≠` le compose d'un `=` et d'une barre mal placée : autant
         // laisser `!=`.
-        let text_system = window.text_system().clone();
         let has_unequal = text_system
             .advance(text_system.resolve_font(&font(sans())), px(16.), '≠')
             .is_ok();
@@ -1953,11 +2450,10 @@ impl Editor {
         let mut kept = FastMap::default();
         // Bloc Mermaid ou `$$` en cours : son début et son source.
         let mut block: Option<(usize, String)> = None;
-        let width = (bounds.size.width - px(48.)).min(MAX_WIDTH).max(px(120.));
         let marked = self.marked.clone();
         let mut rows = Vec::with_capacity(self.rows.len() + 16);
         let mut y = px(0.);
-        let mut offset = 0;
+        let mut offset;
         let mut in_code = false;
         // Couleur d'un panneau `[!TYPE]` : sa teinte dit son type.
         let tint_of = |label: &str| {
@@ -1970,8 +2466,80 @@ impl Editor {
             };
             Hsla { h, s: 0.7, l: 0.5, a: 1. }
         };
-        let mut tint = None;
-        for line in self.content.split('\n') {
+        let mut tint;
+        let mut loading = false;
+        let mut big: Vec<BigBlock> = Vec::new();
+        let text_len = self.content.len();
+        let incremental = plan.is_some();
+        #[cfg(test)]
+        {
+            self.counts.0 += !incremental as usize;
+            self.counts.1 += incremental as usize;
+        }
+        #[cfg(test)]
+        if let Some(plan) = &plan {
+            self.counts.2 += plan.regions.iter().any(|r| r.big.is_some()) as usize;
+        }
+        let (old_total, old_big) = (self.rows.len(), std::mem::take(&mut self.big));
+        let mut old_rows = std::mem::take(&mut self.rows).into_iter();
+        let (after, delta) = plan.as_ref().map_or((usize::MAX, 0), |p| (p.after, p.delta));
+        let regions = plan.map_or_else(|| vec![Region { old: 0..0, start: 0, stop: text_len, big: None, check: false }], |p| p.regions);
+        // Très gros tableaux repris tels quels : leurs colonnes, et la place de leur première ligne.
+        let mut carried: Vec<(Rc<grid::Geometry>, usize)> = Vec::new();
+        let mut next_old = 0;
+        let mut regions = regions.into_iter();
+        // Les lignes reprises : d'abord celles qui précèdent la zone, puis, à la fin, celles qui la suivent.
+        let keep = |upto: usize, next_old: &mut usize, old_rows: &mut std::vec::IntoIter<Row>, y: &mut Pixels, rows: &mut Vec<Row>, carried: &mut Vec<(Rc<grid::Geometry>, usize)>| {
+            let count = upto - *next_old;
+            let shift = if old_rows.as_slice().first().is_some_and(|r| r.start > after) { delta } else { 0 };
+            carried.extend(
+                old_big.iter().filter(|b| (*next_old..upto).contains(&b.rows.start)).map(|b| (b.geom.clone(), rows.len() + b.rows.start - *next_old)),
+            );
+            reuse(old_rows, count, shift, y, rows);
+            *next_old = upto;
+        };
+        while let Some(region) = {
+            let next = regions.next();
+            if incremental {
+                keep(next.as_ref().map_or(old_total, |r| r.old.start), &mut next_old, &mut old_rows, &mut y, &mut rows, &mut carried);
+            }
+            next
+        } {
+            // La zone remplace ses anciennes lignes.
+            old_rows.by_ref().take(region.old.len()).for_each(drop);
+            next_old = region.old.end;
+            offset = region.start;
+            tint = None;
+            let first_new = rows.len();
+            // Zone qui commence à la première ligne d'un très gros tableau : le tableau reste enregistré.
+            if let Some((geom, 0, _)) = &region.big {
+                carried.push((geom.clone(), first_new));
+            }
+            while offset <= region.stop {
+            let line = &self.content[offset..self.content[offset..].find('\n').map_or(text_len, |i| offset + i)];
+            // Dans l'intérieur d'un très gros tableau, chaque ligne se suffit : même hauteur, sans cellules.
+            if let Some((geom, rank, _)) = &region.big {
+                let (pad, height) = geom.metrics(rank + rows.len() - first_new, false, grid::line_height(&t));
+                rows.push(Row {
+                    start: offset,
+                    len: line.len(),
+                    y,
+                    pad,
+                    lh: grid::line_height(&t),
+                    height,
+                    kind: Kind::Table,
+                    shaped: empty.clone(),
+                    image: None,
+                    opens: false,
+                    gap: px(0.),
+                    tint: None,
+                    dx: px(0.),
+                    grid: None,
+                });
+                y += height;
+                offset += line.len() + 1;
+                continue;
+            }
             let (mut kind, mut marker) = md::classify(line, in_code);
             let mut opens = false;
             let mut drawing = None;
@@ -2034,12 +2602,41 @@ impl Editor {
                 let mut at = offset;
                 let block: Vec<(usize, &str)> = self.content[offset..]
                     .split('\n')
-                    .take_while(|l| md::classify(l, false).0 == Kind::Table)
+                    .take_while(|l| md::is_table_line(l))
                     .map(|l| {
                         at += l.len() + 1;
                         (at - l.len() - 1, l)
                     })
                     .collect();
+                // Un très gros tableau : lignes toutes de la même hauteur, sans mise en forme encore.
+                if block.len() > grid::BIG {
+                    let look = grid::Look { theme: &t, style };
+                    let geom = Rc::new(grid::geometry(&mut cells, &text_system, &look, width, &block[..grid::SAMPLE]));
+                    let (first, n, lh) = (rows.len(), block.len(), grid::line_height(&t));
+                    for (k, &(at, text)) in block.iter().enumerate() {
+                        let (pad, height) = geom.metrics(k, k + 1 == n, lh);
+                        rows.push(Row {
+                            start: at,
+                            len: text.len(),
+                            y,
+                            pad,
+                            lh,
+                            height,
+                            kind: Kind::Table,
+                            shaped: empty.clone(),
+                            image: None,
+                            opens: false,
+                            gap: px(0.),
+                            tint: None,
+                            dx: px(0.),
+                            grid: None,
+                        });
+                        y += height;
+                    }
+                    big.push(BigBlock { rows: first..first + n, geom, mat: Vec::new(), rescan: false });
+                    offset = block[n - 1].0 + block[n - 1].1.len() + 1;
+                    continue;
+                }
                 let look = grid::Look { theme: &t, style };
                 pending = grid::build(&mut cells, &text_system, &look, width, &block, cursor, marked.as_ref()).iter().cloned().collect();
             }
@@ -2193,9 +2790,9 @@ impl Editor {
                 // gpui 0.2 rend un SVG deux fois plus grand que nature, pour qu'il reste
                 // net (`SMOOTH_SVG_SCALE_FACTOR`, qui n'est pas public).
                 let zoom = if svg { 2. } else { 1. };
-                let image = window
-                    .use_asset::<ImgResourceLoader>(&Resource::Path(file.into()), cx)?
-                    .ok()?;
+                let loaded = window.use_asset::<ImgResourceLoader>(&Resource::Path(file.into()), cx);
+                loading |= loaded.is_none();
+                let image = loaded?.ok()?;
                 let natural = |d: gpui::DevicePixels| d.0 as f32 / zoom;
                 let (w, h) = (natural(image.size(0).width), natural(image.size(0).height));
                 let scale = (f32::from(width) / w.max(1.)).min(1.);
@@ -2203,7 +2800,9 @@ impl Editor {
             });
             let image = image.or_else(|| {
                 let (image, s) = drawing?;
-                let image = image.use_render_image(window, cx)?;
+                let rendered = image.use_render_image(window, cx);
+                loading |= rendered.is_none();
+                let image = rendered?;
                 let scale = (width / s.width).min(1.);
                 Some((image, size(s.width * scale, s.height * scale)))
             });
@@ -2236,21 +2835,118 @@ impl Editor {
             rows.push(Row { height, ..row });
             y += height;
             offset += line.len() + 1;
+            }
         }
-        if let Some(last) = rows.last_mut().filter(|r| r.kind == Kind::Table) {
+        if let Some(last) = rows.last_mut().filter(|r| r.kind == Kind::Table && r.gap == px(0.)) {
             last.gap = TABLE_GAP;
             last.height += TABLE_GAP;
             y += TABLE_GAP;
         }
         self.rows = rows;
+        // Les très gros tableaux repris : leurs lignes ne sont plus celles qu'on a mises en forme.
+        for (geom, first) in carried {
+            let end = first + self.rows[first..].iter().take_while(|r| r.kind == Kind::Table).count();
+            big.push(BigBlock { rows: first..end, geom, mat: Vec::new(), rescan: true });
+        }
+        big.sort_by_key(|b| b.rows.start);
+        self.big = big;
+        self.big_style = style;
+        self.total_y = y;
+        self.loading = loading;
+        if incremental {
+            kept.extend(old);
+        }
         self.figures = kept;
+        self.dmg = None;
+        self.laid = Some(Laid {
+            epoch: self.epoch,
+            width: f32::from(width).to_bits(),
+            size: t.size.to_bits(),
+            len: text_len,
+            cursor,
+            fences: fences0,
+            dollars: dollars0,
+        });
         // Les lignes qui ne servent plus (supprimées, modifiées) partent quand elles dépassent la note.
         if shaped.len() > self.rows.len() * 2 + 256 {
             shaped.retain(|_, (_, used)| *used == frame);
         }
         self.shaped = shaped;
         self.cells = cells;
+        self.width = width;
+        self.opening = (0..self.rows.len()).filter(|&i| self.rows[i].opens).collect();
+        self.table_meta.clear();
+        let mut i = 0;
+        while i < self.rows.len() {
+            let n = self.rows[i..].iter().take_while(|r| r.kind == Kind::Table).count();
+            if n > 0 {
+                let wide = match self.big.iter().find(|b| b.rows.start == i) {
+                    Some(block) => block.geom.total(),
+                    None => self.rows[i..i + n].iter().map(Row::content_width).fold(px(0.), |a, b| a.max(b)),
+                };
+                let (first, last) = (&self.rows[i], &self.rows[i + n - 1]);
+                self.table_meta.push(TableMeta { range: first.start..last.start + last.len, rows: i..i + n, wide });
+            }
+            i += n.max(1);
+        }
+    }
 
+    /// Donne leurs cellules aux lignes des très gros tableaux qui sont près de l'écran ou du curseur,
+    /// et les retire à celles qui s'en sont éloignées.
+    fn materialize(&mut self, bounds: Bounds<Pixels>, window: &mut Window) {
+        if self.big.is_empty() {
+            return;
+        }
+        let (cursor, t) = (self.cursor(), self.theme);
+        let at = self.row_at(cursor);
+        let look = grid::Look { theme: &t, style: self.big_style };
+        let (page, top) = (bounds.size.height, self.scroll_y - TOP);
+        let (lo, hi) = (top - page * 2., top + page * 3.);
+        let text_system = window.text_system().clone();
+        let mut cells = std::mem::take(&mut self.cells);
+        for b in 0..self.big.len() {
+            let range = self.big[b].rows.clone();
+            let n = range.len();
+            let rows = &self.rows[range.clone()];
+            let (from, to) = (rows.partition_point(|r| r.y + r.height < lo), rows.partition_point(|r| r.y <= hi));
+            let mut want = vec![0..3.min(n), from..to.max(from)];
+            if let Some(k) = at.filter(|c| range.contains(c)).map(|c| c - range.start) {
+                want.push(k.saturating_sub(40)..(k + 41).min(n));
+            }
+            if want == self.big[b].mat && !self.big[b].rescan {
+                continue;
+            }
+            let wanted = |k: usize| want.iter().any(|w| w.contains(&k));
+            if std::mem::take(&mut self.big[b].rescan) {
+                // Lignes venues d'une autre mise en page : on ne sait plus lesquelles ont leurs cellules.
+                for k in (0..n).filter(|&k| !wanted(k)) {
+                    self.rows[range.start + k].grid = None;
+                }
+            }
+            for old in std::mem::take(&mut self.big[b].mat) {
+                for k in old.filter(|&k| !wanted(k)) {
+                    self.rows[range.start + k].grid = None;
+                }
+            }
+            let geom = self.big[b].geom.clone();
+            for k in want.iter().flat_map(|w| w.clone()) {
+                let row = &mut self.rows[range.start + k];
+                if row.grid.is_none() {
+                    let text = &self.content[row.start..row.start + row.len];
+                    let built = grid::big_row(&mut cells, &text_system, &look, &geom, k, k + 1 == n, (row.start, text), self.marked.as_ref());
+                    row.grid = Some(Rc::new(built));
+                }
+            }
+            self.big[b].mat = want;
+        }
+        cells.trim(20_000);
+        self.cells = cells;
+    }
+
+    /// Ce qui dépend du défilement et de la taille de la fenêtre, et se refait à chaque image :
+    /// vue, cadres des tableaux, zones cliquables.
+    fn place(&mut self, bounds: Bounds<Pixels>, window: &mut Window, _: &mut App) {
+        let (cursor, width) = (self.cursor(), self.width);
         let reveal = std::mem::take(&mut self.reveal);
         if reveal {
             let c = self.cursor();
@@ -2265,16 +2961,18 @@ impl Editor {
                 }
             }
         }
-        let max_scroll = (TOP + y - bounds.size.height * 0.4).max(px(0.));
+        let max_scroll = (TOP + self.total_y - bounds.size.height * 0.4).max(px(0.));
         self.scroll_y = self.scroll_y.max(px(0.)).min(max_scroll);
         self.origin = point(
             bounds.left() + (bounds.size.width - width) / 2.,
             bounds.top() + TOP - self.scroll_y,
         );
-        self.width = width;
         self.viewport = bounds;
-        let opening = self.rows.iter().filter(|r| r.opens);
-        self.copy_hitboxes = opening
+        self.materialize(bounds, window);
+        self.copy_hitboxes = self
+            .opening
+            .iter()
+            .map(|&i| &self.rows[i])
             .map(|r| (r.start, window.insert_hitbox(self.copy_bounds(r), HitboxBehavior::Normal)))
             .collect();
         let grid = self.grid.and_then(|_| self.popup_at(Self::grid_size()));
@@ -2284,44 +2982,42 @@ impl Editor {
         let scrolled = std::mem::take(&mut self.table_x);
         self.tables.clear();
         self.thumbs.clear();
-        let mut i = 0;
-        while i < self.rows.len() {
-            let n = self.rows[i..].iter().take_while(|r| r.kind == Kind::Table).count();
-            if n > 0 {
-                let wide = self.rows[i..i + n].iter().map(Row::content_width).fold(px(0.), |a, b| a.max(b));
-                let overflow = (wide - width).max(px(0.));
-                let (start, end) = (self.rows[i].start, self.rows[i + n - 1].start + self.rows[i + n - 1].len);
-                let mut dx = scrolled.get(&start).copied().unwrap_or_default().max(px(0.)).min(overflow);
-                if reveal && (start..=end).contains(&cursor) {
-                    let row = self.rows[i..i + n].iter().find(|r| r.start + r.len >= cursor).unwrap_or(&self.rows[i]);
-                    let x = row.pos(cursor - row.start).x;
-                    let margin = px(24.);
-                    if x - dx < margin {
-                        dx = x - margin;
-                    } else if x - dx > width - margin {
-                        dx = x - width + margin;
-                    }
-                    dx = dx.max(px(0.)).min(overflow);
+        for meta in &self.table_meta {
+            let (start, end) = (meta.range.start, meta.range.end);
+            let wide = meta.wide;
+            let overflow = (wide - width).max(px(0.));
+            let mut dx = scrolled.get(&start).copied().unwrap_or_default().max(px(0.)).min(overflow);
+            if reveal && (start..=end).contains(&cursor) {
+                let at = self.row_at(cursor).unwrap_or(meta.rows.start).clamp(meta.rows.start, meta.rows.end - 1);
+                let row = &self.rows[at];
+                let x = row.pos(cursor - row.start).x;
+                let margin = px(24.);
+                if x - dx < margin {
+                    dx = x - margin;
+                } else if x - dx > width - margin {
+                    dx = x - width + margin;
                 }
-                if overflow > px(0.) {
-                    self.table_x.insert(start, dx);
-                }
-                self.rows[i..i + n].iter_mut().for_each(|r| r.dx = dx);
-                let (first, last) = (&self.rows[i], &self.rows[i + n - 1]);
-                let top = first.y + first.pad;
-                let frame = Bounds::new(
-                    self.origin + point(px(0.), top),
-                    size(wide.min(width), last.y + last.height - last.gap - top),
-                );
-                if overflow > px(0.) {
-                    let thumb = (width * (width / wide)).max(px(24.));
-                    let at = (width - thumb) * (dx / overflow);
-                    let bar = Bounds::new(point(frame.left() + at, frame.bottom() - px(5.)), size(thumb, px(3.)));
-                    self.thumbs.push(bar);
-                }
-                self.tables.push((start..end, frame));
+                dx = dx.max(px(0.)).min(overflow);
             }
-            i += n.max(1);
+            if overflow > px(0.) {
+                self.table_x.insert(start, dx);
+            }
+            if self.rows[meta.rows.start].dx != dx {
+                self.rows[meta.rows.clone()].iter_mut().for_each(|r| r.dx = dx);
+            }
+            let (first, last) = (&self.rows[meta.rows.start], &self.rows[meta.rows.end - 1]);
+            let top = first.y + first.pad;
+            let frame = Bounds::new(
+                self.origin + point(px(0.), top),
+                size(wide.min(width), last.y + last.height - last.gap - top),
+            );
+            if overflow > px(0.) {
+                let thumb = (width * (width / wide)).max(px(24.));
+                let at = (width - thumb) * (dx / overflow);
+                let bar = Bounds::new(point(frame.left() + at, frame.bottom() - px(5.)), size(thumb, px(3.)));
+                self.thumbs.push(bar);
+            }
+            self.tables.push((start..end, frame));
         }
         let bars = self.tables.iter().flat_map(|(_, frame)| plus_bars(*frame));
         self.table_hitboxes = bars.map(|bar| window.insert_hitbox(bar, HitboxBehavior::Normal)).collect();

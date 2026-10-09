@@ -49,6 +49,35 @@ pub fn is_fence(line: &str) -> bool {
     line.trim_start().starts_with("```")
 }
 
+/// La ligne est une ligne de tableau : `classify(line, false)` la dit `Kind::Table`, sans le reste du travail.
+pub fn is_table_line(line: &str) -> bool {
+    line[indent_len(line)..].starts_with('|')
+}
+
+/// Nombre de lignes de clôture ``` et de lignes réduites à `$$` dans le texte, sans l'analyser ligne par ligne :
+/// on cherche les motifs, qui sont rares, puis on regarde la ligne où chacun tombe.
+pub fn count_fences_and_dollars(text: &str) -> (usize, usize) {
+    let line_start = |at: usize| text[..at].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = |at: usize| text[at..].find('\n').map_or(text.len(), |i| at + i);
+    let (mut fences, mut last) = (0, usize::MAX);
+    for (at, _) in text.match_indices("```") {
+        let start = line_start(at);
+        if start != last && text[start..at].chars().all(char::is_whitespace) {
+            fences += 1;
+            last = start;
+        }
+    }
+    let (mut dollars, mut last) = (0, usize::MAX);
+    for (at, _) in text.match_indices("$$") {
+        let start = line_start(at);
+        if start != last && text[start..line_end(at)].trim() == "$$" {
+            dollars += 1;
+            last = start;
+        }
+    }
+    (fences, dollars)
+}
+
 /// Type de la ligne et longueur (en octets) de son marqueur, indentation comprise.
 pub fn classify(line: &str, in_code: bool) -> (Kind, usize) {
     let indent = indent_len(line);
@@ -996,5 +1025,24 @@ mod tests {
         inline("[x] [ ]", 0, &mut flags);
         assert!(flags[..3].iter().all(|f| f & (MARK | BOLD) == MARK | BOLD));
         assert!(flags[4..].iter().all(|f| f & MARK != 0 && f & BOLD == 0));
+    }
+
+    /// Les raccourcis qui évitent de classer chaque ligne disent la même chose que `classify` et `is_fence`.
+    #[test]
+    fn shortcuts_agree_with_the_line_by_line_scan() {
+        let lines = [
+            "", "|", "| a |", "  | a |", "\t| a |", "- | x", "# | x", "|---|", "```", "  ```rust", "x ```", "``````", "$$", " $$ ",
+            "a $$ b", "$$$$", "> | q", "~~~", "---", "|-", "1. | x",
+        ];
+        for text in [lines.join("\n"), lines.join("\n\n"), lines.iter().rev().cloned().collect::<Vec<_>>().join("\n"), "```\n```".to_string()] {
+            let (fences, dollars) = (
+                text.split('\n').filter(|l| is_fence(l)).count(),
+                text.split('\n').filter(|l| l.trim() == "$$").count(),
+            );
+            assert_eq!(count_fences_and_dollars(&text), (fences, dollars), "{text:?}");
+        }
+        for l in lines {
+            assert_eq!(is_table_line(l), classify(l, false).0 == Kind::Table, "{l:?}");
+        }
     }
 }

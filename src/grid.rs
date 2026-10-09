@@ -9,7 +9,7 @@ use std::{
 };
 
 use gpui::{
-    App, Bounds, Pixels, Point, TextAlign, Window, WindowTextSystem, WrappedLine, fill, point, px, size,
+    App, Bounds, ContentMask, Pixels, Point, TextAlign, Window, WindowTextSystem, WrappedLine, fill, point, px, size,
 };
 
 use crate::{
@@ -53,6 +53,14 @@ pub struct Cache {
 pub type Tables = Rc<Vec<Option<Rc<TableRow>>>>;
 
 impl Cache {
+    /// Les mises en forme gardées pour la prochaine frame ne grossissent pas sans fin quand on fait
+    /// défiler un très gros tableau : les lignes affichées gardent les leurs.
+    pub fn trim(&mut self, limit: usize) {
+        if self.new.len() > limit {
+            self.new.clear();
+        }
+    }
+
     pub fn next_frame(&mut self) {
         self.old = std::mem::take(&mut self.new);
         self.tables_old = std::mem::take(&mut self.tables_new);
@@ -194,6 +202,8 @@ pub struct Cell {
     align: TextAlign,
     /// Largeur du texte : celle de la colonne.
     width: Pixels,
+    /// Le texte ne passe pas à la ligne (très gros tableau) : ce qui dépasse est coupé.
+    clip: bool,
 }
 
 impl Cell {
@@ -367,7 +377,13 @@ impl TableRow {
             if let Some(line) = &cell.shape.line {
                 let origin = point(at.x + self.left(c), at.y + self.pad());
                 let area = Bounds::new(origin, size(cell.width, lh * cell.lines() as f32));
-                line.paint(origin, lh, cell.align, Some(area), window, cx).ok();
+                if cell.clip {
+                    window.with_content_mask(Some(ContentMask { bounds: area }), |window| {
+                        line.paint(origin, lh, cell.align, Some(area), window, cx).ok();
+                    });
+                } else {
+                    line.paint(origin, lh, cell.align, Some(area), window, cx).ok();
+                }
             }
         }
         let mut rule = |x: Pixels, y: Pixels, w: Pixels, h: Pixels| {
@@ -557,7 +573,7 @@ fn rows(
                     // à la ligne de GPUI diffèrent de quelques fractions de pixel.
                     let wrap = (alone[r][c] > widths[c]).then_some(widths[c]);
                     let shape = cache.shape(key(text, wrap, bold, &here, look), || shape(text_system, text, wrap, bold, &here, look));
-                    Cell { range, shape, align: aligns[c], width: widths[c] }
+                    Cell { range, shape, align: aligns[c], width: widths[c], clip: false }
                 })
                 .collect();
             Some(TableRow {
@@ -573,6 +589,136 @@ fn rows(
             })
         })
         .collect()
+}
+
+// ───────────────────────── Très gros tableaux ─────────────────────────
+
+/// Au-delà de ce nombre de lignes, un tableau n'est plus mis en page d'un bloc : ses colonnes
+/// viennent de ses premières lignes, ses cellules ne passent plus à la ligne (ce qui dépasse
+/// est coupé), donc chaque ligne a la même hauteur, et seules les lignes proches de l'écran
+/// reçoivent leurs cellules mises en forme. Un tableau de 300 000 lignes s'ouvre aussi vite
+/// qu'un de 3 000.
+pub const BIG: usize = 1500;
+/// Lignes qui fixent les colonnes d'un très gros tableau.
+pub const SAMPLE: usize = 300;
+
+/// Les colonnes d'un très gros tableau, communes à toutes ses lignes.
+pub struct Geometry {
+    cols: usize,
+    widths: Vec<Pixels>,
+    xs: Rc<Vec<Pixels>>,
+    aligns: Vec<TextAlign>,
+    /// Indice de la ligne de tirets, quand il y en a une.
+    dash: Option<usize>,
+}
+
+impl Geometry {
+    /// Mêmes colonnes, mêmes alignements, même ligne de tirets.
+    pub fn same(&self, other: &Geometry) -> bool {
+        self.cols == other.cols
+            && self.dash == other.dash
+            && self.widths == other.widths
+            && *self.xs == *other.xs
+            && self.aligns.iter().zip(&other.aligns).all(|(a, b)| std::mem::discriminant(a) == std::mem::discriminant(b))
+    }
+
+    /// Largeur du tableau, traits compris.
+    pub fn total(&self) -> Pixels {
+        self.xs.last().map_or(px(0.), |x| *x + LINE)
+    }
+
+    /// Place au-dessus du texte et hauteur de la ligne `r` du tableau, sur une seule ligne
+    /// visuelle ; `last` : c'est la dernière. La ligne de tirets n'a pas de hauteur : dans un très gros
+    /// tableau, elle reste masquée même sous le curseur.
+    pub fn metrics(&self, r: usize, last: bool, lh: Pixels) -> (Pixels, Pixels) {
+        if Some(r) == self.dash {
+            return (px(0.), px(0.));
+        }
+        let top = if self.dash.is_some() && r == 2 { LINE * 2. } else { LINE };
+        let bottom = if last { LINE } else { px(0.) };
+        (top + PAD_Y, top + PAD_Y + lh + PAD_Y + bottom)
+    }
+}
+
+/// Fixe les colonnes d'un très gros tableau d'après ses premières lignes.
+pub fn geometry(cache: &mut Cache, text_system: &WindowTextSystem, look: &Look, width: Pixels, lines: &[(usize, &str)]) -> Geometry {
+    let parsed: Vec<Vec<Range<usize>>> = lines.iter().map(|(_, l)| md::cells(l)).collect();
+    let cols = parsed.iter().map(Vec::len).max().unwrap_or(0).max(1);
+    let text = |r: usize, c: usize| parsed[r].get(c).map_or("", |range| &lines[r].1[range.clone()]);
+    let dash = (lines.len() > 1)
+        .then(|| (0..parsed[1].len()).map(|c| text(1, c).to_string()).collect::<Vec<_>>())
+        .filter(|row| md::is_dashes(row))
+        .map(|_| 1);
+    let aligns = (0..cols).map(|c| dash.filter(|_| c < parsed[1].len()).map_or(TextAlign::Left, |d| align_of(text(d, c)))).collect();
+    let mut wide = vec![MIN_WIDE; cols];
+    for r in (0..lines.len()).filter(|&r| Some(r) != dash) {
+        for (c, w) in wide.iter_mut().enumerate() {
+            let (text, bold) = (text(r, c), r == 0);
+            let one = cache.shape(key(text, None, bold, &None, look), || shape(text_system, text, None, bold, &None, look));
+            if let Some(line) = &one.line {
+                *w = w.max(f32::from(line.unwrapped_layout.width));
+            }
+        }
+    }
+    // Pas de retour à la ligne : une colonne prend la largeur de son plus long texte, sans dépasser le tiers
+    // de la page (au-delà, c'est coupé), plus une marge minimale.
+    let frame = (cols + 1) as f32 * f32::from(LINE) + cols as f32 * 2. * f32::from(PAD_X);
+    let cap = ((f32::from(width) - frame) / 3.).max(MIN_WIDE * 2.);
+    let widths: Vec<Pixels> = wide.into_iter().map(|w| px(w.min(cap))).collect();
+    let mut xs = vec![px(0.)];
+    for w in &widths {
+        xs.push(xs[xs.len() - 1] + LINE + PAD_X + *w + PAD_X);
+    }
+    Geometry { cols, widths, xs: Rc::new(xs), aligns, dash }
+}
+
+/// La ligne `r` d'un très gros tableau, ses cellules sur une seule ligne.
+#[allow(clippy::too_many_arguments)]
+pub fn big_row(
+    cache: &mut Cache,
+    text_system: &WindowTextSystem,
+    look: &Look,
+    geom: &Geometry,
+    r: usize,
+    last: bool,
+    (at, line): (usize, &str),
+    marked: Option<&Range<usize>>,
+) -> TableRow {
+    let (ranges, bars) = (md::cells(line), md::bars(line));
+    if Some(r) == geom.dash {
+        return TableRow {
+            cells: Vec::new(),
+            xs: geom.xs.clone(),
+            lines: 0,
+            header: false,
+            top: px(0.),
+            bottom: px(0.),
+            bars,
+            written: 0,
+        };
+    }
+    let cells: Vec<Cell> = (0..geom.cols)
+        .map(|c| {
+            let range = ranges.get(c).cloned().unwrap_or(line.len()..line.len());
+            let (text, bold) = (&line[range.clone()], r == 0);
+            let here = marked
+                .filter(|m| m.start <= at + range.end && m.end >= at + range.start)
+                .map(|m| m.start.saturating_sub(at + range.start)..m.end.saturating_sub(at + range.start));
+            let shape = cache.shape(key(text, None, bold, &here, look), || shape(text_system, text, None, bold, &here, look));
+            let clip = shape.line.as_ref().is_some_and(|l| l.unwrapped_layout.width > geom.widths[c]);
+            Cell { range, shape, align: geom.aligns[c], width: geom.widths[c], clip }
+        })
+        .collect();
+    TableRow {
+        lines: 1,
+        cells,
+        xs: geom.xs.clone(),
+        header: r == 0,
+        top: if geom.dash.is_some() && r == 2 { LINE * 2. } else { LINE },
+        bottom: if last { LINE } else { px(0.) },
+        bars,
+        written: ranges.len(),
+    }
 }
 
 #[cfg(test)]
