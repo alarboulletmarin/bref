@@ -373,7 +373,7 @@ Elsewhere (Windows zip, compiled from source, `bref-git`, other Linux distributi
 
 Bref checks nothing but HTTPS: the files are not signed (see [Windows](#windows) and [macOS](#macos)), so an update is as trustworthy as downloading the same file by hand from this repository's releases.
 
-The check is the only network request the app makes until you press Update. It runs `curl` against `api.github.com/repos/alarboulletmarin/bref/releases/latest`, which sees your IP address and the client name `bref`, and nothing else. Without `curl`, or offline, nothing is shown. Type `updates` in the palette (`Ctrl + P`) to stop checking, or to resume: the choice is kept as `updates=off` in the `settings` file, and the time of the last check in the `update` file, both next to `config`.
+The check is the only network request the app makes until you press Update. It runs `curl` against `api.github.com/repos/alarboulletmarin/bref/releases/latest`, which sees your IP address and the client name `bref`, and nothing else. Without `curl`, or offline, nothing is shown. To check right away, without waiting for the next day, type `check for updates now` in the palette (`Ctrl + P`): Bref answers that it is up to date, or shows the banner. This works even when the daily check is off. Type `updates` in the palette to stop the daily check, or to resume: the choice is kept as `updates=off` in the `settings` file, and the time of the last check in the `update` file, both next to `config`.
 
 ## Compatibility
 

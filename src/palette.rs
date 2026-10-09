@@ -33,8 +33,12 @@ fn updates_label(on: bool) -> &'static str {
     if on {
         tr("Stop checking for updates", "Ne plus chercher les mises à jour")
     } else {
-        tr("Check for updates", "Chercher les mises à jour")
+        tr("Check for updates every day", "Chercher les mises à jour chaque jour")
     }
+}
+
+fn check_label() -> &'static str {
+    tr("Check for updates now", "Chercher une mise à jour maintenant")
 }
 
 fn install_label(version: &str) -> String {
@@ -88,6 +92,8 @@ pub enum PaletteEvent {
     Table(Pick),
     /// Active ou coupe la recherche de nouvelle version.
     ToggleUpdates,
+    /// Cherche tout de suite une nouvelle version.
+    CheckUpdate,
     /// Installe la nouvelle version.
     InstallUpdate,
     /// Texte validé dans un champ de saisie, ou choix validé dans une liste.
@@ -109,6 +115,7 @@ enum Item {
     Folder,
     Import,
     Updates,
+    Check,
     Install,
     Setting(Setting),
     Table(Pick),
@@ -329,6 +336,9 @@ impl Palette {
         {
             items.push(Item::Updates);
         }
+        if self.updates.is_some() && !q.is_empty() && fuzzy(&q, &check_label().to_lowercase()).is_some() {
+            items.push(Item::Check);
+        }
         if self.table && !q.is_empty() {
             items.extend(
                 Pick::ALL.into_iter().filter(|p| fuzzy(&q, &p.label().to_lowercase()).is_some()).map(Item::Table),
@@ -372,6 +382,7 @@ impl Palette {
             Some(&Item::Table(pick)) => PaletteEvent::Table(pick),
             Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
+            Some(Item::Check) => PaletteEvent::CheckUpdate,
             Some(Item::Install) => PaletteEvent::InstallUpdate,
             Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
             None => PaletteEvent::Dismiss,
@@ -495,6 +506,7 @@ impl Render for Palette {
                 Item::Folder => (folder_label().to_string(), format!("{}+Shift+N", crate::MOD)),
                 Item::Import => (import_label().to_string(), String::new()),
                 Item::Updates => (updates_label(self.updates.unwrap_or(true)).to_string(), String::new()),
+                Item::Check => (check_label().to_string(), String::new()),
                 Item::Install => (install_label(self.installable.as_deref().unwrap_or_default()), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
                 Item::Table(pick) => (pick.label().to_string(), String::new()),

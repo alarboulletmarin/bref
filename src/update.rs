@@ -67,7 +67,7 @@ fn curl() -> Command {
 /// dernier contrôle est gardé dans le fichier `update` de la config : avant 24 h, il est
 /// relu au lieu de refaire la requête. Bloquant : à lancer hors du thread UI.
 pub fn check() -> Option<Release> {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let now = now();
     let (at, known) = parse_state(&vault::load_file("update"));
     let installable = asset_name().is_some();
     let waiting_for_files = !known.version.is_empty() && known.asset.is_none() && installable;
@@ -80,7 +80,25 @@ pub fn check() -> Option<Release> {
         // Hors ligne, ou sans `curl` : rien n'est noté, le prochain démarrage réessaie.
         known
     };
-    newer(env!("CARGO_PKG_VERSION"), &latest.version).then(|| only_if_installable(latest, installable))
+    is_new(&latest).then(|| only_if_installable(latest, installable))
+}
+
+/// Contrôle demandé à la main : la dernière version publiée, sans attendre les 24 h (`None` :
+/// GitHub n'a pas répondu). Elle est notée comme un contrôle ordinaire. Bloquant : à lancer
+/// hors du thread UI.
+pub fn check_now() -> Option<Release> {
+    let found = fetch()?;
+    vault::save_file("update", &state_text(now(), &found));
+    Some(found)
+}
+
+/// Cette version publiée est plus récente que celle qui tourne.
+pub fn is_new(release: &Release) -> bool {
+    newer(env!("CARGO_PKG_VERSION"), &release.version)
+}
+
+fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 /// Le contrôle gardé dans le fichier `update` peut venir d'une autre installation de la même

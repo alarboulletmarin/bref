@@ -383,6 +383,8 @@ struct Shell {
     update: Option<update::Release>,
     /// Son installation est en cours.
     updating: bool,
+    /// Réponse à un contrôle demandé à la main (« Bref est à jour »…), à la place de la bannière.
+    notice: Option<String>,
     title: String,
     prefs: Prefs,
     theme: Theme,
@@ -447,6 +449,7 @@ impl Shell {
             error: None,
             update: None,
             updating: false,
+            notice: None,
             title: String::new(),
             prefs,
             theme,
@@ -489,6 +492,34 @@ impl Shell {
             .ok();
         })
         .detach();
+    }
+
+    /// Contrôle demandé depuis la palette : interroge GitHub tout de suite, même si la recherche
+    /// quotidienne est coupée, et dit ce qu'il en est. Les tests ne sortent pas sur le réseau.
+    fn check_now(&mut self, cx: &mut Context<Self>) {
+        self.notice = Some(tr("Checking for updates…", "Recherche d'une mise à jour…").into());
+        cx.notify();
+        if cfg!(test) {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let latest = cx.background_executor().spawn(async move { update::check_now() }).await;
+            this.update(cx, |this, cx| this.checked(latest, cx)).ok();
+        })
+        .detach();
+    }
+
+    /// Suite du contrôle : la bannière si `latest` est plus récente, sinon un mot.
+    fn checked(&mut self, latest: Option<update::Release>, cx: &mut Context<Self>) {
+        self.notice = match latest {
+            None => Some(tr("No answer from GitHub: check the connection", "GitHub ne répond pas : vérifier la connexion").into()),
+            Some(release) if update::is_new(&release) => {
+                self.update = Some(release);
+                None
+            }
+            Some(_) => Some(format!("{} ({})", tr("Bref is up to date", "Bref est à jour"), env!("CARGO_PKG_VERSION"))),
+        };
+        cx.notify();
     }
 
     /// Télécharge et installe la version trouvée, puis quitte : le nouveau programme se
@@ -1373,6 +1404,7 @@ impl Shell {
                 PaletteEvent::ImportDiagram => this.import_diagram(window, cx),
                 PaletteEvent::Setting(setting) => this.choose_setting(*setting, window, cx),
                 PaletteEvent::ToggleUpdates => this.toggle_updates(cx),
+                PaletteEvent::CheckUpdate => this.check_now(cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
@@ -1761,26 +1793,39 @@ impl Render for Shell {
                 ),
                 (None, _) => note.child(self.editor.clone()).child(copy),
             };
+            let banner = || {
+                div()
+                    .absolute()
+                    .bottom_3()
+                    .left_16()
+                    .pl_3()
+                    .pr_2()
+                    .py_1p5()
+                    .rounded(px(6.))
+                    .bg(t.panel)
+                    .border_1()
+                    .border_color(t.border)
+                    .text_size(px(13.))
+                    .flex()
+                    .items_center()
+                    .gap_3()
+            };
             body.flex()
                 .child(self.render_nav(cx))
                 .when(self.nav.panel != Panel::Full, |d| d.child(note))
                 .children(self.palette.clone())
+                // Réponse à un contrôle demandé à la main ; un clic la referme.
+                .children(self.notice.clone().filter(|_| self.update.is_none()).map(|message| {
+                    banner().pr_3().cursor_pointer().child(message).on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.notice = None;
+                            cx.notify();
+                        }),
+                    )
+                }))
                 .children(self.update.clone().map(|release| {
-                    let banner = div()
-                        .absolute()
-                        .bottom_3()
-                        .left_16()
-                        .pl_3()
-                        .pr_2()
-                        .py_1p5()
-                        .rounded(px(6.))
-                        .bg(t.panel)
-                        .border_1()
-                        .border_color(t.border)
-                        .text_size(px(13.))
-                        .flex()
-                        .items_center()
-                        .gap_3();
+                    let banner = banner();
                     if self.updating {
                         return banner.pr_3().child(tr("Updating, Bref restarts…", "Mise à jour, Bref redémarre…"));
                     }
@@ -2331,6 +2376,21 @@ mod tests {
         cx.run_until_parked();
         assert!(shell.read_with(cx, |s, _| !s.updating && s.error.as_deref().is_some_and(|e| e.contains("Mise à jour impossible"))));
         shell.update(cx, |s, _| (s.update, s.error) = (None, None));
+
+        // Contrôle à la main : la palette le lance, puis la réponse dit que Bref est à jour,
+        // que GitHub ne répond pas, ou montre la bannière.
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("maintenant");
+        cx.simulate_keystrokes("down enter");
+        assert!(shell.read_with(cx, |s, _| s.notice.as_deref().is_some_and(|n| n.contains("Recherche"))));
+        let version = |v: &str| Some(update::Release { version: v.into(), ..Default::default() });
+        shell.update(cx, |s, cx| s.checked(version(env!("CARGO_PKG_VERSION")), cx));
+        assert!(shell.read_with(cx, |s, _| s.update.is_none() && s.notice.as_deref().is_some_and(|n| n.contains("à jour"))));
+        shell.update(cx, |s, cx| s.checked(None, cx));
+        assert!(shell.read_with(cx, |s, _| s.notice.as_deref().is_some_and(|n| n.contains("GitHub"))));
+        shell.update(cx, |s, cx| s.checked(version("9.9.9"), cx));
+        assert!(shell.read_with(cx, |s, _| s.notice.is_none() && s.update.as_ref().is_some_and(|r| r.version == "9.9.9")));
+        shell.update(cx, |s, _| s.update = None);
 
         // Wikilien complété puis nouvelle note créée depuis la palette.
         cx.simulate_keystrokes("secondary-end");
