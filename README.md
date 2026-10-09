@@ -22,7 +22,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Keyboard first**: one palette to find, create and switch notes, and a shortcut for every view. No toolbar.
 - **No save button**: notes are written to disk as you type, and named after their first line.
 - **Daily note**: one key opens the note of the day, or creates it.
-- **Word count**: the bottom of the note shows its words, characters and reading time, or those of the selection.
+- **Word count**: the bottom of the note shows its words and characters, or those of the selection.
 - **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, IBM Plex Sans and Plex Mono built in (nothing to install), any installed font if you prefer, and the text size you like.
 - Light and dark, following your system, until you pick a theme. English and French, following the system language.
 
@@ -168,7 +168,7 @@ Start typing: the first line is the title of the note, and the name of its file.
 
 On macOS, read `Cmd` for `Ctrl`, and `Alt` for `Ctrl` when moving by word.
 
-The bottom right of the note shows its number of words and characters and its reading time (200 words a minute); with a selection, the words and characters selected. Characters are counted as written, Markdown markers included, line ends excluded.
+The bottom right of the note shows its number of words and characters; with a selection, the words and characters selected. Characters are counted as written, Markdown markers included, line ends excluded.
 
 | Key | Action |
 |---|---|

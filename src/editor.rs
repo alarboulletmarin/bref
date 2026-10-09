@@ -854,8 +854,7 @@ impl Editor {
         self.counts
     }
 
-    /// Compteur du bas de page : mots, caractères et temps de lecture de la note, ou mots et
-    /// caractères de la sélection. Recompté seulement quand le texte ou la sélection changent.
+    /// Compteur du bas de page : mots et caractères de la note, ou ceux de la sélection. Recompté seulement quand le texte ou la sélection changent.
     pub fn counts(&mut self) -> String {
         let key = (self.version, self.sel.clone());
         if let Some((_, label)) = self.counted.as_ref().filter(|(known, _)| *known == key) {
@@ -870,9 +869,7 @@ impl Editor {
             )
         };
         let label = if self.sel.is_empty() {
-            let (words, chars) = md::counts(&self.content);
-            // 200 mots à la minute, arrondi au-dessus.
-            format!("{} · {} {}", both((words, chars)), words.div_ceil(200), tr("min read", "min de lecture"))
+            both(md::counts(&self.content))
         } else {
             format!("{} {}", tr("Selection:", "Sélection :"), both(md::counts(&self.content[self.sel.clone()])))
         };
