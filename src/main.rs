@@ -318,7 +318,11 @@ impl AssetSource for Assets {
             "logo.svg" => {
                 r#"<rect x="1.8" y="1.8" width="6.2" height="7.6" rx="1.4" transform="rotate(-7 5 5.5)" fill="black" stroke="none"/><rect x="8.3" y="6.6" width="6.2" height="7.6" rx="1.4" transform="rotate(7 11.4 10.4)" fill="black" stroke="none" opacity=".55"/>"#
             }
-            _ => return Ok(None),
+            // Les icônes qu'on donne aux notes et aux dossiers.
+            _ => match ICON_SET.iter().find(|(file, _)| *file == path) {
+                Some((_, shapes)) => shapes,
+                None => return Ok(None),
+            },
         };
         let svg = format!(
             r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">{shapes}</svg>"#
@@ -330,6 +334,51 @@ impl AssetSource for Assets {
         Ok(Vec::new())
     }
 }
+
+/// Icônes à donner à une note, un fichier ou un dossier : le fichier dessiné, et ses formes
+/// dans le carré de 16 des autres icônes. Le nom retenu est celui du fichier sans `i-` ni `.svg`.
+pub const ICON_SET: &[(&str, &str)] = &[
+    ("i-star.svg", r#"<path d="M8 2.5L9.7 6.1L13.6 6.6L10.7 9.3L11.5 13.2L8 11.3L4.5 13.2L5.3 9.3L2.4 6.6L6.3 6.1Z"/>"#),
+    ("i-heart.svg", r#"<path d="M8 13C8 13 2.5 9.8 2.5 6.2A2.8 2.8 0 0 1 8 5A2.8 2.8 0 0 1 13.5 6.2C13.5 9.8 8 13 8 13Z"/>"#),
+    ("i-bookmark.svg", r#"<path d="M4.5 2.5H11.5V13.5L8 11L4.5 13.5Z"/>"#),
+    ("i-flag.svg", r#"<path d="M4 13.5V2.5M4 3H12L10 5.75L12 8.5H4"/>"#),
+    ("i-pin.svg", r#"<path d="M8 14C8 14 3.5 9.8 3.5 6.5A4.5 4.5 0 0 1 12.5 6.5C12.5 9.8 8 14 8 14Z"/><circle cx="8" cy="6.5" r="1.5"/>"#),
+    ("i-target.svg", r#"<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.5"/><path d="M8 8V8.1"/>"#),
+    ("i-done.svg", r#"<circle cx="8" cy="8" r="5.5"/><path d="M5.5 8.2L7.3 10L10.5 6"/>"#),
+    ("i-bolt.svg", r#"<path d="M9 2L4 9H8L7 14L12 7H8Z"/>"#),
+    ("i-home.svg", r#"<path d="M2.5 7.5L8 3L13.5 7.5M4 6.5V13H12V6.5M6.8 13V9.5H9.2V13"/>"#),
+    ("i-book.svg", r#"<path d="M3.5 3H11.5A1 1 0 0 1 12.5 4V13H4.5A1 1 0 0 1 3.5 12ZM3.5 11.5A1 1 0 0 1 4.5 10.5H12.5M6 5.5H10"/>"#),
+    ("i-work.svg", r#"<rect x="2.5" y="5" width="11" height="8" rx="1"/><path d="M6 5V3.5H10V5M2.5 8.5H13.5"/>"#),
+    ("i-school.svg", r#"<path d="M1.5 6.5L8 3.5L14.5 6.5L8 9.5ZM4.5 8V11C4.5 12 6 12.8 8 12.8S11.5 12 11.5 11V8"/>"#),
+    ("i-calendar.svg", r#"<rect x="2.5" y="3.5" width="11" height="10" rx="1"/><path d="M2.5 6.5H13.5M5.5 2.5V4.5M10.5 2.5V4.5"/>"#),
+    ("i-clock.svg", r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 5V8L10 9.5"/>"#),
+    ("i-inbox.svg", r#"<path d="M2.5 9L4.5 3.5H11.5L13.5 9V12.5H2.5ZM2.5 9H6A2 2 0 0 0 10 9H13.5"/>"#),
+    ("i-archive.svg", r#"<path d="M2.5 3H13.5V6H2.5ZM3.5 6V13H12.5V6M6.5 8.5H9.5"/>"#),
+    ("i-idea.svg", r#"<path d="M6 11.5H10M6.5 13.5H9.5M5.5 9.5A4 4 0 1 1 10.5 9.5C10 10 10 10.5 10 11.5H6C6 10.5 6 10 5.5 9.5Z"/>"#),
+    ("i-rocket.svg", r#"<path d="M8 2C10.5 3.5 11.5 6 11 9.5L9.5 11H6.5L5 9.5C4.5 6 5.5 3.5 8 2ZM6.5 11L5 13.5M9.5 11L11 13.5M8 11V13.5"/><circle cx="8" cy="6.5" r="1"/>"#),
+    ("i-person.svg", r#"<circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5C3 10.8 5.2 9.5 8 9.5S13 10.8 13 13.5"/>"#),
+    ("i-chat.svg", r#"<path d="M2.5 3.5H13.5V10.5H7L4.5 13V10.5H2.5Z"/>"#),
+    ("i-mail.svg", r#"<rect x="2.5" y="3.5" width="11" height="9" rx="1"/><path d="M2.5 4.5L8 8.5L13.5 4.5"/>"#),
+    ("i-globe.svg", r#"<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8H13.5M8 2.5C6 4.5 6 11.5 8 13.5M8 2.5C10 4.5 10 11.5 8 13.5"/>"#),
+    ("i-plane.svg", r#"<path d="M14 2L2 7L6.5 9L8.5 14ZM6.5 9L14 2"/>"#),
+    ("i-cart.svg", r#"<path d="M2 3H4L5.5 10H12L13.5 5H4.5"/><circle cx="6.5" cy="12.5" r="1"/><circle cx="11" cy="12.5" r="1"/>"#),
+    ("i-money.svg", r#"<circle cx="8" cy="8" r="5.5"/><path d="M9.8 6.2C9.5 5.5 8.8 5.2 8 5.2C7 5.2 6.2 5.7 6.2 6.6C6.2 8.4 9.8 7.6 9.8 9.4C9.8 10.3 9 10.8 8 10.8C7.2 10.8 6.5 10.5 6.2 9.8M8 4V5.2M8 10.8V12"/>"#),
+    ("i-chart.svg", r#"<path d="M3 13.5V2.5M3 13.5H13.5M5.5 11V8M8 11V5M10.5 11V7"/>"#),
+    ("i-code.svg", r#"<path d="M5.5 4.5L2.5 8L5.5 11.5M10.5 4.5L13.5 8L10.5 11.5M9 3.5L7 12.5"/>"#),
+    ("i-terminal.svg", r#"<rect x="2.5" y="3" width="11" height="10" rx="1"/><path d="M5 6.5L7 8L5 9.5M8.5 10H11"/>"#),
+    ("i-data.svg", r#"<ellipse cx="8" cy="4" rx="4.5" ry="1.8"/><path d="M3.5 4V12C3.5 13 5.5 13.8 8 13.8S12.5 13 12.5 12V4M3.5 8C3.5 9 5.5 9.8 8 9.8S12.5 9 12.5 8"/>"#),
+    ("i-tool.svg", r#"<path d="M13 4.8A3 3 0 0 1 9 7.6L4.6 12.5A1.2 1.2 0 0 1 3 11L7.6 6.6A3 3 0 0 1 10.6 2.6L8.9 4.3L9.3 6.2L11.2 6.6Z"/>"#),
+    ("i-lock.svg", r#"<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5A2.5 2.5 0 0 1 10.5 5V7"/>"#),
+    ("i-key.svg", r#"<circle cx="5.5" cy="10.5" r="2.5"/><path d="M7.3 8.7L13 3M11 5L12.5 6.5M9.5 6.5L10.5 7.5"/>"#),
+    ("i-music.svg", r#"<path d="M6 12V4L12 3V11"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="10.5" cy="11" r="1.5"/>"#),
+    ("i-camera.svg", r#"<path d="M2.5 5.5H5L6 4H10L11 5.5H13.5V12.5H2.5Z"/><circle cx="8" cy="8.8" r="2"/>"#),
+    ("i-gift.svg", r#"<rect x="2.5" y="6" width="11" height="2.5"/><path d="M3.5 8.5V13.5H12.5V8.5M8 6V13.5M8 6C8 6 6 6 5.5 4.5C5.2 3.4 7 2.8 8 6ZM8 6C8 6 10 6 10.5 4.5C10.8 3.4 9 2.8 8 6Z"/>"#),
+    ("i-cup.svg", r#"<path d="M3.5 6H11V10.5A2.5 2.5 0 0 1 8.5 13H6A2.5 2.5 0 0 1 3.5 10.5ZM11 7H12A1.5 1.5 0 0 1 12 10H11M5.5 2.5V4M8.5 2.5V4"/>"#),
+    ("i-health.svg", r#"<path d="M6.5 2.5H9.5V6.5H13.5V9.5H9.5V13.5H6.5V9.5H2.5V6.5H6.5Z"/>"#),
+    ("i-leaf.svg", r#"<path d="M3 13C3 7 6 3 13 3C13 10 9 13 3 13ZM3 13L9 7"/>"#),
+    ("i-sun.svg", r#"<circle cx="8" cy="8" r="2.8"/><path d="M8 1.8V3.2M8 12.8V14.2M1.8 8H3.2M12.8 8H14.2M3.6 3.6L4.6 4.6M11.4 11.4L12.4 12.4M3.6 12.4L4.6 11.4M11.4 4.6L12.4 3.6"/>"#),
+    ("i-moon.svg", r#"<path d="M13 9.5A5.5 5.5 0 1 1 6.5 3A4.5 4.5 0 0 0 13 9.5Z"/>"#),
+];
 
 /// Le logo de l'app, discret : les deux fiches, à la couleur d'accent.
 pub fn logo(t: Theme) -> gpui::Svg {
@@ -451,6 +500,10 @@ struct Shell {
     new_dir: Option<PathBuf>,
     dirty: bool,
     save_gen: usize,
+    /// Icônes des notes, fichiers et dossiers du coffre (voir `vault::load_icons`).
+    icons: std::collections::HashMap<PathBuf, String>,
+    /// Grille de choix d'une icône : où elle s'ouvre, et pour quel élément.
+    icon_pick: Option<(Point<Pixels>, PathBuf)>,
     /// Le panneau des commentaires a été refermé : il attend qu'on le redemande.
     comments_shut: bool,
     /// Messages d'état affichés, du plus ancien au plus récent.
@@ -522,6 +575,8 @@ impl Shell {
             new_dir: None,
             dirty: false,
             save_gen: 0,
+            icons: Default::default(),
+            icon_pick: None,
             comments_shut: false,
             toasts: Vec::new(),
             toasted: 0,
@@ -810,6 +865,7 @@ impl Shell {
     fn set_vault(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.leave(cx);
         self.vault = Some(root.clone());
+        self.icons = vault::load_icons(&root);
         self.notes.clear();
         self.dirs.clear();
         self.images.clear();
@@ -1368,6 +1424,11 @@ impl Shell {
                     },
                 );
                 if self.path.as_ref() != Some(&path) {
+                    // Renommée par son titre, la note garde son icône.
+                    if let Some(icon) = self.path.as_ref().and_then(|old| self.icons.remove(old)) {
+                        self.icons.insert(path.clone(), icon);
+                        self.save_icons(cx);
+                    }
                     self.recent.retain(|p| Some(p) != self.path.as_ref());
                     self.touch(&path);
                     self.nav.reveal(&path);
@@ -1539,6 +1600,24 @@ impl Shell {
             window.focus(&canvas.focus_handle(cx));
         }
         self.settle_nav(window, cx);
+    }
+
+    /// Donne l'icône `icon` à la note, au fichier ou au dossier `path` ; `None` la lui retire.
+    pub fn set_icon(&mut self, path: PathBuf, icon: Option<&str>, cx: &mut Context<Self>) {
+        match icon {
+            Some(icon) => self.icons.insert(path, icon.to_string()),
+            None => self.icons.remove(&path),
+        };
+        self.save_icons(cx);
+    }
+
+    pub fn save_icons(&mut self, cx: &mut Context<Self>) {
+        if let Some(root) = &self.vault
+            && let Err(e) = vault::save_icons(root, &self.icons)
+        {
+            self.say(Tone::Failed, format!("{} : {e}", tr("Icons not saved", "Icônes non enregistrées")), cx);
+        }
+        cx.notify();
     }
 
     /// Ouvre le terminal du système dans le coffre, ou dit qu'il n'en a pas trouvé.
@@ -1755,7 +1834,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 ("Alt + drag".into(), tr("Move the window from anywhere (Linux)", "Déplacer la fenêtre depuis n'importe où (Linux)")),
                 (format!("F2 / {} / {}", m("D"), tr("Delete", "Suppr")), tr("Rename / duplicate / move to the trash", "Renommer / dupliquer / mettre à la corbeille")),
                 (format!("{} / Shift+{}", m(tr("click", "clic")), tr("click", "clic")), tr("Select several rows: move, duplicate, trash them together", "Sélectionner plusieurs lignes : les déplacer, dupliquer, jeter ensemble")),
-                (tr("Right click", "Clic droit").into(), tr("Copy the link or the path, reveal in the file explorer…", "Copier le lien ou le chemin, afficher dans l'explorateur…")),
+                (tr("Right click", "Clic droit").into(), tr("Copy the link or the path, set an icon, reveal in the file explorer…", "Copier le lien ou le chemin, donner une icône, afficher dans l'explorateur…")),
                 (tr("Drag a node", "Glisser un nœud").into(), tr("Move it in the graph, linked notes follow", "Le déplacer dans le graphe, les notes liées suivent")),
             ],
         ),
@@ -2361,6 +2440,7 @@ impl Render for Shell {
             }))
             // Échap dans la note, quand elle n'a rien à fermer : le menu du clic droit.
             .on_action(cx.listener(|this, _: &editor::Cancel, _, cx| {
+                this.icon_pick = None;
                 this.menu = None;
                 cx.notify();
             }))
@@ -2373,6 +2453,7 @@ impl Render for Shell {
             .child(body)
             .when(client, |d| d.child(pill))
             .children(self.render_menu(window, cx))
+            .children(self.render_icons(window, cx))
             .when(self.help, |d| d.child(self.render_help(cx)));
 
         // La marge transparente porte l'ombre et sert de poignée de redimensionnement.
@@ -2981,6 +3062,16 @@ mod tests {
         assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.sel.clone())), (Mode::Tree, Some(archives.clone())));
 
         // F2 renomme : le titre d'une note accordée à son nom suit, la liste des récents aussi.
+        // Une icône, choisie dans la grille du menu, suit la note qu'on renomme ; elle est
+        // retenue dans un fichier du coffre.
+        shell.update_in(cx, |s, window, cx| {
+            s.menu = Some(nav::Menu { at: point(px(300.), px(200.)), target: Some(root.join("Test.md")), text: None });
+            s.menu_do(nav::Do::Icon, Some(root.join("Test.md")), window, cx)
+        });
+        cx.run_until_parked();
+        let grid = shell.read_with(cx, |s, _| s.icon_pick.clone().unwrap().0 - point(s.nav.left, s.nav.left));
+        cx.simulate_click(grid + point(px(5. + 30. + 14.), px(5. + 14.)), gpui::Modifiers::none());
+        assert!(shell.read_with(cx, |s, _| s.icon_pick.is_none() && s.icons.get(&root.join("Test.md")).map(String::as_str) == Some("star")));
         shell.update(cx, |s, _| s.nav.sel = Some(root.join("Test.md")));
         cx.simulate_keystrokes("f2");
         cx.simulate_input("s");
@@ -2988,6 +3079,9 @@ mod tests {
         let renamed = fs::read_to_string(root.join("Tests.md")).unwrap();
         assert!(renamed.starts_with("# Tests\n1. un") && !root.join("Test.md").exists());
         assert!(shell.read_with(cx, |s, _| s.recent.contains(&root.join("Tests.md"))));
+        assert_eq!(fs::read_to_string(root.join(".bref-icons")).unwrap(), "star\tTests.md\n");
+        shell.update(cx, |s, cx| s.set_icon(root.join("Tests.md"), None, cx));
+        assert_eq!(fs::read_to_string(root.join(".bref-icons")).unwrap(), "");
         // Les liens suivent, dans le fichier comme dans la note affichée.
         assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[Tests]]");
         assert!(fs::read_to_string(root.join("Courses.md")).unwrap().ends_with("[[Tests]]"));

@@ -350,6 +350,26 @@ pub fn trash(root: &Path, path: &Path) -> io::Result<()> {
     fs::rename(path, free)
 }
 
+/// Fichier du coffre qui retient les icônes : une ligne `icône<tabulation>chemin` par élément,
+/// le chemin relatif au coffre et écrit avec des `/`. Il voyage avec le coffre.
+const ICONS: &str = ".bref-icons";
+
+/// Icônes choisies pour des notes, des fichiers et des dossiers du coffre, par chemin.
+pub fn load_icons(root: &Path) -> HashMap<PathBuf, String> {
+    let text = fs::read_to_string(root.join(ICONS)).unwrap_or_default();
+    text.lines().filter_map(|line| line.split_once('\t')).map(|(icon, path)| (root.join(path), icon.to_string())).collect()
+}
+
+pub fn save_icons(root: &Path, icons: &HashMap<PathBuf, String>) -> io::Result<()> {
+    let line = |(path, icon): (&PathBuf, &String)| {
+        let inside = path.strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/");
+        Some(format!("{icon}\t{inside}\n"))
+    };
+    let mut lines: Vec<String> = icons.iter().filter_map(line).collect();
+    lines.sort();
+    write(&root.join(ICONS), &lines.concat())
+}
+
 /// Les commandes à essayer, dans l'ordre, pour ouvrir un terminal dans `dir` sous le système
 /// `os` (`std::env::consts::OS`) : le programme et ses arguments. `preferred` est le terminal
 /// que l'utilisateur nomme dans `$TERMINAL`.
@@ -647,6 +667,18 @@ mod tests {
         assert_eq!(images, [root.join("vide/Photo.PNG")]);
         assert_eq!(clean_name(" ../a:b. "), Some("ab".into()));
         assert_eq!(clean_name(" . "), None);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn keeps_icons_with_the_vault() {
+        let root = env::temp_dir().join(format!("bref-icons-{}", std::process::id()));
+        fs::create_dir_all(root.join("Projets")).unwrap();
+        assert!(load_icons(&root).is_empty());
+        let icons = HashMap::from([(root.join("Projets"), "rocket".to_string()), (root.join("Projets/Idées.md"), "idea".to_string())]);
+        save_icons(&root, &icons).unwrap();
+        assert_eq!(fs::read_to_string(root.join(ICONS)).unwrap(), "idea\tProjets/Idées.md\nrocket\tProjets\n");
+        assert_eq!(load_icons(&root), icons);
         fs::remove_dir_all(&root).unwrap();
     }
 

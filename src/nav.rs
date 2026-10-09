@@ -78,6 +78,8 @@ pub enum Do {
     CopyPath,
     CopyRelative,
     Reveal,
+    /// Ouvre la grille des icônes pour la ligne visée.
+    Icon,
     // Menu de la note.
     Cut,
     Copy,
@@ -611,8 +613,14 @@ impl Shell {
 
     /// Exécute une entrée du menu contextuel sur `target` (`None` : le coffre).
     pub fn menu_do(&mut self, what: Do, target: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
-        let link = self.menu.take().and_then(|menu| menu.text).flatten();
+        let menu = self.menu.take();
+        let at = menu.as_ref().map(|menu| menu.at).unwrap_or_default();
+        let link = menu.and_then(|menu| menu.text).flatten();
         cx.notify();
+        if let (Do::Icon, Some(path)) = (what, &target) {
+            self.icon_pick = Some((at, path.clone()));
+            return;
+        }
         // Menu de la note : les gestes de l'éditeur, comme au clavier, et le lien visé.
         let action: Option<Box<dyn Action>> = match (what, link) {
             (Do::Cut, _) => Some(Box::new(editor::Cut)),
@@ -857,6 +865,11 @@ impl Shell {
             sheet.update(cx, |sheet, _| sheet.moved(moved));
         }
         self.recent = self.recent.iter().map(shift).collect();
+        // Les icônes suivent leur note ou leur dossier, et ce qu'il contient.
+        if self.icons.keys().any(|p| p.starts_with(from)) {
+            self.icons = self.icons.drain().map(|(path, icon)| (shift(&path), icon)).collect();
+            self.save_icons(cx);
+        }
         self.nav.open = self.nav.open.iter().map(shift).collect();
         self.new_dir = self.new_dir.as_ref().map(shift);
         self.path = self.path.as_ref().map(shift);
@@ -950,6 +963,7 @@ impl Shell {
                 }
                 if !many {
                     groups[3].push((tr("Rename", "Renommer"), Do::Rename));
+                    groups[3].push((tr("Icon…", "Icône…"), Do::Icon));
                 }
                 groups[3].push((tr("Move to the trash", "Mettre à la corbeille"), Do::Trash));
             }
@@ -1030,6 +1044,58 @@ impl Shell {
         )
     }
 
+    /// Grille des icônes, ouverte depuis le menu : un clic donne l'icône, la croix la retire,
+    /// un clic ailleurs referme.
+    // ponytail: à la souris seulement ; une liste dans la palette si le clavier la réclame.
+    pub fn render_icons(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let (at, path) = self.icon_pick.clone()?;
+        let t = self.theme;
+        let mine = self.icons.get(&path).cloned();
+        let pick = |i: usize, file: &'static str, name: Option<&'static str>, cx: &mut Context<Self>| {
+            let path = path.clone();
+            button(("icon", i), file, name.is_some() && name == mine.as_deref(), t).on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.icon_pick = None;
+                    this.set_icon(path.clone(), name, cx)
+                }),
+            )
+        };
+        let mut cells = vec![pick(0, "close.svg", None, cx)];
+        cells.extend(crate::ICON_SET.iter().enumerate().map(|(i, (file, _))| pick(i + 1, file, Some(&file[2..file.len() - 4]), cx)));
+        // Huit par rangée ; la grille reste dans la fenêtre, comme le menu.
+        let view = window.viewport_size();
+        let (width, height) = (px(8. * 30. - 2. + 12.), px(((cells.len() + 7) / 8) as f32 * 30. - 2. + 12.));
+        let at = point(
+            (at.x - self.nav.left).min(view.width - self.nav.left * 2. - width - px(8.)),
+            (at.y - self.nav.left).min(view.height - self.nav.left * 2. - height - px(8.)),
+        );
+        let close = cx.listener(|this: &mut Self, _: &MouseDownEvent, _, cx| {
+            this.icon_pick = None;
+            cx.notify();
+        });
+        Some(
+            div().absolute().inset_0().occlude().on_mouse_down(MouseButton::Left, close).child(
+                div()
+                    .absolute()
+                    .left(at.x)
+                    .top(at.y)
+                    .w(width)
+                    .p(px(5.))
+                    .bg(t.panel)
+                    .border_1()
+                    .border_color(t.border)
+                    .rounded(px(8.))
+                    .shadow_lg()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(2.))
+                    .children(cells),
+            ),
+        )
+    }
+
     fn render_rows(
         &mut self,
         range: Range<usize>,
@@ -1098,6 +1164,9 @@ impl Shell {
                                 d.child(svg().path(chevron).size(px(14.)).text_color(t.dim))
                             }))
                         })
+                        .children(self.icons.get(&row.path).and_then(|name| crate::ICON_SET.iter().find(|(file, _)| file[2..file.len() - 4] == *name)).map(
+                            |(file, _)| svg().path(*file).size(px(14.)).flex_none().text_color(if current { t.accent } else { t.text }),
+                        ))
                         .child(
                             div()
                                 .truncate()
@@ -1361,7 +1430,7 @@ impl Shell {
                 }))
             })
             .on_action(cx.listener(|this, _: &Close, window, cx| {
-                if this.menu.take().is_some() {
+                if this.menu.take().is_some() || this.icon_pick.take().is_some() {
                     return cx.notify();
                 }
                 if this.nav.panel == Panel::Full {
