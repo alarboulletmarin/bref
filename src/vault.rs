@@ -313,12 +313,14 @@ pub fn rename_note(path: &Path, name: &str) -> io::Result<PathBuf> {
     let content = fs::read_to_string(path)?;
     let to = path.with_file_name(format!("{name}.md"));
     rename(path, &to)?;
+    // L'en-tête YAML reste tel quel : le titre est la première ligne qui le suit.
+    let (meta, body) = content.split_at(markdown::front_matter(&content));
     if stem(path) == title_of(&content)
-        && let Some(first) = content.lines().find(|l| !l.trim().is_empty())
+        && let Some(first) = body.lines().find(|l| !l.trim().is_empty())
     {
         let hashes = first.trim_start().chars().take_while(|c| *c == '#').count();
         let title = if hashes > 0 { format!("{} {name}", "#".repeat(hashes)) } else { name.to_string() };
-        fs::write(&to, content.replacen(first, &title, 1))?;
+        fs::write(&to, format!("{meta}{}", body.replacen(first, &title, 1)))?;
     }
     Ok(to)
 }
@@ -351,6 +353,7 @@ pub fn free_path(dir: &Path, name: &str, extension: &str) -> PathBuf {
 
 /// Nom de fichier (sans extension) tiré de la première ligne non vide.
 pub fn title_of(content: &str) -> String {
+    let content = &content[markdown::front_matter(content)..];
     let first = content.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
     clean_name(first.trim().trim_start_matches('#'))
         .unwrap_or_else(|| tr("Untitled", "Sans titre").to_string())
@@ -358,6 +361,7 @@ pub fn title_of(content: &str) -> String {
 
 /// Titre `# …` en tête de note, sous la forme d'un nom de fichier.
 pub fn h1_of(content: &str) -> Option<String> {
+    let content = &content[markdown::front_matter(content)..];
     let first = content.lines().find(|l| !l.trim().is_empty())?;
     clean_name(first.trim_start().strip_prefix("# ")?)
 }
@@ -491,6 +495,13 @@ mod tests {
         assert_eq!(save(&root, Some(&b), false, "# Z\n").unwrap(), b);
         assert_eq!(fs::read_to_string(&b).unwrap(), "# Z\n");
         assert_eq!(scan(&root).0.len(), 2);
+        // En-tête YAML : le nom vient du titre qui le suit, et renommer ne touche que ce titre.
+        let meta = "---\ntitle: autre\n---\n";
+        let c = save(&root, None, true, &format!("{meta}# Fiche\n---\n")).unwrap();
+        assert_eq!((c.clone(), h1_of(&format!("{meta}\n# Fiche\n"))), (root.join("Fiche.md"), Some("Fiche".into())));
+        let c = rename_note(&c, "Carte").unwrap();
+        assert_eq!(fs::read_to_string(&c).unwrap(), format!("{meta}# Carte\n---\n"));
+        fs::remove_file(&c).unwrap();
         // L'empreinte du coffre suit ce qu'un autre programme y change.
         let before = fingerprint(&root);
         assert_eq!(before, fingerprint(&root));

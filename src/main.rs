@@ -2883,6 +2883,38 @@ mod tests {
         for name in ["Cible.md", "Source A.md", "Source B.md"] {
             fs::remove_file(root.join(name)).unwrap();
         }
+
+        // En-tête YAML (front matter) : ses lignes ne sont ni un titre ni une règle, le nom du
+        // fichier suit le titre placé après lui, et ni la frappe, ni l'enregistrement, ni le
+        // renommage, ni la réécriture des liens n'en changent un octet.
+        let meta = "---\ntags: [projet]\n# pas un titre\nvoir: \"[[Fiche]]\"\n---\n";
+        fs::write(root.join("Fiche.md"), format!("{meta}# Fiche\n\ntexte\n")).unwrap();
+        fs::write(root.join("Renvoi.md"), format!("{meta}# Renvoi\n\n[[Fiche]]\n")).unwrap();
+        settle(cx);
+        shell.update(cx, |s, cx| s.open_note(&root.join("Fiche.md"), cx));
+        cx.run_until_parked();
+        let kind = |cx: &mut gpui::VisualTestContext, at: usize| shell.read_with(cx, |s, cx| s.editor.read(cx).kind_at(at));
+        assert_eq!((kind(cx, 0), kind(cx, meta.find("# pas").unwrap())), (Some(markdown::Kind::Meta), Some(markdown::Kind::Meta)));
+        assert_eq!(kind(cx, meta.len()), Some(markdown::Kind::Heading(1)));
+        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.jump(meta.len() + "# Fiche".len(), false, cx)));
+        cx.simulate_input(" 2");
+        settle(cx);
+        assert_eq!(fs::read_to_string(root.join("Fiche 2.md")).unwrap(), format!("{meta}# Fiche 2\n\ntexte\n"));
+        assert!(!root.join("Fiche.md").exists());
+        // Les liens suivent quand on quitte la note renommée.
+        shell.update(cx, |s, cx| s.open_note(&root.join("Renvoi.md"), cx));
+        settle(cx);
+        assert_eq!(fs::read_to_string(root.join("Renvoi.md")).unwrap(), format!("{meta}# Renvoi\n\n[[Fiche 2]]\n"));
+        // Le bloc ouvert au clavier : tant qu'il n'est pas fermé, sa première ligne reste une règle.
+        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load("---\na: 1\n".into(), 9, cx)));
+        cx.run_until_parked();
+        assert_eq!(kind(cx, 0), Some(markdown::Kind::Rule));
+        cx.simulate_input("---");
+        cx.run_until_parked();
+        assert_eq!((kind(cx, 0), kind(cx, 4), kind(cx, 9)), (Some(markdown::Kind::Meta), Some(markdown::Kind::Meta), Some(markdown::Kind::Meta)));
+        for name in ["Fiche 2.md", "Renvoi.md"] {
+            fs::remove_file(root.join(name)).unwrap();
+        }
         shell.update(cx, |s, cx| s.open_note(&was, cx));
         settle(cx);
         cx.simulate_keystrokes("secondary-t");

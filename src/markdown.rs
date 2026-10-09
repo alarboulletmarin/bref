@@ -17,6 +17,8 @@ pub enum Kind {
     Code,
     Rule,
     Table,
+    /// Ligne du bloc YAML d'en-tête : ni titre ni règle, quoi qu'elle contienne.
+    Meta,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -426,7 +428,7 @@ fn file_name(path: &str) -> &str {
 pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
     let (mut tags, mut wikis) = (Vec::new(), Vec::new());
     let mut in_code = false;
-    for line in text.lines() {
+    for line in text[front_matter(text)..].lines() {
         if is_fence(line) {
             in_code = !in_code;
         } else if !in_code {
@@ -453,12 +455,14 @@ pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
 }
 
 /// Le texte où les wikiliens vers `old` visent `new` (alias et ancre conservés,
-/// blocs de code laissés tels quels) ; `None` si aucun lien ne change.
+/// blocs de code et en-tête YAML laissés tels quels) ; `None` si aucun lien ne change.
 pub fn relink(text: &str, old: &str, new: &str) -> Option<String> {
     let old = old.to_lowercase();
+    let meta = front_matter(text);
     let mut out = String::with_capacity(text.len());
+    out.push_str(&text[..meta]);
     let mut in_code = false;
-    for line in text.split_inclusive('\n') {
+    for line in text[meta..].split_inclusive('\n') {
         let mut done = 0;
         if is_fence(line) {
             in_code = !in_code;
@@ -477,7 +481,7 @@ pub fn relink(text: &str, old: &str, new: &str) -> Option<String> {
         }
         out.push_str(&line[done..]);
     }
-    let out = reembed(&out, &old, new);
+    let out = format!("{}{}", &out[..meta], reembed(&out[meta..], &old, new));
     (out != text).then_some(out)
 }
 
@@ -764,12 +768,31 @@ pub fn format_table(rows: &[Vec<String>], indent: &str) -> String {
     text
 }
 
+/// Longueur du bloc YAML d'en-tête (*front matter*), sa clôture et la fin de ligne de celle-ci
+/// comprises ; zéro s'il n'y en a pas. Il commence à la ligne 1 par `---` et se ferme par `---`
+/// ou `...` ; sans clôture, ce n'est pas un bloc.
+pub fn front_matter(text: &str) -> usize {
+    let mut at = 0;
+    for (i, line) in text.split_inclusive('\n').enumerate() {
+        at += line.len();
+        match (i, line.trim_end()) {
+            (0, "---") => {}
+            (0, _) => return 0,
+            (_, "---" | "...") => return at,
+            _ => {}
+        }
+    }
+    0
+}
+
 /// Titres du texte : niveau (1 à 6), intitulé, début de leur ligne. Une ligne de bloc de code
-/// n'est pas un titre ; comme à l'écran, un ``` sans clôture n'ouvre pas de bloc.
+/// n'est pas un titre, une ligne de l'en-tête YAML non plus ; comme à l'écran, un ``` sans
+/// clôture n'ouvre pas de bloc.
 pub fn headings(text: &str) -> Vec<(u8, &str, usize)> {
-    let fences = text.lines().filter(|line| is_fence(line)).count();
-    let (mut seen, mut in_code, mut at, mut found) = (0, false, 0, Vec::new());
-    for line in text.split('\n') {
+    let meta = front_matter(text);
+    let fences = text[meta..].lines().filter(|line| is_fence(line)).count();
+    let (mut seen, mut in_code, mut at, mut found) = (0, false, meta, Vec::new());
+    for line in text[meta..].split('\n') {
         if is_fence(line) {
             seen += 1;
             in_code = !in_code && seen < fences;
@@ -938,6 +961,25 @@ mod tests {
         assert_eq!(on_enter("- ", 2, false), Enter::Clear);
         assert_eq!(on_enter("  x", 3, false), Enter::Insert("\n  ".into()));
         assert_eq!(on_enter("- a", 3, true), Enter::Insert("\n".into()));
+    }
+
+    #[test]
+    fn reads_the_front_matter() {
+        let block = "---\ntags: [a]\n# pas un titre\n---\n";
+        let text = format!("{block}# Titre\n[[Vieux]] #tag\n");
+        assert_eq!(front_matter(&text), block.len());
+        assert_eq!(front_matter("---\r\na: 1\r\n...\r\nsuite"), "---\r\na: 1\r\n...\r\n".len());
+        assert_eq!(front_matter("---\na: 1\n---"), "---\na: 1\n---".len());
+        // Pas à la ligne 1, ou jamais fermé : du texte ordinaire (la ligne `---` reste une règle).
+        for plain in ["", "---", "---\na: 1\n", "\n---\na\n---\n", "# T\n---\na\n---\n", "----\na\n---\n"] {
+            assert_eq!(front_matter(plain), 0, "{plain:?}");
+        }
+        // Ni titre, ni tag, ni lien à réécrire dans le bloc ; le reste de la note se lit comme avant.
+        assert_eq!(headings(&text), [(1, "Titre", block.len())]);
+        let linked = format!("---\nvoir: \"[[Vieux]]\" #non\n---\n[[Vieux]] #oui\n");
+        assert_eq!(index(&linked), (vec!["oui".to_string()], vec!["vieux".to_string()]));
+        assert_eq!(relink(&linked, "vieux", "Neuf").unwrap(), "---\nvoir: \"[[Vieux]]\" #non\n---\n[[Neuf]] #oui\n");
+        assert_eq!(relink("---\nvoir: \"[[Vieux]]\"\n---\nrien\n", "vieux", "Neuf"), None);
     }
 
     #[test]

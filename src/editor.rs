@@ -235,6 +235,8 @@ struct Laid {
     cursor: usize,
     fences: usize,
     dollars: usize,
+    /// Longueur de l'en-tête YAML.
+    meta: usize,
 }
 
 /// Une zone du texte à remettre en page : les lignes de l'ancienne mise en page `old` (indices),
@@ -877,6 +879,12 @@ impl Editor {
         };
         self.counted = Some((key, label.clone()));
         label
+    }
+
+    /// Type de la ligne qui porte l'octet `i`, à la dernière mise en page.
+    #[cfg(test)]
+    pub fn kind_at(&self, i: usize) -> Option<Kind> {
+        Some(self.rows[self.row_at(i)?].kind)
     }
 
     /// Position du curseur dans le texte.
@@ -2457,6 +2465,13 @@ impl Editor {
         {
             return None;
         }
+        // ponytail: l'en-tête YAML change le sens de toutes ses lignes dès qu'il s'ouvre ou se
+        // ferme ; une frappe dedans, ou qui déplace sa fin, refait donc toute la mise en page.
+        // Le traiter comme une zone à part si de longues notes à en-tête font attendre.
+        let meta = md::front_matter(&self.content);
+        if meta != laid.meta || self.dmg.is_some_and(|d| d.prefix < meta) {
+            return None;
+        }
         // Texte touché, en octets de l'ancienne mise en page (`p..=q`), et son décalage.
         let (p, q, delta) = match self.dmg {
             Some(d) => {
@@ -2757,6 +2772,8 @@ impl Editor {
         let mut y = px(0.);
         let mut offset;
         let mut in_code = false;
+        // En-tête YAML : ses lignes s'écrivent estompées, à chasse fixe, sans être interprétées.
+        let meta = md::front_matter(&self.content);
         // Couleur d'un panneau `[!TYPE]` : sa teinte dit son type.
         let tint_of = |label: &str| {
             let h = match label.to_ascii_lowercase().as_str() {
@@ -2842,7 +2859,7 @@ impl Editor {
                 offset += line.len() + 1;
                 continue;
             }
-            let (mut kind, mut marker) = md::classify(line, in_code);
+            let (mut kind, mut marker) = if offset < meta { (Kind::Meta, 0) } else { md::classify(line, in_code) };
             let mut opens = false;
             let mut drawing = None;
             if kind == Kind::Fence && orphan != Some(offset) {
@@ -2862,7 +2879,7 @@ impl Editor {
                     });
                 }
             }
-            let code = matches!(kind, Kind::Code | Kind::Fence);
+            let code = matches!(kind, Kind::Code | Kind::Fence | Kind::Meta);
             // Formule sur plusieurs lignes, entre deux lignes `$$`.
             let mut math = false;
             if kind == Kind::Code {
@@ -2952,7 +2969,7 @@ impl Editor {
                 Kind::Heading(1) => (px(27.), px(14.)),
                 Kind::Heading(2) => (px(21.), px(10.)),
                 Kind::Heading(_) => (px(17.5), px(6.)),
-                Kind::Code | Kind::Fence | Kind::Table => (px(14.), px(0.)),
+                Kind::Code | Kind::Fence | Kind::Table | Kind::Meta => (px(14.), px(0.)),
                 _ => (px(16.), px(0.)),
             };
             // Les tailles ci-dessus valent pour un texte courant de 16 px.
@@ -2977,7 +2994,9 @@ impl Editor {
                 let mut flags = vec![0u16; line.len()];
                 let list = matches!(kind, Kind::Bullet | Kind::Ordered | Kind::Task(_));
                 flags[..marker].fill(if list { md::MARK } else { md::DIM });
-                if math {
+                if kind == Kind::Meta {
+                    flags.fill(md::DIM);
+                } else if math {
                     flags.fill(if line.trim() == "$$" { md::DIM } else { md::CODE });
                 } else if kind == Kind::Code {
                     // Sans langage annoncé, en texte brut ou en Mermaid, le bloc reste tel quel.
@@ -3168,6 +3187,7 @@ impl Editor {
             cursor,
             fences: fences0,
             dollars: dollars0,
+            meta,
         });
         // Les lignes qui ne servent plus (supprimées, modifiées) partent quand elles dépassent la note.
         if shaped.len() > self.rows.len() * 2 + 256 {

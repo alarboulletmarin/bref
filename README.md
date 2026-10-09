@@ -9,7 +9,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 ## Features
 
 - **Opens instantly**: the window is on screen in about 75 ms on the author's machine.
-- **Plain files**: one `.md` file per note, in a folder (the *vault*) you can sync with git, Syncthing or anything else. An existing Obsidian vault works as is.
+- **Plain files**: one `.md` file per note, in a folder (the *vault*) you can sync with git, Syncthing or anything else. An existing Obsidian vault works as is, YAML front matter included.
 - **Styled as you type**: headings grow, bold and italic render, markers stay visible but dimmed. The file on disk is always plain Markdown.
 - **Lists that continue themselves**: `- `, `1. ` and `[] ` start a list, Enter continues it, numbering stays in order.
 - **Slash commands**: type `/` for a heading, a list, a colored panel, a code block, a formula or a table, whose size you pick on a grid. What lands in the note is plain Markdown.
@@ -374,6 +374,7 @@ A `.csv` or `.tsv` file of the vault shows in the tree and opens in a grid, in p
 - Pictures are part of the vault: the tree lists them under the notes of their folder, and the graph shows them as squares, linked to the notes that display them. Selecting one shows it in place of the note; it can be renamed (the notes that display it follow), moved or trashed like a note.
 - What other programs change in the vault (a sync tool, a script, another editor) is picked up within a second, without restarting: Bref asks the system to report changes (inotify, FSEvents, ReadDirectoryChangesW).
 - A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
+- A YAML front matter (a block that starts on the first line with `---` and ends with `---` or `...`) is shown dimmed and is never interpreted or rewritten: the title of the note is the first line after it, and renaming a note or rewriting its links leaves the block byte for byte as it was.
 - A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) keeps its name, until you add or change a `# ` title on its first line: the file then takes that name, as in Obsidian.
 - `[[Groceries]]` finds the note by file name, in any subfolder, ignoring case.
 - When a note is renamed, from the tree or by changing its first line, the `[[links]]` to its old name are rewritten in every note, keeping their `|alias` and `#heading`. After a change of title, this happens when you leave the note, not at each keystroke. If another note still carries the old name, the links are left alone: they may be meant for it.
