@@ -69,6 +69,7 @@ actions!(
         ToggleTask,
         Bold,
         Italic,
+        InsertLink,
         Copy,
         Cut,
         Paste,
@@ -1808,6 +1809,54 @@ impl Editor {
         self.sel = sel.start + n..sel.end + n;
     }
 
+    /// Adresse que tient le presse-papiers, s'il n'y a que cela.
+    fn copied_url(cx: &mut Context<Self>) -> Option<String> {
+        let text = cx.read_from_clipboard()?.text()?;
+        md::is_url(text.trim()).then(|| text.trim().to_string())
+    }
+
+    /// La sélection, si elle peut devenir le texte d'un lien : sur une seule ligne, hors du
+    /// code, et pas déjà une adresse.
+    fn linkable(&self) -> bool {
+        let text = &self.content[self.sel.clone()];
+        !text.contains('\n') && !md::is_url(text.trim()) && !self.in_code(self.line_range(self.sel.start).start)
+    }
+
+    /// Fait un lien `[texte](adresse)`. Sur un lien existant, son adresse est sélectionnée,
+    /// prête à être remplacée. Sinon la sélection devient le texte du lien, vers l'adresse du
+    /// presse-papiers s'il en tient une ; le curseur attend ce qui manque, l'adresse entre les
+    /// parenthèses ou le texte entre les crochets.
+    fn link(&mut self, cx: &mut Context<Self>) {
+        let lr = self.line_range(self.sel.start);
+        let (line, col) = (&self.content[lr.clone()], self.sel.start - lr.start);
+        let on = md::links(line).into_iter().find(|(r, _)| (r.start..=r.end).contains(&col));
+        if let Some((r, _)) = on
+            && let Some((_, url)) = md::web_link(&line[r.start..])
+        {
+            let at = lr.start + r.start;
+            self.move_to(at + url.start, cx);
+            return self.select_to(at + url.end, cx);
+        }
+        let sel = self.sel.clone();
+        // Une adresse sélectionnée garde sa place : il lui manque son texte.
+        let picked = self.content[sel.clone()].to_string();
+        if !md::is_url(picked.trim()) && !self.linkable() {
+            return;
+        }
+        let (text, url) = match md::is_url(picked.trim()) {
+            true => (String::new(), picked.trim().to_string()),
+            false => (picked, Self::copied_url(cx).unwrap_or_default()),
+        };
+        self.push_undo(true);
+        self.edit(sel.clone(), &format!("[{text}]({url})"), cx);
+        let at = match (text.is_empty(), url.is_empty()) {
+            (true, _) => 1,
+            (false, true) => text.len() + 3,
+            (false, false) => text.len() + url.len() + 4,
+        };
+        self.move_to(sel.start + at, cx);
+    }
+
     // ----- Tableaux -----
 
     /// Tableau autour de l'octet `at` : son étendue, ses lignes, et la cellule
@@ -2445,6 +2494,11 @@ impl Editor {
             return self.edit(from..sel.end, &format!("{lead}{table}{tail}"), cx);
         }
         self.push_undo(true);
+        // Une adresse collée sur du texte en fait un lien.
+        if !sel.is_empty() && md::is_url(text.trim()) && self.linkable() {
+            let linked = format!("[{}]({})", &self.content[sel.clone()], text.trim());
+            return self.edit(sel, &linked, cx);
+        }
         self.edit(sel, &text, cx);
         // Une ligne collée sous un tableau en fait partie : ses colonnes s'alignent.
         self.realign(cx);
@@ -3773,6 +3827,7 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &AlignRight, _, cx| this.align("--:", cx)))
         .on_action(cx.listener(|this, _: &Bold, _, cx| this.wrap("**", cx)))
         .on_action(cx.listener(|this, _: &Italic, _, cx| this.wrap("*", cx)))
+        .on_action(cx.listener(|this, _: &InsertLink, _, cx| this.link(cx)))
         .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(false, cx)))
         .on_action(cx.listener(|this, _: &Cut, _, cx| this.copy(true, cx)))
         .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))

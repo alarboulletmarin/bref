@@ -125,7 +125,24 @@ pub fn classify(line: &str, in_code: bool) -> (Kind, usize) {
     (Kind::Para, 0)
 }
 
-/// Wikiliens, URL et tags de la ligne, avec leur étendue en octets.
+/// Une adresse qu'on peut ouvrir : un protocole connu, puis quelque chose, sans espace.
+pub fn is_url(text: &str) -> bool {
+    let known = ["http://", "https://", "mailto:", "file://"].iter().any(|p| text.len() > p.len() && text.starts_with(p));
+    known && !text.contains(char::is_whitespace)
+}
+
+/// Si `rest` commence par un lien `[texte](adresse)` : l'étendue du texte et celle de l'adresse.
+// ponytail: seules les adresses à protocole, sans `)` ; un lien vers un fichier du coffre
+// s'écrit `[[note]]`. Compter les parenthèses si des adresses qui en contiennent se présentent.
+pub fn web_link(rest: &str) -> Option<(Range<usize>, Range<usize>)> {
+    let close = rest.find("](")?;
+    let end = close + 2 + rest[close + 2..].find(')')?;
+    let (text, url) = (1..close, close + 2..end);
+    let ok = rest.starts_with('[') && !rest[text.clone()].contains(['[', ']']) && is_url(&rest[url.clone()]);
+    ok.then_some((text, url))
+}
+
+/// Wikiliens, liens `[texte](adresse)`, URL et tags de la ligne, avec leur étendue en octets.
 pub fn links(line: &str) -> Vec<(Range<usize>, Link)> {
     let b = line.as_bytes();
     let mut out = Vec::new();
@@ -140,6 +157,14 @@ pub fn links(line: &str) -> Vec<(Range<usize>, Link)> {
                 out.push((i..i + e + 2, Link::Wiki(target.to_string())));
             }
             i += e + 2;
+            continue;
+        }
+        // `![…](…)` est une image, pas un lien.
+        if b[i] == b'[' && (i == 0 || b[i - 1] != b'!')
+            && let Some((_, url)) = web_link(rest)
+        {
+            out.push((i..i + url.end + 1, Link::Url(rest[url.clone()].to_string())));
+            i += url.end + 1;
             continue;
         }
         if rest.starts_with("http://") || rest.starts_with("https://") {
@@ -246,7 +271,14 @@ pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
         }
         match link {
             Link::Tag(_) => flags[r].iter_mut().for_each(|f| *f |= TAG),
-            Link::Url(_) => flags[r].iter_mut().for_each(|f| *f |= LINK),
+            // `[texte](adresse)` : le texte est le lien, le reste s'efface.
+            Link::Url(_) => match web_link(&line[r.start..]) {
+                Some((text, _)) => {
+                    flags[r.clone()].iter_mut().for_each(|f| *f |= DIM);
+                    flags[r.start + text.start..r.start + text.end].iter_mut().for_each(|f| *f = *f & !DIM | LINK);
+                }
+                None => flags[r].iter_mut().for_each(|f| *f |= LINK),
+            },
             Link::Wiki(_) => {
                 flags[r.start..r.start + 2].iter_mut().for_each(|f| *f |= DIM);
                 flags[r.end - 2..r.end].iter_mut().for_each(|f| *f |= DIM);
@@ -910,6 +942,17 @@ mod tests {
         assert_eq!(l[1].1, Link::Tag("projet/x".into()));
         assert_eq!(l[2].1, Link::Url("https://a.b/c".into()));
         assert!(links("a#b et #123").is_empty());
+        // `[texte](adresse)` : un seul lien, sur toute son étendue ; ni une image, ni un chemin.
+        let l = links("lire [la doc](https://a.b/c#d) et ![img](https://a.b/i.png)");
+        assert_eq!(l[0], (5..30, Link::Url("https://a.b/c#d".into())));
+        assert_eq!(l[1], (41..58, Link::Url("https://a.b/i.png".into())));
+        assert_eq!(l.len(), 2);
+        assert!(links("[x](fichier.md) [y]( ) [a [b](c)").is_empty());
+        assert_eq!(web_link("[la doc](mailto:a@b.c) suite"), Some((1..7, 9..21)));
+        assert!(is_url("https://a.b") && !is_url("https://") && !is_url("https://a b") && !is_url("a.b"));
+        let mut flags = vec![0u16; 31];
+        inline("lire [la doc](https://a.b/c#d).", 0, &mut flags);
+        assert!(flags[5] == DIM && flags[6..12].iter().all(|f| *f == LINK) && flags[12..30].iter().all(|f| *f == DIM) && flags[30] == 0);
         let (tags, wikis) = index("#A\n```\n#b [[z]]\n```\n#a #c [[X]] [[x|alias]] [[Y]]");
         assert_eq!(tags, vec!["a", "c"]);
         assert_eq!(wikis, vec!["x", "y"]);

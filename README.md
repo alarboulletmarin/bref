@@ -182,10 +182,11 @@ The bottom right of the note shows its number of words and characters; with a se
 | `Ctrl + M` | navigation panel on the whole window, and back |
 | `Ctrl + Shift + D` | new [diagram](#diagrams) |
 | `Ctrl + O` | change vault |
-| `Ctrl + K` then `Ctrl + T` | [theme](#appearance) (also the half-moon icon at the bottom of the rail) |
+| `Ctrl + K` | make the selection a link, `[text](address)`; on a link, select its address to change it |
 | `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` | bigger, smaller, default text size |
 | `Ctrl + Shift + C` | copy the code block the cursor is in, otherwise the whole note (also the icon at the bottom right, for the note) |
-| `Ctrl + click` | open a `[[link]]`, a `#tag` or a URL |
+| `Ctrl + click` | open a `[[link]]`, a `#tag`, a URL or a `[text](address)` link |
+| `Ctrl + V` | over a selection, a pasted address makes it a link |
 | `F1`, `Ctrl + /` | the list of shortcuts, inside the app; at its foot, the version of Bref and links to its source and to its Ko-fi page |
 | `Ctrl + Q` | quit |
 
@@ -266,7 +267,7 @@ Bref reopens with the panel as you left it.
 
 ## Appearance
 
-- **Theme**: `Ctrl + K` then `Ctrl + T`, the half-moon icon at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system.
+- **Theme**: the half-moon icon at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system.
 - **Fonts**: Bref carries IBM Plex Sans (text) and IBM Plex Mono (code), under the SIL Open Font License (`assets/fonts/`), so it looks the same everywhere without installing anything. Type `font` in the palette (`Ctrl + P`) to choose another font, for the app or for the code, among those installed on your system; type in the list to filter it. Ideograms and emoji, which Plex does not draw, come from a font of your system.
 - **Text size**: `Ctrl + +` and `Ctrl + -`, `Ctrl + 0` for the default. Headings and code scale with it.
 

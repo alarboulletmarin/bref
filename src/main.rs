@@ -1702,7 +1702,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (m("N"), tr("New note", "Nouvelle note")),
                 (m("J"), tr("Today's note: open it, or create it", "Note du jour : l'ouvrir, ou la créer")),
                 (m("O"), tr("Change vault", "Changer de coffre")),
-                (format!("{}, « terminal »", m("P")), tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")),
+                (format!("{} › terminal", m("P")), tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")),
                 (m("Shift+C"), tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
                 (format!("{MOD}+{}", tr("click", "clic")), tr("Open a [[link]], #tag or URL", "Ouvrir un [[lien]], #tag ou URL")),
                 ("F1".into(), tr("This help", "Cette aide")),
@@ -1757,7 +1757,7 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
         (
             tr("Appearance", "Apparence"),
             vec![
-                (format!("{} {}", m("K"), m("T")), tr("Theme, previewed as you browse", "Thème, en aperçu pendant le choix")),
+                (format!("{} › {}", m("P"), tr("theme", "thème")), tr("Theme, previewed as you browse", "Thème, en aperçu pendant le choix")),
                 (format!("{} › {}", m("P"), tr("font", "police")), tr("Font of the app / of the code", "Police de l'app / du code")),
                 (format!("{} / {} / {}", m("+"), m("-"), m("0")), tr("Bigger / smaller / default text", "Texte plus grand / plus petit / d'origine")),
             ],
@@ -1795,6 +1795,8 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 (tr("Pasting a table", "Coller un tableau").into(), tr("Spreadsheet cells or Markdown fill the grid, or become a table", "Des cellules de tableur ou du Markdown remplissent la grille, ou deviennent un tableau")),
                 (m(tr("Enter", "Entrée")), tr("Check / uncheck a task or a [ ] box; in a table cell, add one", "Cocher / décocher une tâche ou une case [ ] ; dans une cellule, en ajouter une")),
                 (format!("{} / {}", m("B"), m("I")), tr("Bold / italic", "Gras / italique")),
+                (m("K"), tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
+                (m("V"), tr("An address pasted over a selection makes it a link", "Une adresse collée sur une sélection en fait un lien")),
                 (format!("{} / {}", m("Z"), m("Shift+Z")), tr("Undo / redo", "Annuler / rétablir")),
                 (format!("{word}+{}", tr("Left / Right", "Gauche / Droite")), tr("Move by word", "Se déplacer par mot")),
             ],
@@ -2361,7 +2363,6 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("f1", ToggleHelp, None),
         KeyBinding::new("secondary-/", ToggleHelp, None),
         KeyBinding::new("escape", CloseHelp, Some("Shell")),
-        KeyBinding::new("secondary-k secondary-t", ChooseTheme, None),
         KeyBinding::new("secondary-shift-o", Outline, None),
         KeyBinding::new("secondary-j", Today, None),
         KeyBinding::new("secondary-shift-f", SearchVault, None),
@@ -2501,6 +2502,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-shift-r", AlignRight, e),
         KeyBinding::new("secondary-b", Bold, e),
         KeyBinding::new("secondary-i", Italic, e),
+        KeyBinding::new("secondary-k", InsertLink, e),
         KeyBinding::new("secondary-c", Copy, e),
         KeyBinding::new("secondary-x", Cut, e),
         KeyBinding::new("secondary-v", Paste, e),
@@ -2743,18 +2745,19 @@ mod tests {
         cx.simulate_input("ok");
         assert_eq!(text(cx), "# Idées\n\nok");
 
-        // Thème : Ctrl+K Ctrl+T liste les thèmes, celui qu'on parcourt s'applique en
+        // Thème : la liste des thèmes (icône du rail, palette), celui qu'on parcourt s'applique en
         // aperçu ; Échap revient au précédent, Entrée garde le choix et le mémorise.
         let look = |cx: &mut gpui::VisualTestContext| {
             shell.read_with(cx, |s, _| (s.prefs.theme.clone(), s.theme.bg))
         };
         let system = look(cx);
-        cx.simulate_keystrokes("secondary-k secondary-t");
+        cx.dispatch_action(ChooseTheme);
         cx.simulate_input("drac");
         assert_eq!(look(cx), ("Dracula".to_string(), Hsla::from(rgb(0x282a36))));
         cx.simulate_keystrokes("escape");
         assert_eq!(look(cx), system);
-        cx.simulate_keystrokes("secondary-k secondary-t down down enter");
+        cx.dispatch_action(ChooseTheme);
+        cx.simulate_keystrokes("down down enter");
         assert_eq!(look(cx), ("Bref Light".to_string(), Hsla::from(rgb(0xfbfaf8))));
         // Police du code, depuis la palette ; taille du texte au clavier.
         cx.simulate_keystrokes("secondary-p");
@@ -3718,6 +3721,30 @@ mod tests {
         cx.executor().advance_clock(TOAST);
         cx.run_until_parked();
         assert!(shell.read_with(cx, |s, _| s.toasts.is_empty()));
+
+        // Liens : une adresse collée sur une sélection en fait un lien ; Ctrl+K sur un lien
+        // sélectionne son adresse, qu'on retape ; Ctrl+K sur une sélection attend l'adresse.
+        load(cx, "voir la doc ici", 5);
+        cx.simulate_keystrokes("shift-right shift-right shift-right shift-right shift-right shift-right");
+        cx.write_to_clipboard(ClipboardItem::new_string("https://a.b/c\n".into()));
+        cx.simulate_keystrokes("secondary-v");
+        assert_eq!(text(cx), "voir [la doc](https://a.b/c) ici");
+        cx.simulate_keystrokes("secondary-k");
+        cx.simulate_input("https://x.y");
+        assert_eq!(text(cx), "voir [la doc](https://x.y) ici");
+        cx.simulate_keystrokes("secondary-z secondary-z");
+        assert_eq!(text(cx), "voir la doc ici");
+        load(cx, "mot", 0);
+        cx.write_to_clipboard(ClipboardItem::new_string("rien".into()));
+        cx.simulate_keystrokes("shift-right shift-right shift-right secondary-k");
+        cx.simulate_input("https://z.fr");
+        assert_eq!(text(cx), "[mot](https://z.fr)");
+        // Sans sélection, et une adresse dans le presse-papiers : il ne manque que le texte.
+        load(cx, "", 0);
+        cx.write_to_clipboard(ClipboardItem::new_string("https://a.b".into()));
+        cx.simulate_keystrokes("secondary-k");
+        cx.simulate_input("ici");
+        assert_eq!(text(cx), "[ici](https://a.b)");
 
         // Recherche dans la note : Ctrl+F, la frappe montre le premier passage, Entrée et
         // Maj+Entrée tournent en boucle, Alt+C tient compte de la casse, Alt+W des mots entiers.
