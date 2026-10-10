@@ -968,15 +968,6 @@ impl Shell {
         }
         self.dirs = self.dirs.iter().map(shift).collect();
         self.images = self.images.iter().map(shift).collect();
-        self.picture = self.picture.as_ref().map(shift);
-        if let Some((path, _)) = &mut self.drawing {
-            *path = shift(path);
-        }
-        if let Some((path, sheet)) = &mut self.sheet {
-            *path = shift(path);
-            let moved = path.clone();
-            sheet.update(cx, |sheet, _| sheet.moved(moved));
-        }
         self.recent = self.recent.iter().map(shift).collect();
         // Les icônes suivent leur note ou leur dossier, et ce qu'il contient.
         if self.icons.keys().any(|p| p.starts_with(from)) {
@@ -984,11 +975,22 @@ impl Shell {
             self.save_icons(cx);
         }
         self.nav.open = self.nav.open.iter().map(shift).collect();
-        self.new_dir = self.new_dir.as_ref().map(shift);
-        self.path = self.path.as_ref().map(shift);
-        if reload && self.path.as_deref() == Some(to) {
-            self.reload(cx);
-        }
+        self.each_pane(|this| {
+            this.picture = this.picture.as_ref().map(shift);
+            if let Some((path, _)) = &mut this.drawing {
+                *path = shift(path);
+            }
+            if let Some((path, sheet)) = &mut this.sheet {
+                *path = shift(path);
+                let moved = path.clone();
+                sheet.update(cx, |sheet, _| sheet.moved(moved));
+            }
+            this.new_dir = this.new_dir.as_ref().map(shift);
+            this.path = this.path.as_ref().map(shift);
+            if reload && this.path.as_deref() == Some(to) {
+                this.reload(cx);
+            }
+        });
         self.nav.reveal(to);
         self.files_changed(cx);
     }
@@ -1005,14 +1007,16 @@ impl Shell {
         self.dirs.retain(|d| !gone(d));
         self.images.retain(|p| !gone(p));
         self.recent.retain(|p| !gone(p));
-        if self.picture.as_ref().is_some_and(gone) {
-            self.picture = None;
-        }
         self.nav.sel = None;
-        if self.path.as_ref().is_some_and(gone) {
-            self.path = None;
-            self.new_note(String::new(), cx);
-        }
+        self.each_pane(|this| {
+            if this.picture.as_ref().is_some_and(gone) {
+                this.picture = None;
+            }
+            if this.path.as_ref().is_some_and(gone) {
+                this.path = None;
+                this.new_note(String::new(), cx);
+            }
+        });
         self.files_changed(cx);
     }
 
@@ -1275,9 +1279,11 @@ impl Shell {
         self.graph_stale = true;
         self.refresh_graph(cx);
         // La note affichée sous la liste est relue : elle vient de changer sur le disque.
-        if self.path.as_ref() == Some(&path) {
-            self.reload(cx);
-        }
+        self.each_pane(|this| {
+            if this.path.as_ref() == Some(&path) {
+                this.reload(cx);
+            }
+        });
         cx.notify();
     }
 

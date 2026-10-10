@@ -481,30 +481,16 @@ struct KeyEdit {
     issue: Option<KeyIssue>,
 }
 
-struct Shell {
-    focus: FocusHandle,
+/// Ce qui est ouvert dans une moitié de la fenêtre : une note et son éditeur, ce qui s'affiche
+/// à sa place (image, schéma, tableau, page liste), et la vue kanban de la note.
+struct Pane {
     editor: Entity<Editor>,
-    nav: Nav,
-    graph: Entity<Graph>,
-    /// Les notes ou leurs liens ont changé depuis le dernier calcul du graphe.
-    graph_stale: bool,
-    palette: Option<Entity<Palette>>,
-    vault: Option<PathBuf>,
-    notes: Vec<Note>,
-    /// Dossiers du coffre, y compris ceux qui ne contiennent aucune note.
-    dirs: Vec<PathBuf>,
-    /// Fichiers du coffre qui ne sont pas des notes : images et tableaux (CSV, TSV).
-    images: Vec<PathBuf>,
     /// Image affichée à la place de la note, choisie dans l'arbre ou le graphe.
     picture: Option<PathBuf>,
     /// Schéma ouvert dans son canevas, quand l'image affichée en est un.
     drawing: Option<(PathBuf, Entity<Canvas>)>,
     /// Tableau ouvert dans sa grille, quand le fichier affiché en est un.
     sheet: Option<(PathBuf, Entity<Sheet>)>,
-    /// Menu contextuel de l'arbre, s'il est ouvert.
-    menu: Option<nav::Menu>,
-    /// Notes ouvertes, de la plus récente à la plus ancienne.
-    recent: Vec<PathBuf>,
     /// Fichier de la note ouverte ; `None` tant qu'une nouvelle note n'est pas enregistrée.
     path: Option<PathBuf>,
     /// Le nom du fichier suit le titre (première ligne) de la note.
@@ -521,7 +507,6 @@ struct Shell {
     /// Dossier où enregistrer la nouvelle note ; le coffre par défaut.
     new_dir: Option<PathBuf>,
     dirty: bool,
-    save_gen: usize,
     /// La note ouverte est un tableau kanban dont on regarde le texte : on l'a demandé, ou on
     /// vient d'en écrire la clé (taper `kanban: true` ne fait pas quitter le texte).
     board_text: bool,
@@ -538,6 +523,32 @@ struct Shell {
     board_focus: FocusHandle,
     /// Page liste affichée à la place de la note.
     listing: Option<nav::Listing>,
+    /// Ce qui est affiché n'est qu'un aperçu (flèches dans l'arbre, graphe) : l'historique
+    /// l'ignore tant qu'il n'est pas ouvert pour de bon.
+    peek: bool,
+}
+
+struct Shell {
+    /// Un pane, ou deux côte à côte ; `active` est celui qui a reçu le focus en dernier.
+    panes: Vec<Pane>,
+    active: usize,
+    focus: FocusHandle,
+    nav: Nav,
+    graph: Entity<Graph>,
+    /// Les notes ou leurs liens ont changé depuis le dernier calcul du graphe.
+    graph_stale: bool,
+    palette: Option<Entity<Palette>>,
+    vault: Option<PathBuf>,
+    notes: Vec<Note>,
+    /// Dossiers du coffre, y compris ceux qui ne contiennent aucune note.
+    dirs: Vec<PathBuf>,
+    /// Fichiers du coffre qui ne sont pas des notes : images et tableaux (CSV, TSV).
+    images: Vec<PathBuf>,
+    /// Menu contextuel de l'arbre, s'il est ouvert.
+    menu: Option<nav::Menu>,
+    /// Notes ouvertes, de la plus récente à la plus ancienne.
+    recent: Vec<PathBuf>,
+    save_gen: usize,
     /// Dernier remplacement dans le coffre, pour le défaire : chaque note réécrite, son texte
     /// d'avant et celui d'après.
     swapped: Vec<(PathBuf, Arc<str>, String)>,
@@ -564,9 +575,6 @@ struct Shell {
     help: bool,
     /// Ce qui a été affiché, pour « précédent » et « suivant ».
     history: History,
-    /// Ce qui est affiché n'est qu'un aperçu (flèches dans l'arbre, graphe) : l'historique
-    /// l'ignore tant qu'il n'est pas ouvert pour de bon.
-    peek: bool,
     /// Les liaisons en vigueur, et ce que l'utilisateur a changé aux raccourcis par défaut.
     bound: Vec<keys::Bind>,
     changes: keys::Changes,
@@ -579,7 +587,69 @@ struct Shell {
     key_tap: Option<gpui::Subscription>,
 }
 
+
+/// `Shell` se lit comme son pane actif : `self.path`, `self.editor`… sont ceux du pane sur lequel
+/// la palette, l'arbre et les raccourcis agissent. Ce qui vaut pour tous les panes passe par
+/// `each_pane`, ce qui vise un pane précis par `in_pane`.
+impl std::ops::Deref for Shell {
+    type Target = Pane;
+
+    fn deref(&self) -> &Pane {
+        &self.panes[self.active]
+    }
+}
+
+impl std::ops::DerefMut for Shell {
+    fn deref_mut(&mut self) -> &mut Pane {
+        &mut self.panes[self.active]
+    }
+}
+
 impl Shell {
+    /// Un pane vide : une note neuve dans son éditeur.
+    fn new_pane(theme: Theme, window: &mut Window, cx: &mut Context<Self>) -> Pane {
+        let editor = cx.new(|cx| Editor::new(theme, cx));
+        cx.subscribe_in(&editor, window, Self::on_editor_event).detach();
+        Pane {
+            editor,
+            picture: None,
+            drawing: None,
+            sheet: None,
+            path: None,
+            synced: true,
+            h1: None,
+            origin: None,
+            preview: false,
+            new_dir: None,
+            dirty: false,
+            board_text: false,
+            board_was: false,
+            board_drag: None,
+            board_card: Default::default(),
+            board_scroll: Default::default(),
+            board_field: None,
+            board_focus: cx.focus_handle(),
+            listing: None,
+            peek: false,
+        }
+    }
+
+    /// Fait `act` dans le pane `pane`, comme s'il était l'actif, puis revient à l'actif.
+    fn in_pane<R>(&mut self, pane: usize, act: impl FnOnce(&mut Self) -> R) -> R {
+        let active = std::mem::replace(&mut self.active, pane);
+        let done = act(self);
+        // Le pane a pu être fermé entre-temps.
+        self.active = active.min(self.panes.len() - 1);
+        done
+    }
+
+    /// Fait `act` dans chaque pane, tour à tour.
+    fn each_pane(&mut self, mut act: impl FnMut(&mut Self)) {
+        for pane in 0..self.panes.len() {
+            self.in_pane(pane, &mut act);
+        }
+    }
+
     fn new(
         vault: Option<PathBuf>,
         recent: Vec<PathBuf>,
@@ -589,11 +659,10 @@ impl Shell {
         let prefs = Prefs::parse(&vault::load_settings());
         apply_fonts(&prefs);
         let theme = Theme::of(&prefs, window.appearance());
-        let editor = cx.new(|cx| Editor::new(theme, cx));
-        cx.subscribe_in(&editor, window, Self::on_editor_event).detach();
+        let pane = Self::new_pane(theme, window, cx);
         cx.observe_window_appearance(window, |this, window, cx| this.restyle(window, cx)).detach();
         cx.on_app_quit(|this, cx| {
-            this.leave(cx);
+            this.each_pane(|this| this.leave(cx));
             async {}
         })
         .detach();
@@ -608,8 +677,9 @@ impl Shell {
         .detach();
 
         let mut this = Self {
+            panes: vec![pane],
+            active: 0,
             focus: cx.focus_handle(),
-            editor,
             nav,
             graph,
             graph_stale: true,
@@ -618,27 +688,9 @@ impl Shell {
             notes: Vec::new(),
             dirs: Vec::new(),
             images: Vec::new(),
-            picture: None,
-            drawing: None,
-            sheet: None,
             menu: None,
             recent: Vec::new(),
-            path: None,
-            synced: true,
-            h1: None,
-            origin: None,
-            preview: false,
-            new_dir: None,
-            dirty: false,
             save_gen: 0,
-            board_text: false,
-            board_was: false,
-            board_drag: None,
-            board_card: Default::default(),
-            board_scroll: Default::default(),
-            board_field: None,
-            board_focus: cx.focus_handle(),
-            listing: None,
             swapped: Vec::new(),
             icons: Default::default(),
             icon_pick: None,
@@ -654,7 +706,6 @@ impl Shell {
             copied: false,
             help: false,
             history: History::default(),
-            peek: false,
             bound: defaults(),
             changes: keys::Changes::new(),
             help_find: None,
@@ -893,7 +944,7 @@ impl Shell {
                 let mut applied = false;
                 this.update(cx, |this, cx| {
                     // Une frappe ou un enregistrement pendant la lecture : on réessaie au prochain tour.
-                    if this.vault.as_ref() == Some(&root) && this.save_gen == generation && !this.dirty {
+                    if this.vault.as_ref() == Some(&root) && this.save_gen == generation && !this.panes.iter().any(|pane| pane.dirty) {
                         this.sync(notes, dirs, images, cx);
                         last = Some((root, print));
                         applied = true;
@@ -938,22 +989,27 @@ impl Shell {
             // Ni nom, ni tag, ni lien n'ont changé, mais le texte peut avoir : la recherche le suit.
             self.notes = notes;
         }
-        // Le tableau affiché a été réécrit ailleurs : il est relu s'il n'attend rien ici.
-        if let Some((_, sheet)) = &self.sheet {
-            sheet.update(cx, |sheet, cx| sheet.reload_if_changed(cx));
-        }
-        // La note affichée a été réécrite ailleurs : on la relit. Sans modification
-        // en attente ici (l'appelant s'en assure), rien n'est perdu.
-        if let Some(path) = &self.path
-            && let Ok(text) = fs::read_to_string(path)
-            && text != self.editor.read(cx).text()
-        {
-            self.reload(cx);
-        }
+        self.each_pane(|this| {
+            // Le tableau affiché a été réécrit ailleurs : il est relu s'il n'attend rien ici.
+            if let Some((_, sheet)) = &this.sheet {
+                sheet.update(cx, |sheet, cx| sheet.reload_if_changed(cx));
+            }
+            // La note affichée a été réécrite ailleurs : on la relit. Sans modification
+            // en attente ici (l'appelant s'en assure), rien n'est perdu.
+            if let Some(path) = &this.path
+                && let Ok(text) = fs::read_to_string(path)
+                && text != this.editor.read(cx).text()
+            {
+                this.reload(cx);
+            }
+        });
     }
 
     fn set_vault(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        self.leave(cx);
+        self.each_pane(|this| this.leave(cx));
+        // Un autre coffre : un seul pane, sur une note neuve.
+        self.panes.truncate(1);
+        self.active = 0;
         self.vault = Some(root.clone());
         self.icons = vault::load_icons(&root);
         self.notes.clear();
@@ -1009,7 +1065,9 @@ impl Shell {
         apply_fonts(&self.prefs);
         let theme = Theme::of(&self.prefs, window.appearance());
         self.theme = theme;
-        self.editor.update(cx, |e, cx| e.set_theme(theme, cx));
+        for pane in &self.panes {
+            pane.editor.update(cx, |e, cx| e.set_theme(theme, cx));
+        }
         if let Some(palette) = &self.palette {
             palette.update(cx, |p, cx| p.set_theme(theme, cx));
         }
@@ -1407,11 +1465,14 @@ impl Shell {
 
     fn push_names(&mut self, cx: &mut Context<Self>) {
         // Les alias se proposent après `[[` comme des noms.
-        let names = self.notes.iter().map(|n| n.name.clone()).chain(self.notes.iter().flat_map(|n| n.aliases.clone())).collect();
-        self.editor.update(cx, |e, _| {
-            e.set_notes(names);
-            e.set_images(&vault::pictures(&self.images));
-        });
+        let names: Vec<String> = self.notes.iter().map(|n| n.name.clone()).chain(self.notes.iter().flat_map(|n| n.aliases.clone())).collect();
+        let pictures = vault::pictures(&self.images);
+        for pane in &self.panes {
+            pane.editor.update(cx, |e, _| {
+                e.set_notes(names.clone());
+                e.set_images(&pictures);
+            });
+        }
     }
 
     /// Indique à l'éditeur où chercher les images : à côté de la note, puis dans le coffre.
@@ -1697,7 +1758,7 @@ impl Shell {
         if key == new.to_lowercase() || self.notes.iter().any(|n| n.name.to_lowercase() == key) {
             return false;
         }
-        let mut open_rewritten = false;
+        let mut changed = Vec::new();
         for note in self.notes.iter_mut().filter(|n| n.links.contains(&key)) {
             let rewritten = fs::read_to_string(&note.path)
                 .ok()
@@ -1705,12 +1766,20 @@ impl Shell {
                 .filter(|text| vault::write(&note.path, text).is_ok());
             if let Some(text) = rewritten {
                 (note.tags, note.links) = markdown::index(&text);
-                open_rewritten |= Some(&note.path) == self.path.as_ref();
+                changed.push(note.path.clone());
                 self.graph_stale = true;
             }
         }
         self.refresh_graph(cx);
-        open_rewritten
+        // La note de l'autre pane est relue ici ; celle du pane actif, l'appelant en décide
+        // (il est peut-être en train de la quitter).
+        let showing = |pane: &Pane| pane.path.as_ref().is_some_and(|path| changed.contains(path));
+        for pane in 0..self.panes.len() {
+            if pane != self.active && showing(&self.panes[pane]) {
+                self.in_pane(pane, |this| this.reload(cx));
+            }
+        }
+        showing(&self.panes[self.active])
     }
 
     /// Remplacement dans tout le coffre : compte d'abord, et n'écrit qu'une fois le compte
@@ -1797,7 +1866,7 @@ impl Shell {
     fn after_swap(&mut self, cx: &mut Context<Self>) {
         self.graph_stale = true;
         self.refresh_graph(cx);
-        self.reload(cx);
+        self.each_pane(|this| this.reload(cx));
         cx.notify();
     }
 
@@ -1811,10 +1880,15 @@ impl Shell {
         }
     }
 
-    /// Écrit la note sur disque si elle a changé.
+    /// Met le disque à jour : chaque pane écrit ce qui y attend.
+    fn flush(&mut self, cx: &mut Context<Self>) {
+        self.each_pane(|this| this.flush_one(cx));
+    }
+
+    /// Écrit la note du pane sur disque si elle a changé.
     // ponytail: écriture synchrone sur le thread UI (quelques Ko, < 1 ms) ;
     // passer en tâche de fond si les notes deviennent très grosses.
-    fn flush(&mut self, cx: &mut Context<Self>) {
+    fn flush_one(&mut self, cx: &mut Context<Self>) {
         self.flush_sheet(cx);
         let Some(root) = self.vault.clone() else {
             return;
@@ -1837,13 +1911,13 @@ impl Shell {
                 self.dirty = false;
                 self.calm();
                 let (tags, links) = markdown::index(&content);
+                let old = self.path.clone();
                 // Le graphe ne change que si la note est nouvelle, renommée ou liée autrement.
-                let known = self.notes.iter().find(|n| Some(&n.path) == self.path.as_ref());
+                let known = self.notes.iter().find(|n| Some(&n.path) == old.as_ref());
                 if known.is_none_or(|n| n.path != path || n.links != links) {
                     self.graph_stale = true;
                 }
-                self.notes
-                    .retain(|n| Some(&n.path) != self.path.as_ref() && n.path != path);
+                self.notes.retain(|n| Some(&n.path) != old.as_ref() && n.path != path);
                 self.notes.insert(
                     0,
                     Note {
@@ -1856,16 +1930,16 @@ impl Shell {
                         body: Arc::from(content),
                     },
                 );
-                if self.path.as_ref() != Some(&path) {
+                if old.as_ref() != Some(&path) {
                     // Renommée par son titre, la note garde son icône.
-                    if let Some(icon) = self.path.as_ref().and_then(|old| self.icons.remove(old)) {
+                    if let Some(icon) = old.as_ref().and_then(|old| self.icons.remove(old)) {
                         self.icons.insert(path.clone(), icon);
                         self.save_icons(cx);
                     }
-                    if let Some(old) = &self.path {
+                    if let Some(old) = &old {
                         self.history.rename(old, &path);
                     }
-                    self.recent.retain(|p| Some(p) != self.path.as_ref());
+                    self.recent.retain(|p| Some(p) != old.as_ref());
                     self.touch(&path);
                     self.nav.reveal(&path);
                     self.path = Some(path);
@@ -1883,20 +1957,28 @@ impl Shell {
 
     fn on_editor_event(
         &mut self,
-        _: &Entity<Editor>,
+        editor: &Entity<Editor>,
         event: &EditorEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let Some(pane) = self.panes.iter().position(|pane| pane.editor == *editor) else { return };
+        // Un geste fait dans une note (lien suivi, menu, remplacement) vaut pour son pane ; la
+        // frappe, elle, peut venir d'ailleurs (une carte du tableau, une cellule de la liste).
+        if !matches!(event, EditorEvent::Changed) {
+            self.active = pane;
+        }
         match event {
             EditorEvent::Changed => {
-                // La clé du tableau vient d'être écrite dans le texte : on y reste, le bouton
-                // du coin montre le tableau quand on le veut.
-                let board = kanban::is_board(self.editor.read(cx).text());
-                self.board_text |= board && !self.board_was;
-                self.board_was = board;
-                self.keep_preview();
-                self.dirty = true;
+                self.in_pane(pane, |this| {
+                    // La clé du tableau vient d'être écrite dans le texte : on y reste, le
+                    // bouton du coin montre le tableau quand on le veut.
+                    let board = kanban::is_board(this.editor.read(cx).text());
+                    this.board_text |= board && !this.board_was;
+                    this.board_was = board;
+                    this.keep_preview();
+                    this.dirty = true;
+                });
                 self.save_gen += 1;
                 let generation = self.save_gen;
                 cx.spawn(async move |this, cx| {
@@ -1932,6 +2014,13 @@ impl Shell {
     // ponytail: écriture synchrone à chaque geste ou frappe (quelques Ko) ;
     // la différer comme celle des notes si de gros schémas font attendre.
     fn on_canvas_event(&mut self, canvas: Entity<Canvas>, event: &CanvasEvent, cx: &mut Context<Self>) {
+        let shows = |pane: &Pane| pane.drawing.as_ref().is_some_and(|(_, open)| *open == canvas);
+        if let Some(pane) = self.panes.iter().position(shows) {
+            self.in_pane(pane, |this| this.canvas_event(canvas, event, cx));
+        }
+    }
+
+    fn canvas_event(&mut self, canvas: Entity<Canvas>, event: &CanvasEvent, cx: &mut Context<Self>) {
         let Some((path, _)) = self.drawing.as_ref().filter(|(_, open)| *open == canvas) else {
             return;
         };
