@@ -16,6 +16,7 @@ mod line;
 mod markdown;
 mod nav;
 mod palette;
+mod recall;
 mod sheet;
 mod table;
 mod update;
@@ -3138,6 +3139,90 @@ impl Shell {
 impl Shell {
     /// Dessine le pane `pane` (l'appelant l'a rendu actif le temps du dessin) : ce qu'il montre,
     /// et le panneau de ses commentaires. `active` : c'est lui qui a la saisie.
+    /// Les notes que le coffre remet sous les yeux aujourd'hui (voir `recall::recall`).
+    // ponytail: recalculé à chaque rendu d'une page vide (un hachage par note, 5 000 notes :
+    // une fraction de milliseconde) ; le garder d'un rendu à l'autre si de bien plus gros
+    // coffres le font sentir.
+    fn recalled(&self) -> Vec<recall::Recalled> {
+        recall::recall(&self.notes, today(), std::time::SystemTime::now())
+    }
+
+    /// La page vide, sous la ligne où l'on écrit : le jour (qui ouvre sa note), les touches
+    /// utiles, les notes à relire. Tout se clique, passe à la ligne dans un pane étroit et
+    /// disparaît à la première frappe.
+    fn render_empty(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let t = self.theme;
+        // `fill` : la ligne se teinte au survol, comme une ligne de liste.
+        let row = |id: (&'static str, usize), fill: bool| {
+            div()
+                .id(id)
+                .debug_selector(move || if id.0 == "empty-today" { id.0.to_string() } else { format!("{}-{}", id.0, id.1) })
+                .flex()
+                .items_center()
+                .gap_2()
+                .rounded(px(6.))
+                .cursor_pointer()
+                .text_color(t.dim)
+                .hover(|s| if fill { s.text_color(t.text).bg(t.border) } else { s.text_color(t.text) })
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        };
+        // Les touches en vigueur ; une action laissée sans raccourci n'est pas annoncée.
+        let actions: [(Box<dyn gpui::Action>, &str); 3] = [
+            (Box::new(OpenPalette), "notes"),
+            (Box::new(NewNote), tr("new note", "nouvelle note")),
+            (Box::new(ToggleHelp), tr("shortcuts", "raccourcis")),
+        ];
+        let keys = actions.into_iter().enumerate().filter_map(|(i, (action, what))| {
+            let keys = keys::of(cx, action.as_ref());
+            let cap = div().px(px(5.)).rounded(px(4.)).border_1().border_color(t.border).bg(t.panel).text_size(px(11.)).child(keys.clone());
+            (!keys.is_empty()).then(|| {
+                row(("empty-key", i), false)
+                    .gap(px(6.))
+                    .child(cap)
+                    .child(what)
+                    .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
+            })
+        });
+        let day = self.vault.is_some().then(|| {
+            row(("empty-today", 0), false)
+                .child(logo(t))
+                .child(recall::long_date(today()))
+                .on_click(cx.listener(|this, _, _, cx| this.open_today(cx)))
+        });
+        let recalled = if self.vault.is_some() { self.recalled() } else { Vec::new() };
+        let again = (!recalled.is_empty()).then(|| {
+            let rows = recalled.into_iter().enumerate().map(|(i, note)| {
+                row(("empty-recall", i), true)
+                    .mx(px(-6.))
+                    .px(px(6.))
+                    .py(px(2.))
+                    .child(div().flex_1().min_w_0().truncate().child(note.name))
+                    .child(div().flex_none().text_size(px(12.)).child(recall::ago(note.days)))
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_note(&note.path, cx)))
+            });
+            div()
+                .max_w(px(380.))
+                .flex()
+                .flex_col()
+                .child(div().mb_1().text_size(px(11.)).text_color(t.dim.opacity(0.7)).child(tr("READ AGAIN", "À RELIRE")))
+                .children(rows)
+        });
+        // Dans la colonne du texte, sous sa première ligne.
+        div().absolute().top(px(76.)).left_0().right_0().flex().justify_center().child(
+            div()
+                .w_full()
+                .max_w(editor::MAX_WIDTH + px(48.))
+                .px(px(32.))
+                .flex()
+                .flex_col()
+                .gap_4()
+                .text_size(px(13.))
+                .children(day)
+                .child(div().flex().flex_wrap().gap_x_4().gap_y_1().children(keys))
+                .children(again),
+        )
+    }
+
     fn render_pane(&mut self, pane: usize, active: bool, client: bool, window: &mut Window, cx: &mut Context<Self>) -> (gpui::AnyElement, Option<gpui::AnyElement>) {
         let t = self.theme;
         let two = self.panes.len() == 2;
@@ -3297,7 +3382,10 @@ impl Shell {
             (Some(path), None) => note.p_6().flex().items_center().justify_center().child(
                 img(path.clone()).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
             ),
-            (None, _) => note.child(self.editor.clone()).child(copy).children(talk).children(flip),
+            (None, _) => {
+                let empty = self.editor.read(cx).text().is_empty().then(|| self.render_empty(cx));
+                note.child(self.editor.clone()).children(empty).child(copy).children(talk).children(flip)
+            }
         };
         // Pendant qu'on glisse un fichier de l'arbre, la zone qui le recevrait est teintée.
         let tint = self.pane_aim.filter(|(over, _)| *over == pane).map(|(_, half)| {
@@ -3407,7 +3495,7 @@ impl Render for Shell {
         let inset = if framed { SHADOW } else { px(0.) };
         window.set_client_inset(inset);
         self.nav.left = inset;
-        self.nav.logo = !client;
+        self.nav.native_bar = !client;
         self.nav.total = window.viewport_size().width - inset * 2.;
 
         // Bouton icône : cercle visible au survol, comme les contrôles de fenêtre de Zed.
@@ -6886,6 +6974,81 @@ mod tests {
         assert_eq!(open, (0, 0.4, vec![Some(left.clone()), Some(right.clone())]));
         cx.simulate_input("x");
         assert_eq!(shell.read_with(cx, |s, cx| s.panes[0].editor.read(cx).text().to_string()), "x# Gauche\n");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// La page vide : la date du jour, les touches utiles et les notes à relire, sous la ligne
+    /// où l'on écrit. Tout tient dans une fenêtre étroite, et s'efface à la première frappe.
+    #[gpui::test]
+    fn empty_page(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-empty-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let _config = isolated_config(&root);
+        let week = date_name(markdown::day_of(markdown::day_number(today()) - 7));
+        let (daily, old) = (root.join(format!("{week}.md")), root.join("Ancienne.md"));
+        fs::write(&daily, format!("# {week}\n")).unwrap();
+        fs::write(&old, "# Ancienne\n").unwrap();
+        let long_ago = std::time::SystemTime::now() - Duration::from_secs(100 * 86_400);
+        fs::File::options().write(true).open(&old).unwrap().set_modified(long_ago).unwrap();
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
+        cx.run_until_parked();
+        let open = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.path.clone());
+        let text_of = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+        assert_eq!(open(cx), None);
+
+        // Le logo est dans le rail, quel que soit le système.
+        assert!(cx.debug_bounds("rail-logo").is_some());
+        // Les notes à relire : la note du jour d'il y a une semaine, puis une note ancienne.
+        assert_eq!(shell.read_with(cx, |s, _| s.recalled().iter().map(|r| r.name.clone()).collect::<Vec<_>>()), [week.clone(), "Ancienne".to_string()]);
+        // Dans la fenêtre la plus étroite, rien ne dépasse du pane.
+        cx.simulate_resize(size(px(360.), px(640.)));
+        cx.run_until_parked();
+        let pane = cx.debug_bounds("pane-0").unwrap();
+        assert!(pane.size.width < px(360.), "{pane:?}");
+        for part in ["empty-today", "empty-key-0", "empty-key-1", "empty-key-2", "empty-recall-0", "empty-recall-1"] {
+            let bounds = cx.debug_bounds(part).unwrap_or_else(|| panic!("{part} absent"));
+            assert!(bounds.left() >= pane.left() && bounds.right() <= pane.right(), "{part} dépasse : {bounds:?} hors de {pane:?}");
+        }
+        cx.simulate_resize(size(px(860.), px(720.)));
+        cx.run_until_parked();
+
+        // Un clic sur une note à relire l'ouvre.
+        let at = cx.debug_bounds("empty-recall-1").unwrap().center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert_eq!(open(cx), Some(old.clone()));
+        // Une note qui a du texte ne montre pas la page vide : là où était la date, le clic
+        // tombe dans la note. (gpui garde les bornes d'un élément disparu : on clique.)
+        cx.run_until_parked();
+        let at = cx.debug_bounds("empty-today").unwrap().center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(open(cx), Some(old.clone()));
+
+        // Une touche de la page vide se clique : ici la palette.
+        cx.simulate_keystrokes("secondary-n");
+        cx.run_until_parked();
+        let at = cx.debug_bounds("empty-key-0").unwrap().center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert!(shell.read_with(cx, |s, _| s.palette.is_some()));
+        cx.simulate_keystrokes("escape");
+
+        // La date ouvre la note du jour.
+        let at = cx.debug_bounds("empty-today").unwrap().center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(open(cx), Some(root.join(format!("{}.md", date_name(today())))));
+
+        // La première frappe efface tout : la page est à ce qu'on écrit.
+        cx.simulate_keystrokes("secondary-n");
+        cx.run_until_parked();
+        cx.simulate_input("x");
+        cx.run_until_parked();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(text_of(cx), "x");
         let _ = fs::remove_dir_all(&root);
     }
 }

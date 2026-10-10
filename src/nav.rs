@@ -179,9 +179,9 @@ pub struct Nav {
     scroll: UniformListScrollHandle,
     /// Amener la sélection à l'écran à la prochaine frame.
     reveal: bool,
-    /// Le logo se place en tête du rail quand l'app ne dessine pas la barre de
-    /// titre (macOS, Windows).
-    pub logo: bool,
+    /// Le système dessine la barre de titre (macOS, Windows) : le rail n'a pas à servir de
+    /// poignée pour déplacer la fenêtre.
+    pub native_bar: bool,
     // Bord gauche et largeur du contenu de la fenêtre, à la dernière frame.
     pub left: Pixels,
     pub total: Pixels,
@@ -219,7 +219,7 @@ impl Nav {
             rows_from: 0,
             scroll: UniformListScrollHandle::new(),
             reveal: false,
-            logo: false,
+            native_bar: false,
             left: px(0.),
             total: px(0.),
         }
@@ -614,11 +614,7 @@ impl Shell {
         let (lead, days) = markdown::month(year, month, monday);
         let names: HashSet<&str> = self.notes.iter().map(|n| n.name.as_str()).collect();
         let (today, open) = (crate::today(), self.path.as_deref().map(vault::stem));
-        const MONTHS: [(&str, &str); 12] = [
-            ("January", "janvier"), ("February", "février"), ("March", "mars"), ("April", "avril"), ("May", "mai"), ("June", "juin"),
-            ("July", "juillet"), ("August", "août"), ("September", "septembre"), ("October", "octobre"), ("November", "novembre"), ("December", "décembre"),
-        ];
-        let (en, fr) = MONTHS[month as usize - 1];
+        let (en, fr) = markdown::MONTHS[month as usize - 1];
         let step = |id: &'static str, icon: &'static str, by: i32, cx: &mut Context<Self>| {
             button(id, icon, false, t).on_click(cx.listener(move |this, _, _, cx| this.day_step(0, by, cx)))
         };
@@ -1673,7 +1669,8 @@ impl Shell {
             .items_center()
             .gap_1()
             .when(!unfolded, |d| d.border_r_1().border_color(t.border))
-            .when(self.nav.logo, |d| d.child(crate::logo(t).mb_1()))
+            // Le logo de l'app, en tête du rail sur tous les systèmes.
+            .child(div().debug_selector(|| "rail-logo".into()).mb_1().child(crate::logo(t)))
             // Précédent et suivant, côte à côte ; estompés quand il n'y a nulle part où aller.
             .child(
                 div()
@@ -1697,7 +1694,7 @@ impl Shell {
                 button("nav-new", "plus.svg", false, t)
                     .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
             )
-            .child(div().flex_1().w_full().when(!self.nav.logo, |d| d.map(crate::drag_window)))
+            .child(div().flex_1().w_full().when(!self.nav.native_bar, |d| d.map(crate::drag_window)))
             // Corbeille du coffre (ce qu'elle contient, pour le reprendre) et sauvegarde.
             .child(
                 button("nav-trash", "trash.svg", false, t)
@@ -1749,7 +1746,7 @@ impl Shell {
                     .truncate()
                     .text_size(px(12.))
                     .text_color(t.dim)
-                    .when(!self.nav.logo, |d| d.map(crate::drag_window))
+                    .when(!self.nav.native_bar, |d| d.map(crate::drag_window))
                     .child(title),
             )
             .when(mode == Mode::Graph, |d| {

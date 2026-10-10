@@ -168,7 +168,7 @@ pub fn add_months((year, month_, day): Date, by: i32) -> Date {
 
 /// Les jours qu'on nomme après `@` : (anglais, français), du lundi au dimanche après les trois
 /// jours relatifs.
-const DAYS: [(&str, &str); 10] = [
+pub const DAYS: [(&str, &str); 10] = [
     ("today", "aujourd'hui"),
     ("tomorrow", "demain"),
     ("yesterday", "hier"),
@@ -179,6 +179,12 @@ const DAYS: [(&str, &str); 10] = [
     ("friday", "vendredi"),
     ("saturday", "samedi"),
     ("sunday", "dimanche"),
+];
+
+/// Les mois : (anglais, français).
+pub const MONTHS: [(&str, &str); 12] = [
+    ("January", "janvier"), ("February", "février"), ("March", "mars"), ("April", "avril"), ("May", "mai"), ("June", "juin"),
+    ("July", "juillet"), ("August", "août"), ("September", "septembre"), ("October", "octobre"), ("November", "novembre"), ("December", "décembre"),
 ];
 
 /// Les dates que `query` (ce qui suit un `@`) peut désigner à partir d'`today` : les jours dont

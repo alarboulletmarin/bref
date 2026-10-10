@@ -30,6 +30,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Shortcuts you can change**: the help panel (`F1`) lists every shortcut, searches them as you type, and lets you give any of them other keys. The menus show, beside each action, the shortcut that does the same. A combination already in use says by what, and is only taken when you ask.
 - **No save button**: notes are written to disk as you type, and named after their first line.
 - **Daily note**: one key opens the note of the day, or creates it.
+- **A blank page that remembers**: an empty note shows, under the line you write on, today's date (a click opens the note of the day), the keys that matter, and what to read again: the daily notes of a week, a month and a year ago, and one note you have not touched for a month or more, a different one each day. A click opens any of them; the first key you type clears the page.
 - **Word count**: the bottom of the note shows its words and characters, or those of the selection.
 - **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, IBM Plex Sans and Plex Mono built in (nothing to install), any installed font if you prefer, and the text size you like.
 - Light and dark, following your system, until you pick a theme. English and French, following the system language.

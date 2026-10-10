@@ -120,7 +120,7 @@ struct Finder {
 }
 
 const TOP: Pixels = px(20.);
-const MAX_WIDTH: Pixels = px(720.);
+pub const MAX_WIDTH: Pixels = px(720.);
 /// Côté du bouton de copie, à droite de l'ouverture d'un bloc de code.
 const COPY_SIZE: Pixels = px(22.);
 /// Corps des formules, par rapport au texte : la police mathématique paraît petite à taille égale.
@@ -3801,17 +3801,8 @@ impl Editor {
             }
         }
         if self.content.is_empty() {
-            // Les touches en vigueur ; une action laissée sans raccourci n'est pas annoncée.
-            let mut hint = tr("Write here…", "Écris ici…").to_string();
-            let actions: [(&dyn gpui::Action, &str); 3] =
-                [(&crate::OpenPalette, "notes"), (&crate::NewNote, tr("new note", "nouvelle note")), (&crate::ToggleHelp, tr("shortcuts", "raccourcis"))];
-            for (action, what) in actions {
-                let keys = crate::keys::of(cx, action);
-                if !keys.is_empty() {
-                    hint.push_str(&format!("   {keys} : {what}"));
-                }
-            }
-            label(&hint, t.dim, window)
+            // Le reste de la page vide (date, touches, notes à relire) est à `Shell::render_empty`.
+            label(tr("Write here…", "Écris ici…"), t.dim, window)
                 .paint(point(o.x + px(8.), o.y + px(3.)), px(22.), window, cx)
                 .ok();
         }
