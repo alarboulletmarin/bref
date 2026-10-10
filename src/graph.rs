@@ -528,7 +528,7 @@ impl Graph {
             let run = TextRun {
                 len: name.len(),
                 font: font(sans()),
-                color: if focus == Some(i) || self.current == Some(i) { t.text } else { fade(t.dim, on) },
+                color: if focus == Some(i) || self.current == Some(i) { t.text } else { fade(t.soft, on) },
                 background_color: None,
                 underline: None,
                 strikethrough: None,

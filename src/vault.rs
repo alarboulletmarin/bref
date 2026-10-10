@@ -114,6 +114,48 @@ pub fn save_settings(text: &str) {
     save_file("settings", text)
 }
 
+/// Dossier proposé pour un premier coffre : `Notes` dans les Documents de l'utilisateur, ou
+/// dans son dossier personnel s'il n'a pas de Documents.
+pub fn default_vault() -> Option<PathBuf> {
+    let home = env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)?;
+    let documents = home.join("Documents");
+    Some(if documents.is_dir() { documents } else { home }.join("Notes"))
+}
+
+/// Un chemin tel qu'on le montre : le dossier personnel abrégé en `~` hors de Windows.
+pub fn shown(path: &Path) -> String {
+    let home = env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
+    match home.as_deref().and_then(|home| path.strip_prefix(home).ok()) {
+        Some(rest) if !cfg!(windows) => format!("~/{}", rest.display()),
+        _ => path.display().to_string(),
+    }
+}
+
+/// Morceau d'un nom pour le tri naturel : un nombre se compare par sa valeur, avant le texte.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+pub enum Chunk {
+    Number(u128),
+    Text(String),
+}
+
+/// Clé de tri « naturel », comme celle des gestionnaires de fichiers : `Note 2` avant
+/// `Note 10`, sans tenir compte de la casse.
+pub fn natural(name: &str) -> Vec<Chunk> {
+    let mut chunks = Vec::new();
+    let mut rest = name;
+    while let Some(first) = rest.chars().next() {
+        let digit = first.is_ascii_digit();
+        let end = rest.find(|c: char| c.is_ascii_digit() != digit).unwrap_or(rest.len());
+        let (part, tail) = rest.split_at(end);
+        chunks.push(match part.parse() {
+            Ok(n) if digit => Chunk::Number(n),
+            _ => Chunk::Text(part.to_lowercase()),
+        });
+        rest = tail;
+    }
+    chunks
+}
+
 pub fn stem(path: &Path) -> String {
     path.file_stem()
         .map(|s| s.to_string_lossy().into_owned())
@@ -689,6 +731,13 @@ pub fn save(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sorts_names_naturally() {
+        let mut names = vec!["Note 10", "note 2", "Note 1", "Notes", "2026-10-09", "2026-9-30", "Note 1b"];
+        names.sort_by_cached_key(|n| natural(n));
+        assert_eq!(names, ["2026-9-30", "2026-10-09", "Note 1", "Note 1b", "note 2", "Note 10", "Notes"]);
+    }
 
     #[test]
     fn gnome_shortcut_list_gains_the_capture_once() {

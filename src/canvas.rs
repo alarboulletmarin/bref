@@ -14,7 +14,7 @@ use gpui::{
 use crate::{
     Theme,
     diagram::{self, Cmd, Diagram, End, Form, Head, Route},
-    nav::button,
+    nav::{button, tip},
     sans, tr,
 };
 
@@ -49,6 +49,23 @@ const TOOLS: [(Tool, &str, &str); 11] = [
     (Tool::Link(Head::Arrow), "d-arrow.svg", "a"),
     (Tool::Link(Head::None), "d-line.svg", "l"),
 ];
+
+/// Nom d'un outil de la barre, pour sa bulle.
+fn tool_label(tool: Tool) -> &'static str {
+    match tool {
+        Tool::Select => tr("Select", "Sélection"),
+        Tool::Shape(Form::Rect) => "Rectangle",
+        Tool::Shape(Form::Round) => tr("Rounded rectangle", "Rectangle arrondi"),
+        Tool::Shape(Form::Ellipse) => "Ellipse",
+        Tool::Shape(Form::Diamond) => tr("Diamond", "Losange"),
+        Tool::Shape(Form::Cylinder) => tr("Cylinder (a database)", "Cylindre (une base de données)"),
+        Tool::Shape(Form::Actor) => tr("Person (an actor)", "Personnage (un acteur)"),
+        Tool::Shape(Form::Note) => "Note",
+        Tool::Shape(Form::Text) => tr("Text", "Texte"),
+        Tool::Link(Head::None) => tr("Line", "Trait"),
+        Tool::Link(_) => tr("Arrow", "Flèche"),
+    }
+}
 
 /// Forme tirée depuis la barre d'outils, dessinée sous le pointeur jusqu'au canevas.
 #[derive(Clone)]
@@ -768,7 +785,7 @@ impl Canvas {
                 "Pick a shape above, or press R, O, D, A, T…, then drag. Double-click to write.",
                 "Choisis une forme ci-dessus, ou tape R, O, D, A, T…, puis fais glisser. Double-clic pour écrire.",
             );
-            let line = self.line(hint, false, t.dim, 0.93, window);
+            let line = self.line(hint, false, t.soft, 0.93, window);
             let origin = bounds.center() - point(line.width / 2., px(10.));
             line.paint(origin, px(20.), window, cx).ok();
         }
@@ -826,8 +843,8 @@ impl Render for Canvas {
         .size_full();
 
         // Un outil se choisit d'un clic ; une forme peut aussi se tirer jusqu'au canevas.
-        let tools = TOOLS.iter().map(|&(tool, icon, _)| {
-            let tool_button = button(icon, icon, self.tool == tool, t).on_click(cx.listener(move |this, _, _, cx| this.set_tool(tool, cx)));
+        let tools = TOOLS.iter().map(|&(tool, icon, key)| {
+            let tool_button = button(icon, icon, self.tool == tool, t).tooltip(tip(tool_label(tool), key.to_uppercase(), t)).on_click(cx.listener(move |this, _, _, cx| this.set_tool(tool, cx)));
             match tool {
                 Tool::Shape(form) => tool_button.on_drag(Placing(form, icon, t), |placing, _, _, cx| cx.new(|_| placing.clone())),
                 _ => tool_button,
@@ -846,19 +863,19 @@ impl Render for Canvas {
             .border_1()
             .border_color(t.border)
             .occlude()
-            .child(button("d-zoom-out", "minimize.svg", false, t).on_click(cx.listener(|this, _, _, cx| this.zoom_by(0.8, cx))))
+            .child(button("d-zoom-out", "minimize.svg", false, t).tooltip(tip(tr("Zoom out", "Dézoomer"), "-".into(), t)).on_click(cx.listener(|this, _, _, cx| this.zoom_by(0.8, cx))))
             .child(
                 div()
                     .id("d-zoom-fit")
                     .w(px(52.))
                     .text_center()
                     .text_size(px(12.))
-                    .text_color(t.dim)
+                    .text_color(t.soft)
                     .cursor_pointer()
                     .child(percent)
                     .on_click(cx.listener(|this, _, _, cx| this.zoom_fit(cx))),
             )
-            .child(button("d-zoom-in", "plus.svg", false, t).on_click(cx.listener(|this, _, _, cx| this.zoom_by(1.25, cx))));
+            .child(button("d-zoom-in", "plus.svg", false, t).tooltip(tip(tr("Zoom in", "Zoomer"), "+".into(), t)).on_click(cx.listener(|this, _, _, cx| this.zoom_by(1.25, cx))));
         // Réglages de la sélection : couleur, fond, pointillé, pointes des flèches.
         let any = !self.selected.is_empty();
         let links = self.selected.iter().any(|id| self.diagram.shape(*id).is_none());
@@ -916,7 +933,7 @@ impl Render for Canvas {
                     }))
             })
             .when(links, |d| {
-                d.child(button("d-route", "d-route.svg", false, t).on_click(cx.listener(|this, _, _, cx| {
+                d.child(button("d-route", "d-route.svg", false, t).tooltip(tip(tr("Route: elbowed, straight or curved", "Tracé : coudé, droit ou courbe"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {
                     // Le tracé choisi vaut aussi pour les flèches à venir.
                     let first = this.selected.iter().find_map(|id| this.diagram.link(*id)).map(|l| l.route.next());
                     if let Some(route) = first {
@@ -940,7 +957,7 @@ impl Render for Canvas {
                 }))
             })
             .child(div().flex_1())
-            .child(button("d-export", if self.exported { "check.svg" } else { "export.svg" }, false, t).on_click(cx.listener(|_, _, _, cx| cx.emit(CanvasEvent::Export))));
+            .child(button("d-export", if self.exported { "check.svg" } else { "export.svg" }, false, t).tooltip(tip(tr("Export as PNG", "Exporter en PNG"), String::new(), t)).on_click(cx.listener(|_, _, _, cx| cx.emit(CanvasEvent::Export))));
 
         div()
             .size_full()

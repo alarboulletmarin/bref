@@ -22,7 +22,7 @@ use crate::{
     Theme,
     line::{self, Line},
     markdown, mono,
-    nav::button,
+    nav::{button, tip},
     table::{self, Encoding, Format, Style, Table, WriteError},
     tr, vault,
 };
@@ -1036,7 +1036,7 @@ impl Sheet {
             .py_0p5()
             .rounded(px(6.))
             .cursor_pointer()
-            .text_color(if on { t.accent } else { t.dim })
+            .text_color(if on { t.accent } else { t.soft })
             .hover(|s| s.bg(t.border))
             .child(text)
             .on_click(move |_, window, cx| window.dispatch_action(pick.action(), cx))
@@ -1067,7 +1067,7 @@ impl Sheet {
                     .items_center()
                     .min_w_0()
                     .truncate()
-                    .text_color(t.dim)
+                    .text_color(t.soft)
                     .when(self.client, |d| d.map(crate::drag_window))
                     .child(info),
             )
@@ -1076,10 +1076,12 @@ impl Sheet {
             .child(self.chip("sheet-header", tr("Header", "En-tête").to_string(), self.format.header, Pick::Header))
             .child(
                 button("sheet-copy", if self.copied { "check.svg" } else { "copy.svg" }, false, t)
+                    .tooltip(tip(tr("Copy the selection", "Copier la sélection"), crate::keys::of(cx, &Copy), t))
                     .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),
             )
             .child(
                 button("sheet-export", "export.svg", false, t)
+                    .tooltip(tip(tr("Export the table…", "Exporter le tableau…"), String::new(), t))
                     .on_click(|_, window, cx| window.dispatch_action(Pick::Export.action(), cx)),
             )
     }
@@ -1200,7 +1202,7 @@ impl Render for Sheet {
                         .border_b_1()
                         .border_color(t.border)
                         .bg(t.code_bg)
-                        .text_color(t.dim)
+                        .text_color(t.soft)
                         .when(inside, |d| d.bg(t.selection))
                         .child(letters(c))
                 }),
@@ -1233,7 +1235,7 @@ impl Render for Sheet {
                 .border_b_1()
                 .border_color(t.border)
                 .bg(t.code_bg)
-                .text_color(if inside { t.text } else { t.dim })
+                .text_color(if inside { t.text } else { t.soft })
                 .when(inside, |d| d.bg(t.selection))
                 .child((r + 1).to_string())
         };

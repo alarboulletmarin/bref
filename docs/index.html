@@ -43,7 +43,7 @@ h1 { font-size: 2.1rem; }  h1::before { content: "# "; }
 h2 { font-size: 1.45rem; margin: 72px 0 20px; }  h2::before { content: "## "; }
 h3 { font-size: 1.1rem; margin: 28px 0 8px; }  h3::before { content: "### "; }
 
-nav { display: flex; align-items: center; gap: 18px; padding: 22px 0; font-size: .92rem; }
+nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 22px 0; font-size: .92rem; }
 nav .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; color: var(--text); font-weight: 600; }
 nav .brand:hover { text-decoration: none; }
 nav img { width: 24px; height: 24px; }
@@ -97,7 +97,7 @@ pre.table { background: none; padding: 0; margin: 14px 0 20px; }
 pre.table kbd { font: inherit; }
 pre.table i { font-style: normal; color: var(--dim); }
 
-.release time { color: var(--dim); font-weight: 400; font-size: .8rem; margin-left: 10px; }
+.release time { color: var(--soft); font-weight: 400; font-size: .8rem; margin-left: 10px; }
 .release ul { color: var(--soft); font-size: .95rem; }
 
 hr { border: 0; border-top: 1px solid var(--border); margin: 72px 0 24px; }
@@ -106,7 +106,13 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
 @media (max-width: 640px) {
   .pair { grid-template-columns: 1fr; }
   h2 { margin-top: 56px; }
-  nav .hide { display: none; }
+  nav { gap: 6px 14px; }
+  nav .brand { flex-basis: 100%; }
+  /* Une seule des deux fenêtres de la capture, celle du thème de la page : lisible à cette largeur. */
+  .hero img { aspect-ratio: 860 / 720; object-fit: cover; object-position: left; }
+}
+@media (max-width: 640px) and (prefers-color-scheme: dark) {
+  .hero img { object-position: right; }
 }
 </style>
 </head>
@@ -114,9 +120,9 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
 <main>
   <nav>
     <a class="brand" href="#"><img src="icon.svg" alt="">Bref</a>
-    <a class="wiki hide" href="#install">Install</a>
-    <a class="wiki hide" href="#docs">Docs</a>
-    <a class="wiki hide" href="#releases">Releases</a>
+    <a class="wiki" href="#install">Install</a>
+    <a class="wiki" href="#docs">Docs</a>
+    <a class="wiki" href="#releases">Releases</a>
     <a class="wiki" href="https://github.com/alarboulletmarin/bref">GitHub</a>
   </nav>
 
@@ -130,43 +136,56 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
   <div class="wide hero"><img src="site/bref.png" width="1720" height="720" alt="Bref showing the same note in the light and dark themes"></div>
 
   <h2>Features</h2>
+  <h3>Writing</h3>
   <ul>
-    <li><b>Opens instantly</b>: the window is on screen in about 75 ms.</li>
-    <li><b>Plain files</b>: one <code>.md</code> per note, plus your <code>.csv</code> and <code>.tsv</code>. Sync with git or Syncthing; an Obsidian vault works as is, front matter included (its tags and aliases are read).</li>
     <li><b>Styled as you type</b>: headings grow, markers stay visible but dimmed. The file is always plain Markdown.</li>
     <li><b>Slash commands</b>: <code>/</code> inserts a heading, list, panel, code block, formula, or a table sized on a grid.</li>
-    <li><b>Kanban boards</b>: a note shown as columns of cards you drag around; underneath, still headings and tasks in plain Markdown.</li>
+    <li><b>Tables like on the web</b>: cells wrap inside their column, <code>[ ]</code> boxes tick with a click, and a table pasted from a web page, a spreadsheet or Markdown just works. A table of 300,000 rows still opens in about 40 ms.</li>
     <li><b>Several cursors</b>: <code>Ctrl + D</code> takes the next occurrence, <code>Alt + click</code> adds a cursor; type once, change every place.</li>
-    <li><b>A folder or a tag as a table</b>: its notes listed with the keys of their front matter as columns; sort with a click, filter as you type, and rewrite a cell to change that key in the note.</li>
-    <li><b>Replace across the vault</b>: plain text or regular expressions, the count shown before anything is written, and one command to undo it all.</li>
-    <li><b>A calendar of your daily notes</b>: one month beside the note, the days you wrote stand out, a click opens or creates the note of a day.</li>
-    <li><b>Days at your fingertips</b>: <code>@tomorrow</code>, <code>@monday</code> or <code>@2026-10-09</code> insert a link to the daily note of that day.</li>
-    <li><b>Links and graph</b>: <code>[[links]]</code>, <code>#tags</code>, renames that rewrite your links, backlinks to the open note, and a graph of your notes.</li>
+    <li><b>Links with a readable text</b>: <code>[text](address)</code>, made from a selection with <code>Ctrl + K</code> or by pasting an address over it; a right click in the note opens, copies or edits it.</li>
+    <li><b>Comments in the margin of your text</b>: <code>Ctrl + Shift + M</code> annotates a word or a line, kept in the note as CriticMarkup; a panel beside the note lists them, a click goes to one or resolves it.</li>
     <li><b>Diagrams</b>: Mermaid, LaTeX, or shapes and arrows drawn on a canvas, saved as SVG in your vault.</li>
-    <li><b>CSV and TSV</b>: opened in a grid, delimiter and encoding detected or chosen, selection by keyboard or mouse, copy, paste and export (TSV, CSV, Markdown, JSON), written straight into the file. A million rows open in a tenth of a second.</li>
-    <li><b>Sync in one action</b>: <code>Ctrl + Shift + S</code> commits, receives, merges and sends a vault kept in git, in the background; a real conflict keeps both versions as two notes, never as markers in your text.</li>
+    <li><b>Find and replace</b>: <code>Ctrl + F</code> highlights every match in the note, <code>Ctrl + H</code> replaces one or all, with case and whole-word options.</li>
+    <li><b>Outline</b>: <code>Ctrl + Shift + O</code> lists the headings of the note; move through them to preview each section, Enter to go there.</li>
+    <li><b>Word count</b>: words and characters at the bottom of the note, or those of the selection.</li>
+  </ul>
+  <h3>Linking and organizing</h3>
+  <ul>
+    <li><b>Links and graph</b>: <code>[[links]]</code>, <code>#tags</code>, renames that rewrite your links, backlinks to the open note, and a graph of your notes.</li>
+    <li><b>Daily note</b>: <code>Ctrl + J</code> opens the note of the day, named after the date, or creates it. <code>/date</code> writes the date.</li>
+    <li><b>Days at your fingertips</b>: <code>@tomorrow</code>, <code>@monday</code> or <code>@2026-10-09</code> insert a link to the daily note of that day.</li>
+    <li><b>A calendar of your daily notes</b>: one month beside the note, the days you wrote stand out, a click opens or creates the note of a day.</li>
+    <li><b>Capture in one line</b>: one shortcut of your desktop, set up from the palette (<code>Super + Shift + N</code> on GNOME), opens a single line: type, <code>Enter</code>, it is in today's note and the window is gone.</li>
+    <li><b>A blank page that remembers</b>: an empty note shows today's date, the keys that matter and what to read again: the daily notes of a week, a month and a year ago, and one old note a day.</li>
+    <li><b>Kanban boards</b>: a note shown as columns of cards you drag around; underneath, still headings and tasks in plain Markdown.</li>
+    <li><b>A folder or a tag as a table</b>: its notes listed with the keys of their front matter as columns; sort with a click, filter as you type, and rewrite a cell to change that key in the note.</li>
+    <li><b>Icons on notes and folders</b>: forty drawn icons to tell a long tree apart at a glance; they follow renames and travel with the vault.</li>
     <li><b>Two panes side by side</b>: <code>Ctrl + \</code> opens a second pane; write a note while reading another, or keep a table next to it. Drag a file from the tree onto the pane where you want it.</li>
     <li><b>Back and forward</b>: <code>Alt + Left</code> and <code>Alt + Right</code>, or the side buttons of the mouse, walk through what you opened and land on the same line.</li>
-    <li><b>Keyboard first</b>: one palette to find, create and switch. No toolbar, no save button.</li>
+  </ul>
+  <h3>Finding</h3>
+  <ul>
+    <li><b>Search inside your notes</b>: the palette finds a note by its name, then by any words in its text, and shows the line that matched. <code>Ctrl + Shift + F</code> lists every matching line of the vault.</li>
+    <li><b>Replace across the vault</b>: plain text or regular expressions, the count shown before anything is written, and one command to undo it all.</li>
+    <li><b>Keyboard first</b>: one palette to find notes, tables, pictures and commands, create and switch. No toolbar, no save button; pointing at an icon names it, with its shortcut.</li>
     <li><b>Shortcuts you can change</b>: the help panel searches every shortcut as you type and lets you give any of them other keys; one already in use says by what, and is only taken when you ask. Menus show the shortcut of each action.</li>
-    <li><b>Daily note</b>: <code>Ctrl+J</code> opens the note of the day, named after the date, or creates it. <code>/date</code> writes the date.</li>
-    <li><b>Capture in one line</b>: one shortcut of your desktop, set up from the palette (<code>Super+Shift+N</code> on GNOME), opens a single line: type, <code>Enter</code>, it is in today's note and the window is gone.</li>
-    <li><b>A blank page that remembers</b>: an empty note shows today's date, the keys that matter and what to read again: the daily notes of a week, a month and a year ago, and one old note a day.</li>
-    <li><b>Word count</b>: words and characters at the bottom of the note, or those of the selection.</li>
-    <li><b>Outline</b>: <code>Ctrl+Shift+O</code> lists the headings of the note; move through them to preview each section, Enter to go there.</li>
-    <li><b>Find and replace</b>: <code>Ctrl+F</code> highlights every match in the note, <code>Ctrl+H</code> replaces one or all, with case and whole-word options.</li>
-    <li><b>Search inside your notes</b>: the palette finds a note by its name, then by any words in its text, and shows the line that matched. <code>Ctrl+Shift+F</code> lists every matching line of the vault.</li>
+  </ul>
+  <h3>Your files</h3>
+  <ul>
+    <li><b>Plain files</b>: one <code>.md</code> per note, plus your <code>.csv</code> and <code>.tsv</code>. Sync with git, or keep the vault in iCloud, Dropbox, Google Drive or Syncthing; an Obsidian vault works as is, front matter included (its tags and aliases are read).</li>
+    <li><b>CSV and TSV</b>: opened in a grid, delimiter and encoding detected or chosen, selection by keyboard or mouse, copy, paste and export (TSV, CSV, Markdown, JSON), written straight into the file. A million rows are parsed in under a tenth of a second.</li>
+    <li><b>Follows your folder</b>: notes added, renamed or changed by another program or a sync tool show up within a second, without restarting.</li>
+    <li><b>Sync in one action</b>: <code>Ctrl + Shift + S</code> commits, receives, merges and sends a vault kept in git, in the background; a real conflict keeps both versions as two notes, never as markers in your text.</li>
     <li><b>Backup in one command</b>: the palette writes a dated archive of the whole vault where you choose.</li>
     <li><b>A trash you can undo</b>: nothing is deleted; the palette lists the trash of the vault and puts a note back.</li>
-    <li><b>Icons on notes and folders</b>: forty drawn icons to tell a long tree apart at a glance; they follow renames and travel with the vault.</li>
-    <li><b>Comments in the margin of your text</b>: <code>Ctrl + Shift + M</code> annotates a word or a line, kept in the note as CriticMarkup; a panel beside the note lists them, a click goes to one or resolves it.</li>
-    <li><b>Links with a readable text</b>: <code>[text](address)</code>, made from a selection with <code>Ctrl + K</code> or by pasting an address over it; a right click in the note opens, copies or edits it.</li>
     <li><b>A terminal one command away</b>: the palette opens the terminal of your system in the folder of the vault.</li>
+  </ul>
+  <h3>The app</h3>
+  <ul>
+    <li><b>Opens instantly</b>: the window is on screen in about 75 ms on the author's machine.</li>
     <li><b>Quiet status messages</b>: what just happened, or failed, shows in a corner and leaves after four seconds or on a click.</li>
-    <li><b>Follows your folder</b>: notes added, renamed or changed by another program or a sync tool show up within a fraction of a second.</li>
     <li><b>Keeps itself current</b>: a banner says when a new version is out. On Windows, macOS and Arch, one click installs it and restarts Bref. It can be turned off.</li>
-    <li><b>Tables like on the web</b>: cells wrap inside their column, <code>[ ]</code> boxes tick with a click, and a table pasted from a web page, a spreadsheet or Markdown just works. A table of 300,000 rows still opens in about 40 ms.</li>
-    <li><b>Yours to dress</b>: a dozen themes, IBM Plex built in so nothing to install (or any font you have), English and French, following your system.</li>
+    <li><b>Yours to dress</b>: a dozen themes, each one readable (links and secondary text at WCAG AA contrast), IBM Plex built in so nothing to install (or any font you have), English and French, following your system.</li>
   </ul>
 
   <h2 id="install">Install</h2>
@@ -187,7 +206,7 @@ cargo install --path . --locked</code></pre>
   <div class="panel"><b>[!NOTE]</b>Linux needs a few system libraries and a Vulkan driver. <a href="https://github.com/alarboulletmarin/bref#install">Steps for each system</a>, including compiling on macOS and Windows.</div>
 
   <h2 id="docs">Documentation</h2>
-  <p>On first run Bref asks for a vault, the folder that holds your notes. That is the only setup. The essentials, <code>Cmd</code> instead of <code>Ctrl</code> on macOS:</p>
+  <p>On first run, one click creates your vault, the folder that holds your notes, in <code>Documents/Notes</code>; or open any folder, an Obsidian vault included. That is the only setup. The essentials, <code>Cmd</code> instead of <code>Ctrl</code> on macOS:</p>
 <pre class="table"><i>|</i> <b>Key</b>                <i>|</i> <b>Action</b>                                         <i>|</i>
 <i>| ------------------ | ---------------------------------------------- |</i>
 <i>|</i> Ctrl + P           <i>|</i> find by name or text, create, filter by #tag   <i>|</i>
@@ -224,7 +243,7 @@ for (const pre of document.querySelectorAll("pre:not(.table)")) {
   const wrap = document.createElement("div");
   wrap.className = "code"; pre.replaceWith(wrap); wrap.append(pre);
   const b = document.createElement("button");
-  b.className = "copy"; b.title = "Copy"; b.innerHTML = COPY;
+  b.className = "copy"; b.title = "Copy"; b.setAttribute("aria-label", "Copy"); b.innerHTML = COPY;
   b.onclick = () => navigator.clipboard.writeText(pre.textContent).then(() => { b.style.color = "var(--accent)"; setTimeout(() => b.style.color = "", 900); });
   wrap.append(b);
 }
@@ -246,7 +265,7 @@ fetch("https://api.github.com/repos/alarboulletmarin/bref/releases?per_page=5")
       t.textContent = new Date(r.published_at).toLocaleDateString("en", { dateStyle: "medium" });
       h.append(a, t);
       const ul = document.createElement("ul");
-      for (const m of r.body.matchAll(/^- (.+)$/gm)) {
+      for (const m of (r.body || "").matchAll(/^- (.+)$/gm)) {
         const li = document.createElement("li");
         li.textContent = m[1].replace(/^\w+: /, "");
         ul.append(li);
