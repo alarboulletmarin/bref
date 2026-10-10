@@ -145,9 +145,10 @@ pub fn explain(stderr: &str) -> String {
     last.trim_start_matches("fatal: ").trim_start_matches("error: ").to_string()
 }
 
-/// Nom du dossier d'un coffre cloné : le dernier morceau de l'adresse, sans `.git`.
+/// Nom du dossier d'un coffre cloné : le dernier morceau de l'adresse (une URL, une adresse
+/// SSH, ou un chemin, y compris à la façon de Windows), sans `.git`.
 pub fn folder_of(url: &str) -> String {
-    let last = url.trim().trim_end_matches('/').rsplit(['/', ':']).next().unwrap_or_default();
+    let last = url.trim().trim_end_matches('/').rsplit(['/', ':', '\\']).next().unwrap_or_default();
     let name = last.strip_suffix(".git").unwrap_or(last).trim();
     if name.is_empty() { "vault".to_string() } else { name.to_string() }
 }
@@ -410,6 +411,7 @@ mod tests {
         assert_eq!(folder_of("git@github.com:me/notes.git"), "notes");
         assert_eq!(folder_of("https://example.org/me/Mes notes/"), "Mes notes");
         assert_eq!(folder_of("/srv/git/vault.git"), "vault");
+        assert_eq!(folder_of(r"C:\Users\moi\dépôts\notes.git"), "notes");
         assert_eq!(folder_of(""), "vault");
     }
 
