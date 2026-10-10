@@ -30,7 +30,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Shortcuts you can change**: the help panel (`F1`) lists every shortcut, searches them as you type, and lets you give any of them other keys. The menus show, beside each action, the shortcut that does the same. A combination already in use says by what, and is only taken when you ask.
 - **No save button**: notes are written to disk as you type, and named after their first line.
 - **Daily note**: one key opens the note of the day, or creates it.
-- **Capture in one line**: `bref --capture`, bound to a shortcut of your desktop, opens a single line anywhere, anytime: type, `Enter`, it is at the bottom of today's note and the window is gone. See [Capture](#capture).
+- **Capture in one line**: one shortcut of your desktop (set up from the palette, `Super + Shift + N` on GNOME) opens a single line anywhere, anytime: type, `Enter`, it is at the bottom of today's note and the window is gone. See [Capture](#capture).
 - **A blank page that remembers**: an empty note shows, under the line you write on, today's date (a click opens the note of the day), the keys that matter, and what to read again: the daily notes of a week, a month and a year ago, and one note you have not touched for a month or more, a different one each day. A click opens any of them; the first key you type clears the page.
 - **Word count**: the bottom of the note shows its words and characters, or those of the selection.
 - **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, IBM Plex Sans and Plex Mono built in (nothing to install), any installed font if you prefer, and the text size you like.
@@ -238,12 +238,12 @@ Only what you changed is kept, one `action=keys` line each, in the `keys` file o
 
 An idea rarely comes while Bref is open. `bref --capture` opens a window that is one line and nothing else, as fast as the app itself: type, press `Enter`, and the line is added to the note of the day as a list item (`- call Léa`; type `- [ ] ` first to make it a task). The note is created if the day has none yet, and found wherever you keep your daily notes in the vault. `Esc`, or a click beside the line, closes the window without writing anything.
 
-Bind the command to a shortcut of your desktop, since an app cannot take a global shortcut by itself:
+To have it under a key, open the palette (`Ctrl + P`), type `capture` and choose **Set up the quick capture shortcut**:
 
-- **GNOME**: Settings › Keyboard › View and Customize Shortcuts › Custom Shortcuts, command `bref --capture`.
-- **KDE**: System Settings › Shortcuts › Add New › Command, `bref --capture`.
-- **macOS**: an Automator *Quick Action* or a Shortcuts shortcut that runs `open -na Bref --args --capture`, with a key assigned in System Settings › Keyboard › Keyboard Shortcuts.
-- **Windows**: a shortcut to `bref.exe --capture` (right click › Properties › *Shortcut key*).
+- **GNOME**: done. Bref adds the shortcut `Super + Shift + N` to your keyboard settings and tells you so. If those keys are already used, it takes none and says so: give it the keys you like in Settings › Keyboard › Custom Shortcuts, under *Bref: capture*, where you can change them at any time. Asking again never adds a second one.
+- **Elsewhere** (KDE, macOS, Windows…): an app cannot take a system-wide shortcut by itself, so Bref copies the command to the clipboard, ready to paste into a new shortcut of your system settings.
+
+Without any setup, on Linux, right click the icon of Bref in the dock or the app grid: **Quick capture** is there.
 
 If Bref is open on today's note, the line appears there a moment later. Without a vault chosen yet, the command opens Bref as usual.
 

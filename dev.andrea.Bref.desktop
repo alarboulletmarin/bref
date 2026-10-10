@@ -13,3 +13,9 @@ Keywords=notes;markdown;writing;
 Keywords[fr]=notes;markdown;écriture;
 StartupNotify=true
 StartupWMClass=dev.andrea.Bref
+Actions=Capture;
+
+[Desktop Action Capture]
+Name=Quick capture
+Name[fr]=Capture rapide
+Exec=bref --capture

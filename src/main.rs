@@ -2523,6 +2523,33 @@ impl Shell {
         cx.notify();
     }
 
+    /// Lie la capture à un raccourci du bureau, et dit lequel. Là où Bref ne peut pas le
+    /// poser lui-même, la commande à lier est copiée : il ne reste qu'à la coller.
+    fn capture_shortcut(&mut self, cx: &mut Context<Self>) {
+        let Ok(exe) = std::env::current_exe() else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            let made = cx.background_executor().spawn(async move { vault::capture_shortcut(&exe) }).await;
+            this.update(cx, |this, cx| {
+                let told = match made {
+                    vault::Shortcut::Bound(keys) => format!("{} : {keys}", tr("Quick capture, from anywhere", "Capture rapide, depuis n'importe où")),
+                    vault::Shortcut::Unbound(keys) => format!(
+                        "{keys} {}",
+                        tr("is taken: choose the keys of “Bref: capture” in Settings › Keyboard", "est pris : choisir les touches de « Bref : capture » dans Réglages › Clavier")
+                    ),
+                    vault::Shortcut::Manual(command) => {
+                        cx.write_to_clipboard(ClipboardItem::new_string(command));
+                        tr("Capture command copied: paste it into a new shortcut of your system settings", "Commande de capture copiée : la coller dans un nouveau raccourci des réglages du système").to_string()
+                    }
+                };
+                this.say(Tone::Done, told, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     /// Ouvre le terminal du système dans le coffre, ou dit qu'il n'en a pas trouvé.
     fn open_terminal(&mut self, cx: &mut Context<Self>) {
         let Some(root) = self.vault.clone() else {
@@ -2697,6 +2724,7 @@ impl Shell {
                 PaletteEvent::Sync => this.git_sync(window, cx),
                 PaletteEvent::CloneVault => this.ask_clone(window, cx),
                 PaletteEvent::Terminal => this.open_terminal(cx),
+                PaletteEvent::CaptureKey => this.capture_shortcut(cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
@@ -2751,7 +2779,7 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 k(&Outline, tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")),
                 k(&NewNote, tr("New note", "Nouvelle note")),
                 k(&Today, tr("Today's note: open it, or create it", "Note du jour : l'ouvrir, ou la créer")),
-                t("bref --capture", tr("Capture: a one-line window that adds what you type to today's note; bind this command to a shortcut of your desktop", "Capture : une fenêtre d'une ligne qui ajoute ce qu'on tape à la note du jour ; lier cette commande à un raccourci du bureau")),
+                p("capture", tr("Quick capture: sets up a shortcut of your desktop (Super+Shift+N on GNOME) that opens a one-line window anywhere; what you type goes to today's note", "Capture rapide : crée un raccourci du bureau (Super+Maj+N sous GNOME) qui ouvre partout une fenêtre d'une ligne ; ce qu'on y tape va dans la note du jour")),
                 k(&OpenVault, tr("Change vault", "Changer de coffre")),
                 p("terminal", tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")),
                 k(&SyncVault, tr("Sync the vault with git: commit, receive, merge, send; a conflict keeps both versions as two notes", "Synchroniser le coffre par git : commiter, recevoir, fusionner, envoyer ; un conflit garde les deux versions en deux notes")),
@@ -5154,6 +5182,16 @@ mod tests {
         cx.simulate_input("terminal");
         cx.simulate_keystrokes("down enter");
         assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.told(Tone::Failed, "$TERMINAL")));
+        shell.update(cx, |s, _| s.toasts.clear());
+
+        // Raccourci de capture : la palette le propose. Hors de GNOME (et dans les tests) la
+        // commande à lier est copiée, et le message dit quoi en faire.
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("capture rapide");
+        cx.simulate_keystrokes("down enter");
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.told(Tone::Done, "copiée")));
+        assert!(cx.read_from_clipboard().and_then(|item| item.text()).is_some_and(|text| text.ends_with(" --capture")));
         shell.update(cx, |s, _| s.toasts.clear());
 
         // Sauvegarde : une archive datée de tout le coffre dans le dossier choisi (la fenêtre de

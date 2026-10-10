@@ -415,6 +415,91 @@ pub fn open_terminal(dir: &Path) -> bool {
         })
 }
 
+/// Touches proposées pour la capture ; libres sur un GNOME d'origine.
+const CAPTURE_KEYS: &str = "<Super><Shift>n";
+const GNOME_KEYS: &str = "org.gnome.settings-daemon.plugins.media-keys";
+/// Un chemin à nous dans les raccourcis personnalisés de GNOME : le redemander ne double rien.
+const GNOME_PATH: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/bref-capture/";
+
+/// Ce qu'a donné la demande d'un raccourci de capture.
+#[derive(Debug, PartialEq)]
+pub enum Shortcut {
+    /// Posé dans les réglages du bureau : les touches, telles qu'on les lit.
+    Bound(String),
+    /// Posé sans touches, celles proposées étant prises : les voici, à choisir dans les réglages.
+    Unbound(String),
+    /// Ce bureau ne se règle pas d'ici : la commande à lier soi-même.
+    Manual(String),
+}
+
+/// Lie `exe --capture` à un raccourci du bureau, sans jamais prendre des touches déjà
+/// utilisées. Sous GNOME c'est fait d'ici ; ailleurs la commande est rendue, à lier à la main.
+/// Bloquant (quelques appels à `gsettings`) : à lancer hors du thread UI. Les tests ne
+/// touchent à aucun réglage.
+pub fn capture_shortcut(exe: &Path) -> Shortcut {
+    let exe = exe.to_string_lossy();
+    let command = if exe.contains(' ') { format!("'{exe}' --capture") } else { format!("{exe} --capture") };
+    let gnome = !cfg!(test) && env::var("XDG_CURRENT_DESKTOP").is_ok_and(|desktop| desktop.contains("GNOME"));
+    gnome.then(|| gnome_shortcut(&command)).flatten().unwrap_or(Shortcut::Manual(command))
+}
+
+/// Ce que répond `gsettings`, s'il est là et accepte.
+fn gsettings(args: &[&str]) -> Option<String> {
+    let out = crate::update::command("gsettings").args(args).stdin(std::process::Stdio::null()).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Le raccourci personnalisé « Bref : capture » de GNOME : créé avec `CAPTURE_KEYS` si rien
+/// ne s'en sert, sinon sans touches. S'il existe déjà, seule sa commande est remise à jour (le
+/// binaire a pu changer de place) : les touches que l'utilisateur lui a données restent.
+fn gnome_shortcut(command: &str) -> Option<Shortcut> {
+    let entry = format!("{GNOME_KEYS}.custom-keybinding:{GNOME_PATH}");
+    let list = gsettings(&["get", GNOME_KEYS, "custom-keybindings"])?;
+    let quoted = |text: &str| format!("'{}'", text.replace('\'', "\\'"));
+    let Some(longer) = with_keybinding(&list, GNOME_PATH) else {
+        gsettings(&["set", &entry, "command", &quoted(command)])?;
+        let keys = gsettings(&["get", &entry, "binding"])?;
+        let keys = keys.trim_matches('\'');
+        return Some(if keys.is_empty() { Shortcut::Unbound(spell_keys(CAPTURE_KEYS)) } else { Shortcut::Bound(spell_keys(keys)) });
+    };
+    // Prises : par un raccourci du système, ou par un autre raccourci personnalisé.
+    let wanted = format!("'{}'", CAPTURE_KEYS.to_lowercase());
+    let others = list.split('\'').skip(1).step_by(2).filter_map(|path| gsettings(&["get", &format!("{GNOME_KEYS}.custom-keybinding:{path}"), "binding"]));
+    let taken = gsettings(&["list-recursively"]).is_some_and(|all| all.to_lowercase().contains(&wanted))
+        || others.into_iter().any(|keys| keys.to_lowercase() == wanted);
+    gsettings(&["set", &entry, "name", &quoted(tr("Bref: capture", "Bref : capture"))])?;
+    gsettings(&["set", &entry, "command", &quoted(command)])?;
+    if !taken {
+        gsettings(&["set", &entry, "binding", &quoted(CAPTURE_KEYS)])?;
+    }
+    gsettings(&["set", GNOME_KEYS, "custom-keybindings", &longer])?;
+    Some(if taken { Shortcut::Unbound(spell_keys(CAPTURE_KEYS)) } else { Shortcut::Bound(spell_keys(CAPTURE_KEYS)) })
+}
+
+/// La liste `['a', 'b']` de `gsettings` (ou `@as []`, vide) avec `path` en plus ; `None` s'il
+/// y est déjà.
+fn with_keybinding(list: &str, path: &str) -> Option<String> {
+    let mut paths: Vec<&str> = list.split('\'').skip(1).step_by(2).collect();
+    if paths.contains(&path) {
+        return None;
+    }
+    paths.push(path);
+    Some(format!("[{}]", paths.iter().map(|p| format!("'{p}'")).collect::<Vec<_>>().join(", ")))
+}
+
+/// `<Super><Shift>n`, comme GNOME l'écrit, tel qu'on le lit : `Super+Maj+N`.
+fn spell_keys(keys: &str) -> String {
+    let parts = keys.split(['<', '>']).filter(|part| !part.is_empty()).map(|part| match part {
+        "Shift" => tr("Shift", "Maj").to_string(),
+        "Primary" | "Control" => "Ctrl".to_string(),
+        _ => {
+            let mut chars = part.chars();
+            chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default()
+        }
+    });
+    parts.collect::<Vec<_>>().join("+")
+}
+
 /// Sauvegarde : tout le coffre (corbeille comprise) dans une archive `<coffre> <date>.tar.gz`
 /// du dossier `dir`, numérotée si le nom est pris. Bloquant : à lancer hors du thread UI.
 // ponytail: le `tar` du système (livré avec Linux, macOS et Windows 10) plutôt qu'une
@@ -604,6 +689,45 @@ pub fn save(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gnome_shortcut_list_gains_the_capture_once() {
+        let path = "/org/gnome/x/bref-capture/";
+        assert_eq!(with_keybinding("@as []", path).as_deref(), Some("['/org/gnome/x/bref-capture/']"));
+        assert_eq!(with_keybinding("['/org/gnome/x/custom0/', '/org/gnome/x/custom1/']", path).as_deref(), Some("['/org/gnome/x/custom0/', '/org/gnome/x/custom1/', '/org/gnome/x/bref-capture/']"));
+        // Déjà là : rien à ajouter, la demande peut se répéter sans rien doubler.
+        assert_eq!(with_keybinding("['/org/gnome/x/custom0/', '/org/gnome/x/bref-capture/']", path), None);
+    }
+
+    #[test]
+    fn gnome_keys_are_spelled_like_the_others() {
+        assert_eq!(spell_keys("<Super><Shift>n"), "Super+Maj+N");
+        assert_eq!(spell_keys("<Primary><Alt>space"), "Ctrl+Alt+Space");
+        assert_eq!(spell_keys("F9"), "F9");
+    }
+
+    /// Le vrai `gsettings`, sur des réglages jetables (fichier clé-valeur dans un dossier
+    /// temporaire) : `cargo test -- --ignored gnome_shortcut_is_registered`, sur un poste GNOME.
+    #[test]
+    #[ignore]
+    fn gnome_shortcut_is_registered() {
+        let dir = std::env::temp_dir().join(format!("bref-gsettings-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        unsafe {
+            std::env::set_var("GSETTINGS_BACKEND", "keyfile");
+            std::env::set_var("XDG_CONFIG_HOME", &dir);
+        }
+        assert_eq!(gnome_shortcut("/usr/bin/bref --capture"), Some(Shortcut::Bound("Super+Maj+N".into())));
+        let saved = fs::read_to_string(dir.join("glib-2.0/settings/keyfile")).unwrap();
+        assert!(saved.contains("command='/usr/bin/bref --capture'") && saved.contains("binding='<Super><Shift>n'"), "{saved}");
+        // Redemandé après un déplacement du binaire : la commande suit, la touche choisie reste.
+        gsettings(&["set", &format!("{GNOME_KEYS}.custom-keybinding:{GNOME_PATH}"), "binding", "<Super>F9"]).unwrap();
+        assert_eq!(gnome_shortcut("/opt/bref --capture"), Some(Shortcut::Bound("Super+F9".into())));
+        let saved = fs::read_to_string(dir.join("glib-2.0/settings/keyfile")).unwrap();
+        assert!(saved.contains("command='/opt/bref --capture'") && saved.matches("bref-capture").count() == 2, "{saved}");
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn capture_appends_a_line_to_the_note_of_the_day() {

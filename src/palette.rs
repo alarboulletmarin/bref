@@ -62,6 +62,10 @@ fn backup_label() -> &'static str {
     tr("Back up the vault…", "Sauvegarder le coffre…")
 }
 
+fn capture_label() -> &'static str {
+    tr("Set up the quick capture shortcut", "Créer le raccourci de capture rapide")
+}
+
 fn terminal_label() -> &'static str {
     tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")
 }
@@ -169,6 +173,8 @@ pub enum PaletteEvent {
     CloneVault,
     /// Ouvre le terminal du système dans le dossier du coffre.
     Terminal,
+    /// Lie la capture (`bref --capture`) à un raccourci du bureau.
+    CaptureKey,
     /// Installe la nouvelle version.
     InstallUpdate,
     /// Texte validé dans un champ de saisie, ou choix validé dans une liste.
@@ -206,6 +212,7 @@ enum Item {
     Sync,
     CloneVault,
     Terminal,
+    CaptureKey,
     Setting(Setting),
     Table(Pick),
 }
@@ -483,7 +490,7 @@ impl Palette {
                 items.push(item);
             }
         }
-        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (undo_swap_label(), Item::UndoSwap), (board_label(), Item::Board), (today_label(), Item::Today), (back_label(), Item::Back), (forward_label(), Item::Forward), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (sync_label(), Item::Sync), (clone_label(), Item::CloneVault), (terminal_label(), Item::Terminal)] {
+        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (undo_swap_label(), Item::UndoSwap), (board_label(), Item::Board), (today_label(), Item::Today), (back_label(), Item::Back), (forward_label(), Item::Forward), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (sync_label(), Item::Sync), (clone_label(), Item::CloneVault), (terminal_label(), Item::Terminal), (capture_label(), Item::CaptureKey)] {
             if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
                 items.push(item);
             }
@@ -560,6 +567,7 @@ impl Palette {
             Some(Item::Sync) => PaletteEvent::Sync,
             Some(Item::CloneVault) => PaletteEvent::CloneVault,
             Some(Item::Terminal) => PaletteEvent::Terminal,
+            Some(Item::CaptureKey) => PaletteEvent::CaptureKey,
             Some(Item::Install) => PaletteEvent::InstallUpdate,
             Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
             None => PaletteEvent::Dismiss,
@@ -698,6 +706,7 @@ impl Render for Palette {
                 Item::Sync => (sync_label().to_string(), crate::keys::of(cx, &crate::SyncVault)),
                 Item::CloneVault => (clone_label().to_string(), String::new()),
                 Item::Terminal => (terminal_label().to_string(), String::new()),
+                Item::CaptureKey => (capture_label().to_string(), String::new()),
                 Item::Install => (install_label(self.installable.as_deref().unwrap_or_default()), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
                 Item::Table(pick) => (pick.label().to_string(), String::new()),
