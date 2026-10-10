@@ -138,7 +138,8 @@ mod tests {
     }
 
     fn names(history: &History) -> Vec<String> {
-        history.list.iter().map(|entry| entry.shown.path().display().to_string()).collect()
+        // Sous Windows, un chemin recomposé s'écrit avec `\\`.
+        history.list.iter().map(|entry| entry.shown.path().display().to_string().replace('\\', "/")).collect()
     }
 
     fn at(cursor: usize) -> Place {

@@ -6255,7 +6255,11 @@ mod tests {
         assert!(shell.read_with(cx, |s, _| s.told(Tone::Done, "relié")), "{:?}", shell.read_with(cx, |s, _| s.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>()));
         // Une autre machine clone le coffre, écrit une note et change le carnet, puis envoie.
         git::clone(&url, &there).unwrap();
+        // Elle reçoit d'abord ce que le serveur a, comme le ferait sa propre synchronisation,
+        // puis écrit : ses changements partent de la dernière version commune.
         let other = |write: &dyn Fn()| {
+            git::fetch(&there).unwrap();
+            git::merge(&there, "2026-10-09", "ailleurs").unwrap();
             write();
             git::save(&there).unwrap();
             git::fetch(&there).unwrap();
