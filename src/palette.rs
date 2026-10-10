@@ -239,6 +239,10 @@ pub struct Palette {
     table: bool,
     /// Marge au-dessus du cadre.
     top: Pixels,
+    /// Défilement de la ligne de saisie, et l'abscisse de son curseur à la dernière image :
+    /// un texte plus long que le cadre glisse dessous pour que le curseur reste en vue.
+    scroll: gpui::ScrollHandle,
+    caret: std::rc::Rc<std::cell::Cell<Option<Pixels>>>,
     theme: Theme,
 }
 
@@ -323,6 +327,8 @@ impl Palette {
             installable: None,
             table: false,
             top: px(72.),
+            scroll: gpui::ScrollHandle::new(),
+            caret: Default::default(),
             theme,
         };
         this.refresh();
@@ -390,6 +396,13 @@ impl Palette {
     }
 
     /// Rang, dans la liste donnée à `choose`, du choix sélectionné.
+    /// Le curseur de la saisie est dans son cadre, à la dernière image dessinée.
+    #[cfg(test)]
+    pub fn caret_inside(&self) -> Option<bool> {
+        let (frame, caret) = (self.scroll.bounds(), self.caret.get()?);
+        Some(caret >= frame.left() && caret <= frame.right())
+    }
+
     /// Nombre de lignes proposées sous la saisie.
     #[cfg(test)]
     pub fn listed(&self) -> usize {
@@ -664,6 +677,37 @@ impl Render for Palette {
         )
         .size_0();
 
+        // La ligne de saisie défile sous son curseur : il reste en vue quoi qu'on tape ou colle.
+        let (line, layout) = self.query.shown(t);
+        let (scroll, seen, at, palette) = (self.scroll.clone(), self.caret.clone(), self.query.cursor(), cx.entity_id());
+        let follow = canvas(
+            |_, _, _| (),
+            move |_, _, _, cx| {
+                let Some(caret) = layout.position_for_index(at) else { return };
+                let frame = scroll.bounds();
+                // De quoi ramener le curseur dans le cadre ; l'image suivante le montre.
+                let slide = if caret.x > frame.right() - px(2.) {
+                    frame.right() - px(2.) - caret.x
+                } else if caret.x < frame.left() {
+                    frame.left() - caret.x
+                } else {
+                    px(0.)
+                };
+                seen.set(Some(caret.x));
+                // Borné à ce qui peut défiler : arrivé au bout, on ne redemande plus rien.
+                let mut offset = scroll.offset();
+                let to = (offset.x + slide).max(-scroll.max_offset().width).min(px(0.));
+                if (to - offset.x).abs() > px(0.5) {
+                    offset.x = to;
+                    scroll.set_offset(offset);
+                    // Pendant le dessin, `Window::refresh` est sans effet : on redemande le rendu après.
+                    cx.defer(move |cx| cx.notify(palette));
+                }
+            },
+        )
+        .absolute()
+        .size_0();
+
         // Une liste de choix montre 14 lignes à la fois, autour du choix sélectionné.
         let first = self.selected.saturating_sub(6).min(self.items.len().saturating_sub(14));
         let rows = self.items.iter().enumerate().skip(first).take(14).map(|(i, item)| {
@@ -797,7 +841,7 @@ impl Render for Palette {
                                     false => tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into(),
                                 })))
                             })
-                            .child(self.query.shown(t).0.whitespace_nowrap())
+                            .child(div().id("palette-line").min_w_0().overflow_x_scroll().track_scroll(&self.scroll).flex().child(line.flex_none().pr(px(2.)).whitespace_nowrap()).child(follow))
                             .when(!self.query.text.is_empty(), |d| {
                                 d.children(self.prompt.clone().map(|label| {
                                     div().ml_auto().pl_3().flex_none().max_w(gpui::relative(0.45)).truncate().text_size(px(12.)).text_color(t.dim).child(label)

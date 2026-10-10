@@ -7119,6 +7119,24 @@ mod tests {
         }
         assert!(!fs::read_to_string(&note).unwrap().contains("oublier"));
         assert_eq!(closed.get(), 2);
+        // Une très longue ligne : rien n'est coupé ni refusé. Le texte défile sous le curseur,
+        // qui reste dans le cadre, à la frappe comme au retour en début de ligne.
+        let long = "mot ".repeat(250);
+        {
+            let (capture, cx) = cx.add_window_view(|window, cx| Capture::new(root.clone(), window, cx));
+            cx.run_until_parked();
+            let caret_inside = |cx: &mut gpui::VisualTestContext| capture.read_with(cx, |c, cx| c.field.read(cx).caret_inside());
+            cx.simulate_input(&long);
+            cx.run_until_parked();
+            assert_eq!(caret_inside(cx), Some(true), "le curseur suit la frappe");
+            cx.simulate_keystrokes("home");
+            cx.run_until_parked();
+            assert_eq!(caret_inside(cx), Some(true), "le curseur revient en vue au début");
+            cx.simulate_keystrokes("end enter");
+            cx.run_until_parked();
+        }
+        assert!(fs::read_to_string(&note).unwrap().ends_with(&format!("- {}\n", long.trim())));
+        assert_eq!(closed.get(), 3);
         let _ = fs::remove_dir_all(&root);
     }
 
