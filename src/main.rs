@@ -2751,6 +2751,7 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 k(&Outline, tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")),
                 k(&NewNote, tr("New note", "Nouvelle note")),
                 k(&Today, tr("Today's note: open it, or create it", "Note du jour : l'ouvrir, ou la créer")),
+                t("bref --capture", tr("Capture: a one-line window that adds what you type to today's note; bind this command to a shortcut of your desktop", "Capture : une fenêtre d'une ligne qui ajoute ce qu'on tape à la note du jour ; lier cette commande à un raccourci du bureau")),
                 k(&OpenVault, tr("Change vault", "Changer de coffre")),
                 p("terminal", tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")),
                 k(&SyncVault, tr("Sync the vault with git: commit, receive, merge, send; a conflict keeps both versions as two notes", "Synchroniser le coffre par git : commiter, recevoir, fusionner, envoyer ; un conflit garde les deux versions en deux notes")),
@@ -3436,6 +3437,55 @@ impl Shell {
             .when(two && active, |d| d.child(div().absolute().top_0().left_0().right_0().h(px(2.)).bg(t.accent.opacity(0.7))))
             .children(tint);
         (area.into_any_element(), comments.map(IntoElement::into_any_element))
+    }
+}
+
+/// La fenêtre de capture (`bref --capture`, à lier à un raccourci du bureau) : une ligne de
+/// saisie, rien d'autre. Entrée l'ajoute à la note du jour et referme ; Échap referme. Le coffre
+/// n'est pas lu, la fenêtre est là aussi vite que l'app.
+// ponytail: si Bref est ouvert sur la note du jour, c'est sa surveillance du coffre qui la relit ;
+// une frappe en attente là-bas est enregistrée 400 ms après (bien avant qu'on ait tapé ici).
+// Parler à l'instance ouverte si ce délai devait un jour s'allonger.
+struct Capture {
+    root: PathBuf,
+    theme: Theme,
+    field: Entity<Palette>,
+}
+
+impl Capture {
+    fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let prefs = Prefs::parse(&vault::load_settings());
+        apply_fonts(&prefs);
+        let theme = Theme::of(&prefs, window.appearance());
+        let field = Self::ask(tr("Add to today's note", "Ajouter à la note du jour").into(), "", theme, window, cx);
+        Self { root, theme, field }
+    }
+
+    /// Le champ de saisie : celui de la palette, qui annonce `label` et part de `text`.
+    fn ask(label: String, text: &str, theme: Theme, window: &mut Window, cx: &mut Context<Self>) -> Entity<Palette> {
+        let field = cx.new(|cx| Palette::prompt(label, text, theme, cx).at_top());
+        cx.subscribe_in(&field, window, |this, _, event, window, cx| match event {
+            PaletteEvent::Submit(text) if !text.is_empty() => match vault::capture(&this.root, &date_name(today()), text) {
+                Ok(_) => window.remove_window(),
+                // Rien n'est perdu : la ligne reste là, avec la raison.
+                Err(e) => {
+                    let label = format!("{} : {e}", tr("Not saved", "Non enregistré"));
+                    this.field = Self::ask(label, text, this.theme, window, cx);
+                    cx.notify();
+                }
+            },
+            PaletteEvent::Submit(_) | PaletteEvent::Dismiss => window.remove_window(),
+            _ => {}
+        })
+        .detach();
+        window.focus(&field.focus_handle(cx));
+        field
+    }
+}
+
+impl Render for Capture {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().font_family(sans()).text_color(self.theme.text).child(self.field.clone())
     }
 }
 
@@ -4221,6 +4271,24 @@ fn main() {
 
         let (vault, recent) = vault::load_config();
         let vault = vault.filter(|v| v.is_dir());
+        // `bref --capture` : la seule ligne de saisie, dans une petite fenêtre sans décor.
+        // Sans coffre choisi, l'app s'ouvre comme d'habitude pour en demander un.
+        if let Some(root) = vault.clone().filter(|_| std::env::args().any(|arg| arg == "--capture")) {
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(560.), px(96.)), cx))),
+                    titlebar: None,
+                    app_id: Some("dev.andrea.Bref".into()),
+                    window_decorations: Some(WindowDecorations::Client),
+                    window_background: WindowBackgroundAppearance::Transparent,
+                    is_resizable: false,
+                    ..Default::default()
+                },
+                |window, cx| cx.new(|cx| Capture::new(root, window, cx)),
+            )
+            .unwrap();
+            return cx.activate(true);
+        }
         let bounds = Bounds::centered(None, size(px(860.), px(720.)), cx);
         cx.open_window(
             WindowOptions {
@@ -6974,6 +7042,45 @@ mod tests {
         assert_eq!(open, (0, 0.4, vec![Some(left.clone()), Some(right.clone())]));
         cx.simulate_input("x");
         assert_eq!(shell.read_with(cx, |s, cx| s.panes[0].editor.read(cx).text().to_string()), "x# Gauche\n");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// La capture (`bref --capture`) : une ligne tapée, Entrée, elle est dans la note du jour
+    /// et la fenêtre s'est refermée. Échap referme sans rien écrire.
+    #[gpui::test]
+    fn capture_window(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-capture-window-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let _config = isolated_config(&root);
+        let note = root.join(format!("{}.md", date_name(today())));
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let closed = std::rc::Rc::new(std::cell::Cell::new(0));
+        cx.update(|cx| {
+            let closed = closed.clone();
+            cx.on_window_closed(move |_| closed.set(closed.get() + 1)).detach();
+        });
+        {
+            let (capture, cx) = cx.add_window_view(|window, cx| Capture::new(root.clone(), window, cx));
+            cx.run_until_parked();
+            // Un champ de saisie ne propose rien, même avant la première frappe.
+            assert_eq!(capture.read_with(cx, |c, cx| c.field.read(cx).listed()), 0);
+            cx.simulate_input("rappeler le plombier");
+            cx.simulate_keystrokes("enter");
+            cx.run_until_parked();
+        }
+        assert_eq!(fs::read_to_string(&note).unwrap(), format!("# {}\n\n- rappeler le plombier\n", date_name(today())));
+        assert_eq!(closed.get(), 1);
+        {
+            let (_, cx) = cx.add_window_view(|window, cx| Capture::new(root.clone(), window, cx));
+            cx.run_until_parked();
+            cx.simulate_input("à oublier");
+            cx.simulate_keystrokes("escape");
+            cx.run_until_parked();
+        }
+        assert!(!fs::read_to_string(&note).unwrap().contains("oublier"));
+        assert_eq!(closed.get(), 2);
         let _ = fs::remove_dir_all(&root);
     }
 

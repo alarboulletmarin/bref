@@ -230,6 +230,8 @@ pub struct Palette {
     installable: Option<String>,
     /// Un tableau est affiché : ses réglages se cherchent ici.
     table: bool,
+    /// Marge au-dessus du cadre.
+    top: Pixels,
     theme: Theme,
 }
 
@@ -313,6 +315,7 @@ impl Palette {
             updates: None,
             installable: None,
             table: false,
+            top: px(72.),
             theme,
         };
         this.refresh();
@@ -335,10 +338,19 @@ impl Palette {
 
     /// Champ de saisie prérempli avec `text` ; Entrée émet `Submit`.
     pub fn prompt(label: impl Into<String>, text: &str, theme: Theme, cx: &mut Context<Self>) -> Self {
-        Self {
+        let mut this = Self {
             prompt: Some(label.into()),
             ..Self::new(Vec::new(), text, theme, cx)
-        }
+        };
+        // `new` a listé les commandes de la palette : un champ de saisie n'en propose aucune.
+        this.refresh();
+        this
+    }
+
+    /// Collé en haut de ce qui le contient : pour une fenêtre qui n'est que ce champ.
+    pub fn at_top(mut self) -> Self {
+        self.top = px(8.);
+        self
     }
 
     /// Liste de choix filtrable (thème, police), `current` présélectionné :
@@ -371,6 +383,12 @@ impl Palette {
     }
 
     /// Rang, dans la liste donnée à `choose`, du choix sélectionné.
+    /// Nombre de lignes proposées sous la saisie.
+    #[cfg(test)]
+    pub fn listed(&self) -> usize {
+        self.items.len()
+    }
+
     pub fn chosen(&self) -> Option<usize> {
         match self.items.get(self.selected) {
             Some(Item::Note(i)) if self.choices => Some(*i),
@@ -627,7 +645,7 @@ impl EntityInputHandler for Palette {
 
 impl Render for Palette {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = self.theme;
+        let (t, top) = (self.theme, self.top);
         let focus = self.focus.clone();
         let entity = cx.entity();
         let input = canvas(
@@ -740,7 +758,7 @@ impl Render for Palette {
             .items_start()
             .child(
                 div()
-                    .mt(px(72.))
+                    .mt(self.top)
                     .w(px(520.))
                     .max_w_full()
                     .pb_1()
@@ -782,7 +800,7 @@ impl Render for Palette {
                     .with_animation(
                         "palette-in",
                         Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
-                        |panel, delta| panel.opacity(delta).mt(px(64. + 8. * delta)),
+                        move |panel, delta| panel.opacity(delta).mt(top - px(8.) * (1. - delta)),
                     ),
             )
     }
