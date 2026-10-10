@@ -1424,7 +1424,7 @@ impl Editor {
         }
     }
 
-    fn restore(&mut self, redo: bool, cx: &mut Context<Self>) {
+    pub fn restore(&mut self, redo: bool, cx: &mut Context<Self>) {
         let (from, to) = if redo {
             (&mut self.redo, &mut self.undo)
         } else {
