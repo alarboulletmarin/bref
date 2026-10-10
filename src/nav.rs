@@ -297,10 +297,10 @@ pub fn tree_rows(
         folders.entry(dir.parent().unwrap_or(root)).or_default().push(dir);
     }
     let label = |dir: &Path| dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
-    folders.values_mut().for_each(|f| f.sort_by_cached_key(|d| label(d).to_lowercase()));
+    folders.values_mut().for_each(|f| f.sort_by_cached_key(|d| vault::natural(&label(d))));
     files
         .values_mut()
-        .for_each(|f| f.sort_by_cached_key(|(path, name)| (vault::is_image(path), name.to_lowercase())));
+        .for_each(|f| f.sort_by_cached_key(|(path, name)| (vault::is_image(path), vault::natural(name))));
 
     let mut rows = Vec::new();
     // Parcours en profondeur : (dossier, profondeur de son contenu), sous-dossiers d'abord.
@@ -377,7 +377,7 @@ pub fn tag_rows(notes: &[Note], open: &HashSet<PathBuf>) -> Vec<Row> {
         let unfolded = open.contains(&path);
         rows.push(Row { path, name: format!("#{tag}"), depth: 0, dir: Some(unfolded) });
         if unfolded {
-            notes.sort_by_cached_key(|n| n.name.to_lowercase());
+            notes.sort_by_cached_key(|n| vault::natural(&n.name));
             rows.extend(notes.iter().map(|n| Row { path: n.path.clone(), name: n.name.clone(), depth: 1, dir: None }));
         }
     }
@@ -1541,8 +1541,9 @@ impl Shell {
                         .child(
                             div()
                                 .truncate()
-                                // La ligne du lien prend la place : le nom se contente du tiers.
-                                .map(|d| if links { d.flex_none().max_w(gpui::relative(0.35)) } else { d.flex_1() })
+                                // Le nom passe d'abord, en entier tant qu'il tient ; la ligne du lien
+                                // prend ce qui reste.
+                                .map(|d| if links { d.flex_none().max_w(gpui::relative(0.7)) } else { d.flex_1() })
                                 .when(current, |d| d.text_color(t.accent))
                                 .child(row.name.clone()),
                         )
