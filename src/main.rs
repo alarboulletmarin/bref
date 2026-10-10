@@ -392,7 +392,7 @@ pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
 
-actions!(app, [GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -481,9 +481,17 @@ struct KeyEdit {
     issue: Option<KeyIssue>,
 }
 
+/// Largeur en dessous de laquelle deux panes ne tiennent pas à côté du panneau : il se replie.
+const MIN_PANE: Pixels = px(300.);
+/// Part de la largeur que peut prendre le pane de gauche.
+const PANE_RATIO: std::ops::RangeInclusive<f32> = 0.2..=0.8;
+
 /// Ce qui est ouvert dans une moitié de la fenêtre : une note et son éditeur, ce qui s'affiche
 /// à sa place (image, schéma, tableau, page liste), et la vue kanban de la note.
 struct Pane {
+    /// Contient le focus dès qu'une des vues du pane l'a : c'est ce qui le rend actif. Il le
+    /// porte lui-même quand le pane ne montre qu'une image.
+    zone: FocusHandle,
     editor: Entity<Editor>,
     /// Image affichée à la place de la note, choisie dans l'arbre ou le graphe.
     picture: Option<PathBuf>,
@@ -532,6 +540,19 @@ struct Shell {
     /// Un pane, ou deux côte à côte ; `active` est celui qui a reçu le focus en dernier.
     panes: Vec<Pane>,
     active: usize,
+    /// Part de la largeur que prend le pane de gauche quand il y en a deux.
+    pane_ratio: f32,
+    /// La bordure entre les deux panes suit le pointeur.
+    pane_drag: bool,
+    /// Place qu'occupent les panes, relevée à leur dessin.
+    pane_box: std::rc::Rc<std::cell::Cell<Bounds<Pixels>>>,
+    /// Pendant qu'on glisse un fichier de l'arbre : le pane survolé, et s'il s'agit de sa moitié
+    /// droite (un seul pane : y lâcher le fichier ouvre le second).
+    pane_aim: Option<(usize, bool)>,
+    /// Le pane actif a changé sans que la saisie suive : le prochain rendu la lui donne.
+    grab: bool,
+    /// La disposition des panes telle qu'elle est enregistrée (fichier `panes`).
+    panes_saved: String,
     focus: FocusHandle,
     nav: Nav,
     graph: Entity<Graph>,
@@ -611,6 +632,7 @@ impl Shell {
         let editor = cx.new(|cx| Editor::new(theme, cx));
         cx.subscribe_in(&editor, window, Self::on_editor_event).detach();
         Pane {
+            zone: cx.focus_handle(),
             editor,
             picture: None,
             drawing: None,
@@ -632,6 +654,104 @@ impl Shell {
             listing: None,
             peek: false,
         }
+    }
+
+    /// Le pane qui montre déjà ce fichier, comme note (même cachée par une image) ou à sa place.
+    fn pane_showing(&self, path: &Path) -> Option<usize> {
+        self.panes.iter().position(|pane| pane.path.as_deref() == Some(path) || pane.picture.as_deref() == Some(path))
+    }
+
+    /// Donne la saisie au pane : à sa grille, à sa liste, à sa note, sinon au pane lui-même.
+    fn focus_pane(&mut self, pane: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.active = pane.min(self.panes.len() - 1);
+        let shown = self.picture.is_some();
+        match (self.shown_sheet(), &self.listing, &self.drawing) {
+            (Some(sheet), ..) => window.focus(&sheet.focus_handle(cx)),
+            (None, Some(listing), _) => window.focus(&listing.filter.focus_handle(cx)),
+            (None, None, Some((_, canvas))) if shown => window.focus(&canvas.focus_handle(cx)),
+            (None, None, _) if shown => window.focus(&self.zone),
+            (None, None, _) => window.focus(&self.editor.focus_handle(cx)),
+        }
+        cx.notify();
+    }
+
+    /// Ouvre le second pane, sur une note neuve, et lui donne la saisie.
+    fn add_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Trop étroit pour deux panes : le panneau se replie sur son rail.
+        let width = self.pane_box.get().size.width;
+        if self.nav.panel == Panel::Split && width > px(0.) && width < MIN_PANE * 2. {
+            self.nav.panel = Panel::Rail;
+            self.nav.save();
+        }
+        if self.nav.panel == Panel::Full {
+            self.nav.panel = Panel::Split;
+        }
+        let pane = Self::new_pane(self.theme, window, cx);
+        self.panes.push(pane);
+        self.active = self.panes.len() - 1;
+        self.push_names(cx);
+        self.push_dirs(cx);
+        window.focus(&self.editor.focus_handle(cx));
+        cx.notify();
+    }
+
+    /// Ctrl+\ : un second pane, ouvert sur la palette pour choisir ce qui y va. Une note ne
+    /// s'affiche pas deux fois, il ne peut donc pas reprendre celle qu'on quitte.
+    fn split(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_none() {
+            return;
+        }
+        if self.panes.len() > 1 {
+            return self.focus_pane(1, window, cx);
+        }
+        self.add_pane(window, cx);
+        self.open_palette("", window, cx);
+    }
+
+    /// Ouvre le fichier dans l'autre pane, créé au besoin ; déjà affiché, il reçoit la saisie.
+    pub fn open_aside(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(pane) = self.pane_showing(path) {
+            return self.focus_pane(pane, window, cx);
+        }
+        match self.panes.len() {
+            1 => self.add_pane(window, cx),
+            _ => self.active = 1 - self.active,
+        }
+        self.open_from_nav(path, window, cx);
+    }
+
+    /// Un fichier de l'arbre lâché sur un pane : il s'y ouvre (un dossier : sa page liste), ou
+    /// dans un second pane s'il est lâché sur la moitié droite du seul pane.
+    fn drop_on_pane(&mut self, pane: usize, aside: bool, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        if path.is_dir() {
+            match aside {
+                true => self.add_pane(window, cx),
+                false => self.active = pane.min(self.panes.len() - 1),
+            }
+            self.open_listing(path.to_path_buf(), window, cx);
+        } else if aside {
+            self.open_aside(path, window, cx);
+        } else {
+            self.active = pane.min(self.panes.len() - 1);
+            self.open_from_nav(path, window, cx);
+        }
+    }
+
+    /// Ferme le pane qui a la saisie ; l'autre reprend toute la largeur. Le dernier reste.
+    fn close_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.panes.len() < 2 {
+            return;
+        }
+        self.leave(cx);
+        self.panes.remove(self.active);
+        self.focus_pane(0, window, cx);
+    }
+
+    /// La disposition des panes, telle qu'elle s'enregistre : la part du pane de gauche, puis le
+    /// fichier du second pane (rien s'il n'y en a qu'un).
+    fn panes_state(&self) -> String {
+        let aside = self.panes.get(1).and_then(|pane| pane.picture.as_ref().or(pane.path.as_ref()));
+        format!("{}\n{}\n", self.pane_ratio, aside.map(|path| path.display().to_string()).unwrap_or_default())
     }
 
     /// Fait `act` dans le pane `pane`, comme s'il était l'actif, puis revient à l'actif.
@@ -679,6 +799,12 @@ impl Shell {
         let mut this = Self {
             panes: vec![pane],
             active: 0,
+            pane_ratio: 0.5,
+            pane_drag: false,
+            pane_box: Default::default(),
+            pane_aim: None,
+            grab: false,
+            panes_saved: String::new(),
             focus: cx.focus_handle(),
             nav,
             graph,
@@ -715,11 +841,22 @@ impl Shell {
         };
         match vault {
             Some(root) => {
-                this.set_vault(root, window, cx);
+                this.set_vault(root.clone(), window, cx);
                 this.recent = recent.into_iter().filter(|p| p.is_file()).collect();
-                if let Some(last) = this.recent.first().cloned() {
+                // Le second pane d'avant, s'il y en avait un et que son fichier existe encore.
+                let saved = vault::load_file("panes");
+                let mut lines = saved.lines();
+                let ratio = lines.next().and_then(|ratio| ratio.parse::<f32>().ok()).filter(|ratio| PANE_RATIO.contains(ratio));
+                this.pane_ratio = ratio.unwrap_or(0.5);
+                let aside = lines.next().map(PathBuf::from).filter(|path| path.is_file() && path.starts_with(&root));
+                if let Some(last) = this.recent.iter().find(|path| Some(*path) != aside.as_ref()).cloned() {
                     this.open_note(&last, cx);
                 }
+                if let Some(aside) = aside {
+                    this.open_aside(&aside, window, cx);
+                    this.focus_pane(0, window, cx);
+                }
+                this.panes_saved = this.panes_state();
                 if this.nav.panel == Panel::Full {
                     window.focus(&this.nav.focus);
                 }
@@ -1504,6 +1641,19 @@ impl Shell {
 
     /// Charge la note dans l'éditeur ; faux si le fichier est illisible.
     fn load_note(&mut self, path: &Path, cx: &mut Context<Self>) -> bool {
+        // Déjà dans l'autre pane : deux éditeurs sur un même fichier s'écraseraient l'un l'autre.
+        // La saisie y passe ; un simple aperçu ne la déplace pas.
+        if let Some(other) = self.pane_showing(path).filter(|other| *other != self.active) {
+            if !self.peek {
+                self.active = other;
+                if self.path.as_deref() == Some(path) {
+                    (self.picture, self.listing) = (None, None);
+                }
+                self.grab = true;
+                cx.notify();
+            }
+            return false;
+        }
         self.listing = None;
         if vault::is_table(path) {
             return self.open_table(path, cx);
@@ -1993,6 +2143,13 @@ impl Shell {
                 .detach();
             }
             EditorEvent::Open(link) => self.follow(link, window, cx),
+            EditorEvent::OpenAside(link) => match link {
+                Link::Wiki(name) => match self.wiki_path(name) {
+                    Some(path) => self.open_aside(&path, window, cx),
+                    None => self.follow(link, window, cx),
+                },
+                _ => self.follow(link, window, cx),
+            },
             EditorEvent::Swap(swap) => self.replace_in_vault(swap.clone(), window, cx),
             EditorEvent::Menu(at, link, commented) => {
                 self.menu = Some(nav::Menu { at: *at, target: None, text: Some(link.clone()), commented: *commented });
@@ -2243,12 +2400,17 @@ impl Shell {
         }
     }
 
-    fn open_wiki(&mut self, name: &str, cx: &mut Context<Self>) {
+    /// La note que désigne un `[[lien]]` : par son nom d'abord, sinon par un alias de son
+    /// en-tête YAML.
+    fn wiki_path(&self, name: &str) -> Option<PathBuf> {
         let wanted = name.to_lowercase();
-        // Par son nom d'abord, sinon par un alias de son en-tête YAML.
         let named = self.notes.iter().find(|n| n.name.to_lowercase() == wanted);
-        match named.or_else(|| self.notes.iter().find(|n| n.answers(&wanted))) {
-            Some(note) => self.open_note(&note.path.clone(), cx),
+        named.or_else(|| self.notes.iter().find(|n| n.answers(&wanted))).map(|note| note.path.clone())
+    }
+
+    fn open_wiki(&mut self, name: &str, cx: &mut Context<Self>) {
+        match self.wiki_path(name) {
+            Some(path) => self.open_note(&path, cx),
             None => self.new_note(format!("# {name}\n\n"), cx),
         }
     }
@@ -2288,10 +2450,12 @@ impl Shell {
             true => Palette::search(entries, theme, cx),
             false => Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table),
         });
-        cx.subscribe_in(&palette, window, |this, _, event, window, cx| {
+        cx.subscribe_in(&palette, window, |this, palette, event, window, cx| {
             this.palette = None;
             window.focus(&this.editor.focus_handle(cx));
+            let aside = palette.read(cx).aside;
             match event {
+                PaletteEvent::Open(path) if aside => this.open_aside(path, window, cx),
                 PaletteEvent::Open(path) => this.open_note(path, cx),
                 PaletteEvent::OpenAt(path, row, query) => {
                     this.open_note(path, cx);
@@ -2383,6 +2547,13 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
             vec![
                 k(&GoBack, tr("Back: what was shown before, at the same place (also the mouse button, and the rail)", "Précédent : ce qui était affiché avant, au même endroit (aussi le bouton de la souris, et le rail)")),
                 k(&GoForward, tr("Forward: what was shown after going back", "Suivant : ce qui était affiché après un retour")),
+                k(&SplitPane, tr("Second pane, side by side: opens on the palette, to choose what goes there", "Second pane, côte à côte : s'ouvre sur la palette, pour choisir ce qui y va")),
+                k(&FocusLeft, tr("Go to the left pane", "Aller au pane de gauche")),
+                k(&FocusRight, tr("Go to the right pane", "Aller au pane de droite")),
+                k(&ClosePane, tr("Close the pane that has the focus", "Fermer le pane qui a la saisie")),
+                k(&palette::ConfirmAside, tr("In the palette: open the chosen note in the other pane", "Dans la palette : ouvrir la note choisie dans l'autre pane")),
+                t(&format!("{MOD}+{shift}+{click}"), tr("Open a [[link]] in the other pane", "Ouvrir un [[lien]] dans l'autre pane")),
+                t(tr("Drag from the tree", "Glisser depuis l'arbre"), tr("Onto a pane: open the file there; onto the right half of a single pane: open a second one", "Sur un pane : y ouvrir le fichier ; sur la moitié droite du seul pane : en ouvrir un second")),
                 k(&nav::ShowTree, tr("Vault tree", "Arbre du coffre")),
                 k(&nav::ShowRecent, tr("Recent notes", "Notes récentes")),
                 k(&nav::ShowGraph, tr("Graph of the notes", "Graphe des notes")),
@@ -2745,9 +2916,251 @@ impl Shell {
     }
 }
 
+impl Shell {
+    /// Dessine le pane `pane` (l'appelant l'a rendu actif le temps du dessin) : ce qu'il montre,
+    /// et le panneau de ses commentaires. `active` : c'est lui qui a la saisie.
+    fn render_pane(&mut self, pane: usize, active: bool, client: bool, window: &mut Window, cx: &mut Context<Self>) -> (gpui::AnyElement, Option<gpui::AnyElement>) {
+        let t = self.theme;
+        let two = self.panes.len() == 2;
+        // Copie de toute la note : simple icône flottante, hors de la barre de titre.
+        // Commentaires de la note, à sa droite : le texte commenté, puis ce qu'on en dit. Un
+        // clic mène au commentaire, prêt à être retouché ; la coche le résout.
+        // ponytail: la note est relue à chaque rendu (une recherche de `{==`) ; garder la
+        // liste d'une version du texte à l'autre si de très longues notes en pâtissent.
+        let said: Vec<(String, String, usize)> = match self.picture.is_none() && self.listing.is_none() && !self.board_shown(cx) {
+            true => markdown::all_comments(self.editor.read(cx).text()).into_iter().map(|(noted, said, at)| (noted.into(), said.into(), at)).collect(),
+            false => Vec::new(),
+        };
+        // Leur bouton, à gauche de celui de la copie, ouvre et referme le panneau ; le
+        // compteur de mots de la note lui laisse la place.
+        let talk = (!said.is_empty()).then(|| {
+            nav::button("comments-toggle", "i-chat.svg", !self.comments_shut, t)
+                .absolute()
+                .bottom_4()
+                .right(px(if kanban::is_board(self.editor.read(cx).text()) { 84. } else { 50. }))
+                .size(px(30.))
+                .rounded(px(8.))
+                .occlude()
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.comments_shut = !this.comments_shut;
+                    cx.notify();
+                }))
+        });
+        // Une note qui est un tableau kanban : son bouton passe du tableau au texte. Le
+        // tableau cache la note, qui ne doit plus recevoir la frappe.
+        let board = self.board_shown(cx);
+        if board && self.editor.focus_handle(cx).is_focused(window) {
+            window.focus(&self.board_focus);
+        }
+        if !cx.has_active_drag() {
+            self.board_drag = None;
+        }
+        // La page liste refermée avec la saisie dans son filtre ou une de ses cellules : plus
+        // rien ne la reçoit, elle revient à la note.
+        if active && self.listing.is_none() && window.focused(cx).is_none() {
+            window.focus(&self.editor.focus_handle(cx));
+        }
+        if !board {
+            self.board_field = None;
+            // Le tableau quitté (une autre note s'ouvre), la saisie revient à la note.
+            if self.board_focus.is_focused(window) {
+                window.focus(&self.editor.focus_handle(cx));
+            }
+        }
+        let boards = kanban::is_board(self.editor.read(cx).text()) && self.picture.is_none() && self.listing.is_none();
+        let flip = boards.then(|| {
+            nav::button("board-toggle", "board.svg", board, t)
+                .absolute()
+                .bottom_4()
+                // Toujours à la même place, tableau ou texte : à gauche de la copie.
+                .right(px(50.))
+                .size(px(30.))
+                .rounded(px(8.))
+                .occlude()
+                .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
+        });
+        self.editor.update(cx, |e, _| e.corner = 1 + talk.is_some() as usize + boards as usize);
+        let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at))| {
+            let at = *at;
+            let inside = at + noted.len() + 9;
+            div()
+                .id(("comment", i))
+                .p_2()
+                .rounded(px(6.))
+                .border_1()
+                .border_color(t.border)
+                .bg(t.bg)
+                .flex()
+                .flex_col()
+                .gap_1()
+                .cursor_pointer()
+                .hover(|s| s.border_color(t.accent.opacity(0.6)))
+                .child(
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap_1()
+                        .child(div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(noted.to_string()))
+                        .child(nav::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.editor.update(cx, |e, cx| e.resolve_comment(at, cx));
+                            window.focus(&this.editor.focus_handle(cx));
+                        }))),
+                )
+                .child(div().text_color(if said.is_empty() { t.dim } else { t.text }).child(match said.is_empty() {
+                    true => tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string(),
+                    false => said.to_string(),
+                }))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.editor.update(cx, |e, cx| e.jump(inside, false, cx));
+                    window.focus(&this.editor.focus_handle(cx));
+                }))
+        });
+        let comments = (!said.is_empty() && !self.comments_shut).then(|| {
+            let title = format!("{} ({})", tr("Comments", "Commentaires"), said.len());
+            let shut = nav::button("comments-shut", "close.svg", false, t).on_click(cx.listener(|this, _, _, cx| {
+                this.comments_shut = true;
+                cx.notify();
+            }));
+            div()
+                .id("comments")
+                .w(px(270.))
+                .flex_none()
+                .h_full()
+                .pt(px(48.))
+                .px_3()
+                .pb_3()
+                .border_l_1()
+                .border_color(t.border)
+                .bg(t.panel)
+                .text_size(px(13.))
+                .flex()
+                .flex_col()
+                .gap_2()
+                .overflow_y_scroll()
+                .child(div().flex().items_center().child(div().flex_1().text_color(t.dim).child(title)).child(shut))
+                .children(cards)
+        });
+        let copy = icon_button("copy-all", if self.copied { "check.svg" } else { "copy.svg" }, t)
+            .absolute()
+            .bottom_4()
+            .right_4()
+            .size(px(30.))
+            .rounded(px(8.))
+            .occlude()
+            .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
+        // L'image choisie dans le panneau ; elle s'efface dès que la note reprend la main.
+        if self.editor.focus_handle(cx).is_focused(window) {
+            self.picture = None;
+            self.listing = None;
+        }
+        if self.drawing.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
+            self.drawing = None;
+        }
+        let note = div().flex_1().min_w_0().h_full().relative();
+        if self.sheet.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
+            self.flush_sheet(cx);
+            self.sheet = None;
+        }
+        let listing = self.listing.is_some().then(|| self.render_listing(cx));
+        let note = match (&self.picture, &self.drawing) {
+            _ if listing.is_some() => note.children(listing),
+            _ if board => note.child(self.render_board(cx)).children(flip),
+            (Some(_), _) if self.sheet.is_some() => {
+                let (_, sheet) = self.sheet.clone().unwrap();
+                sheet.update(cx, |sheet, _| sheet.sync(t, client));
+                note.child(sheet)
+            }
+            (Some(_), Some((_, canvas))) => {
+                canvas.update(cx, |canvas, _| canvas.sync(t));
+                note.child(canvas.clone())
+            }
+            (Some(path), None) => note.p_6().flex().items_center().justify_center().child(
+                img(path.clone()).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
+            ),
+            (None, _) => note.child(self.editor.clone()).child(copy).children(talk).children(flip),
+        };
+        // Pendant qu'on glisse un fichier de l'arbre, la zone qui le recevrait est teintée.
+        let tint = self.pane_aim.filter(|(over, _)| *over == pane).map(|(_, half)| {
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right_0()
+                .map(|d| if half { d.w(gpui::relative(0.5)) } else { d.left_0() })
+                .bg(t.accent.opacity(0.12))
+                .border_1()
+                .border_color(t.accent.opacity(0.5))
+        });
+        let ratio = self.pane_ratio;
+        let area = div()
+            .id(("pane", pane))
+            .debug_selector(move || format!("pane-{pane}"))
+            .track_focus(&self.zone)
+            .relative()
+            .h_full()
+            .min_w_0()
+            .flex()
+            .map(|d| if two && pane == 0 { d.flex_none().w(gpui::relative(ratio)) } else { d.flex_1() })
+            // Un geste de souris dans un pane vaut pour lui, avant que ses vues ne le reçoivent.
+            .capture_any_mouse_down(cx.listener(move |this, _, _, cx| {
+                if this.active != pane && pane < this.panes.len() {
+                    this.active = pane;
+                    cx.notify();
+                }
+            }))
+            .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<nav::Dragged>, _, cx| {
+                let at = e.event.position;
+                let aim = e.bounds.contains(&at).then(|| (pane, this.panes.len() == 1 && at.x > e.bounds.center().x));
+                let was = this.pane_aim.filter(|(over, _)| *over == pane);
+                if aim != was {
+                    this.pane_aim = aim;
+                    cx.notify();
+                }
+            }))
+            .on_drop(cx.listener(move |this, dragged: &nav::Dragged, window, cx| {
+                let aside = this.pane_aim.take().is_some_and(|(_, half)| half);
+                if let Some(path) = dragged.paths.first().cloned() {
+                    this.drop_on_pane(pane, aside, &path, window, cx);
+                }
+            }))
+            .child(note)
+            // Avec deux panes, un filet marque celui qui a la saisie.
+            .when(two && active, |d| d.child(div().absolute().top_0().left_0().right_0().h(px(2.)).bg(t.accent.opacity(0.7))))
+            .children(tint);
+        (area.into_any_element(), comments.map(IntoElement::into_any_element))
+    }
+}
+
+/// Bouton rond à icône : contrôles de la fenêtre, copie de la note.
+fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .size(px(20.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .cursor_pointer()
+        .hover(|s| s.bg(t.border))
+        .active(|s| s.bg(t.selection))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .child(svg().path(icon).size(px(16.)).flex_none().text_color(t.text))
+}
+
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        // Le pane qui contient le focus est l'actif ; quand le code en a changé sans déplacer la
+        // saisie (une note déjà ouverte dans l'autre pane), elle suit.
+        if std::mem::take(&mut self.grab) {
+            self.focus_pane(self.active, window, cx);
+        } else if let Some(pane) = (0..self.panes.len()).find(|&pane| self.panes[pane].zone.contains_focused(window, cx)) {
+            self.active = pane;
+        }
+        if !cx.has_active_drag() {
+            self.pane_aim = None;
+        }
         if self.editor.focus_handle(cx).is_focused(window) {
             self.keep_preview();
         }
@@ -2779,20 +3192,6 @@ impl Render for Shell {
         self.nav.total = window.viewport_size().width - inset * 2.;
 
         // Bouton icône : cercle visible au survol, comme les contrôles de fenêtre de Zed.
-        let icon_button = |id: &'static str, icon: &'static str| {
-            div()
-                .id(id)
-                .size(px(20.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded_full()
-                .cursor_pointer()
-                .hover(|s| s.bg(t.border))
-                .active(|s| s.bg(t.selection))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .child(svg().path(icon).size(px(16.)).flex_none().text_color(t.text))
-        };
         let controls = window.window_controls();
         // Pastille flottante en haut à droite de la note : un fond et un bord fins la
         // distinguent du texte, ni flou ni transparence. Elle sert aussi de poignée de
@@ -2821,13 +3220,13 @@ impl Render for Shell {
             .occlude()
             .map(drag_window)
             .when(controls.minimize, |d| {
-                d.child(icon_button("minimize", "minimize.svg").on_click(|_, window, _| window.minimize_window()))
+                d.child(icon_button("minimize", "minimize.svg", t).on_click(|_, window, _| window.minimize_window()))
             })
             .when(controls.maximize, |d| {
                 let icon = if window.is_maximized() { "restore.svg" } else { "maximize.svg" };
-                d.child(icon_button("maximize", icon).on_click(|_, window, _| window.zoom_window()))
+                d.child(icon_button("maximize", icon, t).on_click(|_, window, _| window.zoom_window()))
             })
-            .child(icon_button("close", "close.svg").on_click(|_, window, _| window.remove_window()));
+            .child(icon_button("close", "close.svg", t).on_click(|_, window, _| window.remove_window()));
 
         let body = div().flex_1().min_h_0().relative();
         let body = if self.vault.is_none() {
@@ -2875,164 +3274,65 @@ impl Render for Shell {
                     )
                 )))
         } else {
-            // Copie de toute la note : simple icône flottante, hors de la barre de titre.
-            // Commentaires de la note, à sa droite : le texte commenté, puis ce qu'on en dit. Un
-            // clic mène au commentaire, prêt à être retouché ; la coche le résout.
-            // ponytail: la note est relue à chaque rendu (une recherche de `{==`) ; garder la
-            // liste d'une version du texte à l'autre si de très longues notes en pâtissent.
-            let said: Vec<(String, String, usize)> = match self.picture.is_none() && self.listing.is_none() && !self.board_shown(cx) {
-                true => markdown::all_comments(self.editor.read(cx).text()).into_iter().map(|(noted, said, at)| (noted.into(), said.into(), at)).collect(),
-                false => Vec::new(),
-            };
-            // Leur bouton, à gauche de celui de la copie, ouvre et referme le panneau ; le
-            // compteur de mots de la note lui laisse la place.
-            let talk = (!said.is_empty()).then(|| {
-                nav::button("comments-toggle", "i-chat.svg", !self.comments_shut, t)
-                    .absolute()
-                    .bottom_4()
-                    .right(px(if kanban::is_board(self.editor.read(cx).text()) { 84. } else { 50. }))
-                    .size(px(30.))
-                    .rounded(px(8.))
-                    .occlude()
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.comments_shut = !this.comments_shut;
-                        cx.notify();
-                    }))
-            });
-            // Une note qui est un tableau kanban : son bouton passe du tableau au texte. Le
-            // tableau cache la note, qui ne doit plus recevoir la frappe.
-            let board = self.board_shown(cx);
-            if board && self.editor.focus_handle(cx).is_focused(window) {
-                window.focus(&self.board_focus);
-            }
-            if !cx.has_active_drag() {
-                self.board_drag = None;
-            }
-            // La page liste refermée avec la saisie dans son filtre ou une de ses cellules : plus
-            // rien ne la reçoit, elle revient à la note.
-            if self.listing.is_none() && window.focused(cx).is_none() {
-                window.focus(&self.editor.focus_handle(cx));
-            }
-            if !board {
-                self.board_field = None;
-                // Le tableau quitté (une autre note s'ouvre), la saisie revient à la note.
-                if self.board_focus.is_focused(window) {
-                    window.focus(&self.editor.focus_handle(cx));
+            // Un pane, ou deux côte à côte : chacun se dessine comme s'il était l'actif. Le panneau
+            // des commentaires, à droite de tout, est celui du pane actif.
+            let (two, active) = (self.panes.len() == 2, self.active);
+            let (mut areas, mut comments) = (Vec::new(), None);
+            for pane in 0..self.panes.len() {
+                let (area, said) = self.in_pane(pane, |this| this.render_pane(pane, pane == active, client, window, cx));
+                areas.push(area);
+                if pane == active {
+                    comments = said;
                 }
             }
-            let boards = kanban::is_board(self.editor.read(cx).text()) && self.picture.is_none() && self.listing.is_none();
-            let flip = boards.then(|| {
-                nav::button("board-toggle", "board.svg", board, t)
-                    .absolute()
-                    .bottom_4()
-                    // Toujours à la même place, tableau ou texte : à gauche de la copie.
-                    .right(px(50.))
-                    .size(px(30.))
-                    .rounded(px(8.))
-                    .occlude()
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
-            });
-            self.editor.update(cx, |e, _| e.corner = 1 + talk.is_some() as usize + boards as usize);
-            let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at))| {
-                let at = *at;
-                let inside = at + noted.len() + 9;
+            let mut areas = areas.into_iter();
+            // La bordure entre les deux se tire ; un double clic la remet au milieu.
+            let divider = two.then(|| {
                 div()
-                    .id(("comment", i))
-                    .p_2()
-                    .rounded(px(6.))
-                    .border_1()
-                    .border_color(t.border)
-                    .bg(t.bg)
+                    .id("pane-divider")
+                    .group("pane-divider")
+                    .w(px(5.))
+                    .h_full()
+                    .flex_none()
+                    .cursor(CursorStyle::ResizeLeftRight)
                     .flex()
-                    .flex_col()
-                    .gap_1()
-                    .cursor_pointer()
-                    .hover(|s| s.border_color(t.accent.opacity(0.6)))
+                    .justify_center()
                     .child(
                         div()
-                            .flex()
-                            .items_start()
-                            .gap_1()
-                            .child(div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(noted.to_string()))
-                            .child(nav::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
-                                cx.stop_propagation();
-                                this.editor.update(cx, |e, cx| e.resolve_comment(at, cx));
-                                window.focus(&this.editor.focus_handle(cx));
-                            }))),
+                            .w(px(1.))
+                            .h_full()
+                            .bg(if self.pane_drag { t.accent } else { t.border })
+                            .group_hover("pane-divider", |s| s.bg(t.accent)),
                     )
-                    .child(div().text_color(if said.is_empty() { t.dim } else { t.text }).child(match said.is_empty() {
-                        true => tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string(),
-                        false => said.to_string(),
-                    }))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.editor.update(cx, |e, cx| e.jump(inside, false, cx));
-                        window.focus(&this.editor.focus_handle(cx));
-                    }))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, e: &gpui::MouseDownEvent, _, cx| {
+                            match e.click_count >= 2 {
+                                true => this.pane_ratio = 0.5,
+                                false => this.pane_drag = true,
+                            }
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
             });
-            let comments = (!said.is_empty() && !self.comments_shut).then(|| {
-                let title = format!("{} ({})", tr("Comments", "Commentaires"), said.len());
-                let shut = nav::button("comments-shut", "close.svg", false, t).on_click(cx.listener(|this, _, _, cx| {
-                    this.comments_shut = true;
-                    cx.notify();
-                }));
-                div()
-                    .id("comments")
-                    .w(px(270.))
-                    .flex_none()
-                    .h_full()
-                    .pt(px(48.))
-                    .px_3()
-                    .pb_3()
-                    .border_l_1()
-                    .border_color(t.border)
-                    .bg(t.panel)
-                    .text_size(px(13.))
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .overflow_y_scroll()
-                    .child(div().flex().items_center().child(div().flex_1().text_color(t.dim).child(title)).child(shut))
-                    .children(cards)
-            });
-            let copy = icon_button("copy-all", if self.copied { "check.svg" } else { "copy.svg" })
-                .absolute()
-                .bottom_4()
-                .right_4()
-                .size(px(30.))
-                .rounded(px(8.))
-                .occlude()
-                .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
-            // L'image choisie dans le panneau ; elle s'efface dès que la note reprend la main.
-            if self.editor.focus_handle(cx).is_focused(window) {
-                self.picture = None;
-                self.listing = None;
+            let area = self.pane_box.clone();
+            let note = div()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .relative()
+                .flex()
+                .child(gpui::canvas(move |bounds, _, _| area.set(bounds), |_, _, _, _| ()).absolute().size_full())
+                .children(areas.next())
+                .children(divider)
+                .children(areas.next());
+            // La disposition des panes est retenue dès qu'elle change.
+            let state = self.panes_state();
+            if state != self.panes_saved {
+                vault::save_file("panes", &state);
+                self.panes_saved = state;
             }
-            if self.drawing.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
-                self.drawing = None;
-            }
-            let note = div().flex_1().min_w_0().h_full().relative();
-            if self.sheet.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
-                self.flush_sheet(cx);
-                self.sheet = None;
-            }
-            let listing = self.listing.is_some().then(|| self.render_listing(cx));
-            let note = match (&self.picture, &self.drawing) {
-                _ if listing.is_some() => note.children(listing),
-                _ if board => note.child(self.render_board(cx)).children(flip),
-                (Some(_), _) if self.sheet.is_some() => {
-                    let (_, sheet) = self.sheet.clone().unwrap();
-                    sheet.update(cx, |sheet, _| sheet.sync(t, client));
-                    note.child(sheet)
-                }
-                (Some(_), Some((_, canvas))) => {
-                    canvas.update(cx, |canvas, _| canvas.sync(t));
-                    note.child(canvas.clone())
-                }
-                (Some(path), None) => note.p_6().flex().items_center().justify_center().child(
-                    img(path.clone()).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
-                ),
-                (None, _) => note.child(self.editor.clone()).child(copy).children(talk).children(flip),
-            };
             let card = || {
                 div()
                     .pl_3()
@@ -3185,6 +3485,17 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &nav::ToggleFull, window, cx| this.toggle_full(window, cx)))
             // Séparateur du panneau : il suit le pointeur tant que le bouton est tenu.
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
+                // La bordure entre les deux panes, de même.
+                if this.pane_drag {
+                    let area = this.pane_box.get();
+                    if e.pressed_button == Some(MouseButton::Left) && area.size.width > px(0.) {
+                        let ratio = (e.position.x - area.left()) / area.size.width;
+                        this.pane_ratio = ratio.clamp(*PANE_RATIO.start(), *PANE_RATIO.end());
+                    } else {
+                        this.pane_drag = false;
+                    }
+                    cx.notify();
+                }
                 if !this.nav.dragging {
                 } else if e.pressed_button == Some(MouseButton::Left) {
                     this.drag_nav(e.position.x, cx)
@@ -3195,6 +3506,9 @@ impl Render for Shell {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| {
+                    if std::mem::take(&mut this.pane_drag) {
+                        cx.notify();
+                    }
                     if this.nav.dragging {
                         this.settle_nav(window, cx)
                     }
@@ -3209,6 +3523,10 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
             .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
             .on_action(cx.listener(|this, _: &Today, _, cx| this.open_today(cx)))
+            .on_action(cx.listener(|this, _: &SplitPane, window, cx| this.split(window, cx)))
+            .on_action(cx.listener(|this, _: &FocusLeft, window, cx| this.focus_pane(0, window, cx)))
+            .on_action(cx.listener(|this, _: &FocusRight, window, cx| this.focus_pane(1, window, cx)))
+            .on_action(cx.listener(|this, _: &ClosePane, window, cx| this.close_pane(window, cx)))
             .on_action(cx.listener(|this, _: &GoBack, window, cx| this.travel(false, window, cx)))
             .on_action(cx.listener(|this, _: &GoForward, window, cx| this.travel(true, window, cx)))
             // Les boutons précédent et suivant de la souris.
@@ -3239,6 +3557,9 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &CloseHelp, window, cx| {
                 if this.help {
                     this.set_help(false, window, cx)
+                } else if this.zone.is_focused(window) {
+                    // Un pane qui ne montre qu'une image : Échap revient à sa note.
+                    window.focus(&this.editor.focus_handle(cx));
                 }
             }))
             .key_context("Shell")
@@ -3351,6 +3672,10 @@ fn defaults() -> Vec<keys::Bind> {
         b("escape", &CloseHelp, Some("Shell")),
         b("secondary-shift-o", &Outline, None),
         b("secondary-j", &Today, None),
+        b("secondary-\\", &SplitPane, None),
+        b("secondary-1", &FocusLeft, None),
+        b("secondary-2", &FocusRight, None),
+        b("secondary-w", &ClosePane, None),
         // Sous macOS, Alt+flèche parcourt les mots : les crochets, comme dans un navigateur.
         b(if cfg!(target_os = "macos") { "cmd-[" } else { "alt-left" }, &GoBack, None),
         b(if cfg!(target_os = "macos") { "cmd-]" } else { "alt-right" }, &GoForward, None),
@@ -3435,6 +3760,7 @@ fn defaults() -> Vec<keys::Bind> {
         b("up", &Prev, p),
         b("down", &Next, p),
         b("enter", &Confirm, p),
+        b("secondary-enter", &palette::ConfirmAside, p),
         b("escape", &Dismiss, p),
         b("backspace", &Backspace, e),
         b("delete", &Delete, e),
@@ -5568,6 +5894,95 @@ mod tests {
         cx.simulate_keystrokes(back);
         assert_eq!(seen(cx), on_note(&hist_a));
 
+        // Deux panes côte à côte.
+        let pane = |name: &str| root.join(format!("Pane {name}.md"));
+        for name in ["A", "B", "D"] {
+            fs::write(pane(name), format!("# Pane {name}\n\n")).unwrap();
+        }
+        fs::write(pane("C"), "# Pane C\n\n[[Pane A]]\n").unwrap();
+        settle(cx);
+        let open = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| (s.active, s.panes.iter().map(|pane| pane.path.clone()).collect::<Vec<_>>()));
+        let both = |active: usize, left: &str, right: &str| (active, vec![Some(pane(left)), Some(pane(right))]);
+        let pane_text = |cx: &mut gpui::VisualTestContext, pane: usize| shell.read_with(cx, |s, cx| s.panes[pane].editor.read(cx).text().to_string());
+        shell.update_in(cx, |s, window, cx| s.open_from_nav(&pane("A"), window, cx));
+        assert_eq!(open(cx), (0, vec![Some(pane("A"))]));
+        // Au clavier : le second pane s'ouvre sur la palette, pour choisir ce qui y va.
+        cx.simulate_keystrokes("secondary-\\");
+        assert_eq!(open(cx), (1, vec![Some(pane("A")), None]));
+        assert!(shell.read_with(cx, |s, _| s.palette.is_some()));
+        cx.simulate_input("pane b");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(open(cx), both(1, "A", "B"));
+        // Chaque pane s'écrit et s'enregistre ; Ctrl+1 et Ctrl+2 passent de l'un à l'autre.
+        cx.simulate_keystrokes("secondary-end");
+        cx.simulate_input("droite");
+        cx.simulate_keystrokes("secondary-1 secondary-end");
+        assert_eq!(open(cx).0, 0);
+        cx.simulate_input("gauche");
+        assert_eq!((pane_text(cx, 0), pane_text(cx, 1)), ("# Pane A\n\ngauche".to_string(), "# Pane B\n\ndroite".to_string()));
+        settle(cx);
+        assert_eq!(fs::read_to_string(pane("A")).unwrap(), "# Pane A\n\ngauche");
+        assert_eq!(fs::read_to_string(pane("B")).unwrap(), "# Pane B\n\ndroite");
+        // Une note déjà affichée ne s'ouvre pas deux fois : la saisie passe dans son pane.
+        shell.update_in(cx, |s, window, cx| s.open_from_nav(&pane("B"), window, cx));
+        assert_eq!(open(cx), both(1, "A", "B"));
+        cx.simulate_input("!");
+        assert_eq!(pane_text(cx, 1), "# Pane B\n\ndroite!");
+        // Ctrl+Entrée dans la palette : la note choisie s'ouvre dans l'autre pane.
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("pane c");
+        cx.simulate_keystrokes("secondary-enter");
+        assert_eq!(open(cx), both(0, "C", "B"));
+        // Ctrl+Maj+clic sur un lien : la note liée s'ouvre à côté.
+        let link = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of("# Pane C\n\n[[Pa".len()).unwrap());
+        cx.simulate_click(link, gpui::Modifiers { shift: true, ..gpui::Modifiers::secondary_key() });
+        assert_eq!(open(cx), both(1, "C", "A"));
+        // « Ouvrir à côté » dans le menu de l'arbre.
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::OpenAside, Some(pane("D")), window, cx));
+        assert_eq!(open(cx), both(0, "D", "A"));
+        // Renommer ou déplacer la note de l'autre pane : il suit.
+        shell.update(cx, |s, cx| s.move_into(&pane("A"), &shelf, cx));
+        assert_eq!(open(cx), (0, vec![Some(pane("D")), Some(shelf.join("Pane A.md"))]));
+        // Glisser une note de l'arbre sur un pane l'y ouvre ; la moitié visée est teintée.
+        shell.update(cx, |s, cx| {
+            (s.nav.mode, s.nav.panel) = (nav::Mode::Tree, nav::Panel::Split);
+            cx.notify();
+        });
+        cx.run_until_parked();
+        let row = cx.debug_bounds("nav-row-Pane B").unwrap().center();
+        let right = cx.debug_bounds("pane-1").unwrap().center();
+        cx.simulate_mouse_down(row, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_move(row + gpui::point(px(12.), px(4.)), Some(MouseButton::Left), gpui::Modifiers::none());
+        cx.simulate_mouse_move(right, Some(MouseButton::Left), gpui::Modifiers::none());
+        assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), Some((1, false)));
+        cx.simulate_mouse_up(right, MouseButton::Left, gpui::Modifiers::none());
+        assert_eq!(open(cx), both(1, "D", "B"));
+        assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), None);
+        // Ctrl+W ferme le pane qui a la saisie ; ce qu'on y avait écrit est enregistré.
+        cx.simulate_keystrokes("secondary-end");
+        cx.simulate_input("?");
+        cx.simulate_keystrokes("secondary-w");
+        assert_eq!(open(cx), (0, vec![Some(pane("D"))]));
+        assert_eq!(fs::read_to_string(pane("B")).unwrap(), "# Pane B\n\ndroite!?");
+        cx.simulate_keystrokes("secondary-end");
+        cx.simulate_input("seul");
+        assert_eq!(text(cx), "# Pane D\n\nseul");
+        cx.simulate_keystrokes("secondary-w");
+        assert_eq!(open(cx).1.len(), 1, "le dernier pane ne se ferme pas");
+        // Avec un seul pane, lâcher une note sur la moitié droite ouvre le second.
+        let whole = cx.debug_bounds("pane-0").unwrap();
+        let half = gpui::point(whole.right() - px(40.), whole.center().y);
+        cx.simulate_mouse_down(row, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_move(row + gpui::point(px(12.), px(4.)), Some(MouseButton::Left), gpui::Modifiers::none());
+        cx.simulate_mouse_move(half, Some(MouseButton::Left), gpui::Modifiers::none());
+        assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), Some((0, true)));
+        cx.simulate_mouse_up(half, MouseButton::Left, gpui::Modifiers::none());
+        assert_eq!(open(cx), both(1, "D", "B"));
+        // La disposition est retenue : la largeur, et ce que montre le second pane.
+        assert_eq!(vault::load_file("panes"), format!("0.5\n{}\n", pane("B").display()));
+        cx.simulate_keystrokes("secondary-w");
+        assert_eq!(vault::load_file("panes"), "0.5\n\n");
+
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -6113,6 +6528,31 @@ mod tests {
         cx.simulate_keystrokes("secondary-shift-y");
         assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tags);
         // Un fichier d'avant cette version, ou vide : les raccourcis d'origine.
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Le second pane revient au lancement, avec sa largeur ; un fichier disparu, ou une config
+    /// d'avant les panes, laisse un seul pane.
+    #[gpui::test]
+    fn panes_come_back(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-panes-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let _config = isolated_config(&root);
+        let (left, right) = (root.join("Gauche.md"), root.join("Droite.md"));
+        fs::write(&left, "# Gauche\n").unwrap();
+        fs::write(&right, "# Droite\n").unwrap();
+        vault::save_file("panes", &format!("0.4\n{}\n", right.display()));
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        // La note de droite est la dernière ouverte : le premier pane prend la suivante.
+        let recent = vec![right.clone(), left.clone()];
+        let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), recent, window, cx));
+        cx.run_until_parked();
+        let open = shell.read_with(cx, |s, _| (s.active, s.pane_ratio, s.panes.iter().map(|pane| pane.path.clone()).collect::<Vec<_>>()));
+        assert_eq!(open, (0, 0.4, vec![Some(left.clone()), Some(right.clone())]));
+        cx.simulate_input("x");
+        assert_eq!(shell.read_with(cx, |s, cx| s.panes[0].editor.read(cx).text().to_string()), "x# Gauche\n");
         let _ = fs::remove_dir_all(&root);
     }
 }

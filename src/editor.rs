@@ -214,6 +214,8 @@ enum Motion {
 pub enum EditorEvent {
     Changed,
     Open(Link),
+    /// Le même, avec Maj : à ouvrir dans l'autre pane.
+    OpenAside(Link),
     /// Remplacer dans tout le coffre ce que la barre de recherche cherche.
     Swap(md::Swap),
     /// Clic droit dans la note : où, le lien qui s'y trouve, et s'il vise un commentaire.
@@ -2465,7 +2467,7 @@ impl Editor {
         if e.modifiers.secondary()
             && let Some((_, link)) = md::links(line).into_iter().find(|(r, _)| r.contains(&col))
         {
-            return cx.emit(EditorEvent::Open(link));
+            return cx.emit(if e.modifiers.shift { EditorEvent::OpenAside(link) } else { EditorEvent::Open(link) });
         }
         if !e.modifiers.secondary()
             && let Some(at) = self.checkbox_at(e.position)

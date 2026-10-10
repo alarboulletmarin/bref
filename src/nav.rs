@@ -74,6 +74,7 @@ pub struct Menu {
 #[derive(Clone, Copy)]
 pub enum Do {
     Open,
+    OpenAside,
     NewNote,
     NewDiagram,
     NewFolder,
@@ -102,9 +103,9 @@ pub enum Do {
 
 /// Ligne de l'arbre en cours de glisser-déposer ; dessinée sous le pointeur.
 #[derive(Clone)]
-struct Dragged {
+pub struct Dragged {
     /// La ligne saisie, ou toute la sélection multiple si elle en fait partie.
-    paths: Vec<PathBuf>,
+    pub paths: Vec<PathBuf>,
     name: String,
     theme: Theme,
 }
@@ -197,7 +198,7 @@ impl Nav {
         }
     }
 
-    fn save(&self) {
+    pub fn save(&self) {
         let mode = match self.mode {
             Mode::Tree => "tree",
             Mode::Recent => "recent",
@@ -771,6 +772,7 @@ impl Shell {
         };
         match (what, target) {
             (Do::Open, Some(path)) => self.open_from_nav(&path, window, cx),
+            (Do::OpenAside, Some(path)) => self.open_aside(&path, window, cx),
             (Do::NewNote, _) => {
                 self.nav.open.insert(dir.clone());
                 self.nav.sel = Some(dir);
@@ -1062,6 +1064,7 @@ impl Shell {
         } else {
             if !is_dir && !many {
                 groups[0].push((tr("Open", "Ouvrir"), Do::Open));
+                groups[0].push((tr("Open to the side", "Ouvrir à côté"), Do::OpenAside));
             }
             if tree && !many {
                 groups[1].push((tr("New note here", "Nouvelle note ici"), Do::NewNote));
@@ -1546,9 +1549,11 @@ impl Shell {
                     true => (lot.clone(), format!("{} {}", lot.len(), tr("items", "éléments"))),
                     false => (vec![path], name),
                 };
+                let selector = format!("nav-row-{}", row.name);
                 Some(
                     div()
                         .id(ix)
+                        .debug_selector(move || selector.clone())
                         .w_full()
                         .h(ROW)
                         .px_1()

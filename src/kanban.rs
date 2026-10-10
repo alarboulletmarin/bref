@@ -280,6 +280,8 @@ fn card_text(text: &str, done: bool, t: Theme) -> Div {
 /// Carte qu'on tient : la carte elle-même, soulevée, qui suit le pointeur par où on l'a prise.
 #[derive(Clone)]
 struct Dragged {
+    /// Le pane du tableau d'où vient la carte : un autre tableau l'ignore.
+    pane: usize,
     from: (usize, usize),
     text: String,
     done: bool,
@@ -304,16 +306,16 @@ impl Render for Dragged {
 
 /// Pendant qu'on tient une carte, le pointeur sur cette zone dit où elle se poserait : avant la
 /// carte de rang `i` de la colonne `c`, ou après elle s'il est dans sa moitié basse (`halves`).
-fn aim(c: usize, i: usize, halves: bool, cx: &mut Context<Shell>) -> impl Fn(&DragMoveEvent<Dragged>, &mut Window, &mut App) + 'static {
+fn aim(pane: usize, c: usize, i: usize, halves: bool, cx: &mut Context<Shell>) -> impl Fn(&DragMoveEvent<Dragged>, &mut Window, &mut App) + 'static {
     cx.listener(move |this, e: &DragMoveEvent<Dragged>, window, cx| {
         let at = e.event.position;
-        if !e.bounds.contains(&at) {
+        if !e.bounds.contains(&at) || e.drag(cx).pane != pane || pane >= this.panes.len() {
             return;
         }
         let below = halves && at.y > e.bounds.origin.y + e.bounds.size.height / 2.;
         let drag = Some((e.drag(cx).from, (c, i + below as usize)));
-        if this.board_drag != drag {
-            this.board_drag = drag;
+        if this.panes[pane].board_drag != drag {
+            this.panes[pane].board_drag = drag;
             cx.set_active_drag_cursor_style(CursorStyle::ClosedHand, window);
             cx.notify();
         }
@@ -411,6 +413,8 @@ impl Shell {
     // la déplacer) si le tableau sert au quotidien. Le tableau ne défile pas tout seul quand on
     // tient une carte près d'un bord : à ajouter si les colonnes dépassent souvent la fenêtre.
     pub fn render_board(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        // Le pane que ce tableau occupe : les gestes qui en partent, plus tard, le visent.
+        let pane = self.active;
         let t = self.theme;
         let text = self.editor.read(cx).text().to_string();
         let writing = self.board_field.as_ref().map(|(slot, field)| (*slot, field.clone()));
@@ -461,8 +465,8 @@ impl Shell {
                     .child(check)
                     .child(card_text(card.text, card.done, t))
                     .on_click(twice(Slot::Card(c, i), cx))
-                    .on_drag(Dragged { from, text: card.text.to_string(), done: card.done, width: self.board_card.get(), theme: t }, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
-                    .on_drag_move(aim(c, i, true, cx))
+                    .on_drag(Dragged { pane, from, text: card.text.to_string(), done: card.done, width: self.board_card.get(), theme: t }, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
+                    .on_drag_move(aim(pane, c, i, true, cx))
                     .into_any_element();
                 cards.push(card);
             }
@@ -510,12 +514,12 @@ impl Shell {
                 .flex_col()
                 .gap_2()
                 // Sur le titre, la carte tenue vise le haut de la colonne ; sous les cartes, le bas.
-                .child(head.on_drag_move(aim(c, 0, false, cx)))
+                .child(head.on_drag_move(aim(pane, c, 0, false, cx)))
                 .children(cards)
-                .child(div().child(add).on_drag_move(aim(c, count, false, cx)));
+                .child(div().child(add).on_drag_move(aim(pane, c, count, false, cx)));
             // Le couloir de la colonne descend jusqu'en bas : une carte lâchée sous une colonne
             // courte s'y pose quand même.
-            let rest = div().debug_selector(|| format!("column-rest-{c}")).flex_1().min_h(px(48.)).on_drag_move(aim(c, count, false, cx));
+            let rest = div().debug_selector(|| format!("column-rest-{c}")).flex_1().min_h(px(48.)).on_drag_move(aim(pane, c, count, false, cx));
             shown.push(div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).flex().flex_col().child(column).child(rest));
         }
         let more = match field_at(Slot::NewColumn) {
@@ -533,10 +537,13 @@ impl Shell {
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.editor.update(cx, |e, cx| e.restore(true, cx))))
             // La carte tenue sortie du tableau : sa place revient d'où elle vient, et la lâcher
             // là ne déplace rien.
-            .on_drag_move(cx.listener(|this, e: &DragMoveEvent<Dragged>, _, cx| {
+            .on_drag_move(cx.listener(move |this, e: &DragMoveEvent<Dragged>, _, cx| {
                 let from = e.drag(cx).from;
-                if !e.bounds.contains(&e.event.position) && this.board_drag != Some((from, from)) {
-                    this.board_drag = Some((from, from));
+                if e.drag(cx).pane != pane || pane >= this.panes.len() {
+                    return;
+                }
+                if !e.bounds.contains(&e.event.position) && this.panes[pane].board_drag != Some((from, from)) {
+                    this.panes[pane].board_drag = Some((from, from));
                     cx.notify();
                 }
             }))
@@ -552,9 +559,13 @@ impl Shell {
             // Un clic à côté valide ce qu'on écrivait.
             .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| this.board_commit(false, window, cx)))
             // La carte lâchée, où que ce soit sur le tableau, va à la place ouverte pour elle.
-            .on_drop(cx.listener(|this, _: &Dragged, _, cx| {
-                if let Some((from, to)) = this.board_drag.take() {
-                    this.board_edit(|text| move_card(text, from, to), cx);
+            .on_drop(cx.listener(move |this, dragged: &Dragged, _, cx| {
+                if dragged.pane == pane && pane < this.panes.len() {
+                    this.in_pane(pane, |this| {
+                        if let Some((from, to)) = this.board_drag.take() {
+                            this.board_edit(|text| move_card(text, from, to), cx);
+                        }
+                    });
                 }
                 cx.notify();
             }))

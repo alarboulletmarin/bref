@@ -112,7 +112,7 @@ impl Setting {
     }
 }
 
-actions!(palette, [Prev, Next, Confirm, Dismiss]);
+actions!(palette, [Prev, Next, Confirm, ConfirmAside, Dismiss]);
 
 #[derive(Default)]
 pub struct Entry {
@@ -199,6 +199,8 @@ enum Item {
 }
 
 pub struct Palette {
+    /// Validé par Ctrl+Entrée : ce qui est choisi s'ouvre dans l'autre pane.
+    pub aside: bool,
     focus: FocusHandle,
     query: Line,
     entries: Vec<Entry>,
@@ -292,6 +294,7 @@ impl Palette {
             entries,
             items: Vec::new(),
             selected: 0,
+            aside: false,
             prompt: None,
             choices: false,
             lines: false,
@@ -706,6 +709,10 @@ impl Render for Palette {
             .on_action(cx.listener(|this, _: &Next, _, cx| this.step(1, cx)))
             .on_action(cx.listener(|this, _: &Prev, _, cx| this.step(this.items.len().max(1) - 1, cx)))
             .on_action(cx.listener(|this, _: &Confirm, _, cx| this.confirm(this.selected, cx)))
+            .on_action(cx.listener(|this, _: &ConfirmAside, _, cx| {
+                this.aside = true;
+                this.confirm(this.selected, cx)
+            }))
             .on_action(cx.listener(|_, _: &Dismiss, _, cx| cx.emit(PaletteEvent::Dismiss)))
             .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.emit(PaletteEvent::Dismiss)));
         line::keys(root, cx, |this| Some(&mut this.query), |this, cx| {
