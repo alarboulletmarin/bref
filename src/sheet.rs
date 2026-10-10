@@ -577,6 +577,21 @@ impl Sheet {
         all
     }
 
+    /// Où l'on en est dans le tableau : la cellule du curseur et le défilement, pour y revenir.
+    pub fn whereabouts(&self) -> ((usize, usize), (f32, f32)) {
+        (self.cursor, self.scroll)
+    }
+
+    /// Revient où l'on en était. Le défilement est borné quand la grille connaît sa taille
+    /// (`measured`), pas avant : elle n'a pas encore été dessinée.
+    pub fn set_view(&mut self, cursor: (usize, usize), scroll: (f32, f32), cx: &mut Context<Self>) {
+        (self.cursor, self.anchor) = (cursor, cursor);
+        self.more.clear();
+        self.clamp();
+        self.scroll = scroll;
+        cx.notify();
+    }
+
     fn select_to(&mut self, to: (usize, usize), extend: bool, cx: &mut Context<Self>) {
         self.cursor = to;
         if !extend {

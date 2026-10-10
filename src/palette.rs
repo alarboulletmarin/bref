@@ -62,6 +62,14 @@ fn trash_label() -> &'static str {
     tr("Restore from the trash…", "Restaurer depuis la corbeille…")
 }
 
+pub fn back_label() -> &'static str {
+    tr("Back: what was shown before", "Précédent : ce qui était affiché avant")
+}
+
+pub fn forward_label() -> &'static str {
+    tr("Forward: what was shown after", "Suivant : ce qui était affiché après")
+}
+
 fn today_label() -> &'static str {
     tr("Today's note", "Note du jour")
 }
@@ -143,6 +151,8 @@ pub enum PaletteEvent {
     OpenAt(PathBuf, usize, String),
     /// Ouvre ou crée la note du jour.
     Today,
+    /// Précédent (`false`) ou suivant (`true`) dans ce qui a été affiché.
+    Travel(bool),
     /// Liste la corbeille du coffre, pour en restaurer un élément.
     Trash,
     /// Archive le coffre dans un dossier à choisir.
@@ -179,6 +189,8 @@ enum Item {
     UndoSwap,
     Board,
     Today,
+    Back,
+    Forward,
     Trash,
     Backup,
     Terminal,
@@ -438,7 +450,7 @@ impl Palette {
                 items.push(item);
             }
         }
-        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (undo_swap_label(), Item::UndoSwap), (board_label(), Item::Board), (today_label(), Item::Today), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (terminal_label(), Item::Terminal)] {
+        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (undo_swap_label(), Item::UndoSwap), (board_label(), Item::Board), (today_label(), Item::Today), (back_label(), Item::Back), (forward_label(), Item::Forward), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (terminal_label(), Item::Terminal)] {
             if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
                 items.push(item);
             }
@@ -508,6 +520,8 @@ impl Palette {
             Some(Item::UndoSwap) => PaletteEvent::UndoSwap,
             Some(Item::Board) => PaletteEvent::NewBoard,
             Some(Item::Today) => PaletteEvent::Today,
+            Some(Item::Back) => PaletteEvent::Travel(false),
+            Some(Item::Forward) => PaletteEvent::Travel(true),
             Some(Item::Trash) => PaletteEvent::Trash,
             Some(Item::Backup) => PaletteEvent::Backup,
             Some(Item::Terminal) => PaletteEvent::Terminal,
@@ -642,6 +656,8 @@ impl Render for Palette {
                 Item::UndoSwap => (undo_swap_label().to_string(), String::new()),
                 Item::Board => (board_label().to_string(), String::new()),
                 Item::Today => (today_label().to_string(), crate::keys::of(cx, &crate::Today)),
+                Item::Back => (back_label().to_string(), crate::keys::of(cx, &crate::GoBack)),
+                Item::Forward => (forward_label().to_string(), crate::keys::of(cx, &crate::GoForward)),
                 Item::Trash => (trash_label().to_string(), String::new()),
                 Item::Backup => (backup_label().to_string(), String::new()),
                 Item::Terminal => (terminal_label().to_string(), String::new()),

@@ -956,6 +956,7 @@ impl Shell {
 
     /// `from` est devenu `to` sur le disque : tout ce que l'app en sait suit.
     fn relocate(&mut self, from: &Path, to: &Path, reload: bool, cx: &mut Context<Self>) {
+        self.history.rename(from, to);
         let shift = |p: &PathBuf| match p.strip_prefix(from) {
             Ok(rest) if rest.as_os_str().is_empty() => to.to_path_buf(),
             Ok(rest) => to.join(rest),
@@ -998,6 +999,7 @@ impl Shell {
         if let Err(e) = vault::trash(root, path) {
             return self.fail(tr("Not moved to the trash", "Mise à la corbeille impossible"), e, cx);
         }
+        self.history.remove(path);
         let gone = |p: &PathBuf| p.starts_with(path);
         self.notes.retain(|n| !gone(&n.path));
         self.dirs.retain(|d| !gone(d));
@@ -1179,6 +1181,7 @@ impl Shell {
         })
         .detach();
         window.focus(&filter.focus_handle(cx));
+        self.peek = false;
         self.listing = Some(Listing { of, by: 0, back: false, filter, edit: None });
         cx.notify();
     }
@@ -1612,6 +1615,19 @@ impl Shell {
             self.nav.scroll.scroll_to_item(ix, ScrollStrategy::Center);
         }
 
+        let travel = |id: &'static str, icon: &'static str, on: bool| {
+            div()
+                .id(id)
+                .debug_selector(move || id.to_string())
+                .w(px(17.))
+                .h(px(24.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(5.))
+                .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.border)).active(|s| s.bg(t.selection)))
+                .child(svg().path(icon).size(px(14.)).flex_none().text_color(t.dim).when(!on, |s| s.opacity(0.35)))
+        };
         let mode_button = |id, icon, m: Mode| {
             button(id, icon, unfolded && mode == m, t)
                 .on_click(cx.listener(move |this, _, window, cx| this.show_nav(m, true, window, cx)))
@@ -1627,6 +1643,14 @@ impl Shell {
             .gap_1()
             .when(!unfolded, |d| d.border_r_1().border_color(t.border))
             .when(self.nav.logo, |d| d.child(crate::logo(t).mb_1()))
+            // Précédent et suivant, côte à côte ; estompés quand il n'y a nulle part où aller.
+            .child(
+                div()
+                    .flex()
+                    .gap(px(2.))
+                    .child(travel("nav-back", "chevron-left.svg", self.history.can_back()).on_click(cx.listener(|this, _, window, cx| this.travel(false, window, cx))))
+                    .child(travel("nav-forward", "chevron-right.svg", self.history.can_forward()).on_click(cx.listener(|this, _, window, cx| this.travel(true, window, cx)))),
+            )
             .child(mode_button("nav-tree", "tree.svg", Mode::Tree))
             .child(mode_button("nav-recent", "clock.svg", Mode::Recent))
             .child(mode_button("nav-graph", "graph.svg", Mode::Graph))

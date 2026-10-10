@@ -7,6 +7,7 @@ mod editor;
 mod figure;
 mod graph;
 mod grid;
+mod history;
 mod import;
 mod kanban;
 mod keys;
@@ -40,6 +41,7 @@ use canvas::{Canvas, CanvasEvent};
 use diagram::Diagram;
 use editor::{Editor, EditorEvent};
 use graph::{Graph, GraphEvent};
+use history::{History, Place, Shown};
 use markdown::Link;
 use nav::{Mode, Nav, Panel};
 use palette::{Entry, Palette, PaletteEvent, Setting};
@@ -390,7 +392,7 @@ pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
 
-actions!(app, [SearchVault, Today, Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -560,6 +562,11 @@ struct Shell {
     edge: Option<ResizeEdge>,
     copied: bool,
     help: bool,
+    /// Ce qui a été affiché, pour « précédent » et « suivant ».
+    history: History,
+    /// Ce qui est affiché n'est qu'un aperçu (flèches dans l'arbre, graphe) : l'historique
+    /// l'ignore tant qu'il n'est pas ouvert pour de bon.
+    peek: bool,
     /// Les liaisons en vigueur, et ce que l'utilisateur a changé aux raccourcis par défaut.
     bound: Vec<keys::Bind>,
     changes: keys::Changes,
@@ -646,6 +653,8 @@ impl Shell {
             edge: None,
             copied: false,
             help: false,
+            history: History::default(),
+            peek: false,
             bound: defaults(),
             changes: keys::Changes::new(),
             help_find: None,
@@ -1182,6 +1191,108 @@ impl Shell {
         cx.notify();
     }
 
+    /// Ce qui est affiché à la place de la note ; rien pour une note neuve pas encore enregistrée.
+    fn shown(&self) -> Option<Shown> {
+        match (&self.listing, &self.picture, &self.path) {
+            (Some(listing), ..) => Some(Shown::List(listing.of.clone())),
+            (None, Some(file), _) => Some(Shown::File(file.clone())),
+            (None, None, Some(note)) => Some(Shown::Note(note.clone())),
+            (None, None, None) => None,
+        }
+    }
+
+    /// Retient, dans l'entrée courante de l'historique, où l'on en est dans ce qu'elle montre :
+    /// à appeler tant que la vue qu'on quitte existe encore.
+    fn mark_place(&mut self, cx: &App) {
+        let Some(shown) = self.history.current().map(|entry| entry.shown.clone()) else { return };
+        let place = match &shown {
+            Shown::Note(path) if self.path.as_ref() == Some(path) => {
+                let (at, scroll) = self.editor.read(cx).view();
+                Place { at: (at, 0), scroll: (0., scroll) }
+            }
+            Shown::File(path) => match self.sheet.as_ref().filter(|(open, _)| open == path) {
+                Some((_, sheet)) => {
+                    let (at, scroll) = sheet.read(cx).whereabouts();
+                    Place { at, scroll }
+                }
+                None => return,
+            },
+            _ => return,
+        };
+        self.history.mark(&shown, place);
+    }
+
+    /// Le seul endroit où l'historique avance : à chaque rendu, ce qui est affiché est comparé à
+    /// son entrée courante. Un aperçu ne compte pas ; revenir en arrière ou repartir non plus,
+    /// puisque l'entrée courante est alors déjà ce qu'on affiche.
+    fn track(&mut self, cx: &App) {
+        if self.peek {
+            return;
+        }
+        let Some(shown) = self.shown() else { return };
+        if self.history.current().is_none_or(|entry| entry.shown != shown) {
+            self.mark_place(cx);
+            self.history.visit(shown);
+        }
+    }
+
+    /// Précédent ou suivant dans ce qui a été affiché ; ce qui n'existe plus est sauté.
+    fn travel(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.mark_place(cx);
+        // Sur ce que l'historique ne retient pas (un aperçu, une note neuve), « précédent »
+        // ramène à l'entrée courante : c'est de là qu'on venait.
+        let mut stay = !forward && self.history.current().is_some_and(|entry| Some(&entry.shown) != self.shown().as_ref());
+        loop {
+            let entry = match (std::mem::take(&mut stay), forward) {
+                (true, _) => self.history.current().cloned(),
+                (false, true) => self.history.forward(),
+                (false, false) => self.history.back(),
+            };
+            let Some(entry) = entry else { break };
+            if Some(&entry.shown) == self.shown().as_ref() {
+                break;
+            }
+            let there = match &entry.shown {
+                Shown::List(of) => nav::tag_of(of).is_some() || of.is_dir(),
+                Shown::Note(path) | Shown::File(path) => path.is_file(),
+            };
+            if there {
+                self.show(entry, window, cx);
+                break;
+            }
+            // Supprimé par un autre programme : l'entrée part, celle d'avant devient la courante.
+            self.history.remove(entry.shown.path());
+            stay = !forward;
+        }
+        cx.notify();
+    }
+
+    /// Affiche une entrée de l'historique, là où on l'avait laissée.
+    fn show(&mut self, entry: history::Entry, window: &mut Window, cx: &mut Context<Self>) {
+        self.peek = false;
+        if self.nav.panel == nav::Panel::Full {
+            self.nav.panel = nav::Panel::Split;
+        }
+        match entry.shown {
+            Shown::List(of) => self.open_listing(of, window, cx),
+            Shown::Note(path) => {
+                if self.load_note(&path, cx) {
+                    self.preview = false;
+                    self.editor.update(cx, |editor, cx| editor.set_view(entry.place.at.0, entry.place.scroll.1, cx));
+                }
+                window.focus(&self.editor.focus_handle(cx));
+            }
+            Shown::File(path) => {
+                self.load_note(&path, cx);
+                // Un tableau reprend sa cellule et la saisie ; une image n'a rien à reprendre.
+                if let Some(sheet) = self.shown_sheet() {
+                    sheet.update(cx, |sheet, cx| sheet.set_view(entry.place.at, entry.place.scroll, cx));
+                    window.focus(&sheet.focus_handle(cx));
+                }
+            }
+        }
+    }
+
     /// Les actions des lignes que l'aide montre, dans l'ordre.
     fn help_actions(&self, cx: &App) -> Vec<&'static str> {
         self.help_rows(cx).into_iter().flat_map(|(_, rows)| rows).filter_map(|row| row.action).collect()
@@ -1386,6 +1497,7 @@ impl Shell {
             cx.notify();
             return false;
         }
+        self.mark_place(cx);
         self.flush_sheet(cx);
         self.sheet = None;
         match sheet::load(path, None) {
@@ -1495,6 +1607,7 @@ impl Shell {
     }
 
     fn open_note(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.peek = false;
         if self.load_note(path, cx) {
             self.preview = false;
             self.touch(path);
@@ -1503,6 +1616,7 @@ impl Shell {
 
     /// Affiche la note sans la compter comme ouverte.
     fn preview_note(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.peek = true;
         // La note déjà chargée, cachée par une image : il suffit de retirer l'image.
         if self.path.as_deref() == Some(path) {
             if self.picture.take().is_some() {
@@ -1515,6 +1629,7 @@ impl Shell {
 
     /// L'aperçu devient une note ouverte.
     fn keep_preview(&mut self) {
+        self.peek = false;
         if std::mem::take(&mut self.preview)
             && let Some(path) = self.path.clone()
         {
@@ -1542,6 +1657,7 @@ impl Shell {
     }
 
     fn new_note(&mut self, text: String, cx: &mut Context<Self>) {
+        self.peek = false;
         self.leave(cx);
         self.listing = None;
         self.picture = None;
@@ -1563,6 +1679,7 @@ impl Shell {
     /// l'a renommée, les liens vers son ancien nom suivent. Attendre ce moment
     /// évite de réécrire les liens à chaque titre intermédiaire pendant la frappe.
     fn leave(&mut self, cx: &mut Context<Self>) {
+        self.mark_place(cx);
         self.flush(cx);
         if let (Some(old), Some(path)) = (self.origin.take(), &self.path) {
             let new = vault::stem(path);
@@ -1744,6 +1861,9 @@ impl Shell {
                     if let Some(icon) = self.path.as_ref().and_then(|old| self.icons.remove(old)) {
                         self.icons.insert(path.clone(), icon);
                         self.save_icons(cx);
+                    }
+                    if let Some(old) = &self.path {
+                        self.history.rename(old, &path);
                     }
                     self.recent.retain(|p| Some(p) != self.path.as_ref());
                     self.touch(&path);
@@ -2103,6 +2223,7 @@ impl Shell {
                 PaletteEvent::UndoSwap => this.undo_swap(cx),
                 PaletteEvent::NewBoard => this.new_note(kanban::new_board(), cx),
                 PaletteEvent::Today => this.open_today(cx),
+                PaletteEvent::Travel(forward) => this.travel(*forward, window, cx),
                 PaletteEvent::Trash => this.open_trash(window, cx),
                 PaletteEvent::Backup => this.choose_backup(window, cx),
                 PaletteEvent::Terminal => this.open_terminal(cx),
@@ -2171,6 +2292,8 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
         (
             "Navigation",
             vec![
+                k(&GoBack, tr("Back: what was shown before, at the same place (also the mouse button, and the rail)", "Précédent : ce qui était affiché avant, au même endroit (aussi le bouton de la souris, et le rail)")),
+                k(&GoForward, tr("Forward: what was shown after going back", "Suivant : ce qui était affiché après un retour")),
                 k(&nav::ShowTree, tr("Vault tree", "Arbre du coffre")),
                 k(&nav::ShowRecent, tr("Recent notes", "Notes récentes")),
                 k(&nav::ShowGraph, tr("Graph of the notes", "Graphe des notes")),
@@ -2539,6 +2662,7 @@ impl Render for Shell {
         if self.editor.focus_handle(cx).is_focused(window) {
             self.keep_preview();
         }
+        self.track(cx);
         let title = match (self.picture.as_ref().or(self.path.as_ref()), &self.vault) {
             (Some(p), _) => vault::stem(p),
             (None, Some(_)) => tr("New note", "Nouvelle note").to_string(),
@@ -2996,6 +3120,17 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
             .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
             .on_action(cx.listener(|this, _: &Today, _, cx| this.open_today(cx)))
+            .on_action(cx.listener(|this, _: &GoBack, window, cx| this.travel(false, window, cx)))
+            .on_action(cx.listener(|this, _: &GoForward, window, cx| this.travel(true, window, cx)))
+            // Les boutons précédent et suivant de la souris.
+            .on_mouse_down(
+                MouseButton::Navigate(gpui::NavigationDirection::Back),
+                cx.listener(|this, _, window, cx| this.travel(false, window, cx)),
+            )
+            .on_mouse_down(
+                MouseButton::Navigate(gpui::NavigationDirection::Forward),
+                cx.listener(|this, _, window, cx| this.travel(true, window, cx)),
+            )
             .on_action(cx.listener(|this, _: &SearchVault, window, cx| this.open_search(window, cx)))
             .on_action(cx.listener(|this, _: &ChooseTheme, window, cx| {
                 this.choose_setting(Setting::Theme, window, cx)
@@ -3127,6 +3262,9 @@ fn defaults() -> Vec<keys::Bind> {
         b("escape", &CloseHelp, Some("Shell")),
         b("secondary-shift-o", &Outline, None),
         b("secondary-j", &Today, None),
+        // Sous macOS, Alt+flèche parcourt les mots : les crochets, comme dans un navigateur.
+        b(if cfg!(target_os = "macos") { "cmd-[" } else { "alt-left" }, &GoBack, None),
+        b(if cfg!(target_os = "macos") { "cmd-]" } else { "alt-right" }, &GoForward, None),
         b("secondary-shift-f", &SearchVault, None),
         b("secondary-=", &ZoomIn, None),
         b("secondary-+", &ZoomIn, None),
@@ -5252,6 +5390,94 @@ mod tests {
         });
         cx.simulate_keystrokes("secondary-a secondary-c");
         assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("a\tb\n1\t2"));
+
+        // Précédent / suivant : l'historique de ce qui a été affiché, comme dans un navigateur.
+        let (hist_a, hist_b, hist_csv) = (root.join("Hist A.md"), root.join("Hist B.md"), root.join("hist.csv"));
+        let long: String = (0..200).map(|i| format!("ligne {i}\n")).collect();
+        fs::write(&hist_a, format!("# Hist A\n\n{long}\n[[Hist B]]\n")).unwrap();
+        fs::write(&hist_b, "# Hist B\n").unwrap();
+        fs::write(&hist_csv, "a,b\n1,2\n3,4\n5,6\n").unwrap();
+        settle(cx);
+        let (back, forward) = if cfg!(target_os = "macos") { ("cmd-[", "cmd-]") } else { ("alt-left", "alt-right") };
+        let seen = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| (s.picture.clone(), s.path.clone()));
+        let on_note = |path: &Path| (None, Some(path.to_path_buf()));
+        shell.update_in(cx, |s, window, cx| s.open_from_nav(&hist_a, window, cx));
+        // Loin dans la note : le curseur et le défilement seront retrouvés au retour.
+        cx.simulate_keystrokes("secondary-end up up up");
+        let place = shell.read_with(cx, |s, cx| s.editor.read(cx).view());
+        assert!(place.0 > 1000 && place.1 > 0., "{place:?}");
+        // Suivre un lien, revenir, repartir.
+        shell.update_in(cx, |s, window, cx| s.follow(&Link::Wiki("Hist B".into()), window, cx));
+        assert_eq!(seen(cx), on_note(&hist_b));
+        assert!(shell.read_with(cx, |s, _| s.history.can_back() && !s.history.can_forward()));
+        cx.simulate_keystrokes(back);
+        assert_eq!(seen(cx), on_note(&hist_a));
+        assert_eq!(shell.read_with(cx, |s, cx| s.editor.read(cx).view()), place);
+        cx.simulate_input("x");
+        assert!(text(cx).contains("x"), "la saisie est dans la note retrouvée");
+        cx.simulate_keystrokes("backspace");
+        assert!(shell.read_with(cx, |s, _| s.history.can_forward()));
+        cx.simulate_keystrokes(forward);
+        assert_eq!(seen(cx), on_note(&hist_b));
+        // Le bouton du rail.
+        let at = cx.debug_bounds("nav-back").unwrap().center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert_eq!(seen(cx), on_note(&hist_a));
+        // Ouvrir autre chose après un retour : « suivant » n'a plus où aller. Un tableau compte.
+        shell.update_in(cx, |s, window, cx| s.open_from_nav(&hist_csv, window, cx));
+        assert_eq!(seen(cx).0, Some(hist_csv.clone()));
+        assert!(!shell.read_with(cx, |s, _| s.history.can_forward()));
+        cx.simulate_keystrokes("down right");
+        cx.simulate_keystrokes(forward);
+        assert_eq!(seen(cx).0, Some(hist_csv.clone()));
+        cx.simulate_keystrokes(back);
+        assert_eq!(seen(cx), on_note(&hist_a));
+        cx.simulate_keystrokes(forward);
+        assert_eq!(seen(cx).0, Some(hist_csv.clone()));
+        assert_eq!(shell.read_with(cx, |s, cx| s.shown_sheet().unwrap().read(cx).whereabouts().0), (1, 1), "la cellule est retrouvée");
+        // Les boutons précédent et suivant de la souris.
+        let middle = gpui::point(px(500.), px(400.));
+        let navigate = |cx: &mut gpui::VisualTestContext, to| {
+            cx.simulate_mouse_down(middle, MouseButton::Navigate(to), gpui::Modifiers::none());
+            cx.simulate_mouse_up(middle, MouseButton::Navigate(to), gpui::Modifiers::none());
+        };
+        navigate(cx, gpui::NavigationDirection::Back);
+        assert_eq!(seen(cx), on_note(&hist_a));
+        // Un aperçu n'entre pas dans l'historique : « précédent » ramène d'où l'on vient, et
+        // « suivant » mène toujours au tableau.
+        shell.update_in(cx, |s, window, cx| {
+            window.focus(&s.nav.focus);
+            s.preview_note(&hist_b, cx);
+        });
+        assert_eq!(seen(cx), on_note(&hist_b));
+        cx.simulate_keystrokes(back);
+        assert_eq!(seen(cx), on_note(&hist_a));
+        navigate(cx, gpui::NavigationDirection::Forward);
+        assert_eq!(seen(cx).0, Some(hist_csv.clone()));
+        // Une note déplacée est suivie.
+        shell.update_in(cx, |s, window, cx| s.open_from_nav(&hist_b, window, cx));
+        let shelf = root.join("Étagère");
+        fs::create_dir_all(&shelf).unwrap();
+        shell.update(cx, |s, cx| s.move_into(&hist_b, &shelf, cx));
+        let moved = shelf.join("Hist B.md");
+        cx.simulate_keystrokes(back);
+        assert_eq!(seen(cx).0, Some(hist_csv.clone()));
+        cx.simulate_keystrokes(forward);
+        assert_eq!(seen(cx), on_note(&moved));
+        // Un fichier mis à la corbeille quitte l'historique ; un fichier supprimé par un autre
+        // programme est sauté.
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Trash, Some(hist_csv.clone()), window, cx));
+        cx.simulate_keystrokes(back);
+        assert_eq!(seen(cx), on_note(&hist_a));
+        fs::remove_file(&moved).unwrap();
+        cx.simulate_keystrokes(forward);
+        assert_eq!(seen(cx), on_note(&hist_a));
+        assert!(!shell.read_with(cx, |s, _| s.history.can_forward()));
+        // Depuis une note neuve, pas encore enregistrée : « précédent » ramène à la dernière.
+        shell.update_in(cx, |s, window, cx| s.new_note_in(None, window, cx));
+        assert_eq!(seen(cx), (None, None));
+        cx.simulate_keystrokes(back);
+        assert_eq!(seen(cx), on_note(&hist_a));
 
         fs::remove_dir_all(&root).unwrap();
     }

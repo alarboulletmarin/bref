@@ -913,6 +913,20 @@ impl Editor {
         self.cursor()
     }
 
+    /// Où l'on en est dans la note : le curseur et le défilement, pour y revenir.
+    pub fn view(&self) -> (usize, f32) {
+        (self.cursor(), self.scroll_y.into())
+    }
+
+    /// Revient où l'on en était : le défilement est repris tel quel, pas recalculé d'après le
+    /// curseur.
+    pub fn set_view(&mut self, at: usize, scroll: f32, cx: &mut Context<Self>) {
+        self.more.clear();
+        self.move_to(self.clamp(at), cx);
+        self.scroll_y = px(scroll);
+        self.reveal = false;
+    }
+
     /// Place le curseur à `at` ; avec `top`, sa ligne monte en haut de la vue (un titre garde
     /// sa section sous lui), sinon elle défile juste assez pour se voir.
     pub fn jump(&mut self, at: usize, top: bool, cx: &mut Context<Self>) {
