@@ -1127,7 +1127,15 @@ impl Shell {
         let lines = (groups.len() - 1) as f32;
         // Le menu reste dans la fenêtre, même ouvert près d'un bord.
         let view = window.viewport_size();
-        let (width, height) = (px(230.), px(28. * count as f32 + 9. * lines + 10.));
+        // Assez large pour le plus long libellé et son raccourci : rien n'est coupé.
+        // ponytail: largeur estimée au nombre de caractères ; mesurer le texte si une police
+        // nettement plus large que Plex est choisie (le libellé serait alors coupé, pas débordant).
+        let needed = |(label, what): &(&'static str, Do)| {
+            let keys = what.keys(cx).chars().count() as f32;
+            label.chars().count() as f32 * 7.8 + if keys > 0. { keys * 6.8 + 20. } else { 0. }
+        };
+        let widest = groups.iter().flatten().map(needed).fold(0., f32::max);
+        let (width, height) = (px((widest + 36.).max(230.)), px(28. * count as f32 + 9. * lines + 10.));
         let at = point(
             (menu.at.x - self.nav.left).min(view.width - self.nav.left * 2. - width - px(8.)),
             (menu.at.y - self.nav.left).min(view.height - self.nav.left * 2. - height - px(8.)),
