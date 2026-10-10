@@ -817,7 +817,7 @@ impl Render for Palette {
                     div()
                         .truncate()
                         .when(!matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none())
-                        .text_color(t.dim)
+                        .text_color(t.soft)
                         .text_size(px(12.))
                         .child(detail),
                 )
@@ -877,7 +877,7 @@ impl Render for Palette {
                             .overflow_hidden()
                             .child(input)
                             .when(self.query.text.is_empty(), |d| {
-                                d.child(div().min_w_0().truncate().text_color(t.dim).child(self.prompt.clone().unwrap_or_else(|| match self.lines {
+                                d.child(div().min_w_0().truncate().text_color(t.soft).child(self.prompt.clone().unwrap_or_else(|| match self.lines {
                                     true => tr("Search in the text of the vault…", "Chercher dans le texte du coffre…").into(),
                                     false => tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into(),
                                 })))
@@ -885,7 +885,7 @@ impl Render for Palette {
                             .child(div().id("palette-line").min_w_0().overflow_x_scroll().track_scroll(&self.scroll).flex().child(line.flex_none().pr(px(2.)).whitespace_nowrap()).child(follow))
                             .when(!self.query.text.is_empty(), |d| {
                                 d.children(self.prompt.clone().map(|label| {
-                                    div().ml_auto().pl_3().flex_none().max_w(gpui::relative(0.45)).truncate().text_size(px(12.)).text_color(t.dim).child(label)
+                                    div().ml_auto().pl_3().flex_none().max_w(gpui::relative(0.45)).truncate().text_size(px(12.)).text_color(t.soft).child(label)
                                 }))
                             }),
                     )

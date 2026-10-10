@@ -11,7 +11,7 @@ use std::{
 };
 
 use gpui::{
-    Action, Animation, AnimationExt, App, ClickEvent, ClipboardItem, Context, CursorStyle, Div, FocusHandle, Focusable, Entity, MouseButton,
+    Action, Animation, AnimationExt, AnyView, App, ClickEvent, ClipboardItem, Context, CursorStyle, Div, FocusHandle, Focusable, Entity, MouseButton,
     MouseDownEvent, Pixels, Point, ScrollStrategy, Stateful, UniformListScrollHandle, Window,
     actions, div, ease_out_quint, point, prelude::*, px, svg, uniform_list,
 };
@@ -403,8 +403,53 @@ pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, 
                 .path(icon)
                 .size(px(16.))
                 .flex_none()
-                .text_color(if active { t.accent } else { t.dim }),
+                .text_color(if active { t.accent } else { t.soft }),
         )
+}
+
+/// L'entrée du menu qui montre un fichier dans le gestionnaire de fichiers, sous son nom de chaque système.
+fn reveal_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        tr("Reveal in Finder", "Afficher dans le Finder")
+    } else if cfg!(windows) {
+        tr("Show in Explorer", "Afficher dans l'Explorateur")
+    } else {
+        tr("Show in the file manager", "Afficher dans le gestionnaire de fichiers")
+    }
+}
+
+/// Bulle d'un bouton à icône : ce qu'il fait et, s'il en a un, son raccourci. Sans elle,
+/// une icône seule oblige à connaître la documentation pour savoir où cliquer.
+pub struct Tip {
+    label: &'static str,
+    keys: String,
+    theme: Theme,
+}
+
+impl Render for Tip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let t = self.theme;
+        div()
+            .px_2()
+            .py(px(3.))
+            .rounded(px(6.))
+            .bg(t.panel)
+            .border_1()
+            .border_color(t.border)
+            .shadow_sm()
+            .text_size(px(12.))
+            .text_color(t.text)
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(self.label)
+            .when(!self.keys.is_empty(), |d| d.child(div().text_color(t.soft).child(self.keys.clone())))
+    }
+}
+
+/// À poser sur un bouton : `.tooltip(tip(libellé, touches, thème))`.
+pub fn tip(label: &'static str, keys: String, theme: Theme) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    move |_, cx| cx.new(|_| Tip { label, keys: keys.clone(), theme }).into()
 }
 
 impl Shell {
@@ -626,7 +671,7 @@ impl Shell {
             .child(step("month-next", "chevron-right.svg", 1, cx));
         let cell = || div().w(px(32.)).h(px(30.)).flex().items_center().justify_center();
         let initials = if monday { tr("MTWTFSS", "LMMJVSD") } else { tr("SMTWTFS", "DLMMJVS") };
-        let week = initials.chars().map(|c| cell().text_color(t.dim).text_size(px(11.)).child(c.to_string()));
+        let week = initials.chars().map(|c| cell().text_color(t.soft).text_size(px(11.)).child(c.to_string()));
         let blanks = (0..lead).map(|_| cell().into_any_element());
         let cells = (1..=days).map(|day| {
             let date = (year, month, day);
@@ -636,7 +681,7 @@ impl Shell {
                 .id(("day", day as usize))
                 .rounded(px(6.))
                 .cursor_pointer()
-                .text_color(if has { t.text } else { t.dim })
+                .text_color(if has { t.text } else { t.soft })
                 .when(has, |d| d.font_weight(gpui::FontWeight::BOLD))
                 .when(open.as_deref() == Some(name.as_str()), |d| d.text_color(t.accent))
                 .when(date == today, |d| d.border_1().border_color(t.accent.opacity(0.6)))
@@ -1102,7 +1147,7 @@ impl Shell {
                 groups[2].push((tr("Copy relative path", "Copier le chemin relatif"), Do::CopyRelative));
             }
             if !many {
-                groups[2].push((tr("Reveal in file explorer", "Afficher dans l'explorateur"), Do::Reveal));
+                groups[2].push((reveal_label(), Do::Reveal));
             }
             if is_dir && !many && tree {
                 groups[0].push((tr("Show as a list", "Afficher en liste"), Do::List));
@@ -1136,7 +1181,7 @@ impl Shell {
                 // Le libellé en entier, puis son raccourci, plus discret, calé à droite : c'est le
                 // menu qui prend la largeur qu'il leur faut.
                 .child(div().flex_1().whitespace_nowrap().child(label))
-                .child(div().flex_none().ml_4().whitespace_nowrap().text_size(px(11.5)).text_color(t.dim).child(what.keys(cx)))
+                .child(div().flex_none().ml_4().whitespace_nowrap().text_size(px(11.5)).text_color(t.soft).child(what.keys(cx)))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {
@@ -1327,7 +1372,7 @@ impl Shell {
             cell(i == 0)
                 .id(("list-head", i))
                 .cursor_pointer()
-                .text_color(if i == by { t.accent } else { t.dim })
+                .text_color(if i == by { t.accent } else { t.soft })
                 .child(format!("{key}{arrow}"))
                 .on_click(cx.listener(move |this, _, _, cx| this.sort_listing(i, cx)))
         });
@@ -1360,7 +1405,7 @@ impl Shell {
                             .items_center()
                             .rounded(px(4.))
                             .cursor_text()
-                            .text_color(t.dim)
+                            .text_color(t.soft)
                             .hover(|s| s.bg(t.bg))
                             .child(div().flex_1().min_w_0().truncate().child(text))
                             .on_click(cx.listener(move |this, _, window, cx| this.list_write(path.clone(), key.clone(), window, cx)))
@@ -1372,7 +1417,7 @@ impl Shell {
             lines.push(div().min_h(ROW).flex().items_center().rounded(px(5.)).hover(|s| s.bg(t.code_bg)).children(shown));
         }
         let asked = !filter.read(cx).line.text.is_empty();
-        let hint = div().absolute().left(px(6.)).top_0().text_color(t.dim).child(tr("Filter… (key:text for one column)", "Filtrer… (clé:texte pour une colonne)"));
+        let hint = div().absolute().left(px(6.)).top_0().text_color(t.soft).child(tr("Filter… (key:text for one column)", "Filtrer… (clé:texte pour une colonne)"));
         let filter_box = div()
             .id("list-filter")
             .w(px(280.))
@@ -1407,7 +1452,7 @@ impl Shell {
                     .items_baseline()
                     .gap_2()
                     .child(div().text_size(px(20.)).font_weight(gpui::FontWeight::BOLD).child(title))
-                    .child(div().text_color(t.dim).child(count.to_string())),
+                    .child(div().text_color(t.soft).child(count.to_string())),
             )
             .child(div().pb_3().px_2().child(filter_box))
             .child(div().h(ROW).flex().items_center().border_b_1().border_color(t.border).children(head))
@@ -1532,7 +1577,7 @@ impl Shell {
                         .when(selected, |d| d.bg(if focused { t.selection } else { t.border }))
                         .when(foldable, |d| {
                             d.child(div().size(px(14.)).flex_none().when(row.dir.is_some(), |d| {
-                                d.child(svg().path(chevron).size(px(14.)).text_color(t.dim))
+                                d.child(svg().path(chevron).size(px(14.)).text_color(t.soft))
                             }))
                         })
                         .children(self.icons.get(&row.path).and_then(|name| crate::ICON_SET.iter().find(|(file, _)| file[2..file.len() - 4] == *name)).map(
@@ -1552,7 +1597,7 @@ impl Shell {
                                 .map(|d| if links { d.flex_1().min_w_0() } else { d.flex_none().max_w(px(110.)) })
                                 .truncate()
                                 .text_size(px(11.5))
-                                .text_color(t.dim)
+                                .text_color(t.soft)
                                 .child(detail),
                         );
                 let (path, name) = (row.path.clone(), row.name.clone());
@@ -1654,12 +1699,14 @@ impl Shell {
                 .justify_center()
                 .rounded(px(5.))
                 .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.border)).active(|s| s.bg(t.selection)))
-                .child(svg().path(icon).size(px(14.)).flex_none().text_color(t.dim).when(!on, |s| s.opacity(0.35)))
+                .child(svg().path(icon).size(px(14.)).flex_none().text_color(t.soft).when(!on, |s| s.opacity(0.35)))
         };
-        let mode_button = |id, icon, m: Mode| {
+        let mode_button = |id, icon, m: Mode, label: &'static str, keys: String| {
             button(id, icon, unfolded && mode == m, t)
+                .tooltip(tip(label, keys, t))
                 .on_click(cx.listener(move |this, _, window, cx| this.show_nav(m, true, window, cx)))
         };
+        let keys = |action: &dyn Action| crate::keys::of(cx, action);
         let rail = div()
             .flex_none()
             .w(RAIL)
@@ -1677,39 +1724,52 @@ impl Shell {
                 div()
                     .flex()
                     .gap(px(2.))
-                    .child(travel("nav-back", "chevron-left.svg", self.history.can_back()).on_click(cx.listener(|this, _, window, cx| this.travel(false, window, cx))))
-                    .child(travel("nav-forward", "chevron-right.svg", self.history.can_forward()).on_click(cx.listener(|this, _, window, cx| this.travel(true, window, cx)))),
+                    .child(
+                        travel("nav-back", "chevron-left.svg", self.history.can_back())
+                            .tooltip(tip(tr("Back", "Précédent"), keys(&crate::GoBack), t))
+                            .on_click(cx.listener(|this, _, window, cx| this.travel(false, window, cx))),
+                    )
+                    .child(
+                        travel("nav-forward", "chevron-right.svg", self.history.can_forward())
+                            .tooltip(tip(tr("Forward", "Suivant"), keys(&crate::GoForward), t))
+                            .on_click(cx.listener(|this, _, window, cx| this.travel(true, window, cx))),
+                    ),
             )
-            .child(mode_button("nav-tree", "tree.svg", Mode::Tree))
-            .child(mode_button("nav-recent", "clock.svg", Mode::Recent))
-            .child(mode_button("nav-graph", "graph.svg", Mode::Graph))
-            .child(mode_button("nav-tags", "tag.svg", Mode::Tags))
-            .child(mode_button("nav-links", "backlink.svg", Mode::Links))
-            .child(mode_button("nav-calendar", "i-calendar.svg", Mode::Calendar))
+            .child(mode_button("nav-tree", "tree.svg", Mode::Tree, tr("Vault tree", "Arbre du coffre"), keys(&ShowTree)))
+            .child(mode_button("nav-recent", "clock.svg", Mode::Recent, tr("Recent notes", "Notes récentes"), keys(&ShowRecent)))
+            .child(mode_button("nav-graph", "graph.svg", Mode::Graph, tr("Graph of the notes", "Graphe des notes"), keys(&ShowGraph)))
+            .child(mode_button("nav-tags", "tag.svg", Mode::Tags, "Tags", keys(&ShowTags)))
+            .child(mode_button("nav-links", "backlink.svg", Mode::Links, tr("Backlinks", "Rétroliens"), keys(&ShowLinks)))
+            .child(mode_button("nav-calendar", "i-calendar.svg", Mode::Calendar, tr("Calendar", "Calendrier"), keys(&ShowCalendar)))
             .child(div().w(px(16.)).h(px(1.)).my_1().bg(t.border))
             .child(
                 button("nav-search", "search.svg", false, t)
+                    .tooltip(tip(tr("Find or create a note", "Chercher ou créer une note"), keys(&crate::OpenPalette), t))
                     .on_click(cx.listener(|this, _, window, cx| this.open_palette("", window, cx))),
             )
             .child(
                 button("nav-new", "plus.svg", false, t)
+                    .tooltip(tip(tr("New note", "Nouvelle note"), keys(&crate::NewNote), t))
                     .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
             )
             .child(div().flex_1().w_full().when(!self.nav.native_bar, |d| d.map(crate::drag_window)))
             // Corbeille du coffre (ce qu'elle contient, pour le reprendre) et sauvegarde.
             .child(
                 button("nav-trash", "trash.svg", false, t)
+                    .tooltip(tip(tr("Trash: restore a note", "Corbeille : restaurer une note"), String::new(), t))
                     .on_click(cx.listener(|this, _, window, cx| this.open_trash(window, cx))),
             )
             .child(
                 button("nav-backup", "backup.svg", false, t)
+                    .tooltip(tip(tr("Back up the vault", "Sauvegarder le coffre"), String::new(), t))
                     .on_click(cx.listener(|this, _, window, cx| this.choose_backup(window, cx))),
             )
-            .child(button("nav-theme", "theme.svg", false, t).on_click(cx.listener(
+            .child(button("nav-theme", "theme.svg", false, t).tooltip(tip(tr("Theme", "Thème"), String::new(), t)).on_click(cx.listener(
                 |this, _, window, cx| this.choose_setting(Setting::Theme, window, cx),
             )))
             .child(
                 button("nav-help", "help.svg", false, t)
+                    .tooltip(tip(tr("Shortcuts and help", "Raccourcis et aide"), keys(&crate::ToggleHelp), t))
                     .on_click(cx.listener(|this, _, window, cx| this.set_help(true, window, cx))),
             );
 
@@ -1746,25 +1806,25 @@ impl Shell {
                     .items_center()
                     .truncate()
                     .text_size(px(12.))
-                    .text_color(t.dim)
+                    .text_color(t.soft)
                     .when(!self.nav.native_bar, |d| d.map(crate::drag_window))
                     .child(title),
             )
             .when(mode == Mode::Graph, |d| {
-                d.child(button("nav-center", "target.svg", false, t).on_click(cx.listener(
+                d.child(button("nav-center", "target.svg", false, t).tooltip(tip(tr("Show the whole graph", "Voir tout le graphe"), String::new(), t)).on_click(cx.listener(
                     |this, _, _, cx| this.graph.update(cx, |graph, cx| graph.recenter(cx)),
                 )))
             })
             .when(mode == Mode::Tree, |d| {
                 // Une note à la racine du coffre, quelle que soit la sélection.
-                d.child(button("nav-file", "file-plus.svg", false, t).on_click(cx.listener(
+                d.child(button("nav-file", "file-plus.svg", false, t).tooltip(tip(tr("New note at the root", "Nouvelle note à la racine"), String::new(), t)).on_click(cx.listener(
                     |this, _, window, cx| this.new_note_in(None, window, cx),
                 )))
-                .child(button("nav-folder", "folder-plus.svg", false, t).on_click(cx.listener(
+                .child(button("nav-folder", "folder-plus.svg", false, t).tooltip(tip(tr("New folder", "Nouveau dossier"), keys(&NewFolder), t)).on_click(cx.listener(
                     |this, _, window, cx| this.menu_do(Do::NewFolder, this.nav.sel.clone(), window, cx),
                 )))
                 // Tout replier ; si tout l'est déjà, tout déplier.
-                .child(button("nav-fold", if folded { "unfold.svg" } else { "fold.svg" }, false, t).on_click(
+                .child(button("nav-fold", if folded { "unfold.svg" } else { "fold.svg" }, false, t).tooltip(tip(if folded { tr("Unfold every folder", "Déplier tous les dossiers") } else { tr("Fold every folder", "Replier tous les dossiers") }, String::new(), t)).on_click(
                     cx.listener(|this, _, _, cx| {
                         this.fold_all();
                         cx.notify();
@@ -1773,6 +1833,7 @@ impl Shell {
             })
             .child(
                 button("nav-full", if full { "shrink.svg" } else { "expand.svg" }, false, t)
+                    .tooltip(tip(if full { tr("Back beside the note", "Revenir à côté de la note") } else { tr("Panel on the whole window", "Panneau en pleine fenêtre") }, keys(&ToggleFull), t))
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_full(window, cx))),
             );
         let list = uniform_list("nav-rows", self.nav.rows.len(), cx.processor(Self::render_rows))

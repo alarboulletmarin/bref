@@ -167,7 +167,7 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
   <ul>
     <li><b>Search inside your notes</b>: the palette finds a note by its name, then by any words in its text, and shows the line that matched. <code>Ctrl + Shift + F</code> lists every matching line of the vault.</li>
     <li><b>Replace across the vault</b>: plain text or regular expressions, the count shown before anything is written, and one command to undo it all.</li>
-    <li><b>Keyboard first</b>: one palette to find, create and switch. No toolbar, no save button.</li>
+    <li><b>Keyboard first</b>: one palette to find notes, tables, pictures and commands, create and switch. No toolbar, no save button; pointing at an icon names it, with its shortcut.</li>
     <li><b>Shortcuts you can change</b>: the help panel searches every shortcut as you type and lets you give any of them other keys; one already in use says by what, and is only taken when you ask. Menus show the shortcut of each action.</li>
   </ul>
   <h3>Your files</h3>
@@ -185,7 +185,7 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
     <li><b>Opens instantly</b>: the window is on screen in about 75 ms on the author's machine.</li>
     <li><b>Quiet status messages</b>: what just happened, or failed, shows in a corner and leaves after four seconds or on a click.</li>
     <li><b>Keeps itself current</b>: a banner says when a new version is out. On Windows, macOS and Arch, one click installs it and restarts Bref. It can be turned off.</li>
-    <li><b>Yours to dress</b>: a dozen themes, IBM Plex built in so nothing to install (or any font you have), English and French, following your system.</li>
+    <li><b>Yours to dress</b>: a dozen themes, each one readable (links and secondary text at WCAG AA contrast), IBM Plex built in so nothing to install (or any font you have), English and French, following your system.</li>
   </ul>
 
   <h2 id="install">Install</h2>
@@ -206,7 +206,7 @@ cargo install --path . --locked</code></pre>
   <div class="panel"><b>[!NOTE]</b>Linux needs a few system libraries and a Vulkan driver. <a href="https://github.com/alarboulletmarin/bref#install">Steps for each system</a>, including compiling on macOS and Windows.</div>
 
   <h2 id="docs">Documentation</h2>
-  <p>On first run Bref asks for a vault, the folder that holds your notes. That is the only setup. The essentials, <code>Cmd</code> instead of <code>Ctrl</code> on macOS:</p>
+  <p>On first run, one click creates your vault, the folder that holds your notes, in <code>Documents/Notes</code>; or open any folder, an Obsidian vault included. That is the only setup. The essentials, <code>Cmd</code> instead of <code>Ctrl</code> on macOS:</p>
 <pre class="table"><i>|</i> <b>Key</b>                <i>|</i> <b>Action</b>                                         <i>|</i>
 <i>| ------------------ | ---------------------------------------------- |</i>
 <i>|</i> Ctrl + P           <i>|</i> find by name or text, create, filter by #tag   <i>|</i>

@@ -572,7 +572,8 @@ pub fn text_runs(t: &Theme, flags: &[u16], marked: impl Fn(usize) -> bool, style
         } else if f & md::NUMBER != 0 {
             hue(0.6)
         } else if f & md::MARK != 0 && let Some(tint) = style.tint {
-            tint
+            // Sur le fond du panneau, sa teinte à 10 % : le titre se lit dans tous les thèmes.
+            crate::legible(tint, crate::blend(tint, t.bg, 0.1))
         } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
             t.accent
         } else {
@@ -1201,7 +1202,7 @@ impl Editor {
         let field = |text: &str, hint: &'static str, on: bool, fresh: bool| {
             let caret = on.then(|| div().flex_none().w(px(1.)).h(px(15.)).bg(t.text));
             let shown = match text.is_empty() {
-                true => div().text_color(t.dim).child(hint),
+                true => div().text_color(t.soft).child(hint),
                 false => div().when(fresh, |d| d.bg(t.selection)).child(text.to_string()),
             };
             let field = div().flex_1().min_w_0().h(px(26.)).px_2().rounded(px(6.)).border_1().bg(t.bg);
@@ -1213,7 +1214,7 @@ impl Editor {
         };
         let toggle = |label: &'static str, on: bool| {
             let toggle = div().flex_none().h(px(26.)).px_1p5().rounded(px(6.)).flex().items_center().cursor_pointer();
-            toggle.text_color(if on { t.accent } else { t.dim }).when(on, |d| d.bg(t.selection)).child(label)
+            toggle.text_color(if on { t.accent } else { t.soft }).when(on, |d| d.bg(t.selection)).child(label)
         };
         let count = match (find.query.is_empty(), find.hits.len()) {
             (true, _) => String::new(),
@@ -1258,7 +1259,7 @@ impl Editor {
             .items_center()
             .gap_1p5()
             .child(field(&find.query, tr("Find", "Chercher"), find.active && !find.on_with, find.fresh).on_mouse_down(MouseButton::Left, pick(false)))
-            .child(div().flex_none().text_size(px(12.)).text_color(t.dim).child(count))
+            .child(div().flex_none().text_size(px(12.)).text_color(t.soft).child(count))
             .child(toggle("Aa", find.case).on_mouse_down(MouseButton::Left, flip(0)))
             .child(toggle("\u{201c}ab\u{201d}", find.word).on_mouse_down(MouseButton::Left, flip(1)))
             .child(toggle(".*", find.regex).on_mouse_down(MouseButton::Left, flip(2)));
@@ -3334,6 +3335,10 @@ impl Editor {
                 }
                 if kind == Kind::Task(true) {
                     flags[marker..].iter_mut().for_each(|f| *f |= md::STRIKE | md::DIM);
+                    // Cochée, sa case est en gras, comme une case dans le texte ou un tableau.
+                    if let Some(at) = line[..marker].find('[') {
+                        flags[at..(at + 3).min(marker)].iter_mut().for_each(|f| *f |= md::BOLD);
+                    }
                 }
                 if let Some(label) = md::callout(line).filter(|_| own_tint.is_some()) {
                     flags[label].fill(md::BOLD | md::MARK);
@@ -3802,7 +3807,7 @@ impl Editor {
         }
         if self.content.is_empty() {
             // Le reste de la page vide (date, touches, notes à relire) est à `Shell::render_empty`.
-            label(tr("Write here…", "Écris ici…"), t.dim, window)
+            label(tr("Write here…", "Écris ici…"), t.soft, window)
                 .paint(point(o.x + px(8.), o.y + px(3.)), px(22.), window, cx)
                 .ok();
         }
@@ -3818,7 +3823,7 @@ impl Editor {
                 let hot = hover.is_some_and(|(_, over)| over == Some(i));
                 window.paint_quad(fill(bar, if hot { t.selection } else { t.code_bg }).corner_radii(px(4.)));
                 let icon = Bounds::new(bar.center() - point(px(5.), px(5.)), size(px(10.), px(10.)));
-                let color = if hot { t.accent } else { t.dim };
+                let color = if hot { t.accent } else { t.soft };
                 window.paint_svg(icon, "plus.svg".into(), TransformationMatrix::unit(), color, cx).ok();
                 if let Some(hitbox) = self.table_hitboxes.get(n * 2 + i) {
                     window.set_cursor_style(CursorStyle::PointingHand, hitbox);
@@ -3846,7 +3851,7 @@ impl Editor {
             label(&size, t.text, window)
                 .paint(point(at.x + px(8.), panel.bottom() - px(24.)), px(20.), window, cx)
                 .ok();
-            let hint = label(tr("or type 12x5", "ou tape 12x5"), t.dim, window);
+            let hint = label(tr("or type 12x5", "ou tape 12x5"), t.soft, window);
             hint.paint(point(panel.right() - px(8.) - hint.width, panel.bottom() - px(24.)), px(20.), window, cx).ok();
         }
         if focused && let Some((_, items)) = self.completion() {
@@ -3869,7 +3874,7 @@ impl Editor {
                 // Le libellé à gauche, sa précision à droite, calée sur le bord : un libellé trop
                 // long est coupé avant elle, jamais dessiné dessous.
                 let mut write = |text: &str, detail: &str| {
-                    let detail = label(detail, t.dim, window);
+                    let detail = label(detail, t.soft, window);
                     let right = at.x + panel.width - px(12.) - detail.width;
                     let room = right - at.x - px(24.);
                     let (mut cut, mut main) = (text.to_string(), label(text, t.text, window));
@@ -4038,7 +4043,7 @@ impl Render for Editor {
             .items_center()
             .bg(self.theme.bg)
             .text_size(px(12.))
-            .text_color(self.theme.dim)
+            .text_color(self.theme.soft)
             .child(self.counts());
         // Avant le dessin : les passages suivent une note modifiée pendant que la barre est ouverte.
         self.refresh_find();

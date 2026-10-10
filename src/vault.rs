@@ -114,6 +114,23 @@ pub fn save_settings(text: &str) {
     save_file("settings", text)
 }
 
+/// Dossier proposé pour un premier coffre : `Notes` dans les Documents de l'utilisateur, ou
+/// dans son dossier personnel s'il n'a pas de Documents.
+pub fn default_vault() -> Option<PathBuf> {
+    let home = env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)?;
+    let documents = home.join("Documents");
+    Some(if documents.is_dir() { documents } else { home }.join("Notes"))
+}
+
+/// Un chemin tel qu'on le montre : le dossier personnel abrégé en `~` hors de Windows.
+pub fn shown(path: &Path) -> String {
+    let home = env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
+    match home.as_deref().and_then(|home| path.strip_prefix(home).ok()) {
+        Some(rest) if !cfg!(windows) => format!("~/{}", rest.display()),
+        _ => path.display().to_string(),
+    }
+}
+
 /// Morceau d'un nom pour le tri naturel : un nombre se compare par sa valeur, avant le texte.
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum Chunk {

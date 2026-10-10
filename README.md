@@ -166,7 +166,7 @@ Bref was called encre until 0.1.4. Your notes are untouched, and the settings sa
 
 ## First run
 
-Bref asks for a **vault**: the folder that holds your notes. Pick an existing folder, or create a new one from the file dialog. That is the only setup.
+Bref asks for a **vault**: the folder that holds your notes. One click on **Start in ~/Documents/Notes** creates it there (in your home folder if you have no `Documents`; a folder already there is opened as it is), or **Open another folder…** picks an existing one, an Obsidian vault included. That is the only setup.
 
 The choice is remembered, along with the last note you had open. Change vault at any time with `Ctrl + O`.
 
@@ -207,7 +207,7 @@ The bottom right of the note shows its number of words and characters; with a se
 | `Ctrl + Shift + S` | sync the vault with git (see [Syncing a vault](#syncing-a-vault)); also **Sync the vault** in the palette |
 | `Ctrl + Q` | quit |
 
-In the palette, type to search; `Enter` opens the selected note. Notes whose name matches come first, then the notes whose text contains every word you typed (from two letters), with the line where the first word appears. If no note has that name, the last row creates it. Typing `#` lists the notes carrying a tag. Typing `folder` offers *New folder*, and `table` offers the settings of the CSV table on display (delimiter, encoding, header row, copy as, export); `diagram`, `theme`, `font` and `update` offer theirs too.
+In the palette, type to search; `Enter` opens the selected note. Notes whose name matches come first (CSV tables, pictures and diagrams are found by their file name too, `contacts.csv`), then the notes whose text contains every word you typed (from two letters), with the line where the first word appears. If no note has that name, the last row creates it. Typing `#` lists the notes carrying a tag. Commands are found by any of their words, accents ignored: typing `folder` offers *New folder*, and `table` offers the settings of the CSV table on display (delimiter, encoding, header row, copy as, export); `diagram`, `theme`, `font` and `update` offer theirs too.
 
 | Key | While editing |
 |---|---|
@@ -303,17 +303,19 @@ A previewed note only counts as opened, and moves to the top of the recent list,
 - **Folders**: the double-chevron button at the top of the tree folds every folder; when they are all folded, it unfolds them all.
 - **New note from the tree**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line. The button to the left of the folder one, at the top of the tree, creates it at the root of the vault instead, whatever is selected.
 - **New folder**: the folder button, `Ctrl + Shift + N`, or `new folder` in the palette. The field says where the folder goes.
-- **Right click** on a line for its menu: open, new note here, new folder, copy the `[[link]]`, the path or the path relative to the vault, reveal in the file explorer, duplicate (`Ctrl + D`), rename, move to the trash. A right click below the last line acts on the vault itself.
+- **Right click** on a line for its menu: open, new note here, new folder, copy the `[[link]]`, the path or the path relative to the vault, show in the file manager (Finder, Explorer), duplicate (`Ctrl + D`), rename, move to the trash. A right click below the last line acts on the vault itself.
 - **Several lines at once**: `Ctrl + click` adds a line to the selection or takes it out, `Shift + click` selects everything from the last line chosen. Dragging, duplicating, copying links or paths and moving to the trash then apply to all of them.
 - **Drag and drop**: in the tree, drag a note or a folder onto a folder to move it there, or below the last line to move it to the top of the vault. Nothing is ever overwritten: if the name is taken, the move is refused.
 - **Renaming** a note whose first line is its name rewrites that line too, so both stay in step. The `[[links]]` to it in the other notes follow, see [Notes and vault](#notes-and-vault).
 - **The trash** is the hidden folder `.trash` at the top of the vault: deleting moves the note or the folder there, and never destroys anything. To take something back, click the bin at the bottom of the rail (or type `trash` in the palette): it lists the trash, and `Enter` returns the chosen item to the top of the vault (the trash does not remember where it came from), under another name if its own is taken. Empty the trash with your file manager.
 
+Names are sorted as in a file manager: `Note 2` before `Note 10`. Pointing at an icon of the rail or of a bar names it, with its shortcut.
+
 Bref reopens with the panel as you left it.
 
 ## Appearance
 
-- **Theme**: the half-filled circle at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system.
+- **Theme**: the half-filled circle at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system. In every theme, links, secondary text and the titles of colored panels are adjusted to read at a contrast of 4.5:1 at least (WCAG AA).
 - **Fonts**: Bref carries IBM Plex Sans (text) and IBM Plex Mono (code), under the SIL Open Font License (`assets/fonts/`), so it looks the same everywhere without installing anything. Type `font` in the palette (`Ctrl + P`) to choose another font, for the app or for the code, among those installed on your system; type in the list to filter it. Ideograms and emoji, which Plex does not draw, come from a font of your system.
 - **Text size**: `Ctrl + +` and `Ctrl + -`, `Ctrl + 0` for the default. Headings and code scale with it.
 
@@ -455,7 +457,8 @@ Put the vault in a folder synced by iCloud, Dropbox, Google Drive or Syncthing: 
 - **Backup**: click the arrow into a tray at the bottom of the rail (or type `back up` in the palette) and choose a folder: Bref writes there one archive of the whole vault, trash included, named after the vault and the date (`Notes 2026-10-09.tar.gz`), numbered if that name is taken. It uses the `tar` program of the system (Linux, macOS, Windows 10 and later) and refuses a folder inside the vault.
 - **Terminal**: type `terminal` in the palette to open the terminal of your system in the folder of the vault (Windows Terminal or the console on Windows, Terminal on macOS; on Linux the one named in `$TERMINAL`, else the one of the desktop). Bref has no terminal of its own.
 - **Status messages**: the outcome of an operation (a backup saved, a note restored, a failure) shows at the bottom right, with a spinner while it runs. A message goes away after four seconds, or as soon as you click it.
-- A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) keeps its name, until you add or change a `# ` title on its first line: the file then takes that name, as in Obsidian.
+- A note opens with the cursor at the start of its body, under its title and its front matter: what you type first goes into the text, it does not rename the note.
+- A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A new note left empty leaves no file behind. A note whose file name did not already match its first line (typical of an existing vault) keeps its name, until you add or change a `# ` title on its first line: the file then takes that name, as in Obsidian.
 - `[[Groceries]]` finds the note by file name, in any subfolder, ignoring case.
 - When a note is renamed, from the tree or by changing its first line, the `[[links]]` to its old name are rewritten in every note, keeping their `|alias` and `#heading`. After a change of title, this happens when you leave the note, not at each keystroke. If another note still carries the old name, the links are left alone: they may be meant for it.
 - The vault and the notes you opened, most recent first, are remembered in a small text file (the navigation panel in a file named `layout` next to it, and the [appearance](#appearance) in `settings`):

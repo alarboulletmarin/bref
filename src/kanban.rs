@@ -266,7 +266,7 @@ fn check_box(done: bool, t: Theme) -> Div {
         .mt(px(1.))
         .rounded(px(4.))
         .border_1()
-        .border_color(if done { t.accent } else { t.dim })
+        .border_color(if done { t.accent } else { t.soft })
         .flex()
         .items_center()
         .justify_center()
@@ -494,13 +494,13 @@ impl Shell {
                     .py_1()
                     .rounded(px(6.))
                     .cursor_pointer()
-                    .text_color(t.dim)
+                    .text_color(t.soft)
                     .hover(|s| s.bg(t.bg).text_color(t.text))
                     .child(format!("+ {}", tr("Add a card", "Ajouter une carte")))
                     .on_click(cx.listener(move |this, _, window, cx| this.board_write(Slot::New(c), window, cx)))
                     .into_any_element(),
             };
-            let head = div().flex().items_center().gap_2().child(title).child(div().text_color(t.dim).child(count.to_string()));
+            let head = div().flex().items_center().gap_2().child(title).child(div().text_color(t.soft).child(count.to_string()));
             // La largeur d'une carte, relevée au dessin : celle qu'on tient garde la sienne.
             let width = self.board_card.clone();
             let measure = canvas(move |bounds, _, _| width.set(bounds.size.width), |_, _, _, _| ()).absolute().top_0().left_2().right_2().h_0();

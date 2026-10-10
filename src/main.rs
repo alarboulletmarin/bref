@@ -401,6 +401,9 @@ pub struct Theme {
     pub bg: Hsla,
     pub text: Hsla,
     pub dim: Hsla,
+    /// Texte secondaire qui reste lisible (4,5:1 sur le fond et le panneau) : libellés, aides,
+    /// compteurs. `dim` reste aux marqueurs Markdown, qu'on n'a pas besoin de lire.
+    pub soft: Hsla,
     pub accent: Hsla,
     pub selection: Hsla,
     pub code_bg: Hsla,
@@ -435,11 +438,18 @@ impl Theme {
         let system = &THEMES[if dark { 0 } else { 1 }];
         let (_, colors) = THEMES.iter().find(|t| t.0 == prefs.theme).unwrap_or(system);
         let [bg, text, dim, accent, code_bg, panel, border] = colors.map(|c| Hsla::from(rgb(c)));
+        // Le plus discret des gris entre texte et fond qui se lit encore sur l'un et l'autre fond.
+        let soft = (0..=20)
+            .map(|i| blend(text, bg, 0.5 + i as f32 * 0.025))
+            .find(|c| contrast(*c, bg) >= 4.5 && contrast(*c, panel) >= 4.5)
+            .unwrap_or(text);
         Self {
             bg,
             text,
             dim,
-            accent,
+            soft,
+            // Les liens et les tags s'écrivent dans l'accent : il doit se lire comme du texte.
+            accent: legible(legible(accent, bg), panel),
             selection: accent.opacity(if bg.l < 0.5 { 0.25 } else { 0.2 }),
             code_bg,
             panel,
@@ -447,6 +457,37 @@ impl Theme {
             size: prefs.size,
         }
     }
+}
+
+/// Luminance relative d'une couleur, au sens des WCAG.
+fn luminance(color: Hsla) -> f32 {
+    let c = color.to_rgb();
+    let linear = |x: f32| if x <= 0.03928 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) };
+    0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
+}
+
+/// Rapport de contraste de deux couleurs (WCAG) : 4,5 au moins pour un texte courant.
+pub fn contrast(a: Hsla, b: Hsla) -> f32 {
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+
+/// `color`, assombrie sur un fond clair ou éclaircie sur un fond sombre, juste assez pour se
+/// lire sur `bg` ; elle garde sa teinte.
+pub fn legible(color: Hsla, bg: Hsla) -> Hsla {
+    let step = if luminance(bg) > 0.18 { -0.02 } else { 0.02 };
+    let mut color = color;
+    while contrast(color, bg) < 4.5 && (0.0..=1.0).contains(&(color.l + step)) {
+        color.l += step;
+    }
+    color
+}
+
+/// `top` posée sur `under` avec l'opacité `share`.
+pub fn blend(top: Hsla, under: Hsla, share: f32) -> Hsla {
+    let (a, b) = (top.to_rgb(), under.to_rgb());
+    let mix = |x: f32, y: f32| x * share + y * (1. - share);
+    Hsla::from(gpui::Rgba { r: mix(a.r, b.r), g: mix(a.g, b.g), b: mix(a.b, b.b), a: 1. })
 }
 
 /// Ton d'un message d'état : il choisit son icône, et s'il part de lui-même.
@@ -1395,6 +1436,18 @@ impl Shell {
             .ok();
         })
         .detach();
+    }
+
+    /// Crée le dossier du coffre s'il n'existe pas, puis l'ouvre : un dossier déjà là est
+    /// ouvert tel quel, rien n'y est écrit.
+    fn create_vault(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        match fs::create_dir_all(&root) {
+            Ok(()) => self.set_vault(root, window, cx),
+            Err(e) => {
+                let what = tr("Cannot create the vault", "Impossible de créer le coffre");
+                self.say(Tone::Failed, format!("{what} {} : {e}", root.display()), cx);
+            }
+        }
     }
 
     fn choose_vault(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2833,13 +2886,13 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
             vec![
                 k(&GoBack, tr("Back: what was shown before, at the same place (also the mouse button, and the rail)", "Précédent : ce qui était affiché avant, au même endroit (aussi le bouton de la souris, et le rail)")),
                 k(&GoForward, tr("Forward: what was shown after going back", "Suivant : ce qui était affiché après un retour")),
-                k(&SplitPane, tr("Second pane, side by side: opens on the palette, to choose what goes there", "Second pane, côte à côte : s'ouvre sur la palette, pour choisir ce qui y va")),
-                k(&FocusLeft, tr("Go to the left pane", "Aller au pane de gauche")),
-                k(&FocusRight, tr("Go to the right pane", "Aller au pane de droite")),
-                k(&ClosePane, tr("Close the pane that has the focus", "Fermer le pane qui a la saisie")),
-                k(&palette::ConfirmAside, tr("In the palette: open the chosen note in the other pane", "Dans la palette : ouvrir la note choisie dans l'autre pane")),
-                t(&format!("{MOD}+{shift}+{click}"), tr("Open a [[link]] in the other pane", "Ouvrir un [[lien]] dans l'autre pane")),
-                t(tr("Drag from the tree", "Glisser depuis l'arbre"), tr("Onto a pane: open the file there; onto the right half of a single pane: open a second one", "Sur un pane : y ouvrir le fichier ; sur la moitié droite du seul pane : en ouvrir un second")),
+                k(&SplitPane, tr("Second pane, side by side: opens on the palette, to choose what goes there", "Second volet, côte à côte : s'ouvre sur la palette, pour choisir ce qui y va")),
+                k(&FocusLeft, tr("Go to the left pane", "Aller au volet de gauche")),
+                k(&FocusRight, tr("Go to the right pane", "Aller au volet de droite")),
+                k(&ClosePane, tr("Close the pane that has the focus", "Fermer le volet qui a la saisie")),
+                k(&palette::ConfirmAside, tr("In the palette: open the chosen note in the other pane", "Dans la palette : ouvrir la note choisie dans l'autre volet")),
+                t(&format!("{MOD}+{shift}+{click}"), tr("Open a [[link]] in the other pane", "Ouvrir un [[lien]] dans l'autre volet")),
+                t(tr("Drag from the tree", "Glisser depuis l'arbre"), tr("Onto a pane: open the file there; onto the right half of a single pane: open a second one", "Sur un volet : y ouvrir le fichier ; sur la moitié droite du seul volet : en ouvrir un second")),
                 k(&nav::ShowTree, tr("Vault tree", "Arbre du coffre")),
                 k(&nav::ShowRecent, tr("Recent notes", "Notes récentes")),
                 k(&nav::ShowGraph, tr("Graph of the notes", "Graphe des notes")),
@@ -2852,6 +2905,7 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 t(tr("Arrows / Tab", "Flèches / Tab"), tr("Select and preview / linked notes (graph)", "Sélectionner en aperçu / notes liées (graphe)")),
                 t(tr("Enter / Esc", "Entrée / Échap"), tr("Open the note / back to the note", "Ouvrir la note / revenir à la note")),
                 k(&nav::NewFolder, tr("New folder (also in the palette)", "Nouveau dossier (aussi dans la palette)")),
+                t(tr("Point at an icon", "Pointer une icône"), tr("Its name and its shortcut", "Son nom et son raccourci")),
                 t("Alt + drag", tr("Move the window from anywhere (Linux)", "Déplacer la fenêtre depuis n'importe où (Linux)")),
                 k(&nav::Rename, tr("Panel: rename", "Panneau : renommer")),
                 k(&nav::Duplicate, tr("Panel: duplicate", "Panneau : dupliquer")),
@@ -2989,11 +3043,11 @@ impl Shell {
                 .rounded(px(4.))
                 .cursor_pointer()
                 .text_size(px(11.))
-                .text_color(t.dim)
+                .text_color(t.soft)
                 .hover(|s| s.bg(t.border).text_color(t.text))
                 .child(text)
         };
-        let hint = div().absolute().left_0().top_0().text_color(t.dim).child(tr("Search the shortcuts…", "Chercher un raccourci…"));
+        let hint = div().absolute().left_0().top_0().text_color(t.soft).child(tr("Search the shortcuts…", "Chercher un raccourci…"));
         let find = div()
             .flex_none()
             .px_5()
@@ -3003,7 +3057,7 @@ impl Shell {
             .flex()
             .items_center()
             .gap_2()
-            .child(svg().path("search.svg").size(px(14.)).flex_none().text_color(t.dim))
+            .child(svg().path("search.svg").size(px(14.)).flex_none().text_color(t.soft))
             .child(
                 div()
                     .flex_1()
@@ -3071,7 +3125,7 @@ impl Shell {
                     };
                     // Sous la ligne en cours de saisie : quoi faire, ou ce qui coince.
                     let note = edit.map(|edit| match &edit.issue {
-                        None => div().text_size(px(12.)).text_color(t.dim).child(tr(
+                        None => div().text_size(px(12.)).text_color(t.soft).child(tr(
                             "Backspace: no shortcut · Esc: cancel",
                             "Retour arrière : aucun raccourci · Échap : annuler",
                         )),
@@ -3104,7 +3158,7 @@ impl Shell {
                         .gap_1()
                         .rounded(px(4.))
                         .when(chosen, |d| d.bg(t.selection.opacity(0.5)))
-                        .child(div().flex().gap_3().child(keys).child(div().flex_1().min_w_0().text_color(t.dim).child(row.effect)))
+                        .child(div().flex().gap_3().child(keys).child(div().flex_1().min_w_0().text_color(t.soft).child(row.effect)))
                         .children(note)
                 }))
         });
@@ -3137,7 +3191,7 @@ impl Shell {
             .gap_2()
             .child(logo(t))
             .child(format!("Bref {}", env!("CARGO_PKG_VERSION")))
-            .child(div().flex_1().min_w(px(200.)).text_color(t.dim).child(tr(
+            .child(div().flex_1().min_w(px(200.)).text_color(t.soft).child(tr(
                 "Fast, minimal Markdown notes, in plain files you own.",
                 "Des notes Markdown rapides et minimales, dans de simples fichiers qui t'appartiennent.",
             )))
@@ -3189,7 +3243,7 @@ impl Shell {
                             .gap_y_4()
                             .children(sections)
                             .when(none, |d| {
-                                d.child(div().text_color(t.dim).child(tr("No shortcut matches.", "Aucun raccourci ne correspond.")))
+                                d.child(div().text_color(t.soft).child(tr("No shortcut matches.", "Aucun raccourci ne correspond.")))
                             }),
                     )
                     .child(about)
@@ -3228,7 +3282,7 @@ impl Shell {
                 .gap_2()
                 .rounded(px(6.))
                 .cursor_pointer()
-                .text_color(t.dim)
+                .text_color(t.soft)
                 .hover(|s| if fill { s.text_color(t.text).bg(t.border) } else { s.text_color(t.text) })
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         };
@@ -3270,7 +3324,7 @@ impl Shell {
                 .max_w(px(380.))
                 .flex()
                 .flex_col()
-                .child(div().mb_1().text_size(px(11.)).text_color(t.dim.opacity(0.7)).child(tr("READ AGAIN", "À RELIRE")))
+                .child(div().mb_1().text_size(px(11.)).text_color(t.soft).child(tr("READ AGAIN", "À RELIRE")))
                 .children(rows)
         });
         // Dans la colonne du texte, sous sa première ligne.
@@ -3305,6 +3359,7 @@ impl Shell {
         // compteur de mots de la note lui laisse la place.
         let talk = (!said.is_empty()).then(|| {
             nav::button("comments-toggle", "i-chat.svg", !self.comments_shut, t)
+                .tooltip(nav::tip(tr("Comments of the note", "Commentaires de la note"), String::new(), t))
                 .absolute()
                 .bottom_4()
                 .right(px(if kanban::is_board(self.editor.read(cx).text()) { 84. } else { 50. }))
@@ -3340,6 +3395,7 @@ impl Shell {
         let boards = kanban::is_board(self.editor.read(cx).text()) && self.picture.is_none() && self.listing.is_none();
         let flip = boards.then(|| {
             nav::button("board-toggle", "board.svg", board, t)
+                .tooltip(nav::tip(if board { tr("Show the text", "Voir le texte") } else { tr("Show the board", "Voir le tableau") }, String::new(), t))
                 .absolute()
                 .bottom_4()
                 // Toujours à la même place, tableau ou texte : à gauche de la copie.
@@ -3377,7 +3433,7 @@ impl Shell {
                             window.focus(&this.editor.focus_handle(cx));
                         }))),
                 )
-                .child(div().text_color(if said.is_empty() { t.dim } else { t.text }).child(match said.is_empty() {
+                .child(div().text_color(if said.is_empty() { t.soft } else { t.text }).child(match said.is_empty() {
                     true => tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string(),
                     false => said.to_string(),
                 }))
@@ -3388,7 +3444,7 @@ impl Shell {
         });
         let comments = (!said.is_empty() && !self.comments_shut).then(|| {
             let title = format!("{} ({})", tr("Comments", "Commentaires"), said.len());
-            let shut = nav::button("comments-shut", "close.svg", false, t).on_click(cx.listener(|this, _, _, cx| {
+            let shut = nav::button("comments-shut", "close.svg", false, t).tooltip(nav::tip(tr("Close", "Fermer"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {
                 this.comments_shut = true;
                 cx.notify();
             }));
@@ -3408,10 +3464,11 @@ impl Shell {
                 .flex_col()
                 .gap_2()
                 .overflow_y_scroll()
-                .child(div().flex().items_center().child(div().flex_1().text_color(t.dim).child(title)).child(shut))
+                .child(div().flex().items_center().child(div().flex_1().text_color(t.soft).child(title)).child(shut))
                 .children(cards)
         });
         let copy = icon_button("copy-all", if self.copied { "check.svg" } else { "copy.svg" }, t)
+            .tooltip(nav::tip(tr("Copy the note", "Copier la note"), keys::of(cx, &CopyAll), t))
             .absolute()
             .bottom_4()
             .right_4()
@@ -3665,14 +3722,18 @@ impl Render for Shell {
                 )
                 .child(
                     div()
-                        .text_color(t.dim)
+                        .text_color(t.soft)
                         .child(tr(
                             "Your notes live in a folder of Markdown files: the vault.",
                             "Tes notes vivent dans un dossier de fichiers Markdown : le coffre.",
                         )),
                 )
-                .child(
+                // Le plus court chemin d'abord : un coffre tout prêt, d'un clic, sans fenêtre de
+                // sélection ni dossier à créer soi-même.
+                .children(vault::default_vault().map(|place| {
                     div()
+                        .id("welcome-create")
+                        .debug_selector(|| "welcome-create".into())
                         .mt_4()
                         .px_4()
                         .py_2()
@@ -3681,11 +3742,20 @@ impl Render for Shell {
                         .text_color(t.bg)
                         .cursor_pointer()
                         .hover(|s| s.opacity(0.9))
-                        .child(tr("Open or create a vault", "Ouvrir ou créer un coffre"))
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, _, window, cx| this.choose_vault(window, cx)),
-                        ),
+                        .child(format!("{} {}", tr("Start in", "Commencer dans"), vault::shown(&place)))
+                        .on_click(cx.listener(move |this, _, window, cx| this.create_vault(place.clone(), window, cx)))
+                }))
+                .child(
+                    div()
+                        .id("welcome-open")
+                        .px_3()
+                        .py_1()
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .text_color(t.accent)
+                        .hover(|s| s.bg(t.border))
+                        .child(tr("Open another folder…", "Ouvrir un autre dossier…"))
+                        .on_click(cx.listener(|this, _, window, cx| this.choose_vault(window, cx))),
                 )
                 .child(
                     div()
@@ -3699,12 +3769,12 @@ impl Render for Shell {
                         .child(tr("Clone a vault from a git address…", "Cloner un coffre depuis une adresse git…"))
                         .on_click(cx.listener(|this, _, window, cx| this.ask_clone(window, cx))),
                 )
-                .child(div().text_size(px(12.)).text_color(t.dim).child(format!(
+                .child(div().text_size(px(12.)).text_color(t.soft).child(format!(
                     "{} · {}",
                     keys::of(cx, &OpenVault),
                     tr(
-                        "you can create a new folder from the file dialog",
-                        "un nouveau dossier peut être créé depuis la fenêtre de sélection",
+                        "an existing Obsidian vault works as it is",
+                        "un coffre Obsidian existant fonctionne tel quel",
                     )
                 )))
                 // L'adresse à cloner se demande ici aussi, sans coffre.
@@ -3788,10 +3858,10 @@ impl Render for Shell {
             let toasts = self.toasts.iter().map(|toast| {
                 let id = toast.id;
                 let (icon, color) = match toast.tone {
-                    Tone::Info => ("info.svg", t.dim),
+                    Tone::Info => ("info.svg", t.soft),
                     Tone::Done => ("check.svg", rgb(0x3fa46a).into()),
                     Tone::Failed => ("alert.svg", rgb(0xd9483b).into()),
-                    Tone::Busy => ("spinner.svg", t.dim),
+                    Tone::Busy => ("spinner.svg", t.soft),
                 };
                 let icon = svg().path(icon).size(px(14.)).flex_none().text_color(color);
                 let icon = match toast.tone {
@@ -3808,7 +3878,7 @@ impl Render for Shell {
                     .cursor_pointer()
                     .child(icon)
                     .child(div().min_w_0().child(toast.text.clone()))
-                    .child(svg().path("close.svg").size(px(14.)).flex_none().text_color(t.dim))
+                    .child(svg().path("close.svg").size(px(14.)).flex_none().text_color(t.soft))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
@@ -3856,7 +3926,7 @@ impl Render for Shell {
                                 .path("close.svg")
                                 .size(px(14.))
                                 .flex_none()
-                                .text_color(t.dim)
+                                .text_color(t.soft)
                                 .cursor_pointer()
                                 .hover(|s| s.text_color(t.text))
                                 .on_mouse_down(
@@ -7118,6 +7188,43 @@ mod tests {
         assert_eq!(open, (0, 0.4, vec![Some(left.clone()), Some(right.clone())]));
         cx.simulate_input("x");
         assert_eq!(shell.read_with(cx, |s, cx| s.panes[0].editor.read(cx).text().to_string()), "# Gauche\nx");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Dans chaque thème, le texte secondaire, l'accent (liens, tags) et le titre d'un panneau
+    /// `[!TIP]` se lisent : 4,5:1 au moins (WCAG AA).
+    #[test]
+    fn every_theme_reads() {
+        for (name, _) in THEMES {
+            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+            assert!(contrast(t.soft, t.bg) >= 4.5 && contrast(t.soft, t.panel) >= 4.5, "{name}: soft");
+            assert!(contrast(t.accent, t.bg) >= 4.5, "{name}: accent");
+            for h in [0.38, 0.75, 0.09, 0., 0.58] {
+                let tint = Hsla { h, s: 0.7, l: 0.5, a: 1. };
+                let under = blend(tint, t.bg, 0.1);
+                assert!(contrast(legible(tint, under), under) >= 4.5, "{name}: panel {h}");
+            }
+        }
+    }
+
+    /// Sans coffre, l'accueil en crée un d'un clic, dans `Notes` du dossier personnel.
+    #[gpui::test]
+    fn starts_in_a_new_vault(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-start-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let _config = isolated_config(&root);
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(None, Vec::new(), window, cx));
+        cx.run_until_parked();
+        let at = cx.debug_bounds("welcome-create").unwrap().center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        cx.run_until_parked();
+        let notes = root.join(".config").join("Notes");
+        assert!(notes.is_dir());
+        assert_eq!(shell.read_with(cx, |s, _| s.vault.clone()), Some(notes.clone()));
+        assert_eq!(vault::shown(&notes), format!("~/{}", Path::new("Notes").display()));
         let _ = fs::remove_dir_all(&root);
     }
 
