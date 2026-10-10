@@ -2713,14 +2713,21 @@ impl Shell {
                 // à garder dans `Note` si cela se remarque.
                 lower: n.body.to_lowercase(),
             })
+            // Les autres fichiers du coffre (tableaux, images, schémas) se trouvent aussi par leur nom.
+            .chain(self.images.iter().map(|path| Entry {
+                name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                path: path.clone(),
+                ..Entry::default()
+            }))
             .collect();
         let theme = self.theme;
         let updates = self.prefs.updates;
         let installable = self.update.as_ref().filter(|r| r.asset.is_some()).map(|r| r.version.clone());
         let table = self.shown_sheet().is_some();
+        let swap = !self.swapped.is_empty();
         let palette = cx.new(|cx| match lines {
             true => Palette::search(entries, theme, cx),
-            false => Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table),
+            false => Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table).with_undo_swap(swap),
         });
         cx.subscribe_in(&palette, window, |this, palette, event, window, cx| {
             this.palette = None;

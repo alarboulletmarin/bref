@@ -237,6 +237,8 @@ pub struct Palette {
     installable: Option<String>,
     /// Un tableau est affiché : ses réglages se cherchent ici.
     table: bool,
+    /// Un remplacement dans le coffre peut être défait.
+    undo_swap: bool,
     /// Marge au-dessus du cadre.
     top: Pixels,
     /// Défilement de la ligne de saisie, et l'abscisse de son curseur à la dernière image :
@@ -298,6 +300,34 @@ fn rows_with(lower: &str, query: &str) -> Vec<usize> {
     rows
 }
 
+/// Le texte en minuscules, sans ses accents : « thème » se trouve en tapant « theme ».
+fn fold(text: &str) -> String {
+    text.to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'à' | 'â' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'î' | 'ï' => 'i',
+            'ô' | 'ö' => 'o',
+            'ù' | 'û' | 'ü' => 'u',
+            'ç' => 'c',
+            c => c,
+        })
+        .collect()
+}
+
+/// Une commande répond à la recherche quand son libellé la contient, ou quand chaque mot tapé
+/// commence un de ses mots (`new fol` : « New folder »). Pas de sous-séquence, comme pour les
+/// notes : `plan` ramènerait « Annuler le remplacement ».
+pub fn command(query: &str, label: &str) -> bool {
+    let (query, label) = (fold(query), fold(label));
+    if label.contains(query.trim()) {
+        return true;
+    }
+    let words: Vec<&str> = label.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    query.split_whitespace().all(|typed| words.iter().any(|word| word.starts_with(typed)))
+}
+
 /// Score de correspondance : sous-chaîne d'abord, sinon sous-séquence.
 pub fn fuzzy(query: &str, name: &str) -> Option<i32> {
     if let Some(i) = name.find(query) {
@@ -326,6 +356,7 @@ impl Palette {
             updates: None,
             installable: None,
             table: false,
+            undo_swap: false,
             top: px(72.),
             scroll: gpui::ScrollHandle::new(),
             caret: Default::default(),
@@ -339,6 +370,13 @@ impl Palette {
     pub fn with_updates(mut self, on: bool, installable: Option<String>) -> Self {
         self.updates = Some(on);
         self.installable = installable;
+        self.refresh();
+        self
+    }
+
+    /// Propose de défaire le dernier remplacement dans le coffre, s'il y en a un.
+    pub fn with_undo_swap(mut self, possible: bool) -> Self {
+        self.undo_swap = possible;
         self.refresh();
         self
     }
@@ -493,44 +531,47 @@ impl Palette {
             items.push(Item::Create);
         }
         for (label, item) in [(vault_label(), Item::Vault), (help_label(), Item::Help)] {
-            if fuzzy(&q, &label.to_lowercase()).is_some() {
+            if command(&q, label) {
                 items.push(item);
             }
         }
         // Comme les réglages : proposés seulement quand on les cherche.
         for (label, item) in [(diagram_label(), Item::Diagram), (folder_label(), Item::Folder), (import_label(), Item::Import)] {
-            if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
+            if !q.is_empty() && command(&q, label) {
                 items.push(item);
             }
         }
-        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (undo_swap_label(), Item::UndoSwap), (board_label(), Item::Board), (today_label(), Item::Today), (back_label(), Item::Back), (forward_label(), Item::Forward), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (sync_label(), Item::Sync), (clone_label(), Item::CloneVault), (terminal_label(), Item::Terminal), (capture_label(), Item::CaptureKey)] {
-            if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
+        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (board_label(), Item::Board), (today_label(), Item::Today), (back_label(), Item::Back), (forward_label(), Item::Forward), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (sync_label(), Item::Sync), (clone_label(), Item::CloneVault), (terminal_label(), Item::Terminal), (capture_label(), Item::CaptureKey)] {
+            if !q.is_empty() && command(&q, label) {
                 items.push(item);
             }
+        }
+        if self.undo_swap && !q.is_empty() && command(&q, undo_swap_label()) {
+            items.push(Item::UndoSwap);
         }
         if let Some(version) = &self.installable
             && !q.is_empty()
-            && fuzzy(&q, &install_label(version).to_lowercase()).is_some()
+            && command(&q, &install_label(version))
         {
             items.push(Item::Install);
         }
         if let Some(on) = self.updates
             && !q.is_empty()
-            && fuzzy(&q, &updates_label(on).to_lowercase()).is_some()
+            && command(&q, updates_label(on))
         {
             items.push(Item::Updates);
         }
-        if self.updates.is_some() && !q.is_empty() && fuzzy(&q, &check_label().to_lowercase()).is_some() {
+        if self.updates.is_some() && !q.is_empty() && command(&q, check_label()) {
             items.push(Item::Check);
         }
         if self.table && !q.is_empty() {
             items.extend(
-                Pick::ALL.into_iter().filter(|p| fuzzy(&q, &p.label().to_lowercase()).is_some()).map(Item::Table),
+                Pick::ALL.into_iter().filter(|p| command(&q, p.label())).map(Item::Table),
             );
         }
         // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
         for setting in [Setting::Theme, Setting::Font, Setting::Mono] {
-            if !q.is_empty() && fuzzy(&q, &setting.label().to_lowercase()).is_some() {
+            if !q.is_empty() && command(&q, setting.label()) {
                 items.push(Item::Setting(setting));
             }
         }
@@ -861,7 +902,7 @@ impl Render for Palette {
 
 #[cfg(test)]
 mod tests {
-    use super::{contains_all, fuzzy, rows_with, snippet, snippet_at};
+    use super::{command, contains_all, fuzzy, rows_with, snippet, snippet_at};
 
     #[test]
     fn finds_text_with_all_the_words() {
@@ -895,5 +936,16 @@ mod tests {
         assert!(fuzzy("crs", "courses") < fuzzy("ours", "courses"));
         assert_eq!(fuzzy("xyz", "courses"), None);
         assert!(fuzzy("", "courses").is_some());
+    }
+
+    #[test]
+    fn finds_commands_by_words() {
+        assert!(command("folder", "New folder"));
+        assert!(command("new fol", "New folder"));
+        assert!(command("theme", "Thème…"));
+        assert!(command("", "Change vault…"));
+        // Plus de sous-séquence : des lettres éparses ne ramènent pas une commande sans rapport.
+        assert!(!command("plan", "Annuler le remplacement dans le coffre"));
+        assert!(!command("nvf", "New folder"));
     }
 }
