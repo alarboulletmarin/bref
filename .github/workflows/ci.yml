@@ -2,7 +2,7 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   # By hand on any branch: `gh workflow run CI --ref <branch>`.
   workflow_dispatch:
