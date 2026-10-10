@@ -1062,7 +1062,7 @@ impl Shell {
     }
 
     /// Menu contextuel, par-dessus toute la fenêtre : un clic ailleurs le ferme.
-    pub fn render_menu(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+    pub fn render_menu(&self, _: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         let menu = self.menu.as_ref()?;
         let t = self.theme;
         let is_dir = menu.target.as_ref().is_none_or(|p| self.dirs.contains(p));
@@ -1123,23 +1123,7 @@ impl Shell {
             }
         }
         groups.retain(|g| !g.is_empty());
-        let count: usize = groups.iter().map(Vec::len).sum();
-        let lines = (groups.len() - 1) as f32;
-        // Le menu reste dans la fenêtre, même ouvert près d'un bord.
-        let view = window.viewport_size();
-        // Assez large pour le plus long libellé et son raccourci : rien n'est coupé.
-        // ponytail: largeur estimée au nombre de caractères ; mesurer le texte si une police
-        // nettement plus large que Plex est choisie (le libellé serait alors coupé, pas débordant).
-        let needed = |(label, what): &(&'static str, Do)| {
-            let keys = what.keys(cx).chars().count() as f32;
-            label.chars().count() as f32 * 7.8 + if keys > 0. { keys * 6.8 + 20. } else { 0. }
-        };
-        let widest = groups.iter().flatten().map(needed).fold(0., f32::max);
-        let (width, height) = (px((widest + 36.).max(230.)), px(28. * count as f32 + 9. * lines + 10.));
-        let at = point(
-            (menu.at.x - self.nav.left).min(view.width - self.nav.left * 2. - width - px(8.)),
-            (menu.at.y - self.nav.left).min(view.height - self.nav.left * 2. - height - px(8.)),
-        );
+        let at = menu.at;
         let target = menu.target.clone();
         let entry = |(label, what): (&'static str, Do), cx: &mut Context<Self>| {
             let target = target.clone();
@@ -1153,10 +1137,10 @@ impl Shell {
                 .rounded(px(5.))
                 .hover(|s| s.bg(t.selection))
                 .when(matches!(what, Do::Trash), |d| d.text_color(t.accent))
-                // Un libellé plus long que le menu est coupé, jamais débordant ; son raccourci,
-                // plus discret, garde sa place à droite.
-                .child(div().flex_1().min_w_0().truncate().child(label))
-                .child(div().flex_none().ml_2().text_size(px(11.5)).text_color(t.dim).child(what.keys(cx)))
+                // Le libellé en entier, puis son raccourci, plus discret, calé à droite : c'est le
+                // menu qui prend la largeur qu'il leur faut.
+                .child(div().flex_1().whitespace_nowrap().child(label))
+                .child(div().flex_none().ml_4().whitespace_nowrap().text_size(px(11.5)).text_color(t.dim).child(what.keys(cx)))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {
@@ -1186,12 +1170,11 @@ impl Shell {
                 .occlude()
                 .on_mouse_down(MouseButton::Left, close())
                 .on_mouse_down(MouseButton::Right, close())
-                .child(
+                // Le menu a la largeur de son plus long libellé avec son raccourci, quelle que
+                // soit la police, et reste dans la fenêtre, même ouvert près d'un bord.
+                .child(gpui::anchored().position(at).snap_to_window_with_margin(px(8.)).child(
                     div()
-                        .absolute()
-                        .left(at.x)
-                        .top(at.y)
-                        .w(width)
+                        .min_w(px(230.))
                         .py(px(5.))
                         .bg(t.panel)
                         .border_1()
@@ -1205,7 +1188,7 @@ impl Shell {
                             Animation::new(Duration::from_millis(110)).with_easing(ease_out_quint()),
                             |menu, delta| menu.opacity(delta),
                         ),
-                ),
+                )),
         )
     }
 
