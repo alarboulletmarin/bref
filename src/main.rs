@@ -518,9 +518,8 @@ struct Shell {
     board_field: Option<(kanban::Slot, Entity<kanban::Field>)>,
     /// Le tableau reçoit la saisie à la place de la note qu'il cache.
     board_focus: FocusHandle,
-    /// Page liste affichée à la place de la note : le dossier, la colonne qui la trie (0 : le
-    /// nom de la note) et si c'est à rebours.
-    listing: Option<(PathBuf, usize, bool)>,
+    /// Page liste affichée à la place de la note.
+    listing: Option<nav::Listing>,
     /// Dernier remplacement dans le coffre, pour le défaire : chaque note réécrite, son texte
     /// d'avant et celui d'après.
     swapped: Vec<(PathBuf, Arc<str>, String)>,
@@ -1973,7 +1972,8 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
                 ("Alt + drag".into(), tr("Move the window from anywhere (Linux)", "Déplacer la fenêtre depuis n'importe où (Linux)")),
                 (format!("F2 / {} / {}", m("D"), tr("Delete", "Suppr")), tr("Rename / duplicate / move to the trash", "Renommer / dupliquer / mettre à la corbeille")),
                 (format!("{} / Shift+{}", m(tr("click", "clic")), tr("click", "clic")), tr("Select several rows: move, duplicate, trash them together", "Sélectionner plusieurs lignes : les déplacer, dupliquer, jeter ensemble")),
-                (tr("Right click", "Clic droit").into(), tr("Copy the link or the path, set an icon, show a folder as a list…", "Copier le lien ou le chemin, donner une icône, afficher un dossier en liste…")),
+                (tr("Right click", "Clic droit").into(), tr("Copy the link or the path, set an icon, show a folder or a tag as a list…", "Copier le lien ou le chemin, donner une icône, afficher un dossier ou un tag en liste…")),
+                (tr("In a list", "Dans une liste").into(), tr("Type to filter (key:text for one column), click a cell to rewrite it", "Taper pour filtrer (clé:texte pour une colonne), cliquer une cellule pour la réécrire")),
                 (tr("Drag a node", "Glisser un nœud").into(), tr("Move it in the graph, linked notes follow", "Le déplacer dans le graphe, les notes liées suivent")),
             ],
         ),
@@ -2324,6 +2324,11 @@ impl Render for Shell {
             }
             if !cx.has_active_drag() {
                 self.board_drag = None;
+            }
+            // La page liste refermée avec la saisie dans son filtre ou une de ses cellules : plus
+            // rien ne la reçoit, elle revient à la note.
+            if self.listing.is_none() && window.focused(cx).is_none() {
+                window.focus(&self.editor.focus_handle(cx));
             }
             if !board {
                 self.board_field = None;
@@ -3638,20 +3643,48 @@ mod tests {
         fs::remove_file(root.join("Zoo B.md")).unwrap();
         settle(cx);
 
-        // Page liste : un dossier montré en table de ses notes, une colonne par clé de leurs
-        // en-têtes ; un clic sur une colonne trie, la note choisie s'ouvre.
+        // Page liste : un dossier ou un tag montré en table de ses notes, une colonne par clé de
+        // leurs en-têtes ; un clic sur une colonne trie, la frappe filtre, un clic sur une
+        // cellule la réécrit dans l'en-tête de la note, la note choisie s'ouvre.
         fs::create_dir_all(root.join("Livres")).unwrap();
         fs::write(root.join("Livres/Dune.md"), "---\nauteur: Herbert\nnote: 9\n---\n# Dune\n").unwrap();
-        fs::write(root.join("Livres/Emma.md"), "---\nauteur: Austen\nnote: 10\n---\n# Emma\n").unwrap();
+        fs::write(root.join("Livres/Emma.md"), "---\nauteur: Austen\nnote: 10\n---\n# Emma\n\n#classique\n").unwrap();
         settle(cx);
         shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::List, Some(root.join("Livres")), window, cx));
-        let listed = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.listed().map(|(keys, rows)| (keys, rows.into_iter().map(|(_, cells)| cells[0].clone()).collect::<Vec<_>>())));
+        let listed = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.listed(cx).map(|(keys, rows)| (keys, rows.into_iter().map(|(_, cells)| cells[0].clone()).collect::<Vec<_>>())));
         assert_eq!(listed(cx), Some((vec!["Note".to_string(), "auteur".into(), "note".into()], vec!["Dune".to_string(), "Emma".into()])));
         shell.update(cx, |s, cx| s.sort_listing(1, cx));
         assert_eq!(listed(cx).unwrap().1, ["Emma", "Dune"]);
         shell.update(cx, |s, cx| s.sort_listing(2, cx));
         shell.update(cx, |s, cx| s.sort_listing(2, cx));
         assert_eq!(listed(cx).unwrap().1, ["Emma", "Dune"]);
+        // Ce qu'on tape filtre, dans toutes les colonnes ou dans celle qu'on nomme ; Échap le vide.
+        cx.run_until_parked();
+        cx.simulate_input("auteur:her");
+        assert_eq!(listed(cx).unwrap().1, ["Dune"]);
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("aus");
+        assert_eq!(listed(cx).unwrap().1, ["Emma"]);
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert_eq!(listed(cx).unwrap().1, ["Emma", "Dune"]);
+        // Un clic sur une cellule l'ouvre ; validée, seule cette clé change dans le fichier.
+        let cell = cx.debug_bounds("list-cell-1-2").unwrap().center();
+        cx.simulate_click(cell, gpui::Modifiers::none());
+        cx.simulate_keystrokes("backspace");
+        cx.simulate_input("7.5");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(fs::read_to_string(root.join("Livres/Dune.md")).unwrap(), "---\nauteur: Herbert\nnote: 7.5\n---\n# Dune\n");
+        // Triée par note à rebours : 10 avant 7.5 ; Échap dans une cellule ne change rien.
+        assert_eq!(listed(cx).unwrap().1, ["Emma", "Dune"]);
+        shell.update_in(cx, |s, window, cx| s.list_write(root.join("Livres/Emma.md"), "auteur".into(), window, cx));
+        cx.simulate_input(" Jane");
+        cx.simulate_keystrokes("escape");
+        assert!(fs::read_to_string(root.join("Livres/Emma.md")).unwrap().contains("auteur: Austen\n"));
+        // Un tag se liste comme un dossier.
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::List, Some(PathBuf::from("#classique")), window, cx));
+        assert_eq!(listed(cx).unwrap().1, ["Emma"]);
         shell.update(cx, |s, cx| s.open_note(&root.join("Livres/Dune.md"), cx));
         assert!(shell.read_with(cx, |s, _| s.listing.is_none()) && text(cx).ends_with("# Dune\n"));
         shell.update(cx, |s, cx| s.open_note(&here, cx));

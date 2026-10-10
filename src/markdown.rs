@@ -953,6 +953,51 @@ pub fn list_table(notes: &[&str]) -> (Vec<String>, Vec<Vec<String>>) {
     (keys, rows)
 }
 
+/// La note une fois la clé `key` de son en-tête YAML mise à `value` ; rien d'autre ne change
+/// dans le fichier. Une clé absente s'ajoute à la fin de l'en-tête, créé au besoin ; une valeur
+/// vide retire la clé, et l'en-tête s'il n'y reste rien. Une liste (`[a, b]` ou à tirets) reste
+/// une liste, écrite en ligne.
+pub fn set_front(text: &str, key: &str, value: &str) -> String {
+    let value = value.trim();
+    let block = front_matter(text);
+    if block == 0 {
+        return if value.is_empty() { text.to_string() } else { format!("---\n{key}: {value}\n---\n{text}") };
+    }
+    let lines: Vec<&str> = text[..block].split_inclusive('\n').collect();
+    let rest_of = |line: &str| Some(line.strip_prefix(key)?.strip_prefix(':')?.trim().to_string());
+    // La clé tient sur sa ligne, plus celles de sa liste à tirets.
+    let (first, rest) = match lines.iter().enumerate().skip(1).find_map(|(i, line)| Some((i, rest_of(line)?))) {
+        Some(found) => found,
+        None if value.is_empty() => return text.to_string(),
+        None => {
+            let close = block - lines[lines.len() - 1].len();
+            return format!("{}{key}: {value}\n{}", &text[..close], &text[close..]);
+        }
+    };
+    let dashes = if rest.is_empty() { lines[first + 1..].iter().take_while(|line| line.trim_start().starts_with("- ")).count() } else { 0 };
+    let end = if lines[first].ends_with("\r\n") { "\r\n" } else { "\n" };
+    let written = match (value.is_empty(), dashes > 0 || rest.starts_with('[')) {
+        (true, _) => String::new(),
+        (_, true) => format!("{key}: [{}]{end}", value.split(',').map(str::trim).filter(|v| !v.is_empty()).collect::<Vec<_>>().join(", ")),
+        (_, false) => format!("{key}: {value}{end}"),
+    };
+    let head: String = lines[..first].concat() + &written + &lines[first + 1 + dashes..].concat();
+    // Il ne reste que l'ouverture et la clôture : plus d'en-tête.
+    let emptied = head.lines().count() == 2;
+    format!("{}{}", if emptied { "" } else { &head }, &text[block..])
+}
+
+/// La ligne d'une table passe le filtre : le texte est cherché dans toutes ses cellules, ou,
+/// écrit `clé:texte`, dans la colonne de cette clé ; sans la casse.
+pub fn row_kept(keys: &[String], cells: &[String], filter: &str) -> bool {
+    let filter = filter.trim().to_lowercase();
+    let column = filter.split_once(':').and_then(|(key, word)| Some((keys.iter().rposition(|k| k.to_lowercase() == key.trim())?, word.trim().to_string())));
+    match column {
+        Some((at, word)) => cells.get(at).is_some_and(|cell| cell.to_lowercase().contains(&word)),
+        None => cells.iter().any(|cell| cell.to_lowercase().contains(&filter)),
+    }
+}
+
 /// Ordre de deux cellules d'une table : les nombres par leur valeur, le reste sans la casse ;
 /// une cellule vide vient après les autres.
 pub fn cell_order(a: &str, b: &str) -> std::cmp::Ordering {
@@ -1110,6 +1155,30 @@ pub fn counts(text: &str) -> (usize, usize) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sets_a_front_matter_key() {
+        let note = "---\nauteur: Herbert\ntags: [sf, roman]\nlu:\n  - 2020\n  - 2023\n---\n# Dune\n\nauteur: pas ici\n";
+        // Une seule clé change, le reste du fichier est le même à l'octet près.
+        assert_eq!(set_front(note, "auteur", " Frank Herbert "), note.replacen("auteur: Herbert", "auteur: Frank Herbert", 1));
+        assert_eq!(set_front(note, "auteur", "Herbert"), note);
+        // Une liste reste une liste, en ligne.
+        assert_eq!(set_front(note, "tags", "sf,classique"), note.replace("[sf, roman]", "[sf, classique]"));
+        assert_eq!(set_front(note, "lu", "2024"), note.replace("lu:\n  - 2020\n  - 2023\n", "lu: [2024]\n"));
+        // Clé absente : ajoutée à la fin de l'en-tête, créé s'il n'y en a pas ; vide : rien.
+        assert_eq!(set_front(note, "note", "9"), note.replace("---\n# Dune", "note: 9\n---\n# Dune"));
+        assert_eq!(set_front("# Emma\n", "note", "10"), "---\nnote: 10\n---\n# Emma\n");
+        assert_eq!(set_front("# Emma\n", "note", " "), "# Emma\n");
+        // Valeur vidée : la clé part, et l'en-tête avec sa dernière clé.
+        assert_eq!(set_front(note, "lu", ""), note.replace("lu:\n  - 2020\n  - 2023\n", ""));
+        assert_eq!(set_front("---\nnote: 9\n---\n# Emma\n", "note", ""), "# Emma\n");
+        assert_eq!(set_front("---\r\nnote: 9\r\n---\r\n# Emma", "note", "8"), "---\r\nnote: 8\r\n---\r\n# Emma");
+
+        let keys = ["Note".to_string(), "auteur".into(), "note".into()];
+        let row = ["Dune".to_string(), "Herbert".into(), "9".into()];
+        assert!(row_kept(&keys, &row, "") && row_kept(&keys, &row, "herb") && row_kept(&keys, &row, " Auteur: HER "));
+        assert!(!row_kept(&keys, &row, "note:herb") && !row_kept(&keys, &row, "austen") && row_kept(&keys, &row, "note:9"));
+    }
+
     use super::*;
 
     #[test]
