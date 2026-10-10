@@ -26,7 +26,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas like Excalidraw's. Each diagram is an SVG file in your vault, shown in your notes.
 - **CSV and TSV files, edited in place**: a `.csv` or `.tsv` in the vault opens in a grid. The encoding (UTF-8, UTF-16, ISO-8859-1, Windows-1252) and the delimiter (comma, semicolon, tab, pipe…) are detected and can be changed; select cells with the keyboard or the mouse, copy, paste, export, and what you change is written straight into the file. A million rows are parsed in under a tenth of a second on the author's machine.
 - **Keyboard first**: one palette to find, create and switch notes, and a shortcut for every view. No toolbar.
-- **Shortcuts you can change**: the help panel (`F1`) lists every shortcut, searches them as you type, and lets you give any of them other keys. A combination already in use says by what, and is only taken when you ask.
+- **Shortcuts you can change**: the help panel (`F1`) lists every shortcut, searches them as you type, and lets you give any of them other keys. The menus show, beside each action, the shortcut that does the same. A combination already in use says by what, and is only taken when you ask.
 - **No save button**: notes are written to disk as you type, and named after their first line.
 - **Daily note**: one key opens the note of the day, or creates it.
 - **Word count**: the bottom of the note shows its words and characters, or those of the selection.
@@ -225,6 +225,7 @@ The shortcuts in this README are the default ones; the help panel (`F1`) always 
 - A combination already used where the action applies is not taken: the row says by which action, and `Enter` (**Replace**) gives it to the new one, the other being left without a shortcut. The same keys in two views that never meet (a table and a diagram) are not a conflict.
 - A key alone that types text, and the keys the text and the views need (`Enter`, `Tab`, the arrows…), are refused, with the reason. A combination your system usually keeps for itself is accepted with a warning.
 - A changed row is highlighted and has a **default** button; **Reset all**, at the top of the panel, puts every shortcut back.
+- The right-click menus and the palette show the keys in effect next to each action that has a shortcut, so a change made here shows there too.
 - Rows without a button are not key bindings (a click, a palette command, something you type): the search finds them, but they cannot be changed.
 
 Only what you changed is kept, one `action=keys` line each, in the `keys` file of the configuration folder (`~/.config/bref/` on Linux), next to `settings`. `secondary` stands for `Cmd` on macOS and `Ctrl` elsewhere. A line that cannot be used (unknown action, unreadable keys, keys already taken) is ignored and reported at launch; the default stays.

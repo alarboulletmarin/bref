@@ -5894,6 +5894,21 @@ mod tests {
         cx.simulate_keystrokes(back);
         assert_eq!(seen(cx), on_note(&hist_a));
 
+        // Les menus montrent, à côté de chaque action, le raccourci qui fait la même chose :
+        // celui en vigueur, et rien pour une action qui n'en a pas.
+        let keys = |cx: &mut gpui::VisualTestContext, what: nav::Do| cx.update(|_, cx| what.keys(cx));
+        assert_eq!(keys(cx, nav::Do::Rename), "F2");
+        assert_eq!(keys(cx, nav::Do::Duplicate), format!("{MOD}+D"));
+        assert_eq!(keys(cx, nav::Do::Bold), format!("{MOD}+B"));
+        assert_eq!(keys(cx, nav::Do::OpenLink), format!("{MOD}+clic"));
+        assert_eq!(keys(cx, nav::Do::Icon), "");
+        shell.update(cx, |s, cx| s.key_set("nav::Rename", "f6".into(), &[], cx));
+        assert_eq!(keys(cx, nav::Do::Rename), "F6");
+        shell.update(cx, |s, cx| s.key_set("nav::Rename", String::new(), &[], cx));
+        assert_eq!(keys(cx, nav::Do::Rename), "");
+        shell.update(cx, |s, cx| s.key_reset(None, cx));
+        assert_eq!(keys(cx, nav::Do::Rename), "F2");
+
         // Deux panes côte à côte.
         let pane = |name: &str| root.join(format!("Pane {name}.md"));
         for name in ["A", "B", "D"] {

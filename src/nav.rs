@@ -101,6 +101,33 @@ pub enum Do {
     CopyAddress,
 }
 
+impl Do {
+    /// Le raccourci qui fait la même chose que cette entrée de menu, tel qu'il est en vigueur ;
+    /// rien quand l'action n'en a pas.
+    pub fn keys(self, cx: &gpui::App) -> String {
+        use crate::{editor, keys::of};
+        match self {
+            Do::Open => of(cx, &Open),
+            Do::NewNote => of(cx, &crate::NewNote),
+            Do::NewDiagram => of(cx, &crate::NewDiagram),
+            Do::NewFolder => of(cx, &NewFolder),
+            Do::Rename => of(cx, &Rename),
+            Do::Duplicate => of(cx, &Duplicate),
+            Do::Trash => of(cx, &Trash),
+            Do::Cut => of(cx, &editor::Cut),
+            Do::Copy => of(cx, &editor::Copy),
+            Do::Paste => of(cx, &editor::Paste),
+            Do::Bold => of(cx, &editor::Bold),
+            Do::Italic => of(cx, &editor::Italic),
+            Do::Link => of(cx, &editor::InsertLink),
+            Do::Comment => of(cx, &editor::Comment),
+            // Pas une liaison, mais le geste qui fait la même chose.
+            Do::OpenLink => format!("{}+{}", crate::MOD, tr("click", "clic")),
+            _ => String::new(),
+        }
+    }
+}
+
 /// Ligne de l'arbre en cours de glisser-déposer ; dessinée sous le pointeur.
 #[derive(Clone)]
 pub struct Dragged {
@@ -1118,8 +1145,10 @@ impl Shell {
                 .rounded(px(5.))
                 .hover(|s| s.bg(t.selection))
                 .when(matches!(what, Do::Trash), |d| d.text_color(t.accent))
-                // Un libellé plus long que le menu est coupé, jamais débordant.
-                .child(div().min_w_0().truncate().child(label))
+                // Un libellé plus long que le menu est coupé, jamais débordant ; son raccourci,
+                // plus discret, garde sa place à droite.
+                .child(div().flex_1().min_w_0().truncate().child(label))
+                .child(div().flex_none().ml_2().text_size(px(11.5)).text_color(t.dim).child(what.keys(cx)))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {

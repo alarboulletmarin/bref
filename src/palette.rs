@@ -647,7 +647,7 @@ impl Render for Palette {
                     format!("{} « {} »", tr("Create", "Créer"), self.query.text.trim()),
                     tr("new note", "nouvelle note").into(),
                 ),
-                Item::Vault => (vault_label().to_string(), String::new()),
+                Item::Vault => (vault_label().to_string(), crate::keys::of(cx, &crate::OpenVault)),
                 Item::Help => (help_label().to_string(), crate::keys::of(cx, &crate::ToggleHelp)),
                 Item::Diagram => (diagram_label().to_string(), crate::keys::of(cx, &crate::NewDiagram)),
                 Item::Folder => (folder_label().to_string(), crate::keys::of(cx, &crate::nav::NewFolder)),
