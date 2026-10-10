@@ -9,6 +9,7 @@ mod graph;
 mod grid;
 mod import;
 mod kanban;
+mod keys;
 mod line;
 mod markdown;
 mod nav;
@@ -544,6 +545,8 @@ struct Shell {
     edge: Option<ResizeEdge>,
     copied: bool,
     help: bool,
+    /// Champ de recherche du panneau d'aide, tant qu'il est ouvert.
+    help_find: Option<Entity<kanban::Field>>,
 }
 
 impl Shell {
@@ -620,6 +623,7 @@ impl Shell {
             edge: None,
             copied: false,
             help: false,
+            help_find: None,
         };
         match vault {
             Some(root) => {
@@ -1097,7 +1101,28 @@ impl Shell {
     /// Affiche ou masque le panneau des raccourcis ; le focus suit.
     fn set_help(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.help = open;
-        if open || self.vault.is_none() {
+        self.help_find = None;
+        if open {
+            let theme = self.theme;
+            let find = cx.new(|cx| kanban::Field::new("", theme, cx));
+            cx.observe(&find, |_, _, cx| cx.notify()).detach();
+            // Échap vide le champ, puis ferme le panneau.
+            cx.subscribe_in(&find, window, |this, find, event: &kanban::FieldEvent, window, cx| {
+                if let kanban::FieldEvent::Cancel = event {
+                    if find.read(cx).line.text.is_empty() {
+                        this.set_help(false, window, cx);
+                    } else {
+                        find.update(cx, |find, cx| {
+                            find.line = line::Line::default();
+                            cx.notify();
+                        });
+                    }
+                }
+            })
+            .detach();
+            window.focus(&find.focus_handle(cx));
+            self.help_find = Some(find);
+        } else if self.vault.is_none() {
             window.focus(&self.focus);
         } else {
             window.focus(&self.editor.focus_handle(cx));
@@ -1932,7 +1957,7 @@ impl Shell {
 const KOFI: &str = "https://ko-fi.com/T6T01WC5ZC";
 
 /// Contenu du panneau d'aide : (titre de section, [(touches, effet)]).
-fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
+fn help_sections() -> keys::Sections {
     let m = |key: &str| format!("{MOD}+{key}");
     let word = if cfg!(target_os = "macos") { "Alt" } else { "Ctrl" };
     vec![
@@ -2062,9 +2087,39 @@ fn help_sections() -> Vec<(&'static str, Vec<(String, &'static str)>)> {
 }
 
 impl Shell {
+    /// Les lignes de l'aide que la recherche garde.
+    fn help_rows(&self, cx: &App) -> keys::Sections {
+        let query = self.help_find.as_ref().map(|find| find.read(cx).line.text.clone()).unwrap_or_default();
+        keys::filter(help_sections(), &query)
+    }
+
     fn render_help(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        let sections = help_sections().into_iter().map(|(title, rows)| {
+        let rows = self.help_rows(cx);
+        let none = rows.is_empty();
+        let asked = self.help_find.as_ref().is_some_and(|find| !find.read(cx).line.text.is_empty());
+        let hint = div().absolute().left_0().top_0().text_color(t.dim).child(tr("Search the shortcuts…", "Chercher un raccourci…"));
+        let find = div()
+            .flex_none()
+            .px_5()
+            .py_3()
+            .border_b_1()
+            .border_color(t.border)
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(svg().path("search.svg").size(px(14.)).flex_none().text_color(t.dim))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .relative()
+                    .whitespace_nowrap()
+                    .overflow_hidden()
+                    .children(self.help_find.clone())
+                    .when(!asked, |d| d.child(hint)),
+            );
+        let sections = rows.into_iter().map(|(title, rows)| {
             div()
                 .w(px(370.))
                 .flex()
@@ -2120,7 +2175,8 @@ impl Shell {
             .occlude()
             .p_4()
             .flex()
-            .items_center()
+            // Calé en haut : le champ de recherche ne bouge pas quand la liste raccourcit.
+            .items_start()
             .justify_center()
             .on_mouse_down(
                 MouseButton::Left,
@@ -2141,6 +2197,9 @@ impl Shell {
                     .rounded(px(10.))
                     .shadow_lg()
                     .text_size(px(13.))
+                    // Un clic dans le panneau ne le ferme pas.
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(find)
                     .child(
                         div()
                             .id("help-keys")
@@ -2152,7 +2211,10 @@ impl Shell {
                             .flex_wrap()
                             .gap_x_6()
                             .gap_y_4()
-                            .children(sections),
+                            .children(sections)
+                            .when(none, |d| {
+                                d.child(div().text_color(t.dim).child(tr("No shortcut matches.", "Aucun raccourci ne correspond.")))
+                            }),
                     )
                     .child(about)
                     .with_animation(
@@ -3142,6 +3204,27 @@ mod tests {
         // Panneau d'aide : F1 l'ouvre, Échap le ferme et rend la main à l'éditeur.
         cx.simulate_keystrokes("f1");
         assert!(shell.read_with(cx, |s, _| s.help));
+        // La frappe va au champ de recherche, qui filtre les lignes : touches ou effet, sans
+        // les accents.
+        let rows = |cx: &mut gpui::VisualTestContext| {
+            shell.read_with(cx, |s, cx| s.help_rows(cx).into_iter().flat_map(|(_, rows)| rows).collect::<Vec<_>>())
+        };
+        let all = rows(cx).len();
+        cx.simulate_input("cOmmente");
+        let found = rows(cx);
+        assert!(!found.is_empty() && found.len() < all, "{found:?}");
+        assert!(found.iter().all(|(_, effect)| keys::fold(effect).contains("commente")), "{found:?}");
+        cx.simulate_keystrokes("secondary-a");
+        cx.simulate_input("shift+f");
+        assert!(rows(cx).iter().any(|(keys, _)| keys.ends_with("Shift+F")));
+        cx.simulate_keystrokes("secondary-a");
+        cx.simulate_input("zzz");
+        assert!(rows(cx).is_empty());
+        assert_eq!(text(cx), "# Idées\n\n", "rien n'est tapé dans la note");
+        // Échap vide d'abord le champ, puis ferme le panneau.
+        cx.simulate_keystrokes("escape");
+        assert!(shell.read_with(cx, |s, _| s.help));
+        assert_eq!(rows(cx).len(), all);
         cx.simulate_keystrokes("escape");
         assert!(!shell.read_with(cx, |s, _| s.help));
         cx.simulate_input("ok");
