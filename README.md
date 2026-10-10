@@ -4,7 +4,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 
 ![Bref, light and dark](docs/screenshots/bref.png)
 
-[Features](#features) · [Install](#install) · [First run](#first-run) · [Using Bref](#using-bref) · [Navigation](#navigation) · [Markdown](#markdown) · [Notes and vault](#notes-and-vault) · [Compatibility](#compatibility) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works) · [Development](#development)
+[Features](#features) · [Install](#install) · [First run](#first-run) · [Using Bref](#using-bref) · [Navigation](#navigation) · [Appearance](#appearance) · [Markdown](#markdown) · [Diagrams](#diagrams) · [CSV tables](#csv-and-tsv-tables) · [Syncing](#syncing-a-vault) · [Notes and vault](#notes-and-vault) · [Updates](#updates) · [Compatibility](#compatibility) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works) · [Development](#development)
 
 ## Features
 
@@ -270,7 +270,7 @@ Click in the note to edit it while the bar stays open: the matches follow the te
 
 ## Navigation
 
-A rail of icons stays on the left of the window. It opens a panel beside the note, in one of five views:
+A rail of icons stays on the left of the window. It opens a panel beside the note, in one of six views:
 
 | View | Key | Shows |
 |---|---|---|
@@ -283,7 +283,7 @@ A rail of icons stays on the left of the window. It opens a panel beside the not
 
 Backlinks follow the note you open, not the one you preview while moving through the list, so you can look at each linking note in turn. Links written with an alias (`[[Note|alias]]`) and links inside tables count.
 
-The same keys work in the five views:
+The same keys work in every view (the calendar has its own arrows, see above):
 
 | Key | Action |
 |---|---|
@@ -298,7 +298,7 @@ The same keys work in the five views:
 A previewed note only counts as opened, and moves to the top of the recent list, once you click or type in it.
 
 - **Sizes**: drag the line between the panel and the note. Dragged all the way left, the panel folds back to its rail; all the way right, it takes the whole window. Double-click the line for the default width. `Ctrl + M`, or the arrows button at the top of the panel, also switches to the whole window and back.
-- **Folding**: pressing the key of the view on display, or clicking its icon, folds the panel. The rail stays, with the four views, search, new note and help one click away.
+- **Folding**: pressing the key of the view on display, or clicking its icon, folds the panel. The rail stays: back and forward, the six views, search and new note at the top; the trash, backup, theme and help at the bottom.
 - **Graph**: drag the background to move around and scroll to zoom. Pointing at a note lights up the notes it is linked to. Drag a note to move it: the notes linked to it follow, the closest ones the most. The target button glides back to the whole graph. With the graph on the whole window, a click only selects: `Enter` or a double click brings the note back.
 - **Folders**: the double-chevron button at the top of the tree folds every folder; when they are all folded, it unfolds them all.
 - **New note from the tree**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line. The button to the left of the folder one, at the top of the tree, creates it at the root of the vault instead, whatever is selected.
@@ -313,7 +313,7 @@ Bref reopens with the panel as you left it.
 
 ## Appearance
 
-- **Theme**: the half-moon icon at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system.
+- **Theme**: the half-filled circle at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system.
 - **Fonts**: Bref carries IBM Plex Sans (text) and IBM Plex Mono (code), under the SIL Open Font License (`assets/fonts/`), so it looks the same everywhere without installing anything. Type `font` in the palette (`Ctrl + P`) to choose another font, for the app or for the code, among those installed on your system; type in the list to filter it. Ideograms and emoji, which Plex does not draw, come from a font of your system.
 - **Text size**: `Ctrl + +` and `Ctrl + -`, `Ctrl + 0` for the default. Headings and code scale with it.
 
@@ -410,7 +410,7 @@ A `.csv` or `.tsv` file of the vault shows in the tree and opens in a grid, in p
 
 - **Detection**: the encoding comes from the byte order mark, else UTF-8 if the file is valid UTF-8, else Windows-1252. The delimiter (`,` `;` tab `|` `:` or space) is the one that splits most lines into the same number of fields, quotes respected. The first row is a header unless it holds numbers.
 - **Settings**: the bar above the grid shows the delimiter, the encoding and the header row; click one, or search `table` in the palette (`Ctrl + P`), to change it. The file is then read again that way, and the choice is kept for that file. *Detect automatically* forgets it.
-- **Moving**: the arrows, `Tab` and `Shift + Tab`, `Page Up` and `Page Down`, `Home` and `End` along the row, ``Ctrl + Home` and `Ctrl + End` to the corners, `Ctrl + Up` and `Ctrl + Down` to the ends of the column. Click a cell, or use the wheel (`Shift` + wheel sideways) and the scroll bars.
+- **Moving**: the arrows, `Tab` and `Shift + Tab`, `Page Up` and `Page Down`, `Home` and `End` along the row, `Ctrl + Home` and `Ctrl + End` to the corners, `Ctrl + Up` and `Ctrl + Down` to the ends of the column. Click a cell, or use the wheel (`Shift` + wheel sideways) and the scroll bars.
 - **Selecting**: `Shift` + arrows, or drag with the mouse. Click a row number or a column header for the whole row or column, the corner or `Ctrl + A` for everything. `Ctrl + click` (on a cell, a row number or a header) keeps what is selected and starts another selection: copy and cut take them all, one block under the other, `Delete` empties them all and `Ctrl + Delete` removes all their rows. Typing and pasting go to the last one.
 - **Writing**: typing replaces the cell, `Enter` or `F2` opens it as it is, `Enter` validates and goes down, `Tab` validates and goes right, `Esc` cancels. `Delete` empties the selection.
 - **Rows**: `Ctrl + Enter` inserts one below, `Ctrl + Shift + Enter` above, `Ctrl + Delete` removes the selected ones. `Ctrl + Z` and `Ctrl + Shift + Z` undo and redo, a paste in one step.
@@ -452,7 +452,7 @@ Put the vault in a folder synced by iCloud, Dropbox, Google Drive or Syncthing: 
 - What other programs change in the vault (a sync tool, a script, another editor) is picked up within a second, without restarting: Bref asks the system to report changes (inotify, FSEvents, ReadDirectoryChangesW).
 - A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
 - A YAML front matter (a block that starts on the first line with `---` and ends with `---` or `...`) is shown dimmed and is never interpreted or rewritten: the title of the note is the first line after it, and renaming a note or rewriting its links leaves the block byte for byte as it was. Two of its keys are read: `tags` (`tags: [a, b]`, `tags: a, b` or a dashed list) count like `#tags` in the text, and each of the `aliases` is another name for the note, suggested after `[[` and followed by links, backlinks and the graph. Other keys and nested YAML are ignored.
-- **Backup**: click the disk with an arrow at the bottom of the rail (or type `back up` in the palette) and choose a folder: Bref writes there one archive of the whole vault, trash included, named after the vault and the date (`Notes 2026-10-09.tar.gz`), numbered if that name is taken. It uses the `tar` program of the system (Linux, macOS, Windows 10 and later) and refuses a folder inside the vault.
+- **Backup**: click the arrow into a tray at the bottom of the rail (or type `back up` in the palette) and choose a folder: Bref writes there one archive of the whole vault, trash included, named after the vault and the date (`Notes 2026-10-09.tar.gz`), numbered if that name is taken. It uses the `tar` program of the system (Linux, macOS, Windows 10 and later) and refuses a folder inside the vault.
 - **Terminal**: type `terminal` in the palette to open the terminal of your system in the folder of the vault (Windows Terminal or the console on Windows, Terminal on macOS; on Linux the one named in `$TERMINAL`, else the one of the desktop). Bref has no terminal of its own.
 - **Status messages**: the outcome of an operation (a backup saved, a note restored, a failure) shows at the bottom right, with a spinner while it runs. A message goes away after four seconds, or as soon as you click it.
 - A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A note whose file name did not already match its first line (typical of an existing vault) keeps its name, until you add or change a `# ` title on its first line: the file then takes that name, as in Obsidian.
@@ -508,7 +508,7 @@ The check is the only network request the app makes until you press Update. It r
 
 **I changed the vault from another program while Bref was open.** Bref is told by the system when the vault changes, and also looks at it every 30 seconds in case an event got lost (every two seconds when the system cannot watch the folder, for instance on some network drives, or when Linux has run out of inotify watches: raise `fs.inotify.max_user_watches`). Notes and folders added, renamed or removed elsewhere show up in the tree, the palette and the graph, and the note on display is read again when its file changes. If you were typing in that note at that moment, your version is kept and written back.
 
-**Limits.** The name field of a new folder or a rename only edits at its end: type, or erase with Backspace. Links written as plain text inside a code block are not followed when a note is renamed. No full-text search: the palette matches note names and tags.
+**Limits.** The name field of a new folder or a rename only edits at its end: type, or erase with Backspace. Links written as plain text inside a code block are not followed when a note is renamed.
 
 ## How it works
 
