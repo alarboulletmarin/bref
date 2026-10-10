@@ -24,6 +24,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas like Excalidraw's. Each diagram is an SVG file in your vault, shown in your notes.
 - **CSV and TSV files, edited in place**: a `.csv` or `.tsv` in the vault opens in a grid. The encoding (UTF-8, UTF-16, ISO-8859-1, Windows-1252) and the delimiter (comma, semicolon, tab, pipe…) are detected and can be changed; select cells with the keyboard or the mouse, copy, paste, export, and what you change is written straight into the file. A million rows are parsed in under a tenth of a second on the author's machine.
 - **Keyboard first**: one palette to find, create and switch notes, and a shortcut for every view. No toolbar.
+- **Shortcuts you can change**: the help panel (`F1`) lists every shortcut, searches them as you type, and lets you give any of them other keys. A combination already in use says by what, and is only taken when you ask.
 - **No save button**: notes are written to disk as you type, and named after their first line.
 - **Daily note**: one key opens the note of the day, or creates it.
 - **Word count**: the bottom of the note shows its words and characters, or those of the selection.
@@ -195,7 +196,7 @@ The bottom right of the note shows its number of words and characters; with a se
 | `Ctrl + V` | over a selection, a pasted address makes it a link |
 | Right click | in a note, a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, make or edit a link, comment |
 | `Ctrl + Shift + M` | comment the selection (without one, the line); on a comment, resolve it: the markup goes, the text stays |
-| `F1`, `Ctrl + /` | the list of shortcuts, inside the app: type to search it, by key or by effect (`ctrl+p`, `graph`), `Esc` empties the search, then closes; at its foot, the version of Bref and links to its source and to its Ko-fi page |
+| `F1`, `Ctrl + /` | the list of shortcuts, inside the app: type to search it, by key or by effect (`ctrl+p`, `graph`), `Esc` empties the search, then closes; click the keys of a row to change them (see [Changing a shortcut](#changing-a-shortcut)); at its foot, the version of Bref and links to its source and to its Ko-fi page |
 | `Ctrl + Q` | quit |
 
 In the palette, type to search; `Enter` opens the selected note. Notes whose name matches come first, then the notes whose text contains every word you typed (from two letters), with the line where the first word appears. If no note has that name, the last row creates it. Typing `#` lists the notes carrying a tag. Typing `folder` offers *New folder*, and `table` offers the settings of the CSV table on display (delimiter, encoding, header row, copy as, export); `diagram`, `theme`, `font` and `update` offer theirs too.
@@ -211,6 +212,18 @@ In the palette, type to search; `Enter` opens the selected note. Notes whose nam
 | `Ctrl + Home` `End` | start, end of the note |
 | `Ctrl + A` `C` `X` `V` | select all, copy, cut, paste |
 | Double click, triple click | select a word, a line; keep dragging to extend by words, by lines |
+
+### Changing a shortcut
+
+The shortcuts in this README are the default ones; the help panel (`F1`) always shows the ones in effect.
+
+- Click the keys of a row, or move to it with `Down` and press `Enter`: the row waits, and the next combination you press becomes its shortcut, at once. `Esc` cancels, `Backspace` leaves the action with no shortcut.
+- A combination already used where the action applies is not taken: the row says by which action, and `Enter` (**Replace**) gives it to the new one, the other being left without a shortcut. The same keys in two views that never meet (a table and a diagram) are not a conflict.
+- A key alone that types text, and the keys the text and the views need (`Enter`, `Tab`, the arrows…), are refused, with the reason. A combination your system usually keeps for itself is accepted with a warning.
+- A changed row is highlighted and has a **default** button; **Reset all**, at the top of the panel, puts every shortcut back.
+- Rows without a button are not key bindings (a click, a palette command, something you type): the search finds them, but they cannot be changed.
+
+Only what you changed is kept, one `action=keys` line each, in the `keys` file of the configuration folder (`~/.config/bref/` on Linux), next to `settings`. `secondary` stands for `Cmd` on macOS and `Ctrl` elsewhere. A line that cannot be used (unknown action, unreadable keys, keys already taken) is ignored and reported at launch; the default stays.
 
 ### Outline
 

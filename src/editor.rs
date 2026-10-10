@@ -26,7 +26,7 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    MOD, Theme, diagram::Diagram, figure, graph, grid::{self, TableRow}, mono, sans, tr, vault,
+    Theme, diagram::Diagram, figure, graph, grid::{self, TableRow}, mono, sans, tr, vault,
     markdown::{self as md, Enter, Kind, Link},
 };
 
@@ -3785,12 +3785,16 @@ impl Editor {
             }
         }
         if self.content.is_empty() {
-            let hint = format!(
-                "{}   {MOD}+P : notes   {MOD}+N : {}   F1 : {}",
-                tr("Write here…", "Écris ici…"),
-                tr("new note", "nouvelle note"),
-                tr("shortcuts", "raccourcis"),
-            );
+            // Les touches en vigueur ; une action laissée sans raccourci n'est pas annoncée.
+            let mut hint = tr("Write here…", "Écris ici…").to_string();
+            let actions: [(&dyn gpui::Action, &str); 3] =
+                [(&crate::OpenPalette, "notes"), (&crate::NewNote, tr("new note", "nouvelle note")), (&crate::ToggleHelp, tr("shortcuts", "raccourcis"))];
+            for (action, what) in actions {
+                let keys = crate::keys::of(cx, action);
+                if !keys.is_empty() {
+                    hint.push_str(&format!("   {keys} : {what}"));
+                }
+            }
             label(&hint, t.dim, window)
                 .paint(point(o.x + px(8.), o.y + px(3.)), px(22.), window, cx)
                 .ok();

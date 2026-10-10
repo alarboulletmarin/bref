@@ -6,12 +6,13 @@
 use std::ops::Range;
 
 use gpui::{
-    Action, App, Bounds, ClipboardItem, Context, HighlightStyle, InteractiveElement, KeyBinding, StyledText, TextLayout, UTF16Selection,
+    Action, App, Bounds, ClipboardItem, Context, HighlightStyle, InteractiveElement, StyledText, TextLayout, UTF16Selection,
     actions, canvas, div, fill, prelude::*, px, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::Theme;
+use crate::keys::{Bind, bind};
 
 actions!(
     line,
@@ -140,29 +141,29 @@ impl Line {
 
 /// Les touches d'une ligne de saisie, pour le contexte « Line ». À lier après celles des champs
 /// qui s'en servent : à profondeur égale, la dernière liaison l'emporte.
-pub fn bindings(word: &str) -> Vec<KeyBinding> {
+pub fn bindings(word: &str) -> Vec<Bind> {
     let c = Some("Line");
     vec![
-        KeyBinding::new("left", Left, c),
-        KeyBinding::new("right", Right, c),
-        KeyBinding::new(&format!("{word}-left"), WordLeft, c),
-        KeyBinding::new(&format!("{word}-right"), WordRight, c),
-        KeyBinding::new("home", Start, c),
-        KeyBinding::new("end", End, c),
-        KeyBinding::new("shift-left", SelectLeft, c),
-        KeyBinding::new("shift-right", SelectRight, c),
-        KeyBinding::new(&format!("{word}-shift-left"), SelectWordLeft, c),
-        KeyBinding::new(&format!("{word}-shift-right"), SelectWordRight, c),
-        KeyBinding::new("shift-home", SelectStart, c),
-        KeyBinding::new("shift-end", SelectEnd, c),
-        KeyBinding::new("secondary-a", SelectAll, c),
-        KeyBinding::new("backspace", Backspace, c),
-        KeyBinding::new("delete", Delete, c),
-        KeyBinding::new(&format!("{word}-backspace"), DeleteWordLeft, c),
-        KeyBinding::new(&format!("{word}-delete"), DeleteWordRight, c),
-        KeyBinding::new("secondary-c", Copy, c),
-        KeyBinding::new("secondary-x", Cut, c),
-        KeyBinding::new("secondary-v", Paste, c),
+        bind("left", &Left, c),
+        bind("right", &Right, c),
+        bind(&format!("{word}-left"), &WordLeft, c),
+        bind(&format!("{word}-right"), &WordRight, c),
+        bind("home", &Start, c),
+        bind("end", &End, c),
+        bind("shift-left", &SelectLeft, c),
+        bind("shift-right", &SelectRight, c),
+        bind(&format!("{word}-shift-left"), &SelectWordLeft, c),
+        bind(&format!("{word}-shift-right"), &SelectWordRight, c),
+        bind("shift-home", &SelectStart, c),
+        bind("shift-end", &SelectEnd, c),
+        bind("secondary-a", &SelectAll, c),
+        bind("backspace", &Backspace, c),
+        bind("delete", &Delete, c),
+        bind(&format!("{word}-backspace"), &DeleteWordLeft, c),
+        bind(&format!("{word}-delete"), &DeleteWordRight, c),
+        bind("secondary-c", &Copy, c),
+        bind("secondary-x", &Cut, c),
+        bind("secondary-v", &Paste, c),
     ]
 }
 

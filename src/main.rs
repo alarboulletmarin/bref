@@ -464,6 +464,21 @@ struct Toast {
 /// Durée d'affichage d'un message d'état.
 const TOAST: Duration = Duration::from_secs(4);
 
+/// Ce qui empêche des touches de devenir un raccourci telles quelles.
+#[derive(Clone, Debug, PartialEq)]
+pub enum KeyIssue {
+    /// Déjà prises par ces actions : à remplacer, ou à laisser.
+    Taken(Vec<&'static str>),
+    Refused(&'static str),
+}
+
+/// Un raccourci attendu dans le panneau d'aide : la prochaine frappe le devient.
+struct KeyEdit {
+    action: &'static str,
+    keys: String,
+    issue: Option<KeyIssue>,
+}
+
 struct Shell {
     focus: FocusHandle,
     editor: Entity<Editor>,
@@ -545,8 +560,16 @@ struct Shell {
     edge: Option<ResizeEdge>,
     copied: bool,
     help: bool,
+    /// Les liaisons en vigueur, et ce que l'utilisateur a changé aux raccourcis par défaut.
+    bound: Vec<keys::Bind>,
+    changes: keys::Changes,
     /// Champ de recherche du panneau d'aide, tant qu'il est ouvert.
     help_find: Option<Entity<kanban::Field>>,
+    /// La ligne de l'aide choisie au clavier, et le raccourci en cours de saisie.
+    help_sel: Option<&'static str>,
+    help_edit: Option<KeyEdit>,
+    /// Reçoit chaque frappe avant les raccourcis, pour celle qu'on attend.
+    key_tap: Option<gpui::Subscription>,
 }
 
 impl Shell {
@@ -623,7 +646,12 @@ impl Shell {
             edge: None,
             copied: false,
             help: false,
+            bound: defaults(),
+            changes: keys::Changes::new(),
             help_find: None,
+            help_sel: None,
+            help_edit: None,
+            key_tap: None,
         };
         match vault {
             Some(root) => {
@@ -640,6 +668,23 @@ impl Shell {
         }
         this.watch(cx);
         this.check_updates(cx);
+        let weak = cx.weak_entity();
+        this.key_tap = Some(cx.intercept_keystrokes(move |event, _, cx| {
+            if weak.update(cx, |this, cx| this.key_pressed(&event.keystroke, cx)).unwrap_or(false) {
+                cx.stop_propagation();
+            }
+        }));
+        // Les raccourcis changés ; une ligne fautive du fichier est écartée et signalée.
+        let open = editable();
+        let (changes, faults) = keys::read(&vault::load_file("keys"), &this.bound, &|action| open.contains(action));
+        if !changes.is_empty() {
+            this.changes = changes;
+            this.rebind(cx);
+        }
+        if let Some(first) = faults.first() {
+            let more = if faults.len() > 1 { format!(" (+{})", faults.len() - 1) } else { String::new() };
+            this.say(Tone::Failed, format!("{} {first}{more}", tr("Shortcut ignored in the keys file:", "Raccourci ignoré dans le fichier keys :")), cx);
+        }
         this
     }
 
@@ -1102,13 +1147,20 @@ impl Shell {
     fn set_help(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.help = open;
         self.help_find = None;
+        self.help_sel = None;
+        self.help_edit = None;
         if open {
             let theme = self.theme;
             let find = cx.new(|cx| kanban::Field::new("", theme, cx));
             cx.observe(&find, |_, _, cx| cx.notify()).detach();
             // Échap vide le champ, puis ferme le panneau.
             cx.subscribe_in(&find, window, |this, find, event: &kanban::FieldEvent, window, cx| {
-                if let kanban::FieldEvent::Cancel = event {
+                if let kanban::FieldEvent::Done = event {
+                    // Entrée sur la ligne choisie : ses touches sont attendues.
+                    if let Some(action) = this.help_sel.filter(|sel| this.help_actions(cx).contains(sel)) {
+                        this.key_edit(action, cx);
+                    }
+                } else if let kanban::FieldEvent::Cancel = event {
                     if find.read(cx).line.text.is_empty() {
                         this.set_help(false, window, cx);
                     } else {
@@ -1127,6 +1179,118 @@ impl Shell {
         } else {
             window.focus(&self.editor.focus_handle(cx));
         }
+        cx.notify();
+    }
+
+    /// Les actions des lignes que l'aide montre, dans l'ordre.
+    fn help_actions(&self, cx: &App) -> Vec<&'static str> {
+        self.help_rows(cx).into_iter().flat_map(|(_, rows)| rows).filter_map(|row| row.action).collect()
+    }
+
+    /// Haut et bas dans l'aide : la ligne choisie, parmi celles dont les touches se changent.
+    // ponytail: la liste ne défile pas jusqu'à la ligne choisie ; la recherche la ramène à
+    // l'écran. Un `ScrollHandle` par section si le besoin se confirme.
+    fn help_step(&mut self, down: bool, cx: &mut Context<Self>) {
+        let actions = self.help_actions(cx);
+        let at = self.help_sel.and_then(|sel| actions.iter().position(|action| *action == sel));
+        let next = match (at, down) {
+            (None, true) => 0,
+            (None, false) => actions.len().saturating_sub(1),
+            (Some(at), true) => (at + 1).min(actions.len().saturating_sub(1)),
+            (Some(at), false) => at.saturating_sub(1),
+        };
+        self.help_sel = actions.get(next).copied();
+        cx.notify();
+    }
+
+    /// Attend les touches du raccourci de `action`.
+    fn key_edit(&mut self, action: &'static str, cx: &mut Context<Self>) {
+        self.help_sel = Some(action);
+        self.help_edit = Some(KeyEdit { action, keys: String::new(), issue: None });
+        cx.notify();
+    }
+
+    /// Une frappe pendant qu'un raccourci est attendu : elle le devient, sauf Échap (renoncer),
+    /// Retour arrière (aucun raccourci) et Entrée sur des touches déjà prises (remplacer).
+    /// `false` quand rien n'est attendu : la frappe suit son cours.
+    fn key_pressed(&mut self, stroke: &gpui::Keystroke, cx: &mut Context<Self>) -> bool {
+        let Some(edit) = &self.help_edit else { return false };
+        let (action, taken) = (edit.action, matches!(edit.issue, Some(KeyIssue::Taken(_))));
+        let keys = keys::spell(stroke);
+        match keys.as_str() {
+            "escape" => self.help_edit = None,
+            "enter" if taken => self.key_replace(cx),
+            "backspace" | "delete" => self.key_set(action, String::new(), &[], cx),
+            _ => {
+                let open = editable();
+                let others = keys::clashes(&self.bound, &defaults(), action, &keys);
+                let issue = match keys::refusal(&keys) {
+                    Some(keys::Why::Types) => Some(KeyIssue::Refused(tr(
+                        "A key alone types text: add Ctrl, Alt or Cmd.",
+                        "Une touche seule écrit du texte : ajouter Ctrl, Alt ou Cmd.",
+                    ))),
+                    Some(_) => Some(KeyIssue::Refused(tr("These keys cannot be a shortcut.", "Ces touches ne peuvent pas servir de raccourci."))),
+                    None if others.iter().any(|other| !open.contains(other)) => Some(KeyIssue::Refused(tr(
+                        "Kept for typing and moving in the text and the views.",
+                        "Réservées à la saisie et au déplacement dans le texte et les vues.",
+                    ))),
+                    None if !others.is_empty() => Some(KeyIssue::Taken(others)),
+                    None => None,
+                };
+                match issue {
+                    None => self.key_set(action, keys, &[], cx),
+                    issue => self.help_edit = Some(KeyEdit { action, keys, issue }),
+                }
+            }
+        }
+        cx.notify();
+        true
+    }
+
+    /// « Remplacer » : les touches proposées vont à l'action, celles qui les avaient les perdent.
+    fn key_replace(&mut self, cx: &mut Context<Self>) {
+        if let Some(KeyEdit { action, keys, issue: Some(KeyIssue::Taken(others)) }) = self.help_edit.take() {
+            self.key_set(action, keys, &others, cx);
+        }
+    }
+
+    /// Donne `keys` à `action` (vides : aucun raccourci) et les retire à `losers`.
+    fn key_set(&mut self, action: &'static str, keys: String, losers: &[&'static str], cx: &mut Context<Self>) {
+        let mut usual: Vec<String> = defaults().into_iter().filter(|bind| bind.action == action).map(|bind| bind.keys).collect();
+        usual.dedup();
+        // Revenu à ses touches d'origine : plus rien à retenir pour cette action.
+        if usual == [keys.clone()] {
+            self.changes.remove(action);
+        } else {
+            self.changes.insert(action.to_string(), keys.clone());
+        }
+        for other in losers {
+            self.changes.insert(other.to_string(), String::new());
+        }
+        self.help_edit = None;
+        if keys::system(&keys) {
+            self.say(Tone::Info, tr("The system may keep these keys for itself.", "Le système garde peut-être ces touches pour lui."), cx);
+        }
+        self.rebind(cx);
+        vault::save_file("keys", &keys::write(&self.changes));
+    }
+
+    /// Remet les touches d'origine d'une action, ou de toutes.
+    fn key_reset(&mut self, action: Option<&'static str>, cx: &mut Context<Self>) {
+        match action {
+            Some(action) => drop(self.changes.remove(action)),
+            None => self.changes.clear(),
+        }
+        self.help_edit = None;
+        self.rebind(cx);
+        vault::save_file("keys", &keys::write(&self.changes));
+    }
+
+    /// Applique `changes` : les liaisons en vigueur changent tout de suite, sans redémarrer.
+    fn rebind(&mut self, cx: &mut Context<Self>) {
+        let open = editable();
+        self.bound = keys::effective(&defaults(), &self.changes, &|action| open.contains(action));
+        install(cx, &self.bound);
         cx.notify();
     }
 
@@ -1956,141 +2120,191 @@ impl Shell {
 
 const KOFI: &str = "https://ko-fi.com/T6T01WC5ZC";
 
-/// Contenu du panneau d'aide : (titre de section, [(touches, effet)]).
-fn help_sections() -> keys::Sections {
-    let m = |key: &str| format!("{MOD}+{key}");
+/// Contenu du panneau d'aide, et du même coup la liste des raccourcis qui se changent : une ligne
+/// `k` par action, dont les touches sont celles en vigueur (`bound`) ; une ligne `t` pour ce qui
+/// n'est pas une liaison (souris, texte tapé, commande de la palette, touches fixes).
+fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Sections {
+    use gpui::Action;
+    use keys::Row;
+    let k = |action: &dyn Action, effect: &'static str| Row {
+        keys: keys::shown(bound, action.name()),
+        effect,
+        action: Some(action.name()),
+        changed: changes.contains_key(action.name()),
+    };
+    let t = |keys: &str, effect: &'static str| Row::text(keys, effect);
+    // Une commande de la palette : ses touches, puis le mot à y taper.
+    let p = |word: &str, effect: &'static str| {
+        let palette = keys::shown(bound, OpenPalette.name());
+        Row::text(format!("{} › {word}", if palette.is_empty() { "Palette" } else { &palette }), effect)
+    };
+    let click = tr("click", "clic");
+    let shift = tr("Shift", "Maj");
     let word = if cfg!(target_os = "macos") { "Alt" } else { "Ctrl" };
     vec![
         (
             "Notes",
             vec![
-                (m("P"), tr("Find by name or text, create, filter by #tag", "Chercher par nom ou texte, créer, filtrer par #tag")),
-                (format!("{} / {}", m("F"), m("H")), tr("Find in the note / find and replace", "Chercher dans la note / chercher et remplacer")),
-                (m("Shift+F"), tr("Search the text of the whole vault, line by line", "Chercher dans le texte de tout le coffre, ligne par ligne")),
-                (tr("Enter / Shift+Enter", "Entrée / Maj+Entrée").into(), tr("Search bar: next / previous match (F3 too)", "Barre de recherche : passage suivant / précédent (F3 aussi)")),
-                ("Alt+C / Alt+W / Alt+R".into(), tr("Search bar: match case / whole words / regular expression ($1 in the replacement)", "Barre de recherche : casse / mots entiers / expression régulière ($1 dans le remplacement)")),
-                ("Tab".into(), tr("Search bar: replace field", "Barre de recherche : champ de remplacement")),
-                (m(tr("Shift+Enter", "Maj+Entrée")), tr("Search bar: replace in the whole vault, after showing the count", "Barre de recherche : remplacer dans tout le coffre, après en avoir montré le compte")),
-                (m(tr("Enter", "Entrée")), tr("Search bar: replace all (Enter: this match)", "Barre de recherche : tout remplacer (Entrée : ce passage)")),
-                (m("Shift+O"), tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")),
-                (m("N"), tr("New note", "Nouvelle note")),
-                (m("J"), tr("Today's note: open it, or create it", "Note du jour : l'ouvrir, ou la créer")),
-                (m("O"), tr("Change vault", "Changer de coffre")),
-                (format!("{} › terminal", m("P")), tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")),
-                (m("Shift+C"), tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
-                (format!("{MOD}+{}", tr("click", "clic")), tr("Open a [[link]], #tag or URL", "Ouvrir un [[lien]], #tag ou URL")),
-                ("F1".into(), tr("This help", "Cette aide")),
+                k(&OpenPalette, tr("Find by name or text, create, filter by #tag", "Chercher par nom ou texte, créer, filtrer par #tag")),
+                k(&editor::Find, tr("Find in the note", "Chercher dans la note")),
+                k(&editor::FindReplace, tr("Find and replace in the note", "Chercher et remplacer dans la note")),
+                k(&SearchVault, tr("Search the text of the whole vault, line by line", "Chercher dans le texte de tout le coffre, ligne par ligne")),
+                k(&editor::FindNext, tr("Search bar: next match (Enter too)", "Barre de recherche : passage suivant (Entrée aussi)")),
+                k(&editor::FindPrev, tr("Search bar: previous match", "Barre de recherche : passage précédent")),
+                k(&editor::FindCase, tr("Search bar: match case", "Barre de recherche : respecter la casse")),
+                k(&editor::FindWord, tr("Search bar: whole words", "Barre de recherche : mots entiers")),
+                k(&editor::FindRegex, tr("Search bar: regular expression ($1 in the replacement)", "Barre de recherche : expression régulière ($1 dans le remplacement)")),
+                t("Tab", tr("Search bar: replace field", "Barre de recherche : champ de remplacement")),
+                k(&editor::ReplaceAll, tr("Search bar: replace all (Enter: this match)", "Barre de recherche : tout remplacer (Entrée : ce passage)")),
+                k(&editor::ReplaceInVault, tr("Search bar: replace in the whole vault, after showing the count", "Barre de recherche : remplacer dans tout le coffre, après en avoir montré le compte")),
+                k(&Outline, tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")),
+                k(&NewNote, tr("New note", "Nouvelle note")),
+                k(&Today, tr("Today's note: open it, or create it", "Note du jour : l'ouvrir, ou la créer")),
+                k(&OpenVault, tr("Change vault", "Changer de coffre")),
+                p("terminal", tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")),
+                k(&CopyAll, tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
+                t(&format!("{MOD}+{click}"), tr("Open a [[link]], #tag or URL", "Ouvrir un [[lien]], #tag ou URL")),
+                k(&ToggleHelp, tr("This help", "Cette aide")),
+                k(&Quit, tr("Quit", "Quitter")),
             ],
         ),
         (
             "Navigation",
             vec![
-                (format!("{} / R / G / T", m("E")), tr("Vault tree / recent notes / graph / tags", "Arbre du coffre / notes récentes / graphe / tags")),
-                (m("L"), tr("Backlinks: the notes that link to this one", "Rétroliens : les notes qui mènent à celle-ci")),
-                (m("Shift+J"), tr("Calendar: arrows, Page Up/Down for the month, Enter opens the day", "Calendrier : flèches, Page haut/bas pour le mois, Entrée ouvre le jour")),
-                (tr("A picture", "Une image").into(), tr("Shown in place of the note; a square in the graph", "Affichée à la place de la note ; un carré dans le graphe")),
-                (tr("A .csv or .tsv", "Un .csv ou .tsv").into(), tr("A grid in place of the note; not in the graph", "Une grille à la place de la note ; absent du graphe")),
-                (m("M"), tr("Panel on the whole window", "Panneau en pleine fenêtre")),
-                (tr("Arrows / Tab", "Flèches / Tab").into(), tr("Select and preview / linked notes (graph)", "Sélectionner en aperçu / notes liées (graphe)")),
-                (tr("Enter / Esc", "Entrée / Échap").into(), tr("Open the note / back to the note", "Ouvrir la note / revenir à la note")),
-                (m("Shift+N"), tr("New folder (also in the palette)", "Nouveau dossier (aussi dans la palette)")),
-                ("Alt + drag".into(), tr("Move the window from anywhere (Linux)", "Déplacer la fenêtre depuis n'importe où (Linux)")),
-                (format!("F2 / {} / {}", m("D"), tr("Delete", "Suppr")), tr("Rename / duplicate / move to the trash", "Renommer / dupliquer / mettre à la corbeille")),
-                (format!("{} / Shift+{}", m(tr("click", "clic")), tr("click", "clic")), tr("Select several rows: move, duplicate, trash them together", "Sélectionner plusieurs lignes : les déplacer, dupliquer, jeter ensemble")),
-                (tr("Right click", "Clic droit").into(), tr("Copy the link or the path, set an icon, show a folder or a tag as a list…", "Copier le lien ou le chemin, donner une icône, afficher un dossier ou un tag en liste…")),
-                (tr("In a list", "Dans une liste").into(), tr("Type to filter (key:text for one column), click a cell to rewrite it", "Taper pour filtrer (clé:texte pour une colonne), cliquer une cellule pour la réécrire")),
-                (tr("Drag a node", "Glisser un nœud").into(), tr("Move it in the graph, linked notes follow", "Le déplacer dans le graphe, les notes liées suivent")),
+                k(&nav::ShowTree, tr("Vault tree", "Arbre du coffre")),
+                k(&nav::ShowRecent, tr("Recent notes", "Notes récentes")),
+                k(&nav::ShowGraph, tr("Graph of the notes", "Graphe des notes")),
+                k(&nav::ShowTags, "Tags"),
+                k(&nav::ShowLinks, tr("Backlinks: the notes that link to this one", "Rétroliens : les notes qui mènent à celle-ci")),
+                k(&nav::ShowCalendar, tr("Calendar: arrows, Page Up/Down for the month, Enter opens the day", "Calendrier : flèches, Page haut/bas pour le mois, Entrée ouvre le jour")),
+                t(tr("A picture", "Une image"), tr("Shown in place of the note; a square in the graph", "Affichée à la place de la note ; un carré dans le graphe")),
+                t(tr("A .csv or .tsv", "Un .csv ou .tsv"), tr("A grid in place of the note; not in the graph", "Une grille à la place de la note ; absent du graphe")),
+                k(&nav::ToggleFull, tr("Panel on the whole window", "Panneau en pleine fenêtre")),
+                t(tr("Arrows / Tab", "Flèches / Tab"), tr("Select and preview / linked notes (graph)", "Sélectionner en aperçu / notes liées (graphe)")),
+                t(tr("Enter / Esc", "Entrée / Échap"), tr("Open the note / back to the note", "Ouvrir la note / revenir à la note")),
+                k(&nav::NewFolder, tr("New folder (also in the palette)", "Nouveau dossier (aussi dans la palette)")),
+                t("Alt + drag", tr("Move the window from anywhere (Linux)", "Déplacer la fenêtre depuis n'importe où (Linux)")),
+                k(&nav::Rename, tr("Panel: rename", "Panneau : renommer")),
+                k(&nav::Duplicate, tr("Panel: duplicate", "Panneau : dupliquer")),
+                k(&nav::Trash, tr("Panel: move to the trash", "Panneau : mettre à la corbeille")),
+                t(&format!("{MOD}+{click} / {shift}+{click}"), tr("Select several rows: move, duplicate, trash them together", "Sélectionner plusieurs lignes : les déplacer, dupliquer, jeter ensemble")),
+                t(tr("Right click", "Clic droit"), tr("Copy the link or the path, set an icon, show a folder or a tag as a list…", "Copier le lien ou le chemin, donner une icône, afficher un dossier ou un tag en liste…")),
+                t(tr("In a list", "Dans une liste"), tr("Type to filter (key:text for one column), click a cell to rewrite it", "Taper pour filtrer (clé:texte pour une colonne), cliquer une cellule pour la réécrire")),
+                t(tr("Drag a node", "Glisser un nœud"), tr("Move it in the graph, linked notes follow", "Le déplacer dans le graphe, les notes liées suivent")),
             ],
         ),
         (
             tr("Diagrams", "Schémas"),
             vec![
-                (m("Shift+D"), tr("New diagram: an SVG file in the vault", "Nouveau schéma : un fichier SVG du coffre")),
-                ("R U O D C P N T".into(), tr("Rectangle, rounded, ellipse, diamond, cylinder, person, note, text", "Rectangle, arrondi, ellipse, losange, cylindre, personnage, note, texte")),
-                ("A / L / V".into(), tr("Arrow / line, held by the shapes they join / select", "Flèche / trait, accrochés aux formes reliées / sélection")),
-                (tr("Enter, double click", "Entrée, double-clic").into(), tr("Write in the shape or on the arrow; Esc when done", "Écrire dans la forme ou sur la flèche ; Échap pour finir")),
-                ("---".into(), tr("Alone on a line of a box: a compartment (UML class)", "Seul sur une ligne d'une boîte : un compartiment (classe UML)")),
-                (format!("Shift+{0} / {1}", tr("click", "clic"), m(tr("click", "clic"))), tr("Add a shape to the selection, or take it out", "Ajouter une forme à la sélection, ou l'en retirer")),
-                (format!("{} / {} / {}", tr("Del", "Suppr"), m("D"), m("Z")), tr("Remove / duplicate / undo", "Retirer / dupliquer / annuler")),
-                (tr("Edge of a shape", "Bord d'une forme").into(), tr("An arrow end dropped there stays there; in the middle, it follows the other end", "Un bout de flèche lâché là y reste ; au milieu, il suit l'autre bout")),
-                (tr("Wheel / + - 0", "Molette / + - 0").into(), tr("Move the view / zoom in, out, fit all", "Déplacer la vue / zoomer, dézoomer, tout cadrer")),
-                ("![](Schéma.svg)".into(), tr("Show the diagram in a note", "Afficher le schéma dans une note")),
-                (format!("{} › import", m("P")), tr("Bring in an Excalidraw or draw.io file", "Reprendre un fichier Excalidraw ou draw.io")),
+                k(&NewDiagram, tr("New diagram: an SVG file in the vault", "Nouveau schéma : un fichier SVG du coffre")),
+                t("R U O D C P N T", tr("Rectangle, rounded, ellipse, diamond, cylinder, person, note, text", "Rectangle, arrondi, ellipse, losange, cylindre, personnage, note, texte")),
+                t("A / L / V", tr("Arrow / line, held by the shapes they join / select", "Flèche / trait, accrochés aux formes reliées / sélection")),
+                t(tr("Enter, double click", "Entrée, double-clic"), tr("Write in the shape or on the arrow; Esc when done", "Écrire dans la forme ou sur la flèche ; Échap pour finir")),
+                t("---", tr("Alone on a line of a box: a compartment (UML class)", "Seul sur une ligne d'une boîte : un compartiment (classe UML)")),
+                t(&format!("{shift}+{click} / {MOD}+{click}"), tr("Add a shape to the selection, or take it out", "Ajouter une forme à la sélection, ou l'en retirer")),
+                t(tr("Delete", "Suppr"), tr("Remove the selection", "Retirer la sélection")),
+                k(&canvas::Duplicate, tr("Diagram: duplicate the selection", "Schéma : dupliquer la sélection")),
+                k(&canvas::Undo, tr("Diagram: undo", "Schéma : annuler")),
+                k(&canvas::Redo, tr("Diagram: redo", "Schéma : rétablir")),
+                t(tr("Edge of a shape", "Bord d'une forme"), tr("An arrow end dropped there stays there; in the middle, it follows the other end", "Un bout de flèche lâché là y reste ; au milieu, il suit l'autre bout")),
+                t(tr("Wheel / + - 0", "Molette / + - 0"), tr("Move the view / zoom in, out, fit all", "Déplacer la vue / zoomer, dézoomer, tout cadrer")),
+                t("![](Schéma.svg)", tr("Show the diagram in a note", "Afficher le schéma dans une note")),
+                p("import", tr("Bring in an Excalidraw or draw.io file", "Reprendre un fichier Excalidraw ou draw.io")),
             ],
         ),
         (
             tr("CSV tables", "Tableaux CSV"),
             vec![
-                (".csv .tsv".into(), tr("Opens in a grid; encoding and delimiter are detected, written straight into the file", "S'ouvre dans une grille ; encodage et délimiteur sont devinés, écrit directement dans le fichier")),
-                (tr("Arrows, Tab", "Flèches, Tab").into(), tr("Move; with Shift (or drag), select a range; click a row number or a header", "Se déplacer ; avec Maj (ou en glissant), sélectionner une plage ; clic sur un numéro ou un en-tête")),
-                (m(tr("click", "clic")), tr("Add another selection: copy, cut, empty or remove their rows together", "Ajouter une autre sélection : les copier, couper, vider ou retirer leurs lignes ensemble")),
-                (tr("Type, Enter, F2", "Taper, Entrée, F2").into(), tr("Replace the cell / validate and go down / open the cell; Esc cancels", "Remplacer la cellule / valider et descendre / ouvrir la cellule ; Échap annule")),
-                (format!("{} / {} / {}", m("C"), m("X"), m("V")), tr("Copy as tab-separated text / cut / paste cells from a spreadsheet, Markdown or CSV", "Copier en texte à tabulations / couper / coller des cellules d'un tableur, de Markdown ou de CSV")),
-                (format!("{} / {}", m("Enter"), m("Delete")), tr("Insert a row (with Shift: above) / remove the selected rows", "Insérer une ligne (avec Maj : au-dessus) / retirer les lignes sélectionnées")),
-                (format!("{} › table", m("P")), tr("Delimiter, encoding, header row, copy as…, export (CSV, TSV, Markdown, JSON)", "Délimiteur, encodage, en-tête, copier en…, exporter (CSV, TSV, Markdown, JSON)")),
+                t(".csv .tsv", tr("Opens in a grid; encoding and delimiter are detected, written straight into the file", "S'ouvre dans une grille ; encodage et délimiteur sont devinés, écrit directement dans le fichier")),
+                t(tr("Arrows, Tab", "Flèches, Tab"), tr("Move; with Shift (or drag), select a range; click a row number or a header", "Se déplacer ; avec Maj (ou en glissant), sélectionner une plage ; clic sur un numéro ou un en-tête")),
+                t(&format!("{MOD}+{click}"), tr("Add another selection: copy, cut, empty or remove their rows together", "Ajouter une autre sélection : les copier, couper, vider ou retirer leurs lignes ensemble")),
+                t(tr("Type, Enter, F2", "Taper, Entrée, F2"), tr("Replace the cell / validate and go down / open the cell; Esc cancels", "Remplacer la cellule / valider et descendre / ouvrir la cellule ; Échap annule")),
+                k(&sheet::Copy, tr("Table: copy as tab-separated text", "Tableau : copier en texte à tabulations")),
+                k(&sheet::Cut, tr("Table: cut", "Tableau : couper")),
+                k(&sheet::Paste, tr("Table: paste cells from a spreadsheet, Markdown or CSV", "Tableau : coller des cellules d'un tableur, de Markdown ou de CSV")),
+                k(&sheet::InsertBelow, tr("Table: insert a row below", "Tableau : insérer une ligne dessous")),
+                k(&sheet::InsertAbove, tr("Table: insert a row above", "Tableau : insérer une ligne dessus")),
+                k(&sheet::DeleteRows, tr("Table: remove the selected rows", "Tableau : retirer les lignes sélectionnées")),
+                k(&sheet::Undo, tr("Table: undo", "Tableau : annuler")),
+                k(&sheet::Redo, tr("Table: redo", "Tableau : rétablir")),
+                p("table", tr("Delimiter, encoding, header row, copy as…, export (CSV, TSV, Markdown, JSON)", "Délimiteur, encodage, en-tête, copier en…, exporter (CSV, TSV, Markdown, JSON)")),
             ],
         ),
         (
             tr("Appearance", "Apparence"),
             vec![
-                (format!("{} › {}", m("P"), tr("theme", "thème")), tr("Theme, previewed as you browse", "Thème, en aperçu pendant le choix")),
-                (format!("{} › {}", m("P"), tr("font", "police")), tr("Font of the app / of the code", "Police de l'app / du code")),
-                (format!("{} / {} / {}", m("+"), m("-"), m("0")), tr("Bigger / smaller / default text", "Texte plus grand / plus petit / d'origine")),
+                p(tr("theme", "thème"), tr("Theme, previewed as you browse", "Thème, en aperçu pendant le choix")),
+                p(tr("font", "police"), tr("Font of the app / of the code", "Police de l'app / du code")),
+                k(&ZoomIn, tr("Bigger text", "Texte plus grand")),
+                k(&ZoomOut, tr("Smaller text", "Texte plus petit")),
+                k(&ZoomReset, tr("Default text size", "Taille du texte d'origine")),
             ],
         ),
         (
             tr("Typing", "À la frappe"),
             vec![
-                ("/".into(), tr("Components: headings, lists, panel, table, code, formula…", "Composants : titres, listes, panneau, tableau, code, formule…")),
-                ("/table".into(), tr("Table: pick its size on the grid (mouse, arrows), or type it: 12x5", "Tableau : choisir sa taille sur la grille (souris, flèches), ou la taper : 12x5")),
-                ("> [!NOTE]".into(), tr("Colored panel: NOTE, TIP, IMPORTANT, WARNING, CAUTION", "Panneau coloré : NOTE, TIP, IMPORTANT, WARNING, CAUTION")),
-                ("- ".into(), tr("Bullet list", "Liste à puces")),
-                ("1. ".into(), tr("Numbered list", "Liste numérotée")),
-                ("[] ".into(), tr("Task", "Tâche à cocher")),
-                ("# ## ###".into(), tr("Headings; the first # names the file", "Titres ; le premier # nomme le fichier")),
-                ("> ".into(), tr("Quote", "Citation")),
-                ("```rust".into(), tr("Code block: colors, copy icon", "Bloc de code : couleurs, icône de copie")),
-                ("---".into(), tr("Divider", "Séparateur")),
-                ("[[".into(), tr("Link to a note", "Lien vers une note")),
-                (format!("{} › kanban", m("P")), tr("New kanban board: cards you type, drag and tick; double click to rewrite", "Nouveau tableau kanban : des cartes à écrire, glisser et cocher ; double-clic pour réécrire")),
-                ("@".into(), tr("Link to the note of a day: @today, @monday, @2026-10-09", "Lien vers la note d'un jour : @demain, @lundi, @2026-10-09")),
-                ("![](image.png)".into(), tr("Picture, under its line", "Image, sous sa ligne")),
-                ("![[".into(), tr("Suggests the pictures and diagrams of the vault", "Propose les images et les schémas du coffre")),
-                (m("V"), tr("Paste text, or a picture", "Coller du texte, ou une image")),
-                (tr("Double / triple click", "Double / triple clic").into(), tr("Select a word / a line; drag to extend by words / lines", "Sélectionner un mot / une ligne ; glisser étend par mots / par lignes")),
-                ("```mermaid".into(), tr("Diagram, under its block", "Diagramme, sous son bloc")),
-                ("$x^2$  $$…$$".into(), tr("LaTeX formula, under its line", "Formule LaTeX, sous sa ligne")),
-                ("-> != <= =>".into(), tr("Shown as → ≠ ≤ ⇒", "Affichés → ≠ ≤ ⇒")),
+                t("/", tr("Components: headings, lists, panel, table, code, formula…", "Composants : titres, listes, panneau, tableau, code, formule…")),
+                t("/table", tr("Table: pick its size on the grid (mouse, arrows), or type it: 12x5", "Tableau : choisir sa taille sur la grille (souris, flèches), ou la taper : 12x5")),
+                t("> [!NOTE]", tr("Colored panel: NOTE, TIP, IMPORTANT, WARNING, CAUTION", "Panneau coloré : NOTE, TIP, IMPORTANT, WARNING, CAUTION")),
+                t("- ", tr("Bullet list", "Liste à puces")),
+                t("1. ", tr("Numbered list", "Liste numérotée")),
+                t("[] ", tr("Task", "Tâche à cocher")),
+                t("# ## ###", tr("Headings; the first # names the file", "Titres ; le premier # nomme le fichier")),
+                t("> ", tr("Quote", "Citation")),
+                t("```rust", tr("Code block: colors, copy icon", "Bloc de code : couleurs, icône de copie")),
+                t("---", tr("Divider", "Séparateur")),
+                t("[[", tr("Link to a note", "Lien vers une note")),
+                p("kanban", tr("New kanban board: cards you type, drag and tick; double click to rewrite", "Nouveau tableau kanban : des cartes à écrire, glisser et cocher ; double-clic pour réécrire")),
+                t("@", tr("Link to the note of a day: @today, @monday, @2026-10-09", "Lien vers la note d'un jour : @demain, @lundi, @2026-10-09")),
+                t("![](image.png)", tr("Picture, under its line", "Image, sous sa ligne")),
+                t("![[", tr("Suggests the pictures and diagrams of the vault", "Propose les images et les schémas du coffre")),
+                t(tr("Double / triple click", "Double / triple clic"), tr("Select a word / a line; drag to extend by words / lines", "Sélectionner un mot / une ligne ; glisser étend par mots / par lignes")),
+                t("```mermaid", tr("Diagram, under its block", "Diagramme, sous son bloc")),
+                t("$x^2$  $$…$$", tr("LaTeX formula, under its line", "Formule LaTeX, sous sa ligne")),
+                t("-> != <= =>", tr("Shown as → ≠ ≤ ⇒", "Affichés → ≠ ≤ ⇒")),
             ],
         ),
         (
             tr("Editing", "Édition"),
             vec![
-                (tr("Enter", "Entrée").into(), tr("Continue the list, or leave it on an empty item", "Continuer la liste, ou en sortir sur un item vide")),
-                ("Tab / Shift+Tab".into(), tr("Indent / outdent", "Indenter / désindenter")),
-                (tr("Tab / Enter in a table", "Tab / Entrée dans un tableau").into(), tr("Next cell / new row; columns stay aligned; + buttons add a row or a column", "Cellule suivante / nouvelle ligne ; les colonnes restent alignées ; les boutons + ajoutent ligne ou colonne")),
-                (m("Shift+L / E / R"), tr("Align the column of the cursor: left, centered, right", "Aligner la colonne du curseur : à gauche, centrée, à droite")),
-                (tr("Pasting a table", "Coller un tableau").into(), tr("Spreadsheet cells or Markdown fill the grid, or become a table", "Des cellules de tableur ou du Markdown remplissent la grille, ou deviennent un tableau")),
-                (m(tr("Enter", "Entrée")), tr("Check / uncheck a task or a [ ] box; in a table cell, add one", "Cocher / décocher une tâche ou une case [ ] ; dans une cellule, en ajouter une")),
-                (format!("{} / {}", m("B"), m("I")), tr("Bold / italic", "Gras / italique")),
-                (format!("{} / Alt+{}", m("D"), tr("click", "clic")), tr("Several cursors: select the word, then its next occurrence / add a cursor (Esc: back to one)", "Plusieurs curseurs : prendre le mot, puis son occurrence suivante / poser un curseur (Échap : un seul)")),
-                (m("K"), tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
-                (m("V"), tr("An address pasted over a selection makes it a link", "Une adresse collée sur une sélection en fait un lien")),
-                (m("Shift+M"), tr("Comment the selection or the line; on a comment, resolve it", "Commenter la sélection ou la ligne ; sur un commentaire, le résoudre")),
-                (format!("{} › {}", m("P"), tr("comments", "commentaires")), tr("Comments: show their panel, jump to one", "Commentaires : montrer leur panneau, aller à l'un d'eux")),
-                (tr("Right click", "Clic droit").into(), tr("Menu of the note: link, comment, cut, copy, paste, bold, italic", "Menu de la note : lien, commentaire, couper, copier, coller, gras, italique")),
-                (format!("{} / {}", m("Z"), m("Shift+Z")), tr("Undo / redo", "Annuler / rétablir")),
-                (format!("{word}+{}", tr("Left / Right", "Gauche / Droite")), tr("Move by word", "Se déplacer par mot")),
+                t(tr("Enter", "Entrée"), tr("Continue the list, or leave it on an empty item", "Continuer la liste, ou en sortir sur un item vide")),
+                t(&format!("Tab / {shift}+Tab"), tr("Indent / outdent", "Indenter / désindenter")),
+                t(tr("Tab / Enter in a table", "Tab / Entrée dans un tableau"), tr("Next cell / new row; columns stay aligned; + buttons add a row or a column", "Cellule suivante / nouvelle ligne ; les colonnes restent alignées ; les boutons + ajoutent une ligne ou une colonne")),
+                k(&editor::AlignLeft, tr("Align the column of the cursor to the left", "Aligner la colonne du curseur à gauche")),
+                k(&editor::AlignCenter, tr("Center the column of the cursor", "Centrer la colonne du curseur")),
+                k(&editor::AlignRight, tr("Align the column of the cursor to the right", "Aligner la colonne du curseur à droite")),
+                t(tr("Pasting a table", "Coller un tableau"), tr("Spreadsheet cells or Markdown fill the grid, or become a table", "Des cellules de tableur ou du Markdown remplissent la grille, ou deviennent un tableau")),
+                k(&editor::ToggleTask, tr("Check / uncheck a task or a [ ] box; in a table cell, add one", "Cocher / décocher une tâche ou une case [ ] ; dans une cellule, en ajouter une")),
+                k(&editor::Bold, tr("Bold", "Gras")),
+                k(&editor::Italic, tr("Italic", "Italique")),
+                k(&editor::SelectNext, tr("Several cursors: select the word, then its next occurrence (Esc: back to one)", "Plusieurs curseurs : prendre le mot, puis son occurrence suivante (Échap : un seul)")),
+                t(&format!("Alt+{click}"), tr("Add a cursor", "Ajouter un curseur")),
+                k(&editor::InsertLink, tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
+                k(&editor::Comment, tr("Comment the selection or the line; on a comment, resolve it", "Commenter la sélection ou la ligne ; sur un commentaire, le résoudre")),
+                p(tr("comments", "commentaires"), tr("Comments: show their panel, jump to one", "Commentaires : montrer leur panneau, aller à l'un d'eux")),
+                t(tr("Right click", "Clic droit"), tr("Menu of the note: link, comment, cut, copy, paste, bold, italic", "Menu de la note : lien, commentaire, couper, copier, coller, gras, italique")),
+                k(&editor::Copy, tr("Copy", "Copier")),
+                k(&editor::Cut, tr("Cut", "Couper")),
+                k(&editor::Paste, tr("Paste text or a picture; an address over a selection makes it a link", "Coller du texte ou une image ; une adresse sur une sélection en fait un lien")),
+                k(&editor::SelectAll, tr("Select all", "Tout sélectionner")),
+                k(&editor::Undo, tr("Undo", "Annuler")),
+                k(&editor::Redo, tr("Redo", "Rétablir")),
+                t(&format!("{word}+{}", tr("Left / Right", "Gauche / Droite")), tr("Move by word", "Se déplacer par mot")),
             ],
         ),
     ]
+}
+
+/// Les actions dont le raccourci se change : celles qui ont leur ligne dans l'aide.
+fn editable() -> std::collections::HashSet<&'static str> {
+    help_sections(&[], &keys::Changes::new()).into_iter().flat_map(|(_, rows)| rows).filter_map(|row| row.action).collect()
 }
 
 impl Shell {
     /// Les lignes de l'aide que la recherche garde.
     fn help_rows(&self, cx: &App) -> keys::Sections {
         let query = self.help_find.as_ref().map(|find| find.read(cx).line.text.clone()).unwrap_or_default();
-        keys::filter(help_sections(), &query)
+        keys::filter(help_sections(&self.bound, &self.changes), &query)
     }
 
     fn render_help(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2098,6 +2312,18 @@ impl Shell {
         let rows = self.help_rows(cx);
         let none = rows.is_empty();
         let asked = self.help_find.as_ref().is_some_and(|find| !find.read(cx).line.text.is_empty());
+        let small = |id: String, text: &'static str| {
+            div()
+                .id(gpui::SharedString::from(id.clone()))
+                .debug_selector(move || id.clone())
+                .px_1()
+                .rounded(px(4.))
+                .cursor_pointer()
+                .text_size(px(11.))
+                .text_color(t.dim)
+                .hover(|s| s.bg(t.border).text_color(t.text))
+                .child(text)
+        };
         let hint = div().absolute().left_0().top_0().text_color(t.dim).child(tr("Search the shortcuts…", "Chercher un raccourci…"));
         let find = div()
             .flex_none()
@@ -2118,7 +2344,15 @@ impl Shell {
                     .overflow_hidden()
                     .children(self.help_find.clone())
                     .when(!asked, |d| d.child(hint)),
-            );
+            )
+            .when(!self.changes.is_empty(), |d| {
+                d.child(
+                    small("keys-reset".into(), tr("Reset all", "Tout rétablir")).on_click(cx.listener(|this, _, _, cx| this.key_reset(None, cx))),
+                )
+            });
+        let label = |action: &str| {
+            help_sections(&[], &keys::Changes::new()).into_iter().flat_map(|(_, rows)| rows).find(|row| row.action == Some(action)).map_or("", |row| row.effect)
+        };
         let sections = rows.into_iter().map(|(title, rows)| {
             div()
                 .w(px(370.))
@@ -2126,12 +2360,83 @@ impl Shell {
                 .flex_col()
                 .gap_1()
                 .child(div().mb_1().text_color(t.accent).text_size(px(12.)).child(title))
-                .children(rows.into_iter().map(|(keys, effect)| {
+                .children(rows.into_iter().map(|row| {
+                    let edit = self.help_edit.as_ref().filter(|edit| Some(edit.action) == row.action);
+                    let chosen = row.action.is_some() && row.action == self.help_sel;
+                    // Les touches : un bouton quand elles se changent, du texte sinon.
+                    let keys = match row.action {
+                        None => div().w(px(156.)).flex_none().font_family(mono()).text_size(px(12.)).child(row.keys.clone()),
+                        Some(action) => {
+                            let shown = if edit.is_some() {
+                                tr("Press the keys…", "Tape les touches…").to_string()
+                            } else if row.keys.is_empty() {
+                                "—".to_string()
+                            } else {
+                                row.keys.clone()
+                            };
+                            let key = div()
+                                .id(gpui::SharedString::from(format!("key-{action}")))
+                                .debug_selector(move || format!("key-{action}"))
+                                .px_1()
+                                .rounded(px(4.))
+                                .bg(t.border.opacity(0.6))
+                                .cursor_pointer()
+                                .font_family(mono())
+                                .text_size(px(12.))
+                                .text_color(if edit.is_some() || row.changed { t.accent } else { t.text })
+                                .hover(|s| s.bg(t.border))
+                                .child(shown)
+                                .on_click(cx.listener(move |this, _, _, cx| this.key_edit(action, cx)));
+                            let reset = small(format!("key-reset-{action}"), tr("default", "défaut"))
+                                .on_click(cx.listener(move |this, _, _, cx| this.key_reset(Some(action), cx)));
+                            div()
+                                .w(px(156.))
+                                .flex_none()
+                                .flex()
+                                .flex_wrap()
+                                .items_start()
+                                .gap_1()
+                                .child(key)
+                                .when(row.changed && edit.is_none(), |d| d.child(reset))
+                        }
+                    };
+                    // Sous la ligne en cours de saisie : quoi faire, ou ce qui coince.
+                    let note = edit.map(|edit| match &edit.issue {
+                        None => div().text_size(px(12.)).text_color(t.dim).child(tr(
+                            "Backspace: no shortcut · Esc: cancel",
+                            "Retour arrière : aucun raccourci · Échap : annuler",
+                        )),
+                        Some(KeyIssue::Refused(why)) => div().text_size(px(12.)).child(format!("{} : {why}", keys::show(&edit.keys))),
+                        Some(KeyIssue::Taken(others)) => div()
+                            .text_size(px(12.))
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child(div().w_full().child(format!(
+                                "{} : {} {}",
+                                keys::show(&edit.keys),
+                                tr("already used by:", "déjà utilisé par :"),
+                                others.iter().map(|other| label(other)).collect::<Vec<_>>().join(", "),
+                            )))
+                            .child(
+                                small("key-replace".into(), tr("Replace (Enter)", "Remplacer (Entrée)"))
+                                    .text_color(t.text)
+                                    .on_click(cx.listener(|this, _, _, cx| this.key_replace(cx))),
+                            )
+                            .child(small("key-keep".into(), tr("Cancel (Esc)", "Annuler (Échap)")).on_click(cx.listener(|this, _, _, cx| {
+                                this.help_edit = None;
+                                cx.notify();
+                            }))),
+                    });
                     div()
                         .flex()
-                        .gap_3()
-                        .child(div().w(px(156.)).flex_none().font_family(mono()).text_size(px(12.)).child(keys))
-                        .child(div().flex_1().min_w_0().text_color(t.dim).child(effect))
+                        .flex_col()
+                        .gap_1()
+                        .rounded(px(4.))
+                        .when(chosen, |d| d.bg(t.selection.opacity(0.5)))
+                        .child(div().flex().gap_3().child(keys).child(div().flex_1().min_w_0().text_color(t.dim).child(row.effect)))
+                        .children(note)
                 }))
         });
         // À propos, en pied de panneau : ce qu'est l'app, et où la trouver.
@@ -2199,6 +2504,8 @@ impl Shell {
                     .text_size(px(13.))
                     // Un clic dans le panneau ne le ferme pas.
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_action(cx.listener(|this, _: &palette::Prev, _, cx| this.help_step(false, cx)))
+                    .on_action(cx.listener(|this, _: &palette::Next, _, cx| this.help_step(true, cx)))
                     .child(find)
                     .child(
                         div()
@@ -2347,7 +2654,8 @@ impl Render for Shell {
                         ),
                 )
                 .child(div().text_size(px(12.)).text_color(t.dim).child(format!(
-                    "{MOD}+O · {}",
+                    "{} · {}",
+                    keys::of(cx, &OpenVault),
                     tr(
                         "you can create a new folder from the file dialog",
                         "un nouveau dossier peut être créé depuis la fenêtre de sélection",
@@ -2795,8 +3103,11 @@ fn resize_edge(pos: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeEdge> {
     })
 }
 
-fn bind_keys(cx: &mut App) {
+/// La table des raccourcis par défaut. Son ordre compte : à contexte égal, la dernière liaison
+/// l'emporte.
+fn defaults() -> Vec<keys::Bind> {
     use editor::*;
+    use keys::bind as b;
     use palette::{Confirm, Dismiss, Next, Prev};
     let e = Some("Editor");
     let p = Some("Palette");
@@ -2806,187 +3117,206 @@ fn bind_keys(cx: &mut App) {
     let sh = Some("Sheet");
     // `secondary` = Cmd sur macOS, Ctrl ailleurs ; les mots se parcourent avec Alt sur macOS.
     let word = if cfg!(target_os = "macos") { "alt" } else { "ctrl" };
-    cx.bind_keys([
-        KeyBinding::new("secondary-p", OpenPalette, None),
-        KeyBinding::new("secondary-n", NewNote, None),
-        KeyBinding::new("secondary-o", OpenVault, None),
-        KeyBinding::new("secondary-shift-c", CopyAll, None),
-        KeyBinding::new("f1", ToggleHelp, None),
-        KeyBinding::new("secondary-/", ToggleHelp, None),
-        KeyBinding::new("escape", CloseHelp, Some("Shell")),
-        KeyBinding::new("secondary-shift-o", Outline, None),
-        KeyBinding::new("secondary-j", Today, None),
-        KeyBinding::new("secondary-shift-f", SearchVault, None),
-        KeyBinding::new("secondary-=", ZoomIn, None),
-        KeyBinding::new("secondary-+", ZoomIn, None),
-        KeyBinding::new("secondary--", ZoomOut, None),
-        KeyBinding::new("secondary-0", ZoomReset, None),
-        KeyBinding::new("secondary-q", Quit, None),
-        KeyBinding::new("secondary-shift-d", NewDiagram, Some("Shell")),
-        KeyBinding::new("secondary-=", canvas::ZoomIn, c),
-        KeyBinding::new("secondary-+", canvas::ZoomIn, c),
-        KeyBinding::new("secondary--", canvas::ZoomOut, c),
-        KeyBinding::new("secondary-0", canvas::ZoomFit, c),
-        KeyBinding::new("backspace", canvas::Erase, c),
-        KeyBinding::new("delete", canvas::EraseNext, c),
-        KeyBinding::new("left", canvas::Left, c),
-        KeyBinding::new("right", canvas::Right, c),
-        KeyBinding::new("up", canvas::Up, c),
-        KeyBinding::new("down", canvas::Down, c),
-        KeyBinding::new("secondary-z", canvas::Undo, c),
-        KeyBinding::new("secondary-shift-z", canvas::Redo, c),
-        KeyBinding::new("secondary-d", canvas::Duplicate, c),
-        KeyBinding::new("secondary-a", canvas::SelectAll, c),
-        KeyBinding::new("secondary-v", canvas::Paste, c),
-        KeyBinding::new("enter", canvas::Confirm, c),
-        KeyBinding::new("escape", canvas::Cancel, c),
+    let mut all = vec![
+        b("secondary-p", &OpenPalette, None),
+        b("secondary-n", &NewNote, None),
+        b("secondary-o", &OpenVault, None),
+        b("secondary-shift-c", &CopyAll, None),
+        b("f1", &ToggleHelp, None),
+        b("secondary-/", &ToggleHelp, None),
+        b("escape", &CloseHelp, Some("Shell")),
+        b("secondary-shift-o", &Outline, None),
+        b("secondary-j", &Today, None),
+        b("secondary-shift-f", &SearchVault, None),
+        b("secondary-=", &ZoomIn, None),
+        b("secondary-+", &ZoomIn, None),
+        b("secondary--", &ZoomOut, None),
+        b("secondary-0", &ZoomReset, None),
+        b("secondary-q", &Quit, None),
+        b("secondary-shift-d", &NewDiagram, Some("Shell")),
+        b("secondary-=", &canvas::ZoomIn, c),
+        b("secondary-+", &canvas::ZoomIn, c),
+        b("secondary--", &canvas::ZoomOut, c),
+        b("secondary-0", &canvas::ZoomFit, c),
+        b("backspace", &canvas::Erase, c),
+        b("delete", &canvas::EraseNext, c),
+        b("left", &canvas::Left, c),
+        b("right", &canvas::Right, c),
+        b("up", &canvas::Up, c),
+        b("down", &canvas::Down, c),
+        b("secondary-z", &canvas::Undo, c),
+        b("secondary-shift-z", &canvas::Redo, c),
+        b("secondary-d", &canvas::Duplicate, c),
+        b("secondary-a", &canvas::SelectAll, c),
+        b("secondary-v", &canvas::Paste, c),
+        b("enter", &canvas::Confirm, c),
+        b("escape", &canvas::Cancel, c),
         // Tableau (CSV, TSV) : flèches, sélection avec Maj, saisie, presse-papiers, annuler.
-        KeyBinding::new("left", sheet::Left, sh),
-        KeyBinding::new("right", sheet::Right, sh),
-        KeyBinding::new("up", sheet::Up, sh),
-        KeyBinding::new("down", sheet::Down, sh),
-        KeyBinding::new("shift-left", sheet::ExtendLeft, sh),
-        KeyBinding::new("shift-right", sheet::ExtendRight, sh),
-        KeyBinding::new("shift-up", sheet::ExtendUp, sh),
-        KeyBinding::new("shift-down", sheet::ExtendDown, sh),
-        KeyBinding::new("pageup", sheet::PageUp, sh),
-        KeyBinding::new("pagedown", sheet::PageDown, sh),
-        KeyBinding::new("home", sheet::RowStart, sh),
-        KeyBinding::new("end", sheet::RowEnd, sh),
-        KeyBinding::new("secondary-home", sheet::Origin, sh),
-        KeyBinding::new("secondary-end", sheet::Corner, sh),
-        KeyBinding::new("secondary-up", sheet::FirstRow, sh),
-        KeyBinding::new("secondary-down", sheet::LastRow, sh),
-        KeyBinding::new("tab", sheet::Next, sh),
-        KeyBinding::new("shift-tab", sheet::Previous, sh),
-        KeyBinding::new("enter", sheet::Enter, sh),
-        KeyBinding::new("f2", sheet::Edit, sh),
-        KeyBinding::new("escape", sheet::Cancel, sh),
-        KeyBinding::new("backspace", sheet::Backspace, sh),
-        KeyBinding::new("delete", sheet::Delete, sh),
-        KeyBinding::new("secondary-c", sheet::Copy, sh),
-        KeyBinding::new("secondary-x", sheet::Cut, sh),
-        KeyBinding::new("secondary-v", sheet::Paste, sh),
-        KeyBinding::new("secondary-a", sheet::SelectAll, sh),
-        KeyBinding::new("secondary-z", sheet::Undo, sh),
-        KeyBinding::new("secondary-shift-z", sheet::Redo, sh),
-        KeyBinding::new("secondary-y", sheet::Redo, sh),
-        KeyBinding::new("secondary-enter", sheet::InsertBelow, sh),
-        KeyBinding::new("secondary-shift-enter", sheet::InsertAbove, sh),
-        KeyBinding::new("secondary-delete", sheet::DeleteRows, sh),
-        KeyBinding::new("secondary-e", nav::ShowTree, Some("Shell")),
-        KeyBinding::new("secondary-r", nav::ShowRecent, Some("Shell")),
-        KeyBinding::new("secondary-g", nav::ShowGraph, Some("Shell")),
-        KeyBinding::new("secondary-t", nav::ShowTags, Some("Shell")),
-        KeyBinding::new("secondary-l", nav::ShowLinks, Some("Shell")),
-        KeyBinding::new("secondary-shift-j", nav::ShowCalendar, Some("Shell")),
-        KeyBinding::new("secondary-m", nav::ToggleFull, Some("Shell")),
-        KeyBinding::new("tab", graph::Cycle, n),
-        KeyBinding::new("secondary-shift-n", nav::NewFolder, Some("Shell")),
-        KeyBinding::new("f2", nav::Rename, n),
-        KeyBinding::new("secondary-d", nav::Duplicate, n),
-        KeyBinding::new("delete", nav::Trash, n),
-        KeyBinding::new("up", nav::Prev, n),
-        KeyBinding::new("down", nav::Next, n),
-        KeyBinding::new("left", nav::Fold, n),
-        KeyBinding::new("right", nav::Unfold, n),
-        KeyBinding::new("enter", nav::Open, n),
-        KeyBinding::new("pageup", nav::PrevMonth, n),
-        KeyBinding::new("pagedown", nav::NextMonth, n),
-        KeyBinding::new("escape", nav::Close, n),
-        KeyBinding::new("up", Prev, p),
-        KeyBinding::new("down", Next, p),
-        KeyBinding::new("enter", Confirm, p),
-        KeyBinding::new("escape", Dismiss, p),
-        KeyBinding::new("backspace", Backspace, e),
-        KeyBinding::new("delete", Delete, e),
-        KeyBinding::new(&format!("{word}-backspace"), DeleteWordLeft, e),
-        KeyBinding::new(&format!("{word}-delete"), DeleteWordRight, e),
-        KeyBinding::new("left", Left, e),
-        KeyBinding::new("right", Right, e),
-        KeyBinding::new("up", Up, e),
-        KeyBinding::new("down", Down, e),
-        KeyBinding::new(&format!("{word}-left"), WordLeft, e),
-        KeyBinding::new(&format!("{word}-right"), WordRight, e),
-        KeyBinding::new("home", Home, e),
-        KeyBinding::new("end", End, e),
-        KeyBinding::new("secondary-home", DocStart, e),
-        KeyBinding::new("secondary-end", DocEnd, e),
-        KeyBinding::new("pageup", PageUp, e),
-        KeyBinding::new("pagedown", PageDown, e),
-        KeyBinding::new("shift-left", SelectLeft, e),
-        KeyBinding::new("shift-right", SelectRight, e),
-        KeyBinding::new("shift-up", SelectUp, e),
-        KeyBinding::new("shift-down", SelectDown, e),
-        KeyBinding::new(&format!("{word}-shift-left"), SelectWordLeft, e),
-        KeyBinding::new(&format!("{word}-shift-right"), SelectWordRight, e),
-        KeyBinding::new("shift-home", SelectHome, e),
-        KeyBinding::new("shift-end", SelectEnd, e),
-        KeyBinding::new("secondary-shift-home", SelectDocStart, e),
-        KeyBinding::new("secondary-shift-end", SelectDocEnd, e),
-        KeyBinding::new("secondary-a", SelectAll, e),
+        b("left", &sheet::Left, sh),
+        b("right", &sheet::Right, sh),
+        b("up", &sheet::Up, sh),
+        b("down", &sheet::Down, sh),
+        b("shift-left", &sheet::ExtendLeft, sh),
+        b("shift-right", &sheet::ExtendRight, sh),
+        b("shift-up", &sheet::ExtendUp, sh),
+        b("shift-down", &sheet::ExtendDown, sh),
+        b("pageup", &sheet::PageUp, sh),
+        b("pagedown", &sheet::PageDown, sh),
+        b("home", &sheet::RowStart, sh),
+        b("end", &sheet::RowEnd, sh),
+        b("secondary-home", &sheet::Origin, sh),
+        b("secondary-end", &sheet::Corner, sh),
+        b("secondary-up", &sheet::FirstRow, sh),
+        b("secondary-down", &sheet::LastRow, sh),
+        b("tab", &sheet::Next, sh),
+        b("shift-tab", &sheet::Previous, sh),
+        b("enter", &sheet::Enter, sh),
+        b("f2", &sheet::Edit, sh),
+        b("escape", &sheet::Cancel, sh),
+        b("backspace", &sheet::Backspace, sh),
+        b("delete", &sheet::Delete, sh),
+        b("secondary-c", &sheet::Copy, sh),
+        b("secondary-x", &sheet::Cut, sh),
+        b("secondary-v", &sheet::Paste, sh),
+        b("secondary-a", &sheet::SelectAll, sh),
+        b("secondary-z", &sheet::Undo, sh),
+        b("secondary-shift-z", &sheet::Redo, sh),
+        b("secondary-y", &sheet::Redo, sh),
+        b("secondary-enter", &sheet::InsertBelow, sh),
+        b("secondary-shift-enter", &sheet::InsertAbove, sh),
+        b("secondary-delete", &sheet::DeleteRows, sh),
+        b("secondary-e", &nav::ShowTree, Some("Shell")),
+        b("secondary-r", &nav::ShowRecent, Some("Shell")),
+        b("secondary-g", &nav::ShowGraph, Some("Shell")),
+        b("secondary-t", &nav::ShowTags, Some("Shell")),
+        b("secondary-l", &nav::ShowLinks, Some("Shell")),
+        b("secondary-shift-j", &nav::ShowCalendar, Some("Shell")),
+        b("secondary-m", &nav::ToggleFull, Some("Shell")),
+        b("tab", &graph::Cycle, n),
+        b("secondary-shift-n", &nav::NewFolder, Some("Shell")),
+        b("f2", &nav::Rename, n),
+        b("secondary-d", &nav::Duplicate, n),
+        b("delete", &nav::Trash, n),
+        b("up", &nav::Prev, n),
+        b("down", &nav::Next, n),
+        b("left", &nav::Fold, n),
+        b("right", &nav::Unfold, n),
+        b("enter", &nav::Open, n),
+        b("pageup", &nav::PrevMonth, n),
+        b("pagedown", &nav::NextMonth, n),
+        b("escape", &nav::Close, n),
+        b("up", &Prev, p),
+        b("down", &Next, p),
+        b("enter", &Confirm, p),
+        b("escape", &Dismiss, p),
+        b("backspace", &Backspace, e),
+        b("delete", &Delete, e),
+        b(&format!("{word}-backspace"), &DeleteWordLeft, e),
+        b(&format!("{word}-delete"), &DeleteWordRight, e),
+        b("left", &Left, e),
+        b("right", &Right, e),
+        b("up", &Up, e),
+        b("down", &Down, e),
+        b(&format!("{word}-left"), &WordLeft, e),
+        b(&format!("{word}-right"), &WordRight, e),
+        b("home", &Home, e),
+        b("end", &End, e),
+        b("secondary-home", &DocStart, e),
+        b("secondary-end", &DocEnd, e),
+        b("pageup", &PageUp, e),
+        b("pagedown", &PageDown, e),
+        b("shift-left", &SelectLeft, e),
+        b("shift-right", &SelectRight, e),
+        b("shift-up", &SelectUp, e),
+        b("shift-down", &SelectDown, e),
+        b(&format!("{word}-shift-left"), &SelectWordLeft, e),
+        b(&format!("{word}-shift-right"), &SelectWordRight, e),
+        b("shift-home", &SelectHome, e),
+        b("shift-end", &SelectEnd, e),
+        b("secondary-shift-home", &SelectDocStart, e),
+        b("secondary-shift-end", &SelectDocEnd, e),
+        b("secondary-a", &SelectAll, e),
         // Recherche dans la note : la barre a son propre contexte tant qu'elle reçoit la saisie.
-        KeyBinding::new("secondary-f", Find, e),
-        KeyBinding::new("secondary-f", Find, f),
-        KeyBinding::new("secondary-h", FindReplace, e),
-        KeyBinding::new("secondary-h", FindReplace, f),
-        KeyBinding::new("f3", FindNext, e),
-        KeyBinding::new("shift-f3", FindPrev, e),
-        KeyBinding::new("f3", FindNext, f),
-        KeyBinding::new("shift-f3", FindPrev, f),
-        KeyBinding::new("enter", FindEnter, f),
-        KeyBinding::new("shift-enter", FindPrev, f),
-        KeyBinding::new("secondary-enter", ReplaceAll, f),
-        KeyBinding::new("secondary-shift-enter", ReplaceInVault, f),
-        KeyBinding::new("escape", FindClose, f),
-        KeyBinding::new("backspace", FindErase, f),
-        KeyBinding::new("tab", FindSwitch, f),
+        b("secondary-f", &Find, e),
+        b("secondary-f", &Find, f),
+        b("secondary-h", &FindReplace, e),
+        b("secondary-h", &FindReplace, f),
+        b("f3", &FindNext, e),
+        b("shift-f3", &FindPrev, e),
+        b("f3", &FindNext, f),
+        b("shift-f3", &FindPrev, f),
+        b("enter", &FindEnter, f),
+        b("shift-enter", &FindPrev, f),
+        b("secondary-enter", &ReplaceAll, f),
+        b("secondary-shift-enter", &ReplaceInVault, f),
+        b("escape", &FindClose, f),
+        b("backspace", &FindErase, f),
+        b("tab", &FindSwitch, f),
         // Aussi quand la barre est ouverte mais que la saisie est revenue à la note.
-        KeyBinding::new("alt-c", FindCase, f),
-        KeyBinding::new("alt-w", FindWord, f),
-        KeyBinding::new("alt-r", FindRegex, f),
-        KeyBinding::new("alt-r", FindRegex, e),
-        KeyBinding::new("alt-c", FindCase, e),
-        KeyBinding::new("alt-w", FindWord, e),
-        KeyBinding::new("secondary-v", FindPaste, f),
-        KeyBinding::new("enter", Newline, e),
-        KeyBinding::new("tab", Indent, e),
-        KeyBinding::new("shift-tab", Outdent, e),
-        KeyBinding::new("secondary-enter", ToggleTask, e),
-        KeyBinding::new("secondary-shift-l", AlignLeft, e),
-        KeyBinding::new("secondary-shift-e", AlignCenter, e),
-        KeyBinding::new("secondary-shift-r", AlignRight, e),
-        KeyBinding::new("secondary-b", Bold, e),
-        KeyBinding::new("secondary-i", Italic, e),
-        KeyBinding::new("secondary-k", InsertLink, e),
-        KeyBinding::new("secondary-d", SelectNext, e),
-        KeyBinding::new("secondary-shift-m", Comment, e),
-        KeyBinding::new("secondary-c", Copy, e),
-        KeyBinding::new("secondary-x", Cut, e),
-        KeyBinding::new("secondary-v", Paste, e),
-        KeyBinding::new("secondary-z", Undo, e),
-        KeyBinding::new("secondary-shift-z", Redo, e),
-        KeyBinding::new("secondary-y", Redo, e),
+        b("alt-c", &FindCase, f),
+        b("alt-w", &FindWord, f),
+        b("alt-r", &FindRegex, f),
+        b("alt-r", &FindRegex, e),
+        b("alt-c", &FindCase, e),
+        b("alt-w", &FindWord, e),
+        b("secondary-v", &FindPaste, f),
+        b("enter", &Newline, e),
+        b("tab", &Indent, e),
+        b("shift-tab", &Outdent, e),
+        b("secondary-enter", &ToggleTask, e),
+        b("secondary-shift-l", &AlignLeft, e),
+        b("secondary-shift-e", &AlignCenter, e),
+        b("secondary-shift-r", &AlignRight, e),
+        b("secondary-b", &Bold, e),
+        b("secondary-i", &Italic, e),
+        b("secondary-k", &InsertLink, e),
+        b("secondary-d", &SelectNext, e),
+        b("secondary-shift-m", &Comment, e),
+        b("secondary-c", &Copy, e),
+        b("secondary-x", &Cut, e),
+        b("secondary-v", &Paste, e),
+        b("secondary-z", &Undo, e),
+        b("secondary-shift-z", &Redo, e),
+        b("secondary-y", &Redo, e),
         // Un geste fait sur le tableau kanban s'annule depuis le tableau.
-        KeyBinding::new("secondary-z", Undo, Some("Board")),
-        KeyBinding::new("secondary-shift-z", Redo, Some("Board")),
-        KeyBinding::new("secondary-y", Redo, Some("Board")),
-        KeyBinding::new("escape", Cancel, e),
-    ]);
+        b("secondary-z", &Undo, Some("Board")),
+        b("secondary-shift-z", &Redo, Some("Board")),
+        b("secondary-y", &Redo, Some("Board")),
+        b("escape", &Cancel, e),
+    ];
     // Après les champs qui s'en servent (palette, grille) : ses touches passent avant les leurs.
-    cx.bind_keys(line::bindings(word));
+    all.extend(line::bindings(word));
     // Conventions macOS : Cmd+flèches pour les extrémités de ligne et de document.
     #[cfg(target_os = "macos")]
-    cx.bind_keys([
-        KeyBinding::new("cmd-left", Home, e),
-        KeyBinding::new("cmd-right", End, e),
-        KeyBinding::new("cmd-up", DocStart, e),
-        KeyBinding::new("cmd-down", DocEnd, e),
-        KeyBinding::new("cmd-shift-left", SelectHome, e),
-        KeyBinding::new("cmd-shift-right", SelectEnd, e),
-        KeyBinding::new("cmd-shift-up", SelectDocStart, e),
-        KeyBinding::new("cmd-shift-down", SelectDocEnd, e),
+    all.extend([
+        b("cmd-left", &Home, e),
+        b("cmd-right", &End, e),
+        b("cmd-up", &DocStart, e),
+        b("cmd-down", &DocEnd, e),
+        b("cmd-shift-left", &SelectHome, e),
+        b("cmd-shift-right", &SelectEnd, e),
+        b("cmd-shift-up", &SelectDocStart, e),
+        b("cmd-shift-down", &SelectDocEnd, e),
     ]);
+    all
+}
+
+/// Remplace toutes les liaisons de l'app par celles-ci.
+fn install(cx: &mut App, binds: &[keys::Bind]) {
+    let binds: Vec<KeyBinding> = binds
+        .iter()
+        .filter_map(|bind| {
+            let action = cx.build_action(bind.action, None).ok()?;
+            let context = bind.context.map(|context| gpui::KeyBindingContextPredicate::parse(context).unwrap().into());
+            KeyBinding::load(&bind.keys, action, context, false, None, &gpui::DummyKeyboardMapper).ok()
+        })
+        .collect();
+    cx.clear_key_bindings();
+    cx.bind_keys(binds);
+}
+
+fn bind_keys(cx: &mut App) {
+    install(cx, &defaults());
 }
 
 /// Le pilote Vulkan NVIDIA (paquet `nvidia-utils`) met environ 2 s à renoncer
@@ -3213,10 +3543,10 @@ mod tests {
         cx.simulate_input("cOmmente");
         let found = rows(cx);
         assert!(!found.is_empty() && found.len() < all, "{found:?}");
-        assert!(found.iter().all(|(_, effect)| keys::fold(effect).contains("commente")), "{found:?}");
+        assert!(found.iter().all(|row| keys::fold(row.effect).contains("commente")), "{found:?}");
         cx.simulate_keystrokes("secondary-a");
-        cx.simulate_input("shift+f");
-        assert!(rows(cx).iter().any(|(keys, _)| keys.ends_with("Shift+F")));
+        cx.simulate_input("maj+f");
+        assert!(rows(cx).iter().any(|row| row.keys.ends_with("Maj+F")));
         cx.simulate_keystrokes("secondary-a");
         cx.simulate_input("zzz");
         assert!(rows(cx).is_empty());
@@ -3228,6 +3558,87 @@ mod tests {
         cx.simulate_keystrokes("escape");
         assert!(!shell.read_with(cx, |s, _| s.help));
         cx.simulate_input("ok");
+        assert_eq!(text(cx), "# Idées\n\nok");
+
+        // Raccourcis modifiables : Entrée sur une ligne de l'aide attend des touches, les
+        // suivantes deviennent le raccourci, tout de suite et dans le fichier `keys`.
+        let (mode, panel) = shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel));
+        let keys_of = |cx: &mut gpui::VisualTestContext, action: &str| {
+            let row = rows(cx).into_iter().find(|row| row.action == Some(action)).unwrap();
+            (row.keys, row.changed)
+        };
+        let editing = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.help_edit.as_ref().map(|edit| (edit.action, edit.issue.clone())));
+        let graph = format!("{MOD}+G");
+        cx.simulate_keystrokes("f1");
+        cx.simulate_input("graphe des notes");
+        assert_eq!(keys_of(cx, "nav::ShowGraph"), (graph.clone(), false));
+        cx.simulate_keystrokes("down enter");
+        assert_eq!(editing(cx), Some(("nav::ShowGraph", None)));
+        // Refusées, avec la raison : une touche seule qui écrit, une touche réservée au texte.
+        cx.simulate_keystrokes("a");
+        assert!(matches!(editing(cx), Some((_, Some(KeyIssue::Refused(_))))));
+        assert_eq!(shell.read_with(cx, |s, cx| s.help_find.as_ref().unwrap().read(cx).line.text.clone()), "graphe des notes", "la touche n'est pas tapée");
+        cx.simulate_keystrokes("enter");
+        assert!(matches!(editing(cx), Some((_, Some(KeyIssue::Refused(_))))));
+        cx.simulate_keystrokes("secondary-shift-y");
+        assert_eq!(editing(cx), None);
+        assert_eq!(keys_of(cx, "nav::ShowGraph"), (format!("{MOD}+Maj+Y"), true));
+        assert_eq!(vault::load_file("keys"), "nav::ShowGraph=secondary-shift-y\n");
+        cx.simulate_keystrokes("escape escape");
+        assert!(!shell.read_with(cx, |s, _| s.help));
+        // Sans redémarrer : les anciennes touches ne font plus rien, les nouvelles agissent.
+        cx.simulate_keystrokes("secondary-e");
+        assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tree);
+        cx.simulate_keystrokes("secondary-g");
+        assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tree);
+        cx.simulate_keystrokes("secondary-shift-y");
+        assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Graph);
+        // Des touches déjà prises : la ligne dit par quoi, et rien n'est pris sans « remplacer ».
+        cx.simulate_keystrokes("f1");
+        cx.simulate_input("graphe des notes");
+        cx.simulate_keystrokes("down enter secondary-p");
+        assert_eq!(editing(cx), Some(("nav::ShowGraph", Some(KeyIssue::Taken(vec!["app::OpenPalette"])))));
+        assert!(shell.read_with(cx, |s, _| s.palette.is_none()));
+        assert_eq!(keys_of(cx, "nav::ShowGraph").0, format!("{MOD}+Maj+Y"));
+        // Entrée remplace : l'autre action perd son raccourci, et la liste le montre.
+        cx.simulate_keystrokes("enter");
+        assert_eq!(editing(cx), None);
+        assert_eq!(keys_of(cx, "nav::ShowGraph"), (format!("{MOD}+P"), true));
+        cx.simulate_keystrokes("secondary-a");
+        cx.simulate_input("filtrer par #tag");
+        assert_eq!(keys_of(cx, "app::OpenPalette"), (String::new(), true));
+        cx.simulate_keystrokes("escape escape secondary-e secondary-p");
+        assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.palette.is_none())), (nav::Mode::Graph, true));
+        // Retour arrière : aucun raccourci. Échap pendant la saisie n'annule qu'elle.
+        cx.simulate_keystrokes("f1");
+        cx.simulate_input("graphe des notes");
+        cx.simulate_keystrokes("down enter backspace");
+        assert_eq!(keys_of(cx, "nav::ShowGraph"), (String::new(), true));
+        cx.simulate_keystrokes("enter escape");
+        assert_eq!((editing(cx), shell.read_with(cx, |s, _| s.help)), (None, true));
+        assert_eq!(rows(cx).len(), 1, "la recherche n'a pas bougé");
+        // Un clic sur les touches attend aussi ; « défaut » remet celles d'origine.
+        let at = cx.debug_bounds("key-nav::ShowGraph").unwrap().center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert_eq!(editing(cx), Some(("nav::ShowGraph", None)));
+        cx.simulate_keystrokes("escape");
+        let at = cx.debug_bounds("key-reset-nav::ShowGraph").unwrap().center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert_eq!(keys_of(cx, "nav::ShowGraph"), (graph, false));
+        assert_eq!(vault::load_file("keys"), "app::OpenPalette=\n");
+        // « Tout rétablir » : plus rien de changé.
+        let at = cx.debug_bounds("keys-reset").unwrap().center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert!(shell.read_with(cx, |s, _| s.changes.is_empty()));
+        assert_eq!(vault::load_file("keys"), "");
+        cx.simulate_keystrokes("escape escape secondary-p");
+        assert!(shell.read_with(cx, |s, _| s.palette.is_some()));
+        cx.simulate_keystrokes("escape");
+        shell.update(cx, |s, cx| {
+            (s.nav.mode, s.nav.panel) = (mode, panel);
+            cx.notify();
+        });
+        cx.run_until_parked();
         assert_eq!(text(cx), "# Idées\n\nok");
 
         // Thème : la liste des thèmes (icône du rail, palette), celui qu'on parcourt s'applique en
@@ -5365,5 +5776,28 @@ mod tests {
         assert_eq!(first_language("(\n    en,\n    fr\n)"), Some("en"));
         assert_eq!(first_language("(\n)"), None);
         assert_eq!(first_language(""), None);
+    }
+
+    /// Les raccourcis changés sont relus au lancement ; une ligne fautive du fichier est écartée
+    /// et signalée, les autres s'appliquent.
+    #[gpui::test]
+    fn keys_survive_a_restart(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-keys-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let _config = isolated_config(&root);
+        vault::save_file("keys", "nav::ShowTags=secondary-shift-y\nno::Such=f8\n");
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
+        cx.run_until_parked();
+        assert_eq!(shell.read_with(cx, |s, _| s.changes.clone()), keys::Changes::from([("nav::ShowTags".to_string(), "secondary-shift-y".to_string())]));
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Failed, "no::Such=f8")));
+        cx.simulate_keystrokes("secondary-t");
+        assert_ne!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tags);
+        cx.simulate_keystrokes("secondary-shift-y");
+        assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tags);
+        // Un fichier d'avant cette version, ou vide : les raccourcis d'origine.
+        let _ = fs::remove_dir_all(&root);
     }
 }
