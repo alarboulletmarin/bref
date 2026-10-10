@@ -251,7 +251,7 @@ impl Render for Field {
 /// Largeur d'une colonne quand la fenêtre a la place ; elles se serrent jusqu'à `NARROW` pour
 /// tenir côte à côte, puis le tableau défile.
 const COLUMN: f32 = 250.;
-const NARROW: f32 = 160.;
+const NARROW: f32 = 140.;
 
 /// Le cadre d'une carte, sa case et son texte : les mêmes pour la carte posée, celle qu'on tient
 /// et la place qu'elle prendrait.
