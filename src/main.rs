@@ -694,7 +694,7 @@ impl Shell {
         match git::linked(&root) {
             Ok(true) => {}
             Ok(false) => {
-                let label = tr("Address of an empty git repository, to sync this vault with", "Adresse d'un dépôt git vide, pour y synchroniser ce coffre");
+                let label = tr("Address of an empty git repository", "Adresse d'un dépôt git vide");
                 return self.ask_text(label, window, cx, |this, url, _, cx| this.git_connect(url, cx));
             }
             Err(e) => return self.sync_failed(&e, cx),

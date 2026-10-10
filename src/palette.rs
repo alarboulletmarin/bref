@@ -761,9 +761,11 @@ impl Render for Palette {
                             .flex()
                             .items_center()
                             .text_size(px(15.))
+                            // Ni l'invite ni une longue adresse collée ne sortent du cadre.
+                            .overflow_hidden()
                             .child(input)
                             .when(self.query.text.is_empty(), |d| {
-                                d.child(div().text_color(t.dim).child(self.prompt.clone().unwrap_or_else(|| match self.lines {
+                                d.child(div().min_w_0().truncate().text_color(t.dim).child(self.prompt.clone().unwrap_or_else(|| match self.lines {
                                     true => tr("Search in the text of the vault…", "Chercher dans le texte du coffre…").into(),
                                     false => tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into(),
                                 })))
@@ -771,7 +773,7 @@ impl Render for Palette {
                             .child(self.query.shown(t).0.whitespace_nowrap())
                             .when(!self.query.text.is_empty(), |d| {
                                 d.children(self.prompt.clone().map(|label| {
-                                    div().ml_auto().pl_3().text_size(px(12.)).text_color(t.dim).child(label)
+                                    div().ml_auto().pl_3().flex_none().max_w(gpui::relative(0.45)).truncate().text_size(px(12.)).text_color(t.dim).child(label)
                                 }))
                             }),
                     )
