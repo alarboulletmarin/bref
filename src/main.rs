@@ -516,6 +516,8 @@ struct Pane {
     preview: bool,
     /// Dossier où enregistrer la nouvelle note ; le coffre par défaut.
     new_dir: Option<PathBuf>,
+    /// La note a été créée dans ce pane : laissée vide, son fichier ne reste pas dans le coffre.
+    fresh: bool,
     dirty: bool,
     /// La note ouverte est un tableau kanban dont on regarde le texte : on l'a demandé, ou on
     /// vient d'en écrire la clé (taper `kanban: true` ne fait pas quitter le texte).
@@ -647,6 +649,7 @@ impl Shell {
             origin: None,
             preview: false,
             new_dir: None,
+            fresh: false,
             dirty: false,
             board_text: false,
             board_was: false,
@@ -1896,6 +1899,7 @@ impl Shell {
         match fs::read_to_string(path) {
             Ok(text) => {
                 self.synced = vault::stem(path) == vault::title_of(&text);
+                self.fresh = false;
                 self.h1 = vault::h1_of(&text);
                 self.origin = Some(vault::stem(path));
                 // Une note relue garde sa vue ; une autre s'ouvre en tableau si elle en est un.
@@ -1903,7 +1907,8 @@ impl Shell {
                 self.board_was = kanban::is_board(&text);
                 self.path = Some(path.to_path_buf());
                 self.calm();
-                self.editor.update(cx, |e, cx| e.load(text, 0, cx));
+                let cursor = markdown::body_start(&text);
+                self.editor.update(cx, |e, cx| e.load(text, cursor, cx));
                 self.push_dirs(cx);
                 self.nav.reveal(path);
                 true
@@ -2092,6 +2097,7 @@ impl Shell {
         self.synced = true;
         self.preview = false;
         self.new_dir = None;
+        self.fresh = true;
         self.dirty = !text.is_empty();
         (self.board_text, self.board_was) = (false, kanban::is_board(&text));
         let cursor = text.len();
@@ -2110,6 +2116,30 @@ impl Shell {
         if let (Some(old), Some(path)) = (self.origin.take(), &self.path) {
             let new = vault::stem(path);
             self.relink(&old, &new, cx);
+        }
+        self.drop_if_empty(cx);
+    }
+
+    /// Une note créée ici puis vidée ne laisse pas de fichier vide derrière elle, ni dans les
+    /// récentes. Seul un fichier vide sur le disque est retiré : rien d'écrit ne se perd.
+    fn drop_if_empty(&mut self, cx: &mut Context<Self>) {
+        if !std::mem::take(&mut self.fresh) || !self.editor.read(cx).text().trim().is_empty() {
+            return;
+        }
+        let Some(path) = self.path.clone() else {
+            return;
+        };
+        if fs::read_to_string(&path).is_ok_and(|text| text.trim().is_empty()) && fs::remove_file(&path).is_ok() {
+            self.notes.retain(|n| n.path != path);
+            self.recent.retain(|p| *p != path);
+            if let Some(root) = &self.vault {
+                vault::save_config(root, &self.recent);
+            }
+            self.history.remove(&path);
+            self.path = None;
+            self.graph_stale = true;
+            self.push_names(cx);
+            self.refresh_graph(cx);
         }
     }
 
@@ -4766,7 +4796,8 @@ mod tests {
         // note quittée, pas à chaque titre intermédiaire.
         cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("tests");
-        cx.simulate_keystrokes("enter end");
+        // La note s'ouvre sur son corps : on remonte au titre pour le changer.
+        cx.simulate_keystrokes("enter secondary-home end");
         for letter in ["X", "Y"] {
             cx.simulate_input(letter);
             cx.executor().advance_clock(Duration::from_millis(500));
@@ -7079,7 +7110,45 @@ mod tests {
         let open = shell.read_with(cx, |s, _| (s.active, s.pane_ratio, s.panes.iter().map(|pane| pane.path.clone()).collect::<Vec<_>>()));
         assert_eq!(open, (0, 0.4, vec![Some(left.clone()), Some(right.clone())]));
         cx.simulate_input("x");
-        assert_eq!(shell.read_with(cx, |s, cx| s.panes[0].editor.read(cx).text().to_string()), "x# Gauche\n");
+        assert_eq!(shell.read_with(cx, |s, cx| s.panes[0].editor.read(cx).text().to_string()), "# Gauche\nx");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Une note s'ouvre sur son corps : la première touche ne casse pas l'en-tête YAML et ne
+    /// renomme pas la note par son titre, ce qui réécrirait les liens des autres notes.
+    #[gpui::test]
+    fn opens_on_the_body(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-body-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let _config = isolated_config(&root);
+        let plan = root.join("Plan.md");
+        fs::write(&plan, "---\ntags: [a]\n---\n# Plan\n\nÉtapes\n").unwrap();
+        fs::write(root.join("Accueil.md"), "# Accueil\n\n[[Plan]]\n").unwrap();
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (_shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), vec![plan.clone()], window, cx));
+        cx.run_until_parked();
+        cx.simulate_input("x");
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        assert_eq!(fs::read_to_string(&plan).unwrap(), "---\ntags: [a]\n---\n# Plan\n\nxÉtapes\n");
+        assert_eq!(fs::read_to_string(root.join("Accueil.md")).unwrap(), "# Accueil\n\n[[Plan]]\n");
+
+        // Une nouvelle note écrite puis vidée ne laisse rien en partant.
+        cx.simulate_keystrokes("secondary-n");
+        cx.simulate_input("Brouillon");
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        assert!(root.join("Brouillon.md").is_file());
+        cx.simulate_keystrokes("secondary-a backspace");
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("secondary-n");
+        cx.run_until_parked();
+        let mut notes: Vec<_> = fs::read_dir(&root).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name()).filter(|n| n.to_string_lossy().ends_with(".md")).collect();
+        notes.sort();
+        assert_eq!(notes, ["Accueil.md", "Plan.md"]);
         let _ = fs::remove_dir_all(&root);
     }
 

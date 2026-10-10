@@ -922,6 +922,26 @@ pub fn front_matter(text: &str) -> usize {
     0
 }
 
+/// Où poser le curseur à l'ouverture d'une note : au début de son corps, après l'en-tête YAML,
+/// la ligne du titre et les lignes vides qui la suivent. La première touche tapée va ainsi dans
+/// le texte, sans casser l'en-tête ni renommer la note par son titre.
+pub fn body_start(text: &str) -> usize {
+    let start = front_matter(text);
+    let rest = &text[start..];
+    let Some(title) = rest.find('\n') else {
+        // Une seule ligne, sans fin : le curseur la suit, comme on l'a laissée.
+        return text.len();
+    };
+    let mut at = start + title + 1;
+    for line in text[at..].split_inclusive('\n') {
+        if !line.trim().is_empty() {
+            break;
+        }
+        at += line.len();
+    }
+    at
+}
+
 /// Valeurs de la clé `key` de l'en-tête YAML, guillemets retirés : liste en ligne (`[a, b]`),
 /// valeurs séparées par des virgules, ou liste à tirets sur les lignes suivantes.
 // ponytail: lu à la main, pour les deux clés dont l'app se sert ; ni YAML imbriqué ni clé
@@ -1348,6 +1368,18 @@ mod tests {
         assert_eq!(on_enter("- ", 2, false), Enter::Clear);
         assert_eq!(on_enter("  x", 3, false), Enter::Insert("\n  ".into()));
         assert_eq!(on_enter("- a", 3, true), Enter::Insert("\n".into()));
+    }
+
+    #[test]
+    fn opens_on_the_body() {
+        let front = "---\ntags: [a]\n---\n";
+        assert_eq!(body_start(&format!("{front}# Titre\n\nCorps\n")), format!("{front}# Titre\n\n").len());
+        assert_eq!(body_start("# Titre\nCorps"), "# Titre\n".len());
+        // Rien après le titre : la fin de la note.
+        assert_eq!(body_start("# Titre\n\n"), "# Titre\n\n".len());
+        assert_eq!(body_start("# Titre"), "# Titre".len());
+        assert_eq!(body_start(""), 0);
+        assert_eq!(body_start(&format!("{front}seul")), format!("{front}seul").len());
     }
 
     #[test]
