@@ -50,6 +50,14 @@ fn install_label(version: &str) -> String {
     format!("{} {version}", tr("Update Bref to", "Mettre à jour Bref vers"))
 }
 
+pub fn sync_label() -> &'static str {
+    tr("Sync the vault (git)", "Synchroniser le coffre (git)")
+}
+
+pub fn clone_label() -> &'static str {
+    tr("Clone a vault from a git address…", "Cloner un coffre depuis une adresse git…")
+}
+
 fn backup_label() -> &'static str {
     tr("Back up the vault…", "Sauvegarder le coffre…")
 }
@@ -157,6 +165,8 @@ pub enum PaletteEvent {
     Trash,
     /// Archive le coffre dans un dossier à choisir.
     Backup,
+    Sync,
+    CloneVault,
     /// Ouvre le terminal du système dans le dossier du coffre.
     Terminal,
     /// Installe la nouvelle version.
@@ -193,6 +203,8 @@ enum Item {
     Forward,
     Trash,
     Backup,
+    Sync,
+    CloneVault,
     Terminal,
     Setting(Setting),
     Table(Pick),
@@ -453,7 +465,7 @@ impl Palette {
                 items.push(item);
             }
         }
-        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (undo_swap_label(), Item::UndoSwap), (board_label(), Item::Board), (today_label(), Item::Today), (back_label(), Item::Back), (forward_label(), Item::Forward), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (terminal_label(), Item::Terminal)] {
+        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (undo_swap_label(), Item::UndoSwap), (board_label(), Item::Board), (today_label(), Item::Today), (back_label(), Item::Back), (forward_label(), Item::Forward), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (sync_label(), Item::Sync), (clone_label(), Item::CloneVault), (terminal_label(), Item::Terminal)] {
             if !q.is_empty() && fuzzy(&q, &label.to_lowercase()).is_some() {
                 items.push(item);
             }
@@ -527,6 +539,8 @@ impl Palette {
             Some(Item::Forward) => PaletteEvent::Travel(true),
             Some(Item::Trash) => PaletteEvent::Trash,
             Some(Item::Backup) => PaletteEvent::Backup,
+            Some(Item::Sync) => PaletteEvent::Sync,
+            Some(Item::CloneVault) => PaletteEvent::CloneVault,
             Some(Item::Terminal) => PaletteEvent::Terminal,
             Some(Item::Install) => PaletteEvent::InstallUpdate,
             Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
@@ -663,6 +677,8 @@ impl Render for Palette {
                 Item::Forward => (forward_label().to_string(), crate::keys::of(cx, &crate::GoForward)),
                 Item::Trash => (trash_label().to_string(), String::new()),
                 Item::Backup => (backup_label().to_string(), String::new()),
+                Item::Sync => (sync_label().to_string(), crate::keys::of(cx, &crate::SyncVault)),
+                Item::CloneVault => (clone_label().to_string(), String::new()),
                 Item::Terminal => (terminal_label().to_string(), String::new()),
                 Item::Install => (install_label(self.installable.as_deref().unwrap_or_default()), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),

@@ -5,6 +5,7 @@ mod canvas;
 mod diagram;
 mod editor;
 mod figure;
+mod git;
 mod graph;
 mod grid;
 mod history;
@@ -392,7 +393,7 @@ pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
 
-actions!(app, [SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [SyncVault, SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -551,6 +552,8 @@ struct Shell {
     pane_aim: Option<(usize, bool)>,
     /// Le pane actif a changé sans que la saisie suive : le prochain rendu la lui donne.
     grab: bool,
+    /// Une synchronisation git est en cours : une seule à la fois.
+    syncing: bool,
     /// La disposition des panes telle qu'elle est enregistrée (fichier `panes`).
     panes_saved: String,
     focus: FocusHandle,
@@ -654,6 +657,216 @@ impl Shell {
             listing: None,
             peek: false,
         }
+    }
+
+    /// Demande une ligne de texte libre (une adresse) dans la palette, puis la passe à `then`.
+    fn ask_text(&mut self, label: &'static str, window: &mut Window, cx: &mut Context<Self>, then: fn(&mut Self, String, &mut Window, &mut Context<Self>)) {
+        let theme = self.theme;
+        let palette = cx.new(|cx| Palette::prompt(label, "", theme, cx));
+        cx.subscribe_in(&palette, window, move |this, _, event, window, cx| {
+            this.palette = None;
+            match this.vault {
+                Some(_) => window.focus(&this.editor.focus_handle(cx)),
+                None => window.focus(&this.focus),
+            }
+            if let PaletteEvent::Submit(text) = event
+                && !text.trim().is_empty()
+            {
+                then(this, text.trim().to_string(), window, cx);
+            }
+            cx.notify();
+        })
+        .detach();
+        window.focus(&palette.focus_handle(cx));
+        self.palette = Some(palette);
+        cx.notify();
+    }
+
+    /// Synchronise le coffre en une action : tout commiter, recevoir, fusionner, envoyer. Le
+    /// réseau travaille en tâche de fond, la saisie reste libre ; un coffre sans dépôt relié
+    /// demande d'abord l'adresse du dépôt.
+    fn git_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.vault.clone() else { return };
+        if self.syncing {
+            return;
+        }
+        self.flush(cx);
+        match git::linked(&root) {
+            Ok(true) => {}
+            Ok(false) => {
+                let label = tr("Address of an empty git repository, to sync this vault with", "Adresse d'un dépôt git vide, pour y synchroniser ce coffre");
+                return self.ask_text(label, window, cx, |this, url, _, cx| this.git_connect(url, cx));
+            }
+            Err(e) => return self.sync_failed(&e, cx),
+        }
+        if let Err(e) = git::save(&root) {
+            return self.sync_failed(&e, cx);
+        }
+        self.syncing = true;
+        self.say(Tone::Busy, tr("Syncing the vault…", "Synchronisation du coffre…"), cx);
+        let (date, host) = (date_name(today()), git::host());
+        cx.spawn(async move |this, cx| {
+            let (mut received, mut conflicts, mut sent) = (0, 0, 0);
+            // Refusé parce qu'une autre machine a envoyé entre-temps : recevoir de nouveau,
+            // trois fois au plus.
+            let busy = tr("the server keeps receiving from another machine: try again.", "le serveur reçoit sans cesse d'une autre machine : réessaie.");
+            let mut outcome = Err(git::Fail::Told(busy.to_string()));
+            for _ in 0..3 {
+                let fetch_root = root.clone();
+                if let Err(e) = cx.background_executor().spawn(async move { git::fetch(&fetch_root) }).await {
+                    outcome = Err(e);
+                    break;
+                }
+                // La partie locale se fait d'une traite sur ce fil : rien ne peut s'intercaler
+                // entre l'enregistrement de ce qui vient d'être tapé et la fusion, donc rien de
+                // tapé n'est perdu et rien de reçu n'est écrasé.
+                // ponytail: l'interface est figée le temps de la fusion (quelques dixièmes de
+                // seconde) ; la passer en tâche de fond avec la saisie retenue si un très gros
+                // coffre la rend sensible.
+                let merged = this.update(cx, |this, cx| {
+                    this.flush(cx);
+                    let merged = git::merge(&root, &date, &host);
+                    this.rescan(&root, cx);
+                    merged
+                });
+                let merged = match merged {
+                    Ok(Ok(merged)) => merged,
+                    Ok(Err(e)) => {
+                        outcome = Err(e);
+                        break;
+                    }
+                    Err(_) => return,
+                };
+                (received, conflicts, sent) = (received + merged.received, conflicts + merged.conflicts.len(), merged.sent);
+                if !merged.ahead {
+                    outcome = Ok(());
+                    break;
+                }
+                let push_root = root.clone();
+                match cx.background_executor().spawn(async move { git::push(&push_root) }).await {
+                    Ok(git::Pushed::Done) => {
+                        outcome = Ok(());
+                        break;
+                    }
+                    Ok(git::Pushed::Rejected) => {}
+                    Err(e) => {
+                        outcome = Err(e);
+                        break;
+                    }
+                }
+            }
+            this.update(cx, |this, cx| {
+                this.syncing = false;
+                match outcome {
+                    Err(e) => this.sync_failed(&e, cx),
+                    Ok(()) if sent + received + conflicts == 0 => this.say(Tone::Done, tr("Already up to date", "Déjà à jour"), cx),
+                    Ok(()) => {
+                        let mut told = format!(
+                            "{} {sent} {}, {received} {}",
+                            tr("Synced:", "Synchronisé :"),
+                            if sent > 1 { tr("sent", "envoyés") } else { tr("sent", "envoyé") },
+                            if received > 1 { tr("received", "reçus") } else { tr("received", "reçu") },
+                        );
+                        if conflicts > 0 {
+                            let kept = if conflicts > 1 {
+                                tr("conflicts: both versions are kept, the other ones as « (conflict …) » notes", "conflits : les deux versions sont gardées, celles d'en face dans des notes « (conflict …) »")
+                            } else {
+                                tr("conflict: both versions are kept, the other one as a « (conflict …) » note", "conflit : les deux versions sont gardées, celle d'en face dans une note « (conflict …) »")
+                            };
+                            told.push_str(&format!(" · {conflicts} {kept}"));
+                        }
+                        this.say(Tone::Done, told, cx)
+                    }
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn sync_failed(&mut self, why: &git::Fail, cx: &mut Context<Self>) {
+        self.syncing = false;
+        self.say(Tone::Failed, format!("{} : {}", tr("Sync failed", "Synchronisation impossible"), why.text()), cx);
+    }
+
+    /// Relit le coffre tout de suite, sans attendre la surveillance : ce que la fusion a écrit
+    /// s'affiche, chaque note gardant son curseur et son défilement.
+    fn rescan(&mut self, root: &Path, cx: &mut Context<Self>) {
+        let views: Vec<(usize, f32)> = self.panes.iter().map(|pane| pane.editor.read(cx).view()).collect();
+        let (notes, dirs, images) = vault::rescan(root, &self.notes);
+        self.sync(notes, dirs, images, cx);
+        for (pane, (at, scroll)) in self.panes.iter().zip(views) {
+            if pane.editor.read(cx).view().0 != at {
+                pane.editor.update(cx, |editor, cx| editor.set_view(at, scroll, cx));
+            }
+        }
+    }
+
+    /// Relie le coffre à un dépôt distant vide, et y envoie ce qu'il contient.
+    fn git_connect(&mut self, url: String, cx: &mut Context<Self>) {
+        let Some(root) = self.vault.clone() else { return };
+        if self.syncing {
+            return;
+        }
+        self.flush(cx);
+        self.syncing = true;
+        self.say(Tone::Busy, tr("Connecting the vault…", "Liaison du coffre…"), cx);
+        cx.spawn(async move |this, cx| {
+            let done = cx.background_executor().spawn(async move { git::connect(&root, &url) }).await;
+            this.update(cx, |this, cx| {
+                this.syncing = false;
+                match done {
+                    Ok(()) => this.say(Tone::Done, tr("Vault connected: it syncs with this repository from now on", "Coffre relié : il se synchronise désormais avec ce dépôt"), cx),
+                    Err(e) => this.say(Tone::Failed, format!("{} : {}", tr("Not connected", "Liaison impossible"), e.text()), cx),
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// « Cloner un coffre » : l'adresse du dépôt, puis le dossier où le poser.
+    fn ask_clone(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let label = tr("Address of the git repository to clone", "Adresse du dépôt git à cloner");
+        self.ask_text(label, window, cx, |_, url, window, cx| {
+            let paths = cx.prompt_for_paths(PathPromptOptions {
+                files: false,
+                directories: true,
+                multiple: false,
+                prompt: Some(tr("Clone into this folder", "Cloner dans ce dossier").into()),
+            });
+            cx.spawn_in(window, async move |this, cx| {
+                if let Ok(Ok(Some(paths))) = paths.await
+                    && let Some(parent) = paths.into_iter().next()
+                {
+                    this.update_in(cx, |this, window, cx| this.clone_to(url, parent, window, cx)).ok();
+                }
+            })
+            .detach();
+        });
+    }
+
+    /// Clone le dépôt dans un nouveau dossier de `parent`, qui devient le coffre ouvert.
+    fn clone_to(&mut self, url: String, parent: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let into = parent.join(git::folder_of(&url));
+        if into.exists() {
+            let taken = tr("Not cloned: this folder already exists:", "Clonage impossible : ce dossier existe déjà :");
+            return self.say(Tone::Failed, format!("{taken} {}", into.display()), cx);
+        }
+        self.say(Tone::Busy, tr("Cloning the vault…", "Clonage du coffre…"), cx);
+        cx.spawn_in(window, async move |this, cx| {
+            let target = into.clone();
+            let done = cx.background_executor().spawn(async move { git::clone(&url, &target) }).await;
+            this.update_in(cx, |this, window, cx| match done {
+                Ok(()) => {
+                    this.set_vault(into, window, cx);
+                    this.say(Tone::Done, tr("Vault cloned", "Coffre cloné"), cx)
+                }
+                Err(e) => this.say(Tone::Failed, format!("{} : {}", tr("Not cloned", "Clonage impossible"), e.text()), cx),
+            })
+            .ok();
+        })
+        .detach();
     }
 
     /// Le pane qui montre déjà ce fichier, comme note (même cachée par une image) ou à sa place.
@@ -805,6 +1018,7 @@ impl Shell {
             pane_aim: None,
             grab: false,
             panes_saved: String::new(),
+            syncing: false,
             focus: cx.focus_handle(),
             nav,
             graph,
@@ -2479,6 +2693,8 @@ impl Shell {
                 PaletteEvent::Travel(forward) => this.travel(*forward, window, cx),
                 PaletteEvent::Trash => this.open_trash(window, cx),
                 PaletteEvent::Backup => this.choose_backup(window, cx),
+                PaletteEvent::Sync => this.git_sync(window, cx),
+                PaletteEvent::CloneVault => this.ask_clone(window, cx),
                 PaletteEvent::Terminal => this.open_terminal(cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
                 PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
@@ -2536,6 +2752,9 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 k(&Today, tr("Today's note: open it, or create it", "Note du jour : l'ouvrir, ou la créer")),
                 k(&OpenVault, tr("Change vault", "Changer de coffre")),
                 p("terminal", tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")),
+                k(&SyncVault, tr("Sync the vault with git: commit, receive, merge, send; a conflict keeps both versions as two notes", "Synchroniser le coffre par git : commiter, recevoir, fusionner, envoyer ; un conflit garde les deux versions en deux notes")),
+                p("clone", tr("Clone a vault from a git address (also on the welcome screen)", "Cloner un coffre depuis une adresse git (aussi sur l'écran d'accueil)")),
+                t(tr("A cloud folder", "Un dossier synchronisé"), tr("iCloud, Dropbox, Google Drive, Syncthing: put the vault there, nothing else; never a git repository inside one", "iCloud, Dropbox, Google Drive, Syncthing : y poser le coffre, rien d'autre ; jamais un dépôt git dans un tel dossier")),
                 k(&CopyAll, tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
                 t(&format!("{MOD}+{click}"), tr("Open a [[link]], #tag or URL", "Ouvrir un [[lien]], #tag ou URL")),
                 k(&ToggleHelp, tr("This help", "Cette aide")),
@@ -3265,6 +3484,18 @@ impl Render for Shell {
                             cx.listener(|this, _, window, cx| this.choose_vault(window, cx)),
                         ),
                 )
+                .child(
+                    div()
+                        .id("welcome-clone")
+                        .px_3()
+                        .py_1()
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .text_color(t.accent)
+                        .hover(|s| s.bg(t.border))
+                        .child(tr("Clone a vault from a git address…", "Cloner un coffre depuis une adresse git…"))
+                        .on_click(cx.listener(|this, _, window, cx| this.ask_clone(window, cx))),
+                )
                 .child(div().text_size(px(12.)).text_color(t.dim).child(format!(
                     "{} · {}",
                     keys::of(cx, &OpenVault),
@@ -3273,6 +3504,8 @@ impl Render for Shell {
                         "un nouveau dossier peut être créé depuis la fenêtre de sélection",
                     )
                 )))
+                // L'adresse à cloner se demande ici aussi, sans coffre.
+                .children(self.palette.clone())
         } else {
             // Un pane, ou deux côte à côte : chacun se dessine comme s'il était l'actif. Le panneau
             // des commentaires, à droite de tout, est celui du pane actif.
@@ -3523,6 +3756,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
             .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
             .on_action(cx.listener(|this, _: &Today, _, cx| this.open_today(cx)))
+            .on_action(cx.listener(|this, _: &SyncVault, window, cx| this.git_sync(window, cx)))
             .on_action(cx.listener(|this, _: &SplitPane, window, cx| this.split(window, cx)))
             .on_action(cx.listener(|this, _: &FocusLeft, window, cx| this.focus_pane(0, window, cx)))
             .on_action(cx.listener(|this, _: &FocusRight, window, cx| this.focus_pane(1, window, cx)))
@@ -3672,6 +3906,7 @@ fn defaults() -> Vec<keys::Bind> {
         b("escape", &CloseHelp, Some("Shell")),
         b("secondary-shift-o", &Outline, None),
         b("secondary-j", &Today, None),
+        b("secondary-shift-s", &SyncVault, None),
         b("secondary-\\", &SplitPane, None),
         b("secondary-1", &FocusLeft, None),
         b("secondary-2", &FocusRight, None),
@@ -5997,6 +6232,85 @@ mod tests {
         assert_eq!(vault::load_file("panes"), format!("0.5\n{}\n", pane("B").display()));
         cx.simulate_keystrokes("secondary-w");
         assert_eq!(vault::load_file("panes"), "0.5\n\n");
+
+        // Synchronisation par git : un serveur (dépôt nu) et une autre machine, dans le dossier
+        // de test. Le coffre de ce parcours-ci est la première machine.
+        let lab = root.join("sync");
+        let (server, here, there) = (lab.join("remote.git"), lab.join("ici"), lab.join("ailleurs"));
+        fs::create_dir_all(&server).unwrap();
+        fs::create_dir_all(&here).unwrap();
+        let git = |dir: &Path, args: &[&str]| assert!(std::process::Command::new("git").current_dir(dir).args(args).output().unwrap().status.success(), "{args:?}");
+        git(&server, &["init", "-q", "--bare", "-b", "main"]);
+        let url = server.to_str().unwrap().to_string();
+        fs::write(here.join("Carnet.md"), "# Carnet\n\nun\ndeux\n").unwrap();
+        shell.update_in(cx, |s, window, cx| s.set_vault(here.clone(), window, cx));
+        cx.run_until_parked();
+        shell.update(cx, |s, cx| s.open_note(&here.join("Carnet.md"), cx));
+        // Un coffre sans git : « Synchroniser » demande l'adresse du dépôt, puis le relie.
+        cx.simulate_keystrokes("secondary-shift-s");
+        assert!(shell.read_with(cx, |s, _| s.palette.is_some()), "l'adresse est demandée");
+        cx.simulate_keystrokes("escape");
+        shell.update(cx, |s, cx| s.git_connect(url.clone(), cx));
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Done, "relié")), "{:?}", shell.read_with(cx, |s, _| s.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>()));
+        // Une autre machine clone le coffre, écrit une note et change le carnet, puis envoie.
+        git::clone(&url, &there).unwrap();
+        let other = |write: &dyn Fn()| {
+            write();
+            git::save(&there).unwrap();
+            git::fetch(&there).unwrap();
+            git::merge(&there, "2026-10-09", "ailleurs").unwrap();
+            assert_eq!(git::push(&there), Ok(git::Pushed::Done));
+        };
+        other(&|| {
+            fs::write(there.join("Venue d'ailleurs.md"), "# Venue d'ailleurs\n").unwrap();
+            fs::write(there.join("Carnet.md"), "# Carnet\n\nun\ndeux\ntrois\n").unwrap();
+        });
+        // Ici, on tape, puis une seule action : tout est commité, reçu, fusionné, envoyé, et la
+        // note ouverte montre ce qui a été reçu sans perdre ce qui vient d'être tapé.
+        cx.simulate_keystrokes("secondary-home down down");
+        cx.simulate_input("zéro");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_keystrokes("secondary-shift-s");
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Done, "1 envoyé") && s.told(Tone::Done, "2 reçus")), "{:?}", shell.read_with(cx, |s, _| s.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>()));
+        assert_eq!(text(cx), "# Carnet\n\nzéro\nun\ndeux\ntrois\n");
+        assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|note| note.name == "Venue d'ailleurs")));
+        // Rien de nouveau : la commande le dit.
+        cx.simulate_keystrokes("secondary-shift-s");
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Done, "à jour")));
+        // La même ligne changée des deux côtés : la note garde ce qu'on y a écrit, la version
+        // d'ailleurs devient une note à côté, et aucun marqueur n'entre dans le texte.
+        other(&|| fs::write(there.join("Carnet.md"), "# Carnet\n\nzéro\nUN (ailleurs)\ndeux\ntrois\n").unwrap());
+        cx.simulate_keystrokes("secondary-home down down down end");
+        cx.simulate_input(" (ici)");
+        cx.simulate_keystrokes("secondary-shift-s");
+        cx.run_until_parked();
+        assert_eq!(text(cx), "# Carnet\n\nzéro\nun (ici)\ndeux\ntrois\n");
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Done, "conflit")));
+        let copy = fs::read_dir(&here).unwrap().flatten().map(|e| e.path()).find(|p| p.file_name().unwrap().to_string_lossy().starts_with("Carnet (conflict ")).unwrap();
+        assert_eq!(fs::read_to_string(&copy).unwrap(), "# Carnet\n\nzéro\nUN (ailleurs)\ndeux\ntrois\n");
+        assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|note| note.path == copy)), "la copie est dans le coffre");
+        // L'autre machine reçoit les deux versions.
+        other(&|| ());
+        assert_eq!(fs::read_to_string(there.join("Carnet.md")).unwrap(), "# Carnet\n\nzéro\nun (ici)\ndeux\ntrois\n");
+        assert!(there.join(copy.file_name().unwrap()).is_file());
+        // Un serveur injoignable : un message clair, et le coffre reste tel qu'il était.
+        git(&here, &["remote", "set-url", "origin", lab.join("nulle-part.git").to_str().unwrap()]);
+        cx.simulate_input("!");
+        cx.simulate_keystrokes("secondary-shift-s");
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.told(Tone::Failed, "Synchronisation impossible")));
+        assert_eq!(text(cx), "# Carnet\n\nzéro\nun (ici)!\ndeux\ntrois\n");
+        assert!(!shell.read_with(cx, |s, _| s.syncing));
+        // Cloner un coffre : le dossier est créé, et devient le coffre ouvert.
+        let shelf = lab.join("clones");
+        fs::create_dir_all(&shelf).unwrap();
+        shell.update_in(cx, |s, window, cx| s.clone_to(url.clone(), shelf.clone(), window, cx));
+        cx.run_until_parked();
+        assert_eq!(shell.read_with(cx, |s, _| s.vault.clone()), Some(shelf.join("remote")));
+        assert!(shelf.join("remote/Venue d'ailleurs.md").is_file());
 
         fs::remove_dir_all(&root).unwrap();
     }

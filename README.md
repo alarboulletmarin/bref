@@ -20,6 +20,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Comments**: `Ctrl + Shift + M` annotates a word, a line or the line of an image without changing its text. The comment is kept in the note itself as [CriticMarkup](https://criticmarkup.com/), `{==the text==}{>>the comment<<}`, so the file stays plain Markdown: the text is highlighted, the comment follows it, faded. A panel to the right of the note lists its comments: click one to go to it, click its check mark to resolve it. The speech bubble at the bottom right of the note, next to the copy button, closes the panel and opens it again (so does its cross); `comments` in the palette lists the comments to jump to one from the keyboard.
 - **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `@` suggests days (`@today`, `@tomorrow`, `@monday`, `@2026-10-09`) and links to the daily note of that day. `#tags` filter the note list.
 - **Backlinks**: the notes that link to the open one, each with the line that holds the link.
+- **Sync in one action**: `Ctrl + Shift + S` commits, receives, merges and sends a vault kept in git, in the background; a real conflict keeps both versions as two notes, never as markers in your text. A vault can also simply live in a cloud folder.
 - **Two panes side by side**: `Ctrl + \` opens a second pane, to write a note while reading another, or to keep a table next to a note. Each pane shows anything Bref can show; a file dragged from the tree opens in the pane you drop it on.
 - **Back and forward**: `Alt + Left` and `Alt + Right` (`Cmd + [` and `Cmd + ]` on macOS), the side buttons of the mouse or the two arrows at the top of the rail walk through what you opened, notes, pictures, diagrams, tables and list pages alike, and land where you were: same line, same scroll.
 - **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons.
@@ -201,6 +202,7 @@ The bottom right of the note shows its number of words and characters; with a se
 | `F1`, `Ctrl + /` | the list of shortcuts, inside the app: type to search it, by key or by effect (`ctrl+p`, `graph`), `Esc` empties the search, then closes; click the keys of a row to change them (see [Changing a shortcut](#changing-a-shortcut)); at its foot, the version of Bref and links to its source and to its Ko-fi page |
 | `Alt + Left`, `Alt + Right` | back to what was shown before, and forward again (`Cmd + [`, `Cmd + ]` on macOS); also the back and forward buttons of the mouse, the two arrows at the top of the rail, and **Back** / **Forward** in the palette. Like a browser: opening something after going back drops what was ahead. A note only previewed (arrows in the tree, a click in the graph) does not count, a renamed file is followed, a deleted one is skipped. The history is not kept between two launches: the recent notes are. |
 | `Ctrl + \` | a second pane, to the right: it opens on the palette, to choose what goes there. `Ctrl + 1` and `Ctrl + 2` move to the left and to the right pane, `Ctrl + W` closes the one that has the focus. In the palette, `Ctrl + Enter` opens the chosen note in the other pane; so do **Open to the side** in the menu of the tree and `Ctrl + Shift + click` on a `[[link]]`. Drag a file from the tree onto a pane to open it there, or onto the right half of a single pane to open a second one; a folder opens as its list page. The border between the two can be dragged, a double click puts it back in the middle. The palette, the tree and the shortcuts act on the pane that has the focus, marked by a line at its top. A note already shown in one pane is not opened twice: the focus moves to it. The layout comes back at the next launch. |
+| `Ctrl + Shift + S` | sync the vault with git (see [Syncing a vault](#syncing-a-vault)); also **Sync the vault** in the palette |
 | `Ctrl + Q` | quit |
 
 In the palette, type to search; `Enter` opens the selected note. Notes whose name matches come first, then the notes whose text contains every word you typed (from two letters), with the line where the first word appears. If no note has that name, the last row creates it. Typing `#` lists the notes carrying a tag. Typing `folder` offers *New folder*, and `table` offers the settings of the CSV table on display (delimiter, encoding, header row, copy as, export); `diagram`, `theme`, `font` and `update` offer theirs too.
@@ -401,6 +403,31 @@ A `.csv` or `.tsv` file of the vault shows in the tree and opens in a grid, in p
 - **Copy as, export**: `copy table as` and `export table` in the palette (or the buttons of the bar) offer TSV, CSV (with the delimiter of the file), Markdown and JSON, for the selection, or the whole table when only one cell is selected. An export is written next to the table, under a name that is still free.
 - **Saved** about half a second after the last change, in the background, atomically, in the encoding and with the line endings of the file. A character the encoding cannot hold (a `€` in ISO-8859-1) is reported and the file is left alone. If another program rewrites the file and nothing waits to be saved, the grid reads it again.
 - **Limits**: files up to 1 GiB, read whole in memory (about the size of the file); no columns to add or remove, no sorting or formulas.
+
+## Syncing a vault
+
+A vault is a folder of plain files: there are two ways to have the same notes on every computer, and safely copied somewhere else. Pick one, never both: a git repository inside a cloud folder ends up corrupted.
+
+### With git: one action
+
+`Ctrl + Shift + S`, or **Sync the vault** in the palette, does everything, in the background, while you keep typing:
+
+1. the open notes are saved and everything that changed is committed;
+2. what the server has is fetched and merged;
+3. the result is sent.
+
+A message says what was sent and received, or why it failed.
+
+- **Conflicts**: two computers that changed different notes, or different parts of the same note, are merged without a question. When the same lines changed on both sides, both versions are kept, as Dropbox and Syncthing do: the note keeps the version of this computer, the other one is written next to it as `Note (conflict 2026-10-09 laptop).md`, and the sync completes. You never get `<<<<<<<` markers in a note. A note deleted on one side and edited on the other stays, edited.
+- **A vault that is not in git yet**: the same command asks for the address of an *empty* repository (create it on GitHub, GitLab, Codeberg, or on any server you reach by SSH with `git init --bare notes.git`), then connects the vault and sends its notes. The trash (`.trash`) is left out of the repository, through a `.gitignore`.
+- **On another computer**: **Clone a vault from a git address…**, in the palette or on the welcome screen, asks for the address and for a folder, and opens the clone as the vault.
+- **Requirements**: `git` must be installed, and able to reach the repository without asking anything (an SSH key, or a credential helper for HTTPS). Bref never shows a password prompt: a refused sign-in is reported. Without a name and an email in the git configuration, the commits are signed `Bref`.
+- **What it refuses**, with the reason and without touching anything: a merge or a rebase in progress, a detached HEAD, a branch that follows no branch of the server, a locked index, and a vault that is only a folder of a larger repository.
+- **Limits**: syncing is done when you ask, not on a timer nor when quitting. git syncs computers: there is no Bref on a phone, where the repository stays readable with another app.
+
+### With a cloud folder: nothing to do
+
+Put the vault in a folder synced by iCloud, Dropbox, Google Drive or Syncthing: Bref follows what changes there (see below), nothing more is needed.
 
 ## Notes and vault
 
