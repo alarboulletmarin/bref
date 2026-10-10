@@ -46,6 +46,7 @@ impl Line {
         Self { at: text.len(), anchor: text.len(), text }
     }
 
+    #[cfg(test)]
     pub fn cursor(&self) -> usize {
         self.at
     }
