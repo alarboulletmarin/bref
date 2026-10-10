@@ -5,8 +5,8 @@
 use std::ops::Range;
 
 use gpui::{
-    App, Bounds, ClickEvent, Context, CursorStyle, Div, DragMoveEvent, ElementInputHandler, EntityInputHandler, EventEmitter, FocusHandle, Focusable, HighlightStyle, Pixels,
-    Point, StyledText, UTF16Selection, Window, canvas, div, prelude::*, px, svg,
+    App, Bounds, ClickEvent, Context, CursorStyle, Div, DragMoveEvent, ElementInputHandler, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Pixels,
+    Point, UTF16Selection, Window, canvas, div, prelude::*, px, svg,
 };
 
 use crate::{
@@ -14,7 +14,8 @@ use crate::{
     editor::{Redo, Undo},
     markdown::{self, Kind},
     nav,
-    palette::{Confirm, DeleteChar, Dismiss},
+    line::{self, Line},
+    palette::{Confirm, Dismiss},
     tr,
 };
 
@@ -163,11 +164,9 @@ pub enum FieldEvent {
 }
 
 /// Champ de saisie posé dans le tableau, à la place de ce qu'il réécrit.
-// ponytail: le curseur reste en fin de texte (ni flèches ni sélection) ; un vrai champ d'une
-// ligne si l'on retouche souvent le milieu d'une carte.
 pub struct Field {
     focus: FocusHandle,
-    pub text: String,
+    pub line: Line,
     theme: Theme,
 }
 
@@ -175,7 +174,7 @@ impl EventEmitter<FieldEvent> for Field {}
 
 impl Field {
     pub fn new(text: &str, theme: Theme, cx: &mut Context<Self>) -> Self {
-        Self { focus: cx.focus_handle(), text: text.to_string(), theme }
+        Self { focus: cx.focus_handle(), line: Line::new(text), theme }
     }
 }
 
@@ -191,8 +190,7 @@ impl EntityInputHandler for Field {
     }
 
     fn selected_text_range(&mut self, _: bool, _: &mut Window, _: &mut Context<Self>) -> Option<UTF16Selection> {
-        let end = self.text.encode_utf16().count();
-        Some(UTF16Selection { range: end..end, reversed: false })
+        Some(self.line.utf16())
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
@@ -202,7 +200,7 @@ impl EntityInputHandler for Field {
     fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {}
 
     fn replace_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
-        self.text.push_str(&text.replace(['\n', '\r'], " "));
+        self.line.insert(text);
         cx.notify();
     }
 
@@ -224,23 +222,29 @@ impl Render for Field {
         let t = self.theme;
         let (focus, entity) = (self.focus.clone(), cx.entity());
         let input = canvas(|_, _, _| (), move |bounds, _, window, cx| window.handle_input(&focus, ElementInputHandler::new(bounds, entity), cx)).size_0();
-        div()
-            // Les touches de la palette : Entrée valide, Échap renonce, Retour efface.
-            .key_context("Palette")
+        let (shown, layout) = self.line.shown(t);
+        let field = div()
+            // Les touches de la palette (Entrée valide, Échap renonce) et celles d'une ligne.
+            .key_context("Palette Line")
             .track_focus(&self.focus)
             .on_action(cx.listener(|_, _: &Confirm, _, cx| cx.emit(FieldEvent::Done)))
             .on_action(cx.listener(|_, _: &Dismiss, _, cx| cx.emit(FieldEvent::Cancel)))
-            .on_action(cx.listener(|this, _: &DeleteChar, _, cx| {
-                this.text.pop();
-                cx.notify();
-            }))
-            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            // Un clic dans le texte y pose le curseur.
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    let (Ok(at) | Err(at)) = layout.index_for_position(e.position);
+                    this.line.place(at);
+                    cx.notify();
+                }),
+            );
+        line::keys(field, cx, |this| Some(&mut this.line), |_, _| ())
             .flex_1()
             .min_w_0()
+            .cursor_text()
             .child(input)
-            // Le curseur est un trait à la suite du texte : il passe à la ligne avec lui, et un
-            // texte long reste dans sa carte.
-            .child(StyledText::new(format!("{}|", self.text)).with_highlights([(self.text.len()..self.text.len() + 1, HighlightStyle::color(t.accent))]))
+            .child(shown)
     }
 }
 
@@ -380,7 +384,7 @@ impl Shell {
         let Some((slot, field)) = self.board_field.take() else {
             return;
         };
-        let typed = field.read(cx).text.clone();
+        let typed = field.read(cx).line.text.clone();
         let written = !typed.trim().is_empty();
         self.board_edit(
             |text| match slot {

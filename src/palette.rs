@@ -11,7 +11,12 @@ use gpui::{
     actions, canvas, div, ease_out_quint, prelude::*, px,
 };
 
-use crate::{Theme, sheet::Pick, tr};
+use crate::{
+    Theme,
+    line::{self, Line},
+    sheet::Pick,
+    tr,
+};
 
 fn vault_label() -> &'static str {
     tr("Change vault…", "Changer de coffre…")
@@ -99,7 +104,7 @@ impl Setting {
     }
 }
 
-actions!(palette, [Prev, Next, Confirm, Dismiss, DeleteChar]);
+actions!(palette, [Prev, Next, Confirm, Dismiss]);
 
 #[derive(Default)]
 pub struct Entry {
@@ -183,7 +188,7 @@ enum Item {
 
 pub struct Palette {
     focus: FocusHandle,
-    query: String,
+    query: Line,
     entries: Vec<Entry>,
     items: Vec<Item>,
     selected: usize,
@@ -271,7 +276,7 @@ impl Palette {
     pub fn new(entries: Vec<Entry>, query: &str, theme: Theme, cx: &mut Context<Self>) -> Self {
         let mut this = Self {
             focus: cx.focus_handle(),
-            query: query.to_string(),
+            query: Line::new(query),
             entries,
             items: Vec::new(),
             selected: 0,
@@ -369,7 +374,7 @@ impl Palette {
         if self.prompt.is_some() && !self.choices {
             return self.items.clear();
         }
-        let q = self.query.trim().to_lowercase();
+        let q = self.query.text.trim().to_lowercase();
         if self.lines {
             // ponytail: les 200 premières lignes trouvées, notes récentes d'abord, cherchées à
             // chaque frappe dans tout le texte du coffre ; une recherche en tâche de fond et une
@@ -484,12 +489,12 @@ impl Palette {
             });
         }
         if self.prompt.is_some() {
-            return cx.emit(PaletteEvent::Submit(self.query.trim().to_string()));
+            return cx.emit(PaletteEvent::Submit(self.query.text.trim().to_string()));
         }
         cx.emit(match self.items.get(index) {
             Some(Item::Note(i) | Item::Text(i)) => PaletteEvent::Open(self.entries[*i].path.clone()),
-            Some(&Item::Line(i, row)) => PaletteEvent::OpenAt(self.entries[i].path.clone(), row, self.query.trim().to_string()),
-            Some(Item::Create) => PaletteEvent::Create(self.query.trim().to_string()),
+            Some(&Item::Line(i, row)) => PaletteEvent::OpenAt(self.entries[i].path.clone(), row, self.query.text.trim().to_string()),
+            Some(Item::Create) => PaletteEvent::Create(self.query.text.trim().to_string()),
             Some(Item::Vault) => PaletteEvent::ChangeVault,
             Some(Item::Help) => PaletteEvent::Help,
             Some(Item::Diagram) => PaletteEvent::NewDiagram,
@@ -513,7 +518,7 @@ impl Palette {
     }
 
     fn typed(&mut self, text: &str, cx: &mut Context<Self>) {
-        self.query.push_str(text);
+        self.query.insert(text);
         self.refresh();
         self.preview(cx);
         cx.notify();
@@ -539,11 +544,7 @@ impl EntityInputHandler for Palette {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
-        let end = self.query.encode_utf16().count();
-        Some(UTF16Selection {
-            range: end..end,
-            reversed: false,
-        })
+        Some(self.query.utf16())
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
@@ -617,16 +618,16 @@ impl Render for Palette {
                 }
                 Item::Text(n) => {
                     let e = &self.entries[*n];
-                    let word = self.query.trim().to_lowercase();
+                    let word = self.query.text.trim().to_lowercase();
                     let word = word.split_whitespace().next().unwrap_or_default().to_string();
                     (e.name.clone(), snippet(&e.body, &e.lower, &word))
                 }
                 Item::Line(n, row) => {
                     let e = &self.entries[*n];
-                    (e.name.clone(), snippet_at(&e.body, &e.lower, *row, &self.query.trim().to_lowercase()))
+                    (e.name.clone(), snippet_at(&e.body, &e.lower, *row, &self.query.text.trim().to_lowercase()))
                 }
                 Item::Create => (
-                    format!("{} « {} »", tr("Create", "Créer"), self.query.trim()),
+                    format!("{} « {} »", tr("Create", "Créer"), self.query.text.trim()),
                     tr("new note", "nouvelle note").into(),
                 ),
                 Item::Vault => (vault_label().to_string(), String::new()),
@@ -679,23 +680,22 @@ impl Render for Palette {
                 )
         });
 
-        div()
+        let root = div()
             .absolute()
             .inset_0()
             .occlude()
-            .key_context("Palette")
+            // Les touches d'une ligne de saisie servent à la question qu'on tape.
+            .key_context("Palette Line")
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &Next, _, cx| this.step(1, cx)))
             .on_action(cx.listener(|this, _: &Prev, _, cx| this.step(this.items.len().max(1) - 1, cx)))
             .on_action(cx.listener(|this, _: &Confirm, _, cx| this.confirm(this.selected, cx)))
             .on_action(cx.listener(|_, _: &Dismiss, _, cx| cx.emit(PaletteEvent::Dismiss)))
-            .on_action(cx.listener(|this, _: &DeleteChar, _, cx| {
-                this.query.pop();
-                this.refresh();
-                this.preview(cx);
-                cx.notify();
-            }))
-            .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.emit(PaletteEvent::Dismiss)))
+            .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.emit(PaletteEvent::Dismiss)));
+        line::keys(root, cx, |this| Some(&mut this.query), |this, cx| {
+            this.refresh();
+            this.preview(cx);
+        })
             .flex()
             .justify_center()
             .items_start()
@@ -723,15 +723,14 @@ impl Render for Palette {
                             .items_center()
                             .text_size(px(15.))
                             .child(input)
-                            .when(self.query.is_empty(), |d| {
+                            .when(self.query.text.is_empty(), |d| {
                                 d.child(div().text_color(t.dim).child(self.prompt.clone().unwrap_or_else(|| match self.lines {
                                     true => tr("Search in the text of the vault…", "Chercher dans le texte du coffre…").into(),
                                     false => tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into(),
                                 })))
                             })
-                            .when(!self.query.is_empty(), |d| d.child(self.query.clone()))
-                            .child(div().w(px(2.)).h(px(18.)).bg(t.accent))
-                            .when(!self.query.is_empty(), |d| {
+                            .child(self.query.shown(t).0.whitespace_nowrap())
+                            .when(!self.query.text.is_empty(), |d| {
                                 d.children(self.prompt.clone().map(|label| {
                                     div().ml_auto().pl_3().text_size(px(12.)).text_color(t.dim).child(label)
                                 }))

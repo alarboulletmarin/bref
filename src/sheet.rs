@@ -17,10 +17,11 @@ use gpui::{
     Focusable, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point,
     ScrollWheelEvent, Stateful, UTF16Selection, Window, actions, canvas, div, prelude::*, px,
 };
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    Theme, markdown, mono,
+    Theme,
+    line::{self, Line},
+    markdown, mono,
     nav::button,
     table::{self, Encoding, Format, Style, Table, WriteError},
     tr, vault,
@@ -96,27 +97,6 @@ enum Change {
     Set(Vec<(usize, usize, String)>),
     Insert(usize, Vec<Vec<String>>),
     Remove(Range<usize>),
-}
-
-/// Texte en cours de frappe dans la cellule active, et place du curseur (octet).
-struct Draft {
-    text: String,
-    at: usize,
-}
-
-impl Draft {
-    fn insert(&mut self, text: &str) {
-        self.text.insert_str(self.at, text);
-        self.at += text.len();
-    }
-
-    fn before(&self) -> usize {
-        self.text[..self.at].grapheme_indices(true).next_back().map_or(0, |(i, _)| i)
-    }
-
-    fn after(&self) -> usize {
-        self.text[self.at..].graphemes(true).next().map_or(self.at, |g| self.at + g.len())
-    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -262,7 +242,8 @@ pub struct Sheet {
     anchor: (usize, usize),
     /// Sélections gardées par Ctrl+clic (ancre, curseur), en plus de celle en cours.
     more: Vec<((usize, usize), (usize, usize))>,
-    edit: Option<Draft>,
+    /// Texte en cours de frappe dans la cellule active.
+    edit: Option<Line>,
     /// Largeur de chaque colonne, et abscisse de son bord gauche (une de plus, pour le total).
     widths: Vec<f32>,
     xs: Vec<f32>,
@@ -629,7 +610,7 @@ impl Sheet {
     fn begin_edit(&mut self, text: Option<&str>, cx: &mut Context<Self>) {
         let (r, c) = self.cursor;
         let text = text.map_or_else(|| self.table.cell(r, c).into_owned(), str::to_string);
-        self.edit = Some(Draft { at: text.len(), text });
+        self.edit = Some(Line::new(text));
         cx.notify();
     }
 
@@ -790,9 +771,6 @@ impl Sheet {
 
     /// Ctrl+C : la sélection en TSV, que les tableurs et les tableaux des notes collent tels quels.
     fn copy(&mut self, cx: &mut Context<Self>) {
-        if let Some(edit) = &self.edit {
-            return cx.write_to_clipboard(ClipboardItem::new_string(edit.text.clone()));
-        }
         // Plusieurs sélections : leurs blocs l'un sous l'autre, de haut en bas.
         let blocks: Vec<String> =
             self.selections().into_iter().map(|(rows, cols)| self.table.text_range(rows, cols, Style::Tsv)).collect();
@@ -813,26 +791,13 @@ impl Sheet {
     }
 
     fn cut(&mut self, cx: &mut Context<Self>) {
-        match self.edit.take() {
-            Some(edit) => {
-                cx.write_to_clipboard(ClipboardItem::new_string(edit.text));
-                self.edit = Some(Draft { text: String::new(), at: 0 });
-                cx.notify();
-            }
-            None => {
-                self.copy(cx);
-                self.clear(cx);
-            }
-        }
+        self.copy(cx);
+        self.clear(cx);
     }
 
     /// Texte collé : des cellules (tableur, tableau Markdown, CSV) remplissent la grille à partir
     /// du coin de la sélection, qui s'agrandit au besoin ; une seule remplit toute la sélection.
     fn paste(&mut self, text: &str, cx: &mut Context<Self>) {
-        if let Some(edit) = &mut self.edit {
-            edit.insert(&text.replace("\r\n", " ").replace(['\n', '\r'], " "));
-            return cx.notify();
-        }
         let grid = markdown::paste_grid(text).unwrap_or_else(|| table::parse_grid(text));
         if grid.is_empty() {
             return;
@@ -1144,10 +1109,9 @@ impl Sheet {
             .text_size(size)
     }
 
-    fn render_edit(&self, edit: &Draft) -> gpui::Div {
+    fn render_edit(&self, edit: &Line) -> gpui::Div {
         let t = self.theme;
         let (row, col) = self.cursor;
-        let (before, after) = edit.text.split_at(edit.at);
         div()
             .absolute()
             .left(px(self.xs[col] - self.scroll.0))
@@ -1162,9 +1126,7 @@ impl Sheet {
             .border_2()
             .border_color(t.accent)
             .text_size(px(self.text_px()))
-            .child(before.to_string())
-            .child(div().flex_none().w(px(1.5)).h(px(self.text_px() + 4.)).bg(t.accent))
-            .child(after.to_string())
+            .child(edit.shown(t).0)
     }
 
     fn render_bars(&self) -> impl IntoElement {
@@ -1289,28 +1251,18 @@ impl Render for Sheet {
             .on_mouse_up_out(MouseButton::Left, cx.listener(|this, _: &MouseUpEvent, _, _| this.drag = Drag::None))
             .on_scroll_wheel(cx.listener(|this, e: &ScrollWheelEvent, _, cx| this.wheel(e, cx)));
 
-        div()
+        line::keys(div(), cx, |this| this.edit.as_mut(), |_, _| ())
             .size_full()
             .flex()
             .flex_col()
             .bg(t.bg)
             .text_color(t.text)
-            .key_context("Sheet")
+            // Une cellule en cours de frappe : les touches d'une ligne de saisie passent avant
+            // celles de la grille (flèches, effacement, presse-papiers).
+            .key_context(if self.edit.is_some() { "Sheet Line" } else { "Sheet" })
             .track_focus(&self.focus)
-            .on_action(cx.listener(|this, _: &Left, _, cx| match &mut this.edit {
-                Some(edit) => {
-                    edit.at = edit.before();
-                    cx.notify();
-                }
-                None => this.go(0, -1, false, cx),
-            }))
-            .on_action(cx.listener(|this, _: &Right, _, cx| match &mut this.edit {
-                Some(edit) => {
-                    edit.at = edit.after();
-                    cx.notify();
-                }
-                None => this.go(0, 1, false, cx),
-            }))
+            .on_action(cx.listener(|this, _: &Left, _, cx| this.go(0, -1, false, cx)))
+            .on_action(cx.listener(|this, _: &Right, _, cx| this.go(0, 1, false, cx)))
             .on_action(cx.listener(|this, _: &Up, _, cx| this.go(-1, 0, false, cx)))
             .on_action(cx.listener(|this, _: &Down, _, cx| this.go(1, 0, false, cx)))
             .on_action(cx.listener(|this, _: &ExtendLeft, _, cx| this.go(0, -1, true, cx)))
@@ -1319,20 +1271,8 @@ impl Render for Sheet {
             .on_action(cx.listener(|this, _: &ExtendDown, _, cx| this.go(1, 0, true, cx)))
             .on_action(cx.listener(|this, _: &PageUp, _, cx| this.go(-this.page(), 0, false, cx)))
             .on_action(cx.listener(|this, _: &PageDown, _, cx| this.go(this.page(), 0, false, cx)))
-            .on_action(cx.listener(|this, _: &RowStart, _, cx| match &mut this.edit {
-                Some(edit) => {
-                    edit.at = 0;
-                    cx.notify();
-                }
-                None => this.select_to((this.cursor.0, 0), false, cx),
-            }))
-            .on_action(cx.listener(|this, _: &RowEnd, _, cx| match &mut this.edit {
-                Some(edit) => {
-                    edit.at = edit.text.len();
-                    cx.notify();
-                }
-                None => this.select_to((this.cursor.0, this.cols() - 1), false, cx),
-            }))
+            .on_action(cx.listener(|this, _: &RowStart, _, cx| this.select_to((this.cursor.0, 0), false, cx)))
+            .on_action(cx.listener(|this, _: &RowEnd, _, cx| this.select_to((this.cursor.0, this.cols() - 1), false, cx)))
             .on_action(cx.listener(|this, _: &Origin, _, cx| {
                 this.finish(cx);
                 this.select_to((0, 0), false, cx)
@@ -1380,23 +1320,8 @@ impl Render for Sheet {
                 }
                 cx.notify();
             }))
-            .on_action(cx.listener(|this, _: &Backspace, _, cx| match &mut this.edit {
-                Some(edit) => {
-                    let from = edit.before();
-                    edit.text.replace_range(from..edit.at, "");
-                    edit.at = from;
-                    cx.notify();
-                }
-                None => this.clear(cx),
-            }))
-            .on_action(cx.listener(|this, _: &Delete, _, cx| match &mut this.edit {
-                Some(edit) => {
-                    let to = edit.after();
-                    edit.text.replace_range(edit.at..to, "");
-                    cx.notify();
-                }
-                None => this.clear(cx),
-            }))
+            .on_action(cx.listener(|this, _: &Backspace, _, cx| this.clear(cx)))
+            .on_action(cx.listener(|this, _: &Delete, _, cx| this.clear(cx)))
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &Cut, _, cx| this.cut(cx)))
             .on_action(cx.listener(|this, _: &Paste, _, cx| {

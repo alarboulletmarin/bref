@@ -9,6 +9,7 @@ mod graph;
 mod grid;
 mod import;
 mod kanban;
+mod line;
 mod markdown;
 mod nav;
 mod palette;
@@ -2729,7 +2730,7 @@ fn resize_edge(pos: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeEdge> {
 
 fn bind_keys(cx: &mut App) {
     use editor::*;
-    use palette::{Confirm, DeleteChar, Dismiss, Next, Prev};
+    use palette::{Confirm, Dismiss, Next, Prev};
     let e = Some("Editor");
     let p = Some("Palette");
     let f = Some("Find");
@@ -2830,7 +2831,6 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("down", Next, p),
         KeyBinding::new("enter", Confirm, p),
         KeyBinding::new("escape", Dismiss, p),
-        KeyBinding::new("backspace", DeleteChar, p),
         KeyBinding::new("backspace", Backspace, e),
         KeyBinding::new("delete", Delete, e),
         KeyBinding::new(&format!("{word}-backspace"), DeleteWordLeft, e),
@@ -2906,6 +2906,8 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-y", Redo, Some("Board")),
         KeyBinding::new("escape", Cancel, e),
     ]);
+    // Après les champs qui s'en servent (palette, grille) : ses touches passent avant les leurs.
+    cx.bind_keys(line::bindings(word));
     // Conventions macOS : Cmd+flèches pour les extrémités de ligne et de document.
     #[cfg(target_os = "macos")]
     cx.bind_keys([
@@ -4225,8 +4227,12 @@ mod tests {
         // écrit sur place : « + » ouvre une carte, Entrée la valide et en rouvre une, Échap
         // arrête ; un double-clic réécrit une carte ou un titre. Déplacer ou cocher une carte
         // réécrit sa ligne. Rien ne fait quitter le tableau, sauf son bouton.
+        // La palette est une ligne de saisie comme les autres : un mot s'y efface d'un coup.
+        let word = if cfg!(target_os = "macos") { "alt" } else { "ctrl" };
         cx.simulate_keystrokes("secondary-p");
-        cx.simulate_input("tableau kanban");
+        cx.simulate_input("tableau zzz");
+        cx.simulate_keystrokes(&format!("{word}-backspace"));
+        cx.simulate_input("kanban");
         cx.simulate_keystrokes("down enter");
         cx.run_until_parked();
         let on_board = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| shell.read(cx).board_focus.is_focused(window));
@@ -4249,6 +4255,17 @@ mod tests {
         cx.simulate_input("Plus tard");
         cx.simulate_keystrokes("enter");
         assert!(text(cx).contains("- [ ] Relire\n\n## En cours de route\n") && text(cx).ends_with("## Fait\n\n## Plus tard\n"));
+        // Une carte s'écrit dans une vraie ligne de saisie : un mot effacé d'un coup, le curseur
+        // qui va au début, une sélection remplacée, tout copié puis collé à la fin.
+        shell.update_in(cx, |s, window, cx| s.board_write(kanban::Slot::New(3), window, cx));
+        cx.simulate_input("Un deux trois");
+        cx.simulate_keystrokes(&format!("{word}-backspace home {word}-shift-right"));
+        cx.simulate_input("Zéro");
+        cx.simulate_keystrokes("secondary-a secondary-c end");
+        cx.simulate_input("+");
+        cx.simulate_keystrokes("secondary-v left delete enter escape");
+        assert!(text(cx).ends_with("## Plus tard\n- [ ] Zéro deux +Zéro deux\n"), "{}", text(cx));
+        shell.update(cx, |s, cx| s.board_edit(|text| kanban::retitle(text, (3, 0), ""), cx));
         // Une carte prise à la souris quitte sa place ; celle qu'elle prendrait suit le pointeur :
         // sous une colonne, son bas ; sur une carte, avant ou après elle selon la moitié visée.
         cx.run_until_parked();
@@ -4617,9 +4634,13 @@ mod tests {
         });
         let cell = |cx: &mut gpui::VisualTestContext, r, c| sheet.read_with(cx, |sheet, _| sheet.table().cell(r, c).to_string());
         // Taper remplace la cellule, Entrée valide et descend.
+        // La cellule qu'on écrit est une ligne de saisie : mot sélectionné et remplacé, espace effacé.
+        let word = if cfg!(target_os = "macos") { "alt" } else { "ctrl" };
         cx.simulate_keystrokes("down right");
-        cx.simulate_input("32");
-        cx.simulate_keystrokes("enter");
+        cx.simulate_input("zéro 2");
+        cx.simulate_keystrokes(&format!("home {word}-shift-right"));
+        cx.simulate_input("3");
+        cx.simulate_keystrokes("delete enter");
         assert_eq!(cell(cx, 1, 1), "32");
         // Maj + flèches sélectionne une plage ; Ctrl+C la copie en TSV, Ctrl+V la colle ailleurs.
         cx.simulate_keystrokes("up shift-left shift-down");
