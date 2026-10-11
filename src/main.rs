@@ -6849,6 +6849,8 @@ mod tests {
     #[gpui::test]
     #[ignore]
     fn md_table_scale(cx: &mut TestAppContext) {
+        // Les tests refont toute la mise en page après chaque reprise, pour la vérifier : pas ici, on mesure.
+        unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
         let root = std::env::temp_dir().join(format!("bref-mdscale-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let _config = isolated_config(&root);
@@ -6919,6 +6921,8 @@ mod tests {
     #[gpui::test]
     #[ignore]
     fn profile_typing(cx: &mut TestAppContext) {
+        // Les tests refont toute la mise en page après chaque reprise, pour la vérifier : pas ici, on mesure.
+        unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
         let root = std::env::temp_dir().join(format!("bref-profile-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let _config = isolated_config(&root);
@@ -6946,6 +6950,7 @@ mod tests {
             cx.simulate_input("a");
             cx.run_until_parked();
         }
+        println!("mises en page (complètes, reprises, dans un gros tableau) : {:?}", shell.read_with(cx, |s, cx| s.editor.read(cx).layouts()));
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -6977,6 +6982,8 @@ mod tests {
     #[gpui::test]
     #[ignore]
     fn bench_scale(cx: &mut TestAppContext) {
+        // Les tests refont toute la mise en page après chaque reprise, pour la vérifier : pas ici, on mesure.
+        unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
         let sizes: Vec<usize> = std::env::var("BREF_BENCH_NOTES")
             .map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect())
             .unwrap_or_else(|_| vec![1000, 5000, 20000]);
@@ -7058,6 +7065,8 @@ mod tests {
     #[gpui::test]
     #[ignore]
     fn bench(cx: &mut TestAppContext) {
+        // Les tests refont toute la mise en page après chaque reprise, pour la vérifier : pas ici, on mesure.
+        unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
         let root = std::env::temp_dir().join(format!("bref-bench-{}", std::process::id()));
         synthetic_vault(&root, 2000);
         let _config = isolated_config(&root);
