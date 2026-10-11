@@ -7020,14 +7020,36 @@ mod tests {
             }
             let typing = start.elapsed() / 20;
             let memory = resident_mb().map_or("?".into(), |m| m.to_string());
-            rows.push(format!("| {notes} | {} | {} | {} | {} | {} | {} | {memory} |", ms(scan), ms(rescan), ms(fingerprint), ms(startup), ms(open), ms(typing)));
+            // La palette sur tout le coffre : l'ouvrir, puis y taper une lettre.
+            let start = Instant::now();
+            cx.simulate_keystrokes("secondary-p");
+            cx.run_until_parked();
+            let palette = start.elapsed();
+            let start = Instant::now();
+            cx.simulate_input("n");
+            cx.run_until_parked();
+            let letter = start.elapsed();
+            cx.simulate_keystrokes("escape");
+            cx.run_until_parked();
+            // Une note écrite par un autre programme : ce que le fil principal y passe (copie
+            // des notes pour la relecture, puis `sync` et le dessin), relecture non comprise.
+            fs::write(root.join("d0").join("Surprise.md"), "# Surprise\n\n[[Note 1]]\n").unwrap();
+            let start = Instant::now();
+            let known = shell.read_with(cx, |s, _| s.notes.clone());
+            let copy = start.elapsed();
+            let (found, dirs, images) = vault::rescan(&root, &known);
+            let start = Instant::now();
+            shell.update(cx, |s, cx| s.sync(found, dirs, images, cx));
+            cx.run_until_parked();
+            let outside = copy + start.elapsed();
+            rows.push(format!("| {notes} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {memory} |", ms(scan), ms(rescan), ms(fingerprint), ms(startup), ms(open), ms(typing), ms(palette), ms(letter), ms(outside)));
             // La fenêtre et son watcher partent avant le coffre suivant.
             cx.update(|_, cx| cx.windows().iter().for_each(|w| { w.update(cx, |_, window, _| window.remove_window()).ok(); }));
             cx.run_until_parked();
             fs::remove_dir_all(&root).unwrap();
         }
-        println!("\n| notes | scan (ms) | rescan (ms) | empreinte (ms) | démarrage (ms) | ouverture 5000 l. (ms) | frappe 5000 l. (ms) | mémoire (Mo) |");
-        println!("|---|---|---|---|---|---|---|---|");
+        println!("\n| notes | scan (ms) | rescan (ms) | empreinte (ms) | démarrage (ms) | ouverture 5000 l. (ms) | frappe 5000 l. (ms) | palette : ouvrir (ms) | palette : une lettre (ms) | note écrite ailleurs, fil principal (ms) | mémoire (Mo) |");
+        println!("|---|---|---|---|---|---|---|---|---|---|---|");
         rows.iter().for_each(|row| println!("{row}"));
     }
 
@@ -7068,6 +7090,7 @@ mod tests {
         };
         time("frappe", cx, &|cx| cx.simulate_input("a"));
         time("flèche bas", cx, &|cx| cx.simulate_keystrokes("down"));
+        time("Entrée", cx, &|cx| cx.simulate_keystrokes("enter"));
         time("molette", cx, &|cx| {
             cx.simulate_event(gpui::ScrollWheelEvent {
                 position: point(px(700.), px(300.)),
