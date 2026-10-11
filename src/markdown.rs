@@ -1077,6 +1077,10 @@ pub fn comments(line: &str) -> Vec<(Range<usize>, Range<usize>, Range<usize>)> {
 /// Tous les commentaires de la note, hors des blocs de code : le texte commenté, le
 /// commentaire, et l'octet où commence le tout.
 pub fn all_comments(text: &str) -> Vec<(&str, &str, usize)> {
+    // Presque toutes les notes n'en ont aucun : une seule recherche le dit, sans lire les lignes.
+    if !text.contains("{==") {
+        return Vec::new();
+    }
     let fences = text.lines().filter(|line| is_fence(line)).count();
     let (mut seen, mut in_code, mut at, mut found) = (0, false, 0, Vec::new());
     for line in text.split('\n') {
@@ -1177,6 +1181,26 @@ pub fn swap(text: &str, swap: &Swap) -> Option<(String, usize)> {
 /// comptent comme des caractères, les fins de ligne non.
 pub fn counts(text: &str) -> (usize, usize) {
     (text.unicode_words().count(), text.graphemes(true).filter(|g| !matches!(*g, "\n" | "\r\n")).count())
+}
+
+/// Les comptes de `new`, connaissant ceux de `old` (`was`) : seules les lignes qui diffèrent
+/// sont recomptées. Ni un mot ni un caractère n'enjambe une fin de ligne : les comptes des
+/// lignes s'additionnent.
+pub fn recount(old: &str, was: (usize, usize), new: &str) -> (usize, usize) {
+    let (a, b) = (old.as_bytes(), new.as_bytes());
+    // Par blocs d'abord (une comparaison de mémoire), puis octet par octet dans le bloc qui diffère.
+    const BLOCK: usize = 4096;
+    let blocks = a.chunks_exact(BLOCK).zip(b.chunks_exact(BLOCK)).take_while(|(x, y)| x == y).count() * BLOCK;
+    let same = blocks + a[blocks..].iter().zip(&b[blocks..]).take_while(|(x, y)| x == y).count();
+    // Le début commun s'arrête après une fin de ligne, la fin commune commence après une autre.
+    let head = a[..same].iter().rposition(|&c| c == b'\n').map_or(0, |i| i + 1);
+    let (a, b) = (&a[head..], &b[head..]);
+    let blocks = a.rchunks_exact(BLOCK).zip(b.rchunks_exact(BLOCK)).take_while(|(x, y)| x == y).count() * BLOCK;
+    let (x, y) = (&a[..a.len() - blocks], &b[..b.len() - blocks]);
+    let tail = blocks + x.iter().rev().zip(y.iter().rev()).take_while(|(x, y)| x == y).count();
+    let tail = a[a.len() - tail..].iter().position(|&c| c == b'\n').map_or(0, |i| tail - i - 1);
+    let (gone, come) = (counts(&old[head..old.len() - tail]), counts(&new[head..new.len() - tail]));
+    (was.0 + come.0 - gone.0, was.1 + come.1 - gone.1)
 }
 
 #[cfg(test)]
@@ -1437,6 +1461,20 @@ mod tests {
         assert_eq!(counts(""), (0, 0));
         assert_eq!(counts("# Été\n\nl'idée, **déjà** 2 fois\n"), (5, 28));
         assert_eq!(counts("👨‍👩‍👧 ok"), (1, 4));
+        // Recompter les seules lignes changées donne les comptes de tout le texte.
+        let texts = ["", "a", "un mot\n", "un mot\ndeux\n", "un mot\r\ndeux\r\n", "un mot\ndeux mots\n", "un\n\ndeux\n", "été\nl'idée 👨‍👩‍👧\nfin", "un mot\ndeux\ntrois\n", "x\r", "x\r\n", "\n", "\n\n", "deux\n"];
+        for old in texts {
+            for new in texts {
+                assert_eq!(recount(old, counts(old), new), counts(new), "{old:?} -> {new:?}");
+            }
+        }
+        // Un long texte, comparé par blocs : une frappe au début, au milieu, à la fin, et une ligne ôtée.
+        let long: String = (0..2000).map(|i| format!("ligne {i} d'été\n")).collect();
+        for at in [0, 7, long.len() / 2, long.len() - 1, long.len()] {
+            let typed = format!("{}mot {}", &long[..at], &long[at..]);
+            assert_eq!(recount(&long, counts(&long), &typed), counts(&typed), "frappe à {at}");
+            assert_eq!(recount(&typed, counts(&typed), &long), counts(&long), "retrait à {at}");
+        }
     }
 
     #[test]

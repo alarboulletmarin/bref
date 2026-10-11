@@ -669,7 +669,10 @@ pub struct Editor {
     /// en page est reprise telle quelle, pour un simple défilement.
     version: u64,
     /// Compteur du bas de page, gardé tant que le texte et la sélection ne bougent pas.
-    counted: Option<((u64, Range<usize>), String)>,
+    counted: Option<((u64, Option<Range<usize>>), String)>,
+    /// Le texte compté en dernier, sa version et ses comptes : à la frappe, seules les lignes
+    /// changées sont recomptées (`md::recount`).
+    tally: Option<(u64, String, (usize, usize))>,
     /// Nombre de boutons que la fenêtre pose dans le coin, à droite du compteur.
     pub corner: usize,
     /// Change quand tout est à refaire (autre note, thème, images) : rien n'est repris.
@@ -753,6 +756,7 @@ impl Editor {
             rows: Vec::new(),
             version: 0,
             counted: None,
+            tally: None,
             corner: 1,
             epoch: 0,
             dmg: None,
@@ -884,7 +888,8 @@ impl Editor {
 
     /// Compteur du bas de page : mots et caractères de la note, ou ceux de la sélection. Recompté seulement quand le texte ou la sélection changent.
     pub fn counts(&mut self) -> String {
-        let key = (self.version, self.sel.clone());
+        // Sans sélection, déplacer le curseur ne change rien au compte.
+        let key = (self.version, (!self.sel.is_empty()).then(|| self.sel.clone()));
         if let Some((_, label)) = self.counted.as_ref().filter(|(known, _)| *known == key) {
             return label.clone();
         }
@@ -897,7 +902,16 @@ impl Editor {
             )
         };
         let label = if self.sel.is_empty() {
-            both(md::counts(&self.content))
+            let whole = match &self.tally {
+                Some((version, _, whole)) if *version == self.version => *whole,
+                Some((_, old, was)) => md::recount(old, *was, &self.content),
+                None => md::counts(&self.content),
+            };
+            if self.tally.as_ref().is_none_or(|(version, ..)| *version != self.version) {
+                // ponytail: une copie du texte pour le prochain recompte ; tenir les comptes dans `splice` si elle pèse.
+                self.tally = Some((self.version, self.content.clone(), whole));
+            }
+            both(whole)
         } else {
             format!("{} {}", tr("Selection:", "Sélection :"), both(md::counts(&self.content[self.sel.clone()])))
         };
