@@ -666,10 +666,11 @@ impl Shell {
         let head = div()
             .flex()
             .items_center()
-            .child(div().flex_1().pl_1().child(format!("{} {year}", tr(en, fr))))
+            .child(div().flex_1().min_w_0().truncate().pl_1().child(format!("{} {year}", tr(en, fr))))
             .child(step("month-prev", "chevron-left.svg", -1, cx))
             .child(step("month-next", "chevron-right.svg", 1, cx));
-        let cell = || div().w(px(32.)).h(px(30.)).flex().items_center().justify_center();
+        // Sept colonnes égales, qui rétrécissent avec le panneau au lieu de passer sous la note.
+        let cell = || div().h(px(30.)).flex().items_center().justify_center();
         let initials = if monday { tr("MTWTFSS", "LMMJVSD") } else { tr("SMTWTFS", "DLMMJVS") };
         let week = initials.chars().map(|c| cell().text_color(t.soft).text_size(px(11.)).child(c.to_string()));
         let blanks = (0..lead).map(|_| cell().into_any_element());
@@ -700,7 +701,7 @@ impl Shell {
             .flex_col()
             .gap_1()
             .child(head)
-            .child(div().w(px(224.)).flex().flex_wrap().children(week).children(blanks).children(cells))
+            .child(div().w_full().max_w(px(224.)).grid().grid_cols(7).children(week).children(blanks).children(cells))
     }
 
     fn nav_step(&mut self, down: bool, cx: &mut Context<Self>) {
@@ -1858,7 +1859,8 @@ impl Shell {
         let room = self.nav.total - RAIL;
         let width = match *self.nav.width() {
             w if w == px(0.) => room / 2.,
-            w => w.min(room - px(200.)).max(px(120.)),
+            // Le mois ne se lit plus en dessous de 170 px : ses jours se touchent.
+            w => w.min(room - px(200.)).max(px(if mode == Mode::Calendar { 170. } else { 120. })),
         };
         let content = div()
             .h_full()
