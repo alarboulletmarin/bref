@@ -72,7 +72,7 @@ pub fn edges(notes: &[Note], images: &[PathBuf]) -> Vec<(usize, usize)> {
     }
     // Un alias ne prend pas la place d'un nom.
     for (i, note) in notes.iter().enumerate() {
-        for alias in &note.aliases {
+        for alias in note.aliases.iter() {
             by_name.entry(alias.to_lowercase()).or_insert(i);
         }
     }
@@ -590,11 +590,12 @@ mod tests {
         Note {
             name: name.into(),
             path: PathBuf::from(format!("/v/{name}.md")),
-            tags: Vec::new(),
+            tags: Default::default(),
             links: links.iter().map(|l| l.to_string()).collect(),
-            aliases: Vec::new(),
+            aliases: Default::default(),
             mtime: SystemTime::UNIX_EPOCH,
             body: "".into(),
+            lower: "".into(),
         }
     }
 
@@ -614,7 +615,7 @@ mod tests {
         assert_eq!(link_line(body, &notes[1]), None);
         // Un alias de l'en-tête YAML vaut le nom : rétrolien, ligne du lien et arête du graphe.
         let mut notes = vec![note("Appli", &[]), note("Journal", &["bref app"])];
-        notes[0].aliases = vec!["Bref App".into()];
+        notes[0].aliases = vec!["Bref App".into()].into();
         assert_eq!(backlinks(&notes, Path::new("/v/Appli.md")).len(), 1);
         assert_eq!(link_line("vu [[bref app]]", &notes[0]), Some("vu [[bref app]]"));
         assert_eq!(edges(&notes, &[]), [(0, 1)]);

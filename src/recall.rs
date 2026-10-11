@@ -86,11 +86,12 @@ mod tests {
         Note {
             name: name.into(),
             path: PathBuf::from(format!("/coffre/{name}.md")),
-            tags: Vec::new(),
-            links: Vec::new(),
-            aliases: Vec::new(),
+            tags: Default::default(),
+            links: Default::default(),
+            aliases: Default::default(),
             mtime: now - DAY * age,
             body: "du texte".into(),
+            lower: "du texte".into(),
         }
     }
 

@@ -21,19 +21,41 @@ use crate::{markdown, tr};
 pub struct Note {
     pub name: String,
     pub path: PathBuf,
-    pub tags: Vec<String>,
+    // Tags, liens et alias sont partagés : copier une note (relecture du coffre, comparaison)
+    // ne recopie pas ses listes.
+    pub tags: Arc<[String]>,
     /// Notes visées par ses `[[wikiliens]]`, en minuscules.
-    pub links: Vec<String>,
+    pub links: Arc<[String]>,
     /// Ses autres noms (clé `aliases` de l'en-tête YAML), tels qu'écrits.
-    pub aliases: Vec<String>,
+    pub aliases: Arc<[String]>,
     pub mtime: SystemTime,
     /// Texte entier de la note, pour la recherche plein texte.
     // ponytail: tout le texte du coffre reste en mémoire (5 000 notes de 6 Ko : 30 Mo) ;
     // passer à un index sur disque si des coffres bien plus gros se présentent.
     pub body: Arc<str>,
+    /// Le même en minuscules : la recherche ne le refait pas à chaque ouverture de la palette.
+    pub lower: Arc<str>,
+}
+
+/// Le texte en minuscules ; le texte lui-même s'il l'est déjà, sans copie.
+pub fn lowered(text: &Arc<str>) -> Arc<str> {
+    let lower = text.to_lowercase();
+    if lower == **text { text.clone() } else { lower.into() }
 }
 
 impl Note {
+    /// Range le nouveau texte de la note, et rend l'ancien.
+    pub fn set_body(&mut self, text: Arc<str>) -> Arc<str> {
+        self.lower = lowered(&text);
+        std::mem::replace(&mut self.body, text)
+    }
+
+    /// Tags et liens du texte d'une note, prêts à y être rangés.
+    pub fn index(text: &str) -> (Arc<[String]>, Arc<[String]>) {
+        let (tags, links) = markdown::index(text);
+        (tags.into(), links.into())
+    }
+
     /// Un lien écrit `key` (en minuscules) vise cette note : par son nom, ou par un alias.
     pub fn answers(&self, key: &str) -> bool {
         self.name.to_lowercase() == key || self.aliases.iter().any(|alias| alias.to_lowercase() == key)
@@ -318,15 +340,17 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
                 }
             } else if path.extension().is_some_and(|e| e == "md") {
                 let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH);
-                let (tags, links, aliases, body) = match known.get(path.as_path()) {
-                    Some(note) if note.mtime == mtime => (note.tags.clone(), note.links.clone(), note.aliases.clone(), note.body.clone()),
+                let (tags, links, aliases, body, lower) = match known.get(path.as_path()) {
+                    Some(note) if note.mtime == mtime => (note.tags.clone(), note.links.clone(), note.aliases.clone(), note.body.clone(), note.lower.clone()),
                     _ => {
                         let text = fs::read_to_string(&path).unwrap_or_default();
                         let (tags, links) = markdown::index(&text);
-                        (tags, links, markdown::aliases(&text), Arc::from(text))
+                        let body = Arc::from(text);
+                        let lower = lowered(&body);
+                        (tags.into(), links.into(), markdown::aliases(&body).into(), body, lower)
                     }
                 };
-                notes.push(Note { name: stem(&path), tags, links, aliases, mtime, path, body });
+                notes.push(Note { name: stem(&path), tags, links, aliases, mtime, path, body, lower });
             } else if is_image(&path) || is_table(&path) {
                 images.push(path);
             }
@@ -901,6 +925,9 @@ mod tests {
         fs::write(root.join("vide/Photo.PNG"), "").unwrap();
         let (notes, dirs, images) = scan(&root);
         assert_eq!((notes.len(), dirs), (2, vec![root.join("vide")]));
+        // Chaque note garde son texte tel quel, et le même en minuscules pour la recherche.
+        assert!(notes.iter().all(|n| !n.body.is_empty() && *n.lower == n.body.to_lowercase()));
+        assert!(notes.iter().any(|n| n.lower != n.body));
         assert_eq!(images, [root.join("vide/Photo.PNG")]);
         assert_eq!(clean_name(" ../a:b. "), Some("ab".into()));
         assert_eq!(clean_name(" . "), None);

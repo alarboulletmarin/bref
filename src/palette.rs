@@ -130,10 +130,10 @@ actions!(palette, [Prev, Next, Confirm, ConfirmAside, Dismiss]);
 pub struct Entry {
     pub name: String,
     pub path: PathBuf,
-    pub tags: Vec<String>,
+    pub tags: Arc<[String]>,
     /// Texte de la note, et le même en minuscules, pour la recherche plein texte.
     pub body: Arc<str>,
-    pub lower: String,
+    pub lower: Arc<str>,
 }
 
 pub enum PaletteEvent {
@@ -223,6 +223,8 @@ pub struct Palette {
     focus: FocusHandle,
     query: Line,
     entries: Vec<Entry>,
+    /// Le nom de chaque entrée en minuscules, fait une fois : la liste se refait à chaque frappe.
+    names: Vec<String>,
     items: Vec<Item>,
     selected: usize,
     /// Champ de saisie : son libellé. Aucune note n'est alors proposée.
@@ -346,6 +348,7 @@ impl Palette {
         let mut this = Self {
             focus: cx.focus_handle(),
             query: Line::new(query),
+            names: entries.iter().map(|e| e.name.to_lowercase()).collect(),
             entries,
             items: Vec::new(),
             selected: 0,
@@ -495,10 +498,10 @@ impl Palette {
                 .collect()
         } else {
             let mut scored: Vec<(i32, usize)> = self
-                .entries
+                .names
                 .iter()
                 .enumerate()
-                .filter_map(|(i, e)| Some((fuzzy(&q, &e.name.to_lowercase())?, i)))
+                .filter_map(|(i, name)| Some((fuzzy(&q, name)?, i)))
                 .collect();
             // Tri stable : à score égal, l'ordre « plus récent d'abord » est conservé.
             scored.sort_by_key(|(score, _)| -score);
@@ -526,7 +529,7 @@ impl Palette {
             return;
         }
         items.truncate(8);
-        let exact = self.entries.iter().any(|e| e.name.to_lowercase() == q);
+        let exact = self.names.contains(&q);
         if !q.is_empty() && !q.starts_with('#') && !exact {
             items.push(Item::Create);
         }

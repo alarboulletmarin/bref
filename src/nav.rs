@@ -367,7 +367,7 @@ pub struct Listing {
 pub fn tag_rows(notes: &[Note], open: &HashSet<PathBuf>) -> Vec<Row> {
     let mut tagged: BTreeMap<&str, Vec<&Note>> = BTreeMap::new();
     for note in notes {
-        for tag in &note.tags {
+        for tag in note.tags.iter() {
             tagged.entry(tag).or_default().push(note);
         }
     }
@@ -1336,9 +1336,9 @@ impl Shell {
             return self.say(crate::Tone::Failed, format!("{} {} : {e}", tr("Not rewritten:", "Non réécrite :"), path.display()), cx);
         }
         if let Some(note) = self.notes.iter_mut().find(|note| note.path == path) {
-            (note.tags, note.links) = markdown::index(&new);
-            note.aliases = markdown::aliases(&new);
-            note.body = new.as_str().into();
+            (note.tags, note.links) = vault::Note::index(&new);
+            note.aliases = markdown::aliases(&new).into();
+            note.set_body(new.as_str().into());
         }
         self.graph_stale = true;
         self.refresh_graph(cx);
@@ -1958,11 +1958,12 @@ mod tests {
         let note = |rel: &str| Note {
             name: vault::stem(Path::new(rel)),
             path: root.join(rel),
-            tags: Vec::new(),
-            links: Vec::new(),
-            aliases: Vec::new(),
+            tags: Default::default(),
+            links: Default::default(),
+            aliases: Default::default(),
             mtime: SystemTime::UNIX_EPOCH,
             body: "".into(),
+            lower: "".into(),
         };
         let notes = [note("b.md"), note("Z/x.md"), note("a/c/d.md"), note("a/B.md"), note("A.md")];
         let shown = |open: &[&str]| -> Vec<String> {

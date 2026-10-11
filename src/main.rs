@@ -1364,16 +1364,15 @@ impl Shell {
         mut images: Vec<PathBuf>,
         cx: &mut Context<Self>,
     ) {
-        let shape = |notes: &[Note]| {
-            let mut shape: Vec<_> = notes.iter().map(|n| (n.path.clone(), n.tags.clone(), n.links.clone())).collect();
-            shape.sort();
-            shape
-        };
+        // Mêmes notes, mêmes tags, mêmes liens ? Chaque note relue se compare à celle qu'on avait
+        // sous son chemin, sans rien copier ni trier.
+        let had: std::collections::HashMap<&Path, &Note> = self.notes.iter().map(|n| (n.path.as_path(), n)).collect();
+        let same = notes.len() == had.len() && notes.iter().all(|n| had.get(n.path.as_path()).is_some_and(|o| o.tags == n.tags && o.links == n.links));
         dirs.sort();
         self.dirs.sort();
         images.sort();
         self.images.sort();
-        if shape(&notes) != shape(&self.notes) || dirs != self.dirs || images != self.images {
+        if !same || dirs != self.dirs || images != self.images {
             self.notes = notes;
             self.dirs = dirs;
             self.images = images;
@@ -1873,7 +1872,7 @@ impl Shell {
 
     fn push_names(&mut self, cx: &mut Context<Self>) {
         // Les alias se proposent après `[[` comme des noms.
-        let names: Vec<String> = self.notes.iter().map(|n| n.name.clone()).chain(self.notes.iter().flat_map(|n| n.aliases.clone())).collect();
+        let names: Vec<String> = self.notes.iter().map(|n| n.name.clone()).chain(self.notes.iter().flat_map(|n| n.aliases.iter().cloned())).collect();
         let pictures = vault::pictures(&self.images);
         for pane in &self.panes {
             pane.editor.update(cx, |e, _| {
@@ -1903,10 +1902,10 @@ impl Shell {
     /// Les notes, de la plus récemment ouverte à la plus ancienne ; celles jamais
     /// ouvertes suivent, par date de modification.
     fn by_recency(&self) -> Vec<&Note> {
+        // Le rang de chaque récente, trouvé d'un coup : pas de liste relue pour chaque note.
+        let rank: std::collections::HashMap<&Path, usize> = self.recent.iter().enumerate().rev().map(|(i, p)| (p.as_path(), i)).collect();
         let mut notes: Vec<&Note> = self.notes.iter().collect();
-        notes.sort_by_cached_key(|n| {
-            self.recent.iter().position(|p| *p == n.path).unwrap_or(usize::MAX)
-        });
+        notes.sort_by_cached_key(|n| rank.get(n.path.as_path()).copied().unwrap_or(usize::MAX));
         notes
     }
 
@@ -2213,7 +2212,7 @@ impl Shell {
                 .and_then(|text| markdown::relink(&text, old, new))
                 .filter(|text| vault::write(&note.path, text).is_ok());
             if let Some(text) = rewritten {
-                (note.tags, note.links) = markdown::index(&text);
+                (note.tags, note.links) = Note::index(&text);
                 changed.push(note.path.clone());
                 self.graph_stale = true;
             }
@@ -2277,8 +2276,8 @@ impl Shell {
                 continue;
             }
             count += hits;
-            (note.tags, note.links) = markdown::index(&text);
-            self.swapped.push((path, std::mem::replace(&mut note.body, Arc::from(text.as_str())), text));
+            (note.tags, note.links) = Note::index(&text);
+            self.swapped.push((path, note.set_body(Arc::from(text.as_str())), text));
         }
         self.after_swap(cx);
         let done = format!("{} {count} · notes : {} ({})", tr("Replaced:", "Remplacés :"), self.swapped.len(), tr("the palette can undo it", "la palette peut l'annuler"));
@@ -2294,8 +2293,8 @@ impl Shell {
             let same = fs::read_to_string(&path).is_ok_and(|now| now == new);
             if same && vault::write(&path, &old).is_ok() {
                 if let Some(note) = self.notes.iter_mut().find(|note| note.path == path) {
-                    (note.tags, note.links) = markdown::index(&old);
-                    note.body = old;
+                    (note.tags, note.links) = Note::index(&old);
+                    note.set_body(old);
                 }
                 back += 1;
             } else {
@@ -2362,20 +2361,22 @@ impl Shell {
                 let old = self.path.clone();
                 // Le graphe ne change que si la note est nouvelle, renommée ou liée autrement.
                 let known = self.notes.iter().find(|n| Some(&n.path) == old.as_ref());
-                if known.is_none_or(|n| n.path != path || n.links != links) {
+                if known.is_none_or(|n| n.path != path || n.links[..] != links[..]) {
                     self.graph_stale = true;
                 }
                 self.notes.retain(|n| Some(&n.path) != old.as_ref() && n.path != path);
+                let body: Arc<str> = Arc::from(content);
                 self.notes.insert(
                     0,
                     Note {
                         name: vault::stem(&path),
-                        tags,
-                        links,
-                        aliases: markdown::aliases(&content),
+                        tags: tags.into(),
+                        links: links.into(),
+                        aliases: markdown::aliases(&body).into(),
                         mtime: SystemTime::now(),
                         path: path.clone(),
-                        body: Arc::from(content),
+                        lower: vault::lowered(&body),
+                        body,
                     },
                 );
                 if old.as_ref() != Some(&path) {
@@ -2762,9 +2763,7 @@ impl Shell {
                 path: n.path.clone(),
                 tags: n.tags.clone(),
                 body: n.body.clone(),
-                // ponytail: mis en minuscules à chaque ouverture (5 000 notes : environ 50 ms) ;
-                // à garder dans `Note` si cela se remarque.
-                lower: n.body.to_lowercase(),
+                lower: n.lower.clone(),
             })
             // Les autres fichiers du coffre (tableaux, images, schémas) se trouvent aussi par leur nom.
             .chain(self.images.iter().map(|path| Entry {
@@ -5076,7 +5075,7 @@ mod tests {
         assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), Mode::Tags);
         assert!(vault::load_layout().starts_with("tags split"));
         let (tagged, previewed) = shell.read_with(cx, |s, _| {
-            let tag = s.notes.iter().flat_map(|n| &n.tags).min().unwrap().clone();
+            let tag = s.notes.iter().flat_map(|n| n.tags.iter()).min().unwrap().clone();
             let has = |n: &&Note| n.tags.contains(&tag);
             (s.notes.iter().filter(has).count(), s.notes.iter().filter(has).any(|n| Some(&n.path) == s.path.as_ref()))
         });
@@ -5146,7 +5145,7 @@ mod tests {
         // avec l'un d'eux ouvre la note au lieu d'en créer une.
         fs::write(root.join("Appli.md"), "---\ntags:\n  - enyaml\naliases: [Bref app]\n---\n# Appli\n").unwrap();
         settle(cx);
-        assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Appli" && n.tags == ["enyaml"] && n.aliases == ["Bref app"])));
+        assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Appli" && n.tags[..] == ["enyaml"] && n.aliases[..] == ["Bref app"])));
         let count = shell.read_with(cx, |s, _| s.notes.len());
         cx.simulate_keystrokes("secondary-end enter");
         cx.simulate_input("[[bref a");
@@ -7027,6 +7026,10 @@ mod tests {
             }
             let typing = start.elapsed() / 20;
             let memory = resident_mb().map_or("?".into(), |m| m.to_string());
+            // Enregistrer la grosse note où l'on vient de taper : ce que coûte un enregistrement.
+            let start = Instant::now();
+            shell.update(cx, |s, cx| s.flush(cx));
+            let saved = start.elapsed();
             // La palette sur tout le coffre : l'ouvrir, puis y taper une lettre.
             let start = Instant::now();
             cx.simulate_keystrokes("secondary-p");
@@ -7047,16 +7050,20 @@ mod tests {
             let (found, dirs, images) = vault::rescan(&root, &known);
             let start = Instant::now();
             shell.update(cx, |s, cx| s.sync(found, dirs, images, cx));
+            let synced = start.elapsed();
+            // Une touche sans effet sur le texte : l'image suivante, panneau compris.
+            cx.simulate_keystrokes("right");
             cx.run_until_parked();
             let outside = copy + start.elapsed();
-            rows.push(format!("| {notes} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {memory} |", ms(scan), ms(rescan), ms(fingerprint), ms(startup), ms(open), ms(typing), ms(palette), ms(letter), ms(outside)));
+            let _ = synced;
+            rows.push(format!("| {notes} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {memory} |", ms(scan), ms(rescan), ms(fingerprint), ms(startup), ms(open), ms(typing), ms(saved), ms(palette), ms(letter), ms(outside)));
             // La fenêtre et son watcher partent avant le coffre suivant.
             cx.update(|_, cx| cx.windows().iter().for_each(|w| { w.update(cx, |_, window, _| window.remove_window()).ok(); }));
             cx.run_until_parked();
             fs::remove_dir_all(&root).unwrap();
         }
-        println!("\n| notes | scan (ms) | rescan (ms) | empreinte (ms) | démarrage (ms) | ouverture 5000 l. (ms) | frappe 5000 l. (ms) | palette : ouvrir (ms) | palette : une lettre (ms) | note écrite ailleurs, fil principal (ms) | mémoire (Mo) |");
-        println!("|---|---|---|---|---|---|---|---|---|---|---|");
+        println!("\n| notes | scan (ms) | rescan (ms) | empreinte (ms) | démarrage (ms) | ouverture 5000 l. (ms) | frappe 5000 l. (ms) | enregistrement 5000 l. (ms) | palette : ouvrir (ms) | palette : une lettre (ms) | note écrite ailleurs, fil principal (ms) | mémoire (Mo) |");
+        println!("|---|---|---|---|---|---|---|---|---|---|---|---|");
         rows.iter().for_each(|row| println!("{row}"));
     }
 
