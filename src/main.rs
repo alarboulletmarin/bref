@@ -4461,7 +4461,7 @@ mod tests {
     /// `root` garde le verrou jusqu'à sa fin, pour qu'un autre ne le déplace pas pendant qu'il s'en sert.
     fn isolated_config(root: &Path) -> std::sync::MutexGuard<'static, ()> {
         let guard = CONFIG.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA"] {
+        for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA", "USERPROFILE"] {
             unsafe { std::env::set_var(key, root.join(".config")) };
         }
         guard
@@ -7224,7 +7224,10 @@ mod tests {
         let notes = root.join(".config").join("Notes");
         assert!(notes.is_dir());
         assert_eq!(shell.read_with(cx, |s, _| s.vault.clone()), Some(notes.clone()));
-        assert_eq!(vault::shown(&notes), format!("~/{}", Path::new("Notes").display()));
+        // Sous Windows, le chemin se montre en entier.
+        if !cfg!(windows) {
+            assert_eq!(vault::shown(&notes), "~/Notes");
+        }
         let _ = fs::remove_dir_all(&root);
     }
 
