@@ -30,7 +30,7 @@ pub struct Note {
     pub aliases: Arc<[String]>,
     pub mtime: SystemTime,
     /// Texte entier de la note, pour la recherche plein texte.
-    // ponytail: tout le texte du coffre reste en mémoire (5 000 notes de 6 Ko : 30 Mo) ;
+    // ponytail: tout le texte du coffre reste en mémoire, tel quel et en minuscules (5 000 notes de 6 Ko : 60 Mo) ;
     // passer à un index sur disque si des coffres bien plus gros se présentent.
     pub body: Arc<str>,
     /// Le même en minuscules : la recherche ne le refait pas à chaque ouverture de la palette.

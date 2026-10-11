@@ -9,6 +9,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 ## Features
 
 - **Opens instantly**: the window is on screen in about 75 ms on the author's machine.
+- **Stays fast as it grows**: a keystroke costs about a millisecond of work, in a short note as in one of 5,000 lines, and the palette opens in 4 ms on a vault of 5,000 notes. The figures, and how to measure them, are under [Speed](#speed).
 - **Plain files**: one `.md` file per note, in a folder (the *vault*) you can sync with git, Syncthing or anything else. An existing Obsidian vault works as is, YAML front matter included.
 - **Styled as you type**: headings grow, bold and italic render, markers stay visible but dimmed. The file on disk is always plain Markdown.
 - **Lists that continue themselves**: `- `, `1. ` and `[] ` start a list, Enter continues it, numbering stays in order.
@@ -451,7 +452,7 @@ Put the vault in a folder synced by iCloud, Dropbox, Google Drive or Syncthing: 
 - A vault is an ordinary folder. Notes in subfolders are found too; hidden folders (`.git`, `.obsidian`…) are ignored. New notes are created at the top of the vault, or in the selected folder when the tree is on display.
 - CSV and TSV files are part of the vault too: the tree lists them with the notes of their folder, and selecting one opens its grid in place of the note (see [CSV and TSV tables](#csv-and-tsv-tables)). They are not in the graph, and a note does not link to them. They can be renamed (they keep their extension), moved, duplicated or trashed like a note.
 - Pictures are part of the vault: the tree lists them under the notes of their folder, and the graph shows them as squares, linked to the notes that display them. Selecting one shows it in place of the note; it can be renamed (the notes that display it follow), moved or trashed like a note.
-- What other programs change in the vault (a sync tool, a script, another editor) is picked up within a second, without restarting: Bref asks the system to report changes (inotify, FSEvents, ReadDirectoryChangesW).
+- What other programs change in the vault (a sync tool, a script, another editor) is picked up in about half a second, without restarting: Bref asks the system to report changes (inotify, FSEvents, ReadDirectoryChangesW).
 - A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
 - A YAML front matter (a block that starts on the first line with `---` and ends with `---` or `...`) is shown dimmed and is never interpreted or rewritten: the title of the note is the first line after it, and renaming a note or rewriting its links leaves the block byte for byte as it was. Two of its keys are read: `tags` (`tags: [a, b]`, `tags: a, b` or a dashed list) count like `#tags` in the text, and each of the `aliases` is another name for the note, suggested after `[[` and followed by links, backlinks and the graph. Other keys and nested YAML are ignored.
 - **Backup**: click the arrow into a tray at the bottom of the rail (or type `back up` in the palette) and choose a folder: Bref writes there one archive of the whole vault, trash included, named after the vault and the date (`Notes 2026-10-09.tar.gz`), numbered if that name is taken. It uses the `tar` program of the system (Linux, macOS, Windows 10 and later) and refuses a folder inside the vault.
@@ -513,13 +514,41 @@ The check is the only network request the app makes until you press Update. It r
 
 **Limits.** The name field of a new folder or a rename only edits at its end: type, or erase with Backspace. Links written as plain text inside a code block are not followed when a note is renamed.
 
+## Speed
+
+Measured on the author's machine (Intel Core i9-13900H, Linux, release build), on vaults of 30-line notes linked to each other.
+
+| Vault | 1,000 notes | 5,000 notes | 20,000 notes |
+|---|---|---|---|
+| Window on screen | 75 ms | 60 ms | 75 ms |
+| Vault indexed, in the background | 20 ms | 90 ms | 275 ms |
+| Palette: to open, then per letter | 1.7 ms, 1.5 ms | 3.6 ms, 1.9 ms | 11 ms, 4 ms |
+| A note written by another program shows up | in 0.3 to 0.45 s | in 0.3 to 0.45 s | in 0.4 to 0.55 s |
+| Memory | 62 MB | 86 MB | 180 MB |
+
+| One gesture | Work before the frame is drawn |
+|---|---|
+| A letter in a short note | 1.1 ms |
+| A letter in a note of 1,000 lines | 1.2 ms |
+| A letter, an arrow or Enter in a note of 5,000 lines | 1.2 to 1.5 ms |
+| A letter in a table of 400 rows | 3.0 ms |
+| One notch of the mouse wheel | 1.1 ms |
+
+At rest Bref uses 0.3 % of one processor core.
+
+The first table comes from the running app (window, memory, outside change) and from the scale benchmark (index, palette). The second is the time Bref spends between a key and the frame it hands to the graphics card, measured without a display; drawing comes on top, and a screen at 120 Hz leaves 8 ms for both. To measure on your machine:
+
+```bash
+cargo test --release --locked -- --ignored --nocapture bench
+```
+
 ## How it works
 
 - **Editor**: a custom text element drawn directly with GPUI's text system. Each line is classified (heading, list item, quote, code…) and shaped with its own size and style runs; the text itself is never transformed. The layout is redone only when the text, the width, the theme or the cursor change, and then only for the lines an edit touched (the others are kept and shifted); a table of more than 1,500 rows is laid out light, with cells shaped only near the screen. A test compares every reused layout with a full one on thousands of random edits.
 - **CSV and TSV** (`src/table.rs`, `src/sheet.rs`): the file is decoded once and kept as text with one small index entry per row, so a million rows cost about 12 MB; fields are read on demand, and a row you did not edit is written back as it was. The grid builds only the cells on screen. Encoding and delimiter detection, parsing, writing and the copy and export formats are pure functions with unit tests.
 - **Typing rules** (`src/markdown.rs`): pure functions decide what Enter and Tab do on a line and renumber the list around the cursor. They are unit-tested without any UI.
 - **Vault** (`src/vault.rs`): the note list, its tags and its text are indexed off the UI thread when the vault opens, then kept up to date on each save. Changes made elsewhere are reported by the `notify` crate; the vault is also checked on a slow timer, which becomes the only mechanism when watching is not possible.
-- **Palette**: name matches first (substring, ranked by position, then subsequence; ties keep the most recently opened note first), then notes whose text contains every word, most recent first. The whole text of the vault is kept in memory for that.
+- **Palette**: name matches first (substring, ranked by position, then subsequence; ties keep the most recently opened note first), then notes whose text contains every word, most recent first. The whole text of the vault is kept in memory for that, as written and in lower case: it is lowered once, when the vault is read, not each time the palette opens.
 - **Updates** (`src/update.rs`): the latest release comes from the GitHub API through `curl`, at most once a day, off the UI thread, and so does the download. Reading the answer and comparing versions are pure functions with unit tests; swapping `Bref.app` from a disk image is tested on a real macOS by CI. `BREF_RELEASES_API` points the check at a local `file://` release description, to try an update without publishing one.
 - **Navigation** (`src/nav.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. 
 - **Graph** (`src/graph.rs`): a force-directed layout computed off the UI thread when the links change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.

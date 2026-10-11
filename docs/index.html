@@ -174,7 +174,7 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
   <ul>
     <li><b>Plain files</b>: one <code>.md</code> per note, plus your <code>.csv</code> and <code>.tsv</code>. Sync with git, or keep the vault in iCloud, Dropbox, Google Drive or Syncthing; an Obsidian vault works as is, front matter included (its tags and aliases are read).</li>
     <li><b>CSV and TSV</b>: opened in a grid, delimiter and encoding detected or chosen, selection by keyboard or mouse, copy, paste and export (TSV, CSV, Markdown, JSON), written straight into the file. A million rows are parsed in under a tenth of a second.</li>
-    <li><b>Follows your folder</b>: notes added, renamed or changed by another program or a sync tool show up within a second, without restarting.</li>
+    <li><b>Follows your folder</b>: notes added, renamed or changed by another program or a sync tool show up in about half a second, without restarting.</li>
     <li><b>Sync in one action</b>: <code>Ctrl + Shift + S</code> commits, receives, merges and sends a vault kept in git, in the background; a real conflict keeps both versions as two notes, never as markers in your text.</li>
     <li><b>Backup in one command</b>: the palette writes a dated archive of the whole vault where you choose.</li>
     <li><b>A trash you can undo</b>: nothing is deleted; the palette lists the trash of the vault and puts a note back.</li>
@@ -183,6 +183,7 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
   <h3>The app</h3>
   <ul>
     <li><b>Opens instantly</b>: the window is on screen in about 75 ms on the author's machine.</li>
+    <li><b>Stays fast as it grows</b>: a keystroke costs about a millisecond of work, in a short note as in one of 5,000 lines; the palette opens in 4 ms on a vault of 5,000 notes, in 11 ms on 20,000. <a href="https://github.com/alarboulletmarin/bref#speed">Every figure, and how to measure it</a>.</li>
     <li><b>Quiet status messages</b>: what just happened, or failed, shows in a corner and leaves after four seconds or on a click.</li>
     <li><b>Keeps itself current</b>: a banner says when a new version is out. On Windows, macOS and Arch, one click installs it and restarts Bref. It can be turned off.</li>
     <li><b>Yours to dress</b>: a dozen themes, each one readable (links and secondary text at WCAG AA contrast), IBM Plex built in so nothing to install (or any font you have), English and French, following your system.</li>
