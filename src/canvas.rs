@@ -106,6 +106,8 @@ enum Drag {
 pub struct Canvas {
     focus: FocusHandle,
     theme: Theme,
+    /// L'app dessine les boutons de la fenêtre : la barre d'outils leur laisse la place.
+    client: bool,
     diagram: Diagram,
     selected: Vec<u32>,
     tool: Tool,
@@ -139,6 +141,7 @@ impl Canvas {
         Self {
             focus: cx.focus_handle(),
             theme,
+            client: false,
             diagram,
             selected: Vec::new(),
             tool: Tool::Select,
@@ -160,8 +163,8 @@ impl Canvas {
     }
 
     /// Le thème, tel que la fenêtre le connaît.
-    pub fn sync(&mut self, theme: Theme) {
-        self.theme = theme;
+    pub fn sync(&mut self, theme: Theme, client: bool) {
+        (self.theme, self.client) = (theme, client);
     }
 
     pub fn exported(&mut self, cx: &mut Context<Self>) {
@@ -785,9 +788,22 @@ impl Canvas {
                 "Pick a shape above, or press R, O, D, A, T…, then drag. Double-click to write.",
                 "Choisis une forme ci-dessus, ou tape R, O, D, A, T…, puis fais glisser. Double-clic pour écrire.",
             );
-            let line = self.line(hint, false, t.soft, 0.93, window);
-            let origin = bounds.center() - point(line.width / 2., px(10.));
-            line.paint(origin, px(20.), window, cx).ok();
+            // Mot à mot : l'indication passe à la ligne dans un canevas étroit.
+            let room = bounds.size.width - px(32.);
+            let mut lines: Vec<String> = Vec::new();
+            for word in hint.split(' ') {
+                let longer = lines.last().map(|last| format!("{last} {word}"));
+                match longer.filter(|longer| self.line(longer, false, t.soft, 0.93, window).width <= room) {
+                    Some(longer) => *lines.last_mut().unwrap() = longer,
+                    None => lines.push(word.to_string()),
+                }
+            }
+            let top = bounds.center().y - px(10.) * lines.len() as f32;
+            for (i, text) in lines.iter().enumerate() {
+                let line = self.line(text, false, t.soft, 0.93, window);
+                let origin = point(bounds.center().x - line.width / 2., top + px(20.) * i as f32);
+                line.paint(origin, px(20.), window, cx).ok();
+            }
         }
     }
 }
@@ -907,7 +923,8 @@ impl Render for Canvas {
         let bar = div()
             .flex_none()
             .min_h(px(44.))
-            .px_2()
+            .pl_2()
+            .pr(px(if self.client { 128. } else { 8. }))
             .py_1()
             .flex()
             .flex_wrap()

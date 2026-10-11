@@ -1049,11 +1049,13 @@ impl Sheet {
         let delimiter = delimiter_option(self.format.delimiter);
         div()
             .flex_none()
-            .h(px(40.))
+            .min_h(px(40.))
             .pl_4()
             // Sous la pastille de la fenêtre, quand l'app dessine sa barre de titre.
             .pr(px(if self.client { 128. } else { 8. }))
             .flex()
+            // Dans une fenêtre étroite, les réglages passent à la ligne au lieu de glisser sous la pastille.
+            .flex_wrap()
             .items_center()
             .gap_1()
             .border_b_1()
@@ -1062,7 +1064,7 @@ impl Sheet {
             .child(
                 div()
                     .flex_1()
-                    .h_full()
+                    .h(px(38.))
                     .flex()
                     .items_center()
                     .min_w_0()

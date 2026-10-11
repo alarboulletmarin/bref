@@ -3029,7 +3029,8 @@ impl Shell {
         keys::filter(help_sections(&self.bound, &self.changes), &query)
     }
 
-    fn render_help(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// `short` : la fenêtre est basse, le pied « à propos » défile avec la liste au lieu de lui prendre sa place.
+    fn render_help(&self, short: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let rows = self.help_rows(cx);
         let none = rows.is_empty();
@@ -3078,6 +3079,7 @@ impl Shell {
         let sections = rows.into_iter().map(|(title, rows)| {
             div()
                 .w(px(370.))
+                .max_w_full()
                 .flex()
                 .flex_col()
                 .gap_1()
@@ -3180,8 +3182,7 @@ impl Shell {
         };
         let about = div()
             .flex_none()
-            .px_5()
-            .py_3()
+            .map(|d| if short { d.w_full().pt_3() } else { d.px_5().py_3() })
             .border_t_1()
             .border_color(t.border)
             .flex()
@@ -3196,6 +3197,7 @@ impl Shell {
             )))
             .child(link("about-github", "code.svg", "GitHub", env!("CARGO_PKG_REPOSITORY")))
             .child(link("about-kofi", "heart.svg", tr("Support on Ko-fi", "Soutenir sur Ko-fi"), KOFI));
+        let (inside, below) = if short { (Some(about), None) } else { (None, Some(about)) };
         div()
             .absolute()
             .inset_0()
@@ -3243,9 +3245,10 @@ impl Shell {
                             .children(sections)
                             .when(none, |d| {
                                 d.child(div().text_color(t.soft).child(tr("No shortcut matches.", "Aucun raccourci ne correspond.")))
-                            }),
+                            })
+                            .children(inside),
                     )
-                    .child(about)
+                    .children(below)
                     .with_animation(
                         "help-in",
                         Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
@@ -3405,6 +3408,18 @@ impl Shell {
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });
         self.editor.update(cx, |e, _| e.corner = 1 + talk.is_some() as usize + boards as usize);
+        // La colonne des commentaires prend ce que le panneau et la note lui laissent, 270 px au
+        // plus ; faute de 140 px, elle ne se montre pas (son bouton reste, la fenêtre élargie la rend).
+        let column = (active && !said.is_empty() && !self.comments_shut)
+            .then(|| {
+                self.nav.aside = px(270.);
+                let panel = if self.nav.panel == Panel::Split { self.split_width() + nav::DIVIDER } else { px(0.) };
+                (self.nav.total - nav::RAIL - panel - nav::NOTE_MIN).min(px(270.))
+            })
+            .filter(|width| *width >= px(140.));
+        if active && column.is_none() {
+            self.nav.aside = px(0.);
+        }
         let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at))| {
             let at = *at;
             let inside = at + noted.len() + 9;
@@ -3441,7 +3456,7 @@ impl Shell {
                     window.focus(&this.editor.focus_handle(cx));
                 }))
         });
-        let comments = (!said.is_empty() && !self.comments_shut).then(|| {
+        let comments = column.map(|column| {
             let title = format!("{} ({})", tr("Comments", "Commentaires"), said.len());
             let shut = nav::button("comments-shut", "close.svg", false, t).tooltip(nav::tip(tr("Close", "Fermer"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {
                 this.comments_shut = true;
@@ -3449,7 +3464,8 @@ impl Shell {
             }));
             div()
                 .id("comments")
-                .w(px(270.))
+                .debug_selector(|| "comments".into())
+                .w(column)
                 .flex_none()
                 .h_full()
                 .pt(px(48.))
@@ -3498,7 +3514,7 @@ impl Shell {
                 note.child(sheet)
             }
             (Some(_), Some((_, canvas))) => {
-                canvas.update(cx, |canvas, _| canvas.sync(t));
+                canvas.update(cx, |canvas, _| canvas.sync(t, client));
                 note.child(canvas.clone())
             }
             (Some(path), None) => note.p_6().flex().items_center().justify_center().child(
@@ -3529,6 +3545,8 @@ impl Shell {
             .relative()
             .h_full()
             .min_w_0()
+            // Rien d'un pane ne se dessine chez son voisin, si étroit soit-il.
+            .overflow_hidden()
             .flex()
             .map(|d| if two && pane == 0 { d.flex_none().w(gpui::relative(ratio)) } else { d.flex_1() })
             // Un geste de souris dans un pane vaut pour lui, avant que ses vues ne le reçoivent.
@@ -3713,6 +3731,8 @@ impl Render for Shell {
                 .items_center()
                 .justify_center()
                 .gap_3()
+                .px_4()
+                .text_center()
                 .child(
                     div()
                         .text_size(px(26.))
@@ -3852,7 +3872,6 @@ impl Render for Shell {
                     .items_center()
                     .gap_3()
             };
-            let banner = || card().absolute().bottom_3().left_16();
             // Messages d'état, empilés au-dessus du compteur de mots : un clic les retire.
             let toasts = self.toasts.iter().map(|toast| {
                 let id = toast.id;
@@ -3886,57 +3905,62 @@ impl Render for Shell {
                         }),
                     )
             });
-            let toasts = div().absolute().bottom(px(54.)).right_4().flex().flex_col().items_end().gap_2().children(toasts);
+            let banner = self.update.clone().map(|release| {
+                let banner = card().max_w_full();
+                if self.updating {
+                    return banner.pr_3().child(tr("Updating, Bref restarts…", "Mise à jour, Bref redémarre…"));
+                }
+                // « Mettre à jour » quand l'app sait le faire seule, sinon la page de téléchargement.
+                let (action, install) = match release.asset {
+                    Some(_) => (tr("Update", "Mettre à jour"), true),
+                    None => (tr("Download", "Télécharger"), false),
+                };
+                banner
+                    .child(format!("{} {}", tr("New version:", "Nouvelle version :"), release.version))
+                    .child(
+                        div()
+                            .cursor_pointer()
+                            .text_color(t.accent)
+                            .hover(|s| s.underline())
+                            .child(action)
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    if install {
+                                        this.install_update(cx)
+                                    } else {
+                                        cx.open_url(&update::releases_url())
+                                    }
+                                }),
+                            ),
+                    )
+                    .child(
+                        svg()
+                            .path("close.svg")
+                            .size(px(14.))
+                            .flex_none()
+                            .text_color(t.soft)
+                            .cursor_pointer()
+                            .hover(|s| s.text_color(t.text))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.update = None;
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+            });
+            // La bannière tient à gauche du compteur de mots ; dans une fenêtre étroite, où elle le
+            // couvrirait, elle rejoint la pile des messages, au-dessus de lui.
+            let narrow = self.nav.total < px(640.);
+            let (low, stacked) = if narrow { (None, banner) } else { (banner, None) };
+            let toasts = div().absolute().bottom(px(54.)).left_4().right_4().flex().flex_col().items_end().gap_2().children(stacked).children(toasts);
             body.flex()
                 .child(self.render_nav(cx))
                 .when(self.nav.panel != Panel::Full, |d| d.child(note).children(comments))
                 .children(self.palette.clone())
-                .children(self.update.clone().map(|release| {
-                    let banner = banner();
-                    if self.updating {
-                        return banner.pr_3().child(tr("Updating, Bref restarts…", "Mise à jour, Bref redémarre…"));
-                    }
-                    // « Mettre à jour » quand l'app sait le faire seule, sinon la page de téléchargement.
-                    let (action, install) = match release.asset {
-                        Some(_) => (tr("Update", "Mettre à jour"), true),
-                        None => (tr("Download", "Télécharger"), false),
-                    };
-                    banner
-                        .child(format!("{} {}", tr("New version:", "Nouvelle version :"), release.version))
-                        .child(
-                            div()
-                                .cursor_pointer()
-                                .text_color(t.accent)
-                                .hover(|s| s.underline())
-                                .child(action)
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, _, _, cx| {
-                                        if install {
-                                            this.install_update(cx)
-                                        } else {
-                                            cx.open_url(&update::releases_url())
-                                        }
-                                    }),
-                                ),
-                        )
-                        .child(
-                            svg()
-                                .path("close.svg")
-                                .size(px(14.))
-                                .flex_none()
-                                .text_color(t.soft)
-                                .cursor_pointer()
-                                .hover(|s| s.text_color(t.text))
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(|this, _, _, cx| {
-                                        this.update = None;
-                                        cx.notify();
-                                    }),
-                                ),
-                        )
-                }))
+                .children(low.map(|banner| banner.absolute().bottom_3().left_16()))
                 .child(toasts)
         };
 
@@ -4073,7 +4097,7 @@ impl Render for Shell {
             .when(client, |d| d.child(pill))
             .children(self.render_menu(window, cx))
             .children(self.render_icons(window, cx))
-            .when(self.help, |d| d.child(self.render_help(cx)));
+            .when(self.help, |d| d.child(self.render_help(window.viewport_size().height < px(420.), cx)));
 
         // La marge transparente porte l'ombre et sert de poignée de redimensionnement.
         div()
@@ -6006,6 +6030,50 @@ mod tests {
         assert_eq!(text(cx), "- un mot ici\n{==fin==}{>>ok<<}");
         cx.simulate_keystrokes("secondary-z");
         assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\n{==fin==}{>>ok<<}");
+        // Fenêtre étroite ou panneau trop large : rien ne passe sous son voisin ni hors de la
+        // fenêtre. La note garde 200 px, le panneau puis la colonne des commentaires lui cèdent.
+        let before = shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel, s.nav.list_w));
+        let whole = cx.update(|window, _| window.viewport_size());
+        let lay = |cx: &mut gpui::VisualTestContext, width: f32, mode: Mode, panel: Panel, list: f32| {
+            cx.simulate_resize(size(px(width), px(600.)));
+            shell.update(cx, |s, cx| {
+                (s.nav.mode, s.nav.panel, s.nav.list_w) = (mode, panel, px(list));
+                cx.notify();
+            });
+            cx.run_until_parked();
+        };
+        let within = |cx: &mut gpui::VisualTestContext, part: &'static str, zone: &'static str| {
+            let (part_at, zone_at) = (cx.debug_bounds(part).unwrap_or_else(|| panic!("{part} absent")), cx.debug_bounds(zone).unwrap());
+            assert!(part_at.left() >= zone_at.left() && part_at.right() <= zone_at.right(), "{part} dépasse de {zone} : {part_at:?} hors de {zone_at:?}");
+        };
+        // Un panneau de 600 px dans une fenêtre de 860 : il rend la place de la note et des commentaires.
+        lay(cx, 860., Mode::Tree, Panel::Split, 600.);
+        let (panel, pane, said) = (cx.debug_bounds("nav-panel").unwrap(), cx.debug_bounds("pane-0").unwrap(), cx.debug_bounds("comments").unwrap());
+        assert!(pane.size.width >= px(199.) && said.size.width == px(270.) && said.right() <= px(860.), "{pane:?} {said:?}");
+        assert!(panel.right() <= pane.left() && pane.right() <= said.left(), "{panel:?} {pane:?} {said:?}");
+        // 420 px avec le panneau : plus de place pour les commentaires, la note garde la sienne.
+        lay(cx, 420., Mode::Tree, Panel::Split, 600.);
+        let pane = cx.debug_bounds("pane-0").unwrap();
+        assert!(pane.size.width >= px(199.) && pane.right() == px(420.), "{pane:?}");
+        // Panneau replié : la colonne revient, plus étroite ; la recherche et le compteur tiennent dans la note.
+        lay(cx, 420., Mode::Tree, Panel::Rail, 600.);
+        let (pane, said) = (cx.debug_bounds("pane-0").unwrap(), cx.debug_bounds("comments").unwrap());
+        assert!(pane.size.width >= px(199.) && said.size.width == px(180.) && said.right() <= px(420.), "{pane:?} {said:?}");
+        cx.simulate_keystrokes("secondary-f");
+        cx.run_until_parked();
+        within(cx, "find-bar", "pane-0");
+        within(cx, "counts", "pane-0");
+        cx.simulate_keystrokes("escape");
+        // Le calendrier ne descend pas sous 170 px, et son mois tient dans le panneau.
+        lay(cx, 420., Mode::Calendar, Panel::Split, 120.);
+        assert_eq!(cx.debug_bounds("nav-panel").unwrap().size.width, px(170.));
+        within(cx, "calendar", "nav-panel");
+        cx.simulate_resize(whole);
+        shell.update(cx, |s, cx| {
+            (s.nav.mode, s.nav.panel, s.nav.list_w) = before;
+            cx.notify();
+        });
+        cx.run_until_parked();
         load(cx, "rien", 0);
         cx.simulate_keystrokes("secondary-p");
         cx.simulate_input("commentaires");

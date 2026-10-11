@@ -31,6 +31,10 @@ actions!(nav, [ShowCalendar, PrevMonth, NextMonth, ShowTree, ShowRecent, ShowGra
 pub const RAIL: Pixels = px(40.);
 const ROW: Pixels = px(26.);
 const LIST_W: Pixels = px(260.);
+/// Largeur que le panneau et la colonne des commentaires laissent toujours à la note.
+pub const NOTE_MIN: Pixels = px(200.);
+/// Poignée entre le panneau et la note.
+pub const DIVIDER: Pixels = px(5.);
 
 #[derive(Clone, Copy, PartialEq, Hash, Debug)]
 pub enum Mode {
@@ -157,7 +161,7 @@ pub struct Nav {
     pub focus: FocusHandle,
     pub mode: Mode,
     pub panel: Panel,
-    list_w: Pixels,
+    pub list_w: Pixels,
     /// Largeur du graphe ; zéro : la moitié de la fenêtre.
     graph_w: Pixels,
     pub dragging: bool,
@@ -185,6 +189,8 @@ pub struct Nav {
     // Bord gauche et largeur du contenu de la fenêtre, à la dernière frame.
     pub left: Pixels,
     pub total: Pixels,
+    /// Largeur réservée à droite de la note (la colonne des commentaires) : le panneau la lui laisse.
+    pub aside: Pixels,
 }
 
 impl Nav {
@@ -222,6 +228,7 @@ impl Nav {
             native_bar: false,
             left: px(0.),
             total: px(0.),
+            aside: px(0.),
         }
     }
 
@@ -510,6 +517,18 @@ impl Shell {
         cx.notify();
     }
 
+    /// Largeur du panneau ouvert à côté de la note : celle qu'on lui a donnée, tant que la note
+    /// (`NOTE_MIN`) et ce qui est réservé à sa droite gardent leur place.
+    pub fn split_width(&self) -> Pixels {
+        let room = self.nav.total - RAIL - DIVIDER - self.nav.aside;
+        // Le mois ne se lit plus en dessous de 170 px : ses jours se touchent.
+        let floor = px(if self.nav.mode == Mode::Calendar { 170. } else { 120. });
+        match if self.nav.mode == Mode::Graph { self.nav.graph_w } else { self.nav.list_w } {
+            w if w == px(0.) => room / 2.,
+            w => w.min(room - NOTE_MIN).max(floor),
+        }
+    }
+
     /// Le séparateur suit le pointeur ; aux extrémités, un côté se replie.
     pub fn drag_nav(&mut self, x: Pixels, cx: &mut Context<Self>) {
         let x = x - self.nav.left - RAIL;
@@ -701,7 +720,7 @@ impl Shell {
             .flex_col()
             .gap_1()
             .child(head)
-            .child(div().w_full().max_w(px(224.)).grid().grid_cols(7).children(week).children(blanks).children(cells))
+            .child(div().debug_selector(|| "calendar".into()).w_full().max_w(px(224.)).grid().grid_cols(7).children(week).children(blanks).children(cells))
     }
 
     fn nav_step(&mut self, down: bool, cx: &mut Context<Self>) {
@@ -1709,9 +1728,12 @@ impl Shell {
         };
         let keys = |action: &dyn Action| crate::keys::of(cx, action);
         let rail = div()
+            .id("rail")
             .flex_none()
             .w(RAIL)
             .h_full()
+            // Une fenêtre basse : le rail défile, ses derniers boutons restent atteignables.
+            .overflow_y_scroll()
             .py_2()
             .flex()
             .flex_col()
@@ -1856,13 +1878,9 @@ impl Shell {
                     }),
                 )
             });
-        let room = self.nav.total - RAIL;
-        let width = match *self.nav.width() {
-            w if w == px(0.) => room / 2.,
-            // Le mois ne se lit plus en dessous de 170 px : ses jours se touchent.
-            w => w.min(room - px(200.)).max(px(if mode == Mode::Calendar { 170. } else { 120. })),
-        };
+        let width = self.split_width();
         let content = div()
+            .debug_selector(|| "nav-panel".into())
             .h_full()
             .min_w_0()
             .flex()
@@ -1915,7 +1933,7 @@ impl Shell {
         let divider = div()
             .id("nav-divider")
             .flex_none()
-            .w(px(5.))
+            .w(DIVIDER)
             .h_full()
             .flex()
             .justify_center()

@@ -1219,7 +1219,7 @@ impl Editor {
                 true => div().text_color(t.soft).child(hint),
                 false => div().when(fresh, |d| d.bg(t.selection)).child(text.to_string()),
             };
-            let field = div().flex_1().min_w_0().h(px(26.)).px_2().rounded(px(6.)).border_1().bg(t.bg);
+            let field = div().flex_1().min_w(px(90.)).h(px(26.)).px_2().rounded(px(6.)).border_1().bg(t.bg);
             let field = field.border_color(if on { t.accent } else { t.border }).flex().items_center().overflow_hidden();
             match text.is_empty() {
                 true => field.children(caret).child(shown),
@@ -1252,10 +1252,9 @@ impl Editor {
             })
         };
         let bar = div()
-            .absolute()
-            .top(px(52.))
-            .right_4()
+            .debug_selector(|| "find-bar".into())
             .w(px(340.))
+            .max_w_full()
             .p_1p5()
             .rounded(px(8.))
             .bg(t.panel)
@@ -1268,8 +1267,10 @@ impl Editor {
             .flex_col()
             .gap_1p5()
             .occlude();
+        // Dans une note étroite, le compte et les réglages passent sous le champ.
         let first = div()
             .flex()
+            .flex_wrap()
             .items_center()
             .gap_1p5()
             .child(field(&find.query, tr("Find", "Chercher"), find.active && !find.on_with, find.fresh).on_mouse_down(MouseButton::Left, pick(false)))
@@ -1289,7 +1290,8 @@ impl Editor {
                 )
                 .child(toggle(tr("Vault…", "Coffre…"), false).on_mouse_down(MouseButton::Left, everywhere))
         });
-        Some(bar.child(first).children(second))
+        // Calée à droite, dans les marges de la note : une note étroite la rétrécit au lieu de la laisser sortir.
+        Some(div().absolute().top(px(52.)).left_4().right_4().flex().justify_end().child(bar.child(first).children(second)))
     }
 
     // ponytail: chaque étape d'annulation (200 max) recopie une fois la note pour
@@ -3021,7 +3023,7 @@ impl Editor {
     fn relayout(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         let t = self.theme;
         let cursor = self.cursor();
-        let width = (bounds.size.width - px(48.)).min(MAX_WIDTH).max(px(120.));
+        let width = (bounds.size.width - px(48.)).min(MAX_WIDTH).max(px(40.));
         let text_system = window.text_system().clone();
         // Ce qui peut être repris de la mise en page précédente, quand seules quelques lignes ont changé.
         // Les premières lignes d'un très gros tableau fixent ses colonnes : si elles bougent, on refait tout.
@@ -4046,19 +4048,21 @@ impl EntityInputHandler for Editor {
 impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // À gauche des boutons que la fenêtre pose dans le coin (copie, commentaires).
-        let counts = div()
-            .absolute()
-            .bottom_4()
-            .right(px(12. + 34. * self.corner as f32))
-            .h(px(30.))
-            .px_2()
-            .rounded(px(8.))
-            .flex()
-            .items_center()
-            .bg(self.theme.bg)
-            .text_size(px(12.))
-            .text_color(self.theme.soft)
-            .child(self.counts());
+        // Le compte se tronque dans une note étroite, au lieu de sortir par la gauche.
+        let counts = div().absolute().bottom_4().left_2().right(px(12. + 34. * self.corner as f32)).flex().justify_end().child(
+            div()
+                .debug_selector(|| "counts".into())
+                .h(px(30.))
+                .min_w_0()
+                .px_2()
+                .rounded(px(8.))
+                .flex()
+                .items_center()
+                .bg(self.theme.bg)
+                .text_size(px(12.))
+                .text_color(self.theme.soft)
+                .child(div().min_w_0().truncate().child(self.counts())),
+        );
         // Avant le dessin : les passages suivent une note modifiée pendant que la barre est ouverte.
         self.refresh_find();
         let finding = self.find.as_ref().is_some_and(|find| find.active);
