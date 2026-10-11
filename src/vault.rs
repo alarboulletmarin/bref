@@ -364,15 +364,7 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
         };
         Note { name: stem(path), tags, links, aliases, mtime: *mtime, path: path.clone(), body, lower }
     };
-    // Lire et indexer les notes à plusieurs : au premier lancement, c'est le disque (et
-    // l'antivirus, sous Windows) qui fait attendre. Les notes gardent l'ordre de la lecture.
-    // ponytail: huit fils au plus, à parts égales ; une file de travail si des notes énormes déséquilibrent.
-    let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).min(8);
-    let share = files.len().div_ceil(workers).max(64);
-    let mut notes: Vec<Note> = std::thread::scope(|scope| {
-        let parts: Vec<_> = files.chunks(share).map(|part| scope.spawn(|| part.iter().map(note).collect::<Vec<_>>())).collect();
-        parts.into_iter().flat_map(|part| part.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))).collect()
-    });
+    let mut notes: Vec<Note> = files.iter().map(note).collect();
     notes.sort_by(|a, b| b.mtime.cmp(&a.mtime));
     (notes, found, images)
 }
