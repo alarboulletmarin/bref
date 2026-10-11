@@ -208,6 +208,12 @@ fn first_visit(visited: &mut HashSet<PathBuf>, dir: &Path) -> bool {
     visited.insert(fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()))
 }
 
+/// L'entrée est un dossier, lien suivi. Son type vient avec la liste du dossier : on n'interroge
+/// le disque que pour un lien, pas une fois par fichier du coffre.
+fn is_dir(entry: &fs::DirEntry) -> bool {
+    entry.file_type().is_ok_and(|kind| kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()))
+}
+
 /// Empreinte de l'état du coffre : les chemins de ses notes, images et dossiers,
 /// et la date de chaque note. Elle change dès qu'un autre programme y touche, sans
 /// qu'il faille lire un seul fichier.
@@ -222,7 +228,7 @@ pub fn fingerprint(root: &Path) -> u64 {
             if entry.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
-            if path.is_dir() {
+            if is_dir(&entry) {
                 if first_visit(&mut visited, &path) {
                     seen.push((path.clone(), None));
                     dirs.push(path);
@@ -318,7 +324,7 @@ pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
 /// Comme `scan`, sans relire les notes de `known` dont la date n'a pas changé.
 pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
     let known: HashMap<&Path, &Note> = known.iter().map(|n| (n.path.as_path(), n)).collect();
-    let mut notes = Vec::new();
+    let mut files = Vec::new();
     let mut images = Vec::new();
     let mut found = Vec::new();
     let mut visited = HashSet::new();
@@ -333,29 +339,40 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
             if entry.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
-            if path.is_dir() {
+            if is_dir(&entry) {
                 if first_visit(&mut visited, &path) {
                     found.push(path.clone());
                     dirs.push(path);
                 }
             } else if path.extension().is_some_and(|e| e == "md") {
-                let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH);
-                let (tags, links, aliases, body, lower) = match known.get(path.as_path()) {
-                    Some(note) if note.mtime == mtime => (note.tags.clone(), note.links.clone(), note.aliases.clone(), note.body.clone(), note.lower.clone()),
-                    _ => {
-                        let text = fs::read_to_string(&path).unwrap_or_default();
-                        let (tags, links) = markdown::index(&text);
-                        let body = Arc::from(text);
-                        let lower = lowered(&body);
-                        (tags.into(), links.into(), markdown::aliases(&body).into(), body, lower)
-                    }
-                };
-                notes.push(Note { name: stem(&path), tags, links, aliases, mtime, path, body, lower });
+                files.push((path, entry.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH)));
             } else if is_image(&path) || is_table(&path) {
                 images.push(path);
             }
         }
     }
+    let note = |(path, mtime): &(PathBuf, SystemTime)| {
+        let (tags, links, aliases, body, lower) = match known.get(path.as_path()) {
+            Some(note) if note.mtime == *mtime => (note.tags.clone(), note.links.clone(), note.aliases.clone(), note.body.clone(), note.lower.clone()),
+            _ => {
+                let text = fs::read_to_string(path).unwrap_or_default();
+                let (tags, links) = markdown::index(&text);
+                let body = Arc::from(text);
+                let lower = lowered(&body);
+                (tags.into(), links.into(), markdown::aliases(&body).into(), body, lower)
+            }
+        };
+        Note { name: stem(path), tags, links, aliases, mtime: *mtime, path: path.clone(), body, lower }
+    };
+    // Lire et indexer les notes à plusieurs : au premier lancement, c'est le disque (et
+    // l'antivirus, sous Windows) qui fait attendre. Les notes gardent l'ordre de la lecture.
+    // ponytail: huit fils au plus, à parts égales ; une file de travail si des notes énormes déséquilibrent.
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).min(8);
+    let share = files.len().div_ceil(workers).max(64);
+    let mut notes: Vec<Note> = std::thread::scope(|scope| {
+        let parts: Vec<_> = files.chunks(share).map(|part| scope.spawn(|| part.iter().map(note).collect::<Vec<_>>())).collect();
+        parts.into_iter().flat_map(|part| part.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))).collect()
+    });
     notes.sort_by(|a, b| b.mtime.cmp(&a.mtime));
     (notes, found, images)
 }
@@ -683,7 +700,7 @@ pub fn capture(root: &Path, name: &str, text: &str) -> io::Result<PathBuf> {
             if entry.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
-            if path.is_dir() {
+            if is_dir(&entry) {
                 if first_visit(&mut visited, &path) {
                     dirs.push(path);
                 }
