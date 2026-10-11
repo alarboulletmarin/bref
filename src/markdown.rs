@@ -1475,6 +1475,28 @@ mod tests {
             assert_eq!(recount(&long, counts(&long), &typed), counts(&typed), "frappe à {at}");
             assert_eq!(recount(&typed, counts(&typed), &long), counts(&long), "retrait à {at}");
         }
+        // Des retouches au hasard (toujours les mêmes) : insérer, effacer, remplacer, où que ce soit.
+        let bits = ["a", " ", "\n", "\r\n", "\r", "é", "👨‍👩‍👧", "l'idée", "3.14", "mot mot\n", "", "\n\n"];
+        let mut seed = 42u64;
+        let mut next = |n: usize| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (seed >> 33) as usize % n.max(1)
+        };
+        let (mut text, mut known) = (String::new(), (0, 0));
+        for step in 0..3000 {
+            let cut = |t: &str, mut i: usize| {
+                while !t.is_char_boundary(i) {
+                    i -= 1;
+                }
+                i
+            };
+            let from = cut(&text, next(text.len() + 1));
+            let to = cut(&text, (from + next(6)).min(text.len())).max(from);
+            let fresh = format!("{}{}{}", &text[..from], bits[next(bits.len())], &text[to..]);
+            known = recount(&text, known, &fresh);
+            assert_eq!(known, counts(&fresh), "retouche {step} : {text:?} -> {fresh:?}");
+            text = fresh;
+        }
     }
 
     #[test]
