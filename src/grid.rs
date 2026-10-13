@@ -299,6 +299,11 @@ impl TableRow {
         self.xs.last().map_or(px(0.), |x| *x + LINE)
     }
 
+    /// Abscisse de chaque trait vertical, depuis le bord gauche du tableau : une de plus que de colonnes.
+    pub fn xs(&self) -> &[Pixels] {
+        &self.xs
+    }
+
     /// Bord gauche du texte de la colonne `c`.
     fn left(&self, c: usize) -> Pixels {
         self.xs[c] + LINE + PAD_X

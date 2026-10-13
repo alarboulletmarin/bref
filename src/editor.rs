@@ -510,6 +510,149 @@ struct BigBlock {
 }
 
 /// Un tableau de la note.
+/// Où sont à l'écran les traits d'un tableau, pour ses poignées et ce qu'on y a pris.
+struct Geo {
+    /// Début du tableau dans le texte.
+    start: usize,
+    frame: Bounds<Pixels>,
+    /// Abscisses des traits verticaux (une de plus que de colonnes), ordonnées des horizontaux
+    /// (une de plus que de lignes vues : l'en-tête, puis le corps).
+    xs: Vec<Pixels>,
+    ys: Vec<Pixels>,
+}
+
+/// Une poignée d'un tableau : une colonne, une ligne, l'angle (tout le tableau), ou le « + » d'un trait.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Part {
+    Col(usize),
+    Row(usize),
+    Corner,
+    /// Le trait avant la colonne ou la ligne `n` : un clic y insère.
+    JoinCol(usize),
+    JoinRow(usize),
+}
+
+/// Lignes et colonnes (rangs visibles) prises par une poignée. Valable tant que le texte et la
+/// sélection sont ceux d'alors : rien d'autre à défaire.
+#[derive(Clone)]
+struct Pick {
+    table: usize,
+    rows: Range<usize>,
+    cols: Range<usize>,
+    sel: Range<usize>,
+    version: u64,
+}
+
+/// Une ligne ou une colonne qu'on déplace en tirant sa poignée.
+struct Moving {
+    table: usize,
+    part: Part,
+    from: Point<Pixels>,
+    /// Le trait où elle se poserait.
+    to: Option<usize>,
+}
+
+/// Une poignée est une pastille de 10 px sur 24 ; elle flotte à 5 px du tableau.
+const GRIP: Pixels = px(10.);
+const GRIP_LONG: Pixels = px(24.);
+const GRIP_GAP: Pixels = px(5.);
+/// Jusqu'où, autour d'un tableau, le pointeur fait paraître la poignée de sa colonne ou de sa ligne.
+const GRIP_REACH: Pixels = px(24.);
+
+/// Ce que le pointeur désigne autour d'un tableau : sa colonne, sa ligne, et si c'est le coin.
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
+struct Near {
+    col: Option<usize>,
+    row: Option<usize>,
+    corner: bool,
+}
+
+impl Geo {
+    fn cols(&self) -> usize {
+        self.xs.len() - 1
+    }
+
+    fn tall(&self) -> usize {
+        self.ys.len() - 1
+    }
+
+    /// La colonne et la ligne au-dessus ou à côté desquelles est `at`, jusqu'à `GRIP_REACH` du tableau.
+    fn near(&self, at: Point<Pixels>) -> Near {
+        let f = self.frame;
+        // Le dernier trait compte pour la dernière colonne (ou ligne) : son « + » s'y montre.
+        let along = |lines: &[Pixels], v: Pixels| {
+            (0..lines.len() - 1).find(|&i| v >= lines[i] && (v < lines[i + 1] || (i + 2 == lines.len() && v <= lines[i + 1])))
+        };
+        let (above, aside) = (at.y >= f.top() - GRIP_REACH && at.y <= f.bottom(), at.x >= f.left() - GRIP_REACH && at.x <= f.right());
+        Near {
+            col: along(&self.xs, at.x).filter(|_| above && at.x >= f.left() && at.x <= f.right()),
+            row: along(&self.ys, at.y).filter(|_| aside && at.y >= f.top() && at.y <= f.bottom()),
+            corner: at.x >= f.left() - GRIP_REACH && at.x <= f.left() + px(16.) && at.y >= f.top() - GRIP_REACH && at.y <= f.top() + px(16.),
+        }
+    }
+
+    /// Les poignées et leur zone, dans l'ordre où l'on cherche celle qui reçoit un clic.
+    fn parts(&self) -> Vec<(Part, Bounds<Pixels>)> {
+        let f = self.frame;
+        let shown = |x: Pixels| x >= f.left() - px(1.) && x <= f.right() + px(1.);
+        // L'angle d'abord : il l'emporte sur le « + » du premier trait, qui le frôle.
+        let mut parts = vec![(Part::Corner, Bounds::new(f.origin - point(GRIP + GRIP_GAP, GRIP + GRIP_GAP), size(GRIP, GRIP)))];
+        for (b, &x) in self.xs.iter().enumerate().filter(|(_, x)| shown(**x)) {
+            parts.push((Part::JoinCol(b), Bounds::new(point(x - px(6.), f.top() - px(18.)), size(px(12.), px(16.)))));
+        }
+        for (b, &y) in self.ys.iter().enumerate().skip(1) {
+            parts.push((Part::JoinRow(b), Bounds::new(point(f.left() - px(18.), y - px(6.)), size(px(16.), px(12.)))));
+        }
+        // Une pastille au milieu de sa colonne (ou de sa ligne), plus petite si la place manque.
+        for c in 0..self.cols() {
+            let (from, to) = (self.xs[c].max(f.left()), self.xs[c + 1].min(f.right()));
+            let long = GRIP_LONG.min(to - from - px(12.));
+            if long >= px(10.) {
+                let mid = (from + to) / 2.;
+                parts.push((Part::Col(c), Bounds::new(point(mid - long / 2., f.top() - GRIP - GRIP_GAP), size(long, GRIP))));
+            }
+        }
+        for r in 0..self.tall() {
+            let (from, to) = (self.ys[r], self.ys[r + 1]);
+            let long = GRIP_LONG.min(to - from - px(8.));
+            if long >= px(10.) {
+                let mid = (from + to) / 2.;
+                parts.push((Part::Row(r), Bounds::new(point(f.left() - GRIP - GRIP_GAP, mid - long / 2.), size(GRIP, long))));
+            }
+        }
+        parts
+    }
+
+    /// La poignée `part` se montre : le pointeur est sur sa colonne ou sa ligne, ou elle tient ce qu'on a pris.
+    fn visible(&self, part: Part, near: Near, pick: Option<&Pick>) -> bool {
+        let (all_rows, all_cols) = pick.map_or((false, false), |p| (p.rows.len() == self.tall(), p.cols.len() == self.cols()));
+        let held = |hold: bool, n: usize, range: Option<&Range<usize>>| hold && range.is_some_and(|r| r.contains(&n));
+        match part {
+            Part::Col(c) => near.col == Some(c) || held(all_rows, c, pick.map(|p| &p.cols)),
+            Part::Row(r) => near.row == Some(r) || held(all_cols, r, pick.map(|p| &p.rows)),
+            Part::Corner => near.corner || (all_rows && all_cols),
+            // Un « + » ne se montre que sous le pointeur : sa zone, près des poignées, suffit.
+            Part::JoinCol(_) | Part::JoinRow(_) => near.col.is_some() || near.row.is_some() || near.corner,
+        }
+    }
+
+    /// Le trait le plus proche de `at`, parmi ceux où une colonne (ou une ligne) peut se poser.
+    fn boundary(&self, part: Part, at: Point<Pixels>) -> usize {
+        let (lines, at, first) = match part {
+            Part::Col(_) => (&self.xs, at.x, 0),
+            _ => (&self.ys, at.y, 1),
+        };
+        (first..lines.len()).min_by_key(|&b| (f32::from((lines[b] - at).abs()) * 100.) as i64).unwrap_or(first)
+    }
+
+    /// Les cases `rows` × `cols`, en pixels.
+    fn cells(&self, rows: &Range<usize>, cols: &Range<usize>) -> Bounds<Pixels> {
+        let (x0, x1) = (self.xs[cols.start.min(self.cols())], self.xs[cols.end.min(self.cols())]);
+        let (y0, y1) = (self.ys[rows.start.min(self.tall())], self.ys[rows.end.min(self.tall())]);
+        Bounds::new(point(x0, y0), size(x1 - x0, y1 - y0))
+    }
+}
+
 struct TableMeta {
     /// Octets, de son début au bout de sa dernière ligne.
     range: Range<usize>,
@@ -865,6 +1008,14 @@ pub struct Editor {
     table_hitboxes: Vec<Hitbox>,
     /// Tableau survolé (son début), et celui de ses boutons qui l'est.
     table_hover: Option<(usize, Option<usize>)>,
+    /// Où sont les traits de chaque tableau affiché, à la dernière frame.
+    geos: Vec<Geo>,
+    /// La poignée sous le pointeur : (début du tableau, poignée).
+    part_hover: Option<(usize, Part)>,
+    /// Où était le pointeur à son dernier mouvement.
+    pointer: Point<Pixels>,
+    pick: Option<Pick>,
+    moving: Option<Moving>,
     /// Défilement horizontal des tableaux plus larges que la page, par début de tableau.
     table_x: HashMap<usize, Pixels>,
     /// Curseur de défilement de chaque tableau trop large, à la dernière frame.
@@ -960,6 +1111,11 @@ impl Editor {
             tables: Vec::new(),
             table_hitboxes: Vec::new(),
             table_hover: None,
+            geos: Vec::new(),
+            part_hover: None,
+            pointer: Point::default(),
+            pick: None,
+            moving: None,
             table_x: HashMap::new(),
             thumbs: Vec::new(),
             theme,
@@ -1206,6 +1362,12 @@ impl Editor {
         let frame = self.tables.first()?.1;
         let scrolled = rows.map(|r| r.dx).next()? - table_lead(self.theme.wide, frame.size.width, self.width);
         Some((scrolled, tall, frame, self.width, self.viewport))
+    }
+
+    /// Centre de la poignée `part` du premier tableau.
+    #[cfg(test)]
+    pub fn part_center(&self, part: Part) -> Option<Point<Pixels>> {
+        self.geos.first()?.parts().into_iter().find(|(p, _)| *p == part).map(|(_, zone)| zone.center())
     }
 
     /// Centre d'une case du sélecteur de tableau, s'il est ouvert.
@@ -1995,6 +2157,9 @@ impl Editor {
     }
 
     fn delete(&mut self, m: Motion, cx: &mut Context<Self>) {
+        if self.clear_pick(cx) {
+            return;
+        }
         if self.grid.is_some() {
             self.grid_typed.pop();
             self.type_grid("", cx);
@@ -2506,8 +2671,11 @@ impl Editor {
         let seen = |r: usize| r.saturating_sub(1);
         let slot = |v: usize| if v == 0 { 0 } else { v + 1 };
         let end = self.table_at(self.sel.end).filter(|(other, ..)| *other == range).map_or((r, c), |(.., cell)| cell);
-        let (r0, r1) = (seen(r).min(seen(end.0)), seen(r).max(seen(end.0)));
-        let (c0, c1) = (c.min(end.1), c.max(end.1));
+        // Ce qu'une poignée a pris compte plus que le texte sélectionné.
+        let (r0, r1, c0, c1) = match self.live_pick(range.start) {
+            Some(pick) => (pick.rows.start, pick.rows.end - 1, pick.cols.start, pick.cols.end - 1),
+            None => (seen(r).min(seen(end.0)), seen(r).max(seen(end.0)), c.min(end.1), c.max(end.1)),
+        };
         let (tall, wide) = (md::visible_rows(&rows), rows[0].len());
         let (grid, at) = match op {
             TableOp::RowAbove => (Some(md::insert_row(&rows, r0)), (slot(r0.max(1)), c0)),
@@ -2565,6 +2733,121 @@ impl Editor {
         self.edit(c..c, &format!("{lead}{}{tail}", md::format_table(&table, "")), cx);
         if let Some((range, rows, _)) = self.table_at(c + lead.len()) {
             self.set_table(range, &rows, (0, 0), cx);
+        }
+    }
+
+    /// La poignée sous le pointeur : (début du tableau, poignée). Seules celles qu'on voit se saisissent.
+    fn part_at(&self, at: Point<Pixels>) -> Option<(usize, Part)> {
+        self.geos.iter().find_map(|geo| {
+            let (near, pick) = (geo.near(at), self.live_pick(geo.start));
+            let hit = geo.parts().into_iter().find(|(part, zone)| zone.dilate(px(2.)).contains(&at) && geo.visible(*part, near, pick))?;
+            Some((geo.start, hit.0))
+        })
+    }
+
+    /// Ce qu'une poignée a pris dans le tableau qui commence en `table`, tant que rien n'a bougé.
+    fn live_pick(&self, table: usize) -> Option<&Pick> {
+        self.pick.as_ref().filter(|p| p.table == table && p.version == self.version && p.sel == self.sel)
+    }
+
+    /// Les cases `rows` × `cols` (rangs visibles) du tableau qui commence en `table` sont prises : le
+    /// curseur va dans la première, et les gestes, la copie et l'effacement valent pour toutes.
+    fn pick(&mut self, table: usize, rows: Range<usize>, cols: Range<usize>, cx: &mut Context<Self>) {
+        let Some((range, _, _)) = self.table_at(table) else {
+            return;
+        };
+        let line = if rows.start == 0 { 0 } else { rows.start + 1 };
+        let text = &self.content[range.clone()];
+        let at = range.start + text.split('\n').take(line).map(|l| l.len() + 1).sum::<usize>();
+        let cell = md::cells(text.split('\n').nth(line).unwrap_or_default()).get(cols.start).cloned().unwrap_or(0..0);
+        self.move_to(at + cell.start, cx);
+        self.select_to(at + cell.end, cx);
+        self.pick = Some(Pick { table: range.start, rows, cols, sel: self.sel.clone(), version: self.version });
+        cx.notify();
+    }
+
+    /// Prend ce que désigne une poignée.
+    fn pick_part(&mut self, table: usize, part: Part, cx: &mut Context<Self>) {
+        let Some(geo) = self.geos.iter().find(|g| g.start == table) else {
+            return;
+        };
+        let (tall, cols) = (geo.tall(), geo.cols());
+        match part {
+            Part::Col(c) => self.pick(table, 0..tall, c..c + 1, cx),
+            Part::Row(r) => self.pick(table, r..r + 1, 0..cols, cx),
+            Part::Corner => self.pick(table, 0..tall, 0..cols, cx),
+            Part::JoinCol(_) | Part::JoinRow(_) => {}
+        }
+    }
+
+    /// Les cases prises, en TSV.
+    fn pick_text(&self) -> Option<String> {
+        let (range, rows, _) = self.table_at(self.sel.start)?;
+        let pick = self.live_pick(range.start)?;
+        let line = |v: usize| if v == 0 { 0 } else { v + 1 };
+        let cells = |v: usize| rows[line(v)][pick.cols.clone()].iter().map(|c| c.replace("\\|", "|")).collect::<Vec<_>>().join("\t");
+        Some(pick.rows.clone().map(cells).collect::<Vec<_>>().join("\n"))
+    }
+
+    /// Vide les cases prises, sans toucher à la forme du tableau. Faux s'il n'y en a pas.
+    fn clear_pick(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some((range, mut rows, _)) = self.table_at(self.sel.start) else {
+            return false;
+        };
+        let Some(pick) = self.live_pick(range.start).cloned() else {
+            return false;
+        };
+        for v in pick.rows.clone() {
+            for c in pick.cols.clone() {
+                rows[if v == 0 { 0 } else { v + 1 }][c].clear();
+            }
+        }
+        self.set_table(range.clone(), &rows, (if pick.rows.start == 0 { 0 } else { pick.rows.start + 1 }, pick.cols.start), cx);
+        self.pick(range.start, pick.rows, pick.cols, cx);
+        true
+    }
+
+    /// Un clic sur une poignée : « + » insère, une poignée prend sa ligne ou sa colonne (et la tire,
+    /// si on la déplace), l'angle prend tout le tableau.
+    fn grip_down(&mut self, table: usize, part: Part, at: Point<Pixels>, cx: &mut Context<Self>) {
+        match part {
+            Part::JoinCol(b) | Part::JoinRow(b) => {
+                let Some((range, rows, _)) = self.table_at(table) else {
+                    return;
+                };
+                let cols = matches!(part, Part::JoinCol(_));
+                let grid = if cols { md::insert_col(&rows, b) } else { md::insert_row(&rows, b) };
+                self.set_table(range, &grid, if cols { (0, b) } else { (b + 1, 0) }, cx);
+            }
+            _ => {
+                self.pick_part(table, part, cx);
+                // L'en-tête reste en tête : sa ligne se prend, elle ne se tire pas.
+                if matches!(part, Part::Col(_) | Part::Row(1..)) {
+                    self.moving = Some(Moving { table, part, from: at, to: None });
+                }
+            }
+        }
+    }
+
+    /// La poignée tirée est lâchée sur le trait `to` : la ligne ou la colonne s'y pose, et reste prise.
+    fn drop_part(&mut self, moving: Moving, cx: &mut Context<Self>) {
+        let (Some(b), Some((range, rows, _))) = (moving.to, self.table_at(moving.table)) else {
+            return;
+        };
+        let (from, grid) = match moving.part {
+            Part::Col(n) | Part::Row(n) => (n, if b > n { b - 1 } else { b }),
+            _ => return,
+        };
+        if from == grid {
+            return;
+        }
+        let (cols, tall) = (rows[0].len(), md::visible_rows(&rows));
+        let moved = if matches!(moving.part, Part::Col(_)) { md::move_col(&rows, from, grid) } else { md::move_row(&rows, from, grid) };
+        self.set_table(range.clone(), &moved, (0, 0), cx);
+        if matches!(moving.part, Part::Col(_)) {
+            self.pick(range.start, 0..tall, grid..grid + 1, cx);
+        } else {
+            self.pick(range.start, grid..grid + 1, 0..cols, cx);
         }
     }
 
@@ -2776,6 +3059,10 @@ impl Editor {
             return self.insert_table(cols, rows, cx);
         }
         self.grid = None;
+        // Poignées d'un tableau : prendre une ligne, une colonne ou tout, insérer à un trait.
+        if let Some((table, part)) = self.part_at(e.position) {
+            return self.grip_down(table, part, e.position, cx);
+        }
         // Boutons « + » d'un tableau : une ligne à la fin, ou une colonne.
         if let Some((at, bar)) = self.plus_at(e.position)
             && let Some((range, mut rows, _)) = self.table_at(at)
@@ -2837,6 +3124,13 @@ impl Editor {
     /// Clic droit : le menu de la note. Hors de la sélection, le curseur vient d'abord sous
     /// le pointeur, pour que « Coller » et « Lien » agissent là où l'on a cliqué.
     fn menu_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // Sur une poignée de tableau : elle prend sa ligne ou sa colonne, et le menu en parle.
+        if let Some((table, part)) = self.part_at(e.position)
+            && matches!(part, Part::Col(_) | Part::Row(_) | Part::Corner)
+        {
+            self.pick_part(table, part, cx);
+            return cx.emit(EditorEvent::Menu(e.position, None, false));
+        }
         let i = self.index_at(e.position);
         if !(self.sel.start..=self.sel.end).contains(&i) {
             self.move_to(i, cx);
@@ -2885,6 +3179,24 @@ impl Editor {
         if self.selecting {
             self.drag_to(self.index_at(e.position), cx);
         }
+        // Une poignée tirée : le trait où elle se poserait suit le pointeur, après quelques pixels.
+        if let Some(moving) = &mut self.moving {
+            if e.pressed_button != Some(MouseButton::Left) {
+                self.moving = None;
+            } else if (e.position - moving.from).magnitude() > 4. {
+                let at = self.geos.iter().find(|g| g.start == moving.table).map(|geo| geo.boundary(moving.part, e.position));
+                moving.to = at;
+            }
+            return cx.notify();
+        }
+        let part = self.part_at(e.position);
+        let near = self.geos.iter().map(|geo| geo.near(e.position)).collect::<Vec<_>>();
+        let before = self.geos.iter().map(|geo| geo.near(self.pointer)).collect::<Vec<_>>();
+        self.pointer = e.position;
+        if part != self.part_hover || near != before {
+            self.part_hover = part;
+            cx.notify();
+        }
         let hover = self.copy_at(e.position);
         if hover != self.hover {
             self.hover = hover;
@@ -2909,8 +3221,12 @@ impl Editor {
         }
     }
 
-    fn mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
+    fn mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.selecting = false;
+        if let Some(moving) = self.moving.take() {
+            self.drop_part(moving, cx);
+            cx.notify();
+        }
     }
 
     fn scroll(&mut self, e: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -2945,6 +3261,13 @@ impl Editor {
     }
 
     fn copy(&mut self, cut: bool, cx: &mut Context<Self>) {
+        if let Some(text) = self.pick_text() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            if cut {
+                self.clear_pick(cx);
+            }
+            return;
+        }
         if self.sel.is_empty() {
             return;
         }
@@ -3965,6 +4288,7 @@ impl Editor {
         // dépasser la page ; au-delà, il défile et suit le curseur.
         let scrolled = std::mem::take(&mut self.table_x);
         self.tables.clear();
+        self.geos.clear();
         self.thumbs.clear();
         for meta in &self.table_meta {
             let (start, end) = (meta.range.start, meta.range.end);
@@ -4005,6 +4329,15 @@ impl Editor {
                 self.thumbs.push(bar);
             }
             self.tables.push((start..end, frame));
+            // Un très gros tableau n'a pas de poignées : ses gestes ne le réécrivent pas d'un bloc.
+            let big = self.big.iter().any(|b| b.rows.start == meta.rows.start);
+            if let Some(grid) = first.grid.as_ref().filter(|_| !big) {
+                let xs = grid.xs().iter().map(|x| frame.left() - dx + *x).collect();
+                let lines = self.rows[meta.rows.clone()].iter().filter(|r| !r.hidden()).map(|r| self.origin.y + r.y);
+                let mut ys: Vec<Pixels> = std::iter::once(frame.top()).chain(lines.skip(1)).collect();
+                ys.push(frame.bottom());
+                self.geos.push(Geo { start, frame, xs, ys });
+            }
         }
         let bars = self.tables.iter().flat_map(|(_, frame)| plus_bars(*frame));
         self.table_hitboxes = bars.map(|bar| window.insert_hitbox(bar, HitboxBehavior::Normal)).collect();
@@ -4171,6 +4504,70 @@ impl Editor {
                 if let Some(hitbox) = self.table_hitboxes.get(n * 2 + i) {
                     window.set_cursor_style(CursorStyle::PointingHand, hitbox);
                 }
+            }
+        }
+        // Poignées d'un tableau : une pastille à trois points sur la colonne et la ligne que le pointeur
+        // survole (et sur ce qu'on a pris), ce qu'elles ont pris, et le trait où l'on dépose ce qu'on tire.
+        for geo in &self.geos {
+            let hot = self.part_hover.filter(|(at, _)| *at == geo.start).map(|(_, part)| part);
+            let (near, pick) = (geo.near(self.pointer), self.live_pick(geo.start));
+            if let Some(pick) = pick {
+                let area = geo.cells(&pick.rows, &pick.cols).intersect(&geo.frame);
+                window.paint_quad(quad(area, px(2.), t.selection, px(1.), t.accent.opacity(0.7), BorderStyle::default()));
+            }
+            let held = |part: Part| {
+                pick.is_some_and(|p| {
+                    let (all_rows, all_cols) = (p.rows.len() == geo.tall(), p.cols.len() == geo.cols());
+                    match part {
+                        Part::Col(c) => all_rows && p.cols.contains(&c),
+                        Part::Row(r) => all_cols && p.rows.contains(&r),
+                        Part::Corner => all_rows && all_cols,
+                        _ => false,
+                    }
+                })
+            };
+            for (part, zone) in geo.parts() {
+                if !geo.visible(part, near, pick) {
+                    continue;
+                }
+                if matches!(part, Part::JoinCol(_) | Part::JoinRow(_)) {
+                    if hot == Some(part) {
+                        let dot = Bounds::new(zone.center() - point(px(7.), px(7.)), size(px(14.), px(14.)));
+                        window.paint_quad(fill(dot, t.accent).corner_radii(px(7.)));
+                        let icon = Bounds::new(zone.center() - point(px(5.), px(5.)), size(px(10.), px(10.)));
+                        window.paint_svg(icon, "plus.svg".into(), TransformationMatrix::unit(), t.bg, cx).ok();
+                    }
+                    continue;
+                }
+                // Au repos : un fond clair et un filet ; sous le pointeur : l'accent en transparence ; pris : l'accent.
+                let (back, edge, dots) = if held(part) {
+                    (t.accent, t.accent, t.bg)
+                } else if hot == Some(part) {
+                    (t.selection, t.accent.opacity(0.6), t.accent)
+                } else {
+                    (t.bg, t.border, t.soft)
+                };
+                window.paint_quad(quad(zone, zone.size.width.min(zone.size.height) / 2., back, px(1.), edge, BorderStyle::default()));
+                // Trois points dans le sens de la poignée ; le coin n'en a pas.
+                if part != Part::Corner {
+                    let lengthwise = zone.size.width > zone.size.height;
+                    for k in [-1., 0., 1.] {
+                        let step = px(4.) * k;
+                        let center = if lengthwise { zone.center() + point(step, px(0.)) } else { zone.center() + point(px(0.), step) };
+                        let dot = Bounds::new(center - point(px(1.), px(1.)), size(px(2.), px(2.)));
+                        window.paint_quad(fill(dot, dots).corner_radii(px(1.)));
+                    }
+                }
+            }
+            if let Some(Moving { table, part, to: Some(b), .. }) = &self.moving
+                && *table == geo.start
+            {
+                let f = geo.frame;
+                let line = match part {
+                    Part::Col(_) => Bounds::new(point(geo.xs[*b] - px(1.), f.top()), size(px(2.), f.size.height)),
+                    _ => Bounds::new(point(f.left(), geo.ys[*b] - px(1.)), size(f.size.width, px(2.))),
+                };
+                window.paint_quad(fill(line, t.accent));
             }
         }
         // Sélecteur de tableau : la grille, et la taille choisie dessous.
@@ -4516,6 +4913,14 @@ impl Render for Editor {
             // Plusieurs curseurs : Échap revient à un seul.
             if !this.more.is_empty() {
                 this.more.clear();
+                return cx.notify();
+            }
+            // Une poignée tirée est lâchée sans rien déplacer ; ce qu'elle avait pris est relâché.
+            if this.moving.take().is_some() {
+                return cx.notify();
+            }
+            if this.pick.as_ref().is_some_and(|p| p.version == this.version && p.sel == this.sel) {
+                this.pick = None;
                 return cx.notify();
             }
             if this.grid.take().is_some() {
