@@ -1802,6 +1802,13 @@ mod tests {
         assert_eq!(to(block, ListStyle::Bullet), "# T\n\n```\ncode\n```\n| a |\n> q\n- texte\n\n- suite");
         assert_eq!(to(block, ListStyle::Ordered), "# T\n\n```\ncode\n```\n| a |\n> q\n1. texte\n\n2. suite");
         assert_eq!(to("# T\n```\n- a\n```", ListStyle::Ordered), "# T\n```\n- a\n```");
+        // Quatre niveaux, et des tabulations pour retrait : un compteur par niveau, qui repart en remontant.
+        assert_eq!(to("- a\n\t- b\n\t\t- c\n\t\t\t- d\n\t\t- e\n- f", ListStyle::Ordered), "1. a\n\t1. b\n\t\t1. c\n\t\t\t1. d\n\t\t2. e\n2. f");
+        assert_eq!(to("1. a\n    1. b\n        1. c\n            1. d", ListStyle::Task), "- [ ] a\n    - [ ] b\n        - [ ] c\n            - [ ] d");
+        // Une ligne seule, vide ou faite d'espaces ; le texte d'un seul caractère.
+        assert_eq!(to("", ListStyle::Bullet), "");
+        assert_eq!(to("   ", ListStyle::Bullet), "   ");
+        assert_eq!(to("é", ListStyle::Ordered), "1. é");
         // Un aller-retour rend la liste d'origine.
         let flat = "- a\n- b\n- c";
         assert_eq!(to(&to(flat, ListStyle::Ordered), ListStyle::Bullet), flat);

@@ -6108,6 +6108,29 @@ mod tests {
         let (dx, _, frame, page, view) = state(cx);
         assert!(dx == px(0.) && frame.size.width > page && frame.size.width <= view.size.width - px(48.), "{dx:?} {frame:?} {page:?} {view:?}");
         assert!((frame.left() - view.left() - (view.size.width - frame.size.width) / 2.).abs() < px(1.), "{frame:?} {view:?}");
+        // Aux limites : fenêtre étroite, colonne pleine ou étroite, texte très petit ou très grand. Le tableau reste dans
+        // la fenêtre avec ses marges, le texte aussi, et le texte n'est jamais plus large que ce que le réglage permet.
+        let whole = cx.update(|window, _| window.viewport_size());
+        for (width, page, zoom) in [(420., editor::Page::Normal, 16.), (420., editor::Page::Full, 16.), (1600., editor::Page::Narrow, 16.), (1600., editor::Page::Full, 32.), (300., editor::Page::Normal, 32.), (1600., editor::Page::Wide, 11.)] {
+            cx.simulate_resize(size(px(width), px(600.)));
+            shell.update(cx, |s, cx| {
+                s.theme = Theme { page, size: zoom, wide: editor::Wide::Centered, ..s.theme };
+                let theme = s.theme;
+                s.editor.update(cx, |e, cx| e.set_theme(theme, cx));
+            });
+            load(cx, &note, note.find("fin").unwrap());
+            let (_, _, frame, text, view) = state(cx);
+            let what = format!("fenêtre {width}, {page:?}, corps {zoom} : cadre {frame:?}, texte {text:?}, vue {view:?}");
+            assert!(frame.left() >= view.left() + px(23.) && frame.right() <= view.right() - px(23.) || frame.size.width <= text, "{what}");
+            assert!(text <= (view.size.width - px(48.)).max(px(40.)) && text <= page.measure(zoom).max(px(40.)), "{what}");
+            assert!(frame.size.width >= px(40.).min(view.size.width - px(48.)), "{what}");
+        }
+        cx.simulate_resize(whole);
+        shell.update(cx, |s, cx| {
+            s.theme = Theme { page: editor::Page::Normal, size: 16., ..s.theme };
+            let theme = s.theme;
+            s.editor.update(cx, |e, cx| e.set_theme(theme, cx));
+        });
         // Un petit tableau garde sa taille, quel que soit le réglage.
         load(cx, "| a | b |\n| - | - |\n| c | d |\n", 0);
         let (_, _, frame, page, _) = state(cx);
@@ -6770,6 +6793,17 @@ mod tests {
         assert_eq!(text(cx), "\nsuite");
         cx.simulate_keystrokes("secondary-z");
         assert_eq!(flat(cx), "Nom|Âge/---|---/Léa|31/Max|7");
+        // Un tableau indenté garde son retrait ; un tableau seul dans la note, sans retour à la ligne final, disparaît tout entier.
+        let indented = "  | a | b |\n  | - | - |\n  | 1 | 2 |";
+        load(cx, indented, indented.find('1').unwrap());
+        op(cx, RowBelow);
+        assert!(text(cx).lines().all(|l| l.starts_with("  | ")) && text(cx).lines().count() == 4, "{:?}", text(cx));
+        cx.simulate_keystrokes("secondary-z");
+        load(cx, "| a |\n| - |\n| b |", 8);
+        op(cx, DeleteTable);
+        assert_eq!(text(cx), "");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(text(cx), "| a |\n| - |\n| b |");
         // Les poignées : une colonne prise se copie, s'efface, se supprime ; une ligne se tire plus haut ;
         // le « + » d'un trait insère ; l'angle prend tout le tableau.
         load(cx, grid, grid.find("Léa").unwrap());
@@ -7148,6 +7182,31 @@ mod tests {
         cx.simulate_keystrokes("secondary-z secondary-z");
         assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
         assert_eq!(on_disk(cx), original);
+        // Sans ligne d'en-tête, la première ligne se trie comme les autres (les nombres avant le texte).
+        sheet.update(cx, |sheet, cx| sheet.toggle_header(cx));
+        cx.simulate_keystrokes("secondary-home");
+        table_op(cx, editor::TableOp::SortAsc);
+        assert_eq!(all(cx), "1|Max|/2|Léa|9/3|Zoé|10/id|name|score");
+        cx.simulate_keystrokes("secondary-z");
+        sheet.update(cx, |sheet, cx| sheet.toggle_header(cx));
+        assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
+        // Une seule ligne : trier, ou monter et descendre une ligne, ne change rien et ne laisse aucune étape d'annulation ;
+        // une colonne peut encore aller à droite, mais pas à gauche de la première.
+        let one = root.join("une.csv");
+        fs::write(&one, "a,b\n").unwrap();
+        shell.update(cx, |s, cx| {
+            let (notes, dirs, images) = vault::scan(&root);
+            s.sync(notes, dirs, images, cx);
+            s.open_note(&one, cx);
+        });
+        let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("le tableau est affiché"));
+        let undone = sheet.read_with(cx, |sheet, _| sheet.undo_len());
+        for op in [editor::TableOp::SortAsc, editor::TableOp::SortDesc, editor::TableOp::MoveRowUp, editor::TableOp::MoveRowDown, editor::TableOp::MoveColLeft] {
+            sheet.update(cx, |sheet, cx| sheet.table_op(op, cx));
+        }
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.undo_len()), undone);
+        sheet.update(cx, |sheet, cx| sheet.table_op(editor::TableOp::MoveColRight, cx));
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.undo_len()), undone + 1);
 
         // Tableau : un CSV en Windows-1252 séparé par « ; » s'ouvre dans une grille, s'édite et se réécrit
         // dans le même encodage, les lignes intactes octet pour octet.
