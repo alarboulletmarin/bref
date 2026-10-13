@@ -110,6 +110,11 @@ fn first_language(list: &str) -> Option<&str> {
         .map(|l| l.trim_end_matches(',').trim_matches('"'))
 }
 
+/// Le nombre de la pastille des commentaires : « 9+ » au-delà de neuf, pour qu'elle reste ronde.
+fn badge_label(count: usize) -> String {
+    if count > 9 { "9+".into() } else { count.to_string() }
+}
+
 /// Date du jour à l'heure locale : année, mois, jour. La bibliothèque standard ne donne que l'UTC.
 #[cfg(unix)]
 pub fn today() -> (i32, u32, u32) {
@@ -3003,7 +3008,7 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 t(&format!("Alt+{click}"), tr("Add a cursor", "Ajouter un curseur")),
                 k(&editor::InsertLink, tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
                 k(&editor::Comment, tr("Comment the selection or the line; on a comment, resolve it", "Commenter la sélection ou la ligne ; sur un commentaire, le résoudre")),
-                p(tr("comments", "commentaires"), tr("Comments: show their panel, jump to one", "Commentaires : montrer leur panneau, aller à l'un d'eux")),
+                p(tr("comments", "commentaires"), tr("Comments: show their panel, jump to one (a badge on the speech bubble counts them)", "Commentaires : montrer leur panneau, aller à l'un d'eux (une pastille sur la bulle les compte)")),
                 t(tr("Right click", "Clic droit"), tr("Menu of the note: link, comment, cut, copy, paste, bold, italic", "Menu de la note : lien, commentaire, couper, copier, coller, gras, italique")),
                 k(&editor::Copy, tr("Copy", "Copier")),
                 k(&editor::Cut, tr("Cut", "Couper")),
@@ -3368,6 +3373,26 @@ impl Shell {
                 .size(px(30.))
                 .rounded(px(8.))
                 .occlude()
+                // Une pastille et leur nombre, que le panneau soit ouvert ou refermé.
+                .child(
+                    div()
+                        .debug_selector(|| "comments-badge".into())
+                        .absolute()
+                        .top(px(-3.))
+                        .right(px(-3.))
+                        .min_w(px(15.))
+                        .h(px(15.))
+                        .px(px(4.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_full()
+                        .bg(t.accent)
+                        .text_color(t.bg)
+                        .text_size(px(10.))
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .child(badge_label(said.len())),
+                )
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.comments_shut = !this.comments_shut;
                     cx.notify();
@@ -6017,6 +6042,9 @@ mod tests {
         // Le bouton du coin, à gauche de la copie, referme le panneau (et le rouvre).
         cx.run_until_parked();
         let corner = cx.update(|window, _| window.viewport_size());
+        // Deux commentaires : la pastille est au coin du bouton, dans la fenêtre.
+        let badge = cx.debug_bounds("comments-badge").unwrap();
+        assert!(badge.right() <= corner.width && badge.size.width >= px(15.), "{badge:?}");
         let closed = shell.read_with(cx, |s, _| s.comments_shut);
         cx.simulate_click(point(corner.width - px(270. + 65.), corner.height - px(31.)), gpui::Modifiers::none());
         assert!(!closed && shell.read_with(cx, |s, _| s.comments_shut));
@@ -7214,6 +7242,11 @@ mod tests {
             })
         });
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn badge_shows_the_count_up_to_nine() {
+        assert_eq!(["1", "9", "9+", "9+"], [badge_label(1), badge_label(9), badge_label(10), badge_label(120)]);
     }
 
     #[test]
