@@ -27,7 +27,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
     Theme, diagram::Diagram, figure, graph, grid::{self, TableRow}, mono, sans, tr, vault,
-    markdown::{self as md, Enter, Kind, Link},
+    markdown::{self as md, Enter, Kind, Link, ListStyle},
 };
 
 actions!(
@@ -67,6 +67,11 @@ actions!(
         Indent,
         Outdent,
         ToggleTask,
+        ListBullet,
+        ListOrdered,
+        ListTask,
+        ListText,
+        ListCycle,
         Bold,
         Italic,
         SelectNext,
@@ -2020,6 +2025,60 @@ impl Editor {
         self.sel = start..end;
         self.changed(cx);
         self.renumber(cx);
+    }
+
+    /// Les lignes de la sélection (ou celle du curseur) écrites dans le style `to` : une seule étape
+    /// d'annulation, la sélection garde son texte. Une ligne que la sélection effleure seulement
+    /// par son début n'en fait pas partie.
+    pub fn restyle(&mut self, to: ListStyle, cx: &mut Context<Self>) {
+        let sel = self.sel.clone();
+        let first = self.line_range(sel.start);
+        let touches = !sel.is_empty() && self.content[..sel.end].ends_with('\n');
+        let block = first.start..self.line_range(if touches { sel.end - 1 } else { sel.end }).end;
+        if self.in_code(first.start) || block.is_empty() {
+            return;
+        }
+        let old = self.content[block.clone()].to_string();
+        let (new, spans) = md::restyle(&old, to);
+        if new == old {
+            return;
+        }
+        // La position `at` après le changement : dans le contenu d'une ligne, elle le suit ; dans son
+        // marqueur, elle va au début du nouveau contenu.
+        let moved = |at: usize| {
+            let at = at.clamp(block.start, block.end) - block.start;
+            let (mut before, mut after) = (0, 0);
+            for ((was, now), &(was_at, now_at)) in old.split('\n').zip(new.split('\n')).zip(&spans) {
+                if at <= before + was.len() {
+                    let within = at - before;
+                    return block.start + after + if within >= was_at { now_at + within - was_at } else { within.min(now_at) };
+                }
+                before += was.len() + 1;
+                after += now.len() + 1;
+            }
+            block.start + new.len()
+        };
+        let sel = moved(sel.start)..moved(sel.end);
+        self.push_undo(true);
+        self.damaged(&block);
+        self.content.replace_range(block, &new);
+        self.sel = sel;
+        self.changed(cx);
+        self.renumber(cx);
+    }
+
+    /// Texte, puces, numérotée, tâches, puis texte : la ligne du curseur (la première de la
+    /// sélection) dit où l'on en est, et la sélection entière passe au suivant.
+    fn cycle_list(&mut self, cx: &mut Context<Self>) {
+        let line = self.line_range(self.sel.start);
+        let kind = md::classify(&self.content[line.clone()], self.in_code(line.start)).0;
+        let next = match kind {
+            Kind::Bullet => ListStyle::Ordered,
+            Kind::Ordered => ListStyle::Task,
+            Kind::Task(_) => ListStyle::Text,
+            _ => ListStyle::Bullet,
+        };
+        self.restyle(next, cx);
     }
 
     /// Coche ou décoche la case `[ ]` qui commence à l'octet `at`.
@@ -4222,6 +4281,11 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &Indent, _, cx| this.shift_lines(true, cx)))
         .on_action(cx.listener(|this, _: &Outdent, _, cx| this.shift_lines(false, cx)))
         .on_action(cx.listener(|this, _: &ToggleTask, _, cx| this.toggle_task(cx)))
+        .on_action(cx.listener(|this, _: &ListBullet, _, cx| this.restyle(ListStyle::Bullet, cx)))
+        .on_action(cx.listener(|this, _: &ListOrdered, _, cx| this.restyle(ListStyle::Ordered, cx)))
+        .on_action(cx.listener(|this, _: &ListTask, _, cx| this.restyle(ListStyle::Task, cx)))
+        .on_action(cx.listener(|this, _: &ListText, _, cx| this.restyle(ListStyle::Text, cx)))
+        .on_action(cx.listener(|this, _: &ListCycle, _, cx| this.cycle_list(cx)))
         .on_action(cx.listener(|this, _: &AlignLeft, _, cx| this.align(":--", cx)))
         .on_action(cx.listener(|this, _: &AlignCenter, _, cx| this.align(":-:", cx)))
         .on_action(cx.listener(|this, _: &AlignRight, _, cx| this.align("--:", cx)))

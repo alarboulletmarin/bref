@@ -200,7 +200,7 @@ The bottom right of the note shows its number of words and characters; with a se
 | `Ctrl + Shift + C` | copy the code block the cursor is in, otherwise the whole note (also the icon at the bottom right, for the note) |
 | `Ctrl + click` | open a `[[link]]`, a `#tag`, a URL or a `[text](address)` link |
 | `Ctrl + V` | over a selection, a pasted address makes it a link |
-| Right click | in a note, a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, make or edit a link, comment |
+| Right click | in a note, a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, make or edit a link, comment, turn the lines into a list |
 | `Ctrl + Shift + M` | comment the selection (without one, the line); on a comment, resolve it: the markup goes, the text stays |
 | `F1`, `Ctrl + /` | the list of shortcuts, inside the app: type to search it, by key or by effect (`ctrl+p`, `graph`), `Esc` empties the search, then closes; click the keys of a row to change them (see [Changing a shortcut](#changing-a-shortcut)); at its foot, the version of Bref and links to its source and to its Ko-fi page |
 | `Alt + Left`, `Alt + Right` | back to what was shown before, and forward again (`Cmd + [`, `Cmd + ]` on macOS); also the back and forward buttons of the mouse, the two arrows at the top of the rail, and **Back** / **Forward** in the palette. Like a browser: opening something after going back drops what was ahead. A note only previewed (arrows in the tree, a click in the graph) does not count, a renamed file is followed, a deleted one is skipped. The history is not kept between two launches: the recent notes are. |
@@ -215,6 +215,7 @@ In the palette, type to search; `Enter` opens the selected note. Notes whose nam
 | `Enter` | continue the list; on an empty item, leave the list |
 | `Tab`, `Shift + Tab` | indent, outdent (the selected lines, or the current list item) |
 | `Ctrl + Enter` | check or uncheck a task or a `[ ]` box; turn a bullet into a task; in a table cell, add a box |
+| `Ctrl + Shift + B` | turn the selected lines (or the line of the cursor) into a list, then into the next kind each time: bullets, numbered, tasks, plain text. The right-click menu and the palette (`bulleted`, `numbered`, `task`, `plain text`) go straight to the kind you want, and the same kind again gives back plain text. Indentation is kept, a numbered list restarts at 1 on each level, a ticked box stays ticked from one task list to another; headings, tables, quotes and code are left alone. One `Ctrl + Z` undoes it. Each kind can also be given its own key in the help panel |
 | `Ctrl + B`, `Ctrl + I` | bold, italic |
 | `Ctrl + Z`, `Ctrl + Shift + Z` | undo, redo |
 | `Ctrl + ←` `→`, `Ctrl + Backspace` | move, delete by word |

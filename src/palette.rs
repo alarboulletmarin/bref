@@ -14,6 +14,7 @@ use gpui::{
 use crate::{
     Theme,
     line::{self, Line},
+    markdown::ListStyle,
     sheet::Pick,
     tr,
 };
@@ -94,6 +95,15 @@ fn undo_swap_label() -> &'static str {
     tr("Undo the replacement in the vault", "Annuler le remplacement dans le coffre")
 }
 
+fn list_label(style: ListStyle) -> &'static str {
+    match style {
+        ListStyle::Bullet => tr("Turn into a bulleted list", "Transformer en liste à puces"),
+        ListStyle::Ordered => tr("Turn into a numbered list", "Transformer en liste numérotée"),
+        ListStyle::Task => tr("Turn into a task list", "Transformer en liste de tâches"),
+        ListStyle::Text => tr("Turn into plain text", "Transformer en texte simple"),
+    }
+}
+
 fn comments_label() -> &'static str {
     tr("Comments of the note", "Commentaires de la note")
 }
@@ -153,6 +163,8 @@ pub enum PaletteEvent {
     Setting(Setting),
     /// Réglage ou geste du tableau affiché.
     Table(Pick),
+    /// Les lignes choisies de la note, en liste ou en texte.
+    Restyle(ListStyle),
     /// Active ou coupe la recherche de nouvelle version.
     ToggleUpdates,
     /// Cherche tout de suite une nouvelle version.
@@ -221,6 +233,7 @@ enum Item {
     CaptureKey,
     Setting(Setting),
     Table(Pick),
+    Restyle(ListStyle),
 }
 
 pub struct Palette {
@@ -245,6 +258,8 @@ pub struct Palette {
     installable: Option<String>,
     /// Un tableau est affiché : ses réglages se cherchent ici.
     table: bool,
+    /// Une note est affichée : ses lignes peuvent devenir une liste.
+    lists: bool,
     /// Un remplacement dans le coffre peut être défait.
     undo_swap: bool,
     /// Marge au-dessus du cadre.
@@ -365,6 +380,7 @@ impl Palette {
             updates: None,
             installable: None,
             table: false,
+            lists: false,
             undo_swap: false,
             top: px(72.),
             scroll: gpui::ScrollHandle::new(),
@@ -386,6 +402,12 @@ impl Palette {
     /// Propose de défaire le dernier remplacement dans le coffre, s'il y en a un.
     pub fn with_undo_swap(mut self, possible: bool) -> Self {
         self.undo_swap = possible;
+        self.refresh();
+        self
+    }
+
+    pub fn with_lists(mut self, shown: bool) -> Self {
+        self.lists = shown;
         self.refresh();
         self
     }
@@ -578,6 +600,14 @@ impl Palette {
                 Pick::ALL.into_iter().filter(|p| command(&q, p.label())).map(Item::Table),
             );
         }
+        if self.lists && !q.is_empty() {
+            items.extend(
+                [ListStyle::Bullet, ListStyle::Ordered, ListStyle::Task, ListStyle::Text]
+                    .into_iter()
+                    .filter(|&s| command(&q, list_label(s)))
+                    .map(Item::Restyle),
+            );
+        }
         // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
         for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide] {
             if !q.is_empty() && command(&q, setting.label()) {
@@ -615,6 +645,7 @@ impl Palette {
             Some(Item::Diagram) => PaletteEvent::NewDiagram,
             Some(Item::Folder) => PaletteEvent::NewFolder,
             Some(&Item::Table(pick)) => PaletteEvent::Table(pick),
+            Some(&Item::Restyle(style)) => PaletteEvent::Restyle(style),
             Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
             Some(Item::Check) => PaletteEvent::CheckUpdate,
@@ -790,6 +821,7 @@ impl Render for Palette {
                 Item::Check => (check_label().to_string(), String::new()),
                 Item::Outline => (outline_label().to_string(), crate::keys::of(cx, &crate::Outline)),
                 Item::Comments => (comments_label().to_string(), String::new()),
+                &Item::Restyle(style) => (list_label(style).to_string(), String::new()),
                 Item::UndoSwap => (undo_swap_label().to_string(), String::new()),
                 Item::Board => (board_label().to_string(), String::new()),
                 Item::Today => (today_label().to_string(), crate::keys::of(cx, &crate::Today)),

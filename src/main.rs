@@ -2813,10 +2813,11 @@ impl Shell {
         let updates = self.prefs.updates;
         let installable = self.update.as_ref().filter(|r| r.asset.is_some()).map(|r| r.version.clone());
         let table = self.shown_sheet().is_some();
+        let lists = self.picture.is_none() && self.listing.is_none() && !self.board_shown(cx);
         let swap = !self.swapped.is_empty();
         let palette = cx.new(|cx| match lines {
             true => Palette::search(entries, theme, cx),
-            false => Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table).with_undo_swap(swap),
+            false => Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table).with_lists(lists).with_undo_swap(swap),
         });
         cx.subscribe_in(&palette, window, |this, palette, event, window, cx| {
             this.palette = None;
@@ -2841,6 +2842,10 @@ impl Shell {
                 PaletteEvent::CheckUpdate => this.check_now(cx),
                 PaletteEvent::Outline => this.open_outline(window, cx),
                 PaletteEvent::Comments => this.open_comments(window, cx),
+                PaletteEvent::Restyle(style) => {
+                    window.focus(&this.editor.focus_handle(cx));
+                    this.editor.update(cx, |e, cx| e.restyle(*style, cx));
+                }
                 PaletteEvent::UndoSwap => this.undo_swap(cx),
                 PaletteEvent::NewBoard => this.new_note(kanban::new_board(), cx),
                 PaletteEvent::Today => this.open_today(cx),
@@ -3035,6 +3040,11 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 k(&editor::AlignCenter, tr("Center the column of the cursor", "Centrer la colonne du curseur")),
                 k(&editor::AlignRight, tr("Align the column of the cursor to the right", "Aligner la colonne du curseur à droite")),
                 t(tr("Pasting a table", "Coller un tableau"), tr("Spreadsheet cells or Markdown fill the grid, or become a table", "Des cellules de tableur ou du Markdown remplissent la grille, ou deviennent un tableau")),
+                k(&editor::ListCycle, tr("Turn the selected lines into a list, then the next kind: bullets, numbered, tasks, plain text", "Mettre les lignes choisies en liste, puis au genre suivant : puces, numérotée, tâches, texte")),
+                k(&editor::ListBullet, tr("Selected lines: bulleted list (again: plain text)", "Lignes choisies : liste à puces (encore : texte)")),
+                k(&editor::ListOrdered, tr("Selected lines: numbered list (again: plain text)", "Lignes choisies : liste numérotée (encore : texte)")),
+                k(&editor::ListTask, tr("Selected lines: task list (again: plain text)", "Lignes choisies : liste de tâches (encore : texte)")),
+                k(&editor::ListText, tr("Selected lines: plain text", "Lignes choisies : texte simple")),
                 k(&editor::ToggleTask, tr("Check / uncheck a task or a [ ] box; in a table cell, add one", "Cocher / décocher une tâche ou une case [ ] ; dans une cellule, en ajouter une")),
                 k(&editor::Bold, tr("Bold", "Gras")),
                 k(&editor::Italic, tr("Italic", "Italique")),
@@ -4407,6 +4417,8 @@ fn defaults() -> Vec<keys::Bind> {
         b("tab", &Indent, e),
         b("shift-tab", &Outdent, e),
         b("secondary-enter", &ToggleTask, e),
+        // Les quatre choix directs n'ont pas de touche : le menu et la palette les offrent, et l'aide les accorde.
+        b("secondary-shift-b", &ListCycle, e),
         b("secondary-shift-l", &AlignLeft, e),
         b("secondary-shift-e", &AlignCenter, e),
         b("secondary-shift-r", &AlignRight, e),
@@ -6210,6 +6222,35 @@ mod tests {
         cx.simulate_keystrokes("secondary-k");
         cx.simulate_input("ici");
         assert_eq!(text(cx), "[ici](https://a.b)");
+        // Des lignes choisies deviennent une liste : au clavier, de genre en genre ; par le menu de la
+        // note et par la palette, au genre voulu ; la sélection reste sur son texte, un geste s'annule d'un trait.
+        load(cx, "un\ndeux\ntrois\n\nfin", 0);
+        cx.simulate_keystrokes("shift-down shift-down shift-end");
+        for want in ["- un\n- deux\n- trois\n\nfin", "1. un\n2. deux\n3. trois\n\nfin", "- [ ] un\n- [ ] deux\n- [ ] trois\n\nfin", "un\ndeux\ntrois\n\nfin"] {
+            cx.simulate_keystrokes("secondary-shift-b");
+            assert_eq!(text(cx), want);
+        }
+        assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).selected() == "un\ndeux\ntrois"));
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Numbered, None, window, cx));
+        assert_eq!(text(cx), "1. un\n2. deux\n3. trois\n\nfin");
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("tâches");
+        cx.simulate_keystrokes("down enter");
+        assert_eq!(text(cx), "- [ ] un\n- [ ] deux\n- [ ] trois\n\nfin");
+        // Encore le même genre : retour au texte. Annuler rend la liste d'avant.
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Tasks, None, window, cx));
+        assert_eq!(text(cx), "un\ndeux\ntrois\n\nfin");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(text(cx), "- [ ] un\n- [ ] deux\n- [ ] trois\n\nfin");
+        // Sans sélection : la ligne du curseur seule, et un titre ou un bloc de code ne bouge pas.
+        load(cx, "# T\n\n```\na\n```\nb", 0);
+        cx.simulate_keystrokes("secondary-shift-b");
+        assert_eq!(text(cx), "# T\n\n```\na\n```\nb");
+        cx.simulate_keystrokes("secondary-end secondary-shift-b");
+        assert_eq!(text(cx), "# T\n\n```\na\n```\n- b");
+        // La note ouverte ici n'existe pas sur le disque : l'enregistrement échoue, et son avis s'efface.
+        cx.executor().advance_clock(Duration::from_secs(5));
+        cx.run_until_parked();
 
         // Recherche dans la note : Ctrl+F, la frappe montre le premier passage, Entrée et
         // Maj+Entrée tournent en boucle, Alt+C tient compte de la casse, Alt+W des mots entiers.

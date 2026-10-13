@@ -684,6 +684,82 @@ pub fn on_enter(line: &str, col: usize, in_code: bool) -> Enter {
     Enter::Insert(format!("\n{indent}{next}"))
 }
 
+/// Ce que deviennent des lignes : un type de liste, ou du texte.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ListStyle {
+    Text,
+    Bullet,
+    Ordered,
+    Task,
+}
+
+/// Les lignes de `block` (sans retour à la ligne final) écrites dans le style `to`. Rend le nouveau
+/// texte et, pour chaque ligne, où commence son contenu avant et après (en octets depuis le début
+/// de la ligne), pour replacer la sélection. Seuls les paragraphes et les items de liste changent :
+/// ni titres, tableaux, citations, blocs de code ni lignes vides. Si toutes les lignes touchées
+/// sont déjà dans ce style, elles redeviennent du texte. Les items gardent leur retrait, une liste
+/// numérotée repart de 1 à chaque niveau, et une case cochée le reste d'une tâche à l'autre.
+pub fn restyle(block: &str, to: ListStyle) -> (String, Vec<(usize, usize)>) {
+    let mut fenced = false;
+    let lines: Vec<(&str, Option<Kind>)> = block
+        .split('\n')
+        .map(|line| {
+            if is_fence(line) {
+                fenced = !fenced;
+                return (line, None);
+            }
+            if fenced || line.trim().is_empty() {
+                return (line, None);
+            }
+            let kind = classify(line, false).0;
+            (line, matches!(kind, Kind::Para | Kind::Bullet | Kind::Ordered | Kind::Task(_)).then_some(kind))
+        })
+        .collect();
+    let same = |kind: Kind| match to {
+        ListStyle::Text => kind == Kind::Para,
+        ListStyle::Bullet => kind == Kind::Bullet,
+        ListStyle::Ordered => kind == Kind::Ordered,
+        ListStyle::Task => matches!(kind, Kind::Task(_)),
+    };
+    let touched = lines.iter().filter_map(|(_, kind)| *kind);
+    let target = if touched.clone().next().is_some() && touched.clone().all(same) { ListStyle::Text } else { to };
+    let (mut out, mut spans) = (Vec::with_capacity(lines.len()), Vec::with_capacity(lines.len()));
+    // Rang du dernier item de chaque retrait, pour numéroter.
+    let mut counts: Vec<(usize, usize)> = Vec::new();
+    for (line, kind) in lines {
+        let Some(kind) = kind else {
+            // Une ligne vide laisse la numérotation courir ; tout autre bloc l'interrompt.
+            if !line.trim().is_empty() {
+                counts.clear();
+            }
+            out.push(line.to_string());
+            spans.push((0, 0));
+            continue;
+        };
+        let indent = indent_len(line);
+        let start = if kind == Kind::Para { indent } else { classify(line, false).1 };
+        let pad = if target == ListStyle::Text { "" } else { &line[..indent] };
+        let marker = match target {
+            ListStyle::Text => String::new(),
+            ListStyle::Bullet => "- ".to_string(),
+            ListStyle::Task => format!("- [{}] ", if kind == Kind::Task(true) { 'x' } else { ' ' }),
+            ListStyle::Ordered => {
+                while counts.last().is_some_and(|&(level, _)| level > indent) {
+                    counts.pop();
+                }
+                match counts.last_mut() {
+                    Some((level, n)) if *level == indent => *n += 1,
+                    _ => counts.push((indent, 1)),
+                }
+                format!("{}. ", counts.last().map_or(1, |c| c.1))
+            }
+        };
+        spans.push((start, pad.len() + marker.len()));
+        out.push(format!("{pad}{marker}{}", &line[start..]));
+    }
+    (out.join("\n"), spans)
+}
+
 /// Renumérote la liste ordonnée autour du curseur. Renvoie le nouveau texte et
 /// le curseur ajusté, ou `None` si rien ne change.
 pub fn renumber(text: &str, cursor: usize) -> Option<(String, usize)> {
@@ -1497,6 +1573,34 @@ mod tests {
             assert_eq!(known, counts(&fresh), "retouche {step} : {text:?} -> {fresh:?}");
             text = fresh;
         }
+    }
+
+    #[test]
+    fn restyles_lines_into_lists() {
+        let to = |block: &str, style| restyle(block, style).0;
+        assert_eq!(to("a\nb", ListStyle::Bullet), "- a\n- b");
+        // Retraits conservés, numérotation par niveau.
+        assert_eq!(to("- a\n  - b\n  - c\n- d", ListStyle::Ordered), "1. a\n  1. b\n  2. c\n2. d");
+        assert_eq!(to("1. a\n   2. b", ListStyle::Bullet), "- a\n   - b");
+        // Une case cochée le reste d'une tâche à l'autre, pas d'une liste à l'autre.
+        assert_eq!(to("- [x] a\n- [ ] b", ListStyle::Ordered), "1. a\n2. b");
+        assert_eq!(to("- a\n- [x] b", ListStyle::Task), "- [ ] a\n- [x] b");
+        // Une sélection mêlée prend le style demandé ; déjà dans ce style, elle redevient du texte.
+        assert_eq!(to("- a\n1. b\ntexte", ListStyle::Bullet), "- a\n- b\n- texte");
+        assert_eq!(to("- a\n- b", ListStyle::Bullet), "a\nb");
+        assert_eq!(to("- [x] a\n- [ ] b", ListStyle::Task), "a\nb");
+        assert_eq!(to("  - a\n  - b", ListStyle::Text), "a\nb");
+        // Titres, tableaux, citations, code et lignes vides restent tels quels.
+        let block = "# T\n\n```\ncode\n```\n| a |\n> q\ntexte\n\nsuite";
+        assert_eq!(to(block, ListStyle::Bullet), "# T\n\n```\ncode\n```\n| a |\n> q\n- texte\n\n- suite");
+        assert_eq!(to(block, ListStyle::Ordered), "# T\n\n```\ncode\n```\n| a |\n> q\n1. texte\n\n2. suite");
+        assert_eq!(to("# T\n```\n- a\n```", ListStyle::Ordered), "# T\n```\n- a\n```");
+        // Un aller-retour rend la liste d'origine.
+        let flat = "- a\n- b\n- c";
+        assert_eq!(to(&to(flat, ListStyle::Ordered), ListStyle::Bullet), flat);
+        assert_eq!(to(&to(flat, ListStyle::Task), ListStyle::Bullet), flat);
+        // Début du contenu avant et après, pour replacer le curseur.
+        assert_eq!(restyle("  - ab\n\ntexte", ListStyle::Ordered).1, vec![(4, 5), (0, 0), (0, 3)]);
     }
 
     #[test]

@@ -101,6 +101,11 @@ pub enum Do {
     Italic,
     Link,
     Comment,
+    /// Les lignes choisies en liste à puces, numérotée, de tâches, ou en texte.
+    Bullets,
+    Numbered,
+    Tasks,
+    Plain,
     OpenLink,
     CopyAddress,
 }
@@ -125,6 +130,10 @@ impl Do {
             Do::Italic => of(cx, &editor::Italic),
             Do::Link => of(cx, &editor::InsertLink),
             Do::Comment => of(cx, &editor::Comment),
+            Do::Bullets => of(cx, &editor::ListBullet),
+            Do::Numbered => of(cx, &editor::ListOrdered),
+            Do::Tasks => of(cx, &editor::ListTask),
+            Do::Plain => of(cx, &editor::ListText),
             // Pas une liaison, mais le geste qui fait la même chose.
             Do::OpenLink => format!("{}+{}", crate::MOD, tr("click", "clic")),
             _ => String::new(),
@@ -828,6 +837,10 @@ impl Shell {
             (Do::Italic, _) => Some(Box::new(editor::Italic)),
             (Do::Link, _) => Some(Box::new(editor::InsertLink)),
             (Do::Comment, _) => Some(Box::new(editor::Comment)),
+            (Do::Bullets, _) => Some(Box::new(editor::ListBullet)),
+            (Do::Numbered, _) => Some(Box::new(editor::ListOrdered)),
+            (Do::Tasks, _) => Some(Box::new(editor::ListTask)),
+            (Do::Plain, _) => Some(Box::new(editor::ListText)),
             (Do::OpenLink, Some(link)) => return self.follow(&link, window, cx),
             (Do::CopyAddress, Some(Link::Url(url))) => return cx.write_to_clipboard(ClipboardItem::new_string(url)),
             _ => None,
@@ -1146,6 +1159,11 @@ impl Shell {
             groups[2].push((tr("Italic", "Italique"), Do::Italic));
             groups[2].push((if web { tr("Edit the link", "Modifier le lien") } else { tr("Make a link", "Faire un lien") }, Do::Link));
             groups[2].push((if menu.commented { tr("Resolve the comment", "Résoudre le commentaire") } else { tr("Comment", "Commenter") }, Do::Comment));
+            // Les lignes visées, d'un genre de liste à l'autre.
+            groups[3].push((tr("Bulleted list", "Liste à puces"), Do::Bullets));
+            groups[3].push((tr("Numbered list", "Liste numérotée"), Do::Numbered));
+            groups[3].push((tr("Task list", "Liste de tâches"), Do::Tasks));
+            groups[3].push((tr("Plain text", "Texte simple"), Do::Plain));
         } else if menu.target.as_deref().and_then(tag_of).is_some() {
             // Un tag n'est ni une note ni un dossier : on ne peut qu'en lister les notes.
             groups[0].push((tr("Show as a list", "Afficher en liste"), Do::List));
