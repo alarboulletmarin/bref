@@ -14,6 +14,7 @@ use gpui::{
 use crate::{
     Theme,
     line::{self, Line},
+    editor::TableOp,
     markdown::ListStyle,
     sheet::Pick,
     tr,
@@ -165,6 +166,8 @@ pub enum PaletteEvent {
     Table(Pick),
     /// Les lignes choisies de la note, en liste ou en texte.
     Restyle(ListStyle),
+    /// Un geste sur le tableau du curseur.
+    Grid(TableOp),
     /// Active ou coupe la recherche de nouvelle version.
     ToggleUpdates,
     /// Cherche tout de suite une nouvelle version.
@@ -234,6 +237,7 @@ enum Item {
     Setting(Setting),
     Table(Pick),
     Restyle(ListStyle),
+    Grid(TableOp),
 }
 
 pub struct Palette {
@@ -260,6 +264,8 @@ pub struct Palette {
     table: bool,
     /// Une note est affichée : ses lignes peuvent devenir une liste.
     lists: bool,
+    /// Le curseur est dans un tableau Markdown : ses lignes et ses colonnes se gèrent d'ici.
+    cells: bool,
     /// Un remplacement dans le coffre peut être défait.
     undo_swap: bool,
     /// Marge au-dessus du cadre.
@@ -381,6 +387,7 @@ impl Palette {
             installable: None,
             table: false,
             lists: false,
+            cells: false,
             undo_swap: false,
             top: px(72.),
             scroll: gpui::ScrollHandle::new(),
@@ -402,6 +409,12 @@ impl Palette {
     /// Propose de défaire le dernier remplacement dans le coffre, s'il y en a un.
     pub fn with_undo_swap(mut self, possible: bool) -> Self {
         self.undo_swap = possible;
+        self.refresh();
+        self
+    }
+
+    pub fn with_cells(mut self, here: bool) -> Self {
+        self.cells = here;
         self.refresh();
         self
     }
@@ -600,6 +613,9 @@ impl Palette {
                 Pick::ALL.into_iter().filter(|p| command(&q, p.label())).map(Item::Table),
             );
         }
+        if self.cells && !q.is_empty() {
+            items.extend(TableOp::ALL.into_iter().filter(|op| command(&q, op.label())).map(Item::Grid));
+        }
         if self.lists && !q.is_empty() {
             items.extend(
                 [ListStyle::Bullet, ListStyle::Ordered, ListStyle::Task, ListStyle::Text]
@@ -646,6 +662,7 @@ impl Palette {
             Some(Item::Folder) => PaletteEvent::NewFolder,
             Some(&Item::Table(pick)) => PaletteEvent::Table(pick),
             Some(&Item::Restyle(style)) => PaletteEvent::Restyle(style),
+            Some(&Item::Grid(op)) => PaletteEvent::Grid(op),
             Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
             Some(Item::Check) => PaletteEvent::CheckUpdate,
@@ -822,6 +839,7 @@ impl Render for Palette {
                 Item::Outline => (outline_label().to_string(), crate::keys::of(cx, &crate::Outline)),
                 Item::Comments => (comments_label().to_string(), String::new()),
                 &Item::Restyle(style) => (list_label(style).to_string(), String::new()),
+                &Item::Grid(op) => (op.label().to_string(), crate::keys::of(cx, op.action().as_ref())),
                 Item::UndoSwap => (undo_swap_label().to_string(), String::new()),
                 Item::Board => (board_label().to_string(), String::new()),
                 Item::Today => (today_label().to_string(), crate::keys::of(cx, &crate::Today)),

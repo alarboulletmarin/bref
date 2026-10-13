@@ -106,6 +106,8 @@ pub enum Do {
     Numbered,
     Tasks,
     Plain,
+    /// Un geste sur le tableau du curseur.
+    Table(editor::TableOp),
     OpenLink,
     CopyAddress,
 }
@@ -134,6 +136,7 @@ impl Do {
             Do::Numbered => of(cx, &editor::ListOrdered),
             Do::Tasks => of(cx, &editor::ListTask),
             Do::Plain => of(cx, &editor::ListText),
+            Do::Table(op) => of(cx, op.action().as_ref()),
             // Pas une liaison, mais le geste qui fait la même chose.
             Do::OpenLink => format!("{}+{}", crate::MOD, tr("click", "clic")),
             _ => String::new(),
@@ -841,6 +844,7 @@ impl Shell {
             (Do::Numbered, _) => Some(Box::new(editor::ListOrdered)),
             (Do::Tasks, _) => Some(Box::new(editor::ListTask)),
             (Do::Plain, _) => Some(Box::new(editor::ListText)),
+            (Do::Table(op), _) => Some(op.action()),
             (Do::OpenLink, Some(link)) => return self.follow(&link, window, cx),
             (Do::CopyAddress, Some(Link::Url(url))) => return cx.write_to_clipboard(ClipboardItem::new_string(url)),
             _ => None,
@@ -1143,7 +1147,7 @@ impl Shell {
         let tree = self.nav.mode == Mode::Tree;
         let many = menu.target.as_ref().is_some_and(|p| self.nav.marked.contains(p)) && self.nav.marked.len() > 1;
         // Groupes d'entrées ; un trait sépare ceux qui en ont.
-        let mut groups: Vec<Vec<(&'static str, Do)>> = vec![Vec::new(); 4];
+        let mut groups: Vec<Vec<(&'static str, Do)>> = vec![Vec::new(); 7];
         if let Some(link) = &menu.text {
             let web = matches!(link, Some(Link::Url(_)));
             if link.is_some() {
@@ -1155,15 +1159,28 @@ impl Shell {
             groups[1].push((tr("Cut", "Couper"), Do::Cut));
             groups[1].push((tr("Copy", "Copier"), Do::Copy));
             groups[1].push((tr("Paste", "Coller"), Do::Paste));
-            groups[2].push((tr("Bold", "Gras"), Do::Bold));
-            groups[2].push((tr("Italic", "Italique"), Do::Italic));
-            groups[2].push((if web { tr("Edit the link", "Modifier le lien") } else { tr("Make a link", "Faire un lien") }, Do::Link));
-            groups[2].push((if menu.commented { tr("Resolve the comment", "Résoudre le commentaire") } else { tr("Comment", "Commenter") }, Do::Comment));
-            // Les lignes visées, d'un genre de liste à l'autre.
-            groups[3].push((tr("Bulleted list", "Liste à puces"), Do::Bullets));
-            groups[3].push((tr("Numbered list", "Liste numérotée"), Do::Numbered));
-            groups[3].push((tr("Task list", "Liste de tâches"), Do::Tasks));
-            groups[3].push((tr("Plain text", "Texte simple"), Do::Plain));
+            if self.editor.read(cx).in_table() {
+                // Dans un tableau : ses lignes, ses colonnes, puis le tableau.
+                use editor::TableOp::*;
+                for (group, ops) in [
+                    (2, [RowAbove, RowBelow, DuplicateRow, MoveRowUp, MoveRowDown, DeleteRow].as_slice()),
+                    (3, [ColLeft, ColRight, DuplicateCol, MoveColLeft, MoveColRight, DeleteCol].as_slice()),
+                    (4, [SortAsc, SortDesc, Transpose, DeleteTable].as_slice()),
+                ] {
+                    groups[group].extend(ops.iter().map(|&op| (op.label(), Do::Table(op))));
+                }
+                groups[5].push((tr("Comment", "Commenter"), Do::Comment));
+            } else {
+                groups[2].push((tr("Bold", "Gras"), Do::Bold));
+                groups[2].push((tr("Italic", "Italique"), Do::Italic));
+                groups[2].push((if web { tr("Edit the link", "Modifier le lien") } else { tr("Make a link", "Faire un lien") }, Do::Link));
+                groups[2].push((if menu.commented { tr("Resolve the comment", "Résoudre le commentaire") } else { tr("Comment", "Commenter") }, Do::Comment));
+                // Les lignes visées, d'un genre de liste à l'autre.
+                groups[3].push((tr("Bulleted list", "Liste à puces"), Do::Bullets));
+                groups[3].push((tr("Numbered list", "Liste numérotée"), Do::Numbered));
+                groups[3].push((tr("Task list", "Liste de tâches"), Do::Tasks));
+                groups[3].push((tr("Plain text", "Texte simple"), Do::Plain));
+            }
         } else if menu.target.as_deref().and_then(tag_of).is_some() {
             // Un tag n'est ni une note ni un dossier : on ne peut qu'en lister les notes.
             groups[0].push((tr("Show as a list", "Afficher en liste"), Do::List));

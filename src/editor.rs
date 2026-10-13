@@ -72,6 +72,22 @@ actions!(
         ListTask,
         ListText,
         ListCycle,
+        TableRowAbove,
+        TableRowBelow,
+        TableColLeft,
+        TableColRight,
+        TableDuplicateRow,
+        TableDuplicateCol,
+        TableMoveRowUp,
+        TableMoveRowDown,
+        TableMoveColLeft,
+        TableMoveColRight,
+        TableDeleteRow,
+        TableDeleteCol,
+        TableDelete,
+        TableSortAsc,
+        TableSortDesc,
+        TableTranspose,
         Bold,
         Italic,
         SelectNext,
@@ -241,6 +257,92 @@ fn inside(root: &Path, file: &Path) -> bool {
 
 /// Commande `/nom` : (nom, libellé anglais, libellé français, texte posé avant
 /// le curseur, texte posé après).
+/// Un geste sur le tableau où est le curseur : il vaut pour les lignes et les colonnes que la
+/// sélection touche.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TableOp {
+    RowAbove,
+    RowBelow,
+    ColLeft,
+    ColRight,
+    DuplicateRow,
+    DuplicateCol,
+    MoveRowUp,
+    MoveRowDown,
+    MoveColLeft,
+    MoveColRight,
+    DeleteRow,
+    DeleteCol,
+    DeleteTable,
+    SortAsc,
+    SortDesc,
+    Transpose,
+}
+
+impl TableOp {
+    pub const ALL: [TableOp; 16] = [
+        TableOp::RowAbove,
+        TableOp::RowBelow,
+        TableOp::DuplicateRow,
+        TableOp::MoveRowUp,
+        TableOp::MoveRowDown,
+        TableOp::DeleteRow,
+        TableOp::ColLeft,
+        TableOp::ColRight,
+        TableOp::DuplicateCol,
+        TableOp::MoveColLeft,
+        TableOp::MoveColRight,
+        TableOp::DeleteCol,
+        TableOp::SortAsc,
+        TableOp::SortDesc,
+        TableOp::Transpose,
+        TableOp::DeleteTable,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            TableOp::RowAbove => tr("Insert a row above", "Insérer une ligne au-dessus"),
+            TableOp::RowBelow => tr("Insert a row below", "Insérer une ligne en dessous"),
+            TableOp::ColLeft => tr("Insert a column on the left", "Insérer une colonne à gauche"),
+            TableOp::ColRight => tr("Insert a column on the right", "Insérer une colonne à droite"),
+            TableOp::DuplicateRow => tr("Duplicate the row", "Dupliquer la ligne"),
+            TableOp::DuplicateCol => tr("Duplicate the column", "Dupliquer la colonne"),
+            TableOp::MoveRowUp => tr("Move the row up", "Monter la ligne"),
+            TableOp::MoveRowDown => tr("Move the row down", "Descendre la ligne"),
+            TableOp::MoveColLeft => tr("Move the column left", "Décaler la colonne à gauche"),
+            TableOp::MoveColRight => tr("Move the column right", "Décaler la colonne à droite"),
+            TableOp::DeleteRow => tr("Delete the row", "Supprimer la ligne"),
+            TableOp::DeleteCol => tr("Delete the column", "Supprimer la colonne"),
+            TableOp::DeleteTable => tr("Delete the table", "Supprimer le tableau"),
+            TableOp::SortAsc => tr("Sort the rows by this column, A to Z", "Trier les lignes sur cette colonne, de A à Z"),
+            TableOp::SortDesc => tr("Sort the rows by this column, Z to A", "Trier les lignes sur cette colonne, de Z à A"),
+            TableOp::Transpose => tr("Swap rows and columns", "Échanger lignes et colonnes"),
+        }
+    }
+
+    /// L'action qui fait la même chose au clavier.
+    pub fn action(self) -> Box<dyn gpui::Action> {
+        match self {
+            TableOp::RowAbove => Box::new(TableRowAbove),
+            TableOp::RowBelow => Box::new(TableRowBelow),
+            TableOp::ColLeft => Box::new(TableColLeft),
+            TableOp::ColRight => Box::new(TableColRight),
+            TableOp::DuplicateRow => Box::new(TableDuplicateRow),
+            TableOp::DuplicateCol => Box::new(TableDuplicateCol),
+            TableOp::MoveRowUp => Box::new(TableMoveRowUp),
+            TableOp::MoveRowDown => Box::new(TableMoveRowDown),
+            TableOp::MoveColLeft => Box::new(TableMoveColLeft),
+            TableOp::MoveColRight => Box::new(TableMoveColRight),
+            TableOp::DeleteRow => Box::new(TableDeleteRow),
+            TableOp::DeleteCol => Box::new(TableDeleteCol),
+            TableOp::DeleteTable => Box::new(TableDelete),
+            TableOp::SortAsc => Box::new(TableSortAsc),
+            TableOp::SortDesc => Box::new(TableSortDesc),
+            TableOp::Transpose => Box::new(TableTranspose),
+        }
+    }
+}
+
 /// Largeur offerte aux tableaux dans un volet large de `pane`, pour un texte large de `text`.
 fn table_room(wide: Wide, pane: Pixels, text: Pixels) -> Pixels {
     match wide {
@@ -2388,6 +2490,57 @@ impl Editor {
         true
     }
 
+    /// Le curseur est dans un tableau Markdown qu'on sait réécrire (pas un très gros).
+    pub fn in_table(&self) -> bool {
+        self.table_at(self.sel.start).is_some()
+    }
+
+    /// Un geste sur le tableau du curseur, pour les lignes et les colonnes que la sélection touche
+    /// (de la cellule où elle commence à celle où elle finit). Un seul pas d'annulation ; le curseur
+    /// se pose sur la cellule qui suit le geste.
+    fn table_op(&mut self, op: TableOp, cx: &mut Context<Self>) {
+        let Some((range, rows, (r, c))) = self.table_at(self.sel.start) else {
+            return;
+        };
+        // Rang visible : la ligne de tirets compte pour l'en-tête.
+        let seen = |r: usize| r.saturating_sub(1);
+        let slot = |v: usize| if v == 0 { 0 } else { v + 1 };
+        let end = self.table_at(self.sel.end).filter(|(other, ..)| *other == range).map_or((r, c), |(.., cell)| cell);
+        let (r0, r1) = (seen(r).min(seen(end.0)), seen(r).max(seen(end.0)));
+        let (c0, c1) = (c.min(end.1), c.max(end.1));
+        let (tall, wide) = (md::visible_rows(&rows), rows[0].len());
+        let (grid, at) = match op {
+            TableOp::RowAbove => (Some(md::insert_row(&rows, r0)), (slot(r0.max(1)), c0)),
+            TableOp::RowBelow => (Some(md::insert_row(&rows, r1 + 1)), (slot(r1 + 1), c0)),
+            TableOp::ColLeft => (Some(md::insert_col(&rows, c0)), (slot(r0), c0)),
+            TableOp::ColRight => (Some(md::insert_col(&rows, c1 + 1)), (slot(r0), c1 + 1)),
+            TableOp::DuplicateRow => (Some(md::duplicate_row(&rows, r0)), (slot(r0 + 1), c0)),
+            TableOp::DuplicateCol => (Some(md::duplicate_col(&rows, c0)), (slot(r0), c0 + 1)),
+            TableOp::MoveRowUp if r0 > 1 => (Some(md::move_row(&rows, r0 - 1, r1)), (slot(r0 - 1), c0)),
+            TableOp::MoveRowDown if r0 > 0 && r1 + 1 < tall => (Some(md::move_row(&rows, r1 + 1, r0)), (slot(r0 + 1), c0)),
+            TableOp::MoveColLeft if c0 > 0 => (Some(md::move_col(&rows, c0 - 1, c1)), (slot(r0), c0 - 1)),
+            TableOp::MoveColRight if c1 + 1 < wide => (Some(md::move_col(&rows, c1 + 1, c0)), (slot(r0), c0 + 1)),
+            TableOp::DeleteRow => (md::delete_rows(&rows, r0..r1 + 1), (slot(r0.min(tall.saturating_sub(r1 - r0 + 2))), c0)),
+            TableOp::DeleteCol => (md::delete_cols(&rows, c0..c1 + 1), (slot(r0), c0.min(wide.saturating_sub(c1 - c0 + 2)))),
+            TableOp::SortAsc => (Some(md::sort_rows(&rows, c0, true)), (0, c0)),
+            TableOp::SortDesc => (Some(md::sort_rows(&rows, c0, false)), (0, c0)),
+            TableOp::Transpose => (Some(md::transpose(&rows)), (0, 0)),
+            TableOp::DeleteTable => (None, (0, 0)),
+            // Un geste qui n'a nulle part où aller : l'en-tête reste en tête, le dernier rang ne descend pas.
+            _ => return,
+        };
+        match grid {
+            Some(grid) => self.set_table(range, &grid, at, cx),
+            // Plus rien dans le tableau : il part avec le retour à la ligne qui le suit.
+            None => {
+                let stop = if self.content[range.end..].starts_with('\n') { range.end + 1 } else { range.end };
+                self.push_undo(true);
+                self.edit(range.start..stop, "", cx);
+                self.move_to(range.start.min(self.content.len()), cx);
+            }
+        }
+    }
+
     /// Aligne la colonne du curseur : `:--`, `:-:` ou `--:` sous son en-tête. La ligne de
     /// tirets ne se voit pas, c'est donc ce raccourci qui la règle.
     fn align(&mut self, dashes: &str, cx: &mut Context<Self>) {
@@ -4286,6 +4439,22 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &ListTask, _, cx| this.restyle(ListStyle::Task, cx)))
         .on_action(cx.listener(|this, _: &ListText, _, cx| this.restyle(ListStyle::Text, cx)))
         .on_action(cx.listener(|this, _: &ListCycle, _, cx| this.cycle_list(cx)))
+        .on_action(cx.listener(|this, _: &TableRowAbove, _, cx| this.table_op(TableOp::RowAbove, cx)))
+        .on_action(cx.listener(|this, _: &TableRowBelow, _, cx| this.table_op(TableOp::RowBelow, cx)))
+        .on_action(cx.listener(|this, _: &TableColLeft, _, cx| this.table_op(TableOp::ColLeft, cx)))
+        .on_action(cx.listener(|this, _: &TableColRight, _, cx| this.table_op(TableOp::ColRight, cx)))
+        .on_action(cx.listener(|this, _: &TableDuplicateRow, _, cx| this.table_op(TableOp::DuplicateRow, cx)))
+        .on_action(cx.listener(|this, _: &TableDuplicateCol, _, cx| this.table_op(TableOp::DuplicateCol, cx)))
+        .on_action(cx.listener(|this, _: &TableMoveRowUp, _, cx| this.table_op(TableOp::MoveRowUp, cx)))
+        .on_action(cx.listener(|this, _: &TableMoveRowDown, _, cx| this.table_op(TableOp::MoveRowDown, cx)))
+        .on_action(cx.listener(|this, _: &TableMoveColLeft, _, cx| this.table_op(TableOp::MoveColLeft, cx)))
+        .on_action(cx.listener(|this, _: &TableMoveColRight, _, cx| this.table_op(TableOp::MoveColRight, cx)))
+        .on_action(cx.listener(|this, _: &TableDeleteRow, _, cx| this.table_op(TableOp::DeleteRow, cx)))
+        .on_action(cx.listener(|this, _: &TableDeleteCol, _, cx| this.table_op(TableOp::DeleteCol, cx)))
+        .on_action(cx.listener(|this, _: &TableDelete, _, cx| this.table_op(TableOp::DeleteTable, cx)))
+        .on_action(cx.listener(|this, _: &TableSortAsc, _, cx| this.table_op(TableOp::SortAsc, cx)))
+        .on_action(cx.listener(|this, _: &TableSortDesc, _, cx| this.table_op(TableOp::SortDesc, cx)))
+        .on_action(cx.listener(|this, _: &TableTranspose, _, cx| this.table_op(TableOp::Transpose, cx)))
         .on_action(cx.listener(|this, _: &AlignLeft, _, cx| this.align(":--", cx)))
         .on_action(cx.listener(|this, _: &AlignCenter, _, cx| this.align(":-:", cx)))
         .on_action(cx.listener(|this, _: &AlignRight, _, cx| this.align("--:", cx)))

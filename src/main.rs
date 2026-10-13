@@ -2814,10 +2814,11 @@ impl Shell {
         let installable = self.update.as_ref().filter(|r| r.asset.is_some()).map(|r| r.version.clone());
         let table = self.shown_sheet().is_some();
         let lists = self.picture.is_none() && self.listing.is_none() && !self.board_shown(cx);
+        let cells = lists && self.editor.read(cx).in_table();
         let swap = !self.swapped.is_empty();
         let palette = cx.new(|cx| match lines {
             true => Palette::search(entries, theme, cx),
-            false => Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table).with_lists(lists).with_undo_swap(swap),
+            false => Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table).with_lists(lists).with_cells(cells).with_undo_swap(swap),
         });
         cx.subscribe_in(&palette, window, |this, palette, event, window, cx| {
             this.palette = None;
@@ -2842,6 +2843,10 @@ impl Shell {
                 PaletteEvent::CheckUpdate => this.check_now(cx),
                 PaletteEvent::Outline => this.open_outline(window, cx),
                 PaletteEvent::Comments => this.open_comments(window, cx),
+                PaletteEvent::Grid(op) => {
+                    window.focus(&this.editor.focus_handle(cx));
+                    window.dispatch_action(op.action(), cx);
+                }
                 PaletteEvent::Restyle(style) => {
                     window.focus(&this.editor.focus_handle(cx));
                     this.editor.update(cx, |e, cx| e.restyle(*style, cx));
@@ -3005,6 +3010,11 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 k(&ZoomOut, tr("Smaller text", "Texte plus petit")),
                 k(&ZoomReset, tr("Default text size", "Taille du texte d'origine")),
             ],
+        ),
+        (
+            // Les gestes de tableau du menu : le cadre dit où ils agissent, chacun peut avoir sa touche.
+            tr("Tables in a note", "Tableaux d'une note"),
+            editor::TableOp::ALL.into_iter().map(|op| k(op.action().as_ref(), op.label())).collect(),
         ),
         (
             tr("Typing", "À la frappe"),
@@ -4419,6 +4429,10 @@ fn defaults() -> Vec<keys::Bind> {
         b("secondary-enter", &ToggleTask, e),
         // Les quatre choix directs n'ont pas de touche : le menu et la palette les offrent, et l'aide les accorde.
         b("secondary-shift-b", &ListCycle, e),
+        // Un tableau : monter ou descendre la ligne, la supprimer ; le reste par le menu, la palette ou l'aide.
+        b("alt-up", &TableMoveRowUp, e),
+        b("alt-down", &TableMoveRowDown, e),
+        b("secondary-shift-backspace", &TableDeleteRow, e),
         b("secondary-shift-l", &AlignLeft, e),
         b("secondary-shift-e", &AlignCenter, e),
         b("secondary-shift-r", &AlignRight, e),
@@ -6248,6 +6262,52 @@ mod tests {
         assert_eq!(text(cx), "# T\n\n```\na\n```\nb");
         cx.simulate_keystrokes("secondary-end secondary-shift-b");
         assert_eq!(text(cx), "# T\n\n```\na\n```\n- b");
+        // Un tableau : ses lignes et ses colonnes se gèrent depuis le menu, la palette ou le clavier,
+        // et le curseur suit le geste.
+        let flat = |cx: &mut gpui::VisualTestContext| {
+            markdown::table(&text(cx).lines().filter(|l| l.starts_with('|')).collect::<Vec<_>>().join("\n")).0.iter().map(|r| r.iter().map(|c| if c.starts_with("--") { "---" } else { c }).collect::<Vec<_>>().join("|")).collect::<Vec<_>>().join("/")
+        };
+        let op = |cx: &mut gpui::VisualTestContext, op: editor::TableOp| {
+            shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Table(op), None, window, cx));
+        };
+        use editor::TableOp::*;
+        let grid = "| Nom | Âge |\n| --- | --- |\n| Léa | 31  |\n| Max | 7   |\n\nsuite";
+        load(cx, grid, grid.find("Léa").unwrap());
+        op(cx, RowBelow);
+        assert_eq!(flat(cx), "Nom|Âge/---|---/Léa|31/|/Max|7");
+        cx.simulate_input("Zoé");
+        assert_eq!(flat(cx), "Nom|Âge/---|---/Léa|31/Zoé|/Max|7");
+        cx.simulate_keystrokes("alt-up");
+        assert_eq!(flat(cx), "Nom|Âge/---|---/Zoé|/Léa|31/Max|7");
+        cx.simulate_keystrokes("alt-up");
+        assert_eq!(flat(cx), "Nom|Âge/---|---/Zoé|/Léa|31/Max|7", "la première ligne ne monte pas plus haut");
+        op(cx, ColRight);
+        cx.simulate_input("Ville");
+        assert_eq!(flat(cx), "Nom||Âge/---|---|---/Zoé|Ville|/Léa||31/Max||7");
+        op(cx, MoveColLeft);
+        assert_eq!(flat(cx), "|Nom|Âge/---|---|---/Ville|Zoé|/|Léa|31/|Max|7");
+        op(cx, DeleteCol);
+        assert_eq!(flat(cx), "Nom|Âge/---|---/Zoé|/Léa|31/Max|7");
+        op(cx, SortDesc);
+        assert_eq!(flat(cx), "Nom|Âge/---|---/Zoé|/Max|7/Léa|31");
+        // Deux lignes choisies partent ensemble ; ni l'en-tête ni le corps ne laissent un tableau sans lignes.
+        load(cx, grid, grid.find("Léa").unwrap());
+        cx.simulate_keystrokes("shift-down");
+        cx.simulate_keystrokes("secondary-shift-backspace");
+        assert_eq!(flat(cx), "Nom|Âge/---|---");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(flat(cx), "Nom|Âge/---|---/Léa|31/Max|7");
+        // Le tableau entier part avec son retour à la ligne ; annuler le rend.
+        op(cx, DeleteTable);
+        assert_eq!(text(cx), "\nsuite");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(flat(cx), "Nom|Âge/---|---/Léa|31/Max|7");
+        // Dans le menu de la note : les gestes du tableau, et sa palette.
+        assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).in_table()));
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("colonne à droite");
+        cx.simulate_keystrokes("down enter");
+        assert_eq!(flat(cx), "Nom||Âge/---|---|---/Léa||31/Max||7");
         // La note ouverte ici n'existe pas sur le disque : l'enregistrement échoue, et son avis s'efface.
         cx.executor().advance_clock(Duration::from_secs(5));
         cx.run_until_parked();

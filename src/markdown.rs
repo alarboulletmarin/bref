@@ -936,6 +936,130 @@ pub fn new_table(cols: usize, rows: usize) -> Vec<Vec<String>> {
     table(&vec![format!("{}|", "| ".repeat(cols)); rows].join("\n")).0
 }
 
+// ----- Gestes sur un tableau : fonctions pures sur la grille de `table` (l'en-tête, la ligne de tirets, le
+// corps). Un rang « visible » ne compte pas la ligne de tirets : 0 est l'en-tête, 1 la première ligne du corps.
+// Chaque geste rend la grille changée, toujours rectangulaire et avec ses tirets ; `None` quand il ne reste plus rien.
+
+/// Les lignes vues du tableau (sans les tirets), et les tirets.
+fn split_grid(rows: &[Vec<String>]) -> (Vec<Vec<String>>, Vec<String>) {
+    let visible = rows.iter().enumerate().filter(|(i, _)| *i != 1).map(|(_, row)| row.clone()).collect();
+    (visible, rows.get(1).cloned().unwrap_or_default())
+}
+
+fn join_grid(mut visible: Vec<Vec<String>>, dashes: Vec<String>) -> Option<Vec<Vec<String>>> {
+    if visible.is_empty() || dashes.is_empty() {
+        return None;
+    }
+    visible.insert(1.min(visible.len()), dashes);
+    Some(visible)
+}
+
+/// Nombre de lignes vues d'une grille (l'en-tête compte, les tirets non).
+pub fn visible_rows(rows: &[Vec<String>]) -> usize {
+    rows.len().saturating_sub(1)
+}
+
+/// Une ligne vide au rang visible `at` (jamais avant l'en-tête, jamais au-delà de la fin).
+pub fn insert_row(rows: &[Vec<String>], at: usize) -> Vec<Vec<String>> {
+    let (mut visible, dashes) = split_grid(rows);
+    visible.insert(at.clamp(1, visible.len()), vec![String::new(); dashes.len()]);
+    join_grid(visible, dashes).unwrap_or_default()
+}
+
+/// Une colonne vide à la place `at`.
+pub fn insert_col(rows: &[Vec<String>], at: usize) -> Vec<Vec<String>> {
+    let mut rows = rows.to_vec();
+    for (i, row) in rows.iter_mut().enumerate() {
+        row.insert(at.min(row.len()), if i == 1 { "---" } else { "" }.to_string());
+    }
+    rows
+}
+
+/// Sans les lignes visibles `range`. Retirer l'en-tête donne la sienne à la ligne suivante.
+pub fn delete_rows(rows: &[Vec<String>], range: std::ops::Range<usize>) -> Option<Vec<Vec<String>>> {
+    let (visible, dashes) = split_grid(rows);
+    let kept = visible.into_iter().enumerate().filter(|(i, _)| !range.contains(i)).map(|(_, row)| row).collect();
+    join_grid(kept, dashes)
+}
+
+/// Sans les colonnes `range`.
+pub fn delete_cols(rows: &[Vec<String>], range: std::ops::Range<usize>) -> Option<Vec<Vec<String>>> {
+    let rows: Vec<Vec<String>> = rows
+        .iter()
+        .map(|row| row.iter().enumerate().filter(|(c, _)| !range.contains(c)).map(|(_, cell)| cell.clone()).collect())
+        .collect();
+    rows.first().is_some_and(|row| !row.is_empty()).then_some(rows)
+}
+
+/// La ligne visible `from` passe au rang `to` (les autres se décalent). L'en-tête peut bouger : la ligne
+/// qui prend sa place devient l'en-tête.
+pub fn move_row(rows: &[Vec<String>], from: usize, to: usize) -> Vec<Vec<String>> {
+    let (mut visible, dashes) = split_grid(rows);
+    if from < visible.len() {
+        let row = visible.remove(from);
+        visible.insert(to.min(visible.len()), row);
+    }
+    join_grid(visible, dashes).unwrap_or_default()
+}
+
+/// La colonne `from` passe à la place `to`, avec son alignement.
+pub fn move_col(rows: &[Vec<String>], from: usize, to: usize) -> Vec<Vec<String>> {
+    let mut rows = rows.to_vec();
+    for row in &mut rows {
+        if from < row.len() {
+            let cell = row.remove(from);
+            row.insert(to.min(row.len()), cell);
+        }
+    }
+    rows
+}
+
+/// La ligne visible `r` recopiée juste dessous (l'en-tête : en tête du corps).
+pub fn duplicate_row(rows: &[Vec<String>], r: usize) -> Vec<Vec<String>> {
+    let (mut visible, dashes) = split_grid(rows);
+    if let Some(row) = visible.get(r).cloned() {
+        visible.insert(r + 1, row);
+    }
+    join_grid(visible, dashes).unwrap_or_default()
+}
+
+/// La colonne `c` recopiée juste à droite.
+pub fn duplicate_col(rows: &[Vec<String>], c: usize) -> Vec<Vec<String>> {
+    let mut rows = rows.to_vec();
+    for row in &mut rows {
+        if let Some(cell) = row.get(c).cloned() {
+            row.insert(c + 1, cell);
+        }
+    }
+    rows
+}
+
+/// Le corps trié sur la colonne `c` (tri naturel, cellules vides à la fin) ; l'en-tête reste en place.
+pub fn sort_rows(rows: &[Vec<String>], c: usize, ascending: bool) -> Vec<Vec<String>> {
+    let (mut visible, dashes) = split_grid(rows);
+    let blank = |row: &Vec<String>| row.get(c).is_none_or(|cell| cell.trim().is_empty());
+    visible[1..].sort_by(|a, b| {
+        let order = cell_order(a.get(c).map_or("", |s| s), b.get(c).map_or("", |s| s));
+        // Les cellules vides restent à la fin dans les deux sens.
+        match (blank(a), blank(b)) {
+            (true, true) => std::cmp::Ordering::Equal,
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            _ => if ascending { order } else { order.reverse() },
+        }
+    });
+    join_grid(visible, dashes).unwrap_or_default()
+}
+
+/// Les lignes deviennent des colonnes : la première ligne devient la première colonne, et l'en-tête.
+pub fn transpose(rows: &[Vec<String>]) -> Vec<Vec<String>> {
+    let (visible, dashes) = split_grid(rows);
+    let flipped: Vec<Vec<String>> =
+        (0..dashes.len()).map(|c| visible.iter().map(|row| row.get(c).cloned().unwrap_or_default()).collect()).collect();
+    let cols = flipped.first().map_or(0, Vec::len);
+    join_grid(flipped, vec!["---".to_string(); cols]).unwrap_or_default()
+}
+
 /// Largeur d'une ligne écrite en colonnes de texte : les idéogrammes et les émojis en prennent deux.
 fn columns(text: &str) -> usize {
     UnicodeWidthStr::width(text)
@@ -1686,6 +1810,90 @@ mod tests {
             let pasted = paste_grid(&text).unwrap();
             assert_eq!(pasted.len(), grid.len() - 1, "cas {case}");
             assert!(pasted.iter().all(|row| row.len() == width), "cas {case}");
+        }
+    }
+
+    /// Un tableau de test écrit en Markdown, relu en grille.
+    fn grid(text: &str) -> Vec<Vec<String>> {
+        table(text).0
+    }
+
+    #[test]
+    fn edits_a_table_by_rows_and_columns() {
+        let t = grid("| Nom | Âge |\n| :-- | --: |\n| Léa | 31 |\n| Max | 7 |");
+        let flat = |g: &[Vec<String>]| g.iter().map(|r| r.join("|")).collect::<Vec<_>>().join("/");
+        assert_eq!(visible_rows(&t), 3);
+        // Insérer : jamais avant l'en-tête, jamais au-delà de la fin.
+        assert_eq!(flat(&insert_row(&t, 0)), "Nom|Âge/:--|--:/|/Léa|31/Max|7");
+        assert_eq!(flat(&insert_row(&t, 2)), "Nom|Âge/:--|--:/Léa|31/|/Max|7");
+        assert_eq!(flat(&insert_row(&t, 99)), "Nom|Âge/:--|--:/Léa|31/Max|7/|");
+        assert_eq!(flat(&insert_col(&t, 1)), "Nom||Âge/:--|---|--:/Léa||31/Max||7");
+        assert_eq!(flat(&insert_col(&t, 9)), "Nom|Âge|/:--|--:|---/Léa|31|/Max|7|");
+        // Supprimer : l'en-tête part avec sa ligne, la suivante le devient ; plus rien : le tableau part.
+        assert_eq!(flat(&delete_rows(&t, 2..3).unwrap()), "Nom|Âge/:--|--:/Léa|31");
+        assert_eq!(flat(&delete_rows(&t, 0..1).unwrap()), "Léa|31/:--|--:/Max|7");
+        assert_eq!(flat(&delete_rows(&t, 1..3).unwrap()), "Nom|Âge/:--|--:");
+        assert_eq!(delete_rows(&t, 0..3), None);
+        assert_eq!(flat(&delete_cols(&t, 0..1).unwrap()), "Âge/--:/31/7");
+        assert_eq!(delete_cols(&t, 0..2), None);
+        // Déplacer : l'alignement suit sa colonne, l'en-tête passe à la ligne qui prend sa place.
+        assert_eq!(flat(&move_col(&t, 0, 1)), "Âge|Nom/--:|:--/31|Léa/7|Max");
+        assert_eq!(flat(&move_row(&t, 1, 2)), "Nom|Âge/:--|--:/Max|7/Léa|31");
+        assert_eq!(flat(&move_row(&t, 2, 0)), "Max|7/:--|--:/Nom|Âge/Léa|31");
+        // Dupliquer.
+        assert_eq!(flat(&duplicate_row(&t, 1)), "Nom|Âge/:--|--:/Léa|31/Léa|31/Max|7");
+        assert_eq!(flat(&duplicate_row(&t, 0)), "Nom|Âge/:--|--:/Nom|Âge/Léa|31/Max|7");
+        assert_eq!(flat(&duplicate_col(&t, 1)), "Nom|Âge|Âge/:--|--:|--:/Léa|31|31/Max|7|7");
+        // Trier : l'en-tête reste, le tri est naturel, les cellules vides restent à la fin dans les deux sens.
+        let n = grid("| n |\n| - |\n| 10 |\n| |\n| 9 |\n| 2 |");
+        assert_eq!(flat(&sort_rows(&n, 0, true)), "n/-/2/9/10/");
+        assert_eq!(flat(&sort_rows(&n, 0, false)), "n/-/10/9/2/");
+        // Transposer : la première ligne devient l'en-tête.
+        assert_eq!(flat(&transpose(&t)), "Nom|Léa|Max/---|---|---/Âge|31|7");
+        // Un seul en-tête, deux lignes de corps : tout reste une grille valable.
+        for g in [insert_row(&t, 1), insert_col(&t, 0), move_col(&t, 1, 0), transpose(&t)] {
+            assert!(g.len() >= 2 && is_dashes(&g[1]) && g.iter().all(|r| r.len() == g[0].len()), "{g:?}");
+        }
+    }
+
+    #[test]
+    fn table_edits_keep_a_valid_grid() {
+        let mut seed = 0x9E3779B97F4A7C15u64;
+        let mut next = move |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        for case in 0..400 {
+            let (cols, body) = (1 + next(5), next(6));
+            let mut g = new_table(cols, 1 + body);
+            for row in g.iter_mut().enumerate().filter(|(i, _)| *i != 1).map(|(_, r)| r) {
+                row.iter_mut().for_each(|c| *c = ["", "a", "b c", "10", "9"][next(5)].to_string());
+            }
+            // Une suite de gestes au hasard : la grille reste rectangulaire, avec ses tirets, ou disparaît.
+            for step in 0..12 {
+                let (r, c) = (next(visible_rows(&g) + 1), next(g[0].len() + 1));
+                let done = match next(11) {
+                    0 => Some(insert_row(&g, r)),
+                    1 => Some(insert_col(&g, c)),
+                    2 => delete_rows(&g, r..r + 1 + next(2)),
+                    3 => delete_cols(&g, c..c + 1 + next(2)),
+                    4 => Some(move_row(&g, r, next(visible_rows(&g) + 1))),
+                    5 => Some(move_col(&g, c, next(g[0].len() + 1))),
+                    6 => Some(duplicate_row(&g, r)),
+                    7 => Some(duplicate_col(&g, c)),
+                    8 => Some(sort_rows(&g, c, next(2) == 0)),
+                    9 => Some(transpose(&g)),
+                    _ => Some(g.clone()),
+                };
+                let Some(next_grid) = done else { break };
+                g = next_grid;
+                assert!(g.len() >= 2 && is_dashes(&g[1]) && g.iter().all(|row| row.len() == g[0].len() && !row.is_empty()), "cas {case} geste {step}: {g:?}");
+                // Écrit puis relu, elle ne change pas de forme.
+                let again = table(&format_table(&g, "")).0;
+                assert_eq!((again.len(), again[0].len()), (g.len(), g[0].len()), "cas {case} geste {step}");
+            }
         }
     }
 
