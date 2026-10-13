@@ -112,6 +112,10 @@ pub enum Setting {
     Theme,
     Font,
     Mono,
+    /// Largeur de la colonne de texte.
+    Page,
+    /// Place des tableaux plus larges que le texte.
+    Wide,
 }
 
 impl Setting {
@@ -120,6 +124,8 @@ impl Setting {
             Setting::Theme => tr("Theme…", "Thème…"),
             Setting::Font => tr("Font…", "Police…"),
             Setting::Mono => tr("Code font…", "Police du code…"),
+            Setting::Page => tr("Page width…", "Largeur de page…"),
+            Setting::Wide => tr("Wide tables…", "Grands tableaux…"),
         }
     }
 }
@@ -573,7 +579,7 @@ impl Palette {
             );
         }
         // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
-        for setting in [Setting::Theme, Setting::Font, Setting::Mono] {
+        for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide] {
             if !q.is_empty() && command(&q, setting.label()) {
                 items.push(Item::Setting(setting));
             }

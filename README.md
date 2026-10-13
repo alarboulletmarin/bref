@@ -318,7 +318,8 @@ Bref reopens with the panel as you left it.
 
 - **Theme**: the half-filled circle at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system. In every theme, links, secondary text and the titles of colored panels are adjusted to read at a contrast of 4.5:1 at least (WCAG AA).
 - **Fonts**: Bref carries IBM Plex Sans (text) and IBM Plex Mono (code), under the SIL Open Font License (`assets/fonts/`), so it looks the same everywhere without installing anything. Type `font` in the palette (`Ctrl + P`) to choose another font, for the app or for the code, among those installed on your system; type in the list to filter it. Ideograms and emoji, which Plex does not draw, come from a font of your system.
-- **Text size**: `Ctrl + +` and `Ctrl + -`, `Ctrl + 0` for the default. Headings and code scale with it.
+- **Text size**: `Ctrl + +` and `Ctrl + -`, `Ctrl + 0` for the default. Headings and code scale with it, and so does the width of the text column.
+- **Page width**: `page width` in the palette sets how wide the text column is (narrow, normal, wide, or the full window), kept in `settings` as `page=narrow|normal|wide|full`. A table wider than the text does not have to scroll inside it: `wide tables` in the palette chooses between staying in the column, where it scrolls sideways, and spilling out on both sides, centered on the window (the default; `wide=column|center`). A small table keeps its own size, and nothing goes past the window.
 
 These choices are kept in a file named `settings`, next to the [config file](#notes-and-vault).
 

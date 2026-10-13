@@ -121,6 +121,90 @@ struct Finder {
 
 const TOP: Pixels = px(20.);
 pub const MAX_WIDTH: Pixels = px(720.);
+/// Marge gardée de chaque côté de la page, qu'elle soit étroite ou pleine.
+const SIDE: Pixels = px(24.);
+
+/// Largeur de la colonne de texte (réglage « Largeur de page »).
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum Page {
+    Narrow,
+    #[default]
+    Normal,
+    Wide,
+    /// Toute la place de la fenêtre.
+    Full,
+}
+
+impl Page {
+    pub const ALL: [Page; 4] = [Page::Narrow, Page::Normal, Page::Wide, Page::Full];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Page::Narrow => "narrow",
+            Page::Normal => "normal",
+            Page::Wide => "wide",
+            Page::Full => "full",
+        }
+    }
+
+    /// Un réglage inconnu ou absent vaut la largeur normale.
+    pub fn of(key: &str) -> Self {
+        Self::ALL.into_iter().find(|p| p.key() == key).unwrap_or_default()
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Page::Narrow => tr("Narrow", "Étroite"),
+            Page::Normal => tr("Normal", "Normale"),
+            Page::Wide => tr("Wide", "Large"),
+            Page::Full => tr("Full width", "Pleine largeur"),
+        }
+    }
+
+    /// La colonne la plus large, pour un texte de `size` px : elle suit le corps du texte, pour que
+    /// le nombre de caractères par ligne reste le même quand on agrandit.
+    pub fn measure(self, size: f32) -> Pixels {
+        let base = match self {
+            Page::Narrow => 560.,
+            Page::Normal => 720.,
+            Page::Wide => 960.,
+            Page::Full => return px(f32::MAX),
+        };
+        px(base * size / 16.)
+    }
+}
+
+/// Où se place un tableau plus large que la colonne de texte (réglage « Grands tableaux »).
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum Wide {
+    /// Il reste dans la colonne et défile de côté.
+    Column,
+    /// Il déborde des deux côtés, centré sur la fenêtre.
+    #[default]
+    Centered,
+}
+
+impl Wide {
+    pub const ALL: [Wide; 2] = [Wide::Column, Wide::Centered];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Wide::Column => "column",
+            Wide::Centered => "center",
+        }
+    }
+
+    pub fn of(key: &str) -> Self {
+        Self::ALL.into_iter().find(|w| w.key() == key).unwrap_or_default()
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Wide::Column => tr("In the text column", "Dans la colonne du texte"),
+            Wide::Centered => tr("Centered, wider than the text", "Centrés, plus larges que le texte"),
+        }
+    }
+}
 /// Côté du bouton de copie, à droite de l'ouverture d'un bloc de code.
 const COPY_SIZE: Pixels = px(22.);
 /// Corps des formules, par rapport au texte : la police mathématique paraît petite à taille égale.
@@ -152,6 +236,22 @@ fn inside(root: &Path, file: &Path) -> bool {
 
 /// Commande `/nom` : (nom, libellé anglais, libellé français, texte posé avant
 /// le curseur, texte posé après).
+/// Largeur offerte aux tableaux dans un volet large de `pane`, pour un texte large de `text`.
+fn table_room(wide: Wide, pane: Pixels, text: Pixels) -> Pixels {
+    match wide {
+        Wide::Column => text,
+        Wide::Centered => (pane - SIDE * 2.).max(text),
+    }
+}
+
+/// De combien un tableau large de `frame` dépasse le bord gauche du texte.
+fn table_lead(wide: Wide, frame: Pixels, text: Pixels) -> Pixels {
+    match wide {
+        Wide::Centered => ((frame - text) / 2.).max(px(0.)),
+        Wide::Column => px(0.),
+    }
+}
+
 type Command = (&'static str, &'static str, &'static str, &'static str, &'static str);
 
 const COMMANDS: &[Command] = &[
@@ -245,6 +345,7 @@ struct Damage {
 struct Laid {
     epoch: u64,
     width: u32,
+    room: u32,
     size: u32,
     len: usize,
     cursor: usize,
@@ -700,6 +801,8 @@ pub struct Editor {
     big_style: u64,
     origin: Point<Pixels>,
     width: Pixels,
+    /// Largeur offerte à un tableau : celle du texte, ou plus si les réglages le laissent déborder.
+    room: Pixels,
     viewport: Bounds<Pixels>,
     scroll_y: Pixels,
     reveal: bool,
@@ -775,6 +878,7 @@ impl Editor {
             big_style: 0,
             origin: Point::default(),
             width: MAX_WIDTH,
+            room: MAX_WIDTH,
             viewport: Bounds::default(),
             scroll_y: px(0.),
             reveal: false,
@@ -986,13 +1090,15 @@ impl Editor {
         &self.content[self.sel.clone()]
     }
 
-    /// Premier tableau : décalage de ses lignes, plus grand nombre de lignes
-    /// visuelles d'une des siennes, largeur de son cadre et de la page.
+    /// Premier tableau : de combien il a défilé, plus grand nombre de lignes visuelles d'une
+    /// des siennes, son cadre, la largeur du texte et la vue.
     #[cfg(test)]
-    pub fn table_state(&self) -> Option<(Pixels, i32, Pixels, Pixels)> {
+    pub fn table_state(&self) -> Option<(Pixels, i32, Bounds<Pixels>, Pixels, Bounds<Pixels>)> {
         let rows = self.rows.iter().filter(|r| r.kind == Kind::Table);
         let tall = rows.clone().map(Row::visual_rows).max()?;
-        Some((rows.map(|r| r.dx).next()?, tall, self.tables.first()?.1.size.width, self.width))
+        let frame = self.tables.first()?.1;
+        let scrolled = rows.map(|r| r.dx).next()? - table_lead(self.theme.wide, frame.size.width, self.width);
+        Some((scrolled, tall, frame, self.width, self.viewport))
     }
 
     /// Centre d'une case du sélecteur de tableau, s'il est ouvert.
@@ -2786,11 +2892,12 @@ impl Editor {
     /// Les zones à remettre en page, quand le reste de la dernière mise en page peut être repris :
     /// le texte touché, la ligne où était le curseur et celle où il est, élargies aux blocs qui
     /// doivent rester entiers (tableau, citation). `None` : tout refaire.
-    fn plan(&self, width: Pixels, cursor: usize) -> Option<Plan> {
+    fn plan(&self, width: Pixels, room: Pixels, cursor: usize) -> Option<Plan> {
         let laid = self.laid.as_ref()?;
         let (rows, len) = (&self.rows, self.content.len());
         if laid.epoch != self.epoch
             || laid.width != f32::from(width).to_bits()
+            || laid.room != f32::from(room).to_bits()
             || laid.size != self.theme.size.to_bits()
             || laid.dollars > 0
             || self.marked.is_some()
@@ -3023,11 +3130,12 @@ impl Editor {
     fn relayout(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         let t = self.theme;
         let cursor = self.cursor();
-        let width = (bounds.size.width - px(48.)).min(MAX_WIDTH).max(px(40.));
+        let width = (bounds.size.width - SIDE * 2.).min(t.page.measure(t.size)).max(px(40.));
+        let room = table_room(t.wide, bounds.size.width, width);
         let text_system = window.text_system().clone();
         // Ce qui peut être repris de la mise en page précédente, quand seules quelques lignes ont changé.
         // Les premières lignes d'un très gros tableau fixent ses colonnes : si elles bougent, on refait tout.
-        let plan = self.plan(width, cursor).filter(|plan| {
+        let plan = self.plan(width, room, cursor).filter(|plan| {
             plan.regions.iter().filter(|r| r.check).all(|r| {
                 let Some((geom, _, start)) = &r.big else { return true };
                 let lines: Vec<(usize, &str)> = self.content[*start..]
@@ -3041,7 +3149,7 @@ impl Editor {
                     .collect();
                 let look = grid::Look { theme: &t, style: 0 };
                 lines.iter().all(|(_, l)| md::is_table_line(l))
-                    && grid::geometry(&mut grid::Cache::default(), &text_system, &look, width, &lines).same(geom)
+                    && grid::geometry(&mut grid::Cache::default(), &text_system, &look, room, &lines).same(geom)
             })
         });
         // Un ``` sans clôture n'ouvre pas de bloc : sinon chaque ``` tapé ferait
@@ -3265,7 +3373,7 @@ impl Editor {
                 // Un très gros tableau : lignes toutes de la même hauteur, sans mise en forme encore.
                 if block.len() > grid::BIG {
                     let look = grid::Look { theme: &t, style };
-                    let geom = Rc::new(grid::geometry(&mut cells, &text_system, &look, width, &block[..grid::SAMPLE]));
+                    let geom = Rc::new(grid::geometry(&mut cells, &text_system, &look, room, &block[..grid::SAMPLE]));
                     let (first, n, lh) = (rows.len(), block.len(), grid::line_height(&t));
                     for (k, &(at, text)) in block.iter().enumerate() {
                         let (pad, height) = geom.metrics(k, k + 1 == n, lh);
@@ -3292,7 +3400,7 @@ impl Editor {
                     continue;
                 }
                 let look = grid::Look { theme: &t, style };
-                pending = grid::build(&mut cells, &text_system, &look, width, &block, cursor, marked.as_ref()).iter().cloned().collect();
+                pending = grid::build(&mut cells, &text_system, &look, room, &block, cursor, marked.as_ref()).iter().cloned().collect();
             }
             let grid_row = if kind == Kind::Table { pending.pop_front().flatten() } else { None };
             if kind != Kind::Table && after_table && let Some(last) = last {
@@ -3319,7 +3427,7 @@ impl Editor {
                 let near = composed.as_ref().map(|m| (m.start.wrapping_sub(offset), m.end.wrapping_sub(offset)));
                 let lang = (kind == Kind::Code).then_some(&lang);
                 let mut hasher = Fast::default();
-                (style, line, kind, marker, math, lang, has_cursor, near, f32::from(width).to_bits(), header, tinted)
+                (style, line, kind, marker, math, lang, has_cursor, near, f32::from(width).to_bits(), f32::from(room).to_bits(), header, tinted)
                     .hash(&mut hasher);
                 hasher.finish()
             };
@@ -3521,6 +3629,7 @@ impl Editor {
         self.laid = Some(Laid {
             epoch: self.epoch,
             width: f32::from(width).to_bits(),
+            room: f32::from(room).to_bits(),
             size: t.size.to_bits(),
             len: text_len,
             cursor,
@@ -3535,6 +3644,7 @@ impl Editor {
         self.shaped = shaped;
         self.cells = cells;
         self.width = width;
+        self.room = room;
         self.opening = (0..self.rows.len()).filter(|&i| self.rows[i].opens).collect();
         self.table_meta.clear();
         let mut i = 0;
@@ -3607,7 +3717,7 @@ impl Editor {
     /// Ce qui dépend du défilement et de la taille de la fenêtre, et se refait à chaque image :
     /// vue, cadres des tableaux, zones cliquables.
     fn place(&mut self, bounds: Bounds<Pixels>, window: &mut Window, _: &mut App) {
-        let (cursor, width) = (self.cursor(), self.width);
+        let (cursor, width, room) = (self.cursor(), self.width, self.room);
         let reveal = std::mem::take(&mut self.reveal);
         let to_top = std::mem::take(&mut self.reveal_top);
         if reveal {
@@ -3647,35 +3757,38 @@ impl Editor {
         for meta in &self.table_meta {
             let (start, end) = (meta.range.start, meta.range.end);
             let wide = meta.wide;
-            let overflow = (wide - width).max(px(0.));
+            let frame_w = wide.min(room);
+            let overflow = (wide - room).max(px(0.));
+            let lead = table_lead(self.theme.wide, frame_w, width);
             let mut dx = scrolled.get(&start).copied().unwrap_or_default().max(px(0.)).min(overflow);
             if reveal && (start..=end).contains(&cursor) {
                 let at = self.row_at(cursor).unwrap_or(meta.rows.start).clamp(meta.rows.start, meta.rows.end - 1);
                 let row = &self.rows[at];
-                let x = row.pos(cursor - row.start).x;
+                // Là où serait le curseur sans défilement.
+                let x = row.pos(cursor - row.start).x + row.dx;
                 let margin = px(24.);
                 if x - dx < margin {
                     dx = x - margin;
-                } else if x - dx > width - margin {
-                    dx = x - width + margin;
+                } else if x - dx > frame_w - margin {
+                    dx = x - frame_w + margin;
                 }
                 dx = dx.max(px(0.)).min(overflow);
             }
             if overflow > px(0.) {
                 self.table_x.insert(start, dx);
             }
-            if self.rows[meta.rows.start].dx != dx {
-                self.rows[meta.rows.clone()].iter_mut().for_each(|r| r.dx = dx);
+            if self.rows[meta.rows.start].dx != dx + lead {
+                self.rows[meta.rows.clone()].iter_mut().for_each(|r| r.dx = dx + lead);
             }
             let (first, last) = (&self.rows[meta.rows.start], &self.rows[meta.rows.end - 1]);
             let top = first.y + first.pad;
             let frame = Bounds::new(
-                self.origin + point(px(0.), top),
-                size(wide.min(width), last.y + last.height - last.gap - top),
+                self.origin + point(-lead, top),
+                size(frame_w, last.y + last.height - last.gap - top),
             );
             if overflow > px(0.) {
-                let thumb = (width * (width / wide)).max(px(24.));
-                let at = (width - thumb) * (dx / overflow);
+                let thumb = (frame_w * (frame_w / wide)).max(px(24.));
+                let at = (frame_w - thumb) * (dx / overflow);
                 let bar = Bounds::new(point(frame.left() + at, frame.bottom() - px(5.)), size(thumb, px(3.)));
                 self.thumbs.push(bar);
             }
@@ -3731,8 +3844,10 @@ impl Editor {
                 _ => {}
             }
             // Un tableau plus large que la page est coupé à ses bords.
-            let mask = (row.kind == Kind::Table).then(|| ContentMask {
-                bounds: Bounds::new(point(o.x - px(2.), top), size(w + px(4.), row.height)),
+            let mask = (row.kind == Kind::Table).then(|| {
+                let frame = self.tables.iter().find(|(range, _)| range.contains(&row.start)).map(|(_, frame)| *frame);
+                let (left, wide) = frame.map_or((o.x, w), |f| (f.left(), f.size.width));
+                ContentMask { bounds: Bounds::new(point(left - px(2.), top), size(wide + px(4.), row.height)) }
             });
             if row.hidden() {
                 continue;
@@ -4297,5 +4412,31 @@ mod tests {
             assert_eq!(history.pop(), Some((state.to_string(), i..i)));
         }
         assert_eq!(history.pop(), None);
+    }
+
+    #[test]
+    fn tables_get_room_by_setting() {
+        let (pane, text) = (px(1000.), px(720.));
+        // Dans la colonne : rien ne change. Centré : toute la fenêtre moins les marges.
+        assert_eq!(table_room(Wide::Column, pane, text), text);
+        assert_eq!(table_room(Wide::Centered, pane, text), px(952.));
+        // Fenêtre étroite : la colonne remplit déjà la place, rien ne déborde.
+        let narrow = px(500.);
+        assert_eq!(table_room(Wide::Centered, narrow, narrow - SIDE * 2.), narrow - SIDE * 2.);
+        // Un tableau centré dépasse de la moitié de son excédent de chaque côté ; jamais à rebours.
+        assert_eq!(table_lead(Wide::Centered, px(952.), text), px(116.));
+        assert_eq!(table_lead(Wide::Centered, px(300.), text), px(0.));
+        assert_eq!(table_lead(Wide::Column, px(952.), text), px(0.));
+    }
+
+    #[test]
+    fn page_width_follows_the_text_size() {
+        assert_eq!(Page::Normal.measure(16.), MAX_WIDTH);
+        assert_eq!(Page::Normal.measure(32.), px(1440.));
+        assert!(Page::Narrow.measure(16.) < Page::Normal.measure(16.) && Page::Normal.measure(16.) < Page::Wide.measure(16.));
+        assert!(Page::Wide.measure(16.) < Page::Full.measure(16.));
+        // Les clés se relisent ; une clé inconnue ou absente vaut le choix par défaut.
+        assert!(Page::ALL.into_iter().all(|p| Page::of(p.key()) == p) && Wide::ALL.into_iter().all(|w| Wide::of(w.key()) == w));
+        assert_eq!((Page::of(""), Page::of("?"), Wide::of(""), Wide::of("?")), (Page::Normal, Page::Normal, Wide::Centered, Wide::Centered));
     }
 }

@@ -218,6 +218,10 @@ struct Prefs {
     size: f32,
     /// Chercher une nouvelle version de l'app (une requête par jour).
     updates: bool,
+    /// Largeur de la colonne de texte et place des grands tableaux (clés de `editor::Page` et
+    /// `editor::Wide`) ; vide : le choix par défaut.
+    page: String,
+    wide: String,
 }
 
 impl Prefs {
@@ -225,7 +229,7 @@ impl Prefs {
 
     fn parse(text: &str) -> Self {
         let mut prefs =
-            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true };
+            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true, page: String::new(), wide: String::new() };
         for (key, value) in text.lines().filter_map(|line| line.split_once('=')) {
             match key {
                 "theme" => prefs.theme = value.into(),
@@ -233,6 +237,8 @@ impl Prefs {
                 "mono" => prefs.mono = value.into(),
                 "size" => prefs.size = value.parse().ok().filter(|s: &f32| s.is_finite()).unwrap_or(Self::SIZE),
                 "updates" => prefs.updates = value != "off",
+                "page" => prefs.page = value.into(),
+                "wide" => prefs.wide = value.into(),
                 _ => {}
             }
         }
@@ -245,6 +251,11 @@ impl Prefs {
         // Absent tant qu'on ne l'a pas coupé : la valeur par défaut n'encombre pas le fichier.
         if !self.updates {
             text.push_str("updates=off\n");
+        }
+        for (key, value) in [("page", &self.page), ("wide", &self.wide)] {
+            if !value.is_empty() {
+                text.push_str(&format!("{key}={value}\n"));
+            }
         }
         text
     }
@@ -416,6 +427,8 @@ pub struct Theme {
     pub border: Hsla,
     /// Taille du texte courant de la note, en pixels.
     pub size: f32,
+    pub page: editor::Page,
+    pub wide: editor::Wide,
 }
 
 /// Thèmes proposés : (nom, [fond, texte, discret, accent, fond du code, panneau, bordure]).
@@ -460,6 +473,8 @@ impl Theme {
             panel,
             border,
             size: prefs.size,
+            page: editor::Page::of(&prefs.page),
+            wide: editor::Wide::of(&prefs.wide),
         }
     }
 }
@@ -1493,30 +1508,47 @@ impl Shell {
             return;
         }
         let default = tr("Default", "Par défaut");
-        let (mut options, current): (Vec<String>, &str) = match setting {
-            Setting::Theme => (THEMES.iter().map(|t| t.0.to_string()).collect(), &self.prefs.theme),
-            Setting::Font | Setting::Mono => (
+        // Largeur de page et grands tableaux : une courte liste fixe, sans « Par défaut » ; le
+        // choix se range sous sa clé, ses libellés suivent la langue.
+        let fixed: Option<Vec<(&'static str, &'static str)>> = match setting {
+            Setting::Page => Some(editor::Page::ALL.map(|p| (p.key(), p.label())).into()),
+            Setting::Wide => Some(editor::Wide::ALL.map(|w| (w.key(), w.label())).into()),
+            _ => None,
+        };
+        let (mut options, current): (Vec<String>, &str) = match (setting, &fixed) {
+            (Setting::Page, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), editor::Page::of(&self.prefs.page).label()),
+            (Setting::Wide, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), editor::Wide::of(&self.prefs.wide).label()),
+            (Setting::Theme, _) => (THEMES.iter().map(|t| t.0.to_string()).collect(), &self.prefs.theme),
+            _ => (
                 FAMILIES.get().into_iter().flatten().map(|f| f.to_string()).collect(),
                 if setting == Setting::Font { &self.prefs.font } else { &self.prefs.mono },
             ),
         };
-        // Le choix en cours remonte en tête, juste sous « Par défaut ».
-        if let Some(i) = options.iter().position(|o| o == current) {
-            let chosen = options.remove(i);
-            options.insert(0, chosen);
-        }
-        options.insert(0, default.to_string());
-        let current = if current.is_empty() { default } else { current };
+        let current = if fixed.is_some() {
+            current
+        } else {
+            // Le choix en cours remonte en tête, juste sous « Par défaut ».
+            if let Some(i) = options.iter().position(|o| o == current) {
+                let chosen = options.remove(i);
+                options.insert(0, chosen);
+            }
+            options.insert(0, default.to_string());
+            if current.is_empty() { default } else { current }
+        };
         let (theme, before) = (self.theme, self.prefs.clone());
         let palette = cx.new(|cx| Palette::choose(setting.label(), options, current, theme, cx));
         cx.subscribe_in(&palette, window, move |this, _, event, window, cx| {
             match event {
                 PaletteEvent::Preview(name) | PaletteEvent::Submit(name) => {
                     let value = if name == default { String::new() } else { name.clone() };
+                    // Le libellé choisi redevient la clé qu'on enregistre.
+                    let key = fixed.iter().flatten().find(|o| o.1 == name).map_or_else(String::new, |o| o.0.to_string());
                     match setting {
                         Setting::Theme => this.prefs.theme = value,
                         Setting::Font => this.prefs.font = value,
                         Setting::Mono => this.prefs.mono = value,
+                        Setting::Page => this.prefs.page = key,
+                        Setting::Wide => this.prefs.wide = key,
                     }
                 }
                 _ => this.prefs = before.clone(),
@@ -2962,6 +2994,8 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
             vec![
                 p(tr("theme", "thème"), tr("Theme, previewed as you browse", "Thème, en aperçu pendant le choix")),
                 p(tr("font", "police"), tr("Font of the app / of the code", "Police de l'app / du code")),
+                p(tr("page width", "largeur de page"), tr("Width of the text column: narrow, normal, wide, full", "Largeur de la colonne de texte : étroite, normale, large, pleine")),
+                p(tr("wide tables", "grands tableaux"), tr("A table wider than the text: in the column, or centered and wider", "Un tableau plus large que le texte : dans la colonne, ou centré et plus large")),
                 k(&ZoomIn, tr("Bigger text", "Texte plus grand")),
                 k(&ZoomOut, tr("Smaller text", "Texte plus petit")),
                 k(&ZoomReset, tr("Default text size", "Taille du texte d'origine")),
@@ -3338,7 +3372,7 @@ impl Shell {
         div().absolute().top(px(76.)).left_0().right_0().flex().justify_center().child(
             div()
                 .w_full()
-                .max_w(editor::MAX_WIDTH + px(48.))
+                .max_w(self.theme.page.measure(self.theme.size) + px(48.))
                 .px(px(32.))
                 .flex()
                 .flex_col()
@@ -5561,16 +5595,25 @@ mod tests {
             cx.run_until_parked();
         };
         let state = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).table_state().unwrap());
+        let set_wide = |cx: &mut gpui::VisualTestContext, wide: editor::Wide| {
+            shell.update(cx, |s, cx| {
+                s.theme = Theme { wide, ..s.theme };
+                let theme = s.theme;
+                s.editor.update(cx, |e, cx| e.set_theme(theme, cx));
+            });
+        };
+        // Dans la colonne du texte : les cellules s'y partagent la largeur.
+        set_wide(cx, editor::Wide::Column);
         load(cx, &note, note.find("fin").unwrap());
-        let (dx, tall, frame, page) = state(cx);
-        assert!(dx == px(0.) && tall > 3 && frame <= page, "{dx:?} {tall} {frame:?} {page:?}");
+        let (dx, tall, frame, page, _) = state(cx);
+        assert!(dx == px(0.) && tall > 3 && frame.size.width <= page, "{dx:?} {tall} {frame:?} {page:?}");
         // Trop de colonnes pour tenir même à leur largeur minimale : le tableau défile, et suit
         // le curseur ; la molette horizontale le fait défiler aussi.
         let cols = 30;
         let head = format!("|{}\n|{}\n|{}\n", " colonne |".repeat(cols), " --- |".repeat(cols), " texte |".repeat(cols));
         load(cx, &head, head.rfind("texte").unwrap());
-        let (dx, tall, frame, page) = state(cx);
-        assert!(dx > px(0.) && frame <= page, "{dx:?} {tall} {frame:?} {page:?}");
+        let (dx, tall, frame, page, _) = state(cx);
+        assert!(dx > px(0.) && frame.size.width <= page, "{dx:?} {tall} {frame:?} {page:?}");
         load(cx, &head, 0);
         assert_eq!(state(cx).0, px(0.));
         let on_table = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(head.find("colonne").unwrap()).unwrap());
@@ -5582,6 +5625,18 @@ mod tests {
         });
         cx.run_until_parked();
         assert_eq!(state(cx).0, px(90.));
+        // Centré (le réglage par défaut) : le tableau sort de la colonne des deux côtés, sans dépasser
+        // la fenêtre ; son bord gauche ne bouge pas avec la mise en page des autres lignes.
+        set_wide(cx, editor::Wide::Centered);
+        load(cx, &note, note.find("fin").unwrap());
+        let (dx, _, frame, page, view) = state(cx);
+        assert!(dx == px(0.) && frame.size.width > page && frame.size.width <= view.size.width - px(48.), "{dx:?} {frame:?} {page:?} {view:?}");
+        assert!((frame.left() - view.left() - (view.size.width - frame.size.width) / 2.).abs() < px(1.), "{frame:?} {view:?}");
+        // Un petit tableau garde sa taille, quel que soit le réglage.
+        load(cx, "| a | b |\n| - | - |\n| c | d |\n", 0);
+        let (_, _, frame, page, _) = state(cx);
+        assert!(frame.size.width < page / 2., "{frame:?} {page:?}");
+        set_wide(cx, editor::Wide::Centered);
 
         // Coller dans un tableau : une cellule garde une seule ligne et ses `|` ; des
         // cellules de tableur remplissent la grille ; le tableau reste aligné.
@@ -5671,7 +5726,9 @@ mod tests {
         cx.simulate_keystrokes("delete");
         assert_eq!(text(cx), t);
 
-        // Une cellule trop longue passe à la ligne : les flèches la parcourent ligne par ligne.
+        // Une cellule trop longue passe à la ligne : les flèches la parcourent ligne par ligne
+        // (dans la colonne du texte, où elle est plus étroite).
+        set_wide(cx, editor::Wide::Column);
         let long = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega ".repeat(3);
         let wrapped = format!("| A | B |\n| --- | --- |\n| {long}| fin |\n| z | z |\n");
         let start = wrapped.find("alpha").unwrap();
@@ -7259,6 +7316,11 @@ mod tests {
         // La recherche de nouvelle version est active tant qu'on ne l'a pas coupée.
         assert!(prefs.updates && !Prefs::parse("updates=off\n").updates && Prefs::parse("updates=on").updates);
         assert!(!Prefs::parse(&Prefs::parse("updates=off").to_text()).updates);
+        // Largeur de page et grands tableaux : absents tant qu'on ne les a pas choisis.
+        let wide = Prefs::parse("page=wide\nwide=column\n");
+        assert_eq!((wide.page.as_str(), wide.wide.as_str()), ("wide", "column"));
+        assert_eq!(Prefs::parse(&wide.to_text()), wide);
+        assert!(!prefs.to_text().contains("page=") && !prefs.to_text().contains("wide="));
     }
 
     #[test]
