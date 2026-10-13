@@ -3420,6 +3420,7 @@ impl Shell {
         // compteur de mots de la note lui laisse la place.
         let talk = (!said.is_empty()).then(|| {
             nav::button("comments-toggle", "i-chat.svg", !self.comments_shut, t)
+                .debug_selector(|| "comments-toggle".into())
                 .tooltip(nav::tip(tr("Comments of the note", "Commentaires de la note"), String::new(), t))
                 .absolute()
                 .bottom_4()
@@ -6141,6 +6142,24 @@ mod tests {
         assert_eq!(text(cx), "- un mot ici\n{==fin==}{>>ok<<}");
         cx.simulate_keystrokes("secondary-z");
         assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\n{==fin==}{>>ok<<}");
+        // La pastille aux limites : dix commentaires, douze, cent vingt. Elle ne grossit que vers la
+        // gauche (son bord droit ne bouge pas), reste dans la fenêtre et loin du bouton de copie,
+        // et sa hauteur ne change pas.
+        let kept = text(cx);
+        let many = |n: usize| format!("# T\n\n{}\n", (0..n).map(|i| format!("mot{{=={i}==}}{{>>c{i}<<}}")).collect::<Vec<_>>().join(" "));
+        let mut seen = Vec::new();
+        for n in [1, 9, 10, 12, 120] {
+            load(cx, &many(n), 0);
+            let (badge, toggle) = (cx.debug_bounds("comments-badge").unwrap(), cx.debug_bounds("comments-toggle").unwrap());
+            let window = cx.update(|window, _| window.viewport_size());
+            assert!(badge.right() <= window.width - px(47.), "{n} : la pastille touche le bouton de copie {badge:?}");
+            assert!(badge.left() >= toggle.left() - px(12.) && badge.top() >= toggle.top() - px(4.) && badge.size.height == px(15.), "{n} : {badge:?} {toggle:?}");
+            seen.push(badge);
+        }
+        // Un chiffre : ronde ; « 9+ » : plus large, au même bord droit, pareil pour 10, 12 et 120.
+        assert!(seen[0].size.width == seen[1].size.width && seen[2].size.width > seen[1].size.width, "{seen:?}");
+        assert!(seen.iter().all(|b| b.right() == seen[0].right()) && seen[2..].iter().all(|b| b.size.width == seen[2].size.width), "{seen:?}");
+        load(cx, &kept, 0);
         // Fenêtre étroite ou panneau trop large : rien ne passe sous son voisin ni hors de la
         // fenêtre. La note garde 200 px, le panneau puis la colonne des commentaires lui cèdent.
         let before = shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel, s.nav.list_w));
@@ -7405,6 +7424,17 @@ mod tests {
     #[test]
     fn badge_shows_the_count_up_to_nine() {
         assert_eq!(["1", "9", "9+", "9+"], [badge_label(1), badge_label(9), badge_label(10), badge_label(120)]);
+        assert_eq!(badge_label(0), "0");
+    }
+
+    #[test]
+    fn badge_text_reads_on_every_theme() {
+        // Le chiffre est dans la couleur du fond, sur la pastille d'accent : il se lit comme le texte d'un lien.
+        for (name, _) in THEMES {
+            let prefs = Prefs { theme: name.to_string(), ..Prefs::parse("") };
+            let t = Theme::of(&prefs, gpui::WindowAppearance::Light);
+            assert!(contrast(t.accent, t.bg) >= 4.5, "{name} : {} sur la pastille", contrast(t.accent, t.bg));
+        }
     }
 
     #[test]
