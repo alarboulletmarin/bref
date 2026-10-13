@@ -2299,6 +2299,14 @@ impl Editor {
         self.renumber(cx);
     }
 
+    /// Un modèle rempli, à la place de la sélection : le curseur va à sa marque, un seul pas d'annulation.
+    pub fn insert_filled(&mut self, text: &str, cursor: usize, cx: &mut Context<Self>) {
+        let at = self.sel.start;
+        self.push_undo(true);
+        self.edit(self.sel.clone(), text, cx);
+        self.move_to(at + cursor.min(text.len()), cx);
+    }
+
     /// Les lignes de la sélection (ou celle du curseur) écrites dans le style `to` : une seule étape
     /// d'annulation, la sélection garde son texte. Une ligne que la sélection effleure seulement
     /// par son début n'en fait pas partie.

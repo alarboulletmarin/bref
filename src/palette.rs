@@ -143,6 +143,24 @@ impl Setting {
 
 actions!(palette, [Prev, Next, Confirm, ConfirmAside, Dismiss]);
 
+/// Ce que les modèles permettent : une note qui en naît, un modèle inséré, la note ouverte rangée en modèle.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TemplateAct {
+    New,
+    Insert,
+    Save,
+}
+
+impl TemplateAct {
+    fn label(self) -> &'static str {
+        match self {
+            TemplateAct::New => tr("New note from a template…", "Nouvelle note depuis un modèle…"),
+            TemplateAct::Insert => tr("Insert a template…", "Insérer un modèle…"),
+            TemplateAct::Save => tr("Make a template of this note…", "Faire un modèle de cette note…"),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Entry {
     pub name: String,
@@ -168,6 +186,8 @@ pub enum PaletteEvent {
     Restyle(ListStyle),
     /// Un geste sur le tableau du curseur.
     Grid(TableOp),
+    /// Une note née d'un modèle, un modèle inséré, ou la note rangée en modèle.
+    Template(TemplateAct),
     /// Active ou coupe la recherche de nouvelle version.
     ToggleUpdates,
     /// Cherche tout de suite une nouvelle version.
@@ -238,6 +258,7 @@ enum Item {
     Table(Pick),
     Restyle(ListStyle),
     Grid(TableOp),
+    Template(TemplateAct),
 }
 
 pub struct Palette {
@@ -617,6 +638,10 @@ impl Palette {
             let shown = |op: &TableOp| (self.cells || op.in_sheet()) && command(&q, op.label());
             items.extend(TableOp::ALL.into_iter().filter(shown).map(Item::Grid));
         }
+        if !q.is_empty() {
+            let acts = [TemplateAct::New, TemplateAct::Insert, TemplateAct::Save];
+            items.extend(acts.into_iter().filter(|a| (*a == TemplateAct::New || self.lists) && command(&q, a.label())).map(Item::Template));
+        }
         if self.lists && !q.is_empty() {
             items.extend(
                 [ListStyle::Bullet, ListStyle::Ordered, ListStyle::Task, ListStyle::Text]
@@ -664,6 +689,7 @@ impl Palette {
             Some(&Item::Table(pick)) => PaletteEvent::Table(pick),
             Some(&Item::Restyle(style)) => PaletteEvent::Restyle(style),
             Some(&Item::Grid(op)) => PaletteEvent::Grid(op),
+            Some(&Item::Template(act)) => PaletteEvent::Template(act),
             Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
             Some(Item::Check) => PaletteEvent::CheckUpdate,
@@ -841,6 +867,7 @@ impl Render for Palette {
                 Item::Comments => (comments_label().to_string(), String::new()),
                 &Item::Restyle(style) => (list_label(style).to_string(), String::new()),
                 &Item::Grid(op) => (op.label().to_string(), crate::keys::of(cx, op.action().as_ref())),
+                &Item::Template(act) => (act.label().to_string(), if act == TemplateAct::New { crate::keys::of(cx, &crate::NewFromTemplate) } else { String::new() }),
                 Item::UndoSwap => (undo_swap_label().to_string(), String::new()),
                 Item::Board => (board_label().to_string(), String::new()),
                 Item::Today => (today_label().to_string(), crate::keys::of(cx, &crate::Today)),

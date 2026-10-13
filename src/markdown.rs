@@ -684,6 +684,54 @@ pub fn on_enter(line: &str, col: usize, in_code: bool) -> Enter {
     Enter::Insert(format!("\n{indent}{next}"))
 }
 
+/// Un modèle rempli : `{{title}}`, `{{date}}` et `{{time}}` prennent leur valeur (sans tenir compte de la
+/// casse ni des espaces dans les accolades), `{{cursor}}` marque où ira le curseur et disparaît. Un autre
+/// `{{mot}}`, une accolade jamais fermée restent tels quels ; ce qu'on insère n'est pas relu. Rend le texte
+/// et la place du curseur (la fin du texte sans `{{cursor}}`).
+pub fn fill(template: &str, title: &str, date: &str, time: &str) -> (String, usize) {
+    let (mut out, mut cursor, mut rest) = (String::with_capacity(template.len()), None, template);
+    while let Some(open) = rest.find("{{") {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 2..];
+        let Some(close) = after.find("}}") else {
+            rest = &rest[open..];
+            break;
+        };
+        match after[..close].trim().to_lowercase().as_str() {
+            "title" => out.push_str(title),
+            "date" => out.push_str(date),
+            "time" => out.push_str(time),
+            "cursor" => {
+                cursor.get_or_insert(out.len());
+            }
+            _ => out.push_str(&rest[open..open + 2 + close + 2]),
+        }
+        rest = &after[close + 2..];
+    }
+    out.push_str(rest);
+    let at = cursor.unwrap_or(out.len());
+    (out, at)
+}
+
+/// La note écrite en modèle : son premier titre `#` devient `{{title}}` (et il en prend un en tête s'il n'y
+/// en a pas), pour que la note née du modèle porte le nom qu'on lui donne.
+pub fn templatize(text: &str) -> String {
+    let start = front_matter(text);
+    let (mut at, mut fenced) = (start, false);
+    for line in text[start..].split_inclusive('\n') {
+        let bare = line.trim_end_matches('\n');
+        if is_fence(bare) {
+            fenced = !fenced;
+        }
+        if !fenced && classify(bare, false).0 == Kind::Heading(1) && line.trim_start().starts_with("# ") {
+            let end = at + line.trim_end_matches('\n').len();
+            return format!("{}# {{{{title}}}}{}", &text[..at], &text[end..]);
+        }
+        at += line.len();
+    }
+    format!("{}# {{{{title}}}}\n\n{}", &text[..start], &text[start..])
+}
+
 /// Ce que deviennent des lignes : un type de liste, ou du texte.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ListStyle {
@@ -1697,6 +1745,41 @@ mod tests {
             assert_eq!(known, counts(&fresh), "retouche {step} : {text:?} -> {fresh:?}");
             text = fresh;
         }
+    }
+
+    #[test]
+    fn fills_a_template() {
+        let at = |t: &str| fill(t, "Plan", "2026-10-13", "09:05");
+        assert_eq!(at("# {{title}}\n{{date}} {{time}}\n"), ("# Plan\n2026-10-13 09:05\n".to_string(), 24));
+        // Le curseur : à la première marque, qui disparaît ; sans marque, à la fin.
+        assert_eq!(at("a {{cursor}}b {{cursor}}c"), ("a b c".to_string(), 2));
+        assert_eq!(at("fin"), ("fin".to_string(), 3));
+        // Casse et espaces ne comptent pas ; un mot inconnu, ou une accolade jamais fermée, reste.
+        assert_eq!(at("{{ Title }}|{{DATE}}|{{ time }}").0, "Plan|2026-10-13|09:05");
+        assert_eq!(at("{{inconnu}} et {{title").0, "{{inconnu}} et {{title");
+        assert_eq!(at("{{}} {{ }}").0, "{{}} {{ }}");
+        // Ce qu'on insère n'est pas relu, et l'Unicode passe : titre avec des accolades, accents, émojis.
+        assert_eq!(fill("{{title}}", "{{date}} é😀", "d", "t"), ("{{date}} é😀".to_string(), "{{date}} é😀".len()));
+        assert_eq!(fill("é {{cursor}}😀 {{title}}", "日本", "", ""), ("é 😀 日本".to_string(), "é ".len()));
+        // Vide, et des accolades en nombre : `{{{title}}}` laisse une accolade de chaque côté.
+        assert_eq!(at(""), (String::new(), 0));
+        assert_eq!(at("{{{title}}}").0, "{{{title}}}");
+        assert_eq!(at("{{title}}{{title}}").0, "PlanPlan");
+    }
+
+    #[test]
+    fn makes_a_template_of_a_note() {
+        assert_eq!(templatize("# Réunion\n\nOrdre du jour\n"), "# {{title}}\n\nOrdre du jour\n");
+        // Sans titre : il s'en ajoute un ; l'en-tête YAML reste en tête ; un `#` dans un bloc de code n'est pas un titre.
+        assert_eq!(templatize("texte"), "# {{title}}\n\ntexte");
+        assert_eq!(templatize("---\ntags: [a]\n---\n# Nom\nsuite"), "---\ntags: [a]\n---\n# {{title}}\nsuite");
+        assert_eq!(templatize("---\ntags: [a]\n---\ntexte"), "---\ntags: [a]\n---\n# {{title}}\n\ntexte");
+        assert_eq!(templatize("```\n# code\n```\n"), "# {{title}}\n\n```\n# code\n```\n");
+        assert_eq!(templatize(""), "# {{title}}\n\n");
+        // Un `##` n'est pas le titre ; sans retour à la ligne final, le titre est quand même remplacé.
+        assert_eq!(templatize("## Deux\n# Un"), "## Deux\n# {{title}}");
+        // Remplie ensuite, elle redonne une note titrée du nom choisi.
+        assert_eq!(fill(&templatize("# Réunion\nx"), "Lundi", "", "").0, "# Lundi\nx");
     }
 
     #[test]

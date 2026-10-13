@@ -368,6 +368,16 @@ Type `/` at the start of a line or of a word: a list offers what can be inserted
 | `/date` | today's date (`2026-10-09`), in place |
 | `/meta` (also `/tags`, `/alias`) | a YAML front matter at the top of the note, wherever you are, with the cursor between the brackets of `tags: []`; if the note has one, the cursor goes there |
 
+### Templates
+
+Put notes in a folder named `Templates` (or `Modèles`) at the root of the vault: each one is a template. Case and accents do not matter, and templates may sit in sub-folders. Templates are left out of the graph, the tags, the links and the notes to read again, and a `[[link]]` never points at one.
+
+- **New note from a template**: `new note from a template` in the palette, or *New note from a template* in the right-click menu of a folder of the tree. Choose the template, type the name of the note, and it is written in the folder selected in the tree (the root of the vault otherwise), opened, with the cursor where the template says. A name already taken is refused, nothing is overwritten.
+- **Placeholders**: `{{title}}` is the name you typed, `{{date}}` is `2026-10-09`, `{{time}}` is `09:05`, `{{cursor}}` is where the cursor goes (and disappears). Any other `{{word}}` stays as written.
+- **Insert a template**: `insert a template` in the palette puts one at the cursor, filled with the name of the open note; one `Ctrl + Z` takes it back.
+- **Make a template of a note**: `make a template of this note` in the palette saves the open note in the templates folder (created if there is none), its first `#` title turned into `{{title}}`.
+- **Today's note**: with a template named `Daily`, `Journal`, `Today` or `Note du jour`, `Ctrl + J` creates the note of the day from it.
+
 ### Tables
 
 `/table` opens a grid under the cursor. Move the pointer over it, or use the arrows, to choose how many columns and rows you want, then click or press `Enter`: the empty table is written, and the cursor waits in its first cell. For a table larger than the grid, type its size while the grid is open, columns first: `12x5`.

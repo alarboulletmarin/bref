@@ -82,6 +82,8 @@ pub enum Do {
     NewNote,
     NewDiagram,
     NewFolder,
+    /// Une note née d'un modèle, dans le dossier visé.
+    FromTemplate,
     Rename,
     Duplicate,
     Trash,
@@ -122,6 +124,7 @@ impl Do {
             Do::NewNote => of(cx, &crate::NewNote),
             Do::NewDiagram => of(cx, &crate::NewDiagram),
             Do::NewFolder => of(cx, &NewFolder),
+            Do::FromTemplate => of(cx, &crate::NewFromTemplate),
             Do::Rename => of(cx, &Rename),
             Do::Duplicate => of(cx, &Duplicate),
             Do::Trash => of(cx, &Trash),
@@ -494,7 +497,8 @@ impl Shell {
     pub fn refresh_graph(&mut self, cx: &mut Context<Self>) {
         if self.graph_stale && self.nav.panel != Panel::Rail && self.nav.mode == Mode::Graph {
             self.graph_stale = false;
-            self.graph.update(cx, |graph, cx| graph.set_notes(&self.notes, &vault::pictures(&self.images), cx));
+            let notes: Vec<Note> = self.notes.iter().filter(|n| !self.is_template(n)).cloned().collect();
+            self.graph.update(cx, |graph, cx| graph.set_notes(&notes, &vault::pictures(&self.images), cx));
         }
     }
 
@@ -883,6 +887,11 @@ impl Shell {
                 self.nav.sel = Some(dir);
                 self.new_note_here(window, cx);
             }
+            (Do::FromTemplate, _) => {
+                self.nav.open.insert(dir.clone());
+                self.nav.sel = Some(dir);
+                self.open_templates(crate::TemplateAct::New, window, cx);
+            }
             (Do::NewDiagram, _) => {
                 self.nav.open.insert(dir.clone());
                 self.nav.sel = Some(dir);
@@ -894,7 +903,7 @@ impl Shell {
                     Some(name) => format!("{} « {} »", tr("Folder name, in", "Nom du dossier, dans"), name.to_string_lossy()),
                     None => tr("Folder name", "Nom du dossier").to_string(),
                 };
-                self.ask(label, "", window, cx, move |this, name, cx| {
+                self.ask(label, "", window, cx, move |this, name, _, cx| {
                     let new = dir.join(name);
                     match fs::create_dir(&new) {
                         Ok(()) => {
@@ -909,7 +918,7 @@ impl Shell {
             (Do::Rename, Some(path)) => {
                 let label = tr("Rename: new name", "Renommer : nouveau nom");
                 let current = if is_dir { path.file_name().unwrap_or_default().to_string_lossy().into_owned() } else { vault::stem(&path) };
-                self.ask(label, &current.clone(), window, cx, move |this, name, cx| {
+                self.ask(label, &current.clone(), window, cx, move |this, name, _, cx| {
                     if name == current {
                         return;
                     }
@@ -1009,13 +1018,13 @@ impl Shell {
     }
 
     /// Demande un nom dans un champ de saisie, puis appelle `then` avec ce nom nettoyé.
-    fn ask(
+    pub(crate) fn ask(
         &mut self,
         label: impl Into<String>,
         text: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
-        then: impl Fn(&mut Self, String, &mut Context<Self>) + 'static,
+        then: impl Fn(&mut Self, String, &mut Window, &mut Context<Self>) + 'static,
     ) {
         let theme = self.theme;
         let prompt = cx.new(|cx| Palette::prompt(label, text, theme, cx));
@@ -1025,7 +1034,7 @@ impl Shell {
             if let PaletteEvent::Submit(text) = event
                 && let Some(name) = vault::clean_name(text)
             {
-                then(this, name, cx);
+                then(this, name, window, cx);
             }
             cx.notify();
         })
@@ -1191,6 +1200,9 @@ impl Shell {
             }
             if tree && !many {
                 groups[1].push((tr("New note here", "Nouvelle note ici"), Do::NewNote));
+                if self.vault.as_ref().is_some_and(|root| vault::template_dir(root, &self.dirs).is_some()) {
+                    groups[1].push((tr("New note from a template", "Nouvelle note depuis un modèle"), Do::FromTemplate));
+                }
                 groups[1].push((tr("New diagram here", "Nouveau schéma ici"), Do::NewDiagram));
                 groups[1].push((tr("New folder", "Nouveau dossier"), Do::NewFolder));
             }

@@ -184,6 +184,29 @@ pub fn stem(path: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// Les noms du dossier des modèles, à la racine du coffre (sans tenir compte de la casse ni des accents).
+const TEMPLATE_DIRS: [&str; 2] = ["templates", "modeles"];
+
+fn is_template_dir(name: &str) -> bool {
+    let name = crate::keys::fold(name);
+    TEMPLATE_DIRS.contains(&name.as_str())
+}
+
+/// Le dossier des modèles du coffre : `Templates` ou `Modèles`, parmi ses dossiers.
+pub fn template_dir(root: &Path, dirs: &[PathBuf]) -> Option<PathBuf> {
+    dirs.iter().find(|d| d.parent() == Some(root) && d.file_name().is_some_and(|n| is_template_dir(&n.to_string_lossy()))).cloned()
+}
+
+/// La note est un modèle : elle est dans le dossier des modèles, où qu'elle soit sous lui. Un modèle
+/// n'est ni dans le graphe, ni dans les tags et les liens : ses `{{mots}}` ne sont pas des liens.
+pub fn in_templates(root: &Path, path: &Path) -> bool {
+    let Ok(rel) = path.strip_prefix(root) else {
+        return false;
+    };
+    let mut parts = rel.components();
+    parts.next_back().is_some() && parts.next().is_some_and(|first| is_template_dir(&first.as_os_str().to_string_lossy()))
+}
+
 /// Le fichier est une image que l'app sait afficher.
 pub fn is_image(path: &Path) -> bool {
     let known = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tif", "tiff", "avif"];
@@ -362,6 +385,9 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
                 (tags.into(), links.into(), markdown::aliases(&body).into(), body, lower)
             }
         };
+        // Un modèle n'a ni tags, ni liens, ni alias : ce qu'il écrit entre `{{ }}` ou sous `#` n'est pas à lui.
+        let (tags, links, aliases) =
+            if in_templates(root, path) { (Vec::new().into(), Vec::new().into(), Vec::new().into()) } else { (tags, links, aliases) };
         Note { name: stem(path), tags, links, aliases, mtime: *mtime, path: path.clone(), body, lower }
     };
     let mut notes: Vec<Note> = files.iter().map(note).collect();
@@ -1046,6 +1072,27 @@ mod tests {
         // L'empreinte, elle aussi, se calcule sans boucler et ne bouge pas.
         assert_eq!(fingerprint(&root), fingerprint(&root));
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn finds_the_templates_folder() {
+        let root = Path::new("/v");
+        let dirs: Vec<PathBuf> = ["/v/Notes", "/v/Modèles", "/v/Notes/Templates"].into_iter().map(PathBuf::from).collect();
+        assert_eq!(template_dir(root, &dirs), Some(PathBuf::from("/v/Modèles")));
+        // Casse et accents ne comptent pas ; seul un dossier de la racine est le dossier des modèles.
+        for name in ["templates", "TEMPLATES", "Modeles", "MODÈLES", "modèles"] {
+            assert_eq!(template_dir(root, &[root.join(name)]), Some(root.join(name)), "{name}");
+        }
+        assert_eq!(template_dir(root, &[PathBuf::from("/v/Notes/Templates"), root.join("Template"), root.join("Modèle")]), None);
+        assert_eq!(template_dir(root, &[]), None);
+        // Un modèle est un fichier sous ce dossier, à n'importe quelle profondeur ; le dossier lui-même, un
+        // fichier de même nom, une note à côté ou ailleurs ne le sont pas.
+        assert!(in_templates(root, Path::new("/v/Templates/Réunion.md")));
+        assert!(in_templates(root, Path::new("/v/modèles/Projets/Plan.md")));
+        assert!(!in_templates(root, Path::new("/v/Templates")));
+        assert!(!in_templates(root, Path::new("/v/Notes/Templates/A.md")));
+        assert!(!in_templates(root, Path::new("/v/Réunion.md")));
+        assert!(!in_templates(root, Path::new("/autre/Templates/A.md")));
     }
 
     #[test]

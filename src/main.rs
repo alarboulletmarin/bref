@@ -46,7 +46,7 @@ use graph::{Graph, GraphEvent};
 use history::{History, Place, Shown};
 use markdown::Link;
 use nav::{Mode, Nav, Panel};
-use palette::{Entry, Palette, PaletteEvent, Setting};
+use palette::{Entry, Palette, PaletteEvent, Setting, TemplateAct};
 use sheet::{Pick, Sheet, SheetEvent};
 use table::{Encoding, Format, Style};
 use vault::Note;
@@ -128,6 +128,44 @@ pub fn today() -> (i32, u32, u32) {
     (tm.tm_year + 1900, tm.tm_mon as u32 + 1, tm.tm_mday as u32)
 }
 
+/// L'heure locale, `09:05` : heures et minutes.
+#[cfg(unix)]
+pub fn clock() -> (u32, u32) {
+    // SAFETY: comme `today`, `localtime_r` n'écrit que dans `tm`, qui est à nous.
+    let tm = unsafe {
+        let now = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now, &mut tm);
+        tm
+    };
+    (tm.tm_hour as u32, tm.tm_min as u32)
+}
+
+#[cfg(windows)]
+pub fn clock() -> (u32, u32) {
+    #[repr(C)]
+    #[derive(Default)]
+    #[allow(dead_code)]
+    struct Local {
+        year: u16,
+        month: u16,
+        day_of_week: u16,
+        day: u16,
+        hour: u16,
+        minute: u16,
+        second: u16,
+        millis: u16,
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetLocalTime(time: *mut Local);
+    }
+    let mut now = Local::default();
+    // SAFETY: `GetLocalTime` remplit la structure qu'on lui donne, et n'échoue pas.
+    unsafe { GetLocalTime(&mut now) };
+    (now.hour as u32, now.minute as u32)
+}
+
 #[cfg(windows)]
 pub fn today() -> (i32, u32, u32) {
     /// `SYSTEMTIME` de l'API Windows : huit mots de 16 bits.
@@ -152,6 +190,11 @@ pub fn today() -> (i32, u32, u32) {
     // SAFETY: `GetLocalTime` remplit la structure qu'on lui donne, et n'échoue pas.
     unsafe { GetLocalTime(&mut now) };
     (now.year as i32, now.month as u32, now.day as u32)
+}
+
+/// `09:05` : l'heure telle qu'elle s'écrit dans un modèle.
+pub fn time_name((hour, minute): (u32, u32)) -> String {
+    format!("{hour:02}:{minute:02}")
 }
 
 /// `2026-10-09` : la date telle qu'elle s'écrit dans une note et nomme la note du jour.
@@ -410,7 +453,7 @@ pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
 
-actions!(app, [SyncVault, SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [SyncVault, SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewFromTemplate, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -1909,7 +1952,8 @@ impl Shell {
 
     fn push_names(&mut self, cx: &mut Context<Self>) {
         // Les alias se proposent après `[[` comme des noms.
-        let names: Vec<String> = self.notes.iter().map(|n| n.name.clone()).chain(self.notes.iter().flat_map(|n| n.aliases.iter().cloned())).collect();
+        let notes: Vec<&Note> = self.notes.iter().filter(|n| !self.is_template(n)).collect();
+        let names: Vec<String> = notes.iter().map(|n| n.name.clone()).chain(notes.iter().flat_map(|n| n.aliases.iter().cloned())).collect();
         let pictures = vault::pictures(&self.images);
         for pane in &self.panes {
             pane.editor.update(cx, |e, _| {
@@ -2395,6 +2439,8 @@ impl Shell {
                 self.dirty = false;
                 self.calm();
                 let (tags, links) = markdown::index(&content);
+                // Un modèle n'a ni tags ni liens.
+                let (tags, links) = if vault::in_templates(&root, &path) { (Vec::new(), Vec::new()) } else { (tags, links) };
                 let old = self.path.clone();
                 // Le graphe ne change que si la note est nouvelle, renommée ou liée autrement.
                 let known = self.notes.iter().find(|n| Some(&n.path) == old.as_ref());
@@ -2758,17 +2804,159 @@ impl Shell {
     /// Note du jour : la note qui porte la date locale pour nom, où qu'elle soit dans le
     /// coffre ; créée avec cette date pour titre si elle n'existe pas encore.
     fn open_today(&mut self, cx: &mut Context<Self>) {
-        if self.vault.is_some() {
-            self.open_wiki(&date_name(today()), cx);
+        let Some(root) = self.vault.clone() else {
+            return;
+        };
+        let name = date_name(today());
+        // Pas encore de note du jour, et un modèle `Daily` ou `Journal` : elle en naît.
+        if self.wiki_path(&name).is_none()
+            && let Some(template) = self.daily_template()
+            && self.create_from(&template, &name, &root, cx).is_some()
+        {
+            return;
         }
+        self.open_wiki(&name, cx);
+    }
+
+    /// Les modèles du coffre, par nom.
+    fn templates(&self) -> Vec<PathBuf> {
+        let Some(root) = &self.vault else {
+            return Vec::new();
+        };
+        let mut found: Vec<PathBuf> = self.notes.iter().filter(|n| vault::in_templates(root, &n.path)).map(|n| n.path.clone()).collect();
+        found.sort_by_key(|path| vault::natural(&vault::stem(path)));
+        found
+    }
+
+    /// Le modèle de la note du jour : celui qui s'appelle `Daily`, `Journal`, `Today`, `Note du jour`…
+    fn daily_template(&self) -> Option<PathBuf> {
+        const NAMES: [&str; 5] = ["daily", "journal", "today", "note du jour", "aujourd'hui"];
+        self.templates().into_iter().find(|path| NAMES.contains(&keys::fold(&vault::stem(path)).as_str()))
+    }
+
+    /// Un modèle à choisir, puis, pour une nouvelle note, son nom ; ou, pour l'insérer, rien d'autre.
+    fn open_templates(&mut self, act: TemplateAct, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_none() {
+            return;
+        }
+        let found = self.templates();
+        if found.is_empty() {
+            return self.say(
+                Tone::Info,
+                tr(
+                    "No template: put notes in a folder named Templates (or Modèles) at the root of the vault",
+                    "Aucun modèle : rangez des notes dans un dossier Templates (ou Modèles) à la racine du coffre",
+                ),
+                cx,
+            );
+        }
+        let names = found.iter().map(|path| vault::stem(path)).collect();
+        let label = if act == TemplateAct::New { tr("New note from a template", "Nouvelle note depuis un modèle") } else { tr("Insert a template", "Insérer un modèle") };
+        let theme = self.theme;
+        let palette = cx.new(|cx| Palette::choose(label, names, "", theme, cx));
+        cx.subscribe_in(&palette, window, move |this, palette, event, window, cx| {
+            if matches!(event, PaletteEvent::Preview(_)) {
+                return;
+            }
+            let chosen = palette.read(cx).chosen().and_then(|i| found.get(i)).cloned().filter(|_| matches!(event, PaletteEvent::Submit(_)));
+            this.palette = None;
+            window.focus(&this.editor.focus_handle(cx));
+            match (chosen, act) {
+                (Some(template), TemplateAct::New) => {
+                    // La note naît dans le dossier choisi dans l'arbre, jamais dans celui des modèles.
+                    let root = this.vault.clone().unwrap_or_default();
+                    let dir = this.nav.target_dir().filter(|dir| !vault::in_templates(&root, &dir.join("x.md"))).unwrap_or(root);
+                    this.ask(tr("Name of the note", "Nom de la note"), "", window, cx, move |this, name, window, cx| {
+                        // La note née, on écrit : le curseur est à sa marque, le focus à l'éditeur.
+                        if this.create_from(&template, &name, &dir, cx).is_some() {
+                            window.focus(&this.editor.focus_handle(cx));
+                        }
+                    });
+                }
+                (Some(template), _) => this.insert_template(&template, cx),
+                (None, _) => {}
+            }
+            cx.notify();
+        })
+        .detach();
+        window.focus(&palette.focus_handle(cx));
+        self.palette = Some(palette);
+        cx.notify();
+    }
+
+    /// La note `name` dans `dir`, écrite d'après le modèle, ouverte, le curseur à sa marque. Rien n'est
+    /// écrasé : un nom pris est refusé. `None` si elle n'a pas pu naître.
+    fn create_from(&mut self, template: &Path, name: &str, dir: &Path, cx: &mut Context<Self>) -> Option<PathBuf> {
+        let root = self.vault.clone()?;
+        let text = match fs::read_to_string(template) {
+            Ok(text) => text,
+            Err(e) => {
+                self.say(Tone::Failed, format!("{} : {e}", tr("Template not read", "Modèle illisible")), cx);
+                return None;
+            }
+        };
+        let path = dir.join(format!("{name}.md"));
+        if path.exists() {
+            self.say(Tone::Failed, format!("{} « {name} »", tr("A note already has the name", "Une note porte déjà le nom")), cx);
+            return None;
+        }
+        let (body, cursor) = markdown::fill(&text, name, &date_name(today()), &time_name(clock()));
+        if let Err(e) = vault::write(&path, &body) {
+            self.say(Tone::Failed, format!("{} : {e}", tr("Note not created", "Note non créée")), cx);
+            return None;
+        }
+        self.rescan(&root, cx);
+        self.nav.reveal(&path);
+        self.open_note(&path, cx);
+        self.editor.update(cx, |editor, cx| editor.jump(cursor, false, cx));
+        Some(path)
+    }
+
+    /// Le modèle, rempli au nom de la note ouverte, à la place du curseur.
+    fn insert_template(&mut self, template: &Path, cx: &mut Context<Self>) {
+        let text = match fs::read_to_string(template) {
+            Ok(text) => text,
+            Err(e) => return self.say(Tone::Failed, format!("{} : {e}", tr("Template not read", "Modèle illisible")), cx),
+        };
+        let title = self.path.as_deref().map(vault::stem).unwrap_or_default();
+        let (body, cursor) = markdown::fill(&text, &title, &date_name(today()), &time_name(clock()));
+        self.editor.update(cx, |editor, cx| editor.insert_filled(&body, cursor, cx));
+    }
+
+    /// La note ouverte, rangée comme modèle : son titre devient `{{title}}`.
+    fn save_as_template(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_none() || self.picture.is_some() || self.listing.is_some() {
+            return;
+        }
+        self.flush(cx);
+        let text = markdown::templatize(self.editor.read(cx).text());
+        let name = self.path.as_deref().map(vault::stem).unwrap_or_default();
+        self.ask(tr("Name of the template", "Nom du modèle"), &name, window, cx, move |this, name, window, cx| {
+            window.focus(&this.editor.focus_handle(cx));
+            let Some(root) = this.vault.clone() else { return };
+            let dir = vault::template_dir(&root, &this.dirs).unwrap_or_else(|| root.join("Templates"));
+            let path = dir.join(format!("{name}.md"));
+            if path.exists() {
+                return this.say(Tone::Failed, format!("{} « {name} »", tr("A template already has the name", "Un modèle porte déjà le nom")), cx);
+            }
+            match fs::create_dir_all(&dir).and_then(|()| vault::write(&path, &text)) {
+                Ok(()) => {
+                    this.rescan(&root, cx);
+                    this.say(Tone::Done, format!("{} {name}", tr("Template saved:", "Modèle enregistré :")), cx);
+                }
+                Err(e) => this.say(Tone::Failed, format!("{} : {e}", tr("Template not saved", "Modèle non enregistré")), cx),
+            }
+        });
     }
 
     /// La note que désigne un `[[lien]]` : par son nom d'abord, sinon par un alias de son
     /// en-tête YAML.
     fn wiki_path(&self, name: &str) -> Option<PathBuf> {
         let wanted = name.to_lowercase();
-        let named = self.notes.iter().find(|n| n.name.to_lowercase() == wanted);
-        named.or_else(|| self.notes.iter().find(|n| n.answers(&wanted))).map(|note| note.path.clone())
+        // Un modèle ne répond à aucun lien : `[[Réunion]]` vise la note, pas son modèle.
+        let mut notes = self.notes.iter().filter(|n| !self.is_template(n));
+        let named = notes.clone().find(|n| n.name.to_lowercase() == wanted);
+        named.or_else(|| notes.find(|n| n.answers(&wanted))).map(|note| note.path.clone())
     }
 
     fn open_wiki(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -2843,6 +3031,8 @@ impl Shell {
                 PaletteEvent::CheckUpdate => this.check_now(cx),
                 PaletteEvent::Outline => this.open_outline(window, cx),
                 PaletteEvent::Comments => this.open_comments(window, cx),
+                PaletteEvent::Template(TemplateAct::Save) => this.save_as_template(window, cx),
+                PaletteEvent::Template(act) => this.open_templates(*act, window, cx),
                 PaletteEvent::Grid(op) => {
                     // Le geste va à ce qui est affiché : la feuille d'un CSV, ou la note.
                     match this.shown_sheet() {
@@ -2918,6 +3108,8 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 k(&editor::ReplaceInVault, tr("Search bar: replace in the whole vault, after showing the count", "Barre de recherche : remplacer dans tout le coffre, après en avoir montré le compte")),
                 k(&Outline, tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")),
                 k(&NewNote, tr("New note", "Nouvelle note")),
+                k(&NewFromTemplate, tr("New note from a template (a note of the Templates folder: {{title}} {{date}} {{time}} {{cursor}})", "Nouvelle note depuis un modèle (une note du dossier Templates ou Modèles : {{title}} {{date}} {{time}} {{cursor}})")),
+                p(tr("template", "modèle"), tr("Insert a template at the cursor, or make a template of the open note", "Insérer un modèle au curseur, ou faire un modèle de la note ouverte")),
                 k(&Today, tr("Today's note: open it, or create it", "Note du jour : l'ouvrir, ou la créer")),
                 p("capture", tr("Quick capture: sets up a shortcut of your desktop (Super+Shift+N on GNOME) that opens a one-line window anywhere; what you type goes to today's note", "Capture rapide : crée un raccourci du bureau (Super+Maj+N sous GNOME) qui ouvre partout une fenêtre d'une ligne ; ce qu'on y tape va dans la note du jour")),
                 k(&OpenVault, tr("Change vault", "Changer de coffre")),
@@ -3336,8 +3528,14 @@ impl Shell {
     // ponytail: recalculé à chaque rendu d'une page vide (un hachage par note, 5 000 notes :
     // une fraction de milliseconde) ; le garder d'un rendu à l'autre si de bien plus gros
     // coffres le font sentir.
+    /// La note est un modèle du coffre.
+    fn is_template(&self, note: &Note) -> bool {
+        self.vault.as_ref().is_some_and(|root| vault::in_templates(root, &note.path))
+    }
+
     fn recalled(&self) -> Vec<recall::Recalled> {
-        recall::recall(&self.notes, today(), std::time::SystemTime::now())
+        let notes: Vec<Note> = self.notes.iter().filter(|n| !self.is_template(n)).cloned().collect();
+        recall::recall(&notes, today(), std::time::SystemTime::now())
     }
 
     /// La page vide, sous la ligne où l'on écrit : le jour (qui ouvre sa note), les touches
@@ -4078,6 +4276,7 @@ impl Render for Shell {
                 this.open_palette("", window, cx)
             }))
             .on_action(cx.listener(|this, _: &NewNote, window, cx| this.new_note_here(window, cx)))
+            .on_action(cx.listener(|this, _: &NewFromTemplate, window, cx| this.open_templates(TemplateAct::New, window, cx)))
             .on_action(cx.listener(|this, _: &NewDiagram, window, cx| this.new_diagram(window, cx)))
             // Échap dans un schéma où plus rien n'est en cours : retour à la note.
             .on_action(cx.listener(|this, _: &canvas::Cancel, window, cx| {
@@ -7752,6 +7951,151 @@ mod tests {
                 assert!(contrast(legible(tint, under), under) >= 4.5, "{name}: panel {h}");
             }
         }
+    }
+
+    /// Les modèles de bout en bout, et leurs limites : pas de dossier, un nom pris ou illisible, un modèle
+    /// qui n'en est pas un, un lien qui ne doit pas viser un modèle, la note du jour, l'annulation.
+    #[gpui::test]
+    fn templates_journey(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-tpl-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("Courses.md"), "# Courses\n\n- lait #maison\n").unwrap();
+        let _config = isolated_config(&root);
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+        let told = |cx: &mut gpui::VisualTestContext, tone, part: &str| shell.read_with(cx, |s, _| s.told(tone, part));
+        let palette = |cx: &mut gpui::VisualTestContext, typed: &str| {
+            cx.simulate_keystrokes("secondary-p");
+            cx.simulate_input(typed);
+            cx.simulate_keystrokes("down enter");
+        };
+        // Une fois la palette éprouvée, les gestes se lancent par leur action : la liste de la palette
+        // change avec les notes qui ressemblent à ce qu'on tape.
+        let start = |cx: &mut gpui::VisualTestContext, act: TemplateAct| {
+            shell.update_in(cx, |s, window, cx| if act == TemplateAct::Save { s.save_as_template(window, cx) } else { s.open_templates(act, window, cx) });
+        };
+        let rescan = |cx: &mut gpui::VisualTestContext| {
+            shell.update(cx, |s, cx| {
+                let (notes, dirs, images) = vault::scan(&root);
+                s.sync(notes, dirs, images, cx);
+            });
+            cx.run_until_parked();
+        };
+        // Sans dossier de modèles : la commande le dit, rien ne se crée.
+        palette(cx, "nouvelle note depuis");
+        assert!(told(cx, Tone::Info, "Aucun modèle"));
+        assert!(!root.join("Templates").exists());
+        // Deux modèles, dont un plus bas dans le dossier ; leurs `#tags` et `[[liens]]` ne sont à personne.
+        fs::create_dir_all(root.join("Modèles/Sous")).unwrap();
+        fs::write(root.join("Modèles/Réunion.md"), "# {{title}}\n\nLe {{date}} à {{time}} #modele [[{{title}}]]\n\n## Notes\n\n{{cursor}}\n").unwrap();
+        fs::write(root.join("Modèles/Sous/Idée.md"), "idée {{inconnu}}").unwrap();
+        rescan(cx);
+        let kept = shell.read_with(cx, |s, _| s.notes.iter().filter(|n| n.name == "Réunion" || n.name == "Idée").map(|n| (n.tags.len(), n.links.len())).collect::<Vec<_>>());
+        assert_eq!(kept, [(0, 0), (0, 0)]);
+        assert!(shell.read_with(cx, |s, _| s.wiki_path("Réunion").is_none() && s.wiki_path("modele").is_none()), "un lien ne vise pas un modèle");
+        // Une note naît du modèle, au nom choisi : titre, date, heure, curseur à sa marque.
+        palette(cx, "nouvelle note depuis");
+        cx.simulate_input("Réu");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("Lundi 3");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        let made = shell.read_with(cx, |s, _| s.path.clone().unwrap());
+        assert_eq!(made.file_name().unwrap(), "Lundi 3.md");
+        let day = date_name(today());
+        let body = fs::read_to_string(&made).unwrap();
+        let stamp = body.split(&format!("Le {day} à ")).nth(1).map(|rest| rest[..5].to_string()).unwrap_or_default();
+        assert!(stamp.len() == 5 && stamp.as_bytes()[2] == b':' && stamp.bytes().filter(u8::is_ascii_digit).count() == 4, "heure : {stamp:?} dans {body}");
+        assert!(body.starts_with("# Lundi 3\n\nLe ") && body.contains("[[Lundi 3]]") && !body.contains("{{"), "{body}");
+        assert_eq!(text(cx), body);
+        assert_eq!(shell.read_with(cx, |s, cx| s.editor.read(cx).position()), body.len() - 1, "le curseur est à la marque {{cursor}}");
+        // Le clavier est à l'éditeur : on peut écrire tout de suite, à la marque.
+        cx.simulate_input("!");
+        assert!(text(cx).ends_with("## Notes\n\n!\n"), "{}", text(cx));
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(text(cx), body);
+        // Le nom est pris : refusé, la note existante est intacte. Un nom vide ne fait rien ; un nom avec des
+        // caractères interdits est nettoyé.
+        fs::write(&made, "# Lundi 3\n\nécrit à la main\n").unwrap();
+        start(cx, TemplateAct::New);
+        cx.simulate_input("Réu");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("Lundi 3");
+        cx.simulate_keystrokes("enter");
+        assert!(told(cx, Tone::Failed, "porte déjà le nom"));
+        assert_eq!(fs::read_to_string(&made).unwrap(), "# Lundi 3\n\nécrit à la main\n");
+        let files = |root: &Path| fs::read_dir(root).unwrap().count();
+        let before = files(&root);
+        start(cx, TemplateAct::New);
+        cx.simulate_input("Idée");
+        cx.simulate_keystrokes("enter enter");
+        assert_eq!(files(&root), before, "un nom vide ne crée rien");
+        start(cx, TemplateAct::New);
+        cx.simulate_input("Idée");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("a/b:c");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(fs::read_to_string(root.join("abc.md")).unwrap(), "idée {{inconnu}}");
+        // Un modèle illisible (octets qui ne sont pas du texte) : un avis, rien ne naît ; un modèle vide : une note vide.
+        fs::write(root.join("Modèles/Cassé.md"), [0xff, 0xfe, 0x00]).unwrap();
+        fs::write(root.join("Modèles/Vide.md"), "").unwrap();
+        rescan(cx);
+        start(cx, TemplateAct::New);
+        cx.simulate_input("Cassé");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("Rien");
+        cx.simulate_keystrokes("enter");
+        assert!(told(cx, Tone::Failed, "Modèle illisible") && !root.join("Rien.md").exists());
+        start(cx, TemplateAct::New);
+        cx.simulate_input("Vide");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("Blanc");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(fs::read(root.join("Blanc.md")).unwrap(), b"");
+        // Insérer au curseur : rempli au nom de la note ouverte, un seul pas d'annulation.
+        shell.update(cx, |s, cx| s.open_note(&made, cx));
+        let before = text(cx);
+        shell.update_in(cx, |s, window, cx| window.focus(&s.editor.focus_handle(cx)));
+        cx.simulate_keystrokes("secondary-end");
+        start(cx, TemplateAct::Insert);
+        cx.simulate_input("Réu");
+        cx.simulate_keystrokes("enter");
+        assert!(text(cx).starts_with(&format!("{before}# Lundi 3\n\nLe ")), "{}", text(cx));
+        assert_eq!(text(cx).matches("[[Lundi 3]]").count(), before.matches("[[Lundi 3]]").count() + 1);
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(text(cx), before);
+        // Faire un modèle de la note : son titre devient {{title}}, le dossier existant est réutilisé.
+        start(cx, TemplateAct::Save);
+        cx.simulate_keystrokes("secondary-a");
+        cx.simulate_input("Copie");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(fs::read_to_string(root.join("Modèles/Copie.md")).unwrap(), markdown::templatize(&before));
+        assert!(fs::read_to_string(root.join("Modèles/Copie.md")).unwrap().starts_with("# {{title}}\n"));
+        assert!(!root.join("Templates").exists());
+        // La note du jour naît du modèle `Daily` quand il existe ; un second Ctrl+J rouvre la même note.
+        let name = date_name(today());
+        if let Some(old) = shell.read_with(cx, |s, _| s.wiki_path(&name)) {
+            fs::remove_file(old).unwrap();
+        }
+        rescan(cx);
+        fs::write(root.join("Modèles/Daily.md"), "# {{title}}\n\n- [ ] {{cursor}}").unwrap();
+        rescan(cx);
+        cx.simulate_keystrokes("secondary-j");
+        cx.run_until_parked();
+        assert_eq!(shell.read_with(cx, |s, _| s.path.clone().unwrap().file_name().unwrap().to_string_lossy().into_owned()), format!("{name}.md"));
+        assert_eq!(text(cx), format!("# {name}\n\n- [ ] "));
+        cx.simulate_keystrokes("secondary-j");
+        assert_eq!(text(cx), format!("# {name}\n\n- [ ] "));
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// Sans coffre, l'accueil en crée un d'un clic, dans `Notes` du dossier personnel.
