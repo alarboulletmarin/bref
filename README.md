@@ -368,6 +368,17 @@ Type `/` at the start of a line or of a word: a list offers what can be inserted
 | `/date` | today's date (`2026-10-09`), in place |
 | `/meta` (also `/tags`, `/alias`) | a YAML front matter at the top of the note, wherever you are, with the cursor between the brackets of `tags: []`; if the note has one, the cursor goes there |
 
+### Dropping files
+
+Drag files or folders from your file manager onto the window; the originals never move, and nothing is overwritten (a name already taken becomes `name 2`).
+
+- **On a note**: a line shows between two lines of the text (never inside a table, a code block or the YAML header), and a label next to the pointer says where it will land. The items are copied next to the note, like a pasted picture, and each gets a line at that place: `![[photo.png]]` for a picture, `[[note]]` for a Markdown note, `[[rapport.pdf]]` for a file the vault lists, `[[Folder]]` for a folder. One `Ctrl + Z` takes the lines back (the copies stay).
+- **On the tree**: the folder under the pointer is tinted (on a file, the folder that holds it), the label names it, and a drop between rows goes to the root of the vault. The new files are shown and selected, and the message says how many files were copied and how many items were left out.
+- **What is copied**: folders with everything in them, except hidden files and symbolic links (they are counted, not copied); a folder is never copied into itself. The copy runs in the background, so a large video does not freeze the window.
+- **Files the vault lists**: pictures, CSV and TSV tables, and attachments (`pdf`, video and audio, archives, Office and OpenDocument files, `txt`, `json`…). They show in the tree and the palette, `[[name.pdf]]` opens them in the application of your system, and renaming one rewrites the links to it. Other types are copied but not listed, so no link is written for them.
+- **On the welcome screen**, a dropped folder becomes the vault. `[[Folder]]` opens the folder as a list when no note has that name.
+- Not possible: pasting files copied in a file manager (the toolkit only passes text and pictures), and video or audio playing inside a note.
+
 ### Templates
 
 Put notes in a folder named `Templates` (or `Modèles`) at the root of the vault: each one is a template. Case and accents do not matter, and templates may sit in sub-folders. Templates are left out of the graph, the tags, the links and the notes to read again, and a `[[link]]` never points at one.

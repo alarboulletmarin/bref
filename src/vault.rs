@@ -215,6 +215,22 @@ pub fn is_image(path: &Path) -> bool {
         .is_some_and(|e| known.iter().any(|k| e.eq_ignore_ascii_case(k)))
 }
 
+/// Les fichiers qu'on range dans le coffre sans les lire : ils se listent dans l'arbre, se trouvent dans
+/// la palette, se visent par `[[nom.pdf]]` et s'ouvrent dans l'application du système.
+const ATTACHMENTS: [&str; 34] = [
+    "pdf", "mp4", "m4v", "mov", "mkv", "webm", "avi", "mp3", "m4a", "wav", "ogg", "opus", "flac", "zip", "7z", "tar", "gz", "rar",
+    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "epub", "txt", "json", "xml", "html", "rtf", "log",
+];
+
+pub fn is_attachment(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| ATTACHMENTS.iter().any(|k| e.eq_ignore_ascii_case(k)))
+}
+
+/// Le fichier est une image, un tableau ou une pièce jointe : ce que l'arbre montre en plus des notes.
+pub fn is_file_shown(path: &Path) -> bool {
+    is_image(path) || is_table(path) || is_attachment(path)
+}
+
 /// Le fichier est un tableau (CSV ou TSV) que l'app ouvre dans une grille.
 pub fn is_table(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| ["csv", "tsv"].iter().any(|k| e.eq_ignore_ascii_case(k)))
@@ -369,7 +385,7 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
                 }
             } else if path.extension().is_some_and(|e| e == "md") {
                 files.push((path, entry.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH)));
-            } else if is_image(&path) || is_table(&path) {
+            } else if is_file_shown(&path) {
                 images.push(path);
             }
         }
@@ -686,6 +702,98 @@ pub fn h1_of(content: &str) -> Option<String> {
     let content = &content[markdown::front_matter(content)..];
     let first = content.lines().find(|l| !l.trim().is_empty())?;
     clean_name(first.trim_start().strip_prefix("# ")?)
+}
+
+/// Un élément déposé, rangé dans le coffre : où il est, si c'est un dossier, combien de fichiers il compte.
+#[derive(Debug, PartialEq)]
+pub struct Imported {
+    pub to: PathBuf,
+    pub dir: bool,
+    pub files: usize,
+}
+
+/// Un nom libre dans `dir` : `nom.ext`, puis `nom 2.ext`, `nom 3.ext`… Rien n'est jamais écrasé.
+fn free_name(dir: &Path, name: &std::ffi::OsStr, folder: bool) -> PathBuf {
+    let as_path = Path::new(name);
+    let (stem, ext) = match (folder, as_path.extension()) {
+        (false, Some(ext)) => (as_path.file_stem().unwrap_or(name).to_string_lossy().into_owned(), Some(ext.to_string_lossy().into_owned())),
+        _ => (name.to_string_lossy().into_owned(), None),
+    };
+    (1..)
+        .map(|n| {
+            let numbered = if n == 1 { stem.clone() } else { format!("{stem} {n}") };
+            dir.join(match &ext {
+                Some(ext) => format!("{numbered}.{ext}"),
+                None => numbered,
+            })
+        })
+        .find(|path| !path.exists() && path.symlink_metadata().is_err())
+        .unwrap()
+}
+
+/// Copie `from` en `to` : un fichier est d'abord écrit sous un nom caché puis renommé, pour qu'une copie
+/// interrompue ne laisse jamais un fichier à moitié. Rend le nombre de fichiers copiés et d'éléments
+/// laissés de côté (liens symboliques, fichiers cachés, autres que des fichiers).
+fn copy_into(from: &Path, to: &Path, skipped: &mut usize) -> io::Result<usize> {
+    if from.is_dir() {
+        fs::create_dir(to)?;
+        let mut entries: Vec<_> = fs::read_dir(from)?.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        let mut files = 0;
+        for entry in entries {
+            let (path, kind) = (entry.path(), entry.file_type()?);
+            if entry.file_name().to_string_lossy().starts_with('.') || kind.is_symlink() || !(kind.is_file() || kind.is_dir()) {
+                *skipped += 1;
+                continue;
+            }
+            files += copy_into(&path, &to.join(entry.file_name()), skipped)?;
+        }
+        return Ok(files);
+    }
+    let part = to.with_file_name(format!(".{}.bref-part", to.file_name().unwrap_or_default().to_string_lossy()));
+    let copied = fs::copy(from, &part).and_then(|_| fs::rename(&part, to));
+    if copied.is_err() {
+        let _ = fs::remove_file(&part);
+    }
+    copied.map(|()| 1)
+}
+
+/// Range dans `dir` des fichiers et des dossiers venus d'ailleurs (un dépôt) : chacun sous un nom libre, un
+/// dossier avec tout ce qu'il contient sauf ce qui est caché ou lien symbolique. Rend ce qui est rangé et,
+/// pour chaque chose laissée de côté, pourquoi. Un dossier ne se copie jamais dans lui-même.
+pub fn import(sources: &[PathBuf], dir: &Path) -> (Vec<Imported>, Vec<String>) {
+    let (mut done, mut problems) = (Vec::new(), Vec::new());
+    for from in sources {
+        let name = from.file_name().unwrap_or_default();
+        let kind = from.symlink_metadata();
+        let shown = from.display();
+        match kind {
+            Err(e) => problems.push(format!("{shown} : {e}")),
+            Ok(kind) if kind.is_symlink() || !(kind.is_file() || kind.is_dir()) => problems.push(format!("{shown} : not a file or a folder")),
+            Ok(_) if name.is_empty() || name.to_string_lossy().starts_with('.') => problems.push(format!("{shown} : hidden")),
+            Ok(kind) if kind.is_dir() && dir.starts_with(from) => problems.push(format!("{shown} : a folder cannot be copied into itself")),
+            Ok(kind) => {
+                let to = free_name(dir, name, kind.is_dir());
+                let mut skipped = 0;
+                match copy_into(from, &to, &mut skipped) {
+                    Ok(files) => {
+                        if skipped > 0 {
+                            problems.push(format!("{shown} : {skipped} hidden or linked items left out"));
+                        }
+                        done.push(Imported { to, dir: kind.is_dir(), files });
+                    }
+                    Err(e) => {
+                        // Un dossier à moitié copié part tout entier : rien ne reste en route.
+                        if kind.is_dir() {
+                            let _ = fs::remove_dir_all(&to);
+                        }
+                        problems.push(format!("{shown} : {e}"));
+                    }
+                }
+            }
+        }
+    }
+    (done, problems)
 }
 
 /// Enregistre une image collée dans `dir`, sous un nom libre, et renvoie ce nom.
@@ -1093,6 +1201,81 @@ mod tests {
         assert!(!in_templates(root, Path::new("/v/Notes/Templates/A.md")));
         assert!(!in_templates(root, Path::new("/v/Réunion.md")));
         assert!(!in_templates(root, Path::new("/autre/Templates/A.md")));
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("bref-import-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn imports_files_and_folders_without_overwriting() {
+        let base = scratch("a");
+        let (vault, outside) = (base.join("coffre"), base.join("dehors"));
+        fs::create_dir_all(&vault).unwrap();
+        fs::create_dir_all(outside.join("Photos/été")).unwrap();
+        fs::write(outside.join("Photos/a.png"), "a").unwrap();
+        fs::write(outside.join("Photos/été/b.jpg"), "bé").unwrap();
+        fs::write(outside.join("Photos/.cache"), "caché").unwrap();
+        fs::write(outside.join("rapport.pdf"), "pdf").unwrap();
+        fs::write(outside.join("vide.txt"), "").unwrap();
+        fs::write(outside.join("sans-extension"), "x").unwrap();
+        fs::write(outside.join("a.tar.gz"), "z").unwrap();
+        fs::create_dir(outside.join("Dossier vide")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.join("rapport.pdf"), outside.join("Photos/lien.pdf")).unwrap();
+        let all: Vec<PathBuf> = ["rapport.pdf", "Photos", "vide.txt", "sans-extension", "a.tar.gz", "Dossier vide"].iter().map(|n| outside.join(n)).collect();
+        let (done, problems) = import(&all, &vault);
+        let names: Vec<_> = done.iter().map(|d| d.to.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["rapport.pdf", "Photos", "vide.txt", "sans-extension", "a.tar.gz", "Dossier vide"]);
+        assert_eq!(done.iter().map(|d| (d.dir, d.files)).collect::<Vec<_>>(), [(false, 1), (true, 2), (false, 1), (false, 1), (false, 1), (true, 0)]);
+        assert_eq!(fs::read_to_string(vault.join("Photos/été/b.jpg")).unwrap(), "bé");
+        // Le caché et le lien symbolique restent dehors, et on le dit ; les sources n'ont pas bougé.
+        assert!(!vault.join("Photos/.cache").exists() && !vault.join("Photos/lien.pdf").exists());
+        assert_eq!(problems.len(), if cfg!(unix) { 1 } else { 1 }, "{problems:?}");
+        assert!(outside.join("Photos/a.png").is_file());
+        // Les mêmes encore : chaque nom prend un numéro, les fichiers déjà là gardent leur contenu.
+        fs::write(vault.join("rapport.pdf"), "le mien").unwrap();
+        let (again, _) = import(&all, &vault);
+        let names: Vec<_> = again.iter().map(|d| d.to.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["rapport 2.pdf", "Photos 2", "vide 2.txt", "sans-extension 2", "a.tar 2.gz", "Dossier vide 2"]);
+        assert_eq!(fs::read_to_string(vault.join("rapport.pdf")).unwrap(), "le mien");
+        let (third, _) = import(&[outside.join("rapport.pdf")], &vault);
+        assert_eq!(third[0].to, vault.join("rapport 3.pdf"));
+        // Aucune copie à moitié ne reste en route.
+        assert!(fs::read_dir(&vault).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().ends_with(".bref-part")));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn imports_refuse_what_cannot_be_copied() {
+        let base = scratch("b");
+        let vault = base.join("coffre");
+        fs::create_dir_all(vault.join("Sous")).unwrap();
+        fs::write(base.join("f.md"), "# f").unwrap();
+        // Un dossier ne va pas dans lui-même ni dans un de ses sous-dossiers ; une source absente, un nom caché,
+        // un dossier de destination absent : refusés avec la raison, le reste passe.
+        let (done, problems) = import(&[base.join("coffre"), vault.join("Sous"), base.join("absent.png"), base.join("f.md")], &vault.join("Sous"));
+        assert_eq!(done.len(), 1);
+        assert_eq!(done[0].to, vault.join("Sous/f.md"));
+        assert_eq!(problems.len(), 3, "{problems:?}");
+        assert!(problems[0].contains("itself") && problems[1].contains("itself"));
+        let hidden = base.join(".cache");
+        fs::write(&hidden, "x").unwrap();
+        assert!(import(&[hidden], &vault).0.is_empty());
+        let (none, problems) = import(&[base.join("f.md")], &base.join("nulle/part"));
+        assert!(none.is_empty() && problems.len() == 1, "{problems:?}");
+        assert_eq!(import(&[], &vault), (Vec::new(), Vec::new()));
+        // Les pièces jointes se reconnaissent à leur extension, sans tenir compte de la casse.
+        for name in ["a.PDF", "b.Mp4", "c.docx"] {
+            assert!(is_attachment(Path::new(name)) && is_file_shown(Path::new(name)), "{name}");
+        }
+        for name in ["a.md", "b", "c.exe", ".pdf"] {
+            assert!(!is_attachment(Path::new(name)), "{name}");
+        }
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

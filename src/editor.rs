@@ -1019,6 +1019,8 @@ pub struct Editor {
     part_hover: Option<(usize, Part)>,
     /// Où était le pointeur à son dernier mouvement.
     pointer: Point<Pixels>,
+    /// Où des fichiers glissés se poseraient : un trait entre deux lignes.
+    drop_mark: Option<usize>,
     pick: Option<Pick>,
     moving: Option<Moving>,
     /// Défilement horizontal des tableaux plus larges que la page, par début de tableau.
@@ -1032,6 +1034,8 @@ pub struct Editor {
     /// (thème, images) : tant qu'il et le reste de `LayoutKey` ne bougent pas, la mise
     /// en page est reprise telle quelle, pour un simple défilement.
     version: u64,
+    /// Compte les changements du texte, et eux seuls : une image qui charge ou un thème qui change ne le font pas bouger.
+    revision: u64,
     /// Compteur du bas de page, gardé tant que le texte et la sélection ne bougent pas.
     counted: Option<((u64, Option<Range<usize>>), String)>,
     /// Le texte compté en dernier, sa version et ses comptes : à la frappe, seules les lignes
@@ -1119,6 +1123,7 @@ impl Editor {
             geos: Vec::new(),
             part_hover: None,
             pointer: Point::default(),
+            drop_mark: None,
             pick: None,
             moving: None,
             table_x: HashMap::new(),
@@ -1126,6 +1131,7 @@ impl Editor {
             theme,
             rows: Vec::new(),
             version: 0,
+            revision: 0,
             counted: None,
             tally: None,
             corner: 1,
@@ -1163,6 +1169,7 @@ impl Editor {
     pub fn load(&mut self, text: String, cursor: usize, cx: &mut Context<Self>) {
         let cursor = cursor.min(text.len());
         self.version += 1;
+        self.revision += 1;
         self.epoch += 1;
         self.content = text;
         self.sel = cursor..cursor;
@@ -1700,6 +1707,7 @@ impl Editor {
 
     fn changed(&mut self, cx: &mut Context<Self>) {
         self.version += 1;
+        self.revision += 1;
         self.marked = None;
         self.copied = None;
         self.grid = None;
@@ -2305,6 +2313,61 @@ impl Editor {
         self.push_undo(true);
         self.edit(self.sel.clone(), text, cx);
         self.move_to(at + cursor.min(text.len()), cx);
+    }
+
+    /// Où poser ce qu'on dépose au pointeur `at` : le début d'une ligne, celle du dessous quand le pointeur est
+    /// dans la moitié basse de la sienne. Jamais dans un tableau, un bloc de code ni l'en-tête YAML : au
+    /// bord du bloc, vers le bas.
+    pub fn drop_point(&self, at: Point<Pixels>) -> usize {
+        let y = at.y - self.origin.y;
+        let Some(row) = self.rows.iter().find(|r| y < r.y + r.height).or(self.rows.last()) else {
+            return 0;
+        };
+        let line = self.line_range(row.start);
+        let mut point = if y > row.y + row.height / 2. { (line.end + 1).min(self.content.len()) } else { line.start };
+        let front = md::front_matter(&self.content);
+        if point > 0 && point < front {
+            point = front;
+        }
+        // Dans un tableau (sa ligne et la précédente en sont) ou dans un bloc de code : plus bas.
+        while point > 0 && point < self.content.len() {
+            let (here, above) = (self.line_range(point), self.line_range(point - 1));
+            if (self.is_table_line(&here) && self.is_table_line(&above)) || self.in_code(point) {
+                point = (here.end + 1).min(self.content.len());
+            } else {
+                break;
+            }
+        }
+        point
+    }
+
+    pub fn set_drop_mark(&mut self, mark: Option<usize>, cx: &mut Context<Self>) {
+        if self.drop_mark != mark {
+            self.drop_mark = mark;
+            cx.notify();
+        }
+    }
+
+    /// Le début de la ligne du curseur.
+    pub fn caret_line_start(&self) -> usize {
+        self.line_range(self.cursor()).start
+    }
+
+    /// Le nombre de changements du texte : un dépôt qui a mis du temps à copier sait avant d'écrire si la note a bougé.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Des lignes posées au début de la ligne `at` (ou après la dernière), qu'on tape ou qu'on dépose :
+    /// un seul pas d'annulation, le curseur à leur fin.
+    pub fn insert_lines(&mut self, at: usize, lines: &[String], cx: &mut Context<Self>) {
+        let at = self.clamp(at);
+        let before = if at > 0 && !self.content[..at].ends_with('\n') { "\n" } else { "" };
+        let after = if at < self.content.len() { "\n" } else { "" };
+        let text = format!("{before}{}{after}", lines.join("\n"));
+        self.push_undo(true);
+        self.edit(at..at, &text, cx);
+        self.move_to(at + text.len() - after.len(), cx);
     }
 
     /// Les lignes de la sélection (ou celle du curseur) écrites dans le style `to` : une seule étape
@@ -4502,6 +4565,17 @@ impl Editor {
         }
         for thumb in &self.thumbs {
             window.paint_quad(fill(*thumb, t.dim.opacity(0.5)).corner_radii(px(1.5)));
+        }
+        // Le trait où se poseraient des fichiers glissés sur la note.
+        if let Some(mark) = self.drop_mark
+            && let Some(last) = self.rows.last()
+        {
+            let y = match self.row_at(mark).filter(|_| mark < self.content.len()) {
+                Some(r) => self.rows[r].y,
+                None => last.y + last.height,
+            };
+            let line = Bounds::new(point(o.x - px(6.), o.y + y - px(1.)), size(w + px(12.), px(2.)));
+            window.paint_quad(fill(line, t.accent).corner_radii(px(1.)));
         }
         for (n, (range, frame)) in self.tables.iter().enumerate() {
             let hover = self.table_hover.filter(|(at, _)| *at == range.start);

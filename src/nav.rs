@@ -322,7 +322,7 @@ pub fn tree_rows(
     folders.values_mut().for_each(|f| f.sort_by_cached_key(|d| vault::natural(&label(d))));
     files
         .values_mut()
-        .for_each(|f| f.sort_by_cached_key(|(path, name)| (vault::is_image(path), vault::natural(name))));
+        .for_each(|f| f.sort_by_cached_key(|(path, name)| (vault::is_file_shown(path), vault::natural(name))));
 
     let mut rows = Vec::new();
     // Parcours en profondeur : (dossier, profondeur de son contenu), sous-dossiers d'abord.
@@ -923,7 +923,7 @@ impl Shell {
                         return;
                     }
                     this.flush(cx);
-                    let image = vault::is_image(&path);
+                    let image = vault::is_image(&path) || vault::is_attachment(&path);
                     let renamed = if is_dir {
                         let to = path.with_file_name(&name);
                         vault::rename(&path, &to).map(|()| to)
@@ -963,6 +963,8 @@ impl Shell {
                     (true, _) => format!("![[{}]]", graph::image_name(path)),
                     // Un tableau n'a pas de lien : son nom de fichier.
                     (_, true) => graph::image_name(path),
+                    // Une pièce jointe se vise par son nom de fichier, extension comprise.
+                    _ if vault::is_attachment(path) => format!("[[{}]]", graph::image_name(path)),
                     _ => format!("[[{}]]", vault::stem(path)),
                 };
                 copy(files.map(link).collect(), cx);
@@ -1673,7 +1675,7 @@ impl Shell {
                     Some(_) => Some(path.clone()),
                     None => path.parent().map(Path::to_path_buf),
                 };
-                let target = path.clone();
+                let (target, drop_into) = (path.clone(), into.clone());
                 let (paths, name) = match marked.contains(&path) {
                     true => (lot.clone(), format!("{} {}", lot.len(), tr("items", "éléments"))),
                     false => (vec![path], name),
@@ -1716,6 +1718,27 @@ impl Shell {
                                 cx.notify();
                             }),
                         )
+                        // Des fichiers venus du système : ils se rangent dans le dossier de la ligne, ou dans celui de
+                        // la note, et la ligne se teinte pour le dire.
+                        .when(tree, |d| {
+                            let aim_into = drop_into.clone();
+                            d.drag_over::<gpui::ExternalPaths>(move |style, _, _, _| style.bg(t.selection))
+                                .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                                    let Some(dir) = &aim_into else { return };
+                                    let mine = matches!(&this.drop_aim, Some(crate::DropAim { aim: crate::Aim::Folder(d), .. }) if d == dir);
+                                    if e.bounds.contains(&e.event.position) {
+                                        let aim = crate::DropAim { aim: crate::Aim::Folder(dir.clone()), items: e.drag(cx).paths().len(), pointer: e.event.position };
+                                        this.aim_drop(Some(aim), cx);
+                                    } else if mine {
+                                        this.aim_drop(None, cx);
+                                    }
+                                }))
+                                .on_drop(cx.listener(move |this, paths: &gpui::ExternalPaths, _, cx| {
+                                    if let Some(dir) = &drop_into {
+                                        this.drop_paths(paths.paths().to_vec(), crate::Aim::Folder(dir.clone()), cx);
+                                    }
+                                }))
+                        })
                         .when(tree, |d| {
                             d.on_drag(Dragged { paths, name, theme: t }, |dragged, _, _, cx| {
                                 cx.new(|_| dragged.clone())
@@ -1912,7 +1935,22 @@ impl Shell {
             .min_h_0()
             // Hors de toute ligne : déposer range à la racine, le clic droit vise le coffre.
             .when(mode == Mode::Tree, |d| {
-                d.on_drop(cx.listener(|this, dragged: &Dragged, _, cx| {
+                // Des fichiers du système lâchés hors de toute ligne : à la racine du coffre.
+                d.on_drag_move(cx.listener(|this, e: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                    let root = matches!(&this.drop_aim, Some(crate::DropAim { aim: crate::Aim::Root, .. }));
+                    if !e.bounds.contains(&e.event.position) {
+                        if root {
+                            this.aim_drop(None, cx);
+                        }
+                    } else if this.drop_aim.is_none() || root {
+                        let aim = crate::DropAim { aim: crate::Aim::Root, items: e.drag(cx).paths().len(), pointer: e.event.position };
+                        this.aim_drop(Some(aim), cx);
+                    }
+                }))
+                .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, _, cx| {
+                    this.drop_paths(paths.paths().to_vec(), crate::Aim::Root, cx);
+                }))
+                .on_drop(cx.listener(|this, dragged: &Dragged, _, cx| {
                     if let Some(root) = this.vault.clone() {
                         this.move_all(&dragged.paths, &root, cx)
                     }

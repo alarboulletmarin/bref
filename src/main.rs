@@ -563,6 +563,25 @@ pub enum Tone {
     Busy,
 }
 
+/// Où des fichiers venus du système se rangeraient, pendant qu'on les glisse sur la fenêtre.
+#[derive(Clone, PartialEq, Debug)]
+pub enum Aim {
+    /// Dans la note du pane, entre deux lignes (l'octet où elle commence) ; `version` : le texte vu alors.
+    Note { pane: usize, at: usize, version: u64 },
+    /// Dans un dossier du coffre.
+    Folder(PathBuf),
+    /// À la racine du coffre.
+    Root,
+}
+
+/// Ce qu'on glisse, et ce que le dépôt ferait : de quoi montrer le choix sous le pointeur.
+#[derive(Clone, PartialEq, Debug)]
+pub struct DropAim {
+    pub aim: Aim,
+    pub items: usize,
+    pub pointer: Point<Pixels>,
+}
+
 struct Toast {
     id: usize,
     tone: Tone,
@@ -657,6 +676,14 @@ struct Shell {
     /// Pendant qu'on glisse un fichier de l'arbre : le pane survolé, et s'il s'agit de sa moitié
     /// droite (un seul pane : y lâcher le fichier ouvre le second).
     pane_aim: Option<(usize, bool)>,
+    /// Des fichiers du système survolent la fenêtre : où ils se rangeraient.
+    drop_aim: Option<DropAim>,
+    /// Test : les pièces jointes qu'on a demandé au système d'ouvrir.
+    #[cfg(test)]
+    opened: Vec<PathBuf>,
+    /// Test : garder l'étiquette de dépôt sans vrai glisser en cours.
+    #[cfg(test)]
+    keep_aim: bool,
     /// Le pane actif a changé sans que la saisie suive : le prochain rendu la lui donne.
     grab: bool,
     /// Une synchronisation git est en cours : une seule à la fois.
@@ -1124,6 +1151,11 @@ impl Shell {
             pane_drag: false,
             pane_box: Default::default(),
             pane_aim: None,
+            drop_aim: None,
+            #[cfg(test)]
+            opened: Vec::new(),
+            #[cfg(test)]
+            keep_aim: false,
             grab: false,
             panes_saved: String::new(),
             syncing: false,
@@ -2006,6 +2038,15 @@ impl Shell {
             return false;
         }
         self.listing = None;
+        // Une pièce jointe (PDF, vidéo, archive…) s'ouvre dans l'application du système ; la note reste là.
+        if vault::is_attachment(path) {
+            // La plateforme de test n'ouvre rien : elle note ce qu'on lui aurait demandé.
+            #[cfg(test)]
+            self.opened.push(path.to_path_buf());
+            #[cfg(not(test))]
+            cx.open_with_system(path);
+            return false;
+        }
         if vault::is_table(path) {
             return self.open_table(path, cx);
         }
@@ -2545,8 +2586,25 @@ impl Shell {
         match link {
             Link::Url(url) => cx.open_url(url),
             Link::Tag(tag) => self.open_palette(&format!("#{tag}"), window, cx),
+            // Un dossier se lit comme une page liste, quand aucune note ne porte son nom.
+            Link::Wiki(name) if self.wiki_path(name).is_none() && self.wiki_file(name).is_none() => match self.wiki_dir(name) {
+                Some(dir) => self.open_listing(dir, window, cx),
+                None => self.open_wiki(name, cx),
+            },
             Link::Wiki(name) => self.open_wiki(name, cx),
         }
+    }
+
+    /// Le fichier du coffre (image, tableau, pièce jointe) que désigne `[[nom.ext]]`, sans tenir compte de la casse.
+    fn wiki_file(&self, name: &str) -> Option<PathBuf> {
+        let wanted = name.to_lowercase();
+        self.images.iter().find(|path| path.file_name().is_some_and(|n| n.to_string_lossy().to_lowercase() == wanted)).cloned()
+    }
+
+    /// Le dossier du coffre que désigne `[[Nom]]`, sauf celui des modèles.
+    fn wiki_dir(&self, name: &str) -> Option<PathBuf> {
+        let (root, wanted) = (self.vault.as_ref()?, name.to_lowercase());
+        self.dirs.iter().find(|dir| !vault::in_templates(root, &dir.join("x")) && dir.file_name().is_some_and(|n| n.to_string_lossy().to_lowercase() == wanted)).cloned()
     }
 
     /// Le schéma est enregistré à chaque changement : rien n'attend en mémoire.
@@ -2818,6 +2876,150 @@ impl Shell {
         self.open_wiki(&name, cx);
     }
 
+    /// Ce qu'un dépôt ferait, tant qu'il dure : l'étiquette près du pointeur, le trait dans la note.
+    fn aim_drop(&mut self, aim: Option<DropAim>, cx: &mut Context<Self>) {
+        if aim == self.drop_aim {
+            return;
+        }
+        let mark = |aim: &Option<DropAim>| match aim {
+            Some(DropAim { aim: Aim::Note { pane, at, .. }, .. }) => Some((*pane, *at)),
+            _ => None,
+        };
+        let (old, new) = (mark(&self.drop_aim), mark(&aim));
+        if old != new {
+            for (n, pane) in self.panes.iter().enumerate() {
+                let at = new.filter(|(pane, _)| *pane == n).map(|(_, at)| at);
+                pane.editor.update(cx, |editor, cx| editor.set_drop_mark(at, cx));
+            }
+        }
+        self.drop_aim = aim;
+        cx.notify();
+    }
+
+    /// Des fichiers et des dossiers lâchés sur la fenêtre : copiés dans le coffre (l'original ne bouge pas, un
+    /// nom pris prend un numéro), puis, sur une note, nommés par une ligne chacun là où le trait était.
+    fn drop_paths(&mut self, paths: Vec<PathBuf>, aim: Aim, cx: &mut Context<Self>) {
+        let Some(root) = self.vault.clone() else {
+            return;
+        };
+        let dir = match &aim {
+            Aim::Note { pane, .. } => {
+                self.panes.get(*pane).and_then(|p| p.path.as_deref()).and_then(Path::parent).map(Path::to_path_buf).unwrap_or_else(|| root.clone())
+            }
+            Aim::Folder(dir) => dir.clone(),
+            Aim::Root => root.clone(),
+        };
+        self.aim_drop(None, cx);
+        if paths.is_empty() {
+            return;
+        }
+        self.say(Tone::Busy, tr("Copying…", "Copie…"), cx);
+        cx.spawn(async move |this, cx| {
+            let copied = cx.background_executor().spawn({
+                let dir = dir.clone();
+                async move { vault::import(&paths, &dir) }
+            });
+            let (done, problems) = copied.await;
+            this.update(cx, |this, cx| this.dropped(done, problems, &root, &dir, aim, cx)).ok();
+        })
+        .detach();
+    }
+
+    /// Ce que la copie a rangé : les nouveaux fichiers dans l'arbre, leurs liens dans la note, un mot sur ce
+    /// qui a été laissé de côté.
+    fn dropped(&mut self, done: Vec<vault::Imported>, problems: Vec<String>, root: &Path, dir: &Path, aim: Aim, cx: &mut Context<Self>) {
+        self.toasts.retain(|t| t.tone != Tone::Busy);
+        if done.is_empty() {
+            let why = problems.first().cloned().unwrap_or_default();
+            return self.say(Tone::Failed, format!("{} : {why}", tr("Nothing copied", "Rien n'a été copié")), cx);
+        }
+        self.rescan(root, cx);
+        if let Some(first) = done.first() {
+            self.nav.open.insert(dir.to_path_buf());
+            self.nav.reveal(&first.to);
+        }
+        if let Aim::Note { pane, at, version } = aim {
+            // Une ligne par élément : l'image s'affiche, un autre fichier se lie par son nom.
+            let lines: Vec<String> = done
+                .iter()
+                // Un type que le coffre ne liste pas (`.exe`…) est copié, mais n'a pas de lien qui s'ouvre.
+                .filter(|item| item.dir || vault::is_file_shown(&item.to) || item.to.extension().is_some_and(|e| e.eq_ignore_ascii_case("md")))
+                .map(|item| {
+                    let name = item.to.file_name().unwrap_or_default().to_string_lossy();
+                    match (item.dir, vault::is_image(&item.to)) {
+                        (false, true) => format!("![[{name}]]"),
+                        (false, false) if item.to.extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) => format!("[[{}]]", vault::stem(&item.to)),
+                        _ => format!("[[{name}]]"),
+                    }
+                })
+                .collect();
+            if let Some(editor) = self.panes.get(pane).map(|p| p.editor.clone()).filter(|_| !lines.is_empty()) {
+                // Le texte a changé pendant la copie : les lignes vont où est le curseur.
+                editor.update(cx, |editor, cx| {
+                    let at = if editor.revision() == version { at } else { editor.caret_line_start() };
+                    editor.insert_lines(at, &lines, cx);
+                });
+            }
+        }
+        let files: usize = done.iter().map(|d| d.files.max(1)).sum();
+        let place = match dir.strip_prefix(root) {
+            Ok(rel) if !rel.as_os_str().is_empty() => rel.display().to_string(),
+            _ => tr("the vault", "le coffre").to_string(),
+        };
+        let mut said = format!("{} {} {} {place}", tr("Copied", "Copié"), files, tr(if files == 1 { "file into" } else { "files into" }, if files == 1 { "fichier dans" } else { "fichiers dans" }));
+        if !problems.is_empty() {
+            said.push_str(&format!(" · {} {}", problems.len(), tr("left out", "laissés de côté")));
+        }
+        self.say(if problems.is_empty() { Tone::Done } else { Tone::Info }, said, cx);
+    }
+
+    /// Où des fichiers glissés en `at` se rangeraient dans la note du pane `pane` : seulement si une note s'y écrit.
+    fn note_aim(&self, pane: usize, at: Point<Pixels>, items: usize, cx: &App) -> Option<DropAim> {
+        let shown = self.panes.get(pane)?;
+        let editor = shown.editor.read(cx);
+        let board = kanban::is_board(editor.text()) && !shown.board_text;
+        let writes = shown.picture.is_none() && shown.listing.is_none() && !board && self.vault.is_some();
+        writes.then(|| DropAim { aim: Aim::Note { pane, at: editor.drop_point(at), version: editor.revision() }, items, pointer: at })
+    }
+
+    /// L'étiquette qui suit le pointeur pendant qu'on glisse des fichiers sur la fenêtre.
+    fn render_drop_chip(&self, view: Size<Pixels>) -> Option<impl IntoElement + use<>> {
+        let (aim, t) = (self.drop_aim.as_ref()?, self.theme);
+        let name = |path: &Path| path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let (verb, place) = match &aim.aim {
+            Aim::Note { pane, .. } => {
+                let title = self.panes.get(*pane).and_then(|p| p.path.as_deref()).map(vault::stem).unwrap_or_else(|| tr("New note", "Nouvelle note").to_string());
+                (tr("Insert in", "Insérer dans"), title)
+            }
+            Aim::Folder(dir) => (tr("Copy into", "Copier dans"), name(dir)),
+            Aim::Root => (tr("Copy into", "Copier dans"), tr("the vault", "le coffre").to_string()),
+        };
+        let count = format!("{} {}", aim.items, tr(if aim.items == 1 { "item" } else { "items" }, if aim.items == 1 { "élément" } else { "éléments" }));
+        // Près d'un bord, l'étiquette passe de l'autre côté du pointeur : elle reste dans la fenêtre.
+        let (left, above) = (aim.pointer.x > view.width * 0.6, aim.pointer.y > view.height - px(70.));
+        Some(
+            div()
+                .debug_selector(|| "drop-chip".into())
+                .absolute()
+                .map(|d| if left { d.right(view.width - aim.pointer.x + px(14.)) } else { d.left(aim.pointer.x + px(14.)) })
+                .map(|d| if above { d.bottom(view.height - aim.pointer.y + px(14.)) } else { d.top(aim.pointer.y + px(18.)) })
+                .max_w(px(420.))
+                .truncate()
+                .px_2()
+                .py_1()
+                .rounded(px(8.))
+                .bg(t.panel)
+                .border_1()
+                .border_color(t.accent.opacity(0.6))
+                .text_size(px(12.))
+                .text_color(t.text)
+                .flex()
+                .gap_1()
+                .child(div().text_color(t.accent).child(verb))
+                .child(format!("« {place} » · {count}")),
+        )
+    }
+
     /// Les modèles du coffre, par nom.
     fn templates(&self) -> Vec<PathBuf> {
         let Some(root) = &self.vault else {
@@ -2960,7 +3162,7 @@ impl Shell {
     }
 
     fn open_wiki(&mut self, name: &str, cx: &mut Context<Self>) {
-        match self.wiki_path(name) {
+        match self.wiki_path(name).or_else(|| self.wiki_file(name)) {
             Some(path) => self.open_note(&path, cx),
             None => self.new_note(format!("# {name}\n\n"), cx),
         }
@@ -3238,6 +3440,7 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 t("@", tr("Link to the note of a day: @today, @monday, @2026-10-09", "Lien vers la note d'un jour : @demain, @lundi, @2026-10-09")),
                 t("![](image.png)", tr("Picture, under its line", "Image, sous sa ligne")),
                 t("![[", tr("Suggests the pictures and diagrams of the vault", "Propose les images et les schémas du coffre")),
+                t(tr("Drop files", "Déposer des fichiers"), tr("Drag files or folders from your file manager onto a note (a line shows where) or onto the tree (the folder under the pointer): they are copied, never overwritten, and a note gets a link per item", "Glisser des fichiers ou des dossiers du gestionnaire de fichiers sur une note (un trait montre où) ou sur l'arbre (le dossier sous le pointeur) : ils sont copiés, jamais écrasés, et la note reçoit un lien par élément")),
                 t(tr("Double / triple click", "Double / triple clic"), tr("Select a word / a line; drag to extend by words / lines", "Sélectionner un mot / une ligne ; glisser étend par mots / par lignes")),
                 t("```mermaid", tr("Diagram, under its block", "Diagramme, sous son bloc")),
                 t("$x^2$  $$…$$", tr("LaTeX formula, under its line", "Formule LaTeX, sous sa ligne")),
@@ -3846,6 +4049,23 @@ impl Shell {
                     cx.notify();
                 }
             }))
+            // Des fichiers du système sur la note : un trait entre deux lignes dit où ils se rangeraient.
+            .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                let mine = matches!(&this.drop_aim, Some(DropAim { aim: Aim::Note { pane: p, .. }, .. }) if *p == pane);
+                let at = e.event.position;
+                match e.bounds.contains(&at).then(|| this.note_aim(pane, at, e.drag(cx).paths().len(), cx)).flatten() {
+                    Some(aim) => this.aim_drop(Some(aim), cx),
+                    None if mine => this.aim_drop(None, cx),
+                    None => {}
+                }
+            }))
+            .on_drop(cx.listener(move |this, paths: &gpui::ExternalPaths, _, cx| {
+                if let Some(DropAim { aim: aim @ Aim::Note { pane: p, .. }, .. }) = this.drop_aim.clone()
+                    && p == pane
+                {
+                    this.drop_paths(paths.paths().to_vec(), aim, cx);
+                }
+            }))
             .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<nav::Dragged>, _, cx| {
                 let at = e.event.position;
                 let aim = e.bounds.contains(&at).then(|| (pane, this.panes.len() == 1 && at.x > e.bounds.center().x));
@@ -3944,8 +4164,16 @@ impl Render for Shell {
         } else if let Some(pane) = (0..self.panes.len()).find(|&pane| self.panes[pane].zone.contains_focused(window, cx)) {
             self.active = pane;
         }
-        if !cx.has_active_drag() {
+        #[cfg(test)]
+        let dragging = cx.has_active_drag() || self.keep_aim;
+        #[cfg(not(test))]
+        let dragging = cx.has_active_drag();
+        if !dragging {
             self.pane_aim = None;
+            // Le glisser est fini (lâché, ou sorti de la fenêtre) : plus d'étiquette ni de trait.
+            if self.drop_aim.is_some() {
+                self.aim_drop(None, cx);
+            }
         }
         if self.editor.focus_handle(cx).is_focused(window) {
             self.keep_preview();
@@ -4016,7 +4244,14 @@ impl Render for Shell {
 
         let body = div().flex_1().min_h_0().relative();
         let body = if self.vault.is_none() {
-            body.flex()
+            // Sans coffre, un dossier lâché sur l'accueil devient le coffre.
+            body.drag_over::<gpui::ExternalPaths>(move |style, _, _, _| style.bg(t.selection))
+                .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
+                    if let Some(dir) = paths.paths().iter().find(|p| p.is_dir()) {
+                        this.set_vault(dir.clone(), window, cx);
+                    }
+                }))
+                .flex()
                 .flex_col()
                 .items_center()
                 .justify_center()
@@ -4388,6 +4623,7 @@ impl Render for Shell {
             .when(client, |d| d.child(pill))
             .children(self.render_menu(window, cx))
             .children(self.render_icons(window, cx))
+            .children(self.render_drop_chip(window.viewport_size()))
             .when(self.help, |d| d.child(self.render_help(window.viewport_size().height < px(420.), cx)));
 
         // La marge transparente porte l'ombre et sert de poignée de redimensionnement.
@@ -8096,6 +8332,139 @@ mod tests {
         cx.simulate_keystrokes("secondary-j");
         assert_eq!(text(cx), format!("# {name}\n\n- [ ] "));
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Le glisser-déposer de bout en bout : ce que `drop_paths` fait de ce que la fenêtre reçoit, et ses limites
+    /// (le câblage des événements du système ne se simule pas : `ExternalPaths` ne se construit pas hors de GPUI).
+    #[gpui::test]
+    fn drops_journey(cx: &mut TestAppContext) {
+        const PNG: [u8; 69] = [
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f,
+            0x15, 0xc4, 0x89, 0, 0, 0, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xff, 0xff, 0x3f, 0, 0x05, 0xfe, 0x02, 0xfe, 0xa7,
+            0x35, 0x81, 0x84, 0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        let base = std::env::temp_dir().join(format!("bref-drop-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let (root, ext) = (base.join("coffre"), base.join("dehors"));
+        fs::create_dir_all(root.join("Dossier")).unwrap();
+        fs::create_dir_all(ext.join("Photos/été")).unwrap();
+        let carnet = "# Carnet\n\npremier\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n```\ncode\n```\n\nfin";
+        fs::write(root.join("Carnet.md"), carnet).unwrap();
+        fs::write(root.join("Dossier/Autre.md"), "# Autre\n\nici\n").unwrap();
+        for (name, bytes) in [("photo.png", PNG.as_slice()), ("rapport.pdf", b"%PDF".as_slice()), ("clip final.mp4", b"mp4".as_slice()), ("inconnu.exe", b"MZ".as_slice()), (".secret", b"x".as_slice()), ("Idées.md", "# Idées\n".as_bytes()), ("Photos/a.png", PNG.as_slice()), ("Photos/été/b.png", PNG.as_slice())] {
+            fs::write(ext.join(name), bytes).unwrap();
+        }
+        let _config = isolated_config(&base);
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+        let told = |cx: &mut gpui::VisualTestContext, tone, part: &str| shell.read_with(cx, |s, _| s.told(tone, part));
+        let drop = |cx: &mut gpui::VisualTestContext, names: &[&str], aim: Aim| {
+            let paths = names.iter().map(|n| ext.join(n)).collect();
+            shell.update(cx, |s, cx| s.drop_paths(paths, aim, cx));
+            cx.run_until_parked();
+        };
+        let known = |cx: &mut gpui::VisualTestContext, path: PathBuf| shell.read_with(cx, |s, _| s.images.contains(&path));
+        // Sur un dossier de l'arbre : les fichiers y sont copiés, l'arbre les montre, un avis le dit.
+        drop(cx, &["rapport.pdf", "clip final.mp4"], Aim::Folder(root.join("Dossier")));
+        assert!(root.join("Dossier/rapport.pdf").is_file() && root.join("Dossier/clip final.mp4").is_file());
+        assert!(known(cx, root.join("Dossier/rapport.pdf")) && known(cx, root.join("Dossier/clip final.mp4")), "les pièces jointes sont dans l'arbre");
+        assert!(told(cx, Tone::Done, "Copié 2 fichiers dans Dossier"), "{:?}", shell.read_with(cx, |s, _| s.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>()));
+        assert!(ext.join("rapport.pdf").is_file(), "l'original ne bouge pas");
+        // Les mêmes encore : des numéros, rien n'est écrasé. Un fichier caché, un type inconnu, un chemin absent.
+        fs::write(root.join("Dossier/rapport.pdf"), "le mien").unwrap();
+        drop(cx, &["rapport.pdf", ".secret", "inconnu.exe", "n'existe-pas.png"], Aim::Folder(root.join("Dossier")));
+        assert_eq!(fs::read_to_string(root.join("Dossier/rapport.pdf")).unwrap(), "le mien");
+        assert!(root.join("Dossier/rapport 2.pdf").is_file() && root.join("Dossier/inconnu.exe").is_file() && !root.join("Dossier/.secret").exists());
+        assert!(told(cx, Tone::Info, "2 laissés de côté"), "{:?}", shell.read_with(cx, |s, _| s.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>()));
+        assert!(!known(cx, root.join("Dossier/inconnu.exe")), "un type inconnu est copié mais pas listé");
+        // Rien de copiable : un avis d'échec, et rien ne change. Une liste vide : rien du tout.
+        let before = fs::read_dir(root.join("Dossier")).unwrap().count();
+        drop(cx, &["n'existe-pas.png", ".secret"], Aim::Folder(root.join("Dossier")));
+        assert!(told(cx, Tone::Failed, "Rien n'a été copié") && fs::read_dir(root.join("Dossier")).unwrap().count() == before);
+        drop(cx, &[], Aim::Root);
+        // Un dossier à la racine du coffre, avec ses sous-dossiers.
+        drop(cx, &["Photos"], Aim::Root);
+        assert!(root.join("Photos/a.png").is_file() && root.join("Photos/été/b.png").is_file());
+        assert!(told(cx, Tone::Done, "Copié 2 fichiers dans le coffre"));
+        // Où se pose un dépôt sur la note : au début de la ligne visée, ou de la suivante dans sa moitié basse ;
+        // jamais dans un tableau ni dans un bloc de code ; après la dernière ligne sous le texte.
+        shell.update(cx, |s, cx| s.open_note(&root.join("Carnet.md"), cx));
+        cx.run_until_parked();
+        let (editor, line) = (shell.read_with(cx, |s, _| s.editor.clone()), |text: &str, what: &str| text.find(what).unwrap());
+        let at = |cx: &mut gpui::VisualTestContext, what: &str, dy: f32| {
+            let start = line(carnet, what);
+            let mut spot = editor.read_with(cx, |e, _| e.point_of(start).unwrap());
+            spot.y += px(dy);
+            editor.read_with(cx, |e, _| e.drop_point(spot))
+        };
+        assert_eq!(at(cx, "premier", -4.), line(carnet, "premier"));
+        assert_eq!(at(cx, "premier", 9.), line(carnet, "premier") + "premier\n".len(), "moitié basse : la ligne suivante, ici la vide");
+        assert_eq!(at(cx, "| 1 | 2 |", -2.), line(carnet, "```") - 1, "dans un tableau : après lui (la ligne vide qui le suit)");
+        assert_eq!(at(cx, "| a | b |", -8.), line(carnet, "| a | b |"), "avant la première ligne du tableau, c'est le bord du bloc");
+        assert_eq!(at(cx, "code", 2.), line(carnet, "fin") - 1, "dans un bloc de code : après sa clôture");
+        assert_eq!(at(cx, "fin", 40.), carnet.len());
+        // Le dépôt sur la note : une ligne par élément, à leur place, dans le dossier de la note ; un seul pas
+        // d'annulation ; le trait et l'étiquette disparaissent.
+        let (version, premier) = (editor.read_with(cx, |e, _| e.revision()), line(carnet, "premier"));
+        drop(cx, &["photo.png", "rapport.pdf", "Idées.md", "Photos", "inconnu.exe", ".secret"], Aim::Note { pane: 0, at: premier, version });
+        let lines = "![[photo.png]]\n[[rapport.pdf]]\n[[Idées]]\n[[Photos 2]]\n";
+        assert_eq!(text(cx), format!("# Carnet\n\n{lines}premier{}", &carnet["# Carnet\n\npremier".len()..]));
+        assert!(root.join("photo.png").is_file() && root.join("Photos 2/a.png").is_file() && root.join("inconnu.exe").is_file());
+        assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Idées")), "la note déposée est une note du coffre");
+        shell.update_in(cx, |s, window, cx| window.focus(&s.editor.focus_handle(cx)));
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(text(cx), carnet);
+        // Au bout d'une note sans retour à la ligne final, puis dans une note rangée dans un sous-dossier.
+        let (version, end) = (editor.read_with(cx, |e, _| e.revision()), carnet.len());
+        drop(cx, &["clip final.mp4"], Aim::Note { pane: 0, at: end, version });
+        assert_eq!(text(cx), format!("{carnet}\n[[clip final.mp4]]"));
+        cx.simulate_keystrokes("secondary-z");
+        shell.update(cx, |s, cx| s.open_note(&root.join("Dossier/Autre.md"), cx));
+        let (version, top) = (shell.read_with(cx, |s, cx| s.editor.read(cx).revision()), 0);
+        drop(cx, &["photo.png"], Aim::Note { pane: 0, at: top, version });
+        assert!(root.join("Dossier/photo.png").is_file(), "dans le dossier de la note, comme une image collée");
+        assert!(text(cx).starts_with("![[photo.png]]\n# Autre"));
+        cx.simulate_keystrokes("secondary-z");
+        // Le texte a changé pendant la copie : les lignes vont où est le curseur, pas où était le trait.
+        let stale = Aim::Note { pane: 0, at: 0, version: 0 };
+        drop(cx, &["rapport.pdf"], stale);
+        assert!(text(cx).contains("[[rapport 3.pdf]]") || text(cx).contains("[[rapport.pdf]]") || text(cx).contains("[[rapport 2.pdf]]"), "{}", text(cx));
+        cx.simulate_keystrokes("secondary-z");
+        // Les liens : une pièce jointe s'ouvre sans créer de note, un dossier s'ouvre en page liste, un nom
+        // inconnu crée la note comme toujours.
+        let notes = shell.read_with(cx, |s, _| s.notes.len());
+        shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("rapport.pdf".into()), window, cx));
+        shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("RAPPORT.PDF".into()), window, cx));
+        assert_eq!(shell.read_with(cx, |s, _| s.notes.len()), notes, "ouvrir une pièce jointe ne crée pas de note");
+        let opened = shell.read_with(cx, |s, _| s.opened.clone());
+        assert!(opened.len() == 2 && opened.iter().all(|p| p.file_name().unwrap() == "rapport.pdf"), "le système ouvre la pièce jointe, sans tenir compte de la casse : {opened:?}");
+        shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("Photos".into()), window, cx));
+        assert_eq!(shell.read_with(cx, |s, _| s.listing.as_ref().map(|l| l.of.clone())), Some(root.join("Photos")));
+        shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("nuage".into()), window, cx));
+        assert!(shell.read_with(cx, |s, cx| s.listing.is_none() && s.editor.read(cx).text().starts_with("# nuage")));
+        // L'étiquette : près de chaque bord de la fenêtre, elle reste dedans, et elle disparaît avec le glisser.
+        let view = cx.update(|window, _| window.viewport_size());
+        shell.update(cx, |s, _| s.keep_aim = true);
+        for pointer in [point(px(4.), px(4.)), point(view.width - px(3.), px(4.)), point(px(4.), view.height - px(3.)), point(view.width - px(3.), view.height - px(3.))] {
+            shell.update(cx, |s, cx| s.aim_drop(Some(DropAim { aim: Aim::Folder(root.join("Dossier")), items: 12, pointer }), cx));
+            cx.run_until_parked();
+            let chip = cx.debug_bounds("drop-chip").unwrap();
+            assert!(chip.left() >= px(0.) && chip.top() >= px(0.) && chip.right() <= view.width && chip.bottom() <= view.height, "{pointer:?} : {chip:?}");
+        }
+        // Le glisser fini, l'étiquette part d'elle-même au prochain dessin.
+        shell.update(cx, |s, cx| {
+            s.keep_aim = false;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.drop_aim.is_none()));
+        let _ = fs::remove_dir_all(&base);
     }
 
     /// Sans coffre, l'accueil en crée un d'un clic, dans `Notes` du dossier personnel.
