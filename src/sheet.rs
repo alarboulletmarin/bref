@@ -20,6 +20,7 @@ use gpui::{
 
 use crate::{
     Theme,
+    editor::{self, TableOp},
     line::{self, Line},
     markdown, mono,
     nav::{button, tip},
@@ -97,6 +98,13 @@ enum Change {
     Set(Vec<(usize, usize, String)>),
     Insert(usize, Vec<Vec<String>>),
     Remove(Range<usize>),
+    /// `n` colonnes avant `at`, avec leurs cellules d'avant (rien : vides).
+    InsertCols(usize, usize, Vec<Vec<String>>),
+    RemoveCols(Range<usize>),
+    /// Les colonnes vont commencer en `to` (compté une fois retirées).
+    MoveCols(Range<usize>, usize),
+    /// Les lignes d'une fenêtre qui commence à `start` : la ligne `i` devient l'ancienne `perm[i]`.
+    Reorder(usize, Vec<usize>),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -577,6 +585,12 @@ impl Sheet {
         all
     }
 
+    /// Nombre de gestes qu'on peut défaire.
+    #[cfg(test)]
+    pub fn undo_len(&self) -> usize {
+        self.undo.len()
+    }
+
     /// Où l'on en est dans le tableau : la cellule du curseur et le défilement, pour y revenir.
     pub fn whereabouts(&self) -> ((usize, usize), (f32, f32)) {
         (self.cursor, self.scroll)
@@ -679,6 +693,32 @@ impl Sheet {
                 self.table.remove_rows(range);
                 Change::Insert(at, rows)
             }
+            // Les largeurs se mesurent de nouveau : `settle` voit qu'elles ne tiennent plus au tableau.
+            Change::InsertCols(at, n, saved) => {
+                self.table.insert_cols(at, n, &saved);
+                self.widths.clear();
+                Change::RemoveCols(at..at + n)
+            }
+            Change::RemoveCols(range) => {
+                let (n, at) = (range.len(), range.start);
+                let saved = self.table.remove_cols(range);
+                self.widths.clear();
+                Change::InsertCols(at, n, saved)
+            }
+            Change::MoveCols(range, to) => {
+                let back = Change::MoveCols(to..to + range.len(), range.start);
+                self.table.move_cols(range, to);
+                self.widths.clear();
+                back
+            }
+            Change::Reorder(start, perm) => {
+                self.table.reorder(start, &perm);
+                let mut back = vec![0; perm.len()];
+                for (i, &from) in perm.iter().enumerate() {
+                    back[from] = i;
+                }
+                Change::Reorder(start, back)
+            }
         }
     }
 
@@ -737,6 +777,85 @@ impl Sheet {
         let at = if below { rows.end } else { rows.start };
         self.commit(vec![Change::Insert(at, vec![Vec::new()])], cx);
         self.select_to((at, self.cursor.1), false, cx);
+    }
+
+    /// Un geste de tableau, comme dans une note : sur les lignes et les colonnes de la sélection. Les
+    /// colonnes et le tri lisent tout le fichier, et un geste se défait d'un trait.
+    pub fn table_op(&mut self, op: TableOp, cx: &mut Context<Self>) {
+        self.finish(cx);
+        self.more.clear();
+        let (rows, cols) = self.selection();
+        let (first, tall, wide) = (self.first(), self.table.rows(), self.cols());
+        let (r, c) = self.cursor;
+        match op {
+            TableOp::RowAbove => self.insert_rows(false, cx),
+            TableOp::RowBelow => self.insert_rows(true, cx),
+            TableOp::DeleteRow => self.delete_rows(cx),
+            TableOp::ColLeft | TableOp::ColRight => {
+                let at = if op == TableOp::ColLeft { cols.start } else { cols.end };
+                self.commit(vec![Change::InsertCols(at, 1, Vec::new())], cx);
+                (self.anchor, self.cursor) = ((r, at), (r, at));
+            }
+            TableOp::DuplicateRow => {
+                let copies = rows.clone().map(|r| self.table.row(r).into_iter().map(|c| c.into_owned()).collect()).collect();
+                self.commit(vec![Change::Insert(rows.end, copies)], cx);
+                self.select_to((rows.end, c), false, cx);
+            }
+            TableOp::DuplicateCol => {
+                let saved = (0..tall).map(|r| self.table.cells(r, cols.clone()).into_iter().map(|c| c.into_owned()).collect()).collect();
+                self.commit(vec![Change::InsertCols(cols.end, cols.len(), saved)], cx);
+                (self.anchor, self.cursor) = ((r, cols.end), (r, cols.end));
+            }
+            // Le corps seul bouge : l'en-tête reste en haut, et rien ne sort du tableau.
+            TableOp::MoveRowUp if rows.start > first => {
+                let perm: Vec<usize> = (1..=rows.len()).chain([0]).collect();
+                self.commit(vec![Change::Reorder(rows.start - 1, perm)], cx);
+                (self.anchor, self.cursor) = ((self.anchor.0 - 1, self.anchor.1), (r - 1, c));
+                self.settle(cx);
+            }
+            TableOp::MoveRowDown if rows.end < tall => {
+                let perm: Vec<usize> = [rows.len()].into_iter().chain(0..rows.len()).collect();
+                self.commit(vec![Change::Reorder(rows.start, perm)], cx);
+                (self.anchor, self.cursor) = ((self.anchor.0 + 1, self.anchor.1), (r + 1, c));
+                self.settle(cx);
+            }
+            TableOp::MoveColLeft if cols.start > 0 => {
+                self.commit(vec![Change::MoveCols(cols.clone(), cols.start - 1)], cx);
+                (self.anchor, self.cursor) = ((self.anchor.0, self.anchor.1 - 1), (r, c - 1));
+                self.settle(cx);
+            }
+            TableOp::MoveColRight if cols.end < wide => {
+                self.commit(vec![Change::MoveCols(cols.clone(), cols.start + 1)], cx);
+                (self.anchor, self.cursor) = ((self.anchor.0, self.anchor.1 + 1), (r, c + 1));
+                self.settle(cx);
+            }
+            // Retirer toutes les colonnes ne laisserait pas de tableau.
+            TableOp::DeleteCol if cols.len() < wide => self.commit(vec![Change::RemoveCols(cols)], cx),
+            TableOp::SortAsc | TableOp::SortDesc => self.sort(c, op == TableOp::SortAsc, cx),
+            _ => {}
+        }
+    }
+
+    /// Les lignes sous l'en-tête, triées sur la colonne `col` : tri naturel, cellules vides à la fin dans
+    /// les deux sens, lignes égales dans leur ordre d'avant. Les lignes ne sont pas copiées.
+    fn sort(&mut self, col: usize, ascending: bool, cx: &mut Context<Self>) {
+        let (first, tall) = (self.first(), self.table.rows());
+        let keys: Vec<String> = (first..tall).map(|r| self.table.cell(r, col).into_owned()).collect();
+        let mut perm: Vec<usize> = (0..keys.len()).collect();
+        perm.sort_by(|&a, &b| {
+            match (keys[a].trim().is_empty(), keys[b].trim().is_empty()) {
+                (true, true) => std::cmp::Ordering::Equal,
+                (true, false) => std::cmp::Ordering::Greater,
+                (false, true) => std::cmp::Ordering::Less,
+                _ => {
+                    let order = crate::markdown::cell_order(&keys[a], &keys[b]);
+                    if ascending { order } else { order.reverse() }
+                }
+            }
+        });
+        if perm.iter().enumerate().any(|(i, &p)| i != p) {
+            self.commit(vec![Change::Reorder(first, perm)], cx);
+        }
     }
 
     fn delete_rows(&mut self, cx: &mut Context<Self>) {
@@ -1354,6 +1473,20 @@ impl Render for Sheet {
             .on_action(cx.listener(|this, _: &InsertBelow, _, cx| this.insert_rows(true, cx)))
             .on_action(cx.listener(|this, _: &InsertAbove, _, cx| this.insert_rows(false, cx)))
             .on_action(cx.listener(|this, _: &DeleteRows, _, cx| this.delete_rows(cx)))
+            .on_action(cx.listener(|this, _: &editor::TableRowAbove, _, cx| this.table_op(TableOp::RowAbove, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableRowBelow, _, cx| this.table_op(TableOp::RowBelow, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableColLeft, _, cx| this.table_op(TableOp::ColLeft, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableColRight, _, cx| this.table_op(TableOp::ColRight, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableDuplicateRow, _, cx| this.table_op(TableOp::DuplicateRow, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableDuplicateCol, _, cx| this.table_op(TableOp::DuplicateCol, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableMoveRowUp, _, cx| this.table_op(TableOp::MoveRowUp, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableMoveRowDown, _, cx| this.table_op(TableOp::MoveRowDown, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableMoveColLeft, _, cx| this.table_op(TableOp::MoveColLeft, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableMoveColRight, _, cx| this.table_op(TableOp::MoveColRight, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableDeleteRow, _, cx| this.table_op(TableOp::DeleteRow, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableDeleteCol, _, cx| this.table_op(TableOp::DeleteCol, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableSortAsc, _, cx| this.table_op(TableOp::SortAsc, cx)))
+            .on_action(cx.listener(|this, _: &editor::TableSortDesc, _, cx| this.table_op(TableOp::SortDesc, cx)))
             .child(self.render_bar(cx))
             .child(body)
     }

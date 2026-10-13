@@ -574,6 +574,89 @@ impl Table {
         }
     }
 
+    /// Nombre de champs de la ligne `row`.
+    fn width_of(&self, row: usize) -> usize {
+        match self.recs.get(row) {
+            Some(&Rec::Raw(s, e)) => split_fields(self.raw(s, e), self.delimiter).len(),
+            Some(&Rec::Owned(k)) => self.owned[k as usize].len(),
+            None => 0,
+        }
+    }
+
+    /// Insère `n` colonnes avant `at`. `saved[r]` donne les cellules de la ligne `r` (une liste vide : la
+    /// ligne n'en avait pas) ; une ligne plus courte que `at` et sans cellule à poser n'a rien à décaler :
+    /// elle reste telle quelle sur disque.
+    // ponytail: toute ligne qui a des cellules à décaler devient possédée en mémoire ; sur un fichier de
+    // centaines de milliers de lignes, la place d'une copie de ses champs.
+    pub fn insert_cols(&mut self, at: usize, n: usize, saved: &[Vec<String>]) {
+        let at = at.min(self.cols);
+        for r in 0..self.recs.len() {
+            let data = saved.get(r).filter(|cells| !cells.is_empty());
+            if data.is_none() && self.width_of(r) <= at {
+                continue;
+            }
+            let cells = self.owned_row(r);
+            if cells.len() < at {
+                cells.resize(at, String::new());
+            }
+            let mut new = data.cloned().unwrap_or_default();
+            new.resize(n, String::new());
+            cells.splice(at..at, new);
+        }
+        self.cols += n;
+    }
+
+    /// Retire les colonnes `range` et rend leurs cellules, ligne par ligne (une ligne qui n'en avait
+    /// pas rend une liste vide) : de quoi les remettre telles quelles.
+    pub fn remove_cols(&mut self, range: Range<usize>) -> Vec<Vec<String>> {
+        let range = range.start..range.end.min(self.cols);
+        let n = range.len();
+        let mut saved = vec![Vec::new(); self.recs.len()];
+        for (r, taken) in saved.iter_mut().enumerate() {
+            if range.is_empty() || self.width_of(r) <= range.start {
+                continue;
+            }
+            let cells = self.owned_row(r);
+            let end = range.end.min(cells.len());
+            *taken = cells.drain(range.start..end).collect();
+            taken.resize(n, String::new());
+        }
+        self.cols = (self.cols - n).max(1);
+        saved
+    }
+
+    /// Les colonnes `range` vont commencer en `to` (compté une fois elles retirées). Une ligne qui n'a
+    /// rien d'aussi loin à droite que le plus proche des deux bords reste telle quelle sur disque.
+    // ponytail: une ligne plus courte que les colonnes déplacées garde, une fois déplacées en retour, des
+    // cellules vides en fin de ligne (`5` devient `5,,`) : mêmes cellules, un peu plus d'octets.
+    pub fn move_cols(&mut self, range: Range<usize>, to: usize) {
+        let near = range.start.min(to);
+        for r in 0..self.recs.len() {
+            if self.width_of(r) <= near {
+                continue;
+            }
+            let cells = self.owned_row(r);
+            if cells.len() < range.end {
+                cells.resize(range.end, String::new());
+            }
+            let block: Vec<String> = cells.drain(range.clone()).collect();
+            if cells.len() < to {
+                cells.resize(to, String::new());
+            }
+            cells.splice(to..to, block);
+        }
+        self.cols = self.cols.max(to + range.len());
+    }
+
+    /// Les lignes `start..start + perm.len()` prennent l'ordre de `perm` : la ligne `i` de la fenêtre
+    /// devient l'ancienne `perm[i]`. Les lignes ne sont ni lues ni copiées.
+    pub fn reorder(&mut self, start: usize, perm: &[usize]) {
+        let old: Vec<Rec> = self.recs[start..start + perm.len()].to_vec();
+        for (i, &from) in perm.iter().enumerate() {
+            self.recs[start + i] = old[from];
+        }
+    }
+
     /// Écrase à partir de `(row, col)`, en ajoutant lignes et colonnes au besoin.
     pub fn paste(&mut self, row: usize, col: usize, grid: &[Vec<String>]) {
         for (i, line) in grid.iter().enumerate() {
@@ -1032,6 +1115,93 @@ special
         t.paste(0, 0, &[vec!["Z".to_string()]]);
         assert_eq!(t.cell(0, 0), "Z");
         assert_eq!(t.cell(0, 1), "b");
+    }
+
+    #[test]
+    fn columns_come_and_go_with_their_cells() {
+        let text = "a,b,c\n1,2,3\n4\n,,\n";
+        let mut t = table(text, b',');
+        let flat = |t: &Table| (0..t.rows()).map(|r| t.row(r).join("|")).collect::<Vec<_>>().join("/");
+        // Insérer une colonne vide : la ligne trop courte n'est pas touchée, une ligne vide gagne sa cellule.
+        t.insert_cols(1, 1, &[]);
+        assert_eq!((flat(&t), t.cols()), ("a||b|c/1||2|3/4/|||".to_string(), 4));
+        assert_eq!(written_text(&t), "a,,b,c\n1,,2,3\n4\n,,,\n");
+        // La retirer rend l'octet près le fichier d'origine.
+        let saved = t.remove_cols(1..2);
+        assert_eq!((flat(&t), t.cols()), ("a|b|c/1|2|3/4/||".to_string(), 3));
+        assert_eq!(written_text(&t), text);
+        // Retirer une colonne pleine, la remettre : rien ne change, même pour une ligne plus courte.
+        let mut t = table(text, b',');
+        let took = t.remove_cols(1..3);
+        assert_eq!((flat(&t), t.cols()), ("a/1/4/".to_string(), 1));
+        t.insert_cols(1, 2, &took);
+        assert_eq!((flat(&t), t.cols()), ("a|b|c/1|2|3/4/||".to_string(), 3));
+        assert_eq!(written_text(&t), text);
+        drop(saved);
+        // Une colonne retirée en entier : la dernière reste (un tableau garde une colonne).
+        let mut one = table("x\ny\n", b',');
+        one.remove_cols(0..1);
+        assert_eq!(one.cols(), 1);
+    }
+
+    #[test]
+    fn columns_move_as_a_block() {
+        let mut t = table("a,b,c,d\n1,2,3,4\n5\n", b',');
+        t.move_cols(1..3, 0);
+        // La ligne courte garde sa valeur dans la même colonne, qui a changé de place.
+        assert_eq!(written_text(&t), "b,c,a,d\n2,3,1,4\n,,5\n");
+        // Le geste inverse rend les mêmes cellules ; la ligne courte garde deux cellules vides en fin.
+        t.move_cols(0..2, 1);
+        assert_eq!(written_text(&t), "a,b,c,d\n1,2,3,4\n5,,\n");
+        t.move_cols(0..1, 3);
+        assert_eq!(written_text(&t), "b,c,d,a\n2,3,4,1\n,,,5\n");
+    }
+
+    /// À la main : `cargo test --release --locked big_table_columns -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn big_table_columns() {
+        let rows = 300_000;
+        let text: String = std::iter::once("id,name,score\n".to_string())
+            .chain((0..rows).map(|i| format!("{},nom{},{}\n", (i * 7919) % rows, i, if i % 50 == 0 { String::new() } else { (i % 97).to_string() })))
+            .collect();
+        let mut t = table(&text, b',');
+        let timed = |what: &str, start: Instant| eprintln!("{what}: {:?}", start.elapsed());
+        let start = Instant::now();
+        t.insert_cols(1, 1, &[]);
+        timed("insérer une colonne au milieu", start);
+        let start = Instant::now();
+        let saved = t.remove_cols(1..2);
+        timed("la retirer", start);
+        let start = Instant::now();
+        t.insert_cols(1, 1, &saved);
+        timed("la remettre", start);
+        let start = Instant::now();
+        t.move_cols(0..1, 2);
+        timed("déplacer une colonne", start);
+        let start = Instant::now();
+        let keys: Vec<String> = (1..t.rows()).map(|r| t.cell(r, 0).into_owned()).collect();
+        let mut perm: Vec<usize> = (0..keys.len()).collect();
+        perm.sort_by(|&a, &b| crate::markdown::cell_order(&keys[a], &keys[b]));
+        t.reorder(1, &perm);
+        timed("trier sur une colonne", start);
+        assert_eq!(t.rows(), rows + 1);
+    }
+
+    #[test]
+    fn rows_change_places_without_being_read() {
+        let mut t = table("c\na\nb\nd\n", b',');
+        t.reorder(1, &[1, 2, 0]);
+        assert_eq!(written_text(&t), "c\nb\nd\na\n");
+        // La permutation inverse défait.
+        t.reorder(1, &[2, 0, 1]);
+        assert_eq!(written_text(&t), "c\na\nb\nd\n");
+        t.reorder(0, &[]);
+        assert_eq!(written_text(&t), "c\na\nb\nd\n");
+    }
+
+    fn written_text(t: &Table) -> String {
+        String::from_utf8(written(t, Encoding::Utf8)).unwrap()
     }
 
     #[test]

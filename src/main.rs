@@ -2844,7 +2844,11 @@ impl Shell {
                 PaletteEvent::Outline => this.open_outline(window, cx),
                 PaletteEvent::Comments => this.open_comments(window, cx),
                 PaletteEvent::Grid(op) => {
-                    window.focus(&this.editor.focus_handle(cx));
+                    // Le geste va à ce qui est affiché : la feuille d'un CSV, ou la note.
+                    match this.shown_sheet() {
+                        Some(sheet) => window.focus(&sheet.focus_handle(cx)),
+                        None => window.focus(&this.editor.focus_handle(cx)),
+                    }
                     window.dispatch_action(op.action(), cx);
                 }
                 PaletteEvent::Restyle(style) => {
@@ -4440,6 +4444,8 @@ fn defaults() -> Vec<keys::Bind> {
         b("secondary-shift-b", &ListCycle, e),
         // Un tableau : monter ou descendre la ligne, la supprimer ; le reste par le menu, la palette ou l'aide.
         b("alt-up", &TableMoveRowUp, e),
+        b("alt-up", &TableMoveRowUp, sh),
+        b("alt-down", &TableMoveRowDown, sh),
         b("alt-down", &TableMoveRowDown, e),
         b("secondary-shift-backspace", &TableDeleteRow, e),
         b("secondary-shift-l", &AlignLeft, e),
@@ -6627,6 +6633,86 @@ mod tests {
         cx.simulate_input("Archives");
         cx.simulate_keystrokes("enter");
         assert!(root.join("Archives").is_dir(), "dossier créé depuis la palette");
+
+        // Colonnes et tri d'un CSV : insérer, déplacer, supprimer, dupliquer, trier, et tout défaire, le fichier
+        // retrouvant ses octets. Les cellules vides vont à la fin dans les deux sens ; la colonne refusée
+        // est la dernière ; l'en-tête reste en haut.
+        let cols = root.join("cols.csv");
+        let original = "id,name,score\n3,Zoé,10\n1,Max,\n2,Léa,9\n";
+        fs::write(&cols, original).unwrap();
+        shell.update(cx, |s, cx| {
+            let (notes, dirs, images) = vault::scan(&root);
+            s.sync(notes, dirs, images, cx);
+            s.open_note(&cols, cx);
+        });
+        let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("le tableau est affiché"));
+        shell.update_in(cx, |s, window, cx| window.focus(&s.shown_sheet().unwrap().focus_handle(cx)));
+        let all = |cx: &mut gpui::VisualTestContext| {
+            sheet.read_with(cx, |sheet, _| (0..sheet.table().rows()).map(|r| sheet.table().row(r).join("|")).collect::<Vec<_>>().join("/"))
+        };
+        let on_disk = |cx: &mut gpui::VisualTestContext| {
+            cx.executor().advance_clock(Duration::from_secs(1));
+            cx.run_until_parked();
+            fs::read_to_string(&cols).unwrap()
+        };
+        let table_op = |cx: &mut gpui::VisualTestContext, op| sheet.update(cx, |sheet, cx| sheet.table_op(op, cx));
+        assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
+        // Trier par la palette, sur la colonne du curseur : « score » de haut en bas, vide en dernier.
+        cx.simulate_keystrokes("down right right");
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("de A à Z");
+        cx.simulate_keystrokes("down enter");
+        assert_eq!(all(cx), "id|name|score/2|Léa|9/3|Zoé|10/1|Max|");
+        table_op(cx, editor::TableOp::SortDesc);
+        assert_eq!(all(cx), "id|name|score/3|Zoé|10/2|Léa|9/1|Max|");
+        // Deux lignes égales gardent leur ordre ; trier un tableau trié ne change rien (pas d'étape d'annulation).
+        let undo_len = sheet.read_with(cx, |sheet, _| sheet.undo_len());
+        table_op(cx, editor::TableOp::SortDesc);
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.undo_len()), undo_len);
+        assert_eq!(on_disk(cx), "id,name,score\n3,Zoé,10\n2,Léa,9\n1,Max,\n");
+        cx.simulate_keystrokes("secondary-z secondary-z");
+        assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
+        assert_eq!(on_disk(cx), original, "annulé, le fichier retrouve ses octets");
+        // Une colonne vide à droite, une copie, un déplacement, puis tout défait.
+        // Tout à droite : la colonne existe, sans rien écrire dans le fichier tant qu'elle est vide.
+        let width = |cx: &mut gpui::VisualTestContext| sheet.read_with(cx, |sheet, _| sheet.table().cols());
+        table_op(cx, editor::TableOp::ColRight);
+        assert_eq!((width(cx), all(cx)), (4, "id|name|score/3|Zoé|10/1|Max|/2|Léa|9".to_string()));
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(width(cx), 3);
+        // Au milieu : chaque ligne qui a des cellules à droite reçoit la sienne, vide.
+        cx.simulate_keystrokes("secondary-home right");
+        table_op(cx, editor::TableOp::ColLeft);
+        assert_eq!(all(cx), "id||name|score/3||Zoé|10/1||Max|/2||Léa|9");
+        assert_eq!(on_disk(cx), "id,,name,score\n3,,Zoé,10\n1,,Max,\n2,,Léa,9\n");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
+        assert_eq!(on_disk(cx), original);
+        table_op(cx, editor::TableOp::DuplicateCol);
+        assert_eq!(all(cx), "id|name|name|score/3|Zoé|Zoé|10/1|Max|Max|/2|Léa|Léa|9");
+        cx.simulate_keystrokes("secondary-z");
+        table_op(cx, editor::TableOp::MoveColLeft);
+        assert_eq!(all(cx), "id|score|name/3|10|Zoé/1||Max/2|9|Léa");
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.whereabouts().0), (0, 1));
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
+        // Le déplacement s'arrête aux bords : à gauche de la première colonne, au-dessus du corps.
+        cx.simulate_keystrokes("secondary-home");
+        table_op(cx, editor::TableOp::MoveColLeft);
+        table_op(cx, editor::TableOp::MoveRowUp);
+        assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
+        // Descendre une ligne ; supprimer une colonne ; refuser de les supprimer toutes.
+        cx.simulate_keystrokes("down");
+        table_op(cx, editor::TableOp::MoveRowDown);
+        assert_eq!(all(cx), "id|name|score/1|Max|/3|Zoé|10/2|Léa|9");
+        table_op(cx, editor::TableOp::DeleteCol);
+        assert_eq!(all(cx), "name|score/Max|/Zoé|10/Léa|9");
+        cx.simulate_keystrokes("secondary-a");
+        table_op(cx, editor::TableOp::DeleteCol);
+        assert_eq!(all(cx), "name|score/Max|/Zoé|10/Léa|9", "toutes les colonnes ne se suppriment pas");
+        cx.simulate_keystrokes("secondary-z secondary-z");
+        assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
+        assert_eq!(on_disk(cx), original);
 
         // Tableau : un CSV en Windows-1252 séparé par « ; » s'ouvre dans une grille, s'édite et se réécrit
         // dans le même encodage, les lignes intactes octet pour octet.

@@ -320,6 +320,11 @@ impl TableOp {
         }
     }
 
+    /// La feuille d'un CSV sait le faire : tout sauf supprimer le tableau et échanger lignes et colonnes.
+    pub fn in_sheet(self) -> bool {
+        !matches!(self, TableOp::DeleteTable | TableOp::Transpose)
+    }
+
     /// L'action qui fait la même chose au clavier.
     pub fn action(self) -> Box<dyn gpui::Action> {
         match self {

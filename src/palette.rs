@@ -613,8 +613,9 @@ impl Palette {
                 Pick::ALL.into_iter().filter(|p| command(&q, p.label())).map(Item::Table),
             );
         }
-        if self.cells && !q.is_empty() {
-            items.extend(TableOp::ALL.into_iter().filter(|op| command(&q, op.label())).map(Item::Grid));
+        if (self.cells || self.table) && !q.is_empty() {
+            let shown = |op: &TableOp| (self.cells || op.in_sheet()) && command(&q, op.label());
+            items.extend(TableOp::ALL.into_iter().filter(shown).map(Item::Grid));
         }
         if self.lists && !q.is_empty() {
             items.extend(
