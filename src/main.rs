@@ -8101,8 +8101,6 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
-    /// Des milliers de modifications au hasard sur des notes variées : chaque mise en page reprise est
-    /// comparée (dans `Editor::layout`, en test) à une mise en page complète.
     /// Ce qu'on peut faire se trouve sans le savoir : le menu de toutes les commandes (F10), la palette
     /// qui les cherche, l'aide ouverte sur la vue, la barre d'un tableau, et les touches rappelées après un clic.
     #[gpui::test]
@@ -8226,6 +8224,8 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
+    /// Des milliers de modifications au hasard sur des notes variées : chaque mise en page reprise est
+    /// comparée (dans `Editor::layout`, en test) à une mise en page complète.
     #[gpui::test]
     fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
         let root = std::env::temp_dir().join(format!("bref-reuse-{}", std::process::id()));
