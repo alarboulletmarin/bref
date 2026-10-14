@@ -905,6 +905,12 @@ fn cached(
 /// séparateurs, 1 px entre chacun des quatorze éléments, 3 px de marge et le trait de bordure.
 const BAR_WIDTH: f32 = 6. + 2. + 11. * 26. + 14. + 13. + 2. * 7.;
 
+/// Fond du bouton qui replie la barre : toujours opaque, il passe sur du texte (la teinte de la sélection,
+/// translucide, laisserait voir ce qu'il couvre).
+pub fn bar_fill(t: &Theme, open: bool) -> Hsla {
+    if open { crate::blend(t.accent, t.panel, 0.2) } else { t.panel }
+}
+
 /// Où et comment se montre la barre de mise en forme.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Bar {
@@ -2926,7 +2932,7 @@ impl Editor {
             .rounded(px(8.))
             .border_1()
             .border_color(t.border)
-            .bg(if open { t.selection } else { t.panel })
+            .bg(bar_fill(&t, open))
             .cursor_pointer()
             .hover(|s| s.bg(t.border))
             .occlude()

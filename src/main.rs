@@ -357,7 +357,7 @@ impl AssetSource for Assets {
             "col-add.svg" => r#"<rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M5.5 2.5V13.5M12 6.4V9.6M10.4 8H13.6"/>"#,
             "row-del.svg" => r#"<rect x="2.5" y="2.5" width="11" height="6" rx="1"/><path d="M2.5 5.5H13.5M6.4 12.2H9.6"/>"#,
             "col-del.svg" => r#"<rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M5.5 2.5V13.5M10.4 8H13.6"/>"#,
-            "format.svg" => r#"<path d="M3 11.5L6.5 3.5L10 11.5M4.4 8.6H8.6M11.5 6.5V9.3C11.5 10.2 12.1 10.8 13 10.8M3 14H13"/>"#,
+            "format.svg" => r#"<path d="M4 11.5L8 3L12 11.5M5.4 8.4H10.6M3 14H13"/>"#,
             "link.svg" => r#"<path d="M6.9 9.1A2.4 2.4 0 0 0 10.3 9.1L12.2 7.2A2.4 2.4 0 0 0 8.8 3.8L8 4.6M9.1 6.9A2.4 2.4 0 0 0 5.7 6.9L3.8 8.8A2.4 2.4 0 0 0 7.2 12.2L8 11.4"/>"#,
             "heart.svg" => {
                 r#"<path d="M8 13C3.5 9.8 2.5 7.6 2.5 5.9A2.6 2.6 0 0 1 8 4.9A2.6 2.6 0 0 1 13.5 5.9C13.5 7.6 12.5 9.8 8 13Z"/>"#
@@ -8173,6 +8173,21 @@ mod tests {
             let prefs = Prefs { theme: name.to_string(), ..Prefs::parse("") };
             let t = Theme::of(&prefs, gpui::WindowAppearance::Light);
             assert!(contrast(t.accent, t.bg) >= 4.5, "{name} : {} sur la pastille", contrast(t.accent, t.bg));
+        }
+    }
+
+    #[test]
+    fn folded_bar_button_hides_what_it_covers() {
+        // Le bouton de la barre repliée passe sur du texte : opaque, fermé ou ouvert, et son signe s'y lit, sur tous les thèmes.
+        for (name, _) in THEMES {
+            let prefs = Prefs { theme: name.to_string(), ..Prefs::parse("") };
+            let t = Theme::of(&prefs, gpui::WindowAppearance::Light);
+            for open in [false, true] {
+                let fill = editor::bar_fill(&t, open);
+                assert!(fill.a == 1., "{name} {open} : fond translucide {fill:?}");
+                let sign = if open { t.accent } else { t.soft };
+                assert!(contrast(sign, fill) >= 3., "{name} {open} : signe {} sur le fond", contrast(sign, fill));
+            }
         }
     }
 
