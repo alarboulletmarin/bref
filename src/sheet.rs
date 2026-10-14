@@ -33,7 +33,8 @@ actions!(
     [
         Left, Right, Up, Down, ExtendLeft, ExtendRight, ExtendUp, ExtendDown, PageUp, PageDown, RowStart, RowEnd,
         Origin, Corner, FirstRow, LastRow, Next, Previous, Enter, Edit, Cancel, Backspace, Delete, Copy, Cut,
-        Paste, SelectAll, Undo, Redo, InsertBelow, InsertAbove, DeleteRows, PickDelimiter, PickEncoding, PickHeader,
+        Paste, SelectAll, SelectRow, SelectCol, Undo, Redo, InsertBelow, InsertAbove, DeleteRows, PickDelimiter,
+        PickEncoding, PickHeader,
         PickCopyAs, PickExport
     ]
 );
@@ -773,10 +774,60 @@ impl Sheet {
     fn insert_rows(&mut self, below: bool, cx: &mut Context<Self>) {
         self.finish(cx);
         self.more.clear();
-        let (rows, _) = self.selection();
+        let (rows, cols) = self.selection();
+        // Des colonnes entières : autant de colonnes vides, à leur droite ou à leur gauche, prises à leur tour.
+        if self.whole_cols() {
+            let at = if below { cols.end } else { cols.start };
+            self.commit(vec![Change::InsertCols(at, cols.len(), Vec::new())], cx);
+            (self.anchor, self.cursor) = ((self.last_row(), at + cols.len() - 1), (0, at));
+            return cx.notify();
+        }
         let at = if below { rows.end } else { rows.start };
         self.commit(vec![Change::Insert(at, vec![Vec::new()])], cx);
         self.select_to((at, self.cursor.1), false, cx);
+    }
+
+    /// Toutes les sélections prennent des colonnes de haut en bas, sans prendre tout le tableau :
+    /// insérer et supprimer agissent alors sur les colonnes, et non sur les lignes.
+    fn whole_cols(&self) -> bool {
+        let (tall, wide) = (self.table.rows(), self.cols());
+        let all = self.selections();
+        all.iter().all(|(rows, _)| rows.start == 0 && rows.end >= tall) && !all.iter().any(|(_, cols)| cols.start == 0 && cols.end >= wide)
+    }
+
+    /// Les lignes ou les colonnes entières de la sélection : Maj+Espace et Ctrl+Espace, comme dans un tableur.
+    fn select_whole(&mut self, rows: bool, cx: &mut Context<Self>) {
+        self.finish(cx);
+        self.more.clear();
+        let (rs, cs) = self.selection();
+        (self.anchor, self.cursor) = match rows {
+            true => ((rs.end - 1, self.cols() - 1), (rs.start, 0)),
+            false => ((self.last_row(), cs.end - 1), (0, cs.start)),
+        };
+        cx.notify();
+    }
+
+    /// Supprimer ce qui est sélectionné : les colonnes quand elles sont prises entières, sinon les lignes.
+    fn delete_span(&mut self, cx: &mut Context<Self>) {
+        if !self.whole_cols() {
+            return self.delete_rows(cx);
+        }
+        self.finish(cx);
+        let cols: std::collections::BTreeSet<usize> = self.selections().into_iter().flat_map(|(_, cols)| cols).collect();
+        let mut ranges: Vec<Range<usize>> = Vec::new();
+        for c in cols {
+            match ranges.last_mut() {
+                Some(last) if last.end == c => last.end = c + 1,
+                _ => ranges.push(c..c + 1),
+            }
+        }
+        let first = ranges[0].start;
+        self.more.clear();
+        // De droite à gauche : chaque retrait laisse en place les colonnes qui restent à retirer.
+        self.commit(ranges.into_iter().rev().map(Change::RemoveCols).collect(), cx);
+        let c = first.min(self.cols() - 1);
+        (self.anchor, self.cursor) = ((self.last_row(), c), (0, c));
+        cx.notify();
     }
 
     /// Un geste de tableau, comme dans une note : sur les lignes et les colonnes de la sélection. Les
@@ -1472,7 +1523,10 @@ impl Render for Sheet {
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
             .on_action(cx.listener(|this, _: &InsertBelow, _, cx| this.insert_rows(true, cx)))
             .on_action(cx.listener(|this, _: &InsertAbove, _, cx| this.insert_rows(false, cx)))
-            .on_action(cx.listener(|this, _: &DeleteRows, _, cx| this.delete_rows(cx)))
+            .on_action(cx.listener(|this, _: &DeleteRows, _, cx| this.delete_span(cx)))
+            .on_action(cx.listener(|this, _: &editor::TableDeleteSpan, _, cx| this.delete_span(cx)))
+            .on_action(cx.listener(|this, _: &SelectRow, _, cx| this.select_whole(true, cx)))
+            .on_action(cx.listener(|this, _: &SelectCol, _, cx| this.select_whole(false, cx)))
             .on_action(cx.listener(|this, _: &editor::TableRowAbove, _, cx| this.table_op(TableOp::RowAbove, cx)))
             .on_action(cx.listener(|this, _: &editor::TableRowBelow, _, cx| this.table_op(TableOp::RowBelow, cx)))
             .on_action(cx.listener(|this, _: &editor::TableColLeft, _, cx| this.table_op(TableOp::ColLeft, cx)))

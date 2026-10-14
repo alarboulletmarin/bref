@@ -84,6 +84,7 @@ actions!(
         TableMoveColRight,
         TableDeleteRow,
         TableDeleteCol,
+        TableDeleteSpan,
         TableDelete,
         TableSortAsc,
         TableSortDesc,
@@ -3195,6 +3196,15 @@ impl Editor {
     /// Un geste sur le tableau du curseur, pour les lignes et les colonnes que la sélection touche
     /// (de la cellule où elle commence à celle où elle finit). Un seul pas d'annulation ; le curseur
     /// se pose sur la cellule qui suit le geste.
+    /// Les colonnes prises par leur poignée, entières, partent ; sinon les lignes de la sélection.
+    fn table_delete_span(&mut self, cx: &mut Context<Self>) {
+        let Some((range, rows, _)) = self.table_at(self.sel.start) else {
+            return;
+        };
+        let cols = self.live_pick(range.start).is_some_and(|p| p.rows.start == 0 && p.rows.end >= md::visible_rows(&rows) && p.cols.len() < rows[0].len());
+        self.table_op(if cols { TableOp::DeleteCol } else { TableOp::DeleteRow }, cx)
+    }
+
     fn table_op(&mut self, op: TableOp, cx: &mut Context<Self>) {
         let Some((range, rows, (r, c))) = self.table_at(self.sel.start) else {
             return;
@@ -5407,6 +5417,7 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &TableMoveColLeft, _, cx| this.table_op(TableOp::MoveColLeft, cx)))
         .on_action(cx.listener(|this, _: &TableMoveColRight, _, cx| this.table_op(TableOp::MoveColRight, cx)))
         .on_action(cx.listener(|this, _: &TableDeleteRow, _, cx| this.table_op(TableOp::DeleteRow, cx)))
+        .on_action(cx.listener(|this, _: &TableDeleteSpan, _, cx| this.table_delete_span(cx)))
         .on_action(cx.listener(|this, _: &TableDeleteCol, _, cx| this.table_op(TableOp::DeleteCol, cx)))
         .on_action(cx.listener(|this, _: &TableDelete, _, cx| this.table_op(TableOp::DeleteTable, cx)))
         .on_action(cx.listener(|this, _: &TableSortAsc, _, cx| this.table_op(TableOp::SortAsc, cx)))
