@@ -1257,6 +1257,7 @@ impl Sheet {
             .min_w(px(self.widths[col]))
             .h(px(ROW))
             .px(px(PAD))
+            .cursor_text()
             .flex()
             .items_center()
             .whitespace_nowrap()
@@ -1278,11 +1279,11 @@ impl Sheet {
         div()
             .when(my > 0., |d| {
                 let (at, len) = thumb(h - ROW, self.scroll.1, my, self.view().1);
-                d.child(div().absolute().right(px(2.)).top(px(ROW + at)).w(px(6.)).h(px(len)).rounded(px(3.)).bg(t.dim.opacity(0.45)))
+                d.child(div().absolute().right(px(2.)).top(px(ROW + at)).w(px(6.)).h(px(len)).rounded(px(3.)).cursor_pointer().bg(t.dim.opacity(0.45)))
             })
             .when(mx > 0., |d| {
                 let (at, len) = thumb(w - GUTTER, self.scroll.0, mx, self.view().0);
-                d.child(div().absolute().bottom(px(2.)).left(px(GUTTER + at)).h(px(6.)).w(px(len)).rounded(px(3.)).bg(t.dim.opacity(0.45)))
+                d.child(div().absolute().bottom(px(2.)).left(px(GUTTER + at)).h(px(6.)).w(px(len)).rounded(px(3.)).cursor_pointer().bg(t.dim.opacity(0.45)))
             })
     }
 }
@@ -1338,7 +1339,7 @@ impl Render for Sheet {
             .bottom(px(0.))
             .overflow_hidden()
             .child(div().absolute().top(px(0.)).left(px(-self.scroll.0)).size_full().children(rows))
-            .child(div().absolute().top(px(0.)).left(px(-self.scroll.0)).w_full().h(px(ROW)).child(head))
+            .child(div().absolute().top(px(0.)).left(px(-self.scroll.0)).w_full().h(px(ROW)).cursor_pointer().child(head))
             .children(self.edit.as_ref().map(|edit| self.render_edit(edit)));
 
         let number = |r: usize, y: f32| {
@@ -1367,6 +1368,8 @@ impl Render for Sheet {
             .w(px(GUTTER))
             .h_full()
             .overflow_hidden()
+            // Un clic y prend une ligne entière, comme un clic sur un en-tête prend sa colonne.
+            .cursor_pointer()
             .bg(t.bg)
             .text_size(px(self.text_px()))
             .children((r0..r1).map(|r| number(r, self.y_of(r))))

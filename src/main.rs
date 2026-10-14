@@ -7057,6 +7057,24 @@ mod tests {
         assert!(text(cx).ends_with("| a     | [x]  |\n| b     |      |\n"), "{}", text(cx));
         cx.simulate_keystrokes("secondary-z");
         assert!(text(cx).ends_with("| a     | [ ]  |\n| b     |      |\n"), "{}", text(cx));
+        // Le pointeur prend la main sur une case, et sur un lien quand Ctrl est tenu ; ailleurs, la barre du texte.
+        let hand = |cx: &mut gpui::VisualTestContext, needle: &str, held: gpui::Modifiers| {
+            let at = boxed.find(needle).unwrap() + 1;
+            let spot = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(at).unwrap()) + gpui::point(px(3.), px(0.));
+            cx.simulate_mouse_move(spot, None, held);
+            shell.read_with(cx, |s, cx| s.editor.read(cx).hand())
+        };
+        assert_eq!(hand(cx, "[x] fin", gpui::Modifiers::none()), Some(CursorStyle::PointingHand));
+        assert_eq!(hand(cx, "avant", gpui::Modifiers::none()), None);
+        let linked = "voir [[Courses]] ici\n";
+        load(cx, linked, 0);
+        let over = |cx: &mut gpui::VisualTestContext, held: gpui::Modifiers| {
+            let spot = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(linked.find("Courses").unwrap()).unwrap()) + gpui::point(px(3.), px(0.));
+            cx.simulate_mouse_move(spot, None, held);
+            shell.read_with(cx, |s, cx| s.editor.read(cx).hand())
+        };
+        assert_eq!(over(cx, gpui::Modifiers::none()), None);
+        assert_eq!(over(cx, gpui::Modifiers::secondary_key()), Some(CursorStyle::PointingHand));
         // Une case dans le code reste du texte.
         load(cx, "`[ ]` et\n\n```\n[ ]\n```\n", 0);
         let code = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(2).unwrap()) + gpui::point(px(3.), px(0.));

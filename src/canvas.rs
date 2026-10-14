@@ -121,6 +121,8 @@ pub struct Canvas {
     editing: Option<(u32, usize)>,
     undo: Vec<Diagram>,
     redo: Vec<Diagram>,
+    /// La forme du pointeur, selon ce qu'il survole et ce qu'on tire.
+    hand: CursorStyle,
     bounds: Bounds<Pixels>,
     /// L'image PNG vient d'être enregistrée : le bouton le montre un instant.
     exported: bool,
@@ -152,6 +154,7 @@ impl Canvas {
             editing: None,
             undo: Vec::new(),
             redo: Vec::new(),
+            hand: CursorStyle::Arrow,
             bounds: Bounds::default(),
             exported: false,
             route: Route::Elbow,
@@ -234,6 +237,7 @@ impl Canvas {
     fn set_tool(&mut self, tool: Tool, cx: &mut Context<Self>) {
         self.stop_editing(cx);
         self.tool = tool;
+        self.hand = if tool == Tool::Select { CursorStyle::Arrow } else { CursorStyle::Crosshair };
         cx.notify();
     }
 
@@ -476,9 +480,54 @@ impl Canvas {
         cx.notify();
     }
 
+    /// Ce que le pointeur annonce : une forme ou une flèche se prend (main), un coin se tire en
+    /// diagonale, un bout de flèche se raccroche, la vue tirée se tient, un outil dessine.
+    fn hand_at(&self, at: Point<Pixels>) -> CursorStyle {
+        match self.drag {
+            Drag::Pan { .. } | Drag::Move { begun: true, .. } => return CursorStyle::ClosedHand,
+            Drag::Resize { .. } | Drag::Tip { .. } | Drag::Create { .. } | Drag::Marquee { .. } => return self.hand,
+            _ => {}
+        }
+        if self.tool != Tool::Select {
+            return CursorStyle::Crosshair;
+        }
+        let p = self.world(at);
+        let near = 7. / self.zoom;
+        let close = |a: (f32, f32)| (a.0 - p.0).hypot(a.1 - p.1) <= near;
+        let only = (self.selected.len() == 1).then(|| self.selected[0]);
+        if let Some(shape) = only.and_then(|id| self.diagram.shape(id))
+            && let Some(i) = Self::corners(shape).iter().position(|c| close(*c))
+        {
+            return if i % 2 == 0 { CursorStyle::ResizeUpLeftDownRight } else { CursorStyle::ResizeUpRightDownLeft };
+        }
+        if let Some((a, b)) = only.and_then(|id| self.diagram.link(id)).and_then(|link| self.diagram.ends(link))
+            && (close(a) || close(b))
+        {
+            return CursorStyle::Crosshair;
+        }
+        if let Some((id, _)) = self.editing
+            && self.diagram.shape(id).is_some_and(|shape| shape.contains(p.0, p.1))
+        {
+            return CursorStyle::IBeam;
+        }
+        match self.diagram.shape_at(p.0, p.1).or_else(|| self.diagram.link_at(p.0, p.1, near)) {
+            Some(_) => CursorStyle::PointingHand,
+            None => CursorStyle::Arrow,
+        }
+    }
+
+    fn aim_hand(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
+        let hand = self.hand_at(at);
+        if hand != self.hand {
+            self.hand = hand;
+            cx.notify();
+        }
+    }
+
     fn mouse_move(&mut self, e: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
         let held = e.pressed_button;
         let p = self.world(e.position);
+        self.aim_hand(e.position, cx);
         match self.drag {
             Drag::Pan { last } if held == Some(MouseButton::Middle) => {
                 self.pan.0 += f32::from(e.position.x - last.x);
@@ -526,8 +575,10 @@ impl Canvas {
         cx.notify();
     }
 
-    fn mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        match std::mem::replace(&mut self.drag, Drag::None) {
+    fn mouse_up(&mut self, e: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let drag = std::mem::replace(&mut self.drag, Drag::None);
+        self.aim_hand(e.position, cx);
+        match drag {
             Drag::Create { id, .. } => {
                 let Some(shape) = self.diagram.shape_mut(id) else { return };
                 // Un simple clic pose la forme à sa taille habituelle.
@@ -1033,7 +1084,7 @@ impl Render for Canvas {
                 div()
                     .flex_1()
                     .min_h_0()
-                    .when(self.tool != Tool::Select, |d| d.cursor(CursorStyle::Crosshair))
+                    .cursor(self.hand)
                     .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
                     .on_mouse_down(
                         MouseButton::Middle,

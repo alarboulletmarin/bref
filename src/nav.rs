@@ -1261,6 +1261,7 @@ impl Shell {
                 .flex()
                 .items_center()
                 .rounded(px(5.))
+                .cursor_pointer()
                 .hover(|s| s.bg(t.selection))
                 .when(matches!(what, Do::Trash), |d| d.text_color(t.accent))
                 // Le libellé en entier, puis son raccourci, plus discret, calé à droite : c'est le
@@ -1704,6 +1705,7 @@ impl Shell {
                         .w_full()
                         .h(ROW)
                         .px_1()
+                        .cursor_pointer()
                         .child(line)
                         .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
                             let held = e.modifiers();

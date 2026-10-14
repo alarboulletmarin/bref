@@ -1060,6 +1060,10 @@ pub struct Editor {
     part_hover: Option<(usize, Part)>,
     /// Où était le pointeur à son dernier mouvement.
     pointer: Point<Pixels>,
+    /// La forme du pointeur sur ce qui se clique dans le texte (poignée, case, lien sous `Ctrl`), et la
+    /// zone de la note où elle vaut.
+    hand: Option<CursorStyle>,
+    view_hitbox: Option<Hitbox>,
     /// Où des fichiers glissés se poseraient : un trait entre deux lignes.
     drop_mark: Option<usize>,
     pick: Option<Pick>,
@@ -1174,6 +1178,8 @@ impl Editor {
             geos: Vec::new(),
             part_hover: None,
             pointer: Point::default(),
+            hand: None,
+            view_hitbox: None,
             drop_mark: None,
             pick: None,
             moving: None,
@@ -1301,6 +1307,11 @@ impl Editor {
     pub fn point_of(&self, i: usize) -> Option<Point<Pixels>> {
         let row = &self.rows[self.row_at(i)?];
         Some(self.origin + point(px(0.), row.y + row.pad + row.lh / 2.) + row.pos(i - row.start))
+    }
+
+    #[cfg(test)]
+    pub fn hand(&self) -> Option<CursorStyle> {
+        self.hand
     }
 
     #[cfg(test)]
@@ -1664,7 +1675,7 @@ impl Editor {
                 true => div().text_color(t.soft).child(hint),
                 false => div().when(fresh, |d| d.bg(t.selection)).child(text.to_string()),
             };
-            let field = div().flex_1().min_w(px(90.)).h(px(26.)).px_2().rounded(px(6.)).border_1().bg(t.bg);
+            let field = div().flex_1().min_w(px(90.)).h(px(26.)).px_2().rounded(px(6.)).border_1().bg(t.bg).cursor(CursorStyle::IBeam);
             let field = field.border_color(if on { t.accent } else { t.border }).flex().items_center().overflow_hidden();
             match text.is_empty() {
                 true => field.children(caret).child(shown),
@@ -3268,6 +3279,45 @@ impl Editor {
         }
     }
 
+    /// Ce qui se clique sous le pointeur prend la main : une poignée de tableau (ouverte, fermée
+    /// quand on la tire), un trait où insérer, une case à cocher, un lien quand `Ctrl` est tenu.
+    fn hand_at(&self, at: Point<Pixels>, held: gpui::Modifiers) -> Option<CursorStyle> {
+        if self.moving.is_some() {
+            return Some(CursorStyle::ClosedHand);
+        }
+        if !self.viewport.contains(&at) {
+            return None;
+        }
+        if let Some((_, part)) = self.part_at(at) {
+            return Some(match part {
+                Part::JoinCol(_) | Part::JoinRow(_) => CursorStyle::PointingHand,
+                Part::Col(_) | Part::Row(_) | Part::Corner => CursorStyle::OpenHand,
+            });
+        }
+        if self.rows.is_empty() {
+            return None;
+        }
+        if !held.secondary() && self.checkbox_at(at).is_some() {
+            return Some(CursorStyle::PointingHand);
+        }
+        let i = self.index_at(at);
+        let lr = self.line_range(i);
+        let (line, col) = (&self.content[lr.clone()], i - lr.start);
+        if held.secondary() && md::links(line).into_iter().any(|(r, _)| r.contains(&col)) {
+            return Some(CursorStyle::PointingHand);
+        }
+        let (kind, marker) = md::classify(line, self.in_code(lr.start));
+        (matches!(kind, Kind::Task(_)) && col + 4 >= marker && col < marker).then_some(CursorStyle::PointingHand)
+    }
+
+    fn aim_hand(&mut self, at: Point<Pixels>, held: gpui::Modifiers, cx: &mut Context<Self>) {
+        let hand = self.hand_at(at, held);
+        if hand != self.hand {
+            self.hand = hand;
+            cx.notify();
+        }
+    }
+
     /// La poignée sous le pointeur : (début du tableau, poignée). Seules celles qu'on voit se saisissent.
     fn part_at(&self, at: Point<Pixels>) -> Option<(usize, Part)> {
         self.geos.iter().find_map(|geo| {
@@ -3711,6 +3761,7 @@ impl Editor {
         if self.selecting {
             self.drag_to(self.index_at(e.position), cx);
         }
+        self.aim_hand(e.position, e.modifiers, cx);
         // Une poignée tirée : le trait où elle se poserait suit le pointeur, après quelques pixels.
         if let Some(moving) = &mut self.moving {
             if e.pressed_button != Some(MouseButton::Left) {
@@ -3753,12 +3804,13 @@ impl Editor {
         }
     }
 
-    fn mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn mouse_up(&mut self, e: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.selecting = false;
         if let Some(moving) = self.moving.take() {
             self.drop_part(moving, cx);
             cx.notify();
         }
+        self.aim_hand(e.position, e.modifiers, cx);
     }
 
     fn scroll(&mut self, e: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -4808,6 +4860,7 @@ impl Editor {
         );
         self.viewport = bounds;
         self.materialize(bounds, window);
+        self.view_hitbox = Some(window.insert_hitbox(bounds, HitboxBehavior::Normal));
         self.copy_hitboxes = self
             .opening
             .iter()
@@ -5506,6 +5559,7 @@ impl Render for Editor {
         .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
         .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
         .on_mouse_move(cx.listener(Self::mouse_move))
+        .on_modifiers_changed(cx.listener(|this, e: &gpui::ModifiersChangedEvent, _, cx| this.aim_hand(this.pointer, e.modifiers, cx)))
         .on_scroll_wheel(cx.listener(Self::scroll))
         .child(EditorElement(cx.entity()))
         .child(counts)
@@ -5582,7 +5636,12 @@ impl Element for EditorElement {
         let focus = self.0.read(cx).focus.clone();
         window.handle_input(&focus, ElementInputHandler::new(bounds, self.0.clone()), cx);
         let focused = focus.is_focused(window);
-        self.0.update(cx, |editor, cx| editor.paint(focused, window, cx));
+        self.0.update(cx, |editor, cx| {
+            editor.paint(focused, window, cx);
+            if let Some((hand, hitbox)) = editor.hand.zip(editor.view_hitbox.as_ref()) {
+                window.set_cursor_style(hand, hitbox);
+            }
+        });
     }
 }
 

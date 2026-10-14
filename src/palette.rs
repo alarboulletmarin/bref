@@ -894,6 +894,7 @@ impl Render for Palette {
                 .flex()
                 .justify_between()
                 .gap_3()
+                .cursor_pointer()
                 .when(i == self.selected, |d| d.bg(t.selection))
                 .when(i != self.selected, |d| d.hover(|s| s.bg(t.code_bg)))
                 // Avec un extrait de texte, le nom garde sa place et l'extrait se raccourcit.
