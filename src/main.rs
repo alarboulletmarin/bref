@@ -357,6 +357,7 @@ impl AssetSource for Assets {
             "col-add.svg" => r#"<rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M5.5 2.5V13.5M12 6.4V9.6M10.4 8H13.6"/>"#,
             "row-del.svg" => r#"<rect x="2.5" y="2.5" width="11" height="6" rx="1"/><path d="M2.5 5.5H13.5M6.4 12.2H9.6"/>"#,
             "col-del.svg" => r#"<rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M5.5 2.5V13.5M10.4 8H13.6"/>"#,
+            "format.svg" => r#"<path d="M3 11.5L6.5 3.5L10 11.5M4.4 8.6H8.6M11.5 6.5V9.3C11.5 10.2 12.1 10.8 13 10.8M3 14H13"/>"#,
             "link.svg" => r#"<path d="M6.9 9.1A2.4 2.4 0 0 0 10.3 9.1L12.2 7.2A2.4 2.4 0 0 0 8.8 3.8L8 4.6M9.1 6.9A2.4 2.4 0 0 0 5.7 6.9L3.8 8.8A2.4 2.4 0 0 0 7.2 12.2L8 11.4"/>"#,
             "heart.svg" => {
                 r#"<path d="M8 13C3.5 9.8 2.5 7.6 2.5 5.9A2.6 2.6 0 0 1 8 4.9A2.6 2.6 0 0 1 13.5 5.9C13.5 7.6 12.5 9.8 8 13Z"/>"#
@@ -3487,7 +3488,7 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 k(&editor::Strike, tr("Strikethrough", "Barré")),
                 k(&editor::Highlight, tr("Highlight", "Surligné")),
                 k(&editor::InlineCode, tr("Inline code", "Code en ligne")),
-                p(tr("formatting bar", "barre de mise en forme"), tr("Under the note, centered: bold, italic, underline, strikethrough, highlight (five colors), code, link, lists, tasks, table (in a table: add or delete a row or a column); a lit button means the selection has the style, click again to remove it; only the active pane shows it; hide it with the palette", "Sous la note, au centre : gras, italique, souligné, barré, surligné (cinq couleurs), code, lien, listes, tâches, tableau (dans un tableau : ajouter ou supprimer une ligne ou une colonne) ; un bouton allumé : la sélection a le style, un second clic le retire ; seul le pane actif la montre ; masquable par la palette")),
+                p(tr("formatting bar", "barre de mise en forme"), tr("Under the note, centered: bold, italic, underline, strikethrough, highlight (five colors), code, link, lists, tasks, table (in a table: add or delete a row or a column); a lit button means the selection has the style, click again to remove it; only the active pane shows it; in a narrow note it folds into a button at the bottom left that opens it; hide it with the palette", "Sous la note, au centre : gras, italique, souligné, barré, surligné (cinq couleurs), code, lien, listes, tâches, tableau (dans un tableau : ajouter ou supprimer une ligne ou une colonne) ; un bouton allumé : la sélection a le style, un second clic le retire ; seul le pane actif la montre ; dans une note étroite, elle se replie en un bouton en bas à gauche qui l'ouvre ; masquable par la palette")),
                 k(&editor::SelectNext, tr("Several cursors: select the word, then its next occurrence (Esc: back to one)", "Plusieurs curseurs : prendre le mot, puis son occurrence suivante (Échap : un seul)")),
                 t(&format!("Alt+{click}"), tr("Add a cursor", "Ajouter un curseur")),
                 k(&editor::InsertLink, tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
@@ -8671,29 +8672,74 @@ mod tests {
         // Un seul geste d'annulation pour chacun.
         cx.simulate_keystrokes("secondary-z");
         assert_eq!((rows(cx), columns(cx)), (r, c + 1));
-        // La barre, à toute largeur : jamais sous le compteur ni hors de la note, au milieu tant qu'il y a de la place, puis plus à gauche, puis retirée.
+        // La barre, à toute largeur, ne disparaît jamais : au milieu de la page tant qu'il y a de la place, puis plus à
+        // gauche, puis repliée en un bouton en bas à gauche, qui l'ouvre au-dessus de lui (ses boutons passent à la ligne).
         let mut seen = Vec::new();
-        for width in [1400., 900., 700., 600., 560., 480., 420.] {
+        for width in [1400., 900., 700., 600., 560., 480., 420., 320., 240.] {
             cx.simulate_resize(size(px(width), px(600.)));
             cx.run_until_parked();
             for _ in 0..2 {
                 cx.update(|window, _| window.refresh());
                 cx.run_until_parked();
             }
-            // Les bornes d'un élément disparu restent en mémoire dans le test : c'est l'éditeur qui dit si la barre est là.
-            let shown = shell.read_with(cx, |s, cx| s.editor.read(cx).bar_shown());
+            // Les bornes d'un élément disparu restent en mémoire dans le test : c'est l'éditeur qui dit ce qui est à l'écran.
+            let (shown, folded) = shell.read_with(cx, |s, cx| (s.editor.read(cx).bar_shown(), s.editor.read(cx).bar_folded()));
             let (counts, pane) = (cx.debug_bounds("counts").unwrap(), cx.debug_bounds("pane-0").unwrap());
             assert!(counts.left() >= pane.left() && counts.right() <= pane.right(), "{width} : {counts:?} {pane:?}");
+            assert!(shown != folded, "{width} : la barre est là, ou repliée en un bouton : {shown} {folded}");
             if shown {
                 let bar = cx.debug_bounds("format-bar").unwrap();
                 assert!(bar.right() <= counts.left() && bar.left() >= pane.left() + px(8.) - px(0.5), "{width} : {bar:?} {counts:?} {pane:?}");
                 if width >= 1400. {
                     assert!((bar.center().x - pane.center().x).abs() <= px(1.), "{width} : au milieu de la page {bar:?} {pane:?}");
                 }
+            } else {
+                // Repliée : le bouton est dans la note, au bord gauche, et le compteur ne passe pas dessous.
+                let toggle = cx.debug_bounds("format-toggle").unwrap();
+                assert!(toggle.left() >= pane.left() && toggle.right() <= counts.left().max(toggle.right()) && toggle.bottom() <= pane.bottom(), "{width} : {toggle:?} {counts:?} {pane:?}");
+                assert!(counts.left() >= toggle.right() || counts.size.width == px(0.), "{width} : le compteur passe sous le bouton {toggle:?} {counts:?}");
+                // Ouverte : tous les boutons sont dans la note, à la ligne si elle est étroite, au-dessus du bouton ; un clic agit.
+                pick(cx, "un mot ici", 3, 3);
+                let at = cx.debug_bounds("format-toggle").unwrap().center();
+                cx.simulate_click(at, gpui::Modifiers::none());
+                cx.run_until_parked();
+                for _ in 0..2 {
+                    cx.update(|window, _| window.refresh());
+                    cx.run_until_parked();
+                }
+                assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).bar_shown()), "{width} : le bouton ouvre la barre");
+                let (bar, toggle) = (cx.debug_bounds("format-bar").unwrap(), cx.debug_bounds("format-toggle").unwrap());
+                assert!(bar.left() >= pane.left() && bar.right() <= pane.right() && bar.bottom() <= toggle.top() && bar.top() >= pane.top(), "{width} : {bar:?} {toggle:?} {pane:?}");
+                for name in NAMES {
+                    let button = cx.debug_bounds(name).unwrap();
+                    assert!(bar.contains(&button.center()) && button.left() >= bar.left() && button.right() <= bar.right(), "{width} : {name} {button:?} hors de {bar:?}");
+                }
+                click(cx, 0);
+                assert_eq!((text(cx), selected(cx).as_str()), ("un **mot** ici".to_string(), "mot"), "{width}");
+                click(cx, 0);
+                assert_eq!(text(cx), "un mot ici", "{width}");
+                // Les pastilles de couleur s'ouvrent aussi, au-dessus de la barre et dans la note.
+                let chevron = cx.debug_bounds("format-colors").unwrap().center();
+                cx.simulate_click(chevron, gpui::Modifiers::none());
+                cx.update(|window, _| window.refresh());
+                cx.run_until_parked();
+                let (pops, bar) = (cx.debug_bounds("format-swatches").unwrap(), cx.debug_bounds("format-bar").unwrap());
+                assert!(pops.left() >= pane.left() && pops.right() <= pane.right() && pops.bottom() <= bar.top(), "{width} : {pops:?} {bar:?} {pane:?}");
+                let green = cx.debug_bounds("swatch-1").unwrap().center();
+                cx.simulate_click(green, gpui::Modifiers::none());
+                assert_eq!(text(cx), "un <mark class=\"green\">mot</mark> ici", "{width}");
+                click(cx, 4);
+                assert_eq!(text(cx), "un mot ici", "{width}");
+                // Échap la referme sans toucher au texte.
+                cx.simulate_keystrokes("escape");
+                cx.update(|window, _| window.refresh());
+                cx.run_until_parked();
+                assert!(shell.read_with(cx, |s, cx| !s.editor.read(cx).bar_shown() && s.editor.read(cx).bar_folded()), "{width}");
+                assert_eq!(text(cx), "un mot ici");
             }
             seen.push(shown);
         }
-        assert!(seen[0] && !seen[6] && seen.windows(2).all(|w| w[0] >= w[1]), "elle disparaît d'un seul bord, sans réapparaître : {seen:?}");
+        assert!(seen[0] && !seen[8] && seen.windows(2).all(|w| w[0] >= w[1]), "elle se replie d'un seul bord, sans revenir en arrière : {seen:?}");
         // Deux panes : une seule barre, celle du pane où l'on écrit.
         cx.simulate_resize(size(px(1400.), px(600.)));
         cx.run_until_parked();

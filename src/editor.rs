@@ -905,6 +905,15 @@ fn cached(
 /// séparateurs, 1 px entre chacun des quatorze éléments, 3 px de marge et le trait de bordure.
 const BAR_WIDTH: f32 = 6. + 2. + 11. * 26. + 14. + 13. + 2. * 7.;
 
+/// Où et comment se montre la barre de mise en forme.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Bar {
+    /// Dans la rangée du bas, son bord gauche à cette abscisse.
+    Inline(f32),
+    /// Repliée en un bouton, en bas à gauche, qui ouvre la barre au-dessus de lui.
+    Compact,
+}
+
 /// Ce que la barre de mise en forme propose pour la sélection.
 #[derive(Clone, Copy)]
 struct Tools {
@@ -1074,7 +1083,9 @@ pub struct Editor {
     /// La note est celle du pane actif : une seule barre de mise en forme pour toute la fenêtre.
     pub bar_here: bool,
     /// Bord gauche de la barre, quand elle se montre (voir `bar_place`).
-    bar_at: Option<f32>,
+    bar_at: Option<Bar>,
+    /// Barre repliée en un bouton (note étroite) : ses boutons sont ouverts au-dessus de lui.
+    bar_open: bool,
     /// Les pastilles de couleur du surlignage sont ouvertes.
     swatches: bool,
     /// Change quand tout est à refaire (autre note, thème, images) : rien n'est repris.
@@ -1172,6 +1183,7 @@ impl Editor {
             tooled: None,
             bar_here: true,
             bar_at: None,
+            bar_open: false,
             swatches: false,
             epoch: 0,
             dmg: None,
@@ -1458,6 +1470,7 @@ impl Editor {
 
     fn move_to(&mut self, to: usize, cx: &mut Context<Self>) {
         self.swatches = false;
+        self.bar_open = false;
         self.sel = to..to;
         self.reversed = false;
         self.goal_x = None;
@@ -2633,23 +2646,34 @@ impl Editor {
         }
     }
 
-    /// La barre de mise en forme se montre : réglage actif, pane actif et place pour elle.
+    #[cfg(test)]
+    /// Les boutons de la barre de mise en forme sont à l'écran : dans la rangée du bas, ou ouverts au-dessus du bouton qui la replie.
     pub fn bar_shown(&self) -> bool {
-        self.bar_at.is_some()
+        match self.bar_at {
+            Some(Bar::Inline(_)) => true,
+            Some(Bar::Compact) => self.bar_open,
+            None => false,
+        }
     }
 
-    /// Où poser la barre (son bord gauche, dans la note) : au milieu de la page, ou plus à gauche
-    /// quand le compteur et les boutons du coin la pousseraient ; `None` sans place (8 px de marge),
-    /// ou tant que la largeur de la note n'est pas connue.
+    /// La note est trop étroite pour la barre : elle se replie en un bouton.
+    #[cfg(test)]
+    pub fn bar_folded(&self) -> bool {
+        self.bar_at == Some(Bar::Compact)
+    }
+
+    /// Où poser la barre : au milieu de la page, plus à gauche quand le compteur et les boutons du coin
+    /// la pousseraient, repliée en un bouton quand elle n'a plus la place ; `None` si elle est coupée ou
+    /// que ce n'est pas le pane actif, ou tant que la largeur de la note n'est pas connue.
     // ponytail: la place du compteur est estimée (7,4 px par caractère à 12 px, les espaces et les points médians comptent plus que les lettres) plutôt que mesurée.
-    fn bar_place(&mut self) -> Option<f32> {
+    fn bar_place(&mut self) -> Option<Bar> {
         let width = f32::from(self.viewport.size.width);
         if !self.theme.bar || !self.bar_here || width == 0. {
             return None;
         }
         let counts = self.counts().chars().count() as f32 * 7.4 + 16.;
         let x = (width / 2. - BAR_WIDTH / 2.).min(width - (12. + 34. * self.corner as f32) - counts - 8. - BAR_WIDTH);
-        (x >= 8.).then_some(x)
+        Some(if x >= 8. { Bar::Inline(x) } else { Bar::Compact })
     }
 
     /// Ce que la barre propose pour la sélection, recalculé seulement quand le texte ou la sélection changent.
@@ -2681,19 +2705,19 @@ impl Editor {
     }
 
     /// Les styles posés sur la sélection (`md::STYLES`), pour allumer les boutons de la barre de mise en forme.
+    #[cfg(test)]
     pub fn styles(&mut self) -> u16 {
         self.tools().styles
     }
 
-    /// Les pastilles de couleur du surlignage, au-dessus du bouton H de la barre posée à `left`.
-    fn swatches(&mut self, left: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    /// Les pastilles de couleur du surlignage, au-dessus de la barre ; `aligned` : sous le bouton H.
+    fn swatches(&mut self, aligned: bool, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let names = [tr("Yellow", "Jaune"), tr("Green", "Vert"), tr("Blue", "Bleu"), tr("Pink", "Rose"), tr("Purple", "Violet")];
         div()
             .debug_selector(|| "format-swatches".into())
-            .absolute()
-            .bottom(px(16. + 30. + 6.))
-            .left(px(left + 4. + 4. * 27.))
+            .ml(px(if aligned { 4. + 4. * 27. } else { 0. }))
+            .flex_none()
             .h(px(30.))
             .px(px(7.))
             .flex()
@@ -2729,9 +2753,15 @@ impl Editor {
     /// La barre de mise en forme : gras, italique, souligné, barré, surligné, code, lien, puis les listes
     /// et l'insertion d'un tableau, ou, dans un tableau, ses lignes et ses colonnes. Un bouton s'allume
     /// quand la sélection a déjà le style, et le retire alors.
-    fn format_bar(&mut self, left: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn format_bar(&mut self, mode: Bar, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let tools = self.tools();
+        let width = f32::from(self.viewport.size.width);
+        let (left, wide, inline) = match mode {
+            Bar::Inline(x) => (x, BAR_WIDTH, true),
+            Bar::Compact => (8., BAR_WIDTH.min(width - 16.), false),
+        };
+        let swatches = self.swatches.then(|| self.swatches(inline, cx));
         let on = tools.styles;
         let keys = |action: &dyn gpui::Action| crate::keys::of(cx, action);
         let mut tips = vec![
@@ -2822,16 +2852,14 @@ impl Editor {
             ]
         };
         let separator = || div().w(px(1.)).h(px(14.)).mx(px(3.)).bg(t.border);
-        div()
+        let bar = div()
             .debug_selector(|| "format-bar".into())
-            .absolute()
-            .bottom_4()
-            .left(px(left))
-            .w(px(BAR_WIDTH))
-            .h(px(30.))
+            .w_full()
+            .min_h(px(30.))
             .px(px(3.))
             .flex_none()
             .flex()
+            .flex_wrap()
             .items_center()
             .gap(px(1.))
             .rounded(px(8.))
@@ -2875,7 +2903,42 @@ impl Editor {
                 this.link(cx);
             })))
             .child(separator())
-            .children(last)
+            .children(last);
+        // Les pastilles de couleur au-dessus de la barre, le tout ancré au bas de la note.
+        // Repliée, la barre s'ouvre au-dessus du bouton (30 px, 16 px du bas, 6 px d'écart).
+        div().absolute().bottom(px(if inline { 16. } else { 52. })).left(px(left)).w(px(wide)).flex().flex_col().items_start().gap(px(6.)).children(swatches).child(bar)
+    }
+
+    /// Le bouton qui replie la barre : en bas à gauche, il l'ouvre au-dessus de lui et la referme.
+    fn bar_toggle(&mut self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let t = self.theme;
+        let open = self.bar_open;
+        div()
+            .id("format-toggle")
+            .debug_selector(|| "format-toggle".into())
+            .absolute()
+            .bottom_4()
+            .left_2()
+            .size(px(30.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(8.))
+            .border_1()
+            .border_color(t.border)
+            .bg(if open { t.selection } else { t.panel })
+            .cursor_pointer()
+            .hover(|s| s.bg(t.border))
+            .occlude()
+            .tooltip(crate::nav::tip(tr("Formatting", "Mise en forme"), String::new(), t))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(|this, _, window, cx| {
+                window.focus(&this.focus);
+                this.bar_open = !this.bar_open;
+                this.swatches = false;
+                cx.notify();
+            }))
+            .child(gpui::svg().path("format.svg").size(px(16.)).flex_none().text_color(if open { t.accent } else { t.soft }))
     }
 
     /// Adresse que tient le presse-papiers, s'il n'y a que cela.
@@ -5256,9 +5319,15 @@ impl Render for Editor {
         let after = 12. + 34. * self.corner as f32;
         // La barre de mise en forme, à part du compteur et au milieu de la page.
         self.bar_at = self.bar_place();
-        let bar = self.bar_at.map(|left| self.format_bar(left, cx));
-        let swatches = self.bar_at.filter(|_| self.swatches).map(|left| self.swatches(left, cx));
-        let counts = div().absolute().bottom_4().left_2().right(px(after)).flex().justify_end().child(
+        let folded = self.bar_at == Some(Bar::Compact);
+        let bar = match self.bar_at {
+            Some(Bar::Inline(_)) => self.bar_at.map(|mode| self.format_bar(mode, cx).into_any_element()),
+            Some(Bar::Compact) if self.bar_open => Some(self.format_bar(Bar::Compact, cx).into_any_element()),
+            _ => None,
+        };
+        let toggle = folded.then(|| self.bar_toggle(cx));
+        // Repliée, la barre laisse la place de son bouton : le compteur se tronque avant de passer dessous.
+        let counts = div().absolute().bottom_4().left(px(if folded { 46. } else { 8. })).right(px(after)).flex().justify_end().child(
             div()
                 .debug_selector(|| "counts".into())
                 .h(px(30.))
@@ -5396,7 +5465,7 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &ReplaceInVault, _, cx| this.replace_in_vault(cx)))
         .on_action(cx.listener(|this, _: &Cancel, _, cx| {
             // Les pastilles de couleur se referment d'abord.
-            if std::mem::take(&mut this.swatches) {
+            if std::mem::take(&mut this.swatches) || std::mem::take(&mut this.bar_open) {
                 return cx.notify();
             }
             // Barre ouverte mais saisie dans la note : Échap la ferme d'abord.
@@ -5434,8 +5503,8 @@ impl Render for Editor {
         .on_scroll_wheel(cx.listener(Self::scroll))
         .child(EditorElement(cx.entity()))
         .child(counts)
+        .children(toggle)
         .children(bar)
-        .children(swatches)
         .children(find_bar)
     }
 }
