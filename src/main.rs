@@ -7812,8 +7812,6 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
-    /// Des milliers de modifications au hasard sur des notes variées : chaque mise en page reprise est
-    /// comparée (dans `Editor::layout`, en test) à une mise en page complète.
     /// Les poignées de bloc, comme dans Notion : au survol d'une ligne, tirer la poignée déplace son bloc,
     /// un clic ouvre son menu, le « + » pose un bloc dessous avec la liste `/` ; Alt+flèche le déplace.
     #[gpui::test]
@@ -7926,6 +7924,8 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
+    /// Des milliers de modifications au hasard sur des notes variées : chaque mise en page reprise est
+    /// comparée (dans `Editor::layout`, en test) à une mise en page complète.
     #[gpui::test]
     fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
         let root = std::env::temp_dir().join(format!("bref-reuse-{}", std::process::id()));
