@@ -37,6 +37,9 @@ pub const DIM: u16 = 16;
 pub const LINK: u16 = 32;
 pub const TAG: u16 = 64;
 pub const MARK: u16 = 128;
+// Surligné `==texte==` et souligné `<u>texte</u>` (Markdown n'a pas de souligné : la balise HTML sert).
+pub const HIGHLIGHT: u16 = 2048;
+pub const UNDER: u16 = 4096;
 // Coloration des blocs de code.
 pub const KEYWORD: u16 = 256;
 pub const STRING: u16 = 512;
@@ -300,11 +303,40 @@ pub fn checkboxes(line: &str, from: usize) -> Vec<Range<usize>> {
     boxes(line, from).filter(|r| flags[r.start] & CODE == 0).collect()
 }
 
+/// Les couleurs de surlignage : le nom (la classe de `<mark class="nom">`), la première est celle de `==`.
+pub const MARKS: [&str; 5] = ["yellow", "green", "blue", "pink", "purple"];
+
+/// `<mark>` ou `<mark class="nom">` au début de `rest` (nom d'une couleur connue), ou `</mark>` quand
+/// `closing` : sa longueur.
+fn mark_tag(rest: &str, closing: bool) -> Option<usize> {
+    if closing {
+        return rest.starts_with("</mark>").then_some(7);
+    }
+    let end = rest.strip_prefix("<mark")?.find('>')? + 6;
+    let tag = &rest[..end];
+    (tag == "<mark>" || MARKS.iter().any(|name| tag == format!("<mark class=\"{name}\">"))).then_some(end)
+}
+
+/// Le numéro (dans `MARKS`) de la couleur d'un `<mark>` ouvrant, 0 pour `<mark>` et pour `==`.
+pub fn mark_color(open: &str) -> usize {
+    MARKS.iter().position(|name| open == format!("<mark class=\"{name}\">")).unwrap_or(0)
+}
+
+/// L'écriture d'un surlignage de la couleur `color` : `(ouvrant, fermant)`.
+pub fn mark_signs(color: usize) -> (String, &'static str) {
+    match color {
+        0 => ("==".into(), "=="),
+        _ => (format!("<mark class=\"{}\">", MARKS[color.min(MARKS.len() - 1)]), "</mark>"),
+    }
+}
+
 /// Remplit `flags` avec les styles en ligne de `line` à partir de l'octet `from`.
 pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
     let b = line.as_bytes();
     let alnum = |i: Option<usize>| i.and_then(|i| b.get(i)).is_some_and(u8::is_ascii_alphanumeric);
     let mut active = 0u16;
+    // Le surligné en cours s'est ouvert par `<mark>` (sinon par `==`) : il se ferme de même.
+    let mut tagged = false;
     let mut i = from;
     while i < b.len() {
         let rest = &line[i..];
@@ -321,6 +353,14 @@ pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
             (2, BOLD)
         } else if rest.starts_with("~~") {
             (2, STRIKE)
+        } else if let Some(n) = if active & HIGHLIGHT != 0 { mark_tag(rest, true).filter(|_| tagged) } else { mark_tag(rest, false) } {
+            (n, HIGHLIGHT)
+        } else if rest.starts_with("==") && !(tagged && active & HIGHLIGHT != 0) {
+            (2, HIGHLIGHT)
+        } else if rest.starts_with("<u>") && active & UNDER == 0 {
+            (3, UNDER)
+        } else if rest.starts_with("</u>") && active & UNDER != 0 {
+            (4, UNDER)
         } else if b[i] == b'*' || b[i] == b'_' {
             (1, ITALIC)
         } else {
@@ -328,7 +368,23 @@ pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
         };
         if flag != 0 {
             let underscore = b[i] == b'_';
-            let ok = if active & flag == 0 {
+            // `==` : ni collé à un mot (`abc==` d'une adresse), ni les `{==` `==}` d'un commentaire.
+            let sound = |at: usize| b.get(at.wrapping_sub(1)) != Some(&b'{') && b.get(at + 2) != Some(&b'}');
+            let ok = if flag == UNDER {
+                n == 4 || rest[n..].contains("</u>")
+            } else if flag == HIGHLIGHT && rest.starts_with('<') {
+                // `<mark>` : ouvrante qui a sa fermante, ou la fermante de celle qui s'est ouverte.
+                active & flag != 0 || rest[n..].contains("</mark>")
+            } else if flag == HIGHLIGHT {
+                if active & flag == 0 {
+                    !alnum(i.checked_sub(1))
+                        && sound(i)
+                        && rest[2..].chars().next().is_some_and(|c| !c.is_whitespace() && c != '=')
+                        && rest[2..].match_indices("==").any(|(j, _)| sound(i + 2 + j) && !alnum(Some(i + 4 + j)))
+                } else {
+                    sound(i) && !alnum(Some(i + 2))
+                }
+            } else if active & flag == 0 {
                 rest[n..].chars().next().is_some_and(|c| !c.is_whitespace())
                     && rest[n..].contains(&rest[..n])
                     && !(underscore && alnum(i.checked_sub(1)))
@@ -337,6 +393,9 @@ pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
             };
             if ok {
                 flags[i..i + n].iter_mut().for_each(|f| *f |= DIM | active);
+                if flag == HIGHLIGHT && active & flag == 0 {
+                    tagged = rest.starts_with('<');
+                }
                 active ^= flag;
                 i += n;
                 continue;
@@ -383,6 +442,117 @@ pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
         flags[noted.end..whole.end].fill(DIM);
         flags[said].fill(DIM | ITALIC);
     }
+}
+
+/// Les passages surlignés de `line` (`==texte==` ou `<mark>`), sans leurs signes, avec leur couleur (voir
+/// `MARKS`), pour que l'éditeur les peigne : la ligne entière après sa puce, ou chaque cellule pour une ligne de tableau.
+pub fn highlights(line: &str, table: bool) -> Vec<(Range<usize>, usize)> {
+    let mut found = Vec::new();
+    if !line.contains("==") && !line.contains("<mark") {
+        return found;
+    }
+    let pieces = if table { cells(line) } else { vec![classify(line, false).1..line.len()] };
+    for piece in pieces {
+        let f = flags(&line[piece.clone()], 0);
+        let mut i = 0;
+        while i < f.len() {
+            if f[i] & HIGHLIGHT == 0 {
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            while j < f.len() && f[j] & HIGHLIGHT != 0 {
+                j += 1;
+            }
+            // Le fermant, et les signes d'un autre style qui le précèdent, ne portent pas le fond.
+            let mut end = j;
+            while end > i && f[end - 1] & DIM != 0 {
+                end -= 1;
+            }
+            if end > i {
+                let before = &line[piece.start..piece.start + i];
+                let color = before.rfind("<mark").filter(|_| before.ends_with('>')).map_or(0, |m| mark_color(&before[m..]));
+                found.push((piece.start + i..piece.start + end, color));
+            }
+            i = j;
+        }
+    }
+    found
+}
+
+/// Les styles que la barre de mise en forme pose, dans l'ordre de ses boutons.
+pub const STYLES: [u16; 6] = [BOLD, ITALIC, UNDER, STRIKE, HIGHLIGHT, CODE];
+
+/// Les écritures d'un style : `(ouvrant, fermant)`, la première est celle qu'on pose.
+pub fn delimiters(flag: u16) -> &'static [(&'static str, &'static str)] {
+    match flag {
+        BOLD => &[("**", "**")],
+        ITALIC => &[("*", "*"), ("_", "_")],
+        STRIKE => &[("~~", "~~")],
+        HIGHLIGHT => &[("==", "==")],
+        UNDER => &[("<u>", "</u>")],
+        CODE => &[("`", "`")],
+        _ => &[],
+    }
+}
+
+/// Les styles en ligne de `line` (voir `inline`), un mot par octet.
+pub fn flags(line: &str, from: usize) -> Vec<u16> {
+    let mut flags = vec![0u16; line.len()];
+    inline(line, from.min(line.len()), &mut flags);
+    flags
+}
+
+/// Le passage de style `flag` qui tient `sel` (octets de `line`, `flags` pris de `flags`) : les
+/// étendues de son ouvrant et de son fermant, de quoi le retirer. `None` si `sel` n'est pas
+/// tout entière dans un tel passage. Un curseur seul compte quand il touche le passage, ou
+/// quand il est entre l'ouvrant et le fermant.
+// ponytail: retire le passage entier, sans le scinder autour d'une sélection plus petite ;
+// une sélection à cheval sur deux passages du même style n'en retire aucun (on repose le style).
+pub fn unmark(line: &str, flags: &[u16], sel: Range<usize>, flag: u16) -> Option<(Range<usize>, Range<usize>)> {
+    let has = |i: usize| flags.get(i).is_some_and(|f| f & flag != 0);
+    let pivot = if sel.is_empty() {
+        let at = sel.start;
+        let touching = [Some(at), at.checked_sub(1)].into_iter().flatten().find(|&i| has(i) && flags[i] & DIM == 0);
+        match touching {
+            Some(i) => i,
+            None => {
+                // `**|**` : un passage vide, le curseur entre ses signes.
+                return delimiters(flag).iter().find_map(|(open, close)| {
+                    (line[..at].ends_with(open) && line[at..].starts_with(close)).then(|| (at - open.len()..at, at..at + close.len()))
+                });
+            }
+        }
+    } else {
+        let mut text = sel.clone().filter(|&i| flags[i] & DIM == 0).peekable();
+        text.peek()?;
+        if !text.all(has) {
+            return None;
+        }
+        sel.clone().find(|&i| flags[i] & DIM == 0)?
+    };
+    let (mut s, mut e) = (pivot, pivot + 1);
+    while s > 0 && has(s - 1) {
+        s -= 1;
+    }
+    while e < line.len() && has(e) {
+        e += 1;
+    }
+    let mut signs: Vec<(String, &str)> = delimiters(flag).iter().map(|(open, close)| (open.to_string(), *close)).collect();
+    // Un surlignage de couleur s'écrit `<mark class="…">…</mark>`.
+    if flag == HIGHLIGHT
+        && let Some(m) = line[..s].rfind("<mark")
+        && mark_tag(&line[m..], false) == Some(s - m)
+    {
+        signs.push((line[m..s].to_string(), "</mark>"));
+    }
+    signs.iter().find_map(|(open, close)| {
+        // Le fermant porte le style des octets qu'il ferme : il est dans le passage, ou juste après.
+        let inside = e >= close.len() && line[..e].ends_with(close) && flags[e - close.len()..e].iter().all(|f| f & DIM != 0);
+        [inside.then(|| e - close.len()), Some(e)].into_iter().flatten().find_map(|end| {
+            (line[..s].ends_with(open.as_str()) && line[end..].starts_with(close)).then(|| (s - open.len()..s, end..end + close.len()))
+        })
+    })
 }
 
 const KEYWORDS: &[&str] = &[
@@ -1589,6 +1759,120 @@ mod tests {
         assert!(f[13..25].iter().all(|&x| x == 0));
         assert_eq!(f[27], ITALIC);
         assert_eq!(f[28], ITALIC);
+    }
+
+    #[test]
+    fn styles_highlight_and_underline() {
+        let on = |line: &str| flags(line, 0);
+        // `==texte==` : les signes en retrait, le texte surligné ; `<u>texte</u>` : souligné.
+        let f = on("a ==b c== d");
+        assert!(f[2..4].iter().all(|x| *x == DIM) && f[4..7].iter().all(|x| *x == HIGHLIGHT) && f[7..9].iter().all(|x| *x == DIM | HIGHLIGHT) && f[9] == 0 && f[0] == 0);
+        let f = on("a <u>b</u> c");
+        assert!(f[2..5].iter().all(|x| *x == DIM) && f[5] == UNDER && f[6..10].iter().all(|x| *x == DIM | UNDER) && f[10] == 0);
+        // Ni un `==` d'opérateur, ni un seul `==`, ni un `<u>` jamais fermé, ni un `</u>` seul.
+        for line in ["a == b == c", "a ==b", "x==y==z", "====", "a === b ===", "<u>ouvert", "fermé</u>", "base64 abc== et def== fin", "?q==a&r==b"] {
+            assert!(on(line).iter().all(|x| x & (HIGHLIGHT | UNDER) == 0 && *x & DIM == 0), "{line} : {:?}", on(line));
+        }
+        // Les `{==`…`==}` d'un commentaire restent un commentaire, même près d'un surlignage.
+        let line = "==a== puis {==mot==}{>>note<<} et ==b==";
+        let f = on(line);
+        assert!(f[2] == HIGHLIGHT && f[line.find("mot").unwrap()] == 0 && f[line.find("b==").unwrap()] == HIGHLIGHT, "{f:?}");
+        let f = on("==a {==mot==}{>>n<<}");
+        assert!(f.iter().all(|x| x & HIGHLIGHT == 0), "un ouvrant sans fermant propre : {f:?}");
+        // Dans le code en ligne, rien ne change ; avec d'autres styles, les drapeaux s'ajoutent.
+        assert!(on("`==a==` `<u>b</u>`").iter().all(|x| x & (HIGHLIGHT | UNDER) == 0));
+        let f = on("**==a <u>é</u>==**");
+        assert_eq!(f[4] & (BOLD | HIGHLIGHT), BOLD | HIGHLIGHT);
+        assert_eq!(f[9] & (BOLD | HIGHLIGHT | UNDER), BOLD | HIGHLIGHT | UNDER);
+    }
+
+    #[test]
+    fn highlights_in_color() {
+        let on = |line: &str| flags(line, 0);
+        // `<mark>` et `<mark class="couleur">` surlignent comme `==`, signes en retrait ; une couleur inconnue n'est pas une couleur.
+        for line in ["a <mark>b c</mark> d", "a <mark class=\"green\">b c</mark> d"] {
+            let f = on(line);
+            let at = line.find("b c").unwrap();
+            assert!(f[at..at + 3].iter().all(|x| *x == HIGHLIGHT) && f[at - 1] == DIM && f[0] == 0 && *f.last().unwrap() == 0, "{line} {f:?}");
+        }
+        for line in ["<mark class=\"rouge\">x</mark>", "<mark>jamais fermé", "</mark> seul", "<markdown>x</mark>", "<mark class=\"green>x</mark>"] {
+            assert!(on(line).iter().all(|x| x & HIGHLIGHT == 0), "{line}");
+        }
+        // Un surlignage ouvert par `==` ne se ferme pas par `</mark>`, ni l'inverse.
+        assert!(on("==a</mark> b==")[2..].iter().take(8).all(|x| x & HIGHLIGHT != 0));
+        assert!(on("<mark>a== b</mark>").iter().skip(6).take(5).all(|x| x & HIGHLIGHT != 0));
+        // Les couleurs lues pour peindre, et les signes qu'on écrit.
+        let line = "a ==b== <mark class=\"blue\">c</mark> <mark>d</mark> <mark class=\"purple\">é</mark>";
+        let got: Vec<_> = highlights(line, false).into_iter().map(|(r, color)| (&line[r], color)).collect();
+        assert_eq!(got, [("b", 0), ("c", 2), ("d", 0), ("é", 4)]);
+        assert_eq!(mark_signs(0), ("==".to_string(), "=="));
+        assert_eq!(mark_signs(3), ("<mark class=\"pink\">".to_string(), "</mark>"));
+        assert_eq!(mark_signs(99).0, "<mark class=\"purple\">");
+        for color in 0..MARKS.len() {
+            let (open, close) = mark_signs(color);
+            let line = format!("un {open}mot{close} ici");
+            let at = line.find("mot").unwrap();
+            let cut = unmark(&line, &flags(&line, 0), at..at + 3, HIGHLIGHT);
+            assert_eq!(cut, Some((3..at, at + 3..at + 3 + close.len())), "{line}");
+            assert_eq!(highlights(&line, false), [(at..at + 3, color)], "{line}");
+        }
+    }
+
+    #[test]
+    fn finds_the_highlighted_text() {
+        fn found(line: &str, table: bool) -> Vec<&str> {
+            highlights(line, table).into_iter().map(|(r, _)| &line[r]).collect()
+        }
+        assert_eq!(found("a ==b c== d ==e==", false), ["b c", "e"]);
+        assert_eq!(found("- ==puce== et", false), ["puce"]);
+        assert_eq!(found("==a **b** c== d", false), ["a **b** c"]);
+        assert_eq!(found("**==a==**", false), ["a"]);
+        assert_eq!(found("| ==Titre== | autre | ==é🙂== |", true), ["Titre", "é🙂"]);
+        // Rien à peindre : pas de `==`, un seul, une adresse, un commentaire, du code.
+        for line in ["", "a b", "a == b", "abc== et def==", "{==mot==}{>>n<<}", "`==a==`", "==a"] {
+            assert!(found(line, false).is_empty(), "{line}");
+        }
+    }
+
+    #[test]
+    fn finds_the_marks_to_remove() {
+        let cut = |line: &str, sel: Range<usize>, flag: u16| unmark(line, &flags(line, 0), sel, flag);
+        // Un curseur dans le passage, à son bord, ou entre ses signes ; hors de tout, rien.
+        assert_eq!(cut("a **bc** d", 5..5, BOLD), Some((2..4, 6..8)));
+        assert_eq!(cut("a **bc** d", 4..4, BOLD), Some((2..4, 6..8)));
+        assert_eq!(cut("a **bc** d", 6..6, BOLD), Some((2..4, 6..8)));
+        assert_eq!(cut("a ****", 4..4, BOLD), Some((2..4, 4..6)));
+        assert_eq!(cut("a **bc** d", 0..0, BOLD), None);
+        assert_eq!(cut("a **bc** d", 9..9, BOLD), None);
+        assert_eq!(cut("a **bc** d", 8..8, BOLD), None);
+        // Une sélection : tout entière dans le passage (les signes compris ou non), sinon rien.
+        assert_eq!(cut("a **bc** d", 4..6, BOLD), Some((2..4, 6..8)));
+        assert_eq!(cut("a **bc** d", 2..8, BOLD), Some((2..4, 6..8)));
+        assert_eq!(cut("a **bc** d", 4..5, BOLD), Some((2..4, 6..8)));
+        assert_eq!(cut("a **bc** d", 0..6, BOLD), None);
+        assert_eq!(cut("a **bc** d", 4..10, BOLD), None);
+        assert_eq!(cut("a **bc** d", 2..4, BOLD), None);
+        // Chaque style a ses signes ; un autre style ne se retire pas.
+        assert_eq!(cut("~~x~~", 2..3, STRIKE), Some((0..2, 3..5)));
+        assert_eq!(cut("==x==", 2..2, HIGHLIGHT), Some((0..2, 3..5)));
+        assert_eq!(cut("<u>x</u>", 3..4, UNDER), Some((0..3, 4..8)));
+        assert_eq!(cut("a `x` b", 3..3, CODE), Some((2..3, 4..5)));
+        assert_eq!(cut("*x* et _y_", 1..1, ITALIC), Some((0..1, 2..3)));
+        assert_eq!(cut("*x* et _y_", 8..8, ITALIC), Some((7..8, 9..10)));
+        assert_eq!(cut("**x**", 2..3, ITALIC), None);
+        // Des styles imbriqués : le gras autour d'un italique, et l'italique dans le gras.
+        assert_eq!(cut("**a *b* c**", 3..3, BOLD), Some((0..2, 9..11)));
+        assert_eq!(cut("**a *b* c**", 5..5, BOLD), Some((0..2, 9..11)));
+        assert_eq!(cut("**a *b* c**", 5..6, ITALIC), Some((4..5, 6..7)));
+        assert_eq!(cut("<u>**é**</u>", 5..7, BOLD), Some((3..5, 7..9)));
+        assert_eq!(cut("<u>**é**</u>", 5..7, UNDER), Some((0..3, 9..13)));
+        // Du texte non ASCII autour : les octets, pas les caractères.
+        let line = "日本 ==語 é🙂== fin";
+        let at = line.find("é").unwrap();
+        assert_eq!(cut(line, at..at, HIGHLIGHT), Some((line.find("==").unwrap()..line.find("==").unwrap() + 2, line.rfind("==").unwrap()..line.rfind("==").unwrap() + 2)));
+        // Un passage non fermé n'en est pas un.
+        assert_eq!(cut("a **bc d", 5..5, BOLD), None);
+        assert_eq!(cut("", 0..0, BOLD), None);
     }
 
     #[test]

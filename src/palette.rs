@@ -127,6 +127,8 @@ pub enum Setting {
     Page,
     /// Place des tableaux plus larges que le texte.
     Wide,
+    /// Barre de mise en forme au bas de la note.
+    Bar,
 }
 
 impl Setting {
@@ -137,6 +139,7 @@ impl Setting {
             Setting::Mono => tr("Code font…", "Police du code…"),
             Setting::Page => tr("Page width…", "Largeur de page…"),
             Setting::Wide => tr("Wide tables…", "Grands tableaux…"),
+            Setting::Bar => tr("Formatting bar…", "Barre de mise en forme…"),
         }
     }
 }
@@ -651,7 +654,7 @@ impl Palette {
             );
         }
         // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
-        for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide] {
+        for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar] {
             if !q.is_empty() && command(&q, setting.label()) {
                 items.push(Item::Setting(setting));
             }

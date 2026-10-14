@@ -11,7 +11,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Opens instantly**: the window is on screen in about 75 ms on the author's machine.
 - **Stays fast as it grows**: a keystroke costs about a millisecond of work, in a short note as in one of 5,000 lines, and the palette opens in 4 ms on a vault of 5,000 notes. The figures, and how to measure them, are under [Speed](#speed).
 - **Plain files**: one `.md` file per note, in a folder (the *vault*) you can sync with git, Syncthing or anything else. An existing Obsidian vault works as is, YAML front matter included.
-- **Styled as you type**: headings grow, bold and italic render, markers stay visible but dimmed. The file on disk is always plain Markdown.
+- **Styled as you type**: headings grow, bold, italic, underline, strikethrough and highlight render, markers stay visible but dimmed. The file on disk is always plain Markdown. A small **formatting bar** at the bottom of the note, centered, applies them with a click: B, I, U, S, highlight (with a choice of five colors), code, link, then bulleted, numbered and task lists and a table (inside a table, its place is taken by row and column buttons: add, delete). A button lights up when the selection already has the style, and a second click removes it. With two panes, only the one you write in shows the bar.
 - **Lists that continue themselves**: `- `, `1. ` and `[] ` start a list, Enter continues it, numbering stays in order.
 - **Slash commands**: type `/` for a heading, a list, a colored panel, a code block, a formula or a table, whose size you pick on a grid. What lands in the note is plain Markdown.
 - **Tables like on the web**: cells wrap inside their column, `Tab` moves from cell to cell, `Enter` adds a row, two `+` buttons add a row or a column, and pasting a table from a web page, a spreadsheet or Markdown just works.
@@ -200,7 +200,7 @@ The bottom right of the note shows its number of words and characters; with a se
 | `Ctrl + Shift + C` | copy the code block the cursor is in, otherwise the whole note (also the icon at the bottom right, for the note) |
 | `Ctrl + click` | open a `[[link]]`, a `#tag`, a URL or a `[text](address)` link |
 | `Ctrl + V` | over a selection, a pasted address makes it a link |
-| Right click | in a note, a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, make or edit a link, comment, turn the lines into a list |
+| Right click | in a note, a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, underline, strikethrough, highlight, code, make or edit a link, comment, turn the lines into a list |
 | `Ctrl + Shift + M` | comment the selection (without one, the line); on a comment, resolve it: the markup goes, the text stays |
 | `F1`, `Ctrl + /` | the list of shortcuts, inside the app: type to search it, by key or by effect (`ctrl+p`, `graph`), `Esc` empties the search, then closes; click the keys of a row to change them (see [Changing a shortcut](#changing-a-shortcut)); at its foot, the version of Bref and links to its source and to its Ko-fi page |
 | `Alt + Left`, `Alt + Right` | back to what was shown before, and forward again (`Cmd + [`, `Cmd + ]` on macOS); also the back and forward buttons of the mouse, the two arrows at the top of the rail, and **Back** / **Forward** in the palette. Like a browser: opening something after going back drops what was ahead. A note only previewed (arrows in the tree, a click in the graph) does not count, a renamed file is followed, a deleted one is skipped. The history is not kept between two launches: the recent notes are. |
@@ -216,7 +216,8 @@ In the palette, type to search; `Enter` opens the selected note. Notes whose nam
 | `Tab`, `Shift + Tab` | indent, outdent (the selected lines, or the current list item) |
 | `Ctrl + Enter` | check or uncheck a task or a `[ ]` box; turn a bullet into a task; in a table cell, add a box |
 | `Ctrl + Shift + B` | turn the selected lines (or the line of the cursor) into a list, then into the next kind each time: bullets, numbered, tasks, plain text. The right-click menu and the palette (`bulleted`, `numbered`, `task`, `plain text`) go straight to the kind you want, and the same kind again gives back plain text. Indentation is kept, a numbered list restarts at 1 on each level, a ticked box stays ticked from one task list to another; headings, tables, quotes and code are left alone. One `Ctrl + Z` undoes it. Each kind can also be given its own key in the help panel |
-| `Ctrl + B`, `Ctrl + I` | bold, italic |
+| `Ctrl + B`, `Ctrl + I`, `Ctrl + U` | bold, italic, underline: the selection is wrapped in `**` `*` `<u>`, and the same key takes the style off again. Without a selection, the signs are inserted and the cursor waits between them |
+| `Ctrl + Shift + X`, `Ctrl + Shift + H`, `Ctrl + Shift + K` | strikethrough, highlight, inline code. Over several lines each line gets its own signs (the bullet, the blanks and code blocks stay as they are), and a selection that already has the style loses it |
 | `Ctrl + Z`, `Ctrl + Shift + Z` | undo, redo |
 | `Ctrl + ←` `→`, `Ctrl + Backspace` | move, delete by word |
 | `Ctrl + Home` `End` | start, end of the note |
@@ -322,6 +323,8 @@ Bref reopens with the panel as you left it.
 - **Text size**: `Ctrl + +` and `Ctrl + -`, `Ctrl + 0` for the default. Headings and code scale with it, and so does the width of the text column.
 - **Page width**: `page width` in the palette sets how wide the text column is (narrow, normal, wide, or the full window), kept in `settings` as `page=narrow|normal|wide|full`. A table wider than the text does not have to scroll inside it: `wide tables` in the palette chooses between staying in the column, where it scrolls sideways, and spilling out on both sides, centered on the window (the default; `wide=column|center`). A small table keeps its own size, and nothing goes past the window.
 
+- **Formatting bar**: `formatting bar` in the palette shows or hides the bar under the note (`bar=on|off` in `settings`). It slides left when the word count needs the room, and steps aside by itself when the note is too narrow to hold both.
+
 These choices are kept in a file named `settings`, next to the [config file](#notes-and-vault).
 
 ## Markdown
@@ -340,7 +343,7 @@ What you type is what is saved. Bref only changes how it looks.
 | `\| a \| b \|` | a table, see [Tables](#tables) |
 | `` ``` `` then `Enter` | a code block, closed for you. Name the language (`` ```rust ``) to get it colored; the copy icon, on its first line, copies its content |
 | `---` | a divider |
-| `**bold**`, `*italic*`, `~~struck~~`, `` `code` `` | inline styles |
+| `**bold**`, `*italic*`, `<u>underlined</u>`, `~~struck~~`, `==highlighted==`, `<mark class="green">colored</mark>`, `` `code` `` | inline styles (`<u>` because Markdown has no underline; `==` as in Obsidian, but not inside a word, so `abc==` of an address stays as it is; `<mark>` is the HTML tag, with `yellow`, `green`, `blue`, `pink` or `purple` as class, so other apps still show it highlighted) |
 | `[[Note name]]` | a link to another note, with suggestions as you type |
 | `#tag` | a tag, usable as a filter in the palette |
 | `https://…` | a link, opened in your browser |

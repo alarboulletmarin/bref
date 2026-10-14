@@ -101,6 +101,10 @@ pub enum Do {
     Paste,
     Bold,
     Italic,
+    Underline,
+    Strike,
+    Highlight,
+    Code,
     Link,
     Comment,
     /// Les lignes choisies en liste à puces, numérotée, de tâches, ou en texte.
@@ -133,6 +137,10 @@ impl Do {
             Do::Paste => of(cx, &editor::Paste),
             Do::Bold => of(cx, &editor::Bold),
             Do::Italic => of(cx, &editor::Italic),
+            Do::Underline => of(cx, &editor::Underline),
+            Do::Strike => of(cx, &editor::Strike),
+            Do::Highlight => of(cx, &editor::Highlight),
+            Do::Code => of(cx, &editor::InlineCode),
             Do::Link => of(cx, &editor::InsertLink),
             Do::Comment => of(cx, &editor::Comment),
             Do::Bullets => of(cx, &editor::ListBullet),
@@ -842,6 +850,10 @@ impl Shell {
             (Do::Paste, _) => Some(Box::new(editor::Paste)),
             (Do::Bold, _) => Some(Box::new(editor::Bold)),
             (Do::Italic, _) => Some(Box::new(editor::Italic)),
+            (Do::Underline, _) => Some(Box::new(editor::Underline)),
+            (Do::Strike, _) => Some(Box::new(editor::Strike)),
+            (Do::Highlight, _) => Some(Box::new(editor::Highlight)),
+            (Do::Code, _) => Some(Box::new(editor::InlineCode)),
             (Do::Link, _) => Some(Box::new(editor::InsertLink)),
             (Do::Comment, _) => Some(Box::new(editor::Comment)),
             (Do::Bullets, _) => Some(Box::new(editor::ListBullet)),
@@ -1184,6 +1196,10 @@ impl Shell {
             } else {
                 groups[2].push((tr("Bold", "Gras"), Do::Bold));
                 groups[2].push((tr("Italic", "Italique"), Do::Italic));
+                groups[2].push((tr("Underline", "Souligné"), Do::Underline));
+                groups[2].push((tr("Strikethrough", "Barré"), Do::Strike));
+                groups[2].push((tr("Highlight", "Surligné"), Do::Highlight));
+                groups[2].push((tr("Code", "Code"), Do::Code));
                 groups[2].push((if web { tr("Edit the link", "Modifier le lien") } else { tr("Make a link", "Faire un lien") }, Do::Link));
                 groups[2].push((if menu.commented { tr("Resolve the comment", "Résoudre le commentaire") } else { tr("Comment", "Commenter") }, Do::Comment));
                 // Les lignes visées, d'un genre de liste à l'autre.

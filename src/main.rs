@@ -265,6 +265,8 @@ struct Prefs {
     /// `editor::Wide`) ; vide : le choix par défaut.
     page: String,
     wide: String,
+    /// Barre de mise en forme du bas de la note : `off` la cache, le reste l'affiche.
+    bar: String,
 }
 
 impl Prefs {
@@ -272,7 +274,7 @@ impl Prefs {
 
     fn parse(text: &str) -> Self {
         let mut prefs =
-            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true, page: String::new(), wide: String::new() };
+            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true, page: String::new(), wide: String::new(), bar: String::new() };
         for (key, value) in text.lines().filter_map(|line| line.split_once('=')) {
             match key {
                 "theme" => prefs.theme = value.into(),
@@ -282,6 +284,7 @@ impl Prefs {
                 "updates" => prefs.updates = value != "off",
                 "page" => prefs.page = value.into(),
                 "wide" => prefs.wide = value.into(),
+                "bar" => prefs.bar = value.into(),
                 _ => {}
             }
         }
@@ -295,7 +298,7 @@ impl Prefs {
         if !self.updates {
             text.push_str("updates=off\n");
         }
-        for (key, value) in [("page", &self.page), ("wide", &self.wide)] {
+        for (key, value) in [("page", &self.page), ("wide", &self.wide), ("bar", &self.bar)] {
             if !value.is_empty() {
                 text.push_str(&format!("{key}={value}\n"));
             }
@@ -346,6 +349,15 @@ impl AssetSource for Assets {
             }
             "backlink.svg" => r#"<path d="M13 4.5H8.5A3 3 0 0 0 5.5 7.5V11.5M3 9L5.5 11.5L8 9"/>"#,
             "code.svg" => r#"<path d="M5.5 4.5L2.5 8L5.5 11.5M10.5 4.5L13.5 8L10.5 11.5"/>"#,
+            "list-bullet.svg" => r#"<path d="M6.5 4H13.5M6.5 8H13.5M6.5 12H13.5M3 4H3.1M3 8H3.1M3 12H3.1"/>"#,
+            "list-number.svg" => r#"<path d="M7 4H13.5M7 8H13.5M7 12H13.5M2.7 3.6L3.8 3V5.4M2.7 8.4A1 1 0 0 1 4.4 9C4.4 9.7 3 10.4 2.7 11H4.5"/>"#,
+            "list-task.svg" => r#"<rect x="2.5" y="2.5" width="3.5" height="3.5" rx="0.8"/><path d="M3.2 4.3L4 5L5.4 3.4M8 4.3H13.5M8 11.7H13.5"/><rect x="2.5" y="10" width="3.5" height="3.5" rx="0.8"/>"#,
+            "table.svg" => r#"<rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5H13.5M2.5 9.8H13.5M7 3V13"/>"#,
+            "row-add.svg" => r#"<rect x="2.5" y="2.5" width="11" height="6" rx="1"/><path d="M2.5 5.5H13.5M8 10.6V13.8M6.4 12.2H9.6"/>"#,
+            "col-add.svg" => r#"<rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M5.5 2.5V13.5M12 6.4V9.6M10.4 8H13.6"/>"#,
+            "row-del.svg" => r#"<rect x="2.5" y="2.5" width="11" height="6" rx="1"/><path d="M2.5 5.5H13.5M6.4 12.2H9.6"/>"#,
+            "col-del.svg" => r#"<rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M5.5 2.5V13.5M10.4 8H13.6"/>"#,
+            "link.svg" => r#"<path d="M6.9 9.1A2.4 2.4 0 0 0 10.3 9.1L12.2 7.2A2.4 2.4 0 0 0 8.8 3.8L8 4.6M9.1 6.9A2.4 2.4 0 0 0 5.7 6.9L3.8 8.8A2.4 2.4 0 0 0 7.2 12.2L8 11.4"/>"#,
             "heart.svg" => {
                 r#"<path d="M8 13C3.5 9.8 2.5 7.6 2.5 5.9A2.6 2.6 0 0 1 8 4.9A2.6 2.6 0 0 1 13.5 5.9C13.5 7.6 12.5 9.8 8 13Z"/>"#
             }
@@ -472,6 +484,8 @@ pub struct Theme {
     pub size: f32,
     pub page: editor::Page,
     pub wide: editor::Wide,
+    /// Barre de mise en forme au bas de la note.
+    pub bar: bool,
 }
 
 /// Thèmes proposés : (nom, [fond, texte, discret, accent, fond du code, panneau, bordure]).
@@ -518,6 +532,7 @@ impl Theme {
             size: prefs.size,
             page: editor::Page::of(&prefs.page),
             wide: editor::Wide::of(&prefs.wide),
+            bar: prefs.bar != "off",
         }
     }
 }
@@ -1588,11 +1603,13 @@ impl Shell {
         let fixed: Option<Vec<(&'static str, &'static str)>> = match setting {
             Setting::Page => Some(editor::Page::ALL.map(|p| (p.key(), p.label())).into()),
             Setting::Wide => Some(editor::Wide::ALL.map(|w| (w.key(), w.label())).into()),
+            Setting::Bar => Some(vec![("on", tr("Shown", "Affichée")), ("off", tr("Hidden", "Masquée"))]),
             _ => None,
         };
         let (mut options, current): (Vec<String>, &str) = match (setting, &fixed) {
             (Setting::Page, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), editor::Page::of(&self.prefs.page).label()),
             (Setting::Wide, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), editor::Wide::of(&self.prefs.wide).label()),
+            (Setting::Bar, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), if self.prefs.bar == "off" { list[1].1 } else { list[0].1 }),
             (Setting::Theme, _) => (THEMES.iter().map(|t| t.0.to_string()).collect(), &self.prefs.theme),
             _ => (
                 FAMILIES.get().into_iter().flatten().map(|f| f.to_string()).collect(),
@@ -1624,6 +1641,7 @@ impl Shell {
                         Setting::Mono => this.prefs.mono = value,
                         Setting::Page => this.prefs.page = key,
                         Setting::Wide => this.prefs.wide = key,
+                        Setting::Bar => this.prefs.bar = key,
                     }
                 }
                 _ => this.prefs = before.clone(),
@@ -3465,6 +3483,11 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 k(&editor::ToggleTask, tr("Check / uncheck a task or a [ ] box; in a table cell, add one", "Cocher / décocher une tâche ou une case [ ] ; dans une cellule, en ajouter une")),
                 k(&editor::Bold, tr("Bold", "Gras")),
                 k(&editor::Italic, tr("Italic", "Italique")),
+                k(&editor::Underline, tr("Underline", "Souligné")),
+                k(&editor::Strike, tr("Strikethrough", "Barré")),
+                k(&editor::Highlight, tr("Highlight", "Surligné")),
+                k(&editor::InlineCode, tr("Inline code", "Code en ligne")),
+                p(tr("formatting bar", "barre de mise en forme"), tr("Under the note, centered: bold, italic, underline, strikethrough, highlight (five colors), code, link, lists, tasks, table (in a table: add or delete a row or a column); a lit button means the selection has the style, click again to remove it; only the active pane shows it; hide it with the palette", "Sous la note, au centre : gras, italique, souligné, barré, surligné (cinq couleurs), code, lien, listes, tâches, tableau (dans un tableau : ajouter ou supprimer une ligne ou une colonne) ; un bouton allumé : la sélection a le style, un second clic le retire ; seul le pane actif la montre ; masquable par la palette")),
                 k(&editor::SelectNext, tr("Several cursors: select the word, then its next occurrence (Esc: back to one)", "Plusieurs curseurs : prendre le mot, puis son occurrence suivante (Échap : un seul)")),
                 t(&format!("Alt+{click}"), tr("Add a cursor", "Ajouter un curseur")),
                 k(&editor::InsertLink, tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
@@ -3900,7 +3923,10 @@ impl Shell {
                 .occlude()
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });
-        self.editor.update(cx, |e, _| e.corner = 1 + talk.is_some() as usize + boards as usize);
+        self.editor.update(cx, |e, _| {
+            e.corner = 1 + talk.is_some() as usize + boards as usize;
+            e.bar_here = active;
+        });
         // La colonne des commentaires prend ce que le panneau et la note lui laissent, 270 px au
         // plus ; faute de 140 px, elle ne se montre pas (son bouton reste, la fenêtre élargie la rend).
         let column = (active && !said.is_empty() && !self.comments_shut)
@@ -4888,6 +4914,10 @@ fn defaults() -> Vec<keys::Bind> {
         b("secondary-shift-r", &AlignRight, e),
         b("secondary-b", &Bold, e),
         b("secondary-i", &Italic, e),
+        b("secondary-u", &Underline, e),
+        b("secondary-shift-x", &Strike, e),
+        b("secondary-shift-h", &Highlight, e),
+        b("secondary-shift-k", &InlineCode, e),
         b("secondary-k", &InsertLink, e),
         b("secondary-d", &SelectNext, e),
         b("secondary-shift-m", &Comment, e),
@@ -6561,9 +6591,9 @@ mod tests {
         assert_eq!((text(cx), cursors(cx)), ("e chats\ne chiens\ne rats".to_string(), 3));
         cx.simulate_keystrokes("shift-end secondary-b");
         assert_eq!(text(cx), "**e chats**\n**e chiens**\n**e rats**");
-        // Une étape d'annulation défait le geste pour les trois curseurs à la fois.
+        // Une étape d'annulation défait le geste pour les trois curseurs à la fois, et lui seul.
         cx.simulate_keystrokes("secondary-z");
-        assert_eq!((text(cx), cursors(cx)), ("le chats\nle chiens\nle rats".to_string(), 1));
+        assert_eq!((text(cx), cursors(cx)), ("e chats\ne chiens\ne rats".to_string(), 1));
         load(cx, "un chat\nun chien\nun rat", 0);
         cx.simulate_keystrokes("secondary-d secondary-d escape");
         assert_eq!(cursors(cx), 1);
@@ -8390,6 +8420,320 @@ mod tests {
         assert_eq!(text(cx), format!("# {name}\n\n- [ ] "));
         cx.simulate_keystrokes("secondary-j");
         assert_eq!(text(cx), format!("# {name}\n\n- [ ] "));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// La mise en forme du texte : gras, italique, souligné, barré, surligné, code, au clavier et par
+    /// la barre du bas, avec leurs limites (curseur seul, blancs, plusieurs lignes, code, retour arrière).
+    #[gpui::test]
+    fn formatting_journey(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-fmt-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("Note.md"), "x").unwrap();
+        let _config = isolated_config(&root);
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.simulate_resize(size(px(900.), px(600.)));
+        cx.run_until_parked();
+        let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+        // Le texte chargé, puis `len` caractères sélectionnés à partir de `from` (en caractères).
+        let pick = |cx: &mut gpui::VisualTestContext, note: &str, from: usize, len: usize| {
+            let at = note.char_indices().nth(from).map_or(note.len(), |(i, _)| i);
+            shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load(note.to_string(), at, cx)));
+            cx.run_until_parked();
+            if len > 0 {
+                cx.simulate_keystrokes(&"shift-right ".repeat(len));
+            }
+        };
+        let selected = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).selected_text());
+        let styles = |cx: &mut gpui::VisualTestContext| shell.update(cx, |s, cx| s.editor.update(cx, |e, _| e.styles()));
+        // Chaque style : ses signes autour du mot, la sélection reste sur le mot, le même geste les retire.
+        for (key, shown, flag) in [
+            ("secondary-b", "un **mot** ici", markdown::BOLD),
+            ("secondary-i", "un *mot* ici", markdown::ITALIC),
+            ("secondary-u", "un <u>mot</u> ici", markdown::UNDER),
+            ("secondary-shift-x", "un ~~mot~~ ici", markdown::STRIKE),
+            ("secondary-shift-h", "un ==mot== ici", markdown::HIGHLIGHT),
+            ("secondary-shift-k", "un `mot` ici", markdown::CODE),
+        ] {
+            pick(cx, "un mot ici", 3, 3);
+            assert_eq!(styles(cx), 0, "{key}");
+            cx.simulate_keystrokes(key);
+            assert_eq!((text(cx), selected(cx).as_str()), (shown.to_string(), "mot"), "{key}");
+            assert_eq!(styles(cx), flag, "{key} : le bouton s'allume");
+            cx.simulate_keystrokes(key);
+            assert_eq!((text(cx), selected(cx).as_str()), ("un mot ici".to_string(), "mot"), "{key} retiré");
+            // Un seul retour arrière défait la pose ; refaire la remet.
+            cx.simulate_keystrokes(key);
+            cx.simulate_keystrokes("secondary-z");
+            assert_eq!(text(cx), "un mot ici", "{key} annulé");
+            cx.simulate_keystrokes("secondary-shift-z");
+            assert_eq!(text(cx), shown, "{key} rétabli");
+        }
+        // Plusieurs styles sur un mot, puis on en retire un du milieu : les autres restent.
+        pick(cx, "un mot ici", 3, 3);
+        cx.simulate_keystrokes("secondary-b secondary-u secondary-shift-h");
+        assert_eq!(text(cx), "un **<u>==mot==</u>** ici");
+        assert_eq!(styles(cx), markdown::BOLD | markdown::UNDER | markdown::HIGHLIGHT);
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "un <u>==mot==</u> ici");
+        cx.simulate_keystrokes("secondary-u");
+        assert_eq!((text(cx), selected(cx).as_str()), ("un ==mot== ici".to_string(), "mot"));
+        // Un gras autour d'un italique : le curseur dans l'italique retire le gras sans toucher l'italique.
+        pick(cx, "**a *b* c**", 5, 0);
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "a *b* c");
+        // Le curseur seul : deux signes et le curseur entre eux ; la frappe les remplit ; le geste suivant les retire.
+        pick(cx, "ab", 1, 0);
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "a****b");
+        cx.simulate_input("x");
+        assert_eq!(text(cx), "a**x**b");
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "axb");
+        // Paire vide : le geste la retire au lieu d'en empiler une autre.
+        pick(cx, "ab", 1, 0);
+        cx.simulate_keystrokes("secondary-b secondary-b");
+        assert_eq!(text(cx), "ab");
+        // Les blancs du bord restent dehors, la puce et le titre aussi.
+        pick(cx, "un mot ici", 3, 4);
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "un **mot** ici");
+        pick(cx, "- liste", 0, 7);
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "- **liste**");
+        pick(cx, "# Titre", 2, 5);
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "# **Titre**");
+        // Que des blancs : rien ne bouge, et rien à annuler.
+        pick(cx, "a   b", 1, 3);
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "a   b");
+        // Texte d'autres écritures, accents, émojis, caractères larges : les signes tombent aux bons octets.
+        for note in ["日本語 é🙂", "é", "🙂", "a|b\\c \"d\""] {
+            pick(cx, note, 0, note.chars().count());
+            cx.simulate_keystrokes("secondary-b secondary-shift-h");
+            assert_eq!(text(cx), format!("**=={note}==**"), "{note}");
+            cx.simulate_keystrokes("secondary-shift-h secondary-b");
+            assert_eq!(text(cx), note, "{note}");
+        }
+        // Plusieurs lignes : chacune a ses signes, sauf blocs de code et lignes vides ; un seul geste, un seul retour.
+        let note = "- un\n- deux\n\n```\ncode\n```\nfin";
+        pick(cx, note, 0, note.chars().count());
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "- **un**\n- **deux**\n\n```\ncode\n```\n**fin**");
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), note);
+        cx.simulate_keystrokes("secondary-b secondary-z");
+        assert_eq!(text(cx), note);
+        // Un bloc de code non fermé n'en est pas un : son texte reçoit le style.
+        pick(cx, "```\nsuite", 4, 5);
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "```\n**suite**");
+        // Dans un bloc de code, rien ne change.
+        pick(cx, "```\ncode\n```", 5, 4);
+        cx.simulate_keystrokes("secondary-b secondary-u");
+        assert_eq!(text(cx), "```\ncode\n```");
+        pick(cx, "```\ncode\n```", 6, 0);
+        cx.simulate_keystrokes("secondary-b");
+        assert_eq!(text(cx), "```\ncode\n```");
+        // Une cellule de tableau, et un commentaire : la sélection y reste valide.
+        pick(cx, "| a | b |\n| --- | --- |\n| c | d |", 26, 1);
+        cx.simulate_keystrokes("secondary-b");
+        assert!(text(cx).contains("| **c** |"), "{}", text(cx));
+        // Plusieurs curseurs : chacun reçoit ses signes, un seul retour les défait tous.
+        pick(cx, "un chat\nun chien", 0, 0);
+        cx.simulate_keystrokes("secondary-d secondary-d secondary-u");
+        assert_eq!(text(cx), "<u>un</u> chat\n<u>un</u> chien");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(text(cx), "un chat\nun chien");
+        cx.simulate_keystrokes("escape");
+
+        // La barre du bas : au milieu de la page, à gauche du compteur, onze boutons de même taille.
+        pick(cx, "un mot ici", 3, 3);
+        let (bar, counts, pane) = (cx.debug_bounds("format-bar").unwrap(), cx.debug_bounds("counts").unwrap(), cx.debug_bounds("pane-0").unwrap());
+        assert!(bar.right() <= counts.left() && bar.left() >= pane.left() && bar.bottom() <= pane.bottom(), "{bar:?} {counts:?} {pane:?}");
+        // Au milieu de la page, ou un peu à gauche quand le compteur (long, avec une sélection) la pousse.
+        assert!(bar.center().x <= pane.center().x + px(1.) && bar.center().x >= pane.center().x - px(60.), "{bar:?} {pane:?}");
+        assert_eq!((bar.size.height, bar.size.width), (counts.size.height, px(335.)));
+        const NAMES: [&str; 11] = ["format-0", "format-1", "format-2", "format-3", "format-4", "format-5", "format-6", "format-7", "format-8", "format-9", "format-10"];
+        let buttons = |cx: &mut gpui::VisualTestContext| NAMES.iter().map(|name| cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} absent"))).collect::<Vec<_>>();
+        let all = buttons(cx);
+        assert!(all.iter().all(|b| b.size == all[0].size && b.top() == all[0].top() && bar.contains(&b.center())), "{all:?}");
+        assert!(all.windows(2).all(|w| w[0].right() <= w[1].left()), "{all:?}");
+        // Un clic : le style se pose sur la sélection, qui reste, et le bouton s'allume ; un second clic le retire.
+        let click = |cx: &mut gpui::VisualTestContext, i: usize| {
+            let at = cx.debug_bounds(NAMES[i]).unwrap().center();
+            cx.simulate_click(at, gpui::Modifiers::none());
+        };
+        click(cx, 0);
+        assert_eq!((text(cx), selected(cx).as_str()), ("un **mot** ici".to_string(), "mot"));
+        assert_eq!(styles(cx), markdown::BOLD);
+        click(cx, 2);
+        click(cx, 4);
+        assert_eq!((text(cx), selected(cx).as_str()), ("un **<u>==mot==</u>** ici".to_string(), "mot"));
+        click(cx, 0);
+        click(cx, 2);
+        click(cx, 4);
+        assert_eq!(text(cx), "un mot ici");
+        click(cx, 3);
+        click(cx, 5);
+        assert_eq!(text(cx), "un ~~`mot`~~ ici");
+        // Les couleurs : le chevron ouvre les pastilles, une pastille surligne dans sa couleur (`<mark>`),
+        // la même une seconde fois retire, une autre change la couleur ; H retire quelle qu'elle soit ; Échap ferme.
+        pick(cx, "un mot ici", 3, 3);
+        let open_swatches = |cx: &mut gpui::VisualTestContext| {
+            let at = cx.debug_bounds("format-colors").unwrap().center();
+            cx.simulate_click(at, gpui::Modifiers::none());
+            cx.run_until_parked();
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        };
+        let swatch = |cx: &mut gpui::VisualTestContext, i: usize| {
+            const SWATCHES: [&str; 5] = ["swatch-0", "swatch-1", "swatch-2", "swatch-3", "swatch-4"];
+            let at = cx.debug_bounds(SWATCHES[i]).unwrap().center();
+            cx.simulate_click(at, gpui::Modifiers::none());
+        };
+        open_swatches(cx);
+        let (bar, pops) = (cx.debug_bounds("format-bar").unwrap(), cx.debug_bounds("format-swatches").unwrap());
+        assert!(pops.bottom() <= bar.top() && pops.left() >= bar.left() && pops.right() <= bar.right() + px(120.), "{pops:?} {bar:?}");
+        swatch(cx, 1);
+        assert_eq!((text(cx), selected(cx).as_str()), ("un <mark class=\"green\">mot</mark> ici".to_string(), "mot"));
+        assert_eq!(styles(cx), markdown::HIGHLIGHT);
+        open_swatches(cx);
+        swatch(cx, 3);
+        assert_eq!(text(cx), "un <mark class=\"pink\">mot</mark> ici");
+        open_swatches(cx);
+        swatch(cx, 3);
+        assert_eq!((text(cx), selected(cx).as_str()), ("un mot ici".to_string(), "mot"));
+        open_swatches(cx);
+        swatch(cx, 0);
+        assert_eq!(text(cx), "un ==mot== ici");
+        open_swatches(cx);
+        swatch(cx, 4);
+        click(cx, 4);
+        assert_eq!(text(cx), "un mot ici");
+        // Sur plusieurs lignes, et le geste s'annule d'un coup ; Échap ferme les pastilles sans rien changer.
+        pick(cx, "- a\n- b", 0, 7);
+        open_swatches(cx);
+        swatch(cx, 2);
+        assert_eq!(text(cx), "- <mark class=\"blue\">a</mark>\n- <mark class=\"blue\">b</mark>");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(text(cx), "- a\n- b");
+        open_swatches(cx);
+        cx.simulate_keystrokes("escape");
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, cx| !s.editor.read(cx).swatches_open()));
+        assert_eq!(text(cx), "- a\n- b");
+        // Le lien depuis la barre : la sélection devient le texte, le curseur attend l'adresse.
+        pick(cx, "un mot ici", 3, 3);
+        click(cx, 6);
+        assert_eq!(text(cx), "un [mot]() ici");
+        // Les listes : un clic change le genre de la ligne, le même bouton la remet en texte, un autre change de genre.
+        pick(cx, "un mot ici\ndeux", 0, 14);
+        click(cx, 7);
+        assert_eq!(text(cx), "- un mot ici\n- deux");
+        click(cx, 7);
+        assert_eq!(text(cx), "un mot ici\ndeux");
+        click(cx, 8);
+        assert_eq!(text(cx), "1. un mot ici\n2. deux");
+        click(cx, 9);
+        assert_eq!(text(cx), "- [ ] un mot ici\n- [ ] deux");
+        click(cx, 7);
+        assert_eq!(text(cx), "- un mot ici\n- deux");
+        cx.simulate_keystrokes("secondary-z secondary-z secondary-z secondary-z secondary-z");
+        assert_eq!(text(cx), "un mot ici\ndeux");
+        // Le tableau : le bouton ouvre la grille de taille ; Entrée la pose. Dans le tableau, les listes cèdent la place à ses lignes et colonnes.
+        pick(cx, "avant", 5, 0);
+        click(cx, 10);
+        cx.simulate_keystrokes("enter");
+        assert!(text(cx).contains("|  |  |  |\n| --- | --- | --- |") || text(cx).contains("| --- |"), "{}", text(cx));
+        assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).in_table()));
+        cx.run_until_parked();
+        let rows = |cx: &mut gpui::VisualTestContext| text(cx).lines().filter(|l| l.starts_with('|')).count();
+        let columns = |cx: &mut gpui::VisualTestContext| text(cx).lines().find(|l| l.starts_with('|')).unwrap().matches('|').count() - 1;
+        let (r, c) = (rows(cx), columns(cx));
+        click(cx, 7);
+        assert_eq!((rows(cx), columns(cx)), (r + 1, c), "{:?}", text(cx));
+        click(cx, 8);
+        assert_eq!((rows(cx), columns(cx)), (r + 1, c + 1));
+        click(cx, 9);
+        click(cx, 10);
+        assert_eq!((rows(cx), columns(cx)), (r, c));
+        let all = buttons(cx);
+        assert_eq!(all.len(), 11);
+        // Un seul geste d'annulation pour chacun.
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!((rows(cx), columns(cx)), (r, c + 1));
+        // La barre, à toute largeur : jamais sous le compteur ni hors de la note, au milieu tant qu'il y a de la place, puis plus à gauche, puis retirée.
+        let mut seen = Vec::new();
+        for width in [1400., 900., 700., 600., 560., 480., 420.] {
+            cx.simulate_resize(size(px(width), px(600.)));
+            cx.run_until_parked();
+            for _ in 0..2 {
+                cx.update(|window, _| window.refresh());
+                cx.run_until_parked();
+            }
+            // Les bornes d'un élément disparu restent en mémoire dans le test : c'est l'éditeur qui dit si la barre est là.
+            let shown = shell.read_with(cx, |s, cx| s.editor.read(cx).bar_shown());
+            let (counts, pane) = (cx.debug_bounds("counts").unwrap(), cx.debug_bounds("pane-0").unwrap());
+            assert!(counts.left() >= pane.left() && counts.right() <= pane.right(), "{width} : {counts:?} {pane:?}");
+            if shown {
+                let bar = cx.debug_bounds("format-bar").unwrap();
+                assert!(bar.right() <= counts.left() && bar.left() >= pane.left() + px(8.) - px(0.5), "{width} : {bar:?} {counts:?} {pane:?}");
+                if width >= 1400. {
+                    assert!((bar.center().x - pane.center().x).abs() <= px(1.), "{width} : au milieu de la page {bar:?} {pane:?}");
+                }
+            }
+            seen.push(shown);
+        }
+        assert!(seen[0] && !seen[6] && seen.windows(2).all(|w| w[0] >= w[1]), "elle disparaît d'un seul bord, sans réapparaître : {seen:?}");
+        // Deux panes : une seule barre, celle du pane où l'on écrit.
+        cx.simulate_resize(size(px(1400.), px(600.)));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("secondary-\\");
+        cx.run_until_parked();
+        for _ in 0..2 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+        let bars = shell.read_with(cx, |s, cx| s.panes.iter().filter(|p| p.editor.read(cx).bar_shown()).count());
+        assert_eq!(bars, 1, "une seule barre pour deux panes");
+        cx.dispatch_action(ClosePane);
+        cx.run_until_parked();
+        assert_eq!(shell.read_with(cx, |s, _| s.panes.len()), 1);
+        cx.simulate_resize(size(px(900.), px(600.)));
+        cx.run_until_parked();
+        // Réglage « Barre de mise en forme… » : masquée, elle ne se dessine plus et le choix survit au redémarrage ;
+        // une valeur vide, absente ou inconnue la laisse affichée.
+        let choose = |cx: &mut gpui::VisualTestContext, keys: &str| {
+            shell.update_in(cx, |s, window, cx| s.choose_setting(Setting::Bar, window, cx));
+            cx.run_until_parked();
+            cx.simulate_keystrokes(keys);
+            cx.run_until_parked();
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        };
+        choose(cx, "down enter");
+        assert!(shell.read_with(cx, |s, _| s.prefs.bar == "off" && !s.theme.bar));
+        assert!(!shell.read_with(cx, |s, cx| s.editor.read(cx).bar_shown()) && cx.debug_bounds("counts").is_some());
+        assert!(vault::load_settings().contains("bar=off\n"));
+        // Échap pendant la liste : le choix en aperçu est repris.
+        choose(cx, "up escape");
+        assert!(shell.read_with(cx, |s, _| s.prefs.bar == "off"));
+        choose(cx, "up enter");
+        assert!(shell.read_with(cx, |s, cx| s.theme.bar && s.editor.read(cx).bar_shown()));
+        for (text, shown) in [("", true), ("bar=\n", true), ("bar=on\n", true), ("bar=zzz\n", true), ("bar=off\n", false)] {
+            assert_eq!(Prefs::parse(text).bar != "off", shown, "{text:?}");
+        }
+        assert_eq!(Prefs::parse(&Prefs::parse("bar=off").to_text()).bar, "off");
+        assert!(!Prefs::parse("").to_text().contains("bar="));
         let _ = fs::remove_dir_all(&root);
     }
 
