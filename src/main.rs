@@ -2,6 +2,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod canvas;
+mod commands;
 mod diagram;
 mod editor;
 mod figure;
@@ -267,6 +268,8 @@ struct Prefs {
     wide: String,
     /// Barre de mise en forme du bas de la note : `off` la cache, le reste l'affiche.
     bar: String,
+    /// Les touches d'une commande faite à la souris, rappelées en passant (`coach`) : `off` les tait.
+    tips: String,
 }
 
 impl Prefs {
@@ -274,7 +277,7 @@ impl Prefs {
 
     fn parse(text: &str) -> Self {
         let mut prefs =
-            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true, page: String::new(), wide: String::new(), bar: String::new() };
+            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true, page: String::new(), wide: String::new(), bar: String::new(), tips: String::new() };
         for (key, value) in text.lines().filter_map(|line| line.split_once('=')) {
             match key {
                 "theme" => prefs.theme = value.into(),
@@ -285,6 +288,7 @@ impl Prefs {
                 "page" => prefs.page = value.into(),
                 "wide" => prefs.wide = value.into(),
                 "bar" => prefs.bar = value.into(),
+                "tips" => prefs.tips = value.into(),
                 _ => {}
             }
         }
@@ -298,7 +302,7 @@ impl Prefs {
         if !self.updates {
             text.push_str("updates=off\n");
         }
-        for (key, value) in [("page", &self.page), ("wide", &self.wide), ("bar", &self.bar)] {
+        for (key, value) in [("page", &self.page), ("wide", &self.wide), ("bar", &self.bar), ("tips", &self.tips)] {
             if !value.is_empty() {
                 text.push_str(&format!("{key}={value}\n"));
             }
@@ -325,6 +329,8 @@ impl AssetSource for Assets {
             }
             "check.svg" => r#"<path d="M4 8.5L7 11L12 5"/>"#,
             "board.svg" => r#"<rect x="2.5" y="3" width="3" height="10" rx="0.8"/><rect x="6.5" y="3" width="3" height="7" rx="0.8"/><rect x="10.5" y="3" width="3" height="4.5" rx="0.8"/>"#,
+            // Trois traits : le menu de toutes les commandes.
+            "menu.svg" => r#"<path d="M3 4.5H13M3 8H13M3 11.5H13"/>"#,
             "info.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 7.5V11M8 5V5.2"/>"#,
             "alert.svg" => r#"<path d="M8 2.5L14 13H2ZM8 6.5V9.5M8 11.3V11.5"/>"#,
             "spinner.svg" => r#"<path d="M8 2.5A5.5 5.5 0 1 1 2.5 8"/>"#,
@@ -466,7 +472,7 @@ pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
 
-actions!(app, [SyncVault, SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewFromTemplate, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [ToggleCommands, CommandUp, CommandDown, CommandLeft, CommandRight, CommandRun, CommandClose, SyncVault, SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewFromTemplate, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -577,6 +583,18 @@ pub enum Tone {
     Failed,
     /// Opération en cours : reste affiché jusqu'au message qui en donne l'issue.
     Busy,
+}
+
+/// Le menu de toutes les commandes : les sections de l'aide (celle de la vue en tête), celle qu'on
+/// regarde et la ligne choisie, les actions que la vue sait faire, et qui avait la saisie.
+struct CommandMenu {
+    focus: FocusHandle,
+    back: Option<FocusHandle>,
+    sections: Vec<(&'static str, Vec<commands::Command>)>,
+    available: std::collections::HashSet<&'static str>,
+    section: usize,
+    row: Option<usize>,
+    scroll: gpui::ScrollHandle,
 }
 
 /// Où des fichiers venus du système se rangeraient, pendant qu'on les glisse sur la fenêtre.
@@ -732,6 +750,10 @@ struct Shell {
     icon_pick: Option<(Point<Pixels>, PathBuf)>,
     /// Le panneau des commentaires a été refermé : il attend qu'on le redemande.
     comments_shut: bool,
+    /// Le menu de toutes les commandes, ouvert.
+    commands: Option<CommandMenu>,
+    /// Combien de fois chaque action déclenchée à la souris a montré sa touche (`coach`).
+    coached: std::collections::HashMap<&'static str, u8>,
     /// Messages d'état affichés, du plus ancien au plus récent.
     toasts: Vec<Toast>,
     /// Numéro du dernier message, pour retirer le bon à l'échéance.
@@ -1191,6 +1213,8 @@ impl Shell {
             icons: Default::default(),
             icon_pick: None,
             comments_shut: false,
+            commands: None,
+            coached: Default::default(),
             toasts: Vec::new(),
             toasted: 0,
             update: None,
@@ -1278,6 +1302,23 @@ impl Shell {
     /// « en cours », dont il est l'issue.
     // ponytail: une seule opération « en cours » à la fois ; rendre le numéro du message à
     // l'appelant le jour où deux opérations longues peuvent se chevaucher.
+    /// Une commande faite à la souris qui a des touches : les deux premières fois de la session, un
+    /// message les montre, pour qu'on les apprenne en passant. Le réglage « Astuces de raccourcis »
+    /// de la palette les tait.
+    pub fn coach(&mut self, action: &str, cx: &mut Context<Self>) {
+        if self.prefs.tips == "off" {
+            return;
+        }
+        let Some(action) = cx.build_action(action, None).ok() else { return };
+        let keys = keys::of(cx, action.as_ref());
+        let seen = self.coached.entry(action.name()).or_default();
+        if keys.is_empty() || *seen >= 2 {
+            return;
+        }
+        *seen += 1;
+        self.say(Tone::Info, format!("{} {keys}", tr("Next time, from the keyboard:", "La prochaine fois, au clavier :")), cx);
+    }
+
     pub fn say(&mut self, tone: Tone, text: impl Into<String>, cx: &mut Context<Self>) {
         self.toasts.retain(|t| t.tone != Tone::Busy);
         self.toasted += 1;
@@ -1605,12 +1646,14 @@ impl Shell {
             Setting::Page => Some(editor::Page::ALL.map(|p| (p.key(), p.label())).into()),
             Setting::Wide => Some(editor::Wide::ALL.map(|w| (w.key(), w.label())).into()),
             Setting::Bar => Some(vec![("on", tr("Shown", "Affichée")), ("off", tr("Hidden", "Masquée"))]),
+            Setting::Tips => Some(vec![("on", tr("Shown", "Affichées")), ("off", tr("Hidden", "Masquées"))]),
             _ => None,
         };
         let (mut options, current): (Vec<String>, &str) = match (setting, &fixed) {
             (Setting::Page, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), editor::Page::of(&self.prefs.page).label()),
             (Setting::Wide, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), editor::Wide::of(&self.prefs.wide).label()),
             (Setting::Bar, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), if self.prefs.bar == "off" { list[1].1 } else { list[0].1 }),
+            (Setting::Tips, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), if self.prefs.tips == "off" { list[1].1 } else { list[0].1 }),
             (Setting::Theme, _) => (THEMES.iter().map(|t| t.0.to_string()).collect(), &self.prefs.theme),
             _ => (
                 FAMILIES.get().into_iter().flatten().map(|f| f.to_string()).collect(),
@@ -1643,6 +1686,7 @@ impl Shell {
                         Setting::Page => this.prefs.page = key,
                         Setting::Wide => this.prefs.wide = key,
                         Setting::Bar => this.prefs.bar = key,
+                        Setting::Tips => this.prefs.tips = key,
                     }
                 }
                 _ => this.prefs = before.clone(),
@@ -1782,7 +1826,8 @@ impl Shell {
         } else if self.vault.is_none() {
             window.focus(&self.focus);
         } else {
-            window.focus(&self.editor.focus_handle(cx));
+            // À ce que le pane montre : rendue à la note, la saisie effacerait un tableau ou un schéma.
+            self.focus_pane(self.active, window, cx);
         }
         cx.notify();
     }
@@ -2155,6 +2200,7 @@ impl Shell {
     fn on_sheet_event(&mut self, _: Entity<Sheet>, event: &SheetEvent, cx: &mut Context<Self>) {
         match event {
             SheetEvent::Error(message) => self.say(Tone::Failed, message.clone(), cx),
+            SheetEvent::Coach(action) => self.coach(action, cx),
             // Un fichier est apparu à côté du tableau : l'arbre le montre.
             SheetEvent::Exported => {
                 if let Some(root) = self.vault.clone() {
@@ -2593,6 +2639,7 @@ impl Shell {
                 _ => self.follow(link, window, cx),
             },
             EditorEvent::Swap(swap) => self.replace_in_vault(swap.clone(), window, cx),
+            EditorEvent::Coach(action) => self.coach(action, cx),
             EditorEvent::Menu(at, link, commented) => {
                 self.menu = Some(nav::Menu { at: *at, target: None, text: Some(link.clone()), commented: *commented });
                 cx.notify();
@@ -3225,11 +3272,20 @@ impl Shell {
         let lists = self.picture.is_none() && self.listing.is_none() && !self.board_shown(cx);
         let cells = lists && self.editor.read(cx).in_table();
         let swap = !self.swapped.is_empty();
+        let (commands, here) = self.palette_commands(window, cx);
         let palette = cx.new(|cx| match lines {
             true => Palette::search(entries, theme, cx),
-            false => Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table).with_lists(lists).with_cells(cells).with_undo_swap(swap),
+            false => Palette::new(entries, query, theme, cx)
+                .with_updates(updates, installable)
+                .with_table(table)
+                .with_lists(lists)
+                .with_cells(cells)
+                .with_undo_swap(swap)
+                .with_commands(commands, here),
         });
-        cx.subscribe_in(&palette, window, |this, palette, event, window, cx| {
+        // Une commande choisie dans la palette va à ce qui avait la saisie avant elle.
+        let back = window.focused(cx);
+        cx.subscribe_in(&palette, window, move |this, palette, event, window, cx| {
             this.palette = None;
             window.focus(&this.editor.focus_handle(cx));
             let aside = palette.read(cx).aside;
@@ -3262,6 +3318,15 @@ impl Shell {
                     }
                     window.dispatch_action(op.action(), cx);
                 }
+                PaletteEvent::Run(name) => {
+                    match &back {
+                        Some(back) => window.focus(back),
+                        None => this.focus_pane(this.active, window, cx),
+                    }
+                    if let Ok(action) = cx.build_action(name, None) {
+                        window.dispatch_action(action, cx);
+                    }
+                }
                 PaletteEvent::Restyle(style) => {
                     window.focus(&this.editor.focus_handle(cx));
                     this.editor.update(cx, |e, cx| e.restyle(*style, cx));
@@ -3277,7 +3342,9 @@ impl Shell {
                 PaletteEvent::Terminal => this.open_terminal(cx),
                 PaletteEvent::CaptureKey => this.capture_shortcut(cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
-                PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
+                // Refermée sans choix : on retrouve ce que le pane montrait, tableau ou schéma compris.
+                PaletteEvent::Dismiss => this.focus_pane(this.active, window, cx),
+                PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
             cx.notify();
         })
@@ -3316,6 +3383,9 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
             "Notes",
             vec![
                 k(&OpenPalette, tr("Find by name or text, create, filter by #tag", "Chercher par nom ou texte, créer, filtrer par #tag")),
+                k(&ToggleCommands, tr("Every command, by kind, with its keys (also the first button of the rail)", "Toutes les commandes, par sorte, avec leurs touches (aussi le premier bouton du rail)")),
+                p(">", tr("Only the commands, found by what they do; Enter runs the one chosen", "Rien que les commandes, trouvées par ce qu'elles font ; Entrée lance celle choisie")),
+                p(tr("tips", "astuces"), tr("Shortcut tips: the keys of a button recalled when it is clicked, on or off", "Astuces de raccourcis : les touches d'un bouton rappelées quand on le clique, ou non")),
                 k(&editor::Find, tr("Find in the note", "Chercher dans la note")),
                 k(&editor::FindReplace, tr("Find and replace in the note", "Chercher et remplacer dans la note")),
                 k(&SearchVault, tr("Search the text of the whole vault, line by line", "Chercher dans le texte de tout le coffre, ligne par ligne")),
@@ -3516,7 +3586,233 @@ impl Shell {
     /// Les lignes de l'aide que la recherche garde.
     fn help_rows(&self, cx: &App) -> keys::Sections {
         let query = self.help_find.as_ref().map(|find| find.read(cx).line.text.clone()).unwrap_or_default();
-        keys::filter(help_sections(&self.bound, &self.changes), &query)
+        let mut sections = keys::filter(help_sections(&self.bound, &self.changes), &query);
+        // Ouvert sur un tableau ou un schéma, le panneau commence par ses touches.
+        if let Some(at) = self.here(cx).and_then(|here| sections.iter().position(|(title, _)| *title == here)) {
+            let first = sections.remove(at);
+            sections.insert(0, first);
+        }
+        sections
+    }
+
+    /// La section de l'aide qui parle de ce qui est affiché : un tableau CSV, un schéma, un tableau
+    /// de la note sous le curseur ; aucune pour une note ordinaire, l'aide commence par les notes.
+    fn here(&self, cx: &App) -> Option<&'static str> {
+        if self.shown_sheet().is_some() {
+            Some(tr("CSV tables", "Tableaux CSV"))
+        } else if self.picture.is_some() && self.drawing.is_some() {
+            Some(tr("Diagrams", "Schémas"))
+        } else if self.picture.is_none() && self.listing.is_none() && self.editor.read(cx).in_table() {
+            Some(tr("Tables in a note", "Tableaux d'une note"))
+        } else {
+            None
+        }
+    }
+
+    /// Les commandes que la palette peut lancer : celles que la vue sait faire, celles de la vue
+    /// d'abord (combien : le second nombre). Celles que la palette offre déjà sous un autre nom
+    /// (gestes de tableau, plan, note du jour…) n'y figurent pas deux fois.
+    fn palette_commands(&self, window: &mut Window, cx: &mut Context<Self>) -> (Vec<commands::Command>, usize) {
+        let available: std::collections::HashSet<&str> = window.available_actions(cx).iter().map(|action| action.name()).collect();
+        let doubled = |name: &str| {
+            name.starts_with("editor::Table")
+                || name.starts_with("sheet::Pick")
+                || matches!(name, "app::OpenPalette" | "app::Outline" | "app::Today" | "app::OpenVault" | "app::GoBack" | "app::GoForward" | "app::SyncVault" | "app::ToggleHelp" | "app::NewDiagram" | "app::NewFromTemplate" | "app::ToggleCommands")
+        };
+        let here = self.here(cx);
+        let mut count = 0;
+        let mut all = Vec::new();
+        for (i, (title, commands)) in commands::sections(help_sections(&self.bound, &self.changes), here).into_iter().enumerate() {
+            let kept = commands.into_iter().filter(|c| available.contains(c.action) && !doubled(c.action));
+            let before = all.len();
+            all.extend(kept);
+            if i == 0 && here == Some(title) {
+                count = all.len() - before;
+            }
+        }
+        (all, count)
+    }
+
+    /// Le menu de toutes les commandes (F10, ou le bouton en tête du rail) : rangées comme l'aide,
+    /// celles de la vue d'abord, avec leurs touches. Celles que la vue ne sait pas faire sont
+    /// estompées : un clic ne ferait rien.
+    pub fn open_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_none() {
+            return;
+        }
+        if self.palette.is_some() || self.help {
+            return;
+        }
+        self.menu = None;
+        let available = window.available_actions(cx).iter().map(|action| action.name()).collect();
+        let sections = commands::sections(help_sections(&self.bound, &self.changes), self.here(cx));
+        let focus = cx.focus_handle();
+        let back = window.focused(cx);
+        window.focus(&focus);
+        self.commands = Some(CommandMenu { focus, back, sections, available, section: 0, row: None, scroll: gpui::ScrollHandle::new() });
+        cx.notify();
+    }
+
+    /// Referme le menu, rend la saisie à qui l'avait, puis lance la commande choisie, s'il y en a une.
+    fn close_commands(&mut self, run: Option<&'static str>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(menu) = self.commands.take() else { return };
+        match menu.back {
+            Some(back) => window.focus(&back),
+            None => self.focus_pane(self.active, window, cx),
+        }
+        if let Some(action) = run.and_then(|name| cx.build_action(name, None).ok()) {
+            window.dispatch_action(action, cx);
+        }
+        cx.notify();
+    }
+
+    /// Flèches du menu : haut et bas dans les commandes, gauche et droite d'une section à l'autre.
+    fn step_commands(&mut self, down: bool, across: bool, cx: &mut Context<Self>) {
+        let Some(menu) = &mut self.commands else { return };
+        if across {
+            let n = menu.sections.len();
+            menu.section = if down { (menu.section + 1) % n } else { (menu.section + n - 1) % n };
+            menu.row = Some(0);
+        } else {
+            menu.row = commands::step(menu.row, menu.sections[menu.section].1.len(), down);
+        }
+        if let Some(row) = menu.row {
+            menu.scroll.scroll_to_item(row);
+        }
+        cx.notify();
+    }
+
+    fn render_commands(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let menu = self.commands.as_ref()?;
+        let t = self.theme;
+        let titles = menu.sections.iter().enumerate().map(|(i, (title, _))| {
+            div()
+                .id(("command-section", i))
+                .debug_selector(move || format!("command-section-{i}"))
+                .h(px(28.))
+                .px_2()
+                .flex()
+                .items_center()
+                .rounded(px(5.))
+                .cursor_pointer()
+                .whitespace_nowrap()
+                .when(i == menu.section, |d| d.bg(t.selection).text_color(t.text))
+                .when(i != menu.section, |d| d.text_color(t.soft).hover(|s| s.bg(t.code_bg)))
+                .child(*title)
+                // Le survol suffit à montrer la section, comme dans un menu.
+                .on_mouse_move(cx.listener(move |this, _, _, cx| {
+                    if let Some(menu) = this.commands.as_mut().filter(|menu| menu.section != i) {
+                        (menu.section, menu.row) = (i, None);
+                        cx.notify();
+                    }
+                }))
+        });
+        let rows = menu.sections[menu.section].1.iter().enumerate().map(|(i, command)| {
+            let on = menu.available.contains(command.action);
+            let action = command.action;
+            div()
+                .id(("command", i))
+                .debug_selector(move || format!("command-{action}"))
+                .min_h(px(28.))
+                .px_2()
+                .py_1()
+                .flex()
+                .items_center()
+                .gap_3()
+                .rounded(px(5.))
+                .when(Some(i) == menu.row, |d| d.bg(t.selection))
+                .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.code_bg)))
+                .when(!on, |d| d.text_color(t.soft).opacity(0.55))
+                .child(div().flex_1().min_w_0().child(command.effect))
+                .when(!command.keys.is_empty(), |d| {
+                    d.child(
+                        div()
+                            .flex_none()
+                            .px(px(5.))
+                            .rounded(px(4.))
+                            .border_1()
+                            .border_color(t.border)
+                            .bg(t.bg)
+                            .font_family(mono())
+                            .text_size(px(11.5))
+                            .text_color(t.soft)
+                            .child(command.keys.clone()),
+                    )
+                })
+                .when(on, |d| {
+                    d.on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.close_commands(Some(action), window, cx)
+                        }),
+                    )
+                })
+        });
+        let height = window.viewport_size().height;
+        let panel = div()
+            .debug_selector(|| "commands".into())
+            .absolute()
+            .top(px(44.))
+            .left(nav::RAIL + px(6.))
+            .max_w(window.viewport_size().width - nav::RAIL - px(12.))
+            .max_h(height - px(64.))
+            .flex()
+            .bg(t.panel)
+            .border_1()
+            .border_color(t.border)
+            .rounded(px(10.))
+            .shadow_lg()
+            .text_size(px(13.))
+            .text_color(t.text)
+            .track_focus(&menu.focus)
+            .key_context("Commands")
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_action(cx.listener(|this, _: &CommandUp, _, cx| this.step_commands(false, false, cx)))
+            .on_action(cx.listener(|this, _: &CommandDown, _, cx| this.step_commands(true, false, cx)))
+            .on_action(cx.listener(|this, _: &CommandLeft, _, cx| this.step_commands(false, true, cx)))
+            .on_action(cx.listener(|this, _: &CommandRight, _, cx| this.step_commands(true, true, cx)))
+            .on_action(cx.listener(|this, _: &CommandRun, window, cx| {
+                let chosen = this.commands.as_ref().and_then(|menu| {
+                    let command = &menu.sections[menu.section].1[menu.row?];
+                    menu.available.contains(command.action).then_some(command.action)
+                });
+                if chosen.is_some() {
+                    this.close_commands(chosen, window, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &CommandClose, window, cx| this.close_commands(None, window, cx)))
+            .on_action(cx.listener(|this, _: &ToggleCommands, window, cx| this.close_commands(None, window, cx)))
+            .child(
+                div()
+                    .id("command-sections")
+                    .flex_none()
+                    .w(px(190.))
+                    .p_1()
+                    .border_r_1()
+                    .border_color(t.border)
+                    .overflow_y_scroll()
+                    .children(titles),
+            )
+            .child(
+                div()
+                    .id("command-rows")
+                    .w(px(440.))
+                    .min_w_0()
+                    .p_1()
+                    .overflow_y_scroll()
+                    .track_scroll(&menu.scroll)
+                    .children(rows),
+            );
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .occlude()
+                .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.close_commands(None, window, cx)))
+                .on_mouse_down(MouseButton::Right, cx.listener(|this, _, window, cx| this.close_commands(None, window, cx)))
+                .child(panel),
+        )
     }
 
     /// `short` : la fenêtre est basse, le pied « à propos » défile avec la liste au lieu de lui prendre sa place.
@@ -4010,7 +4306,10 @@ impl Shell {
             .size(px(30.))
             .rounded(px(8.))
             .occlude()
-            .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.copy_all(false, cx);
+                this.coach(gpui::Action::name(&CopyAll), cx);
+            }));
         // L'image choisie dans le panneau ; elle s'efface dès que la note reprend la main.
         if self.editor.focus_handle(cx).is_focused(window) {
             self.picture = None;
@@ -4631,6 +4930,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &ToggleHelp, window, cx| {
                 this.set_help(!this.help, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ToggleCommands, window, cx| this.open_commands(window, cx)))
             // Échap dans la note, quand elle n'a rien à fermer : le menu du clic droit.
             .on_action(cx.listener(|this, _: &editor::Cancel, _, cx| {
                 this.icon_pick = None;
@@ -4649,6 +4949,7 @@ impl Render for Shell {
             .child(body)
             .when(client, |d| d.child(pill))
             .children(self.render_menu(window, cx))
+            .children(self.render_commands(window, cx))
             .children(self.render_icons(window, cx))
             .children(self.render_drop_chip(window.viewport_size()))
             .when(self.help, |d| d.child(self.render_help(window.viewport_size().height < px(420.), cx)));
@@ -4770,6 +5071,14 @@ fn defaults() -> Vec<keys::Bind> {
         b("secondary--", &ZoomOut, None),
         b("secondary-0", &ZoomReset, None),
         b("secondary-q", &Quit, None),
+        // Le menu de toutes les commandes : F10, comme la barre de menus d'une app de bureau.
+        b("f10", &ToggleCommands, None),
+        b("up", &CommandUp, Some("Commands")),
+        b("down", &CommandDown, Some("Commands")),
+        b("left", &CommandLeft, Some("Commands")),
+        b("right", &CommandRight, Some("Commands")),
+        b("enter", &CommandRun, Some("Commands")),
+        b("escape", &CommandClose, Some("Commands")),
         b("secondary-shift-d", &NewDiagram, Some("Shell")),
         b("secondary-=", &canvas::ZoomIn, c),
         b("secondary-+", &canvas::ZoomIn, c),
@@ -7794,6 +8103,129 @@ mod tests {
 
     /// Des milliers de modifications au hasard sur des notes variées : chaque mise en page reprise est
     /// comparée (dans `Editor::layout`, en test) à une mise en page complète.
+    /// Ce qu'on peut faire se trouve sans le savoir : le menu de toutes les commandes (F10), la palette
+    /// qui les cherche, l'aide ouverte sur la vue, la barre d'un tableau, et les touches rappelées après un clic.
+    #[gpui::test]
+    fn commands_are_found(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-commands-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("data.csv"), "nom;age\nAna;31\nBob;27\n").unwrap();
+        let _config = isolated_config(&root);
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+        shell.update_in(cx, |s, window, cx| window.focus(&s.editor.focus_handle(cx)));
+        cx.simulate_input("mot");
+
+        // F10 ouvre le menu, rangé comme l'aide ; ce que la note ne sait pas faire (la grille) y est estompé.
+        cx.simulate_keystrokes("f10");
+        let menu = |cx: &mut gpui::VisualTestContext| {
+            shell.read_with(cx, |s, _| s.commands.as_ref().map(|m| (m.sections.iter().map(|(t, _)| *t).collect::<Vec<_>>(), m.section, m.row)))
+        };
+        let (titles, ..) = menu(cx).expect("le menu est ouvert");
+        assert_eq!(titles[0], "Notes");
+        assert!(shell.read_with(cx, |s, _| {
+            let m = s.commands.as_ref().unwrap();
+            m.available.contains("app::NewNote") && m.available.contains("editor::Bold") && !m.available.contains("sheet::Copy")
+        }));
+        // Échap le referme et rend la saisie à la note.
+        cx.simulate_keystrokes("escape");
+        assert!(menu(cx).is_none());
+        assert!(shell.update_in(cx, |s, window, cx| s.editor.focus_handle(cx).is_focused(window)));
+        // Au clavier : droite change de section, bas choisit une commande, Entrée la fait, sur la note.
+        let style = titles.iter().position(|t| *t == "Édition").expect("une section d'édition");
+        cx.simulate_keystrokes("secondary-a f10");
+        for _ in 0..style {
+            cx.simulate_keystrokes("right");
+        }
+        let bold = shell.read_with(cx, |s, _| s.commands.as_ref().unwrap().sections[style].1.iter().position(|c| c.action == "editor::Bold").unwrap());
+        for _ in 0..bold {
+            cx.simulate_keystrokes("down");
+        }
+        assert_eq!(menu(cx).map(|(_, section, row)| (section, row)), Some((style, Some(bold))));
+        cx.simulate_keystrokes("enter");
+        assert!(menu(cx).is_none());
+        assert_eq!(text(cx), "**mot**");
+        // À la souris : un clic sur une commande la fait ; un clic à côté referme le menu.
+        cx.simulate_keystrokes("f10");
+        let at = cx.debug_bounds("command-app::OpenPalette").expect("la commande est affichée").center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert!(shell.read_with(cx, |s, _| s.commands.is_none() && s.palette.is_some()));
+        cx.simulate_keystrokes("escape");
+        cx.simulate_keystrokes("f10");
+        cx.simulate_click(gpui::point(px(700.), px(500.)), gpui::Modifiers::none());
+        assert!(menu(cx).is_none());
+
+        // La palette trouve les commandes par ce qu'elles font ; Entrée la fait, là où l'on était.
+        cx.simulate_keystrokes("secondary-z secondary-a secondary-p");
+        cx.simulate_input("italique");
+        let runs = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.palette.as_ref().map(|p| p.read(cx).runs()).unwrap_or_default());
+        assert_eq!(runs(cx), ["editor::Italic"]);
+        // Sans « > », Entrée crée encore la note de ce nom ; avec, seules les commandes restent.
+        cx.simulate_keystrokes("home");
+        cx.simulate_input(">");
+        assert_eq!(runs(cx), ["editor::Italic"]);
+        assert_eq!(shell.read_with(cx, |s, cx| s.palette.as_ref().unwrap().read(cx).listed()), 1);
+        cx.simulate_keystrokes("enter");
+        assert_eq!(text(cx), "*mot*");
+
+        // Un clic sur un bouton de la barre de mise en forme rappelle ses touches, deux fois, pas plus.
+        let tips = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.toasts.iter().filter(|t| t.text.contains("au clavier")).count());
+        let before = tips(cx);
+        for _ in 0..3 {
+            let at = cx.debug_bounds("format-0").expect("la barre de mise en forme").center();
+            cx.simulate_click(at, gpui::Modifiers::none());
+        }
+        assert_eq!(tips(cx), before + 2);
+        assert!(shell.read_with(cx, |s, _| s.toasts.iter().any(|t| t.text.contains("Ctrl+B") || t.text.contains("Cmd+B"))));
+
+        // Sur un tableau CSV : l'aide et le menu commencent par ses touches, la palette vide propose ses gestes.
+        let csv = root.join("data.csv");
+        shell.update_in(cx, |s, window, cx| {
+            let (notes, dirs, images) = vault::scan(&root);
+            s.sync(notes, dirs, images, cx);
+            s.open_note(&csv, cx);
+            window.focus(&s.shown_sheet().unwrap().focus_handle(cx));
+        });
+        cx.run_until_parked();
+        let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
+        cx.simulate_keystrokes("f10");
+        assert_eq!(menu(cx).unwrap().0[0], "Tableaux CSV");
+        cx.simulate_keystrokes("escape f1");
+        assert_eq!(shell.read_with(cx, |s, cx| s.help_rows(cx)[0].0), "Tableaux CSV");
+        // Refermer l'aide, ou la palette sans rien choisir, rend la saisie au tableau, qui reste affiché.
+        cx.simulate_keystrokes("f1");
+        cx.run_until_parked();
+        let on_sheet = |cx: &mut gpui::VisualTestContext| shell.update_in(cx, |s, window, cx| s.shown_sheet().is_some_and(|sheet| sheet.focus_handle(cx).is_focused(window)));
+        assert!(on_sheet(cx));
+        cx.simulate_keystrokes("secondary-p");
+        assert!(runs(cx).contains(&"sheet::Copy"), "{:?}", runs(cx));
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert!(on_sheet(cx));
+        // Une colonne entière choisie : la barre du tableau montre ses gestes, un clic en fait un.
+        sheet.update(cx, |sheet, cx| sheet.pick("col", 0, cx));
+        cx.run_until_parked();
+        // Un mouvement du pointeur fait redessiner la fenêtre de test.
+        cx.simulate_mouse_move(gpui::point(px(400.), px(300.)), None, gpui::Modifiers::none());
+        let at = cx.debug_bounds("sheet-span-editor::TableColRight").expect("le geste est dans la barre").center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cols()), 3);
+        sheet.update(cx, |sheet, cx| sheet.pick("row", 1, cx));
+        cx.run_until_parked();
+        // Un mouvement du pointeur fait redessiner la fenêtre de test.
+        cx.simulate_mouse_move(gpui::point(px(400.), px(300.)), None, gpui::Modifiers::none());
+        let at = cx.debug_bounds("sheet-span-sheet::DeleteRows").expect("une ligne entière a ses gestes").center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert_eq!(sheet.read_with(cx, |sheet, _| (sheet.table().rows(), sheet.table().cell(1, 0).to_string())), (2, "Bob".to_string()));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
     #[gpui::test]
     fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
         let root = std::env::temp_dir().join(format!("bref-reuse-{}", std::process::id()));

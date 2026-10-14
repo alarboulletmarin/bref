@@ -129,6 +129,8 @@ pub enum Setting {
     Wide,
     /// Barre de mise en forme au bas de la note.
     Bar,
+    /// Les touches rappelées après une commande faite à la souris.
+    Tips,
 }
 
 impl Setting {
@@ -140,6 +142,7 @@ impl Setting {
             Setting::Page => tr("Page width…", "Largeur de page…"),
             Setting::Wide => tr("Wide tables…", "Grands tableaux…"),
             Setting::Bar => tr("Formatting bar…", "Barre de mise en forme…"),
+            Setting::Tips => tr("Shortcut tips…", "Astuces de raccourcis…"),
         }
     }
 }
@@ -176,6 +179,8 @@ pub struct Entry {
 
 pub enum PaletteEvent {
     Open(PathBuf),
+    /// Une commande de l'app : le nom de son action.
+    Run(&'static str),
     Create(String),
     ChangeVault,
     Help,
@@ -262,6 +267,8 @@ enum Item {
     Restyle(ListStyle),
     Grid(TableOp),
     Template(TemplateAct),
+    /// Une commande de l'app (`commands`), par son rang.
+    Command(usize),
 }
 
 pub struct Palette {
@@ -292,6 +299,10 @@ pub struct Palette {
     cells: bool,
     /// Un remplacement dans le coffre peut être défait.
     undo_swap: bool,
+    /// Les commandes que la vue sait faire, celles de la vue d'abord (les `here` premières) : la
+    /// palette les trouve par ce qu'elles font, et propose les `here` sans rien taper.
+    commands: Vec<crate::commands::Command>,
+    here: usize,
     /// Marge au-dessus du cadre.
     top: Pixels,
     /// Défilement de la ligne de saisie, et l'abscisse de son curseur à la dernière image :
@@ -413,6 +424,8 @@ impl Palette {
             lists: false,
             cells: false,
             undo_swap: false,
+            commands: Vec::new(),
+            here: 0,
             top: px(72.),
             scroll: gpui::ScrollHandle::new(),
             caret: Default::default(),
@@ -431,6 +444,12 @@ impl Palette {
     }
 
     /// Propose de défaire le dernier remplacement dans le coffre, s'il y en a un.
+    pub fn with_commands(mut self, commands: Vec<crate::commands::Command>, here: usize) -> Self {
+        (self.commands, self.here) = (commands, here);
+        self.refresh();
+        self
+    }
+
     pub fn with_undo_swap(mut self, possible: bool) -> Self {
         self.undo_swap = possible;
         self.refresh();
@@ -510,6 +529,12 @@ impl Palette {
     }
 
     /// Nombre de lignes proposées sous la saisie.
+    /// Les commandes proposées, par le nom de leur action.
+    #[cfg(test)]
+    pub fn runs(&self) -> Vec<&'static str> {
+        self.items.iter().filter_map(|item| if let &Item::Command(n) = item { Some(self.commands[n].action) } else { None }).collect()
+    }
+
     #[cfg(test)]
     pub fn listed(&self) -> usize {
         self.items.len()
@@ -556,6 +581,14 @@ impl Palette {
             self.selected = 0;
             return;
         }
+        // « > » en tête : rien que les commandes, comme dans VS Code ; seul, il les montre toutes.
+        if let Some(asked) = q.strip_prefix('>').filter(|_| !self.choices && self.prompt.is_none()) {
+            let asked = asked.trim();
+            let found = (0..self.commands.len()).filter(|&i| asked.is_empty() || command(asked, self.commands[i].effect) || command(asked, &self.commands[i].keys));
+            self.items = found.map(Item::Command).collect();
+            self.selected = 0;
+            return;
+        }
         let mut items: Vec<Item> = if let Some(tag) = q.strip_prefix('#') {
             (0..self.entries.len())
                 .filter(|&i| self.entries[i].tags.iter().any(|t| t.starts_with(tag)))
@@ -594,6 +627,14 @@ impl Palette {
             return;
         }
         items.truncate(8);
+        // Sans rien taper, sur un tableau ou un schéma : ce qu'on peut y faire, sous les notes récentes.
+        if q.is_empty() {
+            items.extend((0..self.here.min(self.commands.len()).min(6)).map(Item::Command));
+            // Dans un tableau de la note : ses gestes les plus courants.
+            if self.cells {
+                items.extend(TableOp::ALL.into_iter().take(5).map(Item::Grid));
+            }
+        }
         let exact = self.names.contains(&q);
         if !q.is_empty() && !q.starts_with('#') && !exact {
             items.push(Item::Create);
@@ -653,8 +694,16 @@ impl Palette {
                     .map(Item::Restyle),
             );
         }
+        // Toutes les commandes de l'app, par ce qu'elles font ou par leurs touches ; celles de la vue d'abord.
+        if !q.is_empty() {
+            let found = (0..self.commands.len()).filter(|&i| {
+                let c = &self.commands[i];
+                command(&q, c.effect) || command(&q, &c.keys)
+            });
+            items.extend(found.take(12).map(Item::Command));
+        }
         // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
-        for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar] {
+        for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar, Setting::Tips] {
             if !q.is_empty() && command(&q, setting.label()) {
                 items.push(Item::Setting(setting));
             }
@@ -692,6 +741,7 @@ impl Palette {
             Some(&Item::Table(pick)) => PaletteEvent::Table(pick),
             Some(&Item::Restyle(style)) => PaletteEvent::Restyle(style),
             Some(&Item::Grid(op)) => PaletteEvent::Grid(op),
+            Some(&Item::Command(n)) => PaletteEvent::Run(self.commands[n].action),
             Some(&Item::Template(act)) => PaletteEvent::Template(act),
             Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
@@ -870,6 +920,7 @@ impl Render for Palette {
                 Item::Comments => (comments_label().to_string(), String::new()),
                 &Item::Restyle(style) => (list_label(style).to_string(), String::new()),
                 &Item::Grid(op) => (op.label().to_string(), crate::keys::of(cx, op.action().as_ref())),
+                &Item::Command(n) => (self.commands[n].effect.to_string(), self.commands[n].keys.clone()),
                 &Item::Template(act) => (act.label().to_string(), if act == TemplateAct::New { crate::keys::of(cx, &crate::NewFromTemplate) } else { String::new() }),
                 Item::UndoSwap => (undo_swap_label().to_string(), String::new()),
                 Item::Board => (board_label().to_string(), String::new()),

@@ -90,6 +90,8 @@ pub enum SheetEvent {
     Error(String),
     /// Un fichier vient d'être écrit à côté du tableau.
     Exported,
+    /// Une commande faite à la souris (le nom de son action) : l'app en rappelle les touches.
+    Coach(&'static str),
 }
 
 /// Un geste d'édition, et son contraire : annuler applique le contraire et obtient le geste.
@@ -1161,6 +1163,60 @@ impl Sheet {
             .on_click(move |_, window, cx| window.dispatch_action(pick.action(), cx))
     }
 
+    /// Les gestes de ce qui est sélectionné, quand ce sont des colonnes ou des lignes entières : la
+    /// barre les montre, avec leurs touches en infobulle. Un clic les fait et rappelle ces touches.
+    fn span_tools(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let t = self.theme;
+        let (rows, cols) = self.selection();
+        let whole_cols = rows.start == 0 && rows.end >= self.table.rows() && cols.len() < self.cols();
+        let whole_rows = cols.start == 0 && cols.end >= self.cols() && !whole_cols && rows.len() < self.table.rows();
+        let tools: Vec<(&'static str, &'static str, Box<dyn Action>)> = if whole_cols {
+            vec![
+                ("←+", TableOp::ColLeft.label(), Box::new(editor::TableColLeft)),
+                ("+→", TableOp::ColRight.label(), Box::new(editor::TableColRight)),
+                ("←", TableOp::MoveColLeft.label(), Box::new(editor::TableMoveColLeft)),
+                ("→", TableOp::MoveColRight.label(), Box::new(editor::TableMoveColRight)),
+                ("A→Z", TableOp::SortAsc.label(), Box::new(editor::TableSortAsc)),
+                ("Z→A", TableOp::SortDesc.label(), Box::new(editor::TableSortDesc)),
+                (tr("Delete", "Supprimer"), TableOp::DeleteCol.label(), Box::new(editor::TableDeleteCol)),
+            ]
+        } else if whole_rows {
+            vec![
+                ("↑+", tr("Insert a row above", "Insérer une ligne dessus"), Box::new(InsertAbove)),
+                ("+↓", tr("Insert a row below", "Insérer une ligne dessous"), Box::new(InsertBelow)),
+                ("↑", TableOp::MoveRowUp.label(), Box::new(editor::TableMoveRowUp)),
+                ("↓", TableOp::MoveRowDown.label(), Box::new(editor::TableMoveRowDown)),
+                (tr("Duplicate", "Dupliquer"), TableOp::DuplicateRow.label(), Box::new(editor::TableDuplicateRow)),
+                (tr("Delete", "Supprimer"), tr("Remove the selected rows", "Retirer les lignes sélectionnées"), Box::new(DeleteRows)),
+            ]
+        } else {
+            return Vec::new();
+        };
+        let mut out: Vec<gpui::AnyElement> = vec![div().w(px(1.)).h(px(16.)).mx_1().bg(t.border).into_any_element()];
+        out.extend(tools.into_iter().enumerate().map(|(i, (face, label, action))| {
+            let keys = crate::keys::of(cx, action.as_ref());
+            let name = action.name();
+            div()
+                .id(("sheet-span", i))
+                .debug_selector(move || format!("sheet-span-{name}"))
+                .px_2()
+                .py_0p5()
+                .rounded(px(6.))
+                .cursor_pointer()
+                .whitespace_nowrap()
+                .text_color(t.text)
+                .hover(|s| s.bg(t.border))
+                .tooltip(tip(label, keys, t))
+                .child(face)
+                .on_click(cx.listener(move |_, _, window, cx| {
+                    window.dispatch_action(action.boxed_clone(), cx);
+                    cx.emit(SheetEvent::Coach(name));
+                }))
+                .into_any_element()
+        }));
+        out
+    }
+
     fn render_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let name = self.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
@@ -1195,6 +1251,7 @@ impl Sheet {
             .child(self.chip("sheet-delimiter", delimiter, false, Pick::Delimiter))
             .child(self.chip("sheet-encoding", self.format.encoding.label().to_string(), false, Pick::Encoding))
             .child(self.chip("sheet-header", tr("Header", "En-tête").to_string(), self.format.header, Pick::Header))
+            .children(self.span_tools(cx))
             .child(
                 button("sheet-copy", if self.copied { "check.svg" } else { "copy.svg" }, false, t)
                     .tooltip(tip(tr("Copy the selection", "Copier la sélection"), crate::keys::of(cx, &Copy), t))
