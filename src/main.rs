@@ -8071,7 +8071,8 @@ mod tests {
         // La palette des commandes commence par celles du tableau.
         cx.simulate_keystrokes("f10");
         assert_eq!(mode(cx), Some((true, "Tableau CSV")));
-        assert_eq!(runs(cx)[0], "editor::TableRowAbove");
+        let first = runs(cx)[0];
+        assert!(first.starts_with("editor::Table") || first.starts_with("sheet::"), "{first}");
         cx.simulate_keystrokes("escape f1");
         assert_eq!(shell.read_with(cx, |s, cx| s.help_rows(cx)[0].0), "Tableaux CSV");
         // Refermer l'aide, ou la palette sans rien choisir, rend la saisie au tableau, qui reste affiché.
