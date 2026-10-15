@@ -436,8 +436,6 @@ pub enum EditorEvent {
     Swap(md::Swap),
     /// Clic droit dans la note : où, le lien qui s'y trouve, et s'il vise un commentaire.
     Menu(Point<Pixels>, Option<Link>, bool),
-    /// Une commande faite à la souris (le nom de son action) : l'app en rappelle les touches.
-    Coach(&'static str),
 }
 
 /// Ce dont la mise en page dépend, en dehors du texte : si rien n'a changé, on la garde.
@@ -2817,22 +2815,10 @@ impl Editor {
         };
         let icon = |path: &'static str, lit: bool| gpui::svg().path(path).size(px(16.)).flex_none().text_color(if lit { t.accent } else { t.soft }).into_any_element();
         let lit = |flag: u16| on & flag != 0;
-        let named = |flag: u16| -> &'static str {
-            use gpui::Action;
-            match flag {
-                md::BOLD => Bold.name(),
-                md::ITALIC => Italic.name(),
-                md::UNDER => Underline.name(),
-                md::STRIKE => Strike.name(),
-                md::HIGHLIGHT => Highlight.name(),
-                _ => InlineCode.name(),
-            }
-        };
         let styled = |i: usize, flag: u16, face: gpui::AnyElement| {
             button(i, face, lit(flag)).on_click(cx.listener(move |this, _, window, cx| {
                 window.focus(&this.focus);
                 this.each(cx, |this, cx| this.mark(flag, cx));
-                cx.emit(EditorEvent::Coach(named(flag)));
             }))
         };
         // Un genre de liste : un second clic, sur ses lignes, les remet en texte.
@@ -2841,12 +2827,6 @@ impl Editor {
             button(i, icon(path, lit), lit).on_click(cx.listener(move |this, _, window, cx| {
                 window.focus(&this.focus);
                 this.restyle(if lit { ListStyle::Text } else { style }, cx);
-                let action: &dyn gpui::Action = match style {
-                    ListStyle::Bullet => &ListBullet,
-                    ListStyle::Ordered => &ListOrdered,
-                    _ => &ListTask,
-                };
-                cx.emit(EditorEvent::Coach(action.name()));
             }))
         };
         let last = if tools.table {
@@ -2857,7 +2837,6 @@ impl Editor {
                         .on_click(cx.listener(move |this, _, window, cx| {
                             window.focus(&this.focus);
                             this.table_op(ops[n], cx);
-                            cx.emit(EditorEvent::Coach(ops[n].action().name()));
                         }))
                         .into_any_element()
                 })
@@ -2928,7 +2907,6 @@ impl Editor {
             .child(button(6, icon("link.svg", false), false).on_click(cx.listener(|this, _, window, cx| {
                 window.focus(&this.focus);
                 this.link(cx);
-                cx.emit(EditorEvent::Coach(gpui::Action::name(&InsertLink)));
             })))
             .child(separator())
             .children(last);

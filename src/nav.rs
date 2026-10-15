@@ -1807,14 +1807,12 @@ impl Shell {
                 .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.border)).active(|s| s.bg(t.selection)))
                 .child(svg().path(icon).size(px(14.)).flex_none().text_color(t.soft).when(!on, |s| s.opacity(0.35)))
         };
-        let keys = |action: &dyn Action| crate::keys::of(cx, action);
-        // Un bouton du rail qui a ses touches les rappelle quand on le clique (`coach`).
-        let mode_button = |id, icon, m: Mode, label: &'static str, action: &'static dyn Action| {
-            button(id, icon, unfolded && mode == m, t).tooltip(tip(label, keys(action), t)).on_click(cx.listener(move |this, _, window, cx| {
-                this.show_nav(m, true, window, cx);
-                this.coach(action.name(), cx);
-            }))
+        let mode_button = |id, icon, m: Mode, label: &'static str, keys: String| {
+            button(id, icon, unfolded && mode == m, t)
+                .tooltip(tip(label, keys, t))
+                .on_click(cx.listener(move |this, _, window, cx| this.show_nav(m, true, window, cx)))
         };
+        let keys = |action: &dyn Action| crate::keys::of(cx, action);
         let rail = div()
             .id("rail")
             .flex_none()
@@ -1831,12 +1829,10 @@ impl Shell {
             // Le logo de l'app, en tête du rail sur tous les systèmes.
             .child(div().debug_selector(|| "rail-logo".into()).mb_1().child(crate::logo(t)))
             .child(
-                button("nav-commands", "menu.svg", self.commands.is_some(), t)
-                    .tooltip(tip(tr("All commands", "Toutes les commandes"), keys(&crate::ToggleCommands), t))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_commands(window, cx);
-                        this.coach(crate::ToggleCommands.name(), cx);
-                    })),
+                button("nav-commands", "menu.svg", false, t)
+                    .debug_selector(|| "nav-commands".into())
+                    .tooltip(tip(tr("Commands", "Commandes"), keys(&crate::ToggleCommands), t))
+                    .on_click(cx.listener(|this, _, window, cx| this.open_commands(window, cx))),
             )
             // Précédent et suivant, côte à côte ; estompés quand il n'y a nulle part où aller.
             .child(
@@ -1846,42 +1842,30 @@ impl Shell {
                     .child(
                         travel("nav-back", "chevron-left.svg", self.history.can_back())
                             .tooltip(tip(tr("Back", "Précédent"), keys(&crate::GoBack), t))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.travel(false, window, cx);
-                                this.coach(crate::GoBack.name(), cx);
-                            })),
+                            .on_click(cx.listener(|this, _, window, cx| this.travel(false, window, cx))),
                     )
                     .child(
                         travel("nav-forward", "chevron-right.svg", self.history.can_forward())
                             .tooltip(tip(tr("Forward", "Suivant"), keys(&crate::GoForward), t))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.travel(true, window, cx);
-                                this.coach(crate::GoForward.name(), cx);
-                            })),
+                            .on_click(cx.listener(|this, _, window, cx| this.travel(true, window, cx))),
                     ),
             )
-            .child(mode_button("nav-tree", "tree.svg", Mode::Tree, tr("Vault tree", "Arbre du coffre"), &ShowTree))
-            .child(mode_button("nav-recent", "clock.svg", Mode::Recent, tr("Recent notes", "Notes récentes"), &ShowRecent))
-            .child(mode_button("nav-graph", "graph.svg", Mode::Graph, tr("Graph of the notes", "Graphe des notes"), &ShowGraph))
-            .child(mode_button("nav-tags", "tag.svg", Mode::Tags, "Tags", &ShowTags))
-            .child(mode_button("nav-links", "backlink.svg", Mode::Links, tr("Backlinks", "Rétroliens"), &ShowLinks))
-            .child(mode_button("nav-calendar", "i-calendar.svg", Mode::Calendar, tr("Calendar", "Calendrier"), &ShowCalendar))
+            .child(mode_button("nav-tree", "tree.svg", Mode::Tree, tr("Vault tree", "Arbre du coffre"), keys(&ShowTree)))
+            .child(mode_button("nav-recent", "clock.svg", Mode::Recent, tr("Recent notes", "Notes récentes"), keys(&ShowRecent)))
+            .child(mode_button("nav-graph", "graph.svg", Mode::Graph, tr("Graph of the notes", "Graphe des notes"), keys(&ShowGraph)))
+            .child(mode_button("nav-tags", "tag.svg", Mode::Tags, "Tags", keys(&ShowTags)))
+            .child(mode_button("nav-links", "backlink.svg", Mode::Links, tr("Backlinks", "Rétroliens"), keys(&ShowLinks)))
+            .child(mode_button("nav-calendar", "i-calendar.svg", Mode::Calendar, tr("Calendar", "Calendrier"), keys(&ShowCalendar)))
             .child(div().w(px(16.)).h(px(1.)).my_1().bg(t.border))
             .child(
                 button("nav-search", "search.svg", false, t)
                     .tooltip(tip(tr("Find or create a note", "Chercher ou créer une note"), keys(&crate::OpenPalette), t))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_palette("", window, cx);
-                        this.coach(crate::OpenPalette.name(), cx);
-                    })),
+                    .on_click(cx.listener(|this, _, window, cx| this.open_palette("", window, cx))),
             )
             .child(
                 button("nav-new", "plus.svg", false, t)
                     .tooltip(tip(tr("New note", "Nouvelle note"), keys(&crate::NewNote), t))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.new_note_here(window, cx);
-                        this.coach(crate::NewNote.name(), cx);
-                    })),
+                    .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
             )
             .child(div().flex_1().w_full().when(!self.nav.native_bar, |d| d.map(crate::drag_window)))
             // Corbeille du coffre (ce qu'elle contient, pour le reprendre) et sauvegarde.
@@ -1901,10 +1885,7 @@ impl Shell {
             .child(
                 button("nav-help", "help.svg", false, t)
                     .tooltip(tip(tr("Shortcuts and help", "Raccourcis et aide"), keys(&crate::ToggleHelp), t))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.set_help(true, window, cx);
-                        this.coach(crate::ToggleHelp.name(), cx);
-                    })),
+                    .on_click(cx.listener(|this, _, window, cx| this.set_help(true, window, cx))),
             );
 
         let wrapper = div().h_full().flex().min_w_0();
