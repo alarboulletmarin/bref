@@ -3291,7 +3291,11 @@ impl Shell {
             let aside = palette.read(cx).aside;
             match event {
                 PaletteEvent::Open(path) if aside => this.open_aside(path, window, cx),
-                PaletteEvent::Open(path) => this.open_note(path, cx),
+                PaletteEvent::Open(path) => {
+                    this.open_note(path, cx);
+                    // Un tableau, une image ou un schéma prend la saisie : rendue à la note, elle les effacerait.
+                    this.focus_pane(this.active, window, cx);
+                }
                 PaletteEvent::OpenAt(path, row, query) => {
                     this.open_note(path, cx);
                     this.editor.update(cx, |e, cx| e.select_in_row(*row, query, cx));
@@ -8182,15 +8186,17 @@ mod tests {
         assert_eq!(tips(cx), before + 2);
         assert!(shell.read_with(cx, |s, _| s.toasts.iter().any(|t| t.text.contains("Ctrl+B") || t.text.contains("Cmd+B"))));
 
-        // Sur un tableau CSV : l'aide et le menu commencent par ses touches, la palette vide propose ses gestes.
-        let csv = root.join("data.csv");
-        shell.update_in(cx, |s, window, cx| {
+        // Sur un tableau CSV, ouvert depuis la palette : il reste affiché et prend la saisie. L'aide et le menu
+        // commencent par ses touches, la palette vide propose ses gestes.
+        shell.update(cx, |s, cx| {
             let (notes, dirs, images) = vault::scan(&root);
             s.sync(notes, dirs, images, cx);
-            s.open_note(&csv, cx);
-            window.focus(&s.shown_sheet().unwrap().focus_handle(cx));
         });
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("data.csv");
+        cx.simulate_keystrokes("enter");
         cx.run_until_parked();
+        assert!(shell.update_in(cx, |s, window, cx| s.shown_sheet().is_some_and(|sheet| sheet.focus_handle(cx).is_focused(window))));
         let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
         cx.simulate_keystrokes("f10");
         assert_eq!(menu(cx).unwrap().0[0], "Tableaux CSV");
