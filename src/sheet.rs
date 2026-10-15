@@ -1212,6 +1212,77 @@ impl Sheet {
             .on_click(move |_, window, cx| window.dispatch_action(pick.action(), cx))
     }
 
+    /// Ce qui est sélectionné, quand ce sont des colonnes ou des lignes entières, et ses gestes : son nom
+    /// (« Colonne « age » », « 2 lignes »), puis des icônes par groupe (insérer, déplacer, trier ou
+    /// dupliquer, supprimer), chacune nommée avec ses touches dans son infobulle.
+    fn span_tools(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let t = self.theme;
+        let (rows, cols) = self.selection();
+        let whole_cols = rows.start == 0 && rows.end >= self.table.rows() && cols.len() < self.cols();
+        let whole_rows = cols.start == 0 && cols.end >= self.cols() && !whole_cols && rows.len() < self.table.rows();
+        type Tool = (&'static str, &'static str, Box<dyn Action>);
+        let (title, groups): (String, Vec<Vec<Tool>>) = if whole_cols {
+            let named = self.table.cell(0, cols.start).trim().to_string();
+            let title = match (cols.len(), self.format.header && !named.is_empty()) {
+                (1, true) => format!("{} « {named} »", tr("Column", "Colonne")),
+                (1, false) => format!("{} {}", tr("Column", "Colonne"), letters(cols.start)),
+                (n, _) => format!("{n} {}", tr("columns", "colonnes")),
+            };
+            (title, vec![
+                vec![
+                    ("c-ins-left.svg", TableOp::ColLeft.label(), Box::new(editor::TableColLeft)),
+                    ("c-ins-right.svg", TableOp::ColRight.label(), Box::new(editor::TableColRight)),
+                ],
+                vec![
+                    ("c-left.svg", TableOp::MoveColLeft.label(), Box::new(editor::TableMoveColLeft)),
+                    ("c-right.svg", TableOp::MoveColRight.label(), Box::new(editor::TableMoveColRight)),
+                ],
+                vec![
+                    ("c-sort-az.svg", TableOp::SortAsc.label(), Box::new(editor::TableSortAsc)),
+                    ("c-sort-za.svg", TableOp::SortDesc.label(), Box::new(editor::TableSortDesc)),
+                ],
+                vec![("trash.svg", TableOp::DeleteCol.label(), Box::new(editor::TableDeleteCol))],
+            ])
+        } else if whole_rows {
+            let title = match rows.len() {
+                1 => format!("{} {}", tr("Row", "Ligne"), rows.start + 1),
+                n => format!("{n} {}", tr("rows", "lignes")),
+            };
+            (title, vec![
+                vec![
+                    ("c-ins-above.svg", tr("Insert a row above", "Insérer une ligne au-dessus"), Box::new(InsertAbove)),
+                    ("c-ins-below.svg", tr("Insert a row below", "Insérer une ligne en dessous"), Box::new(InsertBelow)),
+                ],
+                vec![
+                    ("c-up.svg", TableOp::MoveRowUp.label(), Box::new(editor::TableMoveRowUp)),
+                    ("c-down.svg", TableOp::MoveRowDown.label(), Box::new(editor::TableMoveRowDown)),
+                ],
+                vec![("copy.svg", TableOp::DuplicateRow.label(), Box::new(editor::TableDuplicateRow))],
+                vec![("trash.svg", tr("Delete the rows", "Supprimer les lignes"), Box::new(DeleteRows))],
+            ])
+        } else {
+            return Vec::new();
+        };
+        let separator = || div().flex_none().w(px(1.)).h(px(16.)).mx(px(6.)).bg(t.border).into_any_element();
+        let mut out = vec![separator(), div().flex_none().mr_1().font_weight(FontWeight::BOLD).text_color(t.text).child(title).into_any_element()];
+        for (g, group) in groups.into_iter().enumerate() {
+            if g > 0 {
+                out.push(div().flex_none().w(px(1.)).h(px(14.)).mx(px(3.)).bg(t.border).into_any_element());
+            }
+            for (icon, label, action) in group {
+                let name = action.name();
+                out.push(
+                    button(gpui::SharedString::from(format!("sheet-span-{name}")), icon, false, t)
+                        .debug_selector(move || format!("sheet-span-{name}"))
+                        .tooltip(tip(label, crate::keys::of(cx, action.as_ref()), t))
+                        .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
+                        .into_any_element(),
+                );
+            }
+        }
+        out
+    }
+
     fn render_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let name = self.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
@@ -1233,7 +1304,7 @@ impl Sheet {
             .text_size(px(12.))
             .child(
                 div()
-                    .flex_1()
+                    .flex_shrink()
                     .h(px(38.))
                     .flex()
                     .items_center()
@@ -1243,9 +1314,13 @@ impl Sheet {
                     .when(self.client, |d| d.map(crate::drag_window))
                     .child(info),
             )
+            // À côté du nom du tableau : ce qui est sélectionné, et ce qu'on peut en faire.
+            .children(self.span_tools(cx))
+            .child(div().flex_1().min_w(px(8.)).h(px(38.)).when(self.client, |d| d.map(crate::drag_window)))
             .child(self.chip("sheet-delimiter", delimiter, false, Pick::Delimiter))
             .child(self.chip("sheet-encoding", self.format.encoding.label().to_string(), false, Pick::Encoding))
             .child(self.chip("sheet-header", tr("Header", "En-tête").to_string(), self.format.header, Pick::Header))
+            .child(div().flex_none().w(px(1.)).h(px(16.)).mx(px(6.)).bg(t.border))
             .child(
                 button("sheet-copy", if self.copied { "check.svg" } else { "copy.svg" }, false, t)
                     .tooltip(tip(tr("Copy the selection", "Copier la sélection"), crate::keys::of(cx, &Copy), t))

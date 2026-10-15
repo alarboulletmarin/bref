@@ -8,7 +8,7 @@ use std::time::Duration;
 use gpui::{
     Animation, AnimationExt, App, Bounds, Context, ElementInputHandler, EntityInputHandler,
     EventEmitter, FocusHandle, Focusable, MouseButton, Pixels, Point, UTF16Selection, Window,
-    actions, canvas, div, ease_out_quint, prelude::*, px,
+    actions, canvas, div, ease_out_quint, prelude::*, px, svg,
 };
 
 use crate::{
@@ -176,6 +176,8 @@ pub struct Entry {
 
 pub enum PaletteEvent {
     Open(PathBuf),
+    /// Une commande de l'app : le nom de son action.
+    Run(&'static str),
     Create(String),
     ChangeVault,
     Help,
@@ -262,6 +264,8 @@ enum Item {
     Restyle(ListStyle),
     Grid(TableOp),
     Template(TemplateAct),
+    /// Une commande de l'app (`commands`), par son rang.
+    Command(usize),
 }
 
 pub struct Palette {
@@ -292,6 +296,13 @@ pub struct Palette {
     cells: bool,
     /// Un remplacement dans le coffre peut être défait.
     undo_swap: bool,
+    /// Les commandes que la vue sait faire, celles de la vue d'abord (les `here` premières) : la
+    /// palette les trouve par ce qu'elles font, et propose les `here` sans rien taper.
+    commands: Vec<crate::commands::Command>,
+    here: usize,
+    /// Rien que les commandes (F10, ou « > » tapé en tête), et le nom de ce qu'on regarde.
+    commands_only: bool,
+    context: &'static str,
     /// Marge au-dessus du cadre.
     top: Pixels,
     /// Défilement de la ligne de saisie, et l'abscisse de son curseur à la dernière image :
@@ -413,6 +424,10 @@ impl Palette {
             lists: false,
             cells: false,
             undo_swap: false,
+            commands: Vec::new(),
+            here: 0,
+            commands_only: false,
+            context: "",
             top: px(72.),
             scroll: gpui::ScrollHandle::new(),
             caret: Default::default(),
@@ -431,6 +446,12 @@ impl Palette {
     }
 
     /// Propose de défaire le dernier remplacement dans le coffre, s'il y en a un.
+    pub fn with_commands(mut self, commands: Vec<crate::commands::Command>, here: usize, context: &'static str) -> Self {
+        (self.commands, self.here, self.context) = (commands, here, context);
+        self.refresh();
+        self
+    }
+
     pub fn with_undo_swap(mut self, possible: bool) -> Self {
         self.undo_swap = possible;
         self.refresh();
@@ -510,6 +531,18 @@ impl Palette {
     }
 
     /// Nombre de lignes proposées sous la saisie.
+    /// Rien que les commandes, et le nom de ce qu'on regarde.
+    #[cfg(test)]
+    pub fn mode(&self) -> (bool, &'static str) {
+        (self.commands_only, self.context)
+    }
+
+    /// Les commandes proposées, par le nom de leur action.
+    #[cfg(test)]
+    pub fn runs(&self) -> Vec<&'static str> {
+        self.items.iter().filter_map(|item| if let &Item::Command(n) = item { Some(self.commands[n].action) } else { None }).collect()
+    }
+
     #[cfg(test)]
     pub fn listed(&self) -> usize {
         self.items.len()
@@ -556,6 +589,19 @@ impl Palette {
             self.selected = 0;
             return;
         }
+        // « > » en tête, comme dans VS Code : la palette ne montre plus que les commandes, et le « > »
+        // s'efface du champ.
+        if !self.commands_only && !self.choices && self.prompt.is_none() && self.query.text.starts_with('>') {
+            self.query = Line::new(self.query.text[1..].trim_start());
+            self.commands_only = true;
+        }
+        if self.commands_only {
+            let q = self.query.text.trim().to_lowercase();
+            let found = (0..self.commands.len()).filter(|&i| q.is_empty() || command(&q, self.commands[i].label) || command(&q, &self.commands[i].keys));
+            self.items = found.map(Item::Command).collect();
+            self.selected = 0;
+            return;
+        }
         let mut items: Vec<Item> = if let Some(tag) = q.strip_prefix('#') {
             (0..self.entries.len())
                 .filter(|&i| self.entries[i].tags.iter().any(|t| t.starts_with(tag)))
@@ -594,6 +640,10 @@ impl Palette {
             return;
         }
         items.truncate(8);
+        // Sans rien taper, sur un tableau ou un schéma : ce qu'on peut y faire, sous les notes récentes.
+        if q.is_empty() && self.context != "Note" {
+            items.extend((0..self.here.min(self.commands.len()).min(6)).map(Item::Command));
+        }
         let exact = self.names.contains(&q);
         if !q.is_empty() && !q.starts_with('#') && !exact {
             items.push(Item::Create);
@@ -653,6 +703,22 @@ impl Palette {
                     .map(Item::Restyle),
             );
         }
+        // Les commandes de l'app, par ce qu'elles font ; celles que la palette offre déjà sous un autre
+        // nom (gestes de tableau, plan, note du jour…) n'y sont pas deux fois.
+        if !q.is_empty() {
+            let doubled = |name: &str| {
+                name.starts_with("editor::Table")
+                    || name.starts_with("sheet::Pick")
+                    || matches!(
+                        name,
+                        "app::Outline" | "app::Today" | "app::OpenVault" | "app::GoBack" | "app::GoForward" | "app::SyncVault" | "app::ToggleHelp"
+                            | "app::NewDiagram" | "nav::NewFolder" | "app::NewFromTemplate" | "app::ChooseTheme" | "editor::ListBullet"
+                            | "editor::ListOrdered" | "editor::ListTask"
+                    )
+            };
+            let found = (0..self.commands.len()).filter(|&i| !doubled(self.commands[i].action) && command(&q, self.commands[i].label));
+            items.extend(found.take(8).map(Item::Command));
+        }
         // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
         for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar] {
             if !q.is_empty() && command(&q, setting.label()) {
@@ -692,6 +758,7 @@ impl Palette {
             Some(&Item::Table(pick)) => PaletteEvent::Table(pick),
             Some(&Item::Restyle(style)) => PaletteEvent::Restyle(style),
             Some(&Item::Grid(op)) => PaletteEvent::Grid(op),
+            Some(&Item::Command(n)) => PaletteEvent::Run(self.commands[n].action),
             Some(&Item::Template(act)) => PaletteEvent::Template(act),
             Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
@@ -792,6 +859,52 @@ impl EntityInputHandler for Palette {
     }
 }
 
+impl Palette {
+    /// Une commande : son icône, son libellé, ses touches une à une ; au-dessus, le titre de son groupe
+    /// quand elle l'ouvre.
+    fn command_row(&self, i: usize, n: usize, header: bool, cx: &Context<Self>) -> gpui::Div {
+        let t = self.theme;
+        let c = &self.commands[n];
+        let on = i == self.selected;
+        let caps = crate::commands::keycaps(&c.keys).into_iter().map(|key| {
+            div()
+                .min_w(px(20.))
+                .px(px(6.))
+                .rounded(px(4.))
+                .flex()
+                .justify_center()
+                .bg(if on { t.panel.opacity(0.7) } else { t.code_bg })
+                .text_size(px(11.5))
+                .text_color(t.soft)
+                .child(key)
+        });
+        let title = header.then(|| {
+            div().px_4().pt(px(10.)).pb(px(4.)).text_size(px(11.5)).text_color(t.soft).child(c.group.title(n < self.here))
+        });
+        let row = div()
+            .id(("command", i))
+            .debug_selector({
+                let action = c.action;
+                move || format!("command-{action}")
+            })
+            .mx_1()
+            .px_3()
+            .h(px(34.))
+            .rounded(px(6.))
+            .flex()
+            .items_center()
+            .gap(px(11.))
+            .cursor_pointer()
+            .when(on, |d| d.bg(t.selection))
+            .when(!on, |d| d.hover(|s| s.bg(t.code_bg)))
+            .child(svg().path(c.icon).size(px(16.)).flex_none().text_color(if on { t.accent } else { t.soft }))
+            .child(div().flex_1().min_w_0().truncate().child(c.label))
+            .child(div().flex_none().flex().gap(px(3.)).children(caps))
+            .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| this.confirm(i, cx)));
+        div().flex().flex_col().children(title).child(row)
+    }
+}
+
 impl Render for Palette {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let (t, top) = (self.theme, self.top);
@@ -839,6 +952,14 @@ impl Render for Palette {
         // Une liste de choix montre 14 lignes à la fois, autour du choix sélectionné.
         let first = self.selected.saturating_sub(6).min(self.items.len().saturating_sub(14));
         let rows = self.items.iter().enumerate().skip(first).take(14).map(|(i, item)| {
+            if let &Item::Command(n) = item {
+                // Sans rien taper, les commandes vont par groupe, chacun sous son titre.
+                let grouped = self.query.text.trim().is_empty();
+                let group = self.commands[n].group;
+                let same = |prev: Option<&Item>| matches!(prev, Some(&Item::Command(m)) if self.commands[m].group == group);
+                let header = grouped && (i == first || !same(i.checked_sub(1).and_then(|p| self.items.get(p))));
+                return self.command_row(i, n, header, cx);
+            }
             let (label, detail) = match item {
                 Item::Note(n) => {
                     let e = &self.entries[*n];
@@ -870,6 +991,7 @@ impl Render for Palette {
                 Item::Comments => (comments_label().to_string(), String::new()),
                 &Item::Restyle(style) => (list_label(style).to_string(), String::new()),
                 &Item::Grid(op) => (op.label().to_string(), crate::keys::of(cx, op.action().as_ref())),
+                &Item::Command(n) => (self.commands[n].label.to_string(), self.commands[n].keys.clone()),
                 &Item::Template(act) => (act.label().to_string(), if act == TemplateAct::New { crate::keys::of(cx, &crate::NewFromTemplate) } else { String::new() }),
                 Item::UndoSwap => (undo_swap_label().to_string(), String::new()),
                 Item::Board => (board_label().to_string(), String::new()),
@@ -967,10 +1089,12 @@ impl Render for Palette {
                             // Ni l'invite ni une longue adresse collée ne sortent du cadre.
                             .overflow_hidden()
                             .child(input)
+                            .when(self.commands_only, |d| d.gap(px(10.)).child(svg().path("search.svg").size(px(16.)).flex_none().text_color(t.soft)))
                             .when(self.query.text.is_empty(), |d| {
-                                d.child(div().min_w_0().truncate().text_color(t.soft).child(self.prompt.clone().unwrap_or_else(|| match self.lines {
-                                    true => tr("Search in the text of the vault…", "Chercher dans le texte du coffre…").into(),
-                                    false => tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into(),
+                                d.child(div().min_w_0().truncate().text_color(t.soft).child(self.prompt.clone().unwrap_or_else(|| match (self.lines, self.commands_only) {
+                                    (true, _) => tr("Search in the text of the vault…", "Chercher dans le texte du coffre…").into(),
+                                    (_, true) => tr("Search a command…", "Rechercher une commande…").into(),
+                                    _ => tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into(),
                                 })))
                             })
                             .child(div().id("palette-line").min_w_0().overflow_x_scroll().track_scroll(&self.scroll).flex().child(line.flex_none().pr(px(2.)).whitespace_nowrap()).child(follow))
@@ -978,6 +1102,21 @@ impl Render for Palette {
                                 d.children(self.prompt.clone().map(|label| {
                                     div().ml_auto().pl_3().flex_none().max_w(gpui::relative(0.45)).truncate().text_size(px(12.)).text_color(t.soft).child(label)
                                 }))
+                            })
+                            // Ce que les commandes visent d'abord : la note, un tableau, un schéma.
+                            .when(self.commands_only && !self.context.is_empty(), |d| {
+                                d.child(
+                                    div()
+                                        .ml_auto()
+                                        .flex_none()
+                                        .px(px(7.))
+                                        .py(px(1.))
+                                        .rounded(px(5.))
+                                        .bg(t.code_bg)
+                                        .text_size(px(11.5))
+                                        .text_color(t.soft)
+                                        .child(self.context),
+                                )
                             }),
                     )
                     .children(rows)

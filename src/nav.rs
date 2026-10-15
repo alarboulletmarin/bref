@@ -1830,6 +1830,12 @@ impl Shell {
             .when(!unfolded, |d| d.border_r_1().border_color(t.border))
             // Le logo de l'app, en tête du rail sur tous les systèmes.
             .child(div().debug_selector(|| "rail-logo".into()).mb_1().child(crate::logo(t)))
+            .child(
+                button("nav-commands", "menu.svg", false, t)
+                    .debug_selector(|| "nav-commands".into())
+                    .tooltip(tip(tr("Commands", "Commandes"), keys(&crate::ToggleCommands), t))
+                    .on_click(cx.listener(|this, _, window, cx| this.open_commands(window, cx))),
+            )
             // Précédent et suivant, côte à côte ; estompés quand il n'y a nulle part où aller.
             .child(
                 div()

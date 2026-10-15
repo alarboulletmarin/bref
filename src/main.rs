@@ -2,6 +2,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod canvas;
+mod commands;
 mod diagram;
 mod editor;
 mod figure;
@@ -325,6 +326,42 @@ impl AssetSource for Assets {
             }
             "check.svg" => r#"<path d="M4 8.5L7 11L12 5"/>"#,
             "board.svg" => r#"<rect x="2.5" y="3" width="3" height="10" rx="0.8"/><rect x="6.5" y="3" width="3" height="7" rx="0.8"/><rect x="10.5" y="3" width="3" height="4.5" rx="0.8"/>"#,
+            // Les icônes des commandes de la palette et de la barre d'un tableau.
+            "c-bold.svg" => r#"<path d="M5 3.5H9A2.2 2.2 0 0 1 9 8H5ZM5 8H9.6A2.25 2.25 0 0 1 9.6 12.5H5Z"/>"#,
+            "c-italic.svg" => r#"<path d="M7 3.5H12M4 12.5H9M9.5 3.5L6.5 12.5"/>"#,
+            "c-underline.svg" => r#"<path d="M4.5 3V7.5A3.5 3.5 0 0 0 11.5 7.5V3M3.5 13.5H12.5"/>"#,
+            "c-strike.svg" => r#"<path d="M11 4.5C10.5 3.6 9.4 3 8 3C6.3 3 5 3.9 5 5.2C5 6.3 5.9 6.9 7 7.3M3 8.5H13M10.2 9.5C10.7 10 11 10.5 11 11.1C11 12.4 9.7 13.2 8 13.2C6.4 13.2 5.2 12.6 4.7 11.6"/>"#,
+            "c-highlight.svg" => r#"<path d="M9.5 3L13 6.5L7.5 12H4V8.5ZM3 13.5H13"/>"#,
+            "c-heading.svg" => r#"<path d="M3 3.5V12.5M9 3.5V12.5M3 8H9M11.5 8.5L13 7.5V12.5"/>"#,
+            "c-text.svg" => r#"<path d="M3.5 4.5V3.5H12.5V4.5M8 3.5V12.5M6.5 12.5H9.5"/>"#,
+            "c-quote.svg" => r#"<path d="M3.5 3.5V12.5M6.5 5H12.5M6.5 8H12.5M6.5 11H10.5"/>"#,
+            "c-up.svg" => r#"<path d="M8 12.5V3.5M4.5 7L8 3.5L11.5 7"/>"#,
+            "c-down.svg" => r#"<path d="M8 3.5V12.5M4.5 9L8 12.5L11.5 9"/>"#,
+            "c-left.svg" => r#"<path d="M12.5 8H3.5M7 4.5L3.5 8L7 11.5"/>"#,
+            "c-right.svg" => r#"<path d="M3.5 8H12.5M9 4.5L12.5 8L9 11.5"/>"#,
+            "c-ins-left.svg" => r#"<rect x="7.5" y="2.5" width="6" height="11" rx="1"/><path d="M2.5 8H5.5M4 6.5V9.5"/>"#,
+            "c-ins-right.svg" => r#"<rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M10.5 8H13.5M12 6.5V9.5"/>"#,
+            "c-ins-above.svg" => r#"<rect x="2.5" y="7.5" width="11" height="6" rx="1"/><path d="M8 2.5V5.5M6.5 4H9.5"/>"#,
+            "c-ins-below.svg" => r#"<rect x="2.5" y="2.5" width="11" height="6" rx="1"/><path d="M8 10.5V13.5M6.5 12H9.5"/>"#,
+            "c-sort-az.svg" => r#"<path d="M2.5 12L4.5 5L6.5 12M3.2 9.8H5.8M9 5H12.5L9 12H12.5"/>"#,
+            "c-sort-za.svg" => r#"<path d="M2.5 5H6L2.5 12H6M9 12L11 5L13 12M9.7 9.8H12.3"/>"#,
+            "c-transpose.svg" => r#"<path d="M3.5 3.5H9.5M3.5 3.5V9.5M12.5 6.5V12.5H6.5M11 11L5 5"/>"#,
+            "c-select-row.svg" => r#"<rect x="2.5" y="6" width="11" height="4" rx="1"/><path d="M2.5 3H13.5M2.5 13H13.5"/>"#,
+            "c-select-col.svg" => r#"<rect x="6" y="2.5" width="4" height="11" rx="1"/><path d="M3 2.5V13.5M13 2.5V13.5"/>"#,
+            "c-cut.svg" => r#"<circle cx="4.5" cy="11.5" r="1.8"/><circle cx="11.5" cy="11.5" r="1.8"/><path d="M5.8 10.2L11.5 3M10.2 10.2L4.5 3"/>"#,
+            "c-paste.svg" => r#"<rect x="3.5" y="3" width="9" height="10.5" rx="1.5"/><path d="M6 3V2.5H10V3M6 7H10M6 10H9"/>"#,
+            "c-undo.svg" => r#"<path d="M5.5 4L3 6.5L5.5 9M3 6.5H9.5A3 3 0 0 1 9.5 12.5H6"/>"#,
+            "c-redo.svg" => r#"<path d="M10.5 4L13 6.5L10.5 9M13 6.5H6.5A3 3 0 0 0 6.5 12.5H10"/>"#,
+            "c-comment.svg" => r#"<path d="M3 4A1.5 1.5 0 0 1 4.5 2.5H11.5A1.5 1.5 0 0 1 13 4V9.5A1.5 1.5 0 0 1 11.5 11H7L4 13.5V11H4.5A1.5 1.5 0 0 1 3 9.5Z"/>"#,
+            "c-outline.svg" => r#"<path d="M3 4H13M5.5 8H13M8 12H13"/>"#,
+            "c-calendar.svg" => r#"<rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5H13.5M5.5 2.5V4.5M10.5 2.5V4.5"/>"#,
+            "c-split.svg" => r#"<rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M8 3V13"/>"#,
+            "c-zoom-in.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.3 7H8.7M7 5.3V8.7"/>"#,
+            "c-zoom-out.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.3 7H8.7"/>"#,
+            "c-zoom-reset.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.5 7H8.5M5.5 7.01"/>"#,
+            "c-quit.svg" => r#"<path d="M9.5 3H12.5V13H9.5M6.5 5L3.5 8L6.5 11M3.5 8H10"/>"#,
+            // Trois traits : le menu de toutes les commandes.
+            "menu.svg" => r#"<path d="M3 4.5H13M3 8H13M3 11.5H13"/>"#,
             "info.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 7.5V11M8 5V5.2"/>"#,
             "alert.svg" => r#"<path d="M8 2.5L14 13H2ZM8 6.5V9.5M8 11.3V11.5"/>"#,
             "spinner.svg" => r#"<path d="M8 2.5A5.5 5.5 0 1 1 2.5 8"/>"#,
@@ -466,7 +503,7 @@ pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }
 
-actions!(app, [SyncVault, SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewFromTemplate, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [ToggleCommands, SyncVault, SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewFromTemplate, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -1782,7 +1819,8 @@ impl Shell {
         } else if self.vault.is_none() {
             window.focus(&self.focus);
         } else {
-            window.focus(&self.editor.focus_handle(cx));
+            // À ce que le pane montre : rendue à la note, la saisie effacerait un tableau ou un schéma.
+            self.focus_pane(self.active, window, cx);
         }
         cx.notify();
     }
@@ -3225,17 +3263,31 @@ impl Shell {
         let lists = self.picture.is_none() && self.listing.is_none() && !self.board_shown(cx);
         let cells = lists && self.editor.read(cx).in_table();
         let swap = !self.swapped.is_empty();
+        let (commands, here) = self.palette_commands(window, cx);
+        let context = self.here_group(cx).1;
         let palette = cx.new(|cx| match lines {
             true => Palette::search(entries, theme, cx),
-            false => Palette::new(entries, query, theme, cx).with_updates(updates, installable).with_table(table).with_lists(lists).with_cells(cells).with_undo_swap(swap),
+            false => Palette::new(entries, query, theme, cx)
+                .with_updates(updates, installable)
+                .with_table(table)
+                .with_lists(lists)
+                .with_cells(cells)
+                .with_undo_swap(swap)
+                .with_commands(commands, here, context),
         });
-        cx.subscribe_in(&palette, window, |this, palette, event, window, cx| {
+        // Une commande choisie dans la palette va à ce qui avait la saisie avant elle.
+        let back = window.focused(cx);
+        cx.subscribe_in(&palette, window, move |this, palette, event, window, cx| {
             this.palette = None;
             window.focus(&this.editor.focus_handle(cx));
             let aside = palette.read(cx).aside;
             match event {
                 PaletteEvent::Open(path) if aside => this.open_aside(path, window, cx),
-                PaletteEvent::Open(path) => this.open_note(path, cx),
+                PaletteEvent::Open(path) => {
+                    this.open_note(path, cx);
+                    // Un tableau, une image ou un schéma prend la saisie : rendue à la note, elle les effacerait.
+                    this.focus_pane(this.active, window, cx);
+                }
                 PaletteEvent::OpenAt(path, row, query) => {
                     this.open_note(path, cx);
                     this.editor.update(cx, |e, cx| e.select_in_row(*row, query, cx));
@@ -3262,6 +3314,15 @@ impl Shell {
                     }
                     window.dispatch_action(op.action(), cx);
                 }
+                PaletteEvent::Run(name) => {
+                    match &back {
+                        Some(back) => window.focus(back),
+                        None => this.focus_pane(this.active, window, cx),
+                    }
+                    if let Ok(action) = cx.build_action(name, None) {
+                        window.dispatch_action(action, cx);
+                    }
+                }
                 PaletteEvent::Restyle(style) => {
                     window.focus(&this.editor.focus_handle(cx));
                     this.editor.update(cx, |e, cx| e.restyle(*style, cx));
@@ -3277,7 +3338,9 @@ impl Shell {
                 PaletteEvent::Terminal => this.open_terminal(cx),
                 PaletteEvent::CaptureKey => this.capture_shortcut(cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
-                PaletteEvent::Dismiss | PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
+                // Refermée sans choix : on retrouve ce que le pane montrait, tableau ou schéma compris.
+                PaletteEvent::Dismiss => this.focus_pane(this.active, window, cx),
+                PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
             cx.notify();
         })
@@ -3316,6 +3379,7 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
             "Notes",
             vec![
                 k(&OpenPalette, tr("Find by name or text, create, filter by #tag", "Chercher par nom ou texte, créer, filtrer par #tag")),
+                k(&ToggleCommands, tr("Command palette: every command, found by what it does (also the first button of the rail, or > in the palette)", "Palette des commandes : toutes les commandes, trouvées par ce qu'elles font (aussi le premier bouton du rail, ou > dans la palette)")),
                 k(&editor::Find, tr("Find in the note", "Chercher dans la note")),
                 k(&editor::FindReplace, tr("Find and replace in the note", "Chercher et remplacer dans la note")),
                 k(&SearchVault, tr("Search the text of the whole vault, line by line", "Chercher dans le texte de tout le coffre, ligne par ligne")),
@@ -3522,7 +3586,67 @@ impl Shell {
     /// Les lignes de l'aide que la recherche garde.
     fn help_rows(&self, cx: &App) -> keys::Sections {
         let query = self.help_find.as_ref().map(|find| find.read(cx).line.text.clone()).unwrap_or_default();
-        keys::filter(help_sections(&self.bound, &self.changes), &query)
+        let mut sections = keys::filter(help_sections(&self.bound, &self.changes), &query);
+        // Ouvert sur un tableau ou un schéma, le panneau commence par ses touches.
+        if let Some(at) = self.here(cx).and_then(|here| sections.iter().position(|(title, _)| *title == here)) {
+            let first = sections.remove(at);
+            sections.insert(0, first);
+        }
+        sections
+    }
+
+    /// La section de l'aide qui parle de ce qui est affiché : un tableau CSV, un schéma, un tableau
+    /// de la note sous le curseur ; aucune pour une note ordinaire, l'aide commence par les notes.
+    fn here(&self, cx: &App) -> Option<&'static str> {
+        if self.shown_sheet().is_some() {
+            Some(tr("CSV tables", "Tableaux CSV"))
+        } else if self.picture.is_some() && self.drawing.is_some() {
+            Some(tr("Diagrams", "Schémas"))
+        } else if self.picture.is_none() && self.listing.is_none() && self.editor.read(cx).in_table() {
+            Some(tr("Tables in a note", "Tableaux d'une note"))
+        } else {
+            None
+        }
+    }
+
+    /// Le groupe des commandes de ce qu'on regarde, et son nom pour le champ de la palette : un tableau
+    /// CSV, un schéma, un tableau de la note sous le curseur, sinon le bloc du curseur.
+    fn here_group(&self, cx: &App) -> (Option<commands::Group>, &'static str) {
+        use commands::Group;
+        if self.shown_sheet().is_some() {
+            (Some(Group::Table), tr("CSV table", "Tableau CSV"))
+        } else if self.picture.is_some() && self.drawing.is_some() {
+            (Some(Group::Diagram), tr("Diagram", "Schéma"))
+        } else if self.picture.is_some() || self.listing.is_some() || self.board_shown(cx) {
+            (None, "")
+        } else if self.editor.read(cx).in_table() {
+            (Some(Group::Table), tr("Table", "Tableau"))
+        } else {
+            (Some(Group::Block), "Note")
+        }
+    }
+
+    /// Les commandes du catalogue que la vue sait faire, avec leurs touches, celles de la vue d'abord
+    /// (combien : le second nombre). Celles qu'elle ne sait pas faire ne sont pas proposées.
+    fn palette_commands(&self, window: &mut Window, cx: &mut Context<Self>) -> (Vec<commands::Command>, usize) {
+        let available: std::collections::HashSet<&str> = window.available_actions(cx).iter().map(|action| action.name()).collect();
+        let list = commands::catalog()
+            .into_iter()
+            .filter(|(action, ..)| available.contains(action))
+            .filter_map(|(action, label, icon, group)| {
+                let keys = keys::of(cx, cx.build_action(action, None).ok()?.as_ref());
+                Some(commands::Command { action, label, icon, group, keys })
+            })
+            .collect();
+        commands::arrange(list, self.here_group(cx).0)
+    }
+
+    /// La palette des commandes (F10, ou le premier bouton du rail) : la palette, rien que les commandes.
+    pub fn open_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.palette.is_some() {
+            return;
+        }
+        self.show_palette(">", false, window, cx)
     }
 
     /// `short` : la fenêtre est basse, le pied « à propos » défile avec la liste au lieu de lui prendre sa place.
@@ -4637,6 +4761,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &ToggleHelp, window, cx| {
                 this.set_help(!this.help, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ToggleCommands, window, cx| this.open_commands(window, cx)))
             // Échap dans la note, quand elle n'a rien à fermer : le menu du clic droit.
             .on_action(cx.listener(|this, _: &editor::Cancel, _, cx| {
                 this.icon_pick = None;
@@ -4776,6 +4901,8 @@ fn defaults() -> Vec<keys::Bind> {
         b("secondary--", &ZoomOut, None),
         b("secondary-0", &ZoomReset, None),
         b("secondary-q", &Quit, None),
+        // La palette des commandes : F10, comme la barre de menus d'une app de bureau.
+        b("f10", &ToggleCommands, None),
         b("secondary-shift-d", &NewDiagram, Some("Shell")),
         b("secondary-=", &canvas::ZoomIn, c),
         b("secondary-+", &canvas::ZoomIn, c),
@@ -7845,6 +7972,113 @@ mod tests {
             cx.run_until_parked();
             println!("   dans la note collée, {what:6} : {:?}", start.elapsed());
         }
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Ce qu'on peut faire se trouve sans le savoir : la palette des commandes (F10, ou « > »), qui les
+    /// cherche par ce qu'elles font, celles de la vue d'abord ; l'aide ouverte sur la vue ; la barre d'un tableau.
+    #[gpui::test]
+    fn commands_are_found(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-commands-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("data.csv"), "nom;age\nAna;31\nBob;27\n").unwrap();
+        let _config = isolated_config(&root);
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+        shell.update_in(cx, |s, window, cx| window.focus(&s.editor.focus_handle(cx)));
+        cx.simulate_input("mot");
+        let runs = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.palette.as_ref().map(|p| p.read(cx).runs()).unwrap_or_default());
+        let mode = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.palette.as_ref().map(|p| p.read(cx).mode()));
+
+        // F10 ouvre la palette des commandes : rien que les commandes que la note sait faire (pas celles
+        // d'une grille), sous le nom de ce qu'on regarde.
+        cx.simulate_keystrokes("f10");
+        assert_eq!(mode(cx), Some((true, "Note")));
+        let all = runs(cx);
+        assert!(all.contains(&"app::NewNote") && all.contains(&"editor::Bold"), "{all:?}");
+        assert!(!all.contains(&"sheet::Copy") && !all.contains(&"canvas::Erase"));
+        // Échap la referme et rend la saisie à la note.
+        cx.simulate_keystrokes("escape");
+        assert_eq!(mode(cx), None);
+        assert!(shell.update_in(cx, |s, window, cx| s.editor.focus_handle(cx).is_focused(window)));
+        // Taper filtre par ce que fait la commande ; Entrée la fait, sur la note.
+        cx.simulate_keystrokes("secondary-a f10");
+        cx.simulate_input("gras");
+        assert_eq!(runs(cx), ["editor::Bold"]);
+        cx.simulate_keystrokes("enter");
+        assert_eq!(mode(cx), None);
+        assert_eq!(text(cx), "**mot**");
+        // Le premier bouton du rail l'ouvre aussi ; un clic sur une commande la fait.
+        let at = cx.debug_bounds("nav-commands").expect("le bouton du rail").center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert_eq!(mode(cx).map(|m| m.0), Some(true));
+        cx.simulate_input("raccourcis");
+        let at = cx.debug_bounds("command-app::ToggleHelp").expect("la commande est affichée").center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.help));
+        shell.update_in(cx, |s, window, cx| s.set_help(false, window, cx));
+
+        // Dans la palette des notes, « > » en tête passe aux commandes, et s'efface ; sans lui, une commande
+        // se trouve aussi, mais Entrée crée encore la note de ce nom.
+        cx.simulate_keystrokes("secondary-z secondary-a secondary-p");
+        cx.simulate_input("italique");
+        assert_eq!(runs(cx), ["editor::Italic"]);
+        cx.simulate_keystrokes("home");
+        cx.simulate_input(">");
+        assert_eq!(mode(cx), Some((true, "Note")));
+        assert_eq!(shell.read_with(cx, |s, cx| s.palette.as_ref().unwrap().read(cx).listed()), 1);
+        cx.simulate_keystrokes("enter");
+        assert_eq!(text(cx), "*mot*");
+
+        // Sur un tableau CSV, ouvert depuis la palette : il reste affiché et prend la saisie. L'aide et le menu
+        // commencent par ses touches, la palette vide propose ses gestes.
+        shell.update(cx, |s, cx| {
+            let (notes, dirs, images) = vault::scan(&root);
+            s.sync(notes, dirs, images, cx);
+        });
+        cx.simulate_keystrokes("secondary-p");
+        cx.simulate_input("data.csv");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert!(shell.update_in(cx, |s, window, cx| s.shown_sheet().is_some_and(|sheet| sheet.focus_handle(cx).is_focused(window))));
+        let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
+        // La palette des commandes commence par celles du tableau.
+        cx.simulate_keystrokes("f10");
+        assert_eq!(mode(cx), Some((true, "Tableau CSV")));
+        assert_eq!(runs(cx)[0], "editor::TableRowAbove");
+        cx.simulate_keystrokes("escape f1");
+        assert_eq!(shell.read_with(cx, |s, cx| s.help_rows(cx)[0].0), "Tableaux CSV");
+        // Refermer l'aide, ou la palette sans rien choisir, rend la saisie au tableau, qui reste affiché.
+        cx.simulate_keystrokes("f1");
+        cx.run_until_parked();
+        let on_sheet = |cx: &mut gpui::VisualTestContext| shell.update_in(cx, |s, window, cx| s.shown_sheet().is_some_and(|sheet| sheet.focus_handle(cx).is_focused(window)));
+        assert!(on_sheet(cx));
+        cx.simulate_keystrokes("secondary-p");
+        assert!(runs(cx).contains(&"editor::TableRowAbove"), "{:?}", runs(cx));
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert!(on_sheet(cx));
+        // Une colonne entière choisie : la barre du tableau montre ses gestes, un clic en fait un.
+        sheet.update(cx, |sheet, cx| sheet.pick("col", 0, cx));
+        cx.run_until_parked();
+        // Un mouvement du pointeur fait redessiner la fenêtre de test.
+        cx.simulate_mouse_move(gpui::point(px(400.), px(300.)), None, gpui::Modifiers::none());
+        let at = cx.debug_bounds("sheet-span-editor::TableColRight").expect("le geste est dans la barre").center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cols()), 3);
+        sheet.update(cx, |sheet, cx| sheet.pick("row", 1, cx));
+        cx.run_until_parked();
+        // Un mouvement du pointeur fait redessiner la fenêtre de test.
+        cx.simulate_mouse_move(gpui::point(px(400.), px(300.)), None, gpui::Modifiers::none());
+        let at = cx.debug_bounds("sheet-span-sheet::DeleteRows").expect("une ligne entière a ses gestes").center();
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert_eq!(sheet.read_with(cx, |sheet, _| (sheet.table().rows(), sheet.table().cell(1, 0).to_string())), (2, "Bob".to_string()));
         fs::remove_dir_all(&root).unwrap();
     }
 
