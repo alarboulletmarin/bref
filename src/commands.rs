@@ -56,19 +56,19 @@ pub struct Command {
 pub fn catalog() -> Vec<(&'static str, &'static str, &'static str, Group)> {
     use Group::*;
     vec![
-        ("editor::BlockText", tr("Turn into text", "Transformer en texte"), "c-text.svg", Block),
         ("editor::BlockHeading1", tr("Turn into heading 1", "Transformer en titre 1"), "c-heading.svg", Block),
         ("editor::BlockHeading2", tr("Turn into heading 2", "Transformer en titre 2"), "c-heading.svg", Block),
-        ("editor::BlockHeading3", tr("Turn into heading 3", "Transformer en titre 3"), "c-heading.svg", Block),
         ("editor::BlockBullet", tr("Turn into a bulleted list", "Transformer en liste à puces"), "list-bullet.svg", Block),
-        ("editor::BlockOrdered", tr("Turn into a numbered list", "Transformer en liste numérotée"), "list-number.svg", Block),
         ("editor::BlockTask", tr("Turn into a task list", "Transformer en liste de tâches"), "list-task.svg", Block),
-        ("editor::BlockQuote", tr("Turn into a quote", "Transformer en citation"), "c-quote.svg", Block),
-        ("editor::BlockCode", tr("Turn into a code block", "Transformer en bloc de code"), "code.svg", Block),
         ("editor::BlockUp", tr("Move the block up", "Monter le bloc"), "c-up.svg", Block),
         ("editor::BlockDown", tr("Move the block down", "Descendre le bloc"), "c-down.svg", Block),
         ("editor::BlockDuplicate", tr("Duplicate the block", "Dupliquer le bloc"), "copy.svg", Block),
         ("editor::BlockDelete", tr("Delete the block", "Supprimer le bloc"), "trash.svg", Block),
+        ("editor::BlockText", tr("Turn into text", "Transformer en texte"), "c-text.svg", Block),
+        ("editor::BlockHeading3", tr("Turn into heading 3", "Transformer en titre 3"), "c-heading.svg", Block),
+        ("editor::BlockOrdered", tr("Turn into a numbered list", "Transformer en liste numérotée"), "list-number.svg", Block),
+        ("editor::BlockQuote", tr("Turn into a quote", "Transformer en citation"), "c-quote.svg", Block),
+        ("editor::BlockCode", tr("Turn into a code block", "Transformer en bloc de code"), "code.svg", Block),
         ("editor::TableRowAbove", tr("Insert a row above", "Insérer une ligne au-dessus"), "c-ins-above.svg", Table),
         ("editor::TableRowBelow", tr("Insert a row below", "Insérer une ligne en dessous"), "c-ins-below.svg", Table),
         ("editor::TableColLeft", tr("Insert a column to the left", "Insérer une colonne à gauche"), "c-ins-left.svg", Table),
@@ -177,6 +177,18 @@ pub fn keycaps(keys: &str) -> Vec<String> {
             }
         }
     }
+    // Les flèches et l'effacement se lisent mieux en signes qu'en mots.
+    for key in &mut out {
+        let sign = match key.as_str() {
+            "Up" | "Haut" => "↑",
+            "Down" | "Bas" => "↓",
+            "Left" | "Gauche" => "←",
+            "Right" | "Droite" => "→",
+            "Backspace" | "Retour arrière" => "⌫",
+            _ => continue,
+        };
+        *key = sign.to_string();
+    }
     out
 }
 
@@ -204,6 +216,7 @@ mod tests {
         assert_eq!(keycaps("Ctrl+Maj+C"), ["Ctrl", "Maj", "C"]);
         assert_eq!(keycaps("Ctrl++"), ["Ctrl", "+"]);
         assert_eq!(keycaps("F10"), ["F10"]);
+        assert_eq!(keycaps("Alt+Haut"), ["Alt", "↑"]);
         assert!(keycaps("").is_empty());
     }
 

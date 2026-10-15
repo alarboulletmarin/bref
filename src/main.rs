@@ -3623,16 +3623,20 @@ impl Shell {
     /// Les commandes du catalogue que la vue sait faire, avec leurs touches, celles de la vue d'abord
     /// (combien : le second nombre). Celles qu'elle ne sait pas faire ne sont pas proposées.
     fn palette_commands(&self, window: &mut Window, cx: &mut Context<Self>) -> (Vec<commands::Command>, usize) {
+        use commands::Group;
         let available: std::collections::HashSet<&str> = window.available_actions(cx).iter().map(|action| action.name()).collect();
+        let here = self.here_group(cx).0;
         let list = commands::catalog()
             .into_iter()
             .filter(|(action, ..)| available.contains(action))
+            // Les gestes d'un bloc, d'un tableau ou d'un schéma ne valent que là : ailleurs, ils ne feraient rien.
+            .filter(|&(_, _, _, group)| !matches!(group, Group::Block | Group::Table | Group::Diagram) || Some(group) == here)
             .filter_map(|(action, label, icon, group)| {
                 let keys = keys::of(cx, cx.build_action(action, None).ok()?.as_ref());
                 Some(commands::Command { action, label, icon, group, keys })
             })
             .collect();
-        commands::arrange(list, self.here_group(cx).0)
+        commands::arrange(list, here)
     }
 
     /// La palette des commandes (F10, ou le premier bouton du rail) : la palette, rien que les commandes.
