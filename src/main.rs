@@ -3408,9 +3408,11 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 k(&sheet::Copy, tr("Table: copy as tab-separated text", "Tableau : copier en texte à tabulations")),
                 k(&sheet::Cut, tr("Table: cut", "Tableau : couper")),
                 k(&sheet::Paste, tr("Table: paste cells from a spreadsheet, Markdown or CSV", "Tableau : coller des cellules d'un tableur, de Markdown ou de CSV")),
-                k(&sheet::InsertBelow, tr("Table: insert a row below", "Tableau : insérer une ligne dessous")),
-                k(&sheet::InsertAbove, tr("Table: insert a row above", "Tableau : insérer une ligne dessus")),
-                k(&sheet::DeleteRows, tr("Table: remove the selected rows", "Tableau : retirer les lignes sélectionnées")),
+                k(&sheet::SelectRow, tr("Table: select the whole rows of the selection", "Tableau : sélectionner les lignes entières de la sélection")),
+                k(&sheet::SelectCol, tr("Table: select the whole columns of the selection", "Tableau : sélectionner les colonnes entières de la sélection")),
+                k(&sheet::InsertBelow, tr("Table: insert a row below (a column to the right when whole columns are selected)", "Tableau : insérer une ligne dessous (une colonne à droite si des colonnes entières sont sélectionnées)")),
+                k(&sheet::InsertAbove, tr("Table: insert a row above (a column to the left when whole columns are selected)", "Tableau : insérer une ligne dessus (une colonne à gauche si des colonnes entières sont sélectionnées)")),
+                k(&sheet::DeleteRows, tr("Table: remove the selected rows, or the columns when whole columns are selected", "Tableau : retirer les lignes sélectionnées, ou les colonnes si des colonnes entières sont sélectionnées")),
                 k(&sheet::Undo, tr("Table: undo", "Tableau : annuler")),
                 k(&sheet::Redo, tr("Table: redo", "Tableau : rétablir")),
                 p("table", tr("Delimiter, encoding, header row, copy as…, export (CSV, TSV, Markdown, JSON)", "Délimiteur, encodage, en-tête, copier en…, exporter (CSV, TSV, Markdown, JSON)")),
@@ -3439,6 +3441,10 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 ),
             ))
             .chain(editor::TableOp::ALL.into_iter().map(|op| k(op.action().as_ref(), op.label())))
+            .chain([k(
+                &editor::TableDeleteSpan,
+                tr("Remove the row, or the columns taken by their grip", "Supprimer la ligne, ou les colonnes prises par leur poignée"),
+            )])
             .collect(),
         ),
         (
@@ -4822,6 +4828,10 @@ fn defaults() -> Vec<keys::Bind> {
         b("secondary-enter", &sheet::InsertBelow, sh),
         b("secondary-shift-enter", &sheet::InsertAbove, sh),
         b("secondary-delete", &sheet::DeleteRows, sh),
+        // Comme dans un tableur : la ligne, la colonne de la sélection entières.
+        b("shift-space", &sheet::SelectRow, sh),
+        b("ctrl-space", &sheet::SelectCol, sh),
+        b("secondary-shift-backspace", &TableDeleteSpan, sh),
         b("secondary-e", &nav::ShowTree, Some("Shell")),
         b("secondary-r", &nav::ShowRecent, Some("Shell")),
         b("secondary-g", &nav::ShowGraph, Some("Shell")),
@@ -4909,7 +4919,7 @@ fn defaults() -> Vec<keys::Bind> {
         b("alt-up", &TableMoveRowUp, sh),
         b("alt-down", &TableMoveRowDown, sh),
         b("alt-down", &TableMoveRowDown, e),
-        b("secondary-shift-backspace", &TableDeleteRow, e),
+        b("secondary-shift-backspace", &TableDeleteSpan, e),
         b("secondary-shift-l", &AlignLeft, e),
         b("secondary-shift-e", &AlignCenter, e),
         b("secondary-shift-r", &AlignRight, e),
@@ -6935,6 +6945,13 @@ mod tests {
         // Sans prise, le geste vaut pour la ligne du curseur : l'en-tête, et la suivante lui succède.
         assert_eq!(flat(cx), "Léa|31/---|---/Max|7");
         cx.simulate_keystrokes("secondary-z");
+        // Une colonne prise par sa poignée : le même geste la supprime, elle et non la ligne.
+        let at = center(cx, Part::Col(0));
+        cx.simulate_click(at, none);
+        cx.simulate_keystrokes("secondary-shift-backspace");
+        assert_eq!(flat(cx), "Âge/---/31/7");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(flat(cx), "Nom|Âge/---|---/Léa|31/Max|7");
         // Trente colonnes : celles qui sortent du cadre n'ont pas de poignée à l'écran ; un tableau
         // de plus de 1 500 lignes n'en a aucune (il garde Tab).
         let wide = format!("|{}\n|{}\n|{}\n", " colonne |".repeat(30), " --- |".repeat(30), " texte |".repeat(30));
@@ -7331,6 +7348,27 @@ mod tests {
         assert_eq!((cell(cx, 1, 0), cell(cx, 2, 1)), ("Anaïs".to_string(), "27".to_string()));
         cx.simulate_click(first, gpui::Modifiers::none());
         assert_eq!(picked(cx), [(1..2, 0..1)]);
+        // Ctrl+Espace prend la colonne entière : Ctrl+Entrée en insère une à sa droite, Ctrl+Suppr la retire,
+        // elle et non toutes les lignes. Maj+Espace prend la ligne, que Ctrl+Maj+Retour arrière retire.
+        let size = |cx: &mut gpui::VisualTestContext| sheet.read_with(cx, |sheet, _| (sheet.table().rows(), sheet.table().cols()));
+        cx.simulate_keystrokes("ctrl-space");
+        assert_eq!(picked(cx), [(0..3, 0..1)]);
+        cx.simulate_keystrokes("secondary-enter");
+        assert_eq!((size(cx), cell(cx, 0, 1), cell(cx, 0, 2)), ((3, 3), String::new(), "age".to_string()));
+        assert_eq!(picked(cx), [(0..3, 1..2)]);
+        cx.simulate_keystrokes("secondary-z");
+        cx.simulate_click(first, gpui::Modifiers::none());
+        cx.simulate_keystrokes("ctrl-space secondary-delete");
+        assert_eq!((size(cx), cell(cx, 0, 0), cell(cx, 1, 0)), ((3, 1), "age".to_string(), "32".to_string()));
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!((size(cx), cell(cx, 0, 0)), ((3, 2), "nom".to_string()));
+        cx.simulate_click(first, gpui::Modifiers::none());
+        cx.simulate_keystrokes("shift-space");
+        assert_eq!(picked(cx), [(1..2, 0..2)]);
+        cx.simulate_keystrokes("secondary-shift-backspace");
+        assert_eq!((size(cx), cell(cx, 1, 0)), ((2, 2), "Bob".to_string()));
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!((size(cx), cell(cx, 1, 0)), ((3, 2), "Anaïs".to_string()));
         // Sélectionner une colonne, une ligne ou tout ne fait pas défiler la vue (elle ne saute pas à la dernière ligne).
         let long = root.join("long.csv");
         fs::write(&long, (0..400).map(|i| format!("{i};a{i};b{i};c{i}\n")).collect::<String>()).unwrap();
