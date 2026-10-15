@@ -152,21 +152,41 @@ fn before(text: &str, block: &Range<usize>) -> Range<usize> {
     from.max(md::front_matter(text).saturating_sub(1)).min(block.start)..block.start
 }
 
-/// Le texte sans le bloc, l'espace qui partait avec lui, et où le bloc était (dans le nouveau texte).
+/// La première ligne d'un bloc.
+fn head(piece: &str) -> &str {
+    piece.split('\n').next().unwrap_or_default()
+}
+
+/// Le texte sans le bloc ni le plus petit des deux espaces qui le bordent (celui d'après, à
+/// égalité) : le dernier item d'une liste part avec le retour à la ligne qui le lie à l'item d'avant,
+/// et la ligne vide qui sépare la liste de ce qui suit reste en place. Rend aussi l'espace parti et
+/// où était le bloc dans le nouveau texte.
 fn take(text: &str, block: &Range<usize>) -> Option<(String, String, usize)> {
     let (gap, more) = after(text, block);
-    if more {
-        let mut out = text.to_string();
+    let before = before(text, block);
+    let lines = |r: &Range<usize>| text[r.clone()].matches('\n').count();
+    let mut out = text.to_string();
+    if more && (before.is_empty() || lines(&gap) <= lines(&before)) {
         out.replace_range(block.start..gap.end, "");
         return Some((out, text[gap].to_string(), block.start));
     }
-    let gap = before(text, block);
-    if gap.is_empty() {
+    if before.is_empty() {
         return None;
     }
-    let mut out = text.to_string();
-    out.replace_range(gap.start..block.end, "");
-    Some((out, text[gap.clone()].to_string(), gap.start))
+    out.replace_range(before.start..block.end, "");
+    Some((out, text[before.clone()].to_string(), before.start))
+}
+
+/// L'espace à mettre entre deux blocs voisins `a` et `b` : deux items de liste restent collés ; un
+/// item à côté d'autre chose prend l'espace `there` du lieu où il arrive ; sinon `kept`, l'espace
+/// que le bloc avait, garde la façon d'écrire de la note.
+fn spacing(a: &str, b: &str, there: &str, kept: &str) -> String {
+    let gap = match (is_item(head(a)), is_item(head(b))) {
+        (true, true) => "\n",
+        (false, false) => kept,
+        _ => there,
+    };
+    if gap.contains('\n') { gap.to_string() } else { "\n\n".to_string() }
 }
 
 /// Le bloc posé avant le bloc qui commence en `to` (dans le texte d'origine), ou à la fin
@@ -177,33 +197,36 @@ pub fn moved(text: &str, block: Range<usize>, to: usize) -> Option<(String, Rang
         return None;
     }
     let piece = &text[block.clone()];
-    let (mut rest, sep, _) = take(text, &block)?;
-    let sep = if sep.is_empty() { "\n".to_string() } else { sep };
+    let (mut rest, kept, _) = take(text, &block)?;
+    let removed = text.len() - rest.len();
     if to >= text.len() {
         let end = rest.trim_end_matches(['\n', ' ', '\t']).len();
+        // L'espace de cet endroit : celui qui précède le dernier bloc.
+        let last = blocks(&rest[..end]).last().cloned().unwrap_or(0..0);
+        let there = rest[before(&rest, &last)].to_string();
+        let sep = spacing(&rest[last], piece, &there, &kept);
         rest.insert_str(end, &format!("{sep}{piece}"));
         let at = end + sep.len();
         return Some((rest, at..at + piece.len()));
     }
-    let removed = text.len() - rest.len();
+    // L'espace qui précède, à l'origine, le bloc devant lequel on se pose : celui de cet endroit.
+    let there_start = text[..to].trim_end_matches(['\n', ' ', '\t']).len();
+    let there = &text[there_start..to];
+    let target = text[to..].split('\n').next().unwrap_or_default();
+    let sep = spacing(piece, target, there, &kept);
     let at = if to > block.start { to - removed } else { to };
     rest.insert_str(at, &format!("{piece}{sep}"));
     Some((rest, at..at + piece.len()))
 }
 
-/// Le bloc doublé juste après lui, avec l'espace qui le suit : le nouveau texte et où est la copie.
+/// Le bloc doublé juste après lui : un item colle à son double, un autre bloc garde l'espace qui le
+/// borde. Le nouveau texte et où est la copie.
 pub fn duplicated(text: &str, block: Range<usize>) -> (String, Range<usize>) {
     let piece = &text[block.clone()];
     let (gap, more) = after(text, &block);
+    let kept = if more { &text[gap] } else { &text[before(text, &block)] };
+    let sep = spacing(piece, piece, kept, kept);
     let mut out = text.to_string();
-    if more {
-        out.insert_str(gap.end, &format!("{piece}{}", &text[gap.clone()]));
-        return (out, gap.end..gap.end + piece.len());
-    }
-    let sep = match &text[before(text, &block)] {
-        "" => "\n",
-        sep => sep,
-    };
     out.insert_str(block.end, &format!("{sep}{piece}"));
     let at = block.end + sep.len();
     (out, at..at + piece.len())
@@ -341,6 +364,15 @@ mod tests {
         assert_eq!(moved(list, 8..11, 0).unwrap().0, "- c\n- a\n- b");
         // Le seul bloc n'a nulle part où aller.
         assert_eq!(moved("seul\n", 0..4, 5), None);
+        // Le dernier item d'une liste, monté en tête : la liste reste collée, et la ligne vide qui la
+        // sépare du panneau reste en place.
+        let list = "Titre\n\n- a\n- b\n- c\n\n> note\n";
+        let c = list.find("- c").unwrap();
+        assert_eq!(moved(list, c..c + 3, list.find("- a").unwrap()).unwrap().0, "Titre\n\n- c\n- a\n- b\n\n> note\n");
+        // Un item sorti de sa liste prend l'espace de l'endroit où il arrive.
+        let a = list.find("- a").unwrap();
+        assert_eq!(moved(list, a..a + 3, list.find("> note").unwrap()).unwrap().0, "Titre\n\n- b\n- c\n\n- a\n\n> note\n");
+        assert_eq!(moved(list, a..a + 3, list.len()).unwrap().0, "Titre\n\n- b\n- c\n\n> note\n\n- a\n");
     }
 
     #[test]
@@ -349,6 +381,7 @@ mod tests {
         assert_eq!(duplicated(text, 0..1), ("A\n\nA\n\nB\n".to_string(), 3..4));
         assert_eq!(duplicated(text, 3..4), ("A\n\nB\n\nB\n".to_string(), 6..7));
         assert_eq!(duplicated("- a\n- b", 0..3).0, "- a\n- a\n- b");
+        assert_eq!(duplicated("- a\n- b\n\nP", 4..7).0, "- a\n- b\n- b\n\nP");
         assert_eq!(removed(text, 0..1), ("B\n".to_string(), 0));
         assert_eq!(removed(text, 3..4), ("A\n".to_string(), 1));
         assert_eq!(removed("seul", 0..4), (String::new(), 0));
