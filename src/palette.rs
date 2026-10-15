@@ -1065,6 +1065,7 @@ impl Render for Palette {
             .items_start()
             .child(
                 div()
+                    .debug_selector(|| "palette-panel".into())
                     .mt(self.top)
                     .w(px(520.))
                     .max_w_full()
@@ -1106,9 +1107,9 @@ impl Render for Palette {
                             })
                             // Ce que les commandes visent d'abord : la note, un tableau, un schéma.
                             .when(self.commands_only && !self.context.is_empty(), |d| {
-                                d.child(
+                                d.child(div().flex_1()).child(
                                     div()
-                                        .ml_auto()
+                                        .debug_selector(|| "palette-context".into())
                                         .flex_none()
                                         .px(px(7.))
                                         .py(px(1.))
