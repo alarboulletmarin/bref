@@ -1090,7 +1090,7 @@ impl Render for Palette {
                             // Ni l'invite ni une longue adresse collée ne sortent du cadre.
                             .overflow_hidden()
                             .child(input)
-                            .when(self.commands_only, |d| d.gap(px(10.)).child(svg().path("search.svg").size(px(16.)).flex_none().text_color(t.soft)))
+                            .when(self.commands_only, |d| d.child(svg().path("search.svg").size(px(16.)).flex_none().mr(px(10.)).text_color(t.soft)))
                             // Le curseur d'abord, l'invite après lui : on écrit à sa place.
                             .child(div().id("palette-line").min_w_0().overflow_x_scroll().track_scroll(&self.scroll).flex().child(line.flex_none().pr(px(2.)).whitespace_nowrap()).child(follow))
                             .when(self.query.text.is_empty(), |d| {
