@@ -1,6 +1,7 @@
 // Pas de console derrière la fenêtre sous Windows.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod block;
 mod canvas;
 mod commands;
 mod diagram;
@@ -369,6 +370,8 @@ impl AssetSource for Assets {
             "clock.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 5V8L10 9.5"/>"#,
             "search.svg" => r#"<circle cx="7" cy="7" r="3.5"/><path d="M9.7 9.7L12.5 12.5"/>"#,
             "plus.svg" => r#"<path d="M8 3.5V12.5M3.5 8H12.5"/>"#,
+            // Six points : la poignée d'un bloc.
+            "grip.svg" => r#"<path d="M6 3.5V3.6M10 3.5V3.6M6 8V8.1M10 8V8.1M6 12.5V12.6M10 12.5V12.6" stroke-width="2.2"/>"#,
             "help.svg" => {
                 r#"<circle cx="8" cy="8" r="5.5"/><path d="M6.4 6.6A1.6 1.6 0 1 1 8 8.4V9.2M8 11.2V11.3"/>"#
             }
@@ -2632,7 +2635,11 @@ impl Shell {
             },
             EditorEvent::Swap(swap) => self.replace_in_vault(swap.clone(), window, cx),
             EditorEvent::Menu(at, link, commented) => {
-                self.menu = Some(nav::Menu { at: *at, target: None, text: Some(link.clone()), commented: *commented });
+                self.menu = Some(nav::Menu { at: *at, target: None, text: Some(link.clone()), commented: *commented, block: false });
+                cx.notify();
+            }
+            EditorEvent::BlockMenu(at) => {
+                self.menu = Some(nav::Menu { at: *at, target: None, text: Some(None), commented: false, block: true });
                 cx.notify();
             }
         }
@@ -3573,6 +3580,18 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 k(&editor::Redo, tr("Redo", "Rétablir")),
                 t(&format!("{word}+{}", tr("Left / Right", "Gauche / Droite")), tr("Move by word", "Se déplacer par mot")),
             ],
+        ),
+        (
+            tr("Blocks", "Blocs"),
+            std::iter::once(t(
+                tr("Grip", "Poignée"),
+                tr(
+                    "Left of the line under the pointer: drag it to move the block (a line shows where it lands), click it to select the block and open its menu; the + left of it adds a block under it and opens the / list",
+                    "À gauche de la ligne sous le pointeur : la tirer déplace le bloc (un trait montre où il arrive), un clic sélectionne le bloc et ouvre son menu ; le + à sa gauche ajoute un bloc dessous et ouvre la liste /",
+                ),
+            ))
+            .chain(editor::BlockOp::ALL.into_iter().map(|op| k(op.action().as_ref(), op.effect())))
+            .collect(),
         ),
     ]
 }
@@ -5042,10 +5061,11 @@ fn defaults() -> Vec<keys::Bind> {
         // Les quatre choix directs n'ont pas de touche : le menu et la palette les offrent, et l'aide les accorde.
         b("secondary-shift-b", &ListCycle, e),
         // Un tableau : monter ou descendre la ligne, la supprimer ; le reste par le menu, la palette ou l'aide.
-        b("alt-up", &TableMoveRowUp, e),
+        // Hors d'un tableau, Alt+flèche monte ou descend le bloc du curseur ; dans un tableau, sa ligne.
+        b("alt-up", &BlockUp, e),
         b("alt-up", &TableMoveRowUp, sh),
         b("alt-down", &TableMoveRowDown, sh),
-        b("alt-down", &TableMoveRowDown, e),
+        b("alt-down", &BlockDown, e),
         b("secondary-shift-backspace", &TableDeleteSpan, e),
         b("secondary-shift-l", &AlignLeft, e),
         b("secondary-shift-e", &AlignCenter, e),
@@ -5574,7 +5594,7 @@ mod tests {
         // Une icône, choisie dans la grille du menu, suit la note qu'on renomme ; elle est
         // retenue dans un fichier du coffre.
         shell.update_in(cx, |s, window, cx| {
-            s.menu = Some(nav::Menu { at: point(px(300.), px(200.)), target: Some(root.join("Test.md")), text: None, commented: false });
+            s.menu = Some(nav::Menu { at: point(px(300.), px(200.)), target: Some(root.join("Test.md")), text: None, commented: false, block: false });
             s.menu_do(nav::Do::Icon, Some(root.join("Test.md")), window, cx)
         });
         cx.run_until_parked();
@@ -6885,7 +6905,7 @@ mod tests {
         assert!(text(cx).contains(" !") && text(cx).replace(" !", "") == "voir [la doc](https://a.b/c) ici");
         let link = Link::Url("https://a.b/c".into());
         shell.update_in(cx, |s, window, cx| {
-            s.menu = Some(nav::Menu { at: point(px(0.), px(0.)), target: None, text: Some(Some(link)), commented: false });
+            s.menu = Some(nav::Menu { at: point(px(0.), px(0.)), target: None, text: Some(Some(link)), commented: false, block: false });
             s.menu_do(nav::Do::CopyAddress, None, window, cx)
         });
         assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("https://a.b/c"));
@@ -8079,6 +8099,118 @@ mod tests {
         let at = cx.debug_bounds("sheet-span-sheet::DeleteRows").expect("une ligne entière a ses gestes").center();
         cx.simulate_click(at, gpui::Modifiers::none());
         assert_eq!(sheet.read_with(cx, |sheet, _| (sheet.table().rows(), sheet.table().cell(1, 0).to_string())), (2, "Bob".to_string()));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Les poignées de bloc, comme dans Notion : au survol d'une ligne, tirer la poignée déplace son bloc,
+    /// un clic ouvre son menu, le « + » pose un bloc dessous avec la liste `/` ; Alt+flèche le déplace.
+    #[gpui::test]
+    fn block_handles(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-blocks-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let _config = isolated_config(&root);
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        cx.run_until_parked();
+        let note = "# Titre\n\nUn\n\nDeux\n\n- a\n    - sous\n- b\n";
+        let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+        let load = |cx: &mut gpui::VisualTestContext, text: &str| {
+            shell.update_in(cx, |s, window, cx| {
+                s.editor.update(cx, |e, cx| e.load(text.to_string(), 0, cx));
+                window.focus(&s.editor.focus_handle(cx));
+            });
+            cx.run_until_parked();
+        };
+        load(cx, note);
+        let none = gpui::Modifiers::none();
+        let spot = |cx: &mut gpui::VisualTestContext, needle: &str| {
+            let at = text(cx).find(needle).unwrap();
+            shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(at).unwrap()) + gpui::point(px(3.), px(0.))
+        };
+        let hover = |cx: &mut gpui::VisualTestContext, needle: &str| {
+            let at = spot(cx, needle);
+            cx.simulate_mouse_move(at, None, none);
+            shell.read_with(cx, |s, cx| s.editor.read(cx).hovered_block().map(str::to_string))
+        };
+        let handle = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).block_handle()).expect("la poignée est là");
+
+        // Le survol d'une ligne montre la poignée de son bloc : un item emporte ses sous-items. Le
+        // titre, qui nomme la note, n'en a pas.
+        assert_eq!(hover(cx, "Titre"), None);
+        assert_eq!(hover(cx, "Un").as_deref(), Some("Un"));
+        assert_eq!(hover(cx, "- a").as_deref(), Some("- a\n    - sous"));
+        assert_eq!(hover(cx, "sous").as_deref(), Some("    - sous"));
+        // La poignée d'un sous-item est à son retrait.
+        let inner = handle(cx).0;
+        hover(cx, "- b");
+        assert!(inner.left() > handle(cx).0.left() + px(10.), "{inner:?}");
+        // Tirée jusqu'au haut d'une autre ligne, la poignée y pose le bloc, avec ses lignes vides.
+        hover(cx, "Un");
+        let (grip, plus) = handle(cx);
+        assert!(plus.is_some_and(|plus| plus.right() <= grip.left()));
+        let to = spot(cx, "- a") - gpui::point(px(0.), px(8.));
+        cx.simulate_mouse_down(grip.center(), MouseButton::Left, none);
+        cx.simulate_mouse_move(grip.center() + gpui::point(px(0.), px(10.)), MouseButton::Left, none);
+        cx.simulate_mouse_move(to, MouseButton::Left, none);
+        cx.simulate_mouse_up(to, MouseButton::Left, none);
+        assert_eq!(text(cx), "# Titre\n\nDeux\n\nUn\n\n- a\n    - sous\n- b\n");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(text(cx), note);
+        // Un item se pose parmi les autres, sans ligne vide.
+        hover(cx, "- b");
+        let (grip, _) = handle(cx);
+        let to = spot(cx, "- a") - gpui::point(px(0.), px(8.));
+        cx.simulate_mouse_down(grip.center(), MouseButton::Left, none);
+        cx.simulate_mouse_move(to, MouseButton::Left, none);
+        cx.simulate_mouse_up(to, MouseButton::Left, none);
+        assert_eq!(text(cx), "# Titre\n\nUn\n\nDeux\n\n- b\n- a\n    - sous\n");
+        cx.simulate_keystrokes("secondary-z");
+
+        // Un clic sur la poignée prend le bloc et ouvre son menu ; « Titre 2 » le transforme.
+        hover(cx, "Deux");
+        let (grip, _) = handle(cx);
+        cx.simulate_click(grip.center(), none);
+        assert!(shell.read_with(cx, |s, _| s.menu.as_ref().is_some_and(|m| m.block)));
+        assert_eq!(shell.read_with(cx, |s, cx| s.editor.read(cx).selected().to_string()), "Deux");
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Block(editor::BlockOp::Turn(block::Turn::Heading(2))), None, window, cx));
+        assert_eq!(text(cx), "# Titre\n\nUn\n\n## Deux\n\n- a\n    - sous\n- b\n");
+        // Le même bloc, toujours visé : dupliqué, puis supprimé.
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Block(editor::BlockOp::Duplicate), None, window, cx));
+        assert_eq!(text(cx), "# Titre\n\nUn\n\n## Deux\n\n## Deux\n\n- a\n    - sous\n- b\n");
+        shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Block(editor::BlockOp::Delete), None, window, cx));
+        cx.simulate_keystrokes("secondary-z secondary-z secondary-z");
+        assert_eq!(text(cx), note);
+
+        // Alt+Bas descend le bloc du curseur d'un bloc, Alt+Haut le remonte ; un item, parmi les items.
+        load(cx, note);
+        let place = |cx: &mut gpui::VisualTestContext, needle: &str| {
+            let at = note.find(needle).unwrap();
+            shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.place_cursor(at, cx)));
+        };
+        place(cx, "Un");
+        cx.simulate_keystrokes("alt-down");
+        assert_eq!(text(cx), "# Titre\n\nDeux\n\nUn\n\n- a\n    - sous\n- b\n");
+        cx.simulate_keystrokes("alt-up");
+        assert_eq!(text(cx), note);
+        cx.simulate_keystrokes("alt-up");
+        assert_eq!(text(cx), note, "rien ne monte au-dessus du titre");
+        place(cx, "- a");
+        cx.simulate_keystrokes("alt-down");
+        assert_eq!(text(cx), "# Titre\n\nUn\n\nDeux\n\n- b\n- a\n    - sous\n");
+
+        // Le « + » pose une ligne sous le bloc, séparée comme ses voisins, et ouvre la liste `/`.
+        load(cx, note);
+        hover(cx, "Un");
+        let (_, plus) = handle(cx);
+        cx.simulate_click(plus.unwrap().center(), none);
+        assert_eq!(text(cx), "# Titre\n\nUn\n\n/\n\nDeux\n\n- a\n    - sous\n- b\n");
+        cx.simulate_input("h1");
+        cx.simulate_keystrokes("enter");
+        assert!(text(cx).starts_with("# Titre\n\nUn\n\n# "), "{}", text(cx));
         fs::remove_dir_all(&root).unwrap();
     }
 

@@ -73,6 +73,8 @@ pub struct Menu {
     pub text: Option<Option<Link>>,
     /// Ce clic droit dans la note vise un commentaire.
     pub commented: bool,
+    /// Ouvert par la poignée d'un bloc : les gestes du bloc.
+    pub block: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -114,6 +116,8 @@ pub enum Do {
     Plain,
     /// Un geste sur le tableau du curseur.
     Table(editor::TableOp),
+    /// Un geste sur le bloc de la poignée.
+    Block(editor::BlockOp),
     OpenLink,
     CopyAddress,
 }
@@ -148,6 +152,7 @@ impl Do {
             Do::Tasks => of(cx, &editor::ListTask),
             Do::Plain => of(cx, &editor::ListText),
             Do::Table(op) => of(cx, op.action().as_ref()),
+            Do::Block(op) => of(cx, op.action().as_ref()),
             // Pas une liaison, mais le geste qui fait la même chose.
             Do::OpenLink => format!("{}+{}", crate::MOD, tr("click", "clic")),
             _ => String::new(),
@@ -861,6 +866,7 @@ impl Shell {
             (Do::Tasks, _) => Some(Box::new(editor::ListTask)),
             (Do::Plain, _) => Some(Box::new(editor::ListText)),
             (Do::Table(op), _) => Some(op.action()),
+            (Do::Block(op), _) => Some(op.action()),
             (Do::OpenLink, Some(link)) => return self.follow(&link, window, cx),
             (Do::CopyAddress, Some(Link::Url(url))) => return cx.write_to_clipboard(ClipboardItem::new_string(url)),
             _ => None,
@@ -1171,7 +1177,16 @@ impl Shell {
         let many = menu.target.as_ref().is_some_and(|p| self.nav.marked.contains(p)) && self.nav.marked.len() > 1;
         // Groupes d'entrées ; un trait sépare ceux qui en ont.
         let mut groups: Vec<Vec<(&'static str, Do)>> = vec![Vec::new(); 7];
-        if let Some(link) = &menu.text {
+        if menu.block {
+            // La poignée d'un bloc : ce qu'il peut devenir, le déplacer ou le doubler, le copier, le supprimer.
+            use editor::BlockOp;
+            groups[0].extend(BlockOp::ALL.into_iter().filter(|op| matches!(op, BlockOp::Turn(_))).map(|op| (op.label(), Do::Block(op))));
+            groups[1].extend([BlockOp::Duplicate, BlockOp::Up, BlockOp::Down].map(|op| (op.label(), Do::Block(op))));
+            groups[2].push((tr("Copy", "Copier"), Do::Copy));
+            groups[2].push((tr("Cut", "Couper"), Do::Cut));
+            groups[2].push((tr("Comment", "Commenter"), Do::Comment));
+            groups[3].push((BlockOp::Delete.label(), Do::Block(BlockOp::Delete)));
+        } else if let Some(link) = &menu.text {
             let web = matches!(link, Some(Link::Url(_)));
             if link.is_some() {
                 groups[0].push((tr("Open the link", "Ouvrir le lien"), Do::OpenLink));
@@ -1729,7 +1744,7 @@ impl Shell {
                                 }
                                 // Un tag n'a qu'une entrée : la liste de ses notes.
                                 if this.vault.as_ref().is_some_and(|root| target.starts_with(root)) || tag_of(&target).is_some() {
-                                    this.menu = Some(Menu { at: e.position, target: Some(target.clone()), text: None, commented: false });
+                                    this.menu = Some(Menu { at: e.position, target: Some(target.clone()), text: None, commented: false, block: false });
                                 }
                                 window.focus(&this.nav.focus);
                                 cx.stop_propagation();
@@ -1982,7 +1997,7 @@ impl Shell {
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(|this, e: &MouseDownEvent, _, cx| {
-                        this.menu = Some(Menu { at: e.position, target: None, text: None, commented: false });
+                        this.menu = Some(Menu { at: e.position, target: None, text: None, commented: false, block: false });
                         cx.notify();
                     }),
                 )
