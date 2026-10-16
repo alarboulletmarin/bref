@@ -5148,6 +5148,16 @@ fn skip_absent_nvidia_driver() {
 fn main() {
     #[cfg(target_os = "linux")]
     skip_absent_nvidia_driver();
+    // Sous Windows l'app n'a pas de console : une panique la fermerait sans laisser de trace.
+    // Elle est ajoutée à `crash.log`, dans le dossier de config, avant le message habituel.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let dir = vault::config_dir().join("bref");
+        let line = format!("{} {info}\n{}\n", env!("CARGO_PKG_VERSION"), std::backtrace::Backtrace::force_capture());
+        let _ = fs::create_dir_all(&dir);
+        let _ = fs::OpenOptions::new().create(true).append(true).open(dir.join("crash.log")).and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+        default_hook(info);
+    }));
     Application::new().with_assets(Assets).run(|cx: &mut App| {
         bind_keys(cx);
         init_fonts(cx);
@@ -9549,6 +9559,82 @@ mod tests {
         cx.simulate_click(at, gpui::Modifiers::none());
         cx.run_until_parked();
         assert_eq!(text_of(cx), "x");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Créer, ouvrir, marquer et jeter dans le désordre, vite : l'app ne doit jamais tomber.
+    #[gpui::test]
+    fn create_and_trash_in_bursts(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("bref-burst-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("Dossier")).unwrap();
+        let _config = isolated_config(&root);
+        cx.update(bind_keys);
+        cx.update(init_fonts);
+        let (shell, cx) = cx.add_window_view({
+            let root = root.clone();
+            |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+        });
+        shell.update(cx, |s, _| s.nav.panel = nav::Panel::Split);
+        cx.run_until_parked();
+        let mut seed = 0x9E3779B97F4A7C15u64;
+        let mut next = move |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        for step in 0..1500 {
+            let rows = shell.read_with(cx, |s, _| s.nav.rows.len());
+            match next(12) {
+                0..=2 => {
+                    cx.simulate_keystrokes("secondary-n");
+                    cx.simulate_input(&format!("# Note {}", next(20)));
+                }
+                3 => cx.simulate_input("x"),
+                4 | 5 if rows > 0 => {
+                    let ix = next(rows);
+                    shell.update_in(cx, |s, window, cx| {
+                        window.focus(&s.nav.focus);
+                        s.nav.marked.clear();
+                        s.nav.sel = Some(s.nav.rows[ix].path.clone());
+                    });
+                    cx.simulate_keystrokes("delete");
+                }
+                6 if rows > 1 => {
+                    let (a, b) = (next(rows), next(rows));
+                    shell.update_in(cx, |s, window, cx| {
+                        window.focus(&s.nav.focus);
+                        s.nav.marked.clear();
+                        s.nav.sel = Some(s.nav.rows[a].path.clone());
+                        s.nav_mark(b, step % 2 == 0, cx);
+                    });
+                    cx.simulate_keystrokes("delete");
+                }
+                7 if rows > 0 => {
+                    let ix = next(rows);
+                    shell.update_in(cx, |s, window, cx| {
+                        let path = s.nav.rows[ix].path.clone();
+                        s.open_from_nav(&path, window, cx);
+                    });
+                }
+                8 => {
+                    let name = format!("Dossier {}", next(3));
+                    let _ = fs::create_dir(root.join(&name));
+                    let _ = fs::write(root.join(&name).join(format!("N{}.md", next(5))), "# n\n");
+                    shell.update(cx, |s, cx| {
+                        let (notes, dirs, images) = vault::scan(&root);
+                        s.sync(notes, dirs, images, cx);
+                    });
+                }
+                9 => cx.simulate_keystrokes(["up", "down", "secondary-z", "secondary-shift-z", "escape"][next(5)]),
+                10 => shell.update(cx, |s, _| s.nav.mode = [nav::Mode::Tree, nav::Mode::Recent][next(2)]),
+                _ => cx.executor().advance_clock(Duration::from_millis(100 * next(8) as u64)),
+            }
+            cx.run_until_parked();
+        }
+        let thrown = fs::read_dir(root.join(".trash")).unwrap().count();
+        assert!(thrown > 50, "{thrown} éléments jetés");
         let _ = fs::remove_dir_all(&root);
     }
 }
