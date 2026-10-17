@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::{
-    diagram::{COLORS, Diagram, End, Form, Head, RULE, Route},
-    tr,
+    logic::diagram::{COLORS, Diagram, End, Form, Head, RULE, Route},
+    lang::tr,
 };
 
 /// Rang de la couleur de Bref la plus proche de `#rrggbb` ; le noir, le blanc

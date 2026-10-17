@@ -1,45 +1,37 @@
 // Pas de console derrière la fenêtre sous Windows.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-mod block;
-mod canvas;
-mod commands;
-mod diagram;
-mod editor;
-mod figure;
-mod git;
-mod graph;
-mod grid;
-mod history;
-mod import;
-mod kanban;
 mod keys;
-mod line;
-mod markdown;
-mod nav;
-mod palette;
-mod recall;
-mod sheet;
-mod svg;
-mod table;
-mod update;
-mod vault;
-mod viewer;
+mod lang;
+mod logic;
+mod platform;
+mod ui;
+mod views;
+
+use lang::{date_name, time_name, tr};
+use logic::{commands, diagram, history, import, markdown, prefs::Prefs, recall, table};
+use platform::{clock::{clock, today}, git, update, vault};
+use ui::{
+    assets::{Assets, FAMILIES, init_fonts, apply_fonts, logo, mono, sans},
+    figure, line,
+    theme::{Page, THEMES, Theme, Wide},
+    widgets::{drag_window, icon_button},
+};
+use views::{canvas, editor, graph, kanban, nav, palette, sheet, viewer};
 
 use std::{
-    borrow::Cow,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock, RwLock},
+    sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
 
 use gpui::{
-    Animation, AnimationExt, App, Application, AssetSource, Bounds, BoxShadow, ClipboardItem, Context,
-    CursorStyle, Decorations, Entity, FocusHandle, Focusable, Hsla, KeyBinding, MouseButton,
-    MouseMoveEvent, ObjectFit, PathPromptOptions, Pixels, Point, ResizeEdge, SharedString, Size, TitlebarOptions,
+    Animation, AnimationExt, App, Application, Bounds, BoxShadow, ClipboardItem, Context,
+    CursorStyle, Decorations, Entity, FocusHandle, Focusable, KeyBinding, MouseButton,
+    MouseMoveEvent, ObjectFit, PathPromptOptions, Pixels, Point, ResizeEdge, Size, TitlebarOptions,
     Transformation,
-    Window, WindowAppearance, WindowBounds, WindowBackgroundAppearance, WindowDecorations,
+    Window, WindowBounds, WindowBackgroundAppearance, WindowDecorations,
     WindowOptions, actions, div, ease_out_quint, hsla, img, percentage, point, prelude::*, px, rgb, size, svg,
 };
 
@@ -53,563 +45,20 @@ use nav::{Mode, Nav, Panel};
 use palette::{Entry, Palette, PaletteEvent, Setting, TemplateAct};
 use sheet::{Pick, Sheet, SheetEvent};
 use table::{Encoding, Format, Style};
-use vault::Note;
+use logic::note::Note;
 
 /// Touche des raccourcis, telle qu'affichée : Cmd sur macOS, Ctrl ailleurs.
 pub const MOD: &str = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" };
-
-/// Texte d'interface : français si la langue du système l'est, anglais sinon.
-pub fn tr(en: &'static str, fr: &'static str) -> &'static str {
-    static FRENCH: OnceLock<bool> = OnceLock::new();
-    // Les tests tournent en français pour rester déterministes.
-    if *FRENCH.get_or_init(|| cfg!(test) || system_is_french()) { fr } else { en }
-}
-
-/// Les variables de locale d'abord (lancement depuis un terminal), sinon le système :
-/// une application lancée depuis le Finder ou le menu Démarrer n'en reçoit aucune.
-fn system_is_french() -> bool {
-    match ["LC_ALL", "LC_MESSAGES", "LANG"]
-        .iter()
-        .find_map(|key| std::env::var(key).ok().filter(|v| !v.is_empty()))
-    {
-        Some(lang) => lang.starts_with("fr"),
-        None => os_language_is_french(),
-    }
-}
-
-#[cfg(windows)]
-fn os_language_is_french() -> bool {
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn GetUserDefaultUILanguage() -> u16;
-    }
-    // Un LANGID : les 10 bits de poids faible donnent la langue (0x0c : français).
-    (unsafe { GetUserDefaultUILanguage() } & 0x3ff) == 0x0c
-}
-
-#[cfg(target_os = "macos")]
-fn os_language_is_french() -> bool {
-    std::process::Command::new("defaults")
-        .args(["read", "-g", "AppleLanguages"])
-        .output()
-        .ok()
-        .and_then(|out| first_language(&String::from_utf8_lossy(&out.stdout)).map(|l| l.starts_with("fr")))
-        .unwrap_or(false)
-}
-
-// ponytail: sous Linux, seules les variables d'environnement comptent (le système
-// n'en offre pas d'autre) ; sous macOS la langue vient d'un appel à `defaults` au démarrage.
-#[cfg(not(any(windows, target_os = "macos")))]
-fn os_language_is_french() -> bool {
-    false
-}
-
-/// Première langue de la liste que `defaults read -g AppleLanguages` imprime :
-/// `(\n    "fr-FR",\n    "en-US"\n)`, avec ou sans guillemets.
-#[cfg(any(target_os = "macos", test))]
-fn first_language(list: &str) -> Option<&str> {
-    list.lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty() && *l != "(" && *l != ")")
-        .map(|l| l.trim_end_matches(',').trim_matches('"'))
-}
 
 /// Le nombre de la pastille des commentaires : « 9+ » au-delà de neuf, pour qu'elle reste ronde.
 fn badge_label(count: usize) -> String {
     if count > 9 { "9+".into() } else { count.to_string() }
 }
 
-/// Date du jour à l'heure locale : année, mois, jour. La bibliothèque standard ne donne que l'UTC.
-#[cfg(unix)]
-pub fn today() -> (i32, u32, u32) {
-    // SAFETY: `time` accepte un pointeur nul ; `localtime_r` n'écrit que dans `tm`, qui est à nous.
-    let tm = unsafe {
-        let now = libc::time(std::ptr::null_mut());
-        let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&now, &mut tm);
-        tm
-    };
-    (tm.tm_year + 1900, tm.tm_mon as u32 + 1, tm.tm_mday as u32)
-}
-
-/// L'heure locale, `09:05` : heures et minutes.
-#[cfg(unix)]
-pub fn clock() -> (u32, u32) {
-    // SAFETY: comme `today`, `localtime_r` n'écrit que dans `tm`, qui est à nous.
-    let tm = unsafe {
-        let now = libc::time(std::ptr::null_mut());
-        let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&now, &mut tm);
-        tm
-    };
-    (tm.tm_hour as u32, tm.tm_min as u32)
-}
-
-#[cfg(windows)]
-pub fn clock() -> (u32, u32) {
-    #[repr(C)]
-    #[derive(Default)]
-    #[allow(dead_code)]
-    struct Local {
-        year: u16,
-        month: u16,
-        day_of_week: u16,
-        day: u16,
-        hour: u16,
-        minute: u16,
-        second: u16,
-        millis: u16,
-    }
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn GetLocalTime(time: *mut Local);
-    }
-    let mut now = Local::default();
-    // SAFETY: `GetLocalTime` remplit la structure qu'on lui donne, et n'échoue pas.
-    unsafe { GetLocalTime(&mut now) };
-    (now.hour as u32, now.minute as u32)
-}
-
-#[cfg(windows)]
-pub fn today() -> (i32, u32, u32) {
-    /// `SYSTEMTIME` de l'API Windows : huit mots de 16 bits.
-    #[repr(C)]
-    #[derive(Default)]
-    #[allow(dead_code)]
-    struct Local {
-        year: u16,
-        month: u16,
-        day_of_week: u16,
-        day: u16,
-        hour: u16,
-        minute: u16,
-        second: u16,
-        millis: u16,
-    }
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn GetLocalTime(time: *mut Local);
-    }
-    let mut now = Local::default();
-    // SAFETY: `GetLocalTime` remplit la structure qu'on lui donne, et n'échoue pas.
-    unsafe { GetLocalTime(&mut now) };
-    (now.year as i32, now.month as u32, now.day as u32)
-}
-
-/// `09:05` : l'heure telle qu'elle s'écrit dans un modèle.
-pub fn time_name((hour, minute): (u32, u32)) -> String {
-    format!("{hour:02}:{minute:02}")
-}
-
-/// `2026-10-09` : la date telle qu'elle s'écrit dans une note et nomme la note du jour.
-pub fn date_name((year, month, day): (i32, u32, u32)) -> String {
-    format!("{year:04}-{month:02}-{day:02}")
-}
-
-/// Polices installées, relevées au démarrage.
-static FAMILIES: OnceLock<Vec<&'static str>> = OnceLock::new();
-
-/// Polices (texte, code) en usage : celles choisies, sinon celles par défaut.
-static FONTS: RwLock<(&str, &str)> = RwLock::new(("IBM Plex Sans", "IBM Plex Mono"));
-
-/// IBM Plex Sans et Plex Mono (licence SIL OFL, `assets/fonts/`), dans le binaire : l'app
-/// a ses polices sans rien installer. Des polices statiques, car gpui 0.2 ne met pas en
-/// gras une police variable.
-pub const FONT_FILES: [&[u8]; 8] = [
-    include_bytes!("../assets/fonts/IBMPlexSans-Regular.ttf"),
-    include_bytes!("../assets/fonts/IBMPlexSans-Italic.ttf"),
-    include_bytes!("../assets/fonts/IBMPlexSans-Bold.ttf"),
-    include_bytes!("../assets/fonts/IBMPlexSans-BoldItalic.ttf"),
-    include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf"),
-    include_bytes!("../assets/fonts/IBMPlexMono-Italic.ttf"),
-    include_bytes!("../assets/fonts/IBMPlexMono-Bold.ttf"),
-    include_bytes!("../assets/fonts/IBMPlexMono-BoldItalic.ttf"),
-];
-
-pub fn sans() -> &'static str {
-    FONTS.read().unwrap().0
-}
-
-pub fn mono() -> &'static str {
-    FONTS.read().unwrap().1
-}
-
-fn init_fonts(cx: &mut App) {
-    cx.text_system().add_fonts(FONT_FILES.iter().map(|f| Cow::Borrowed(*f)).collect()).ok();
-    FAMILIES.get_or_init(|| {
-        let names: &'static [String] = cx.text_system().all_font_names().leak();
-        names.iter().map(String::as_str).collect()
-    });
-}
-
-/// Met en usage les polices des réglages (n'importe quelle police installée) ; à
-/// défaut, celles de l'app.
-fn apply_fonts(prefs: &Prefs) {
-    let installed = FAMILIES.get().map_or(&[][..], Vec::as_slice);
-    let pick = |chosen: &str, wanted: &[&'static str]| {
-        let known = |name: &str| installed.iter().copied().find(|i| *i == name);
-        known(chosen)
-            .or_else(|| wanted.iter().find_map(|w| known(w)))
-            .unwrap_or(wanted[0])
-    };
-    *FONTS.write().unwrap() = (pick(&prefs.font, &["IBM Plex Sans"]), pick(&prefs.mono, &["IBM Plex Mono"]));
-}
-
-/// Apparence choisie par l'utilisateur ; un champ vide garde la valeur par défaut.
-#[derive(Clone, Debug, PartialEq)]
-struct Prefs {
-    theme: String,
-    font: String,
-    mono: String,
-    /// Taille du texte courant de la note, en pixels.
-    size: f32,
-    /// Chercher une nouvelle version de l'app (une requête par jour).
-    updates: bool,
-    /// Largeur de la colonne de texte et place des grands tableaux (clés de `editor::Page` et
-    /// `editor::Wide`) ; vide : le choix par défaut.
-    page: String,
-    wide: String,
-    /// Barre de mise en forme du bas de la note : `off` la cache, le reste l'affiche.
-    bar: String,
-}
-
-impl Prefs {
-    const SIZE: f32 = 16.;
-
-    fn parse(text: &str) -> Self {
-        let mut prefs =
-            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true, page: String::new(), wide: String::new(), bar: String::new() };
-        for (key, value) in text.lines().filter_map(|line| line.split_once('=')) {
-            match key {
-                "theme" => prefs.theme = value.into(),
-                "font" => prefs.font = value.into(),
-                "mono" => prefs.mono = value.into(),
-                "size" => prefs.size = value.parse().ok().filter(|s: &f32| s.is_finite()).unwrap_or(Self::SIZE),
-                "updates" => prefs.updates = value != "off",
-                "page" => prefs.page = value.into(),
-                "wide" => prefs.wide = value.into(),
-                "bar" => prefs.bar = value.into(),
-                _ => {}
-            }
-        }
-        prefs.size = prefs.size.clamp(11., 32.);
-        prefs
-    }
-
-    fn to_text(&self) -> String {
-        let mut text = format!("theme={}\nfont={}\nmono={}\nsize={}\n", self.theme, self.font, self.mono, self.size);
-        // Absent tant qu'on ne l'a pas coupé : la valeur par défaut n'encombre pas le fichier.
-        if !self.updates {
-            text.push_str("updates=off\n");
-        }
-        for (key, value) in [("page", &self.page), ("wide", &self.wide), ("bar", &self.bar)] {
-            if !value.is_empty() {
-                text.push_str(&format!("{key}={value}\n"));
-            }
-        }
-        text
-    }
-}
-
 /// Marge transparente autour de la fenêtre quand l'app dessine ses décorations.
 const SHADOW: Pixels = px(10.);
 
-/// Icônes embarquées dans le binaire (traits de 1,2 px sur une grille de 16 px).
-struct Assets;
-
-impl AssetSource for Assets {
-    fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
-        let shapes = match path {
-            "minimize.svg" => r#"<path d="M4 8H12"/>"#,
-            "maximize.svg" => r#"<path d="M4.5 4.5H11.5V11.5H4.5Z"/>"#,
-            "restore.svg" => r#"<path d="M3.5 6.5H9.5V12.5H3.5Z"/><path d="M10 8.5H12.5V3.5H7.5V6"/>"#,
-            "close.svg" => r#"<path d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5"/>"#,
-            "copy.svg" => {
-                r#"<rect x="6" y="6" width="7.5" height="7.5" rx="1.5"/><path d="M10 4A1.5 1.5 0 0 0 8.5 2.5H4A1.5 1.5 0 0 0 2.5 4V8.5A1.5 1.5 0 0 0 4 10"/>"#
-            }
-            "check.svg" => r#"<path d="M4 8.5L7 11L12 5"/>"#,
-            "board.svg" => r#"<rect x="2.5" y="3" width="3" height="10" rx="0.8"/><rect x="6.5" y="3" width="3" height="7" rx="0.8"/><rect x="10.5" y="3" width="3" height="4.5" rx="0.8"/>"#,
-            // Les icônes des commandes de la palette et de la barre d'un tableau.
-            "c-bold.svg" => r#"<path d="M5 3.5H9A2.2 2.2 0 0 1 9 8H5ZM5 8H9.6A2.25 2.25 0 0 1 9.6 12.5H5Z"/>"#,
-            "c-italic.svg" => r#"<path d="M7 3.5H12M4 12.5H9M9.5 3.5L6.5 12.5"/>"#,
-            "c-underline.svg" => r#"<path d="M4.5 3V7.5A3.5 3.5 0 0 0 11.5 7.5V3M3.5 13.5H12.5"/>"#,
-            "c-strike.svg" => r#"<path d="M11 4.5C10.5 3.6 9.4 3 8 3C6.3 3 5 3.9 5 5.2C5 6.3 5.9 6.9 7 7.3M3 8.5H13M10.2 9.5C10.7 10 11 10.5 11 11.1C11 12.4 9.7 13.2 8 13.2C6.4 13.2 5.2 12.6 4.7 11.6"/>"#,
-            "c-highlight.svg" => r#"<path d="M9.5 3L13 6.5L7.5 12H4V8.5ZM3 13.5H13"/>"#,
-            "c-heading.svg" => r#"<path d="M3 3.5V12.5M9 3.5V12.5M3 8H9M11.5 8.5L13 7.5V12.5"/>"#,
-            "c-text.svg" => r#"<path d="M3.5 4.5V3.5H12.5V4.5M8 3.5V12.5M6.5 12.5H9.5"/>"#,
-            "c-quote.svg" => r#"<path d="M3.5 3.5V12.5M6.5 5H12.5M6.5 8H12.5M6.5 11H10.5"/>"#,
-            "c-up.svg" => r#"<path d="M8 12.5V3.5M4.5 7L8 3.5L11.5 7"/>"#,
-            "c-down.svg" => r#"<path d="M8 3.5V12.5M4.5 9L8 12.5L11.5 9"/>"#,
-            "c-left.svg" => r#"<path d="M12.5 8H3.5M7 4.5L3.5 8L7 11.5"/>"#,
-            "c-right.svg" => r#"<path d="M3.5 8H12.5M9 4.5L12.5 8L9 11.5"/>"#,
-            "c-ins-left.svg" => r#"<rect x="7.5" y="2.5" width="6" height="11" rx="1"/><path d="M2.5 8H5.5M4 6.5V9.5"/>"#,
-            "c-ins-right.svg" => r#"<rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M10.5 8H13.5M12 6.5V9.5"/>"#,
-            "c-ins-above.svg" => r#"<rect x="2.5" y="7.5" width="11" height="6" rx="1"/><path d="M8 2.5V5.5M6.5 4H9.5"/>"#,
-            "c-ins-below.svg" => r#"<rect x="2.5" y="2.5" width="11" height="6" rx="1"/><path d="M8 10.5V13.5M6.5 12H9.5"/>"#,
-            "c-sort-az.svg" => r#"<path d="M2.5 12L4.5 5L6.5 12M3.2 9.8H5.8M9 5H12.5L9 12H12.5"/>"#,
-            "c-sort-za.svg" => r#"<path d="M2.5 5H6L2.5 12H6M9 12L11 5L13 12M9.7 9.8H12.3"/>"#,
-            "c-transpose.svg" => r#"<path d="M3.5 3.5H9.5M3.5 3.5V9.5M12.5 6.5V12.5H6.5M11 11L5 5"/>"#,
-            "c-select-row.svg" => r#"<rect x="2.5" y="6" width="11" height="4" rx="1"/><path d="M2.5 3H13.5M2.5 13H13.5"/>"#,
-            "c-select-col.svg" => r#"<rect x="6" y="2.5" width="4" height="11" rx="1"/><path d="M3 2.5V13.5M13 2.5V13.5"/>"#,
-            "c-cut.svg" => r#"<circle cx="4.5" cy="11.5" r="1.8"/><circle cx="11.5" cy="11.5" r="1.8"/><path d="M5.8 10.2L11.5 3M10.2 10.2L4.5 3"/>"#,
-            "c-paste.svg" => r#"<rect x="3.5" y="3" width="9" height="10.5" rx="1.5"/><path d="M6 3V2.5H10V3M6 7H10M6 10H9"/>"#,
-            "c-undo.svg" => r#"<path d="M5.5 4L3 6.5L5.5 9M3 6.5H9.5A3 3 0 0 1 9.5 12.5H6"/>"#,
-            "c-redo.svg" => r#"<path d="M10.5 4L13 6.5L10.5 9M13 6.5H6.5A3 3 0 0 0 6.5 12.5H10"/>"#,
-            "c-comment.svg" => r#"<path d="M3 4A1.5 1.5 0 0 1 4.5 2.5H11.5A1.5 1.5 0 0 1 13 4V9.5A1.5 1.5 0 0 1 11.5 11H7L4 13.5V11H4.5A1.5 1.5 0 0 1 3 9.5Z"/>"#,
-            "c-outline.svg" => r#"<path d="M3 4H13M5.5 8H13M8 12H13"/>"#,
-            "c-calendar.svg" => r#"<rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5H13.5M5.5 2.5V4.5M10.5 2.5V4.5"/>"#,
-            "c-split.svg" => r#"<rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M8 3V13"/>"#,
-            "c-zoom-in.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.3 7H8.7M7 5.3V8.7"/>"#,
-            "c-zoom-out.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.3 7H8.7"/>"#,
-            "c-zoom-reset.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.5 7H8.5M5.5 7.01"/>"#,
-            "c-quit.svg" => r#"<path d="M9.5 3H12.5V13H9.5M6.5 5L3.5 8L6.5 11M3.5 8H10"/>"#,
-            // Trois traits : le menu de toutes les commandes.
-            "menu.svg" => r#"<path d="M3 4.5H13M3 8H13M3 11.5H13"/>"#,
-            "info.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 7.5V11M8 5V5.2"/>"#,
-            "alert.svg" => r#"<path d="M8 2.5L14 13H2ZM8 6.5V9.5M8 11.3V11.5"/>"#,
-            "spinner.svg" => r#"<path d="M8 2.5A5.5 5.5 0 1 1 2.5 8"/>"#,
-            "tree.svg" => r#"<path d="M3 3.5H10M3 3.5V12H6M3 7.75H6M8.5 7.75H13M8.5 12H13"/>"#,
-            "clock.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 5V8L10 9.5"/>"#,
-            "search.svg" => r#"<circle cx="7" cy="7" r="3.5"/><path d="M9.7 9.7L12.5 12.5"/>"#,
-            "plus.svg" => r#"<path d="M8 3.5V12.5M3.5 8H12.5"/>"#,
-            // Six points : la poignée d'un bloc.
-            "grip.svg" => r#"<path d="M6 3.5V3.6M10 3.5V3.6M6 8V8.1M10 8V8.1M6 12.5V12.6M10 12.5V12.6" stroke-width="2.2"/>"#,
-            "help.svg" => {
-                r#"<circle cx="8" cy="8" r="5.5"/><path d="M6.4 6.6A1.6 1.6 0 1 1 8 8.4V9.2M8 11.2V11.3"/>"#
-            }
-            "chevron-right.svg" => r#"<path d="M6.5 4.5L10 8L6.5 11.5"/>"#,
-            "chevron-left.svg" => r#"<path d="M9.5 4.5L6 8L9.5 11.5"/>"#,
-            "chevron-down.svg" => r#"<path d="M4.5 6.5L8 10L11.5 6.5"/>"#,
-            "graph.svg" => {
-                r#"<circle cx="4" cy="11.5" r="1.7"/><circle cx="11.5" cy="4.5" r="1.7"/><circle cx="12" cy="12" r="1.3"/><path d="M5.3 10.3L10.2 5.7M11.6 6.2L11.9 10.7"/>"#
-            }
-            "tag.svg" => r#"<path d="M6.5 3L5 13M11 3L9.5 13M3.5 6H13M3 10H12.5"/>"#,
-            "trash.svg" => r#"<path d="M3 4.5H13M6.5 4.5V3H9.5V4.5M4.5 4.5L5 13H11L11.5 4.5M6.8 7V10.5M9.2 7V10.5"/>"#,
-            // Une flèche vers un disque : une copie mise à l'abri, pas une boîte d'archives.
-            "backup.svg" => {
-                r#"<path d="M8 2V8M5.5 5.5L8 8L10.5 5.5"/><rect x="2.5" y="9.5" width="11" height="4" rx="1"/><path d="M11 11.5H11.2"/>"#
-            }
-            "backlink.svg" => r#"<path d="M13 4.5H8.5A3 3 0 0 0 5.5 7.5V11.5M3 9L5.5 11.5L8 9"/>"#,
-            "code.svg" => r#"<path d="M5.5 4.5L2.5 8L5.5 11.5M10.5 4.5L13.5 8L10.5 11.5"/>"#,
-            "list-bullet.svg" => r#"<path d="M6.5 4H13.5M6.5 8H13.5M6.5 12H13.5M3 4H3.1M3 8H3.1M3 12H3.1"/>"#,
-            "list-number.svg" => r#"<path d="M7 4H13.5M7 8H13.5M7 12H13.5M2.7 3.6L3.8 3V5.4M2.7 8.4A1 1 0 0 1 4.4 9C4.4 9.7 3 10.4 2.7 11H4.5"/>"#,
-            "list-task.svg" => r#"<rect x="2.5" y="2.5" width="3.5" height="3.5" rx="0.8"/><path d="M3.2 4.3L4 5L5.4 3.4M8 4.3H13.5M8 11.7H13.5"/><rect x="2.5" y="10" width="3.5" height="3.5" rx="0.8"/>"#,
-            "table.svg" => r#"<rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5H13.5M2.5 9.8H13.5M7 3V13"/>"#,
-            "row-add.svg" => r#"<rect x="2.5" y="2.5" width="11" height="6" rx="1"/><path d="M2.5 5.5H13.5M8 10.6V13.8M6.4 12.2H9.6"/>"#,
-            "col-add.svg" => r#"<rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M5.5 2.5V13.5M12 6.4V9.6M10.4 8H13.6"/>"#,
-            "row-del.svg" => r#"<rect x="2.5" y="2.5" width="11" height="6" rx="1"/><path d="M2.5 5.5H13.5M6.4 12.2H9.6"/>"#,
-            "col-del.svg" => r#"<rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M5.5 2.5V13.5M10.4 8H13.6"/>"#,
-            "format.svg" => r#"<path d="M4 11.5L8 3L12 11.5M5.4 8.4H10.6M3 14H13"/>"#,
-            "link.svg" => r#"<path d="M6.9 9.1A2.4 2.4 0 0 0 10.3 9.1L12.2 7.2A2.4 2.4 0 0 0 8.8 3.8L8 4.6M9.1 6.9A2.4 2.4 0 0 0 5.7 6.9L3.8 8.8A2.4 2.4 0 0 0 7.2 12.2L8 11.4"/>"#,
-            "heart.svg" => {
-                r#"<path d="M8 13C3.5 9.8 2.5 7.6 2.5 5.9A2.6 2.6 0 0 1 8 4.9A2.6 2.6 0 0 1 13.5 5.9C13.5 7.6 12.5 9.8 8 13Z"/>"#
-            }
-            "d-select.svg" => r#"<path d="M4 3V12L6.5 9.8L8.2 13.2L9.6 12.5L7.9 9.2L11 9Z"/>"#,
-            "d-rect.svg" => r#"<rect x="2.5" y="4" width="11" height="8" rx="0.5"/>"#,
-            "d-round.svg" => r#"<rect x="2.5" y="4" width="11" height="8" rx="3"/>"#,
-            "d-ellipse.svg" => r#"<ellipse cx="8" cy="8" rx="5.5" ry="4"/>"#,
-            "d-diamond.svg" => r#"<path d="M8 2.5L13.5 8L8 13.5L2.5 8Z"/>"#,
-            "d-cylinder.svg" => {
-                r#"<ellipse cx="8" cy="4.5" rx="4.5" ry="1.8"/><path d="M3.5 4.5V11.5A4.5 1.8 0 0 0 12.5 11.5V4.5"/>"#
-            }
-            "d-actor.svg" => r#"<circle cx="8" cy="4" r="1.7"/><path d="M8 5.7V10M5 7.5H11M5.5 13.5L8 10L10.5 13.5"/>"#,
-            "d-note.svg" => r#"<path d="M3.5 3H10L12.5 5.5V13H3.5ZM10 3V5.5H12.5"/>"#,
-            "d-text.svg" => r#"<path d="M4 4.5V3.5H12V4.5M8 3.5V12.5M6.5 12.5H9.5"/>"#,
-            "d-arrow.svg" => r#"<path d="M3 13L13 3M7.5 3H13V8.5"/>"#,
-            "d-line.svg" => r#"<path d="M3 13L13 3"/>"#,
-            "d-route.svg" => r#"<path d="M2.5 12.5H8V3.5H13.5"/>"#,
-            "d-fill.svg" => r#"<rect x="3" y="3" width="10" height="10" rx="1.5" fill="black" fill-opacity="0.35"/>"#,
-            "d-dash.svg" => r#"<path d="M2.5 8H5M7 8H9M11 8H13.5"/>"#,
-            "d-head-start.svg" => r#"<path d="M13.5 8H3M6.5 4.5L3 8L6.5 11.5"/>"#,
-            "d-head-end.svg" => r#"<path d="M2.5 8H13M9.5 4.5L13 8L9.5 11.5"/>"#,
-            "export.svg" => r#"<path d="M8 2.5V10M5 7L8 10L11 7M3 13H13"/>"#,
-            "target.svg" => r#"<circle cx="8" cy="8" r="2"/><path d="M8 2.5V5M8 11V13.5M2.5 8H5M11 8H13.5"/>"#,
-            "file-plus.svg" => {
-                r#"<path d="M4 2.5H9L12.5 6V12.5A1 1 0 0 1 11.5 13.5H4.5A1 1 0 0 1 3.5 12.5V3.5A1 1 0 0 1 4.5 2.5Z"/><path d="M8 7.7V11M6.4 9.35H9.6"/>"#
-            }
-            "folder-plus.svg" => {
-                r#"<path d="M2.5 4.5A1 1 0 0 1 3.5 3.5H6.5L8 5H12.5A1 1 0 0 1 13.5 6V11.5A1 1 0 0 1 12.5 12.5H3.5A1 1 0 0 1 2.5 11.5Z"/><path d="M8 7.2V10.4M6.4 8.8H9.6"/>"#
-            }
-            "unfold.svg" => r#"<path d="M4.5 6.5L8 3.5L11.5 6.5M4.5 9.5L8 12.5L11.5 9.5"/>"#,
-            "fold.svg" => r#"<path d="M4.5 3.5L8 6.5L11.5 3.5M4.5 12.5L8 9.5L11.5 12.5"/>"#,
-            "expand.svg" => r#"<path d="M9.5 3.5H12.5V6.5M6.5 12.5H3.5V9.5M12.5 3.5L9 7M3.5 12.5L7 9"/>"#,
-            "shrink.svg" => r#"<path d="M12.5 6.5H9.5V3.5M3.5 9.5H6.5V12.5M9.5 6.5L13 3M6.5 9.5L3 13"/>"#,
-            "theme.svg" => {
-                r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="black"/>"#
-            }
-            // Les deux fiches de l'icône de l'app, pleines ; celle du dessous est estompée.
-            "logo.svg" => {
-                r#"<rect x="1.8" y="1.8" width="6.2" height="7.6" rx="1.4" transform="rotate(-7 5 5.5)" fill="black" stroke="none"/><rect x="8.3" y="6.6" width="6.2" height="7.6" rx="1.4" transform="rotate(7 11.4 10.4)" fill="black" stroke="none" opacity=".55"/>"#
-            }
-            // Les icônes qu'on donne aux notes et aux dossiers.
-            _ => match ICON_SET.iter().find(|(file, _)| *file == path) {
-                Some((_, shapes)) => shapes,
-                None => return Ok(None),
-            },
-        };
-        let svg = format!(
-            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">{shapes}</svg>"#
-        );
-        Ok(Some(Cow::Owned(svg.into_bytes())))
-    }
-
-    fn list(&self, _: &str) -> gpui::Result<Vec<SharedString>> {
-        Ok(Vec::new())
-    }
-}
-
-/// Icônes à donner à une note, un fichier ou un dossier : le fichier dessiné, et ses formes
-/// dans le carré de 16 des autres icônes. Le nom retenu est celui du fichier sans `i-` ni `.svg`.
-pub const ICON_SET: &[(&str, &str)] = &[
-    ("i-star.svg", r#"<path d="M8 2.5L9.7 6.1L13.6 6.6L10.7 9.3L11.5 13.2L8 11.3L4.5 13.2L5.3 9.3L2.4 6.6L6.3 6.1Z"/>"#),
-    ("i-heart.svg", r#"<path d="M8 13C8 13 2.5 9.8 2.5 6.2A2.8 2.8 0 0 1 8 5A2.8 2.8 0 0 1 13.5 6.2C13.5 9.8 8 13 8 13Z"/>"#),
-    ("i-bookmark.svg", r#"<path d="M4.5 2.5H11.5V13.5L8 11L4.5 13.5Z"/>"#),
-    ("i-flag.svg", r#"<path d="M4 13.5V2.5M4 3H12L10 5.75L12 8.5H4"/>"#),
-    ("i-pin.svg", r#"<path d="M8 14C8 14 3.5 9.8 3.5 6.5A4.5 4.5 0 0 1 12.5 6.5C12.5 9.8 8 14 8 14Z"/><circle cx="8" cy="6.5" r="1.5"/>"#),
-    ("i-target.svg", r#"<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.5"/><path d="M8 8V8.1"/>"#),
-    ("i-done.svg", r#"<circle cx="8" cy="8" r="5.5"/><path d="M5.5 8.2L7.3 10L10.5 6"/>"#),
-    ("i-bolt.svg", r#"<path d="M9 2L4 9H8L7 14L12 7H8Z"/>"#),
-    ("i-home.svg", r#"<path d="M2.5 7.5L8 3L13.5 7.5M4 6.5V13H12V6.5M6.8 13V9.5H9.2V13"/>"#),
-    ("i-book.svg", r#"<path d="M3.5 3H11.5A1 1 0 0 1 12.5 4V13H4.5A1 1 0 0 1 3.5 12ZM3.5 11.5A1 1 0 0 1 4.5 10.5H12.5M6 5.5H10"/>"#),
-    ("i-work.svg", r#"<rect x="2.5" y="5" width="11" height="8" rx="1"/><path d="M6 5V3.5H10V5M2.5 8.5H13.5"/>"#),
-    ("i-school.svg", r#"<path d="M1.5 6.5L8 3.5L14.5 6.5L8 9.5ZM4.5 8V11C4.5 12 6 12.8 8 12.8S11.5 12 11.5 11V8"/>"#),
-    ("i-calendar.svg", r#"<rect x="2.5" y="3.5" width="11" height="10" rx="1"/><path d="M2.5 6.5H13.5M5.5 2.5V4.5M10.5 2.5V4.5"/>"#),
-    ("i-clock.svg", r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 5V8L10 9.5"/>"#),
-    ("i-inbox.svg", r#"<path d="M2.5 9L4.5 3.5H11.5L13.5 9V12.5H2.5ZM2.5 9H6A2 2 0 0 0 10 9H13.5"/>"#),
-    ("i-archive.svg", r#"<path d="M2.5 3H13.5V6H2.5ZM3.5 6V13H12.5V6M6.5 8.5H9.5"/>"#),
-    ("i-idea.svg", r#"<path d="M6 11.5H10M6.5 13.5H9.5M5.5 9.5A4 4 0 1 1 10.5 9.5C10 10 10 10.5 10 11.5H6C6 10.5 6 10 5.5 9.5Z"/>"#),
-    ("i-rocket.svg", r#"<path d="M8 2C10.5 3.5 11.5 6 11 9.5L9.5 11H6.5L5 9.5C4.5 6 5.5 3.5 8 2ZM6.5 11L5 13.5M9.5 11L11 13.5M8 11V13.5"/><circle cx="8" cy="6.5" r="1"/>"#),
-    ("i-person.svg", r#"<circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5C3 10.8 5.2 9.5 8 9.5S13 10.8 13 13.5"/>"#),
-    ("i-chat.svg", r#"<path d="M2.5 3.5H13.5V10.5H7L4.5 13V10.5H2.5Z"/>"#),
-    ("i-mail.svg", r#"<rect x="2.5" y="3.5" width="11" height="9" rx="1"/><path d="M2.5 4.5L8 8.5L13.5 4.5"/>"#),
-    ("i-globe.svg", r#"<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8H13.5M8 2.5C6 4.5 6 11.5 8 13.5M8 2.5C10 4.5 10 11.5 8 13.5"/>"#),
-    ("i-plane.svg", r#"<path d="M14 2L2 7L6.5 9L8.5 14ZM6.5 9L14 2"/>"#),
-    ("i-cart.svg", r#"<path d="M2 3H4L5.5 10H12L13.5 5H4.5"/><circle cx="6.5" cy="12.5" r="1"/><circle cx="11" cy="12.5" r="1"/>"#),
-    ("i-money.svg", r#"<circle cx="8" cy="8" r="5.5"/><path d="M9.8 6.2C9.5 5.5 8.8 5.2 8 5.2C7 5.2 6.2 5.7 6.2 6.6C6.2 8.4 9.8 7.6 9.8 9.4C9.8 10.3 9 10.8 8 10.8C7.2 10.8 6.5 10.5 6.2 9.8M8 4V5.2M8 10.8V12"/>"#),
-    ("i-chart.svg", r#"<path d="M3 13.5V2.5M3 13.5H13.5M5.5 11V8M8 11V5M10.5 11V7"/>"#),
-    ("i-code.svg", r#"<path d="M5.5 4.5L2.5 8L5.5 11.5M10.5 4.5L13.5 8L10.5 11.5M9 3.5L7 12.5"/>"#),
-    ("i-terminal.svg", r#"<rect x="2.5" y="3" width="11" height="10" rx="1"/><path d="M5 6.5L7 8L5 9.5M8.5 10H11"/>"#),
-    ("i-data.svg", r#"<ellipse cx="8" cy="4" rx="4.5" ry="1.8"/><path d="M3.5 4V12C3.5 13 5.5 13.8 8 13.8S12.5 13 12.5 12V4M3.5 8C3.5 9 5.5 9.8 8 9.8S12.5 9 12.5 8"/>"#),
-    ("i-tool.svg", r#"<path d="M13 4.8A3 3 0 0 1 9 7.6L4.6 12.5A1.2 1.2 0 0 1 3 11L7.6 6.6A3 3 0 0 1 10.6 2.6L8.9 4.3L9.3 6.2L11.2 6.6Z"/>"#),
-    ("i-lock.svg", r#"<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5A2.5 2.5 0 0 1 10.5 5V7"/>"#),
-    ("i-key.svg", r#"<circle cx="5.5" cy="10.5" r="2.5"/><path d="M7.3 8.7L13 3M11 5L12.5 6.5M9.5 6.5L10.5 7.5"/>"#),
-    ("i-music.svg", r#"<path d="M6 12V4L12 3V11"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="10.5" cy="11" r="1.5"/>"#),
-    ("i-camera.svg", r#"<path d="M2.5 5.5H5L6 4H10L11 5.5H13.5V12.5H2.5Z"/><circle cx="8" cy="8.8" r="2"/>"#),
-    ("i-gift.svg", r#"<rect x="2.5" y="6" width="11" height="2.5"/><path d="M3.5 8.5V13.5H12.5V8.5M8 6V13.5M8 6C8 6 6 6 5.5 4.5C5.2 3.4 7 2.8 8 6ZM8 6C8 6 10 6 10.5 4.5C10.8 3.4 9 2.8 8 6Z"/>"#),
-    ("i-cup.svg", r#"<path d="M3.5 6H11V10.5A2.5 2.5 0 0 1 8.5 13H6A2.5 2.5 0 0 1 3.5 10.5ZM11 7H12A1.5 1.5 0 0 1 12 10H11M5.5 2.5V4M8.5 2.5V4"/>"#),
-    ("i-health.svg", r#"<path d="M6.5 2.5H9.5V6.5H13.5V9.5H9.5V13.5H6.5V9.5H2.5V6.5H6.5Z"/>"#),
-    ("i-leaf.svg", r#"<path d="M3 13C3 7 6 3 13 3C13 10 9 13 3 13ZM3 13L9 7"/>"#),
-    ("i-sun.svg", r#"<circle cx="8" cy="8" r="2.8"/><path d="M8 1.8V3.2M8 12.8V14.2M1.8 8H3.2M12.8 8H14.2M3.6 3.6L4.6 4.6M11.4 11.4L12.4 12.4M3.6 12.4L4.6 11.4M11.4 4.6L12.4 3.6"/>"#),
-    ("i-moon.svg", r#"<path d="M13 9.5A5.5 5.5 0 1 1 6.5 3A4.5 4.5 0 0 0 13 9.5Z"/>"#),
-];
-
-/// Le logo de l'app, discret : les deux fiches, à la couleur d'accent.
-pub fn logo(t: Theme) -> gpui::Svg {
-    svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
-}
-
 actions!(app, [ToggleCommands, SyncVault, SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewFromTemplate, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
-
-#[derive(Clone, Copy)]
-pub struct Theme {
-    pub bg: Hsla,
-    pub text: Hsla,
-    pub dim: Hsla,
-    /// Texte secondaire qui reste lisible (4,5:1 sur le fond et le panneau) : libellés, aides,
-    /// compteurs. `dim` reste aux marqueurs Markdown, qu'on n'a pas besoin de lire.
-    pub soft: Hsla,
-    pub accent: Hsla,
-    pub selection: Hsla,
-    pub code_bg: Hsla,
-    pub panel: Hsla,
-    pub border: Hsla,
-    /// Taille du texte courant de la note, en pixels.
-    pub size: f32,
-    pub page: editor::Page,
-    pub wide: editor::Wide,
-    /// Barre de mise en forme au bas de la note.
-    pub bar: bool,
-}
-
-/// Thèmes proposés : (nom, [fond, texte, discret, accent, fond du code, panneau, bordure]).
-/// Les deux premiers sont ceux de Bref, sombre et clair, qui suivent le système.
-const THEMES: &[(&str, [u32; 7])] = &[
-    ("Bref Dark", [0x1b1a19, 0xe4e0da, 0x77716a, 0xe0926b, 0x262423, 0x242221, 0x3a3735]),
-    ("Bref Light", [0xfbfaf8, 0x26231f, 0xa8a29a, 0xb4532a, 0xf1eeea, 0xffffff, 0xe2ddd6]),
-    ("Dracula", [0x282a36, 0xf8f8f2, 0x6272a4, 0xbd93f9, 0x21222c, 0x343746, 0x44475a]),
-    ("One Dark", [0x282c34, 0xabb2bf, 0x5c6370, 0x61afef, 0x21252b, 0x2c313a, 0x3e4451]),
-    ("Gruvbox Dark", [0x282828, 0xebdbb2, 0x928374, 0xfabd2f, 0x32302f, 0x3c3836, 0x504945]),
-    ("Nord", [0x2e3440, 0xd8dee9, 0x616e88, 0x88c0d0, 0x3b4252, 0x3b4252, 0x4c566a]),
-    ("Catppuccin Mocha", [0x1e1e2e, 0xcdd6f4, 0x6c7086, 0xcba6f7, 0x181825, 0x313244, 0x45475a]),
-    ("Tokyo Night", [0x1a1b26, 0xc0caf5, 0x565f89, 0x7aa2f7, 0x16161e, 0x24283b, 0x3b4261]),
-    ("Rosé Pine", [0x191724, 0xe0def4, 0x6e6a86, 0xebbcba, 0x1f1d2e, 0x26233a, 0x403d52]),
-    ("Solarized Dark", [0x002b36, 0x93a1a1, 0x586e75, 0x268bd2, 0x073642, 0x073642, 0x0a4856]),
-    ("Solarized Light", [0xfdf6e3, 0x586e75, 0x93a1a1, 0x268bd2, 0xeee8d5, 0xfffbf0, 0xd9d2c2]),
-    ("Catppuccin Latte", [0xeff1f5, 0x4c4f69, 0x9ca0b0, 0x8839ef, 0xe6e9ef, 0xffffff, 0xccd0da]),
-    ("Gruvbox Light", [0xfbf1c7, 0x3c3836, 0x928374, 0xb57614, 0xf2e5bc, 0xf9f5d7, 0xd5c4a1]),
-];
-
-impl Theme {
-    /// Le thème choisi ; à défaut, celui de Bref accordé à l'apparence du système.
-    fn of(prefs: &Prefs, appearance: WindowAppearance) -> Self {
-        let dark = matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark);
-        let system = &THEMES[if dark { 0 } else { 1 }];
-        let (_, colors) = THEMES.iter().find(|t| t.0 == prefs.theme).unwrap_or(system);
-        let [bg, text, dim, accent, code_bg, panel, border] = colors.map(|c| Hsla::from(rgb(c)));
-        // Le plus discret des gris entre texte et fond qui se lit encore sur l'un et l'autre fond.
-        let soft = (0..=20)
-            .map(|i| blend(text, bg, 0.5 + i as f32 * 0.025))
-            .find(|c| contrast(*c, bg) >= 4.5 && contrast(*c, panel) >= 4.5)
-            .unwrap_or(text);
-        Self {
-            bg,
-            text,
-            dim,
-            soft,
-            // Les liens et les tags s'écrivent dans l'accent : il doit se lire comme du texte.
-            accent: legible(legible(accent, bg), panel),
-            selection: accent.opacity(if bg.l < 0.5 { 0.25 } else { 0.2 }),
-            code_bg,
-            panel,
-            border,
-            size: prefs.size,
-            page: editor::Page::of(&prefs.page),
-            wide: editor::Wide::of(&prefs.wide),
-            bar: prefs.bar != "off",
-        }
-    }
-}
-
-/// Luminance relative d'une couleur, au sens des WCAG.
-fn luminance(color: Hsla) -> f32 {
-    let c = color.to_rgb();
-    let linear = |x: f32| if x <= 0.03928 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) };
-    0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
-}
-
-/// Rapport de contraste de deux couleurs (WCAG) : 4,5 au moins pour un texte courant.
-pub fn contrast(a: Hsla, b: Hsla) -> f32 {
-    let (a, b) = (luminance(a), luminance(b));
-    (a.max(b) + 0.05) / (a.min(b) + 0.05)
-}
-
-/// `color`, assombrie sur un fond clair ou éclaircie sur un fond sombre, juste assez pour se
-/// lire sur `bg` ; elle garde sa teinte.
-pub fn legible(color: Hsla, bg: Hsla) -> Hsla {
-    let step = if luminance(bg) > 0.18 { -0.02 } else { 0.02 };
-    let mut color = color;
-    while contrast(color, bg) < 4.5 && (0.0..=1.0).contains(&(color.l + step)) {
-        color.l += step;
-    }
-    color
-}
-
-/// `top` posée sur `under` avec l'opacité `share`.
-pub fn blend(top: Hsla, under: Hsla, share: f32) -> Hsla {
-    let (a, b) = (top.to_rgb(), under.to_rgb());
-    let mix = |x: f32, y: f32| x * share + y * (1. - share);
-    Hsla::from(gpui::Rgba { r: mix(a.r, b.r), g: mix(a.g, b.g), b: mix(a.b, b.b), a: 1. })
-}
 
 /// Ton d'un message d'état : il choisit son icône, et s'il part de lui-même.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -1655,14 +1104,14 @@ impl Shell {
         // Largeur de page et grands tableaux : une courte liste fixe, sans « Par défaut » ; le
         // choix se range sous sa clé, ses libellés suivent la langue.
         let fixed: Option<Vec<(&'static str, &'static str)>> = match setting {
-            Setting::Page => Some(editor::Page::ALL.map(|p| (p.key(), p.label())).into()),
-            Setting::Wide => Some(editor::Wide::ALL.map(|w| (w.key(), w.label())).into()),
+            Setting::Page => Some(Page::ALL.map(|p| (p.key(), p.label())).into()),
+            Setting::Wide => Some(Wide::ALL.map(|w| (w.key(), w.label())).into()),
             Setting::Bar => Some(vec![("on", tr("Shown", "Affichée")), ("off", tr("Hidden", "Masquée"))]),
             _ => None,
         };
         let (mut options, current): (Vec<String>, &str) = match (setting, &fixed) {
-            (Setting::Page, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), editor::Page::of(&self.prefs.page).label()),
-            (Setting::Wide, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), editor::Wide::of(&self.prefs.wide).label()),
+            (Setting::Page, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), Page::of(&self.prefs.page).label()),
+            (Setting::Wide, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), Wide::of(&self.prefs.wide).label()),
             (Setting::Bar, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), if self.prefs.bar == "off" { list[1].1 } else { list[0].1 }),
             (Setting::Theme, _) => (THEMES.iter().map(|t| t.0.to_string()).collect(), &self.prefs.theme),
             _ => (
@@ -2578,7 +2027,7 @@ impl Shell {
                         aliases: markdown::aliases(&body).into(),
                         mtime: SystemTime::now(),
                         path: path.clone(),
-                        lower: vault::lowered(&body),
+                        lower: logic::note::lowered(&body),
                         body,
                     },
                 );
@@ -3126,7 +2575,7 @@ impl Shell {
     /// Le modèle de la note du jour : celui qui s'appelle `Daily`, `Journal`, `Today`, `Note du jour`…
     fn daily_template(&self) -> Option<PathBuf> {
         const NAMES: [&str; 5] = ["daily", "journal", "today", "note du jour", "aujourd'hui"];
-        self.templates().into_iter().find(|path| NAMES.contains(&keys::fold(&vault::stem(path)).as_str()))
+        self.templates().into_iter().find(|path| NAMES.contains(&lang::fold(&vault::stem(path)).as_str()))
     }
 
     /// Un modèle à choisir, puis, pour une nouvelle note, son nom ; ou, pour l'insérer, rien d'autre.
@@ -4039,9 +3488,9 @@ impl Shell {
         // Leur bouton, à gauche de celui de la copie, ouvre et referme le panneau ; le
         // compteur de mots de la note lui laisse la place.
         let talk = (!said.is_empty()).then(|| {
-            nav::button("comments-toggle", "i-chat.svg", !self.comments_shut, t)
+            ui::widgets::button("comments-toggle", "i-chat.svg", !self.comments_shut, t)
                 .debug_selector(|| "comments-toggle".into())
-                .tooltip(nav::tip(tr("Comments of the note", "Commentaires de la note"), String::new(), t))
+                .tooltip(ui::widgets::tip(tr("Comments of the note", "Commentaires de la note"), String::new(), t))
                 .absolute()
                 .bottom_4()
                 .right(px(if kanban::is_board(self.editor.read(cx).text()) { 84. } else { 50. }))
@@ -4096,8 +3545,8 @@ impl Shell {
         }
         let boards = kanban::is_board(self.editor.read(cx).text()) && self.picture.is_none() && self.listing.is_none();
         let flip = boards.then(|| {
-            nav::button("board-toggle", "board.svg", board, t)
-                .tooltip(nav::tip(if board { tr("Show the text", "Voir le texte") } else { tr("Show the board", "Voir le tableau") }, String::new(), t))
+            ui::widgets::button("board-toggle", "board.svg", board, t)
+                .tooltip(ui::widgets::tip(if board { tr("Show the text", "Voir le texte") } else { tr("Show the board", "Voir le tableau") }, String::new(), t))
                 .absolute()
                 .bottom_4()
                 // Toujours à la même place, tableau ou texte : à gauche de la copie.
@@ -4144,7 +3593,7 @@ impl Shell {
                         .items_start()
                         .gap_1()
                         .child(div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(noted.to_string()))
-                        .child(nav::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
+                        .child(ui::widgets::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.editor.update(cx, |e, cx| e.resolve_comment(at, cx));
                             window.focus(&this.editor.focus_handle(cx));
@@ -4161,7 +3610,7 @@ impl Shell {
         });
         let comments = column.map(|column| {
             let title = format!("{} ({})", tr("Comments", "Commentaires"), said.len());
-            let shut = nav::button("comments-shut", "close.svg", false, t).tooltip(nav::tip(tr("Close", "Fermer"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {
+            let shut = ui::widgets::button("comments-shut", "close.svg", false, t).tooltip(ui::widgets::tip(tr("Close", "Fermer"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {
                 this.comments_shut = true;
                 cx.notify();
             }));
@@ -4186,7 +3635,7 @@ impl Shell {
                 .children(cards)
         });
         let copy = icon_button("copy-all", if self.copied { "check.svg" } else { "copy.svg" }, t)
-            .tooltip(nav::tip(tr("Copy the note", "Copier la note"), keys::of(cx, &CopyAll), t))
+            .tooltip(ui::widgets::tip(tr("Copy the note", "Copier la note"), keys::of(cx, &CopyAll), t))
             .absolute()
             .bottom_4()
             .right_4()
@@ -4359,22 +3808,6 @@ impl Render for Capture {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div().size_full().font_family(sans()).text_color(self.theme.text).child(self.field.clone())
     }
-}
-
-/// Bouton rond à icône : contrôles de la fenêtre, copie de la note.
-fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .size(px(20.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_full()
-        .cursor_pointer()
-        .hover(|s| s.bg(t.border))
-        .active(|s| s.bg(t.selection))
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .child(svg().path(icon).size(px(16.)).flex_none().text_color(t.text))
 }
 
 impl Render for Shell {
@@ -4897,20 +4330,6 @@ impl Render for Shell {
     }
 }
 
-/// Fait d'un élément une poignée de la fenêtre, là où l'app dessine sa barre de titre
-/// (Linux) : glisser la déplace, double-clic l'agrandit, clic droit ouvre le menu du système.
-pub fn drag_window<E: InteractiveElement>(element: E) -> E {
-    element
-        .on_mouse_down(MouseButton::Left, |e, window, _| {
-            if e.click_count == 2 {
-                window.zoom_window()
-            } else {
-                window.start_window_move()
-            }
-        })
-        .on_mouse_down(MouseButton::Right, |e, window, _| window.show_window_menu(e.position))
-}
-
 /// Bord ou coin de fenêtre sous le pointeur, dans une marge de quelques pixels.
 fn resize_edge(pos: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeEdge> {
     let m = SHADOW;
@@ -5173,24 +4592,9 @@ fn bind_keys(cx: &mut App) {
     install(cx, &defaults());
 }
 
-/// Le pilote Vulkan NVIDIA (paquet `nvidia-utils`) met environ 2 s à renoncer
-/// quand aucune carte NVIDIA n'est branchée : on demande au chargeur de l'ignorer.
-#[cfg(target_os = "linux")]
-fn skip_absent_nvidia_driver() {
-    let has_nvidia = fs::read_dir("/sys/bus/pci/devices").is_ok_and(|devices| {
-        devices.flatten().any(|d| {
-            fs::read_to_string(d.path().join("vendor")).is_ok_and(|v| v.trim() == "0x10de")
-        })
-    });
-    if !has_nvidia && std::env::var_os("VK_LOADER_DRIVERS_DISABLE").is_none() {
-        // Sûr : appelé au tout début de `main`, avant la création du moindre thread.
-        unsafe { std::env::set_var("VK_LOADER_DRIVERS_DISABLE", "*nvidia*") };
-    }
-}
-
 fn main() {
     #[cfg(target_os = "linux")]
-    skip_absent_nvidia_driver();
+    platform::skip_absent_nvidia_driver();
     Application::new().with_assets(Assets).run(|cx: &mut App| {
         bind_keys(cx);
         init_fonts(cx);
@@ -5246,9 +4650,33 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::TestAppContext;
+    use crate::{logic::block, ui::theme::contrast, views::grid};
+    use gpui::{Hsla, TestAppContext};
 
     static CONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// The layers only depend downwards: `logic` and `platform` never see gpui nor the layers
+    /// above them, and `ui` never sees the views. See ARCHITECTURE.md.
+    #[test]
+    fn layers_only_depend_downwards() {
+        let rules: &[(&str, &[&str])] = &[
+            ("src/logic", &["gpui", "crate::platform", "crate::ui", "crate::views"]),
+            ("src/platform", &["gpui", "crate::ui", "crate::views"]),
+            ("src/ui", &["crate::views"]),
+        ];
+        for (dir, banned) in rules {
+            for entry in fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                let code = fs::read_to_string(&path).unwrap();
+                // Comments may name anything; only code counts.
+                let code: String = code.lines().map(|l| l.split("//").next().unwrap()).collect::<Vec<_>>().join("\n");
+                for word in *banned {
+                    assert!(!code.contains(word), "{} uses `{word}`", path.display());
+                }
+            }
+        }
+    }
+
 
     /// Le dossier de config est global au processus (variables d'environnement) : un test qui le déplace sous
     /// `root` garde le verrou jusqu'à sa fin, pour qu'un autre ne le déplace pas pendant qu'il s'en sert.
@@ -5415,7 +4843,7 @@ mod tests {
         cx.simulate_input("cOmmente");
         let found = rows(cx);
         assert!(!found.is_empty() && found.len() < all, "{found:?}");
-        assert!(found.iter().all(|row| keys::fold(row.effect).contains("commente")), "{found:?}");
+        assert!(found.iter().all(|row| lang::fold(row.effect).contains("commente")), "{found:?}");
         cx.simulate_keystrokes("secondary-a");
         cx.simulate_input("maj+f");
         assert!(rows(cx).iter().any(|row| row.keys.ends_with("Maj+F")));
@@ -6399,7 +5827,7 @@ mod tests {
             cx.run_until_parked();
         };
         let state = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).table_state().unwrap());
-        let set_wide = |cx: &mut gpui::VisualTestContext, wide: editor::Wide| {
+        let set_wide = |cx: &mut gpui::VisualTestContext, wide: Wide| {
             shell.update(cx, |s, cx| {
                 s.theme = Theme { wide, ..s.theme };
                 let theme = s.theme;
@@ -6407,7 +5835,7 @@ mod tests {
             });
         };
         // Dans la colonne du texte : les cellules s'y partagent la largeur.
-        set_wide(cx, editor::Wide::Column);
+        set_wide(cx, Wide::Column);
         load(cx, &note, note.find("fin").unwrap());
         let (dx, tall, frame, page, _) = state(cx);
         assert!(dx == px(0.) && tall > 3 && frame.size.width <= page, "{dx:?} {tall} {frame:?} {page:?}");
@@ -6431,7 +5859,7 @@ mod tests {
         assert_eq!(state(cx).0, px(90.));
         // Centré (le réglage par défaut) : le tableau sort de la colonne des deux côtés, sans dépasser
         // la fenêtre ; son bord gauche ne bouge pas avec la mise en page des autres lignes.
-        set_wide(cx, editor::Wide::Centered);
+        set_wide(cx, Wide::Centered);
         load(cx, &note, note.find("fin").unwrap());
         let (dx, _, frame, page, view) = state(cx);
         assert!(dx == px(0.) && frame.size.width > page && frame.size.width <= view.size.width - px(48.), "{dx:?} {frame:?} {page:?} {view:?}");
@@ -6439,10 +5867,10 @@ mod tests {
         // Aux limites : fenêtre étroite, colonne pleine ou étroite, texte très petit ou très grand. Le tableau reste dans
         // la fenêtre avec ses marges, le texte aussi, et le texte n'est jamais plus large que ce que le réglage permet.
         let whole = cx.update(|window, _| window.viewport_size());
-        for (width, page, zoom) in [(420., editor::Page::Normal, 16.), (420., editor::Page::Full, 16.), (1600., editor::Page::Narrow, 16.), (1600., editor::Page::Full, 32.), (300., editor::Page::Normal, 32.), (1600., editor::Page::Wide, 11.)] {
+        for (width, page, zoom) in [(420., Page::Normal, 16.), (420., Page::Full, 16.), (1600., Page::Narrow, 16.), (1600., Page::Full, 32.), (300., Page::Normal, 32.), (1600., Page::Wide, 11.)] {
             cx.simulate_resize(size(px(width), px(600.)));
             shell.update(cx, |s, cx| {
-                s.theme = Theme { page, size: zoom, wide: editor::Wide::Centered, ..s.theme };
+                s.theme = Theme { page, size: zoom, wide: Wide::Centered, ..s.theme };
                 let theme = s.theme;
                 s.editor.update(cx, |e, cx| e.set_theme(theme, cx));
             });
@@ -6455,7 +5883,7 @@ mod tests {
         }
         cx.simulate_resize(whole);
         shell.update(cx, |s, cx| {
-            s.theme = Theme { page: editor::Page::Normal, size: 16., ..s.theme };
+            s.theme = Theme { page: Page::Normal, size: 16., ..s.theme };
             let theme = s.theme;
             s.editor.update(cx, |e, cx| e.set_theme(theme, cx));
         });
@@ -6463,7 +5891,7 @@ mod tests {
         load(cx, "| a | b |\n| - | - |\n| c | d |\n", 0);
         let (_, _, frame, page, _) = state(cx);
         assert!(frame.size.width < page / 2., "{frame:?} {page:?}");
-        set_wide(cx, editor::Wide::Centered);
+        set_wide(cx, Wide::Centered);
 
         // Coller dans un tableau : une cellule garde une seule ligne et ses `|` ; des
         // cellules de tableur remplissent la grille ; le tableau reste aligné.
@@ -6555,7 +5983,7 @@ mod tests {
 
         // Une cellule trop longue passe à la ligne : les flèches la parcourent ligne par ligne
         // (dans la colonne du texte, où elle est plus étroite).
-        set_wide(cx, editor::Wide::Column);
+        set_wide(cx, Wide::Column);
         let long = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega ".repeat(3);
         let wrapped = format!("| A | B |\n| --- | --- |\n| {long}| fin |\n| z | z |\n");
         let start = wrapped.find("alpha").unwrap();
@@ -8754,45 +8182,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn reads_settings() {
-        let prefs = Prefs::parse("theme=Dracula\nfont=Inter\nsize=99\nbogus\nmono=\n");
-        assert_eq!((prefs.theme.as_str(), prefs.font.as_str(), prefs.mono.as_str()), ("Dracula", "Inter", ""));
-        // Taille bornée, et valeur illisible ignorée.
-        assert_eq!((prefs.size, Prefs::parse("size=NaN").size), (32., 16.));
-        assert_eq!(Prefs::parse(&prefs.to_text()), prefs);
-        // La recherche de nouvelle version est active tant qu'on ne l'a pas coupée.
-        assert!(prefs.updates && !Prefs::parse("updates=off\n").updates && Prefs::parse("updates=on").updates);
-        assert!(!Prefs::parse(&Prefs::parse("updates=off").to_text()).updates);
-        // Largeur de page et grands tableaux : absents tant qu'on ne les a pas choisis.
-        let wide = Prefs::parse("page=wide\nwide=column\n");
-        assert_eq!((wide.page.as_str(), wide.wide.as_str()), ("wide", "column"));
-        assert_eq!(Prefs::parse(&wide.to_text()), wide);
-        assert!(!prefs.to_text().contains("page=") && !prefs.to_text().contains("wide="));
-    }
-
-    #[test]
-    fn names_the_day() {
-        assert_eq!(date_name((2026, 1, 2)), "2026-01-02");
-        let (year, month, day) = today();
-        assert!(year >= 2026 && (1..=12).contains(&month) && (1..=31).contains(&day));
-        // La date locale est celle que donne le système (à minuit près, entre les deux lectures).
-        #[cfg(unix)]
-        if let Ok(out) = std::process::Command::new("date").arg("+%F").output() {
-            let system = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            assert!(system == date_name((year, month, day)) || system == date_name(today()));
-        }
-    }
-
-    #[test]
-    fn reads_the_first_system_language() {
-        // Ce que `defaults read -g AppleLanguages` imprime, avec et sans guillemets.
-        assert_eq!(first_language("(\n    \"fr-FR\",\n    \"en-US\"\n)\n"), Some("fr-FR"));
-        assert_eq!(first_language("(\n    en,\n    fr\n)"), Some("en"));
-        assert_eq!(first_language("(\n)"), None);
-        assert_eq!(first_language(""), None);
-    }
-
     /// Les raccourcis changés sont relus au lancement ; une ligne fautive du fichier est écartée
     /// et signalée, les autres s'appliquent.
     #[gpui::test]
@@ -8839,22 +8228,6 @@ mod tests {
         cx.simulate_input("x");
         assert_eq!(shell.read_with(cx, |s, cx| s.panes[0].editor.read(cx).text().to_string()), "# Gauche\nx");
         let _ = fs::remove_dir_all(&root);
-    }
-
-    /// Dans chaque thème, le texte secondaire, l'accent (liens, tags) et le titre d'un panneau
-    /// `[!TIP]` se lisent : 4,5:1 au moins (WCAG AA).
-    #[test]
-    fn every_theme_reads() {
-        for (name, _) in THEMES {
-            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
-            assert!(contrast(t.soft, t.bg) >= 4.5 && contrast(t.soft, t.panel) >= 4.5, "{name}: soft");
-            assert!(contrast(t.accent, t.bg) >= 4.5, "{name}: accent");
-            for h in [0.38, 0.75, 0.09, 0., 0.58] {
-                let tint = Hsla { h, s: 0.7, l: 0.5, a: 1. };
-                let under = blend(tint, t.bg, 0.1);
-                assert!(contrast(legible(tint, under), under) >= 4.5, "{name}: panel {h}");
-            }
-        }
     }
 
     /// Les modèles de bout en bout, et leurs limites : pas de dossier, un nom pris ou illisible, un modèle

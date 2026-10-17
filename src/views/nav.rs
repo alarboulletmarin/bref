@@ -11,19 +11,21 @@ use std::{
 };
 
 use gpui::{
-    Action, Animation, AnimationExt, AnyView, App, ClickEvent, ClipboardItem, Context, CursorStyle, Div, FocusHandle, Focusable, Entity, MouseButton,
+    Action, Animation, AnimationExt, App, ClickEvent, ClipboardItem, Context, CursorStyle, Div, FocusHandle, Focusable, Entity, MouseButton,
     MouseDownEvent, Pixels, Point, ScrollStrategy, Stateful, UniformListScrollHandle, Window,
     actions, div, ease_out_quint, point, prelude::*, px, svg, uniform_list,
 };
 
 use crate::{
-    Shell, Theme, Tone, editor, graph,
-    kanban::{Field, FieldEvent},
-    line::Line,
-    markdown::{self, Date, Link},
-    palette::{Palette, PaletteEvent, Setting},
-    tr,
-    vault::{self, Note},
+    ui::widgets::{button, tip},
+    Shell, ui::theme::Theme, Tone, views::editor, views::graph,
+    views::kanban::{Field, FieldEvent},
+    ui::line::Line,
+    logic::markdown::{self, Date, Link},
+    views::palette::{Palette, PaletteEvent, Setting},
+    lang::tr,
+    platform::vault,
+    logic::note::Note,
 };
 
 actions!(nav, [ShowCalendar, PrevMonth, NextMonth, ShowTree, ShowRecent, ShowGraph, ShowTags, ShowLinks, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Duplicate, Trash]);
@@ -126,7 +128,7 @@ impl Do {
     /// Le raccourci qui fait la même chose que cette entrée de menu, tel qu'il est en vigueur ;
     /// rien quand l'action n'en a pas.
     pub fn keys(self, cx: &gpui::App) -> String {
-        use crate::{editor, keys::of};
+        use crate::{views::editor, keys::of};
         match self {
             Do::Open => of(cx, &Open),
             Do::NewNote => of(cx, &crate::NewNote),
@@ -247,7 +249,7 @@ impl Nav {
             sel: None,
             marked: HashSet::new(),
             anchor: None,
-            day: crate::today(),
+            day: crate::platform::clock::today(),
             open: HashSet::new(),
             rows: Vec::new(),
             rows_from: 0,
@@ -419,29 +421,6 @@ pub fn tag_rows(notes: &[Note], open: &HashSet<PathBuf>) -> Vec<Row> {
     rows
 }
 
-/// Bouton icône du rail et des en-têtes de panneau.
-pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, t: Theme) -> Stateful<Div> {
-    div()
-        .id(id)
-        .size(px(28.))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(6.))
-        .cursor_pointer()
-        .hover(|s| s.bg(t.border))
-        .active(|s| s.bg(t.selection))
-        .when(active, |d| d.bg(t.selection))
-        .child(
-            svg()
-                .path(icon)
-                .size(px(16.))
-                .flex_none()
-                .text_color(if active { t.accent } else { t.soft }),
-        )
-}
-
 /// L'entrée du menu qui montre un fichier dans le gestionnaire de fichiers, sous son nom de chaque système.
 fn reveal_label() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -451,40 +430,6 @@ fn reveal_label() -> &'static str {
     } else {
         tr("Show in the file manager", "Afficher dans le gestionnaire de fichiers")
     }
-}
-
-/// Bulle d'un bouton à icône : ce qu'il fait et, s'il en a un, son raccourci. Sans elle,
-/// une icône seule oblige à connaître la documentation pour savoir où cliquer.
-pub struct Tip {
-    label: &'static str,
-    keys: String,
-    theme: Theme,
-}
-
-impl Render for Tip {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let t = self.theme;
-        div()
-            .px_2()
-            .py(px(3.))
-            .rounded(px(6.))
-            .bg(t.panel)
-            .border_1()
-            .border_color(t.border)
-            .shadow_sm()
-            .text_size(px(12.))
-            .text_color(t.text)
-            .flex()
-            .items_center()
-            .gap_2()
-            .child(self.label)
-            .when(!self.keys.is_empty(), |d| d.child(div().text_color(t.soft).child(self.keys.clone())))
-    }
-}
-
-/// À poser sur un bouton : `.tooltip(tip(libellé, touches, thème))`.
-pub fn tip(label: &'static str, keys: String, theme: Theme) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
-    move |_, cx| cx.new(|_| Tip { label, keys: keys.clone(), theme }).into()
 }
 
 impl Shell {
@@ -693,7 +638,7 @@ impl Shell {
     /// Ouvre la note du jour `day`, ou la crée : celle que `@` et Ctrl+J désignent.
     pub fn open_day(&mut self, day: Date, cx: &mut Context<Self>) {
         self.nav.day = day;
-        self.open_wiki(&crate::date_name(day), cx);
+        self.open_wiki(&crate::lang::date_name(day), cx);
         cx.notify();
     }
 
@@ -706,7 +651,7 @@ impl Shell {
         let monday = tr("sunday", "monday") == "monday";
         let (lead, days) = markdown::month(year, month, monday);
         let names: HashSet<&str> = self.notes.iter().map(|n| n.name.as_str()).collect();
-        let (today, open) = (crate::today(), self.path.as_deref().map(vault::stem));
+        let (today, open) = (crate::platform::clock::today(), self.path.as_deref().map(vault::stem));
         let (en, fr) = markdown::MONTHS[month as usize - 1];
         let step = |id: &'static str, icon: &'static str, by: i32, cx: &mut Context<Self>| {
             button(id, icon, false, t).on_click(cx.listener(move |this, _, _, cx| this.day_step(0, by, cx)))
@@ -724,7 +669,7 @@ impl Shell {
         let blanks = (0..lead).map(|_| cell().into_any_element());
         let cells = (1..=days).map(|day| {
             let date = (year, month, day);
-            let name = crate::date_name(date);
+            let name = crate::lang::date_name(date);
             let has = names.contains(name.as_str());
             cell()
                 .id(("day", day as usize))
@@ -1437,7 +1382,7 @@ impl Shell {
             return self.say(crate::Tone::Failed, format!("{} {} : {e}", tr("Not rewritten:", "Non réécrite :"), path.display()), cx);
         }
         if let Some(note) = self.notes.iter_mut().find(|note| note.path == path) {
-            (note.tags, note.links) = vault::Note::index(&new);
+            (note.tags, note.links) = crate::logic::note::Note::index(&new);
             note.aliases = markdown::aliases(&new).into();
             note.set_body(new.as_str().into());
         }
@@ -1580,7 +1525,7 @@ impl Shell {
             )
         };
         let mut cells = vec![pick(0, "close.svg", None, cx)];
-        cells.extend(crate::ICON_SET.iter().enumerate().map(|(i, (file, _))| pick(i + 1, file, Some(&file[2..file.len() - 4]), cx)));
+        cells.extend(crate::ui::assets::ICON_SET.iter().enumerate().map(|(i, (file, _))| pick(i + 1, file, Some(&file[2..file.len() - 4]), cx)));
         // Huit par rangée ; la grille reste dans la fenêtre, comme le menu.
         let view = window.viewport_size();
         let (width, height) = (px(8. * 30. - 2. + 12.), px(((cells.len() + 7) / 8) as f32 * 30. - 2. + 12.));
@@ -1681,7 +1626,7 @@ impl Shell {
                                 d.child(svg().path(chevron).size(px(14.)).text_color(t.soft))
                             }))
                         })
-                        .children(self.icons.get(&row.path).and_then(|name| crate::ICON_SET.iter().find(|(file, _)| file[2..file.len() - 4] == *name)).map(
+                        .children(self.icons.get(&row.path).and_then(|name| crate::ui::assets::ICON_SET.iter().find(|(file, _)| file[2..file.len() - 4] == *name)).map(
                             |(file, _)| svg().path(*file).size(px(14.)).flex_none().text_color(if current { t.accent } else { t.text }),
                         ))
                         .child(
@@ -1844,7 +1789,7 @@ impl Shell {
             .gap_1()
             .when(!unfolded, |d| d.border_r_1().border_color(t.border))
             // Le logo de l'app, en tête du rail sur tous les systèmes.
-            .child(div().debug_selector(|| "rail-logo".into()).mb_1().child(crate::logo(t)))
+            .child(div().debug_selector(|| "rail-logo".into()).mb_1().child(crate::ui::assets::logo(t)))
             .child(
                 button("nav-commands", "menu.svg", false, t)
                     .debug_selector(|| "nav-commands".into())
@@ -1884,7 +1829,7 @@ impl Shell {
                     .tooltip(tip(tr("New note", "Nouvelle note"), keys(&crate::NewNote), t))
                     .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
             )
-            .child(div().flex_1().w_full().when(!self.nav.native_bar, |d| d.map(crate::drag_window)))
+            .child(div().flex_1().w_full().when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window)))
             // Corbeille du coffre (ce qu'elle contient, pour le reprendre) et sauvegarde.
             .child(
                 button("nav-trash", "trash.svg", false, t)
@@ -1939,7 +1884,7 @@ impl Shell {
                     .truncate()
                     .text_size(px(12.))
                     .text_color(t.soft)
-                    .when(!self.nav.native_bar, |d| d.map(crate::drag_window))
+                    .when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window))
                     .child(title),
             )
             .when(mode == Mode::Graph, |d| {

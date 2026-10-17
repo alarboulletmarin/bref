@@ -6,7 +6,7 @@
 //! sont réécrites octet pour octet depuis le texte source.
 #![allow(dead_code)]
 
-use crate::tr;
+use crate::lang::tr;
 use std::borrow::Cow;
 use std::fmt::{self, Write as _};
 use std::io::{self, Write};
@@ -1182,7 +1182,7 @@ special
         let start = Instant::now();
         let keys: Vec<String> = (1..t.rows()).map(|r| t.cell(r, 0).into_owned()).collect();
         let mut perm: Vec<usize> = (0..keys.len()).collect();
-        perm.sort_by(|&a, &b| crate::markdown::cell_order(&keys[a], &keys[b]));
+        perm.sort_by(|&a, &b| crate::logic::markdown::cell_order(&keys[a], &keys[b]));
         t.reorder(1, &perm);
         timed("trier sur une colonne", start);
         assert_eq!(t.rows(), rows + 1);

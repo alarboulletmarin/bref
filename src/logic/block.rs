@@ -6,7 +6,7 @@
 //! des espaces qui le bordent, et le rend où il arrive : des paragraphes séparés par une ligne vide le
 //! restent, des items de liste restent collés. Fonctions pures.
 
-use crate::markdown::{self as md, Kind};
+use crate::logic::markdown::{self as md, Kind};
 use std::ops::Range;
 
 /// Ce qu'un bloc peut devenir.

@@ -16,10 +16,10 @@ use gpui::{
 use resvg::usvg;
 
 use crate::{
-    Theme,
-    canvas::{Cancel, Down, Left, Right, Up, ZoomFit, ZoomIn, ZoomOut},
-    nav::{button, tip},
-    figure, svg, tr,
+    ui::theme::Theme,
+    views::canvas::{Cancel, Down, Left, Right, Up, ZoomFit, ZoomIn, ZoomOut},
+    ui::widgets::{button, tip},
+    ui::figure, ui::svg, lang::tr,
 };
 
 /// Côté d'une tuile, en pixels de l'écran.

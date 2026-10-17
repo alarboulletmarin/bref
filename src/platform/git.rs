@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 
-use crate::{tr, update};
+use crate::lang::tr;
 
 /// Un dépôt dans un état que la synchronisation ne touche pas : on le dit, sans deviner.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -155,14 +155,14 @@ pub fn folder_of(url: &str) -> String {
 
 /// Nom de cette machine, pour nommer la copie d'un conflit ; vide si on ne le trouve pas.
 pub fn host() -> String {
-    let named = update::command("hostname").stdin(Stdio::null()).output().ok().filter(|out| out.status.success());
+    let named = crate::platform::command("hostname").stdin(Stdio::null()).output().ok().filter(|out| out.status.success());
     named.map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string()).unwrap_or_default()
 }
 
 /// Lance git dans `root`, sans jamais attendre une saisie : pas d'invite de mot de passe (ni de
 /// git, ni de ssh), l'échec est rapporté. Les fins de ligne des notes ne sont jamais converties.
 fn call(root: &Path, args: &[&str]) -> Result<Output, Fail> {
-    let mut command = update::command("git");
+    let mut command = crate::platform::command("git");
     command.current_dir(root).args(["-c", "core.quotepath=off", "-c", "core.autocrlf=false"]).args(args);
     command.env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C").stdin(Stdio::null());
     if std::env::var_os("GIT_SSH_COMMAND").is_none() {

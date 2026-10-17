@@ -12,10 +12,10 @@ use gpui::{
 };
 
 use crate::{
-    Theme,
-    diagram::{self, Cmd, Diagram, End, Form, Head, Route},
-    nav::{button, tip},
-    sans, tr,
+    ui::theme::Theme,
+    logic::diagram::{self, Cmd, Diagram, End, Form, Head, Route},
+    ui::widgets::{button, tip},
+    ui::assets::sans, lang::tr,
 };
 
 actions!(canvas, [ZoomIn, ZoomOut, ZoomFit, Erase, EraseNext, Duplicate, SelectAll, Undo, Redo, Confirm, Cancel, Left, Right, Up, Down, Paste]);

@@ -1,0 +1,91 @@
+//! Small widgets shared by the views: icon buttons, tooltips, and the window-drag handle.
+
+use gpui::{AnyView, App, Context, Div, InteractiveElement, MouseButton, Stateful, Window, div, prelude::*, px, svg};
+
+use crate::ui::theme::Theme;
+
+/// Bouton icône du rail et des en-têtes de panneau.
+pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, t: Theme) -> Stateful<Div> {
+    div()
+        .id(id)
+        .size(px(28.))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(6.))
+        .cursor_pointer()
+        .hover(|s| s.bg(t.border))
+        .active(|s| s.bg(t.selection))
+        .when(active, |d| d.bg(t.selection))
+        .child(
+            svg()
+                .path(icon)
+                .size(px(16.))
+                .flex_none()
+                .text_color(if active { t.accent } else { t.soft }),
+        )
+}
+
+/// Bulle d'un bouton à icône : ce qu'il fait et, s'il en a un, son raccourci. Sans elle,
+/// une icône seule oblige à connaître la documentation pour savoir où cliquer.
+pub struct Tip {
+    label: &'static str,
+    keys: String,
+    theme: Theme,
+}
+
+impl Render for Tip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let t = self.theme;
+        div()
+            .px_2()
+            .py(px(3.))
+            .rounded(px(6.))
+            .bg(t.panel)
+            .border_1()
+            .border_color(t.border)
+            .shadow_sm()
+            .text_size(px(12.))
+            .text_color(t.text)
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(self.label)
+            .when(!self.keys.is_empty(), |d| d.child(div().text_color(t.soft).child(self.keys.clone())))
+    }
+}
+
+/// À poser sur un bouton : `.tooltip(tip(libellé, touches, thème))`.
+pub fn tip(label: &'static str, keys: String, theme: Theme) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    move |_, cx| cx.new(|_| Tip { label, keys: keys.clone(), theme }).into()
+}
+/// Bouton rond à icône : contrôles de la fenêtre, copie de la note.
+pub fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .size(px(20.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .cursor_pointer()
+        .hover(|s| s.bg(t.border))
+        .active(|s| s.bg(t.selection))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .child(svg().path(icon).size(px(16.)).flex_none().text_color(t.text))
+}
+
+/// Fait d'un élément une poignée de la fenêtre, là où l'app dessine sa barre de titre
+/// (Linux) : glisser la déplace, double-clic l'agrandit, clic droit ouvre le menu du système.
+pub fn drag_window<E: InteractiveElement>(element: E) -> E {
+    element
+        .on_mouse_down(MouseButton::Left, |e, window, _| {
+            if e.click_count == 2 {
+                window.zoom_window()
+            } else {
+                window.start_window_move()
+            }
+        })
+        .on_mouse_down(MouseButton::Right, |e, window, _| window.show_window_menu(e.position))
+}

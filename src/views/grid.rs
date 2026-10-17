@@ -13,9 +13,9 @@ use gpui::{
 };
 
 use crate::{
-    Theme,
-    editor::{Fast, FastMap, RunStyle, text_runs},
-    markdown as md,
+    ui::theme::Theme,
+    views::editor::{Fast, FastMap, RunStyle, text_runs},
+    logic::markdown as md,
 };
 
 /// Marge intérieure d'une cellule, et épaisseur des traits.

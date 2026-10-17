@@ -18,7 +18,7 @@ pub struct Look {
 }
 
 impl Look {
-    pub fn of(t: &crate::Theme) -> Self {
+    pub fn of(t: &crate::ui::theme::Theme) -> Self {
         let hex = |c: gpui::Hsla| {
             let c = gpui::Rgba::from(c);
             let [r, g, b] = [c.r, c.g, c.b].map(|v| (v * 255.) as u8);
@@ -30,7 +30,7 @@ impl Look {
             fill: hex(t.code_bg),
             text: hex(t.text),
             line: hex(t.dim),
-            font: crate::sans().to_string(),
+            font: crate::ui::assets::sans().to_string(),
         }
     }
 }
@@ -82,7 +82,7 @@ pub fn latex(source: &str, display: bool, rgb: [u8; 3], size: f32) -> Option<Fig
 /// L'image PNG d'un SVG, `scale` fois plus grande que nature, sur fond blanc.
 pub fn png(svg: &str, scale: f32) -> Option<Vec<u8>> {
     use resvg::tiny_skia;
-    let tree = crate::svg::parse(svg)?;
+    let tree = crate::ui::svg::parse(svg)?;
     let size = tree.size();
     let mut pixmap = tiny_skia::Pixmap::new((size.width() * scale).ceil() as u32, (size.height() * scale).ceil() as u32)?;
     pixmap.fill(tiny_skia::Color::WHITE);
@@ -129,7 +129,7 @@ mod tests {
             font: "sans-serif".into(),
         };
         let svg = mermaid("flowchart LR\n    A --> B", &look).unwrap();
-        let size = crate::svg::parse(&svg).unwrap().size();
+        let size = crate::ui::svg::parse(&svg).unwrap().size();
         assert!(svg.contains("#101010") && size.width() > size.height() && size.height() > 10.);
         assert!(mermaid("ceci n'est pas un diagramme", &look).is_none() && mermaid("", &look).is_none());
 

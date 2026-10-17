@@ -3,7 +3,6 @@
 //! que « bref » comme nom de client.
 
 use std::{
-    ffi::OsStr,
     fs::{DirBuilder, File},
     io,
     path::{Path, PathBuf},
@@ -13,7 +12,8 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-use crate::{tr, vault};
+use crate::{lang::tr, platform::vault};
+use crate::platform::command;
 
 const DAY: u64 = 24 * 3600;
 /// Les fichiers d'une release arrivent un quart d'heure après elle : on revérifie plus tôt.
@@ -180,18 +180,6 @@ fn fetch() -> Option<Release> {
         .ok()
         .filter(|o| o.status.success())?;
     release_of(&String::from_utf8_lossy(&out.stdout), asset_name())
-}
-
-/// Un processus sans fenêtre de console (l'app n'en a pas sous Windows : sinon elle clignote).
-pub fn command(program: impl AsRef<OsStr>) -> Command {
-    #[allow(unused_mut)]
-    let mut command = Command::new(program);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-    command
 }
 
 /// Lance la commande et attend ; en cas d'échec, la dernière ligne de son message d'erreur.

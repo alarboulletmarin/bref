@@ -4,9 +4,9 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use crate::markdown::{self, Date};
-use crate::vault::Note;
-use crate::{date_name, tr};
+use crate::logic::markdown::{self, Date};
+use crate::logic::note::Note;
+use crate::{lang::date_name, lang::tr};
 
 /// Une note qu'on n'a pas touchée depuis ce temps-là pour être proposée à la relecture.
 const OLD: i64 = 30;

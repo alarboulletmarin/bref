@@ -11,7 +11,7 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::Theme;
+use crate::ui::theme::Theme;
 use crate::keys::{Bind, bind};
 
 actions!(

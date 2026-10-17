@@ -15,10 +15,11 @@ use gpui::{
 };
 
 use crate::{
-    Theme,
-    nav::{Fold, Next, Open, Prev, Unfold},
-    sans,
-    vault::{self, Note},
+    ui::theme::Theme,
+    views::nav::{Fold, Next, Open, Prev, Unfold},
+    ui::assets::sans,
+    platform::vault,
+    logic::note::Note,
 };
 
 actions!(graph, [Cycle]);
@@ -58,8 +59,8 @@ pub fn backlinks<'a>(notes: &'a [Note], target: &Path) -> Vec<&'a Note> {
 /// Première ligne de `body` qui porte un wikilien vers la note `aimed` (son nom ou un alias).
 pub fn link_line<'a>(body: &'a str, aimed: &Note) -> Option<&'a str> {
     body.lines().find(|line| {
-        let links = crate::markdown::links(line);
-        links.iter().any(|(_, link)| matches!(link, crate::markdown::Link::Wiki(name) if aimed.answers(&name.to_lowercase())))
+        let links = crate::logic::markdown::links(line);
+        links.iter().any(|(_, link)| matches!(link, crate::logic::markdown::Link::Wiki(name) if aimed.answers(&name.to_lowercase())))
     })
 }
 

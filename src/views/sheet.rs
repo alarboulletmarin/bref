@@ -19,13 +19,13 @@ use gpui::{
 };
 
 use crate::{
-    Theme,
-    editor::{self, TableOp},
-    line::{self, Line},
-    markdown, mono,
-    nav::{button, tip},
-    table::{self, Encoding, Format, Style, Table, WriteError},
-    tr, vault,
+    ui::theme::Theme,
+    views::editor::{self, TableOp},
+    ui::line::{self, Line},
+    logic::markdown, ui::assets::mono,
+    ui::widgets::{button, tip},
+    logic::table::{self, Encoding, Format, Style, Table, WriteError},
+    lang::tr, platform::vault,
 };
 
 actions!(
@@ -899,7 +899,7 @@ impl Sheet {
                 (true, false) => std::cmp::Ordering::Greater,
                 (false, true) => std::cmp::Ordering::Less,
                 _ => {
-                    let order = crate::markdown::cell_order(&keys[a], &keys[b]);
+                    let order = crate::logic::markdown::cell_order(&keys[a], &keys[b]);
                     if ascending { order } else { order.reverse() }
                 }
             }
@@ -1311,12 +1311,12 @@ impl Sheet {
                     .min_w_0()
                     .truncate()
                     .text_color(t.soft)
-                    .when(self.client, |d| d.map(crate::drag_window))
+                    .when(self.client, |d| d.map(crate::ui::widgets::drag_window))
                     .child(info),
             )
             // À côté du nom du tableau : ce qui est sélectionné, et ce qu'on peut en faire.
             .children(self.span_tools(cx))
-            .child(div().flex_1().min_w(px(8.)).h(px(38.)).when(self.client, |d| d.map(crate::drag_window)))
+            .child(div().flex_1().min_w(px(8.)).h(px(38.)).when(self.client, |d| d.map(crate::ui::widgets::drag_window)))
             .child(self.chip("sheet-delimiter", delimiter, false, Pick::Delimiter))
             .child(self.chip("sheet-encoding", self.format.encoding.label().to_string(), false, Pick::Encoding))
             .child(self.chip("sheet-header", tr("Header", "En-tête").to_string(), self.format.header, Pick::Header))

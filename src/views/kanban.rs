@@ -10,13 +10,12 @@ use gpui::{
 };
 
 use crate::{
-    Shell, Theme,
-    editor::{Redo, Undo},
-    markdown::{self, Kind},
-    nav,
-    line::{self, Line},
-    palette::{Confirm, Dismiss},
-    tr,
+    Shell, ui::theme::Theme,
+    views::editor::{Redo, Undo},
+    logic::markdown::{self, Kind},
+    ui::line::{self, Line},
+    views::palette::{Confirm, Dismiss},
+    lang::tr,
 };
 
 #[derive(Debug, PartialEq)]
@@ -524,7 +523,7 @@ impl Shell {
         }
         let more = match field_at(Slot::NewColumn) {
             Some(field) => div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().rounded(px(8.)).bg(t.panel).border_1().border_color(t.accent).flex().child(field).into_any_element(),
-            None => nav::button("column-add", "plus.svg", false, t)
+            None => crate::ui::widgets::button("column-add", "plus.svg", false, t)
                 .flex_none()
                 .on_click(cx.listener(|this, _, window, cx| this.board_write(Slot::NewColumn, window, cx)))
                 .into_any_element(),

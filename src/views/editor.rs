@@ -26,8 +26,9 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    Theme, block, diagram::Diagram, figure, graph, svg, grid::{self, TableRow}, mono, sans, tr, vault,
-    markdown::{self as md, Enter, Kind, Link, ListStyle},
+    ui::theme::Wide,
+    ui::theme::Theme, logic::block, logic::diagram::Diagram, ui::figure, views::graph, ui::svg, views::grid::{self, TableRow}, ui::assets::mono, ui::assets::sans, lang::tr, platform::vault,
+    logic::markdown::{self as md, Enter, Kind, Link, ListStyle},
 };
 
 actions!(
@@ -163,87 +164,6 @@ pub const MAX_WIDTH: Pixels = px(720.);
 /// Marge gardée de chaque côté de la page, qu'elle soit étroite ou pleine.
 const SIDE: Pixels = px(24.);
 
-/// Largeur de la colonne de texte (réglage « Largeur de page »).
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub enum Page {
-    Narrow,
-    #[default]
-    Normal,
-    Wide,
-    /// Toute la place de la fenêtre.
-    Full,
-}
-
-impl Page {
-    pub const ALL: [Page; 4] = [Page::Narrow, Page::Normal, Page::Wide, Page::Full];
-
-    pub fn key(self) -> &'static str {
-        match self {
-            Page::Narrow => "narrow",
-            Page::Normal => "normal",
-            Page::Wide => "wide",
-            Page::Full => "full",
-        }
-    }
-
-    /// Un réglage inconnu ou absent vaut la largeur normale.
-    pub fn of(key: &str) -> Self {
-        Self::ALL.into_iter().find(|p| p.key() == key).unwrap_or_default()
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Page::Narrow => tr("Narrow", "Étroite"),
-            Page::Normal => tr("Normal", "Normale"),
-            Page::Wide => tr("Wide", "Large"),
-            Page::Full => tr("Full width", "Pleine largeur"),
-        }
-    }
-
-    /// La colonne la plus large, pour un texte de `size` px : elle suit le corps du texte, pour que
-    /// le nombre de caractères par ligne reste le même quand on agrandit.
-    pub fn measure(self, size: f32) -> Pixels {
-        let base = match self {
-            Page::Narrow => 560.,
-            Page::Normal => 720.,
-            Page::Wide => 960.,
-            Page::Full => return px(f32::MAX),
-        };
-        px(base * size / 16.)
-    }
-}
-
-/// Où se place un tableau plus large que la colonne de texte (réglage « Grands tableaux »).
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub enum Wide {
-    /// Il reste dans la colonne et défile de côté.
-    Column,
-    /// Il déborde des deux côtés, centré sur la fenêtre.
-    #[default]
-    Centered,
-}
-
-impl Wide {
-    pub const ALL: [Wide; 2] = [Wide::Column, Wide::Centered];
-
-    pub fn key(self) -> &'static str {
-        match self {
-            Wide::Column => "column",
-            Wide::Centered => "center",
-        }
-    }
-
-    pub fn of(key: &str) -> Self {
-        Self::ALL.into_iter().find(|w| w.key() == key).unwrap_or_default()
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Wide::Column => tr("In the text column", "Dans la colonne du texte"),
-            Wide::Centered => tr("Centered, wider than the text", "Centrés, plus larges que le texte"),
-        }
-    }
-}
 /// Côté du bouton de copie, à droite de l'ouverture d'un bloc de code.
 const COPY_SIZE: Pixels = px(22.);
 /// Corps des formules, par rapport au texte : la police mathématique paraît petite à taille égale.
@@ -1098,7 +1018,7 @@ const BAR_WIDTH: f32 = 6. + 2. + 11. * 26. + 14. + 13. + 2. * 7.;
 /// Fond du bouton qui replie la barre : toujours opaque, il passe sur du texte (la teinte de la sélection,
 /// translucide, laisserait voir ce qu'il couvre).
 pub fn bar_fill(t: &Theme, open: bool) -> Hsla {
-    if open { crate::blend(t.accent, t.panel, 0.2) } else { t.panel }
+    if open { crate::ui::theme::blend(t.accent, t.panel, 0.2) } else { t.panel }
 }
 
 /// Où et comment se montre la barre de mise en forme.
@@ -1160,7 +1080,7 @@ pub fn text_runs(t: &Theme, flags: &[u16], marked: impl Fn(usize) -> bool, style
             hue(0.6)
         } else if f & md::MARK != 0 && let Some(tint) = style.tint {
             // Sur le fond du panneau, sa teinte à 10 % : le titre se lit dans tous les thèmes.
-            crate::legible(tint, crate::blend(tint, t.bg, 0.1))
+            crate::ui::theme::legible(tint, crate::ui::theme::blend(tint, t.bg, 0.1))
         } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
             t.accent
         } else {
@@ -2981,7 +2901,7 @@ impl Editor {
                     .border_1()
                     .border_color(t.border)
                     .hover(|s| s.border_color(t.accent))
-                    .tooltip(crate::nav::tip(names[i], String::new(), t))
+                    .tooltip(crate::ui::widgets::tip(names[i], String::new(), t))
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |this, _, window, cx| {
                         window.focus(&this.focus);
@@ -3043,7 +2963,7 @@ impl Editor {
                 .when(lit, |d| d.bg(t.selection))
                 .hover(|s| s.bg(t.border).text_color(t.text))
                 .active(|s| s.bg(t.selection))
-                .tooltip(crate::nav::tip(label, keys, t))
+                .tooltip(crate::ui::widgets::tip(label, keys, t))
                 // Ni la note ni son curseur ne bougent sous le clic : le geste porte sur la sélection.
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(face)
@@ -3128,7 +3048,7 @@ impl Editor {
                     .cursor_pointer()
                     .when(self.swatches, |d| d.bg(t.selection))
                     .hover(|s| s.bg(t.border))
-                    .tooltip(crate::nav::tip(tr("Highlight color", "Couleur du surlignage"), String::new(), t))
+                    .tooltip(crate::ui::widgets::tip(tr("Highlight color", "Couleur du surlignage"), String::new(), t))
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(|this, _, window, cx| {
                         window.focus(&this.focus);
@@ -3171,7 +3091,7 @@ impl Editor {
             .cursor_pointer()
             .hover(|s| s.bg(t.border))
             .occlude()
-            .tooltip(crate::nav::tip(tr("Formatting", "Mise en forme"), String::new(), t))
+            .tooltip(crate::ui::widgets::tip(tr("Formatting", "Mise en forme"), String::new(), t))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|this, _, window, cx| {
                 window.focus(&this.focus);
@@ -4013,7 +3933,7 @@ impl Editor {
         if !starts_word || !query.chars().all(|ch| ch.is_alphanumeric() || matches!(ch, '-' | '\'' | '’')) || self.in_code(line) {
             return None;
         }
-        let items = md::dates(query, crate::today()).into_iter().map(|(en, fr, date)| Choice::Date(en, fr, date));
+        let items = md::dates(query, crate::platform::clock::today()).into_iter().map(|(en, fr, date)| Choice::Date(en, fr, date));
         Some((c - query.len(), items.collect()))
     }
 
@@ -4035,7 +3955,7 @@ impl Editor {
             // Le jour devient un lien vers sa note du jour, créée à sa première ouverture.
             Choice::Date(_, _, date) => {
                 self.push_undo(true);
-                self.edit(start - 1..c, &format!("[[{}]]", crate::date_name(date)), cx);
+                self.edit(start - 1..c, &format!("[[{}]]", crate::lang::date_name(date)), cx);
             }
             Choice::Command(&(name, _, _, before, after)) => {
                 let slash = start - 1;
@@ -4060,7 +3980,7 @@ impl Editor {
                 }
                 // La date du jour s'écrit là où on la demande.
                 if name == "date" {
-                    self.edit(slash..c, &crate::date_name(crate::today()), cx);
+                    self.edit(slash..c, &crate::lang::date_name(crate::platform::clock::today()), cx);
                     return true;
                 }
                 // Un lien se pose dans la phrase ; tout le reste commence sa ligne.
@@ -5198,7 +5118,7 @@ impl Editor {
                 && let Ok(stamp) = fs::metadata(file).and_then(|m| m.modified())
             {
                 let (k, family) = (key(3, &format!("{}{stamp:?}", file.display())).0, key(3, &file.display().to_string()).1);
-                let (path, ink, dark) = (file.clone(), crate::canvas::neutral(t), look.dark);
+                let (path, ink, dark) = (file.clone(), crate::views::canvas::neutral(t), look.dark);
                 let own = cached(&mut old, &mut kept, (k, family), false, || {
                     let make = move || {
                         let text = fs::read_to_string(&path).ok()?;
@@ -5825,7 +5745,7 @@ impl Editor {
                 match choice {
                     Choice::Name(name) => write(name, ""),
                     Choice::Command((name, en, fr, ..)) => write(tr(en, fr), &format!("/{name}")),
-                    Choice::Date(en, fr, date) => write(tr(en, fr), &crate::date_name(*date)),
+                    Choice::Date(en, fr, date) => write(tr(en, fr), &crate::lang::date_name(*date)),
                 }
             }
         }
@@ -6313,14 +6233,4 @@ mod tests {
         assert_eq!(table_lead(Wide::Column, px(952.), text), px(0.));
     }
 
-    #[test]
-    fn page_width_follows_the_text_size() {
-        assert_eq!(Page::Normal.measure(16.), MAX_WIDTH);
-        assert_eq!(Page::Normal.measure(32.), px(1440.));
-        assert!(Page::Narrow.measure(16.) < Page::Normal.measure(16.) && Page::Normal.measure(16.) < Page::Wide.measure(16.));
-        assert!(Page::Wide.measure(16.) < Page::Full.measure(16.));
-        // Les clés se relisent ; une clé inconnue ou absente vaut le choix par défaut.
-        assert!(Page::ALL.into_iter().all(|p| Page::of(p.key()) == p) && Wide::ALL.into_iter().all(|w| Wide::of(w.key()) == w));
-        assert_eq!((Page::of(""), Page::of("?"), Wide::of(""), Wide::of("?")), (Page::Normal, Page::Normal, Wide::Centered, Wide::Centered));
-    }
 }

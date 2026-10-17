@@ -2,7 +2,7 @@
 //! la personne, une icône et un groupe. Le groupe de ce qu'on regarde (un bloc, un tableau, un schéma)
 //! passe en tête ; les touches viennent des liaisons en vigueur. Fonctions pures.
 
-use crate::tr;
+use crate::lang::tr;
 
 /// Les groupes, dans l'ordre où la palette les montre, après celui de la vue.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord)]

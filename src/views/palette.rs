@@ -12,12 +12,12 @@ use gpui::{
 };
 
 use crate::{
-    Theme,
-    line::{self, Line},
-    editor::TableOp,
-    markdown::ListStyle,
-    sheet::Pick,
-    tr,
+    ui::theme::Theme,
+    ui::line::{self, Line},
+    views::editor::TableOp,
+    logic::markdown::ListStyle,
+    views::sheet::Pick,
+    lang::tr,
 };
 
 fn vault_label() -> &'static str {
@@ -298,7 +298,7 @@ pub struct Palette {
     undo_swap: bool,
     /// Les commandes que la vue sait faire, celles de la vue d'abord (les `here` premières) : la
     /// palette les trouve par ce qu'elles font, et propose les `here` sans rien taper.
-    commands: Vec<crate::commands::Command>,
+    commands: Vec<crate::logic::commands::Command>,
     here: usize,
     /// Rien que les commandes (F10, ou « > » tapé en tête), et le nom de ce qu'on regarde.
     commands_only: bool,
@@ -446,7 +446,7 @@ impl Palette {
     }
 
     /// Propose de défaire le dernier remplacement dans le coffre, s'il y en a un.
-    pub fn with_commands(mut self, commands: Vec<crate::commands::Command>, here: usize, context: &'static str) -> Self {
+    pub fn with_commands(mut self, commands: Vec<crate::logic::commands::Command>, here: usize, context: &'static str) -> Self {
         (self.commands, self.here, self.context) = (commands, here, context);
         self.refresh();
         self
@@ -866,7 +866,7 @@ impl Palette {
         let t = self.theme;
         let c = &self.commands[n];
         let on = i == self.selected;
-        let caps = crate::commands::keycaps(&c.keys).into_iter().map(|key| {
+        let caps = crate::logic::commands::keycaps(&c.keys).into_iter().map(|key| {
             div()
                 .min_w(px(20.))
                 .px(px(6.))
@@ -983,7 +983,7 @@ impl Render for Palette {
                 Item::Vault => (vault_label().to_string(), crate::keys::of(cx, &crate::OpenVault)),
                 Item::Help => (help_label().to_string(), crate::keys::of(cx, &crate::ToggleHelp)),
                 Item::Diagram => (diagram_label().to_string(), crate::keys::of(cx, &crate::NewDiagram)),
-                Item::Folder => (folder_label().to_string(), crate::keys::of(cx, &crate::nav::NewFolder)),
+                Item::Folder => (folder_label().to_string(), crate::keys::of(cx, &crate::views::nav::NewFolder)),
                 Item::Import => (import_label().to_string(), String::new()),
                 Item::Updates => (updates_label(self.updates.unwrap_or(true)).to_string(), String::new()),
                 Item::Check => (check_label().to_string(), String::new()),

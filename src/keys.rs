@@ -1,7 +1,8 @@
 //! Raccourcis : la table des liaisons, ce que l'utilisateur en a changé, les conflits, le
 //! fichier `keys`, et ce que le panneau d'aide montre et cherche (fonctions pures).
 
-use crate::{MOD, tr};
+use crate::{MOD, lang::tr};
+use crate::lang::fold;
 use gpui::{Action, App, Keystroke};
 use std::collections::BTreeMap;
 
@@ -258,27 +259,6 @@ pub fn shown(bound: &[Bind], action: &str) -> String {
         }
     }
     keys.into_iter().map(show).collect::<Vec<_>>().join(" / ")
-}
-
-/// Texte ramené à ce que la recherche compare : minuscules, sans accents.
-// ponytail: les seuls accents du français ; passer à une normalisation Unicode si une autre
-// langue arrive dans `tr`.
-pub fn fold(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars().flat_map(char::to_lowercase) {
-        match c {
-            'à' | 'â' | 'ä' => out.push('a'),
-            'é' | 'è' | 'ê' | 'ë' => out.push('e'),
-            'î' | 'ï' => out.push('i'),
-            'ô' | 'ö' => out.push('o'),
-            'ù' | 'û' | 'ü' => out.push('u'),
-            'ç' => out.push('c'),
-            'œ' => out.push_str("oe"),
-            '’' => out.push('\''),
-            c => out.push(c),
-        }
-    }
-    out
 }
 
 /// Les lignes dont les touches ou l'effet contiennent chaque mot cherché ; une section vide
