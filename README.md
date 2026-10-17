@@ -352,7 +352,7 @@ What you type is what is saved. Bref only changes how it looks.
 | `https://…` | a link, opened in your browser |
 | `![](picture.png)` or `![[picture.png]]` | the picture, under its line. It is looked for next to the note, at the top of the vault, then by its file name anywhere in the vault |
 | `Ctrl + V` with a picture in the clipboard | the picture is saved next to the note, and its `![](…)` line inserted |
-| `` ```mermaid `` | a [Mermaid](https://mermaid.js.org) diagram, drawn under its block once the cursor has left it |
+| `` ```mermaid `` | a [Mermaid](https://mermaid.js.org) diagram, drawn under its block once the cursor has left it; the magnifier next to the copy button shows it full size, to zoom and move around |
 | `$x^2$`, `$$…$$`, or lines between two `$$` lines | a LaTeX formula, drawn under its line |
 | `->`, `<-`, `<->`, `=>`, `<=>`, `!=`, `<=`, `>=` | shown as →, ←, ↔, ⇒, ⇔, ≠, ≤, ≥, except on the line you are editing and inside code |
 
@@ -436,6 +436,7 @@ Pick a tool, from its key or from the bar above the canvas, then drag; a click d
 - **In a note**: `![](Diagram.svg)` or `![[Diagram.svg]]` shows the diagram, in the colors of your theme, and follows its changes. Typing `![[` suggests the diagrams and pictures of the vault.
 - **The file** is a plain SVG, saved at each change: it opens in a browser and displays on GitHub. It also carries its own source, which is what Bref reads to keep editing it.
 - **Export**: the button at the right of the bar saves a PNG next to the diagram, dark on white.
+- **SVG from elsewhere** (draw.io, Mermaid.js, Inkscape, a browser): it opens in a viewer, fitted to its width. Drag or use the wheel to move, `+` `-` (or `Ctrl` + wheel) to zoom from 5 % to 800 %, `0` to fit; `Esc` goes back to the note. It is drawn in tiles at the resolution of the zoom, so a diagram several thousand pixels tall stays sharp. Text written in HTML (draw.io labels, Mermaid.js) is turned into SVG text with its bold, colors and line breaks, and `light-dark()` colors follow the theme. In a note, `![](file.svg)` shows it the same way.
 - **Import**: `import` in the palette takes an Excalidraw file (`.excalidraw`) or a draw.io file (`.drawio`, saved without compression: untick *File › Properties › Compressed*). Shapes, texts, arrows and what they hold on to are kept; freehand strokes and pictures are not, and arrows are routed again by Bref.
 
 ## CSV and TSV tables
@@ -586,6 +587,7 @@ cargo test --release --locked -- --ignored --nocapture bench
 - **Navigation** (`src/nav.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. 
 - **Graph** (`src/graph.rs`): a force-directed layout computed off the UI thread when the links change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
 - **Diagrams** (`src/diagram.rs`, `src/canvas.rs`, `src/import.rs`): shapes and arrows are plain data; the same outlines are drawn on the canvas and written to the SVG file, whose `<metadata>` holds one line of source per element.
+- **Figures and SVG** (`src/svg.rs`, `src/viewer.rs`): Mermaid diagrams and SVG files are laid out and rasterized off the UI thread, at most one at a time per figure, and the previous version stays on screen until the new one is ready; a figure never exceeds 8,192 pixels a side or 16 million pixels. The viewer draws tiles of 512 pixels and keeps the last 64.
 - **Startup**: the last note is read before the first frame, so the window appears with its content. Icons are embedded in the binary.
 - **Window**: on Linux Bref draws its own title bar, shadow and resize edges (client-side decorations); on macOS and Windows the system does.
 

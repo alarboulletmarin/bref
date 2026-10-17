@@ -7,6 +7,7 @@ use latex_rust::{Color, Dim, MathFont, SvgOptions, latex_to_svg};
 use mermaid_rs_renderer::{RenderOptions, Theme, render_with_options};
 
 /// Couleurs du thème, en `#rrggbb`, et police du texte.
+#[derive(Clone, Hash, PartialEq)]
 pub struct Look {
     pub dark: bool,
     pub bg: String,
@@ -16,11 +17,29 @@ pub struct Look {
     pub font: String,
 }
 
+impl Look {
+    pub fn of(t: &crate::Theme) -> Self {
+        let hex = |c: gpui::Hsla| {
+            let c = gpui::Rgba::from(c);
+            let [r, g, b] = [c.r, c.g, c.b].map(|v| (v * 255.) as u8);
+            format!("#{r:02x}{g:02x}{b:02x}")
+        };
+        Look {
+            dark: t.bg.l < 0.5,
+            bg: hex(t.bg),
+            fill: hex(t.code_bg),
+            text: hex(t.text),
+            line: hex(t.dim),
+            font: crate::sans().to_string(),
+        }
+    }
+}
+
 /// Un SVG et sa taille à l'écran, en pixels.
 pub type Figure = (String, f32, f32);
 
-/// Le diagramme Mermaid de `source` ; `None` s'il est invalide.
-pub fn mermaid(source: &str, look: &Look) -> Option<Figure> {
+/// Le SVG du diagramme Mermaid de `source` ; `None` s'il est invalide.
+pub fn mermaid(source: &str, look: &Look) -> Option<String> {
     let base = if look.dark { Theme::dark() } else { Theme::modern() };
     let theme = Theme {
         font_family: look.font.clone(),
@@ -41,8 +60,7 @@ pub fn mermaid(source: &str, look: &Look) -> Option<Figure> {
     let options = RenderOptions { theme, ..Default::default() };
     // Le moteur vient d'ailleurs : un diagramme qui le ferait paniquer ne doit pas
     // emporter l'app, donc la note en cours de frappe.
-    let svg = catch_unwind(|| render_with_options(source, options).ok()).ok()??;
-    sharpen(&svg)
+    catch_unwind(|| render_with_options(source, options).ok()).ok()?
 }
 
 /// La formule LaTeX `source`, en couleur `rgb` et corps `size` (pixels) ;
@@ -61,21 +79,10 @@ pub fn latex(source: &str, display: bool, rgb: [u8; 3], size: f32) -> Option<Fig
     sharpen(&svg)
 }
 
-/// L'image PNG d'un SVG, `scale` fois plus grande que nature, sur fond blanc ;
-/// son texte est écrit dans la police `font`.
-pub fn png(svg: &str, font: &str, scale: f32) -> Option<Vec<u8>> {
-    use resvg::{tiny_skia, usvg};
-    let mut options = usvg::Options::default();
-    options.fontdb_mut().load_system_fonts();
-    crate::FONT_FILES.iter().for_each(|data| options.fontdb_mut().load_font_data(data.to_vec()));
-    // Une police absente serait remplacée par la première venue, parfois une
-    // police de symboles : on n'en désigne qu'une qui existe.
-    let known = |name: &str| options.fontdb.faces().any(|face| face.families.iter().any(|(family, _)| family == name));
-    let usual = [font, "DejaVu Sans", "Noto Sans", "Liberation Sans", "Arial", "Helvetica"];
-    if let Some(family) = usual.into_iter().find(|name| known(name)) {
-        options.fontdb_mut().set_sans_serif_family(family);
-    }
-    let tree = usvg::Tree::from_str(svg, &options).ok()?;
+/// L'image PNG d'un SVG, `scale` fois plus grande que nature, sur fond blanc.
+pub fn png(svg: &str, scale: f32) -> Option<Vec<u8>> {
+    use resvg::tiny_skia;
+    let tree = crate::svg::parse(svg)?;
     let size = tree.size();
     let mut pixmap = tiny_skia::Pixmap::new((size.width() * scale).ceil() as u32, (size.height() * scale).ceil() as u32)?;
     pixmap.fill(tiny_skia::Color::WHITE);
@@ -121,8 +128,9 @@ mod tests {
             line: "#808080".into(),
             font: "sans-serif".into(),
         };
-        let (svg, w, h) = mermaid("flowchart LR\n    A --> B", &look).unwrap();
-        assert!(svg.contains("#101010") && w > h && h > 10.);
+        let svg = mermaid("flowchart LR\n    A --> B", &look).unwrap();
+        let size = crate::svg::parse(&svg).unwrap().size();
+        assert!(svg.contains("#101010") && size.width() > size.height() && size.height() > 10.);
         assert!(mermaid("ceci n'est pas un diagramme", &look).is_none() && mermaid("", &look).is_none());
 
         let (svg, w, h) = latex(r"\frac{1}{2}", true, [255, 0, 0], 16.).unwrap();
@@ -130,3 +138,4 @@ mod tests {
         assert!(latex(r"\frac{1}{", false, [0, 0, 0], 16.).is_none());
     }
 }
+

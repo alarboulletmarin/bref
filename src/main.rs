@@ -20,9 +20,11 @@ mod nav;
 mod palette;
 mod recall;
 mod sheet;
+mod svg;
 mod table;
 mod update;
 mod vault;
+mod viewer;
 
 use std::{
     borrow::Cow,
@@ -678,6 +680,10 @@ struct Pane {
     picture: Option<PathBuf>,
     /// Schéma ouvert dans son canevas, quand l'image affichée en est un.
     drawing: Option<(PathBuf, Entity<Canvas>)>,
+    /// SVG venu d'ailleurs, ouvert dans la visionneuse.
+    viewer: Option<(PathBuf, Entity<viewer::Viewer>)>,
+    /// Diagramme Mermaid de la note, vu en grand à sa place.
+    figure: Option<Entity<viewer::Viewer>>,
     /// Tableau ouvert dans sa grille, quand le fichier affiché en est un.
     sheet: Option<(PathBuf, Entity<Sheet>)>,
     /// Fichier de la note ouverte ; `None` tant qu'une nouvelle note n'est pas enregistrée.
@@ -829,6 +835,8 @@ impl Shell {
             editor,
             picture: None,
             drawing: None,
+            viewer: None,
+            figure: None,
             sheet: None,
             path: None,
             synced: true,
@@ -1069,10 +1077,15 @@ impl Shell {
     fn focus_pane(&mut self, pane: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.active = pane.min(self.panes.len() - 1);
         let shown = self.picture.is_some();
+        if let Some(figure) = &self.figure {
+            window.focus(&figure.focus_handle(cx));
+            return cx.notify();
+        }
         match (self.shown_sheet(), &self.listing, &self.drawing) {
             (Some(sheet), ..) => window.focus(&sheet.focus_handle(cx)),
             (None, Some(listing), _) => window.focus(&listing.filter.focus_handle(cx)),
             (None, None, Some((_, canvas))) if shown => window.focus(&canvas.focus_handle(cx)),
+            (None, None, None) if shown && let Some((_, viewer)) = &self.viewer => window.focus(&viewer.focus_handle(cx)),
             (None, None, _) if shown => window.focus(&self.zone),
             (None, None, _) => window.focus(&self.editor.focus_handle(cx)),
         }
@@ -2124,6 +2137,12 @@ impl Shell {
                     (path.to_path_buf(), canvas)
                 });
             }
+            // Un SVG d'ailleurs s'ouvre dans la visionneuse : on le zoome, on s'y déplace.
+            if svg && self.drawing.is_none() && self.viewer.as_ref().is_none_or(|(open, _)| open != path) {
+                let theme = self.theme;
+                let source = viewer::Source::File(path.to_path_buf(), None);
+                self.viewer = Some((path.to_path_buf(), cx.new(|cx| viewer::Viewer::new(source, theme, cx))));
+            }
             cx.notify();
             return false;
         }
@@ -2642,6 +2661,14 @@ impl Shell {
                 self.menu = Some(nav::Menu { at: *at, target: None, text: Some(None), commented: false, block: true });
                 cx.notify();
             }
+            // Le diagramme prend la place de la note, comme une image ; Échap y ramène.
+            EditorEvent::View(source) => {
+                let (source, theme) = (viewer::Source::Mermaid(source.clone()), self.theme);
+                let figure = cx.new(|cx| viewer::Viewer::new(source, theme, cx));
+                window.focus(&figure.focus_handle(cx));
+                self.figure = Some(figure);
+                cx.notify();
+            }
         }
     }
 
@@ -2703,7 +2730,7 @@ impl Shell {
         let canvas = canvas.downgrade();
         cx.spawn(async move |this, cx| {
             let drawn = cx.background_executor().spawn(async move {
-                let bytes = figure::png(&svg, sans(), 2.).ok_or_else(|| std::io::Error::other("PNG"))?;
+                let bytes = figure::png(&svg, 2.).ok_or_else(|| std::io::Error::other("PNG"))?;
                 let path = vault::free_path(file.parent().unwrap_or(Path::new("")), &vault::stem(&file), "png");
                 fs::write(&path, bytes).map(|_| path)
             });
@@ -2790,6 +2817,8 @@ impl Shell {
         }
         if let Some((_, canvas)) = &self.drawing {
             window.focus(&canvas.focus_handle(cx));
+        } else if let Some((_, viewer)) = &self.viewer {
+            window.focus(&viewer.focus_handle(cx));
         }
         self.settle_nav(window, cx);
     }
@@ -3466,6 +3495,7 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 t(tr("Edge of a shape", "Bord d'une forme"), tr("An arrow end dropped there stays there; in the middle, it follows the other end", "Un bout de flèche lâché là y reste ; au milieu, il suit l'autre bout")),
                 t(tr("Wheel / + - 0", "Molette / + - 0"), tr("Move the view / zoom in, out, fit all", "Déplacer la vue / zoomer, dézoomer, tout cadrer")),
                 t("![](Schéma.svg)", tr("Show the diagram in a note", "Afficher le schéma dans une note")),
+                t(".svg", tr("An SVG from elsewhere (draw.io, Mermaid.js…) opens in a viewer: drag or wheel to move, + - 0 to zoom", "Un SVG d'ailleurs (draw.io, Mermaid.js…) s'ouvre dans une visionneuse : glisser ou molette pour se déplacer, + - 0 pour zoomer")),
                 p("import", tr("Bring in an Excalidraw or draw.io file", "Reprendre un fichier Excalidraw ou draw.io")),
             ],
         ),
@@ -3538,7 +3568,7 @@ fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Section
                 t("![[", tr("Suggests the pictures and diagrams of the vault", "Propose les images et les schémas du coffre")),
                 t(tr("Drop files", "Déposer des fichiers"), tr("Drag files or folders from your file manager onto a note (a line shows where) or onto the tree (the folder under the pointer): they are copied, never overwritten, and a note gets a link per item", "Glisser des fichiers ou des dossiers du gestionnaire de fichiers sur une note (un trait montre où) ou sur l'arbre (le dossier sous le pointeur) : ils sont copiés, jamais écrasés, et la note reçoit un lien par élément")),
                 t(tr("Double / triple click", "Double / triple clic"), tr("Select a word / a line; drag to extend by words / lines", "Sélectionner un mot / une ligne ; glisser étend par mots / par lignes")),
-                t("```mermaid", tr("Diagram, under its block", "Diagramme, sous son bloc")),
+                t("```mermaid", tr("Diagram, under its block; its magnifier shows it full size", "Diagramme, sous son bloc ; sa loupe le montre en grand")),
                 t("$x^2$  $$…$$", tr("LaTeX formula, under its line", "Formule LaTeX, sous sa ligne")),
                 t("-> != <= =>", tr("Shown as → ≠ ≤ ⇒", "Affichés → ≠ ≤ ⇒")),
             ],
@@ -4168,9 +4198,13 @@ impl Shell {
         if self.editor.focus_handle(cx).is_focused(window) {
             self.picture = None;
             self.listing = None;
+            self.figure = None;
         }
         if self.drawing.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
             self.drawing = None;
+        }
+        if self.viewer.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
+            self.viewer = None;
         }
         let note = div().flex_1().min_w_0().h_full().relative();
         if self.sheet.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
@@ -4180,6 +4214,10 @@ impl Shell {
         let listing = self.listing.is_some().then(|| self.render_listing(cx));
         let note = match (&self.picture, &self.drawing) {
             _ if listing.is_some() => note.children(listing),
+            _ if let Some(figure) = self.figure.clone() => {
+                figure.update(cx, |figure, _| figure.sync(t));
+                note.child(figure)
+            }
             _ if board => note.child(self.render_board(cx)).children(flip),
             (Some(_), _) if self.sheet.is_some() => {
                 let (_, sheet) = self.sheet.clone().unwrap();
@@ -4189,6 +4227,11 @@ impl Shell {
             (Some(_), Some((_, canvas))) => {
                 canvas.update(cx, |canvas, _| canvas.sync(t, client));
                 note.child(canvas.clone())
+            }
+            (Some(path), None) if self.viewer.as_ref().is_some_and(|(open, _)| open == path) => {
+                let (_, viewer) = self.viewer.clone().unwrap();
+                viewer.update(cx, |viewer, _| viewer.sync(t));
+                note.child(viewer)
             }
             (Some(path), None) => note.p_6().flex().items_center().justify_center().child(
                 img(path.clone()).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
@@ -5813,6 +5856,99 @@ mod tests {
         cx.simulate_keystrokes("escape");
         cx.run_until_parked();
         assert_eq!(shell.read_with(cx, |s, _| s.picture.clone()), None);
+
+        // Un SVG d'ailleurs (draw.io : texte en HTML, couleurs `light-dark()`) s'affiche dans la
+        // note, dessiné en tâche de fond. Changer de thème, même vite et plusieurs fois, garde la
+        // figure à sa place (l'ancienne reste le temps que la nouvelle se dessine) et n'accumule rien.
+        let drawio = r##"<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120" style="background: light-dark(#fff, #121212)"><rect width="400" height="120" style="fill: light-dark(#ffffff, #121212)"/><switch><foreignObject width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 200px; height: 1px; padding-top: 60px; margin-left: 100px;"><div style="text-align: center;"><div style="display: inline-block; font-size: 12px; color: light-dark(#000, #fff); white-space: normal;"><b>Étape</b><br/>texte</div></div></div></foreignObject><text x="200" y="64">Text is not SVG - cannot display</text></switch></svg>"##;
+        fs::write(root.join("drawio.svg"), drawio).unwrap();
+        fs::write(root.join("cassé.svg"), "<svg pas fermé").unwrap();
+        cx.simulate_keystrokes("secondary-end enter");
+        cx.simulate_input("![](drawio.svg)");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("![](cassé.svg)");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        cx.simulate_input("fin");
+        cx.run_until_parked();
+        let seen = |cx: &mut gpui::VisualTestContext| {
+            shell.read_with(cx, |s, cx| {
+                let editor = s.editor.read(cx);
+                (editor.decorations("![](drawio").1, editor.decorations("![](cassé").1, editor.figure_count())
+            })
+        };
+        let (drawn, broken, (count, waiting)) = seen(cx);
+        assert_eq!((drawn, broken, waiting), (Some((400., 120.)), None, 0));
+        for name in ["Bref Dark", "Bref Light", "Bref Dark", "Bref Light", "Bref Dark"] {
+            shell.update_in(cx, |s, window, cx| {
+                s.prefs.theme = name.into();
+                s.restyle(window, cx);
+            });
+            cx.simulate_input("x");
+            cx.simulate_keystrokes("backspace");
+            assert_eq!(seen(cx).0, Some((400., 120.)), "la figure reste en place pendant qu'elle se redessine");
+        }
+        cx.run_until_parked();
+        cx.simulate_input("x");
+        cx.simulate_keystrokes("backspace");
+        cx.run_until_parked();
+        assert_eq!(seen(cx), (Some((400., 120.)), None, (count, 0)), "ni figure ni dessin de trop");
+
+        // Le même SVG, ouvert, s'affiche dans la visionneuse : cadré sur sa largeur, zoomé au
+        // clavier, et Échap ramène à la note. Un SVG illisible le dit, sans rien casser.
+        // Ouvert depuis l'arbre, il prend la saisie : la note ne la garde pas.
+        shell.update_in(cx, |s, window, cx| {
+            s.preview_note(&root.join("drawio.svg"), cx);
+            s.focus_pane(0, window, cx);
+        });
+        // La plateforme de test ne redessine pas d'elle-même quand un dessin en tâche de fond aboutit.
+        let settle = |cx: &mut gpui::VisualTestContext| {
+            for _ in 0..3 {
+                cx.run_until_parked();
+                cx.update(|window, _| window.refresh());
+            }
+            cx.run_until_parked();
+        };
+        settle(cx);
+        let viewer = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.viewer.as_ref().map(|(_, v)| v.read(cx).state()));
+        let (loaded, failed, fit, _) = viewer(cx).unwrap();
+        assert!(loaded && !failed && fit > 0. && fit <= 1., "{:?}", viewer(cx));
+        cx.simulate_keystrokes("secondary-=");
+        assert!((viewer(cx).unwrap().2 - fit * 1.25).abs() < 1e-4);
+        cx.simulate_keystrokes("secondary-0");
+        settle(cx);
+        assert_eq!(viewer(cx).unwrap().2, fit);
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.picture.is_none() && s.viewer.is_none()));
+        // La loupe d'un bloc Mermaid montre le diagramme en grand, à la place de la note ; + et -
+        // zooment ; Échap ramène à la note.
+        let button = shell.read_with(cx, |s, cx| s.editor.read(cx).view_button("```mermaid")).unwrap();
+        cx.simulate_click(button, gpui::Modifiers::none());
+        settle(cx);
+        let figure = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.figure.as_ref().map(|f| f.read(cx).state()));
+        let (loaded, failed, fit, _) = figure(cx).unwrap();
+        assert!(loaded && !failed && fit > 0., "{:?}", figure(cx));
+        assert!(text(cx).contains("```mermaid\nflowchart LR"), "la note n'a pas bougé");
+        cx.simulate_keystrokes("+");
+        assert!((figure(cx).unwrap().2 - fit * 1.25).abs() < 1e-4);
+        cx.simulate_keystrokes("- 0");
+        settle(cx);
+        assert_eq!(figure(cx).unwrap().2, fit);
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |s, _| s.figure.is_none()));
+        shell.update_in(cx, |s, window, cx| {
+            s.preview_note(&root.join("cassé.svg"), cx);
+            s.focus_pane(0, window, cx);
+        });
+        settle(cx);
+        assert_eq!(viewer(cx).map(|v| (v.0, v.1)), Some((false, true)));
+        shell.update(cx, |s, cx| {
+            let note = s.path.clone().unwrap();
+            s.preview_note(&note, cx);
+        });
+        cx.run_until_parked();
 
         // Tags : Ctrl+T liste les tags du coffre ; Droite déplie le premier, Bas
         // affiche en aperçu une note qui le porte.

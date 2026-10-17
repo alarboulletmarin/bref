@@ -26,7 +26,7 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    Theme, block, diagram::Diagram, figure, graph, grid::{self, TableRow}, mono, sans, tr, vault,
+    Theme, block, diagram::Diagram, figure, graph, svg, grid::{self, TableRow}, mono, sans, tr, vault,
     markdown::{self as md, Enter, Kind, Link, ListStyle},
 };
 
@@ -549,6 +549,8 @@ pub enum EditorEvent {
     Menu(Point<Pixels>, Option<Link>, bool),
     /// Clic sur la poignée d'un bloc : son menu, à cet endroit.
     BlockMenu(Point<Pixels>),
+    /// Un diagramme Mermaid à voir en grand : son source.
+    View(String),
 }
 
 /// Ce dont la mise en page dépend, en dehors du texte : si rien n'a changé, on la garde.
@@ -993,24 +995,99 @@ struct Shaped {
 /// Figure prête à dessiner (`None` : source invalide) et sa taille.
 type Drawing = Option<(Arc<Image>, Size<Pixels>)>;
 
-/// La figure de clé `key`, reprise de la frame précédente ou dessinée par `make` ;
-/// si `lazy`, seulement reprise.
-fn cached(
-    old: &mut FastMap<u64, Drawing>,
-    kept: &mut FastMap<u64, Drawing>,
+/// Les figures dessinées, par clé ; chacune avec la clé de sa source seule (sans le thème),
+/// pour montrer l'ancienne version pendant que la nouvelle se dessine.
+type Figures = FastMap<u64, (u64, Drawing)>;
+
+/// La figure de clé `key`, reprise de la frame précédente ou dessinée par `make` ; si `lazy`,
+/// seulement reprise. Tant que `make` n'a rien (dessin en tâche de fond), la version d'avant
+/// de la même source (`family`), s'il y en a une.
+fn cached(old: &mut Figures, kept: &mut Figures, (key, family): (u64, u64), lazy: bool, make: impl FnOnce() -> Option<Drawing>) -> Drawing {
+    if let Some(entry) = old.remove(&key).or_else(|| kept.get(&key).cloned()) {
+        kept.insert(key, entry.clone());
+        return entry.1;
+    }
+    if lazy {
+        return None;
+    }
+    if let Some(drawing) = make() {
+        kept.insert(key, (family, drawing.clone()));
+        return drawing;
+    }
+    let stale = *old.iter().find(|(_, (f, d))| *f == family && d.is_some())?.0;
+    let entry = old.remove(&stale)?;
+    kept.insert(stale, entry.clone());
+    entry.1
+}
+
+/// Une figure dessinée hors du fil de l'interface : la mise en page d'un gros diagramme
+/// Mermaid peut prendre une seconde, et resvg autant pour un SVG chargé de texte.
+#[derive(Clone)]
+struct Job {
     key: u64,
-    lazy: bool,
-    make: impl FnOnce() -> Option<figure::Figure>,
-) -> Drawing {
-    let drawing = match old.remove(&key).or_else(|| kept.get(&key).cloned()) {
-        Some(drawing) => drawing,
-        None if lazy => return None,
-        None => make().map(|(svg, w, h)| {
-            let image = Image::from_bytes(ImageFormat::Svg, svg.into_bytes());
-            (Arc::new(image), size(px(w), px(h)))
-        }),
+    /// La clé de la source seule : une figure à la fois par source.
+    family: u64,
+    /// Le SVG à dessiner ; `None` si la source est invalide.
+    make: Arc<dyn Fn() -> Option<String> + Send + Sync>,
+    /// Largeur d'affichage au plus, densité de l'écran, et fond.
+    room: f32,
+    density: f32,
+    bg: [u8; 3],
+}
+
+impl Job {
+    fn id(&self) -> (u64, u32, u32, [u8; 3]) {
+        (self.key, self.room.to_bits(), self.density.to_bits(), self.bg)
+    }
+}
+
+impl Hash for Job {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
+    }
+}
+
+impl gpui::Asset for Job {
+    type Source = Self;
+    type Output = Drawing;
+
+    fn load(job: Self, _: &mut App) -> impl Future<Output = Drawing> + Send + 'static {
+        async move {
+            let tree = svg::parse(&(job.make)()?)?;
+            let (w, h) = (tree.size().width(), tree.size().height());
+            // Pas plus fin que l'écran à la plus grande largeur d'affichage : un schéma très
+            // large ou très haut ne pèse pas plus que ce qu'on en voit.
+            let scale = svg::scale_for(w, h, job.density * (job.room / w).min(1.));
+            let bytes = svg::bmp(&tree, scale, (0, 0, (w * scale).ceil() as u32, (h * scale).ceil() as u32), job.bg)?;
+            Some((Arc::new(Image::from_bytes(ImageFormat::Bmp, bytes)), size(px(w), px(h))))
+        }
+    }
+}
+
+/// La figure de `job` si elle est prête ; sinon elle se dessine (`waiting`), et la note sera
+/// remise en page. Une seule à la fois par source (`before` : celles qu'on attendait) : parcourir
+/// vite les thèmes ne lance pas un dessin par thème.
+fn drawn(job: Job, before: &[Job], waiting: &mut Vec<Job>, window: &mut Window, cx: &mut App) -> Option<Drawing> {
+    if let Some(running) = before.iter().find(|j| j.family == job.family && j.id() != job.id()) {
+        if window.use_asset::<Job>(running, cx).is_none() {
+            waiting.push(running.clone());
+            return None;
+        }
+        cx.remove_asset::<Job>(running);
+    }
+    let drawing = window.use_asset::<Job>(&job, cx);
+    // Prête quand son image est décodée : jusque-là, l'ancienne version reste à l'écran.
+    let ready = match &drawing {
+        Some(Some((image, _))) => image.clone().use_render_image(window, cx).is_some(),
+        Some(None) => true,
+        None => false,
     };
-    kept.insert(key, drawing.clone());
+    if !ready {
+        waiting.push(job);
+        return None;
+    }
+    // La figure est gardée par l'éditeur : gpui n'a plus à la retenir.
+    cx.remove_asset::<Job>(&job);
     drawing
 }
 
@@ -1142,10 +1219,15 @@ pub struct Editor {
     copied: Option<usize>,
     /// Début de la ligne dont le bouton de copie est survolé.
     hover: Option<usize>,
+    /// Ligne dont le bouton « en grand » est survolé.
+    view_hover: Option<usize>,
     /// Zones des boutons de copie, par début de ligne : elles portent le curseur en main.
     copy_hitboxes: Vec<(usize, Hitbox)>,
+    view_hitboxes: Vec<(usize, Hitbox)>,
     /// Diagrammes et formules de la dernière frame, par empreinte de leur source.
-    figures: FastMap<u64, Drawing>,
+    figures: Figures,
+    /// Figures en cours de dessin.
+    waiting: Vec<Job>,
     /// Lignes mises en forme à la dernière frame, par empreinte de leur texte et
     /// de leur contexte.
     shaped: FastMap<u64, (Rc<Shaped>, u32)>,
@@ -1283,8 +1365,11 @@ impl Editor {
             images: HashMap::new(),
             copied: None,
             hover: None,
+            view_hover: None,
             copy_hitboxes: Vec::new(),
+            view_hitboxes: Vec::new(),
             figures: FastMap::default(),
+            waiting: Vec::new(),
             shaped: FastMap::default(),
             frame: 0,
             cells: grid::Cache::default(),
@@ -1420,6 +1505,19 @@ impl Editor {
         let row = self.rows.iter().find(|r| self.content[r.start..].starts_with(prefix)).unwrap();
         let image = row.image.as_ref().map(|(_, s)| (s.width.into(), s.height.into()));
         (row.shaped.subs.len(), image)
+    }
+
+    /// Centre du bouton « en grand » du bloc Mermaid qui commence par `prefix`.
+    #[cfg(test)]
+    pub fn view_button(&self, prefix: &str) -> Option<Point<Pixels>> {
+        let row = self.rows.iter().find(|r| self.views(r) && self.content[r.start..].starts_with(prefix))?;
+        Some(self.view_bounds(row).center())
+    }
+
+    /// Figures gardées, et figures en cours de dessin.
+    #[cfg(test)]
+    pub fn figure_count(&self) -> (usize, usize) {
+        (self.figures.len(), self.waiting.len())
     }
 
     /// Centre des boutons « + » (ligne, colonne) du premier tableau affiché.
@@ -3990,6 +4088,24 @@ impl Editor {
         Some(row.start)
     }
 
+    /// La ligne ouvre un bloc Mermaid : elle porte aussi le bouton qui montre le diagramme en grand,
+    /// à gauche de celui de copie.
+    fn views(&self, row: &Row) -> bool {
+        let line = &self.content[row.start..row.start + row.len];
+        row.opens && line.trim_start().get(3..).is_some_and(|lang| lang.trim().eq_ignore_ascii_case("mermaid"))
+    }
+
+    fn view_bounds(&self, row: &Row) -> Bounds<Pixels> {
+        let copy = self.copy_bounds(row);
+        Bounds::new(copy.origin - point(COPY_SIZE + px(4.), px(0.)), copy.size)
+    }
+
+    /// Début de la ligne dont le bouton « en grand » est sous le pointeur.
+    fn view_at(&self, at: Point<Pixels>) -> Option<usize> {
+        let row = self.rows.iter().find(|r| self.views(r) && self.view_bounds(r).contains(&at))?;
+        Some(row.start)
+    }
+
     fn index_at(&self, pos: Point<Pixels>) -> usize {
         let y = pos.y - self.origin.y;
         let Some(row) = self.rows.iter().find(|r| y < r.y + r.height).or(self.rows.last()) else {
@@ -4002,6 +4118,12 @@ impl Editor {
     fn mouse_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(find) = &mut self.find {
             find.active = false;
+        }
+        // Diagramme Mermaid en grand, dans la visionneuse.
+        if let Some(start) = self.view_at(e.position)
+            && let Some(block) = md::code_block(&self.content, self.line_range(start).end + 1)
+        {
+            return cx.emit(EditorEvent::View(self.content[block].to_string()));
         }
         // Bouton de copie, à droite de l'ouverture d'un bloc de code.
         if let Some(start) = self.copy_at(e.position)
@@ -4183,9 +4305,9 @@ impl Editor {
             self.part_hover = part;
             cx.notify();
         }
-        let hover = self.copy_at(e.position);
-        if hover != self.hover {
-            self.hover = hover;
+        let hover = (self.copy_at(e.position), self.view_at(e.position));
+        if hover != (self.hover, self.view_hover) {
+            (self.hover, self.view_hover) = hover;
             cx.notify();
         }
         if let Some(cell) = self.grid_at(e.position)
@@ -4702,24 +4824,27 @@ impl Editor {
             let [r, g, b] = rgb(c);
             format!("#{r:02x}{g:02x}{b:02x}")
         };
-        let look = figure::Look {
-            dark: t.bg.l < 0.5,
-            bg: hex(t.bg),
-            fill: hex(t.code_bg),
-            text: hex(t.text),
-            line: hex(t.dim),
-            font: sans().to_string(),
-        };
+        let look = figure::Look::of(&t);
+        // La clé d'une figure, et celle de sa source seule.
         let key = |kind: u8, source: &str| {
-            let mut hasher = Fast::default();
+            let (mut hasher, mut family) = (Fast::default(), Fast::default());
             (kind, source, &look.bg, &look.fill, &look.text, &look.line, &look.font, t.size.to_bits())
                 .hash(&mut hasher);
-            hasher.finish()
+            (kind, source).hash(&mut family);
+            (hasher.finish(), family.finish())
         };
         let style = {
             let mut hasher = Fast::default();
-            (key(0, ""), hex(t.accent), mono(), has_unequal).hash(&mut hasher);
+            (key(0, "").0, hex(t.accent), mono(), has_unequal).hash(&mut hasher);
             hasher.finish()
+        };
+        // Les figures se dessinent à la plus grande largeur de la page, pour cet écran.
+        let job = {
+            let (room, density, bg) = (f32::from(t.page.measure(t.size)), window.scale_factor(), rgb(t.bg));
+            move |(key, family): (u64, u64), make: Arc<dyn Fn() -> Option<String> + Send + Sync>| Job { key, family, make, room, density, bg }
+        };
+        let vector = |figure: Option<figure::Figure>| {
+            Some(figure.map(|(svg, w, h)| (Arc::new(Image::from_bytes(ImageFormat::Svg, svg.into_bytes())), size(px(w), px(h)))))
         };
         let mut cells = std::mem::take(&mut self.cells);
         cells.next_frame();
@@ -4730,6 +4855,7 @@ impl Editor {
         self.frame = self.frame.wrapping_add(1);
         let frame = self.frame;
         let mut old = std::mem::take(&mut self.figures);
+        let (mut waiting, before) = (Vec::new(), std::mem::take(&mut self.waiting));
         let mut kept = FastMap::default();
         // Bloc Mermaid ou `$$` en cours : son début et son source.
         let mut block: Option<(usize, String)> = None;
@@ -4836,12 +4962,11 @@ impl Editor {
                     lang = line.trim_start()[3..].trim().to_lowercase();
                     block = (lang == "mermaid").then(|| (offset, String::new()));
                 } else if let Some((start, source)) = block.take() {
-                    // ponytail: un diagramme se dessine sur le thread UI (quelques dizaines
-                    // de ms), donc seulement une fois le curseur sorti du bloc ; passer
-                    // en tâche de fond si de gros diagrammes font attendre.
+                    // Un diagramme se dessine une fois le curseur sorti du bloc, en tâche de fond.
                     let editing = (start..=offset + line.len()).contains(&cursor);
-                    drawing = cached(&mut old, &mut kept, key(0, &source), editing, || {
-                        figure::mermaid(&source, &look)
+                    let (k, look) = (key(0, &source), look.clone());
+                    drawing = cached(&mut old, &mut kept, k, editing, || {
+                        drawn(job(k, Arc::new(move || figure::mermaid(&source, &look))), &before, &mut waiting, window, cx)
                     });
                 }
             }
@@ -4859,7 +4984,7 @@ impl Editor {
                 match block.take() {
                     Some((_, source)) => {
                         drawing = cached(&mut old, &mut kept, key(1, &source), false, || {
-                            figure::latex(&source, true, rgb(t.text), t.size * MATH_SCALE)
+                            vector(figure::latex(&source, true, rgb(t.text), t.size * MATH_SCALE))
                         });
                     }
                     // Comme pour ``` : un `$$` sans clôture n'ouvre rien.
@@ -5050,7 +5175,7 @@ impl Editor {
             }) };
             if let Some((source, display)) = &made.formula {
                 drawing = cached(&mut old, &mut kept, key(1 + *display as u8, source), false, || {
-                    figure::latex(source, *display, rgb(t.text), t.size * MATH_SCALE)
+                    vector(figure::latex(source, *display, rgb(t.text), t.size * MATH_SCALE))
                 });
             }
             // ponytail: une image par ligne, cherchée dans le dossier de la note, à la
@@ -5065,26 +5190,29 @@ impl Editor {
                 })
             });
             let svg = file.as_ref().is_some_and(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")));
-            // Un schéma de Bref est redessiné aux couleurs du thème, et à chaque fois
-            // que son fichier change : sa date fait partie de sa clé.
+            // Un SVG est redessiné aux couleurs du thème, et à chaque fois que son fichier
+            // change : sa date fait partie de sa clé. Un schéma de Bref prend l'encre du
+            // texte ; un SVG d'ailleurs est rendu lisible (texte HTML, `light-dark()`).
             if svg
                 && let Some(file) = &file
                 && let Ok(stamp) = fs::metadata(file).and_then(|m| m.modified())
             {
-                let own = cached(&mut old, &mut kept, key(3, &format!("{}{stamp:?}", file.display())), false, || {
-                    let diagram = Diagram::from_svg(&fs::read_to_string(file).ok()?)?;
-                    figure::sharpen(&diagram.to_svg(crate::canvas::neutral(t)))
+                let (k, family) = (key(3, &format!("{}{stamp:?}", file.display())).0, key(3, &file.display().to_string()).1);
+                let (path, ink, dark) = (file.clone(), crate::canvas::neutral(t), look.dark);
+                let own = cached(&mut old, &mut kept, (k, family), false, || {
+                    let make = move || {
+                        let text = fs::read_to_string(&path).ok()?;
+                        Some(Diagram::from_svg(&text).map_or_else(|| svg::readable(&text, dark), |d| d.to_svg(ink)))
+                    };
+                    drawn(job((k, family), Arc::new(make)), &before, &mut waiting, window, cx)
                 });
                 drawing = own.or(drawing);
             }
-            let image = file.filter(|_| drawing.is_none()).and_then(|file| {
-                // gpui 0.2 rend un SVG deux fois plus grand que nature, pour qu'il reste
-                // net (`SMOOTH_SVG_SCALE_FACTOR`, qui n'est pas public).
-                let zoom = if svg { 2. } else { 1. };
+            let image = file.filter(|_| drawing.is_none() && !svg).and_then(|file| {
                 let loaded = window.use_asset::<ImgResourceLoader>(&Resource::Path(file.into()), cx);
                 loading |= loaded.is_none();
                 let image = loaded?.ok()?;
-                let natural = |d: gpui::DevicePixels| d.0 as f32 / zoom;
+                let natural = |d: gpui::DevicePixels| d.0 as f32;
                 let (w, h) = (natural(image.size(0).width), natural(image.size(0).height));
                 let scale = (f32::from(width) / w.max(1.)).min(1.);
                 Some((image, size(px(w * scale), px(h * scale))))
@@ -5143,9 +5271,27 @@ impl Editor {
         self.big = big;
         self.big_style = style;
         self.total_y = y;
-        self.loading = loading;
         if incremental {
-            kept.extend(old);
+            kept.extend(old.drain());
+        }
+        // Une figure qui n'est plus demandée (autre thème, source changée) n'est plus attendue.
+        for job in before {
+            if !waiting.iter().any(|w| w.id() == job.id()) {
+                cx.remove_asset::<Job>(&job);
+            }
+        }
+        self.loading = loading || !waiting.is_empty();
+        self.waiting = waiting;
+        // Les figures qui ne servent plus libèrent leur image et sa place sur la carte graphique,
+        // sauf si une figure gardée a la même (même source, revenue au même thème).
+        let used: Vec<u64> = kept.values().filter_map(|(_, d)| Some(d.as_ref()?.0.id())).collect();
+        for (_, (_, drawing)) in old {
+            if let Some((image, _)) = drawing.filter(|(image, _)| !used.contains(&image.id())) {
+                if let Some(render) = image.clone().get_render_image(window, cx) {
+                    window.drop_image(render).ok();
+                }
+                image.remove_asset(cx);
+            }
         }
         self.figures = kept;
         self.dmg = None;
@@ -5270,6 +5416,13 @@ impl Editor {
             .iter()
             .map(|&i| &self.rows[i])
             .map(|r| (r.start, window.insert_hitbox(self.copy_bounds(r), HitboxBehavior::Normal)))
+            .collect();
+        self.view_hitboxes = self
+            .opening
+            .iter()
+            .map(|&i| &self.rows[i])
+            .filter(|r| self.views(r))
+            .map(|r| (r.start, window.insert_hitbox(self.view_bounds(r), HitboxBehavior::Normal)))
             .collect();
         let grid = self.grid.and_then(|_| self.popup_at(Self::grid_size()));
         self.grid_hitbox = grid.map(|at| window.insert_hitbox(Bounds::new(at, Self::grid_size()), HitboxBehavior::Normal));
@@ -5476,6 +5629,17 @@ impl Editor {
                 window.paint_svg(at, icon.into(), TransformationMatrix::unit(), t.text, cx).ok();
                 if let Some((_, hitbox)) = self.copy_hitboxes.iter().find(|(s, _)| *s == row.start) {
                     window.set_cursor_style(CursorStyle::PointingHand, hitbox);
+                }
+                if self.views(row) {
+                    let bounds = self.view_bounds(row);
+                    if self.view_hover == Some(row.start) {
+                        window.paint_quad(fill(bounds, t.border).corner_radii(px(6.)));
+                    }
+                    let at = Bounds::new(bounds.origin + point(inset, inset), size(px(16.), px(16.)));
+                    window.paint_svg(at, "c-zoom-in.svg".into(), TransformationMatrix::unit(), t.text, cx).ok();
+                    if let Some((_, hitbox)) = self.view_hitboxes.iter().find(|(s, _)| *s == row.start) {
+                        window.set_cursor_style(CursorStyle::PointingHand, hitbox);
+                    }
                 }
             }
         }
