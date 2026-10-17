@@ -85,6 +85,17 @@ pub fn paste_grid(text: &str) -> Option<Vec<Vec<String>>> {
     (!rows.is_empty()).then_some(rows)
 }
 
+/// Cells (their text as displayed, `|` not escaped) as a Markdown table: the
+/// first row is the header, a line of dashes follows it. A cell keeps a single
+/// line and its `|` escaped, so pasting the result rebuilds the same cells.
+pub fn grid_markdown(cells: &[Vec<String>]) -> String {
+    let block: Vec<String> = cells.iter().map(|row| format!("| {} |", row.iter().map(|c| cell_text(c)).collect::<Vec<_>>().join(" | "))).collect();
+    if block.is_empty() {
+        return String::new();
+    }
+    format_table(&table(&block.join("\n")).0, "")
+}
+
 /// Text pasted outside a table that is one, reformatted: a Markdown table of
 /// several lines, or cells separated by tabs (spreadsheet, web page), in
 /// equal number on each line. Code indented with tabs is not one.

@@ -1486,6 +1486,38 @@ mod tests {
     }
 
     #[test]
+    fn copied_cells_are_a_markdown_table_that_pastes_back() {
+        let g = |rows: &[&[&str]]| rows.iter().map(|r| r.iter().map(|c| c.to_string()).collect::<Vec<_>>()).collect::<Vec<_>>();
+        assert_eq!(grid_markdown(&[]), "");
+        assert_eq!(grid_markdown(&g(&[&["a"]])), "| a   |\n| --- |");
+        assert_eq!(grid_markdown(&g(&[&["Nom", "Âge"], &["Léa", "31"]])), "| Nom | Âge |\n| --- | --- |\n| Léa | 31  |");
+        let cases: Vec<Vec<Vec<String>>> = vec![
+            g(&[&["a"], &["b"]]),
+            g(&[&["", ""], &["", "x"]]),
+            g(&[&["a|b", "c\\d"], &["l1\nl2", " pad "], &["😀", "日本語"], &["é", "[[x|y]]"]]),
+            g(&[&["h1", "h2"]]),
+            vec![(0..30).map(|i| format!("c{i}")).collect(), (0..30).map(|i| i.to_string()).collect()],
+            std::iter::once(vec!["k".to_string(), "v".to_string()]).chain((0..1000).map(|i| vec![format!("n{i}"), i.to_string()])).collect(),
+        ];
+        for (n, cells) in cases.iter().enumerate() {
+            let text = grid_markdown(cells);
+            // Every line is a table line, in one piece, however the cells look.
+            assert!(text.lines().all(|l| l.starts_with('|') && l.ends_with('|')), "case {n}: {text}");
+            let back = paste_grid(&text).unwrap();
+            assert_eq!(back.len(), cells.len(), "case {n}");
+            let unescaped = |c: &str| c.replace("\\|", "|");
+            for (row, want) in back.iter().zip(cells) {
+                let want: Vec<String> = want.iter().map(|c| cell_text(c)).collect();
+                assert_eq!(row.iter().map(|c| unescaped(c)).collect::<Vec<_>>(), want.iter().map(|c| unescaped(c)).collect::<Vec<_>>(), "case {n}");
+            }
+            // Outside a table, it is a table again.
+            if cells.len() > 1 {
+                assert!(paste_table(&text).is_some(), "case {n}");
+            }
+        }
+    }
+
+    #[test]
     fn pastes_tables_from_anywhere() {
         let md = "| a | b |\n|:--|--:|\n| longue | 2 |";
         assert_eq!(paste_table(md).unwrap(), "| a      | b   |\n| :----- | --: |\n| longue | 2   |");

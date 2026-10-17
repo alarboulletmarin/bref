@@ -125,13 +125,17 @@ impl Editor {
         }
     }
 
-    /// The taken cells, as TSV.
+    /// The taken cells, as a Markdown table (a single cell: its text).
     pub(super) fn pick_text(&self) -> Option<String> {
         let (range, rows, _) = self.table_at(self.sel.start)?;
         let pick = self.live_pick(range.start)?;
         let line = |v: usize| if v == 0 { 0 } else { v + 1 };
-        let cells = |v: usize| rows[line(v)][pick.cols.clone()].iter().map(|c| c.replace("\\|", "|")).collect::<Vec<_>>().join("\t");
-        Some(pick.rows.clone().map(cells).collect::<Vec<_>>().join("\n"))
+        let cells: Vec<Vec<String>> =
+            pick.rows.clone().map(|v| rows[line(v)][pick.cols.clone()].iter().map(|c| c.replace("\\|", "|")).collect()).collect();
+        match cells.as_slice() {
+            [one] if one.len() == 1 => Some(one[0].clone()),
+            _ => Some(md::grid_markdown(&cells)),
+        }
     }
 
     /// Empties the taken cells, without touching the table's shape. False if there are none.

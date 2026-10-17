@@ -237,11 +237,18 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let delimiter = shell.read_with(cx, |s, cx| s.shown_sheet().unwrap().read(cx).format().delimiter);
     assert_eq!(delimiter, b',');
 
-    // In a note, selected table cells copy as TSV, which spreadsheets paste.
+    // In a note, selected table cells copy as a Markdown table, which pastes as a table in another note.
     shell.update_in(cx, |s, window, cx| {
         s.new_note("| a | b |\n| --- | --- |\n| 1 | 2 |\n".into(), cx);
         window.focus(&s.pane().editor.focus_handle(cx));
     });
     cx.simulate_keystrokes("secondary-a secondary-c");
-    assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("a\tb\n1\t2"));
+    assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("| a   | b   |\n| --- | --- |\n| 1   | 2   |"));
+    shell.update_in(cx, |s, window, cx| {
+        s.new_note("autre\n\n".into(), cx);
+        window.focus(&s.pane().editor.focus_handle(cx));
+    });
+    cx.simulate_keystrokes("secondary-end secondary-v");
+    let pasted = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
+    assert_eq!(pasted, "autre\n\n| a   | b   |\n| --- | --- |\n| 1   | 2   |");
 }

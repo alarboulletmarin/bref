@@ -653,8 +653,11 @@ impl Editor {
         (inside(col) && inside(row)).then_some((col as usize + 1, row as usize + 1))
     }
 
-    /// Selected cells of a table, as TSV: spreadsheets paste them as they are,
-    /// and in a note, pasting rebuilds the Markdown table.
+    /// Selected cells of a table, as a Markdown table: mail, issues and Markdown
+    /// editors paste it as a table, and in a note, pasting rebuilds the cells.
+    // ponytail: plain text only, no `text/html` flavor: gpui's clipboard item holds one text, and
+    // `wl-copy` / `xclip` offer one type per call, so setting HTML would drop the text. A
+    // spreadsheet pastes the Markdown lines in one column.
     pub(super) fn cells_text(&self) -> Option<String> {
         let mut rows: Vec<Vec<String>> = Vec::new();
         let mut line = None;
@@ -668,7 +671,7 @@ impl Editor {
             }
             rows.last_mut()?.push(self.content[cell].trim().replace("\\|", "|"));
         }
-        Some(rows.iter().map(|row| row.join("\t")).collect::<Vec<_>>().join("\n"))
+        Some(md::grid_markdown(&rows))
     }
 
     /// Pasting in a table: a cell keeps a single line and its `|`s

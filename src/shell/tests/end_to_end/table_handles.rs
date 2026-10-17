@@ -65,7 +65,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let at = center(cx, editor::Part::Col(1));
     cx.simulate_click(at, none);
     cx.simulate_keystrokes("secondary-c");
-    assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("Âge\n31\n7"));
+    assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("| Âge |\n| --- |\n| 31  |\n| 7   |"));
     cx.simulate_keystrokes("delete");
     assert_eq!(flat(cx), "Nom|/---|---/Léa|/Max|");
     cx.simulate_keystrokes("secondary-z");
@@ -91,7 +91,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let at = center(cx, editor::Part::Corner);
     cx.simulate_click(at, none);
     cx.simulate_keystrokes("secondary-c");
-    assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("Nom\tÂge\nLéa\t31\nMax\t7"));
+    assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("| Nom | Âge |\n| --- | --- |\n| Léa | 31  |\n| Max | 7   |"));
+    // Copied table, pasted in another note: the same table, and a one-column copy pastes into a table's cells.
+    j.load(cx, "avant\n\n", 7);
+    cx.simulate_keystrokes("secondary-v");
+    assert_eq!(text(cx), "avant\n\n| Nom | Âge |\n| --- | --- |\n| Léa | 31  |\n| Max | 7   |");
+    j.load(cx, grid, grid.find("Léa").unwrap());
+    cx.run_until_parked();
     // The limits of the handles. A table of one column and one row: deleting its column deletes it.
     use editor::Part;
     let one = "avant\n\n| a |\n| - |\n| b |\n\nsuite";
