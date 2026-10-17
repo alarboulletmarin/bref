@@ -62,7 +62,8 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | git commands, update check | `platform/git.rs`, `platform/update.rs` |
 | colours, themes, page width | `ui/theme.rs` |
 | icons and fonts | `ui/assets.rs` |
-| the text editor | `views/editor.rs` |
+| the text editor | `views/editor/`: `edit.rs` (changes, undo), `cursor.rs`, `style.rs`, `table.rs`, `blocks.rs`, `find.rs`, `completion.rs`, `links.rs`, `format_bar.rs`, `mouse.rs`, `clipboard.rs`, `input.rs` (IME) |
+| what a keystroke costs | `views/editor/layout.rs` (`plan` redoes only the damaged lines) then `paint.rs`; the test `layout_reuse_matches_full_layout` checks every reuse against a full layout |
 | the tree, recent notes, calendar | `views/nav.rs` (state), `shell/sidebar.rs` (drawing) |
 | the command palette | `views/palette.rs`, `shell/palette_open.rs` |
 | the CSV/TSV grid | `views/sheet.rs` |

@@ -5,7 +5,6 @@
 pub mod canvas;
 pub mod editor;
 pub mod graph;
-pub mod grid;
 pub mod kanban;
 pub mod nav;
 pub mod palette;

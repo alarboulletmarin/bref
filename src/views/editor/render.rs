@@ -1,0 +1,215 @@
+//! The editor drawn as a gpui view: the page, its buttons and its popups.
+
+use super::*;
+
+impl Render for Editor {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // À gauche des boutons que la fenêtre pose dans le coin (copie, commentaires).
+        // Le compte se tronque dans une note étroite, au lieu de sortir par la gauche.
+        let after = 12. + 34. * self.corner as f32;
+        // La barre de mise en forme, à part du compteur et au milieu de la page.
+        self.bar.at = self.bar_place();
+        let folded = self.bar.at == Some(Bar::Compact);
+        let bar = match self.bar.at {
+            Some(Bar::Inline(_)) => self.bar.at.map(|mode| self.format_bar(mode, cx).into_any_element()),
+            Some(Bar::Compact) if self.bar.open => Some(self.format_bar(Bar::Compact, cx).into_any_element()),
+            _ => None,
+        };
+        let toggle = folded.then(|| self.bar_toggle(cx));
+        // Repliée, la barre laisse la place de son bouton : le compteur se tronque avant de passer dessous.
+        let counts = div().absolute().bottom_4().left(px(if folded { 46. } else { 8. })).right(px(after)).flex().justify_end().child(
+            div()
+                .debug_selector(|| "counts".into())
+                .h(px(30.))
+                .min_w_0()
+                .px_2()
+                .rounded(px(8.))
+                .flex()
+                .items_center()
+                .bg(self.theme.bg)
+                .text_size(px(12.))
+                .text_color(self.theme.soft)
+                .child(div().min_w_0().truncate().child(self.counts())),
+        );
+        // Avant le dessin : les passages suivent une note modifiée pendant que la barre est ouverte.
+        self.refresh_find();
+        let finding = self.find.as_ref().is_some_and(|find| find.active);
+        let find_bar = self.find_bar(cx);
+        macro_rules! motions {
+            ($el:expr, $($action:ident => $motion:ident, $select:expr;)*) => {
+                $el$(.on_action(cx.listener(|this, _: &$action, _, cx| {
+                    this.each(cx, |this, cx| this.go(Motion::$motion, $select, cx))
+                })))*
+            };
+        }
+        let el = div()
+            .size_full()
+            .relative()
+            // Barre de recherche en saisie : ses touches, et non celles du texte.
+            .key_context(if finding { "Find" } else { "Editor" })
+            .track_focus(&self.focus)
+            .cursor(CursorStyle::IBeam);
+        motions!(el,
+            Left => Left, false; Right => Right, false; Up => Up, false; Down => Down, false;
+            WordLeft => WordLeft, false; WordRight => WordRight, false;
+            Home => Home, false; End => End, false;
+            DocStart => DocStart, false; DocEnd => DocEnd, false;
+            PageUp => PageUp, false; PageDown => PageDown, false;
+            SelectLeft => Left, true; SelectRight => Right, true;
+            SelectUp => Up, true; SelectDown => Down, true;
+            SelectWordLeft => WordLeft, true; SelectWordRight => WordRight, true;
+            SelectHome => Home, true; SelectEnd => End, true;
+            SelectDocStart => DocStart, true; SelectDocEnd => DocEnd, true;
+        )
+        .on_action(cx.listener(|this, _: &Backspace, _, cx| this.each(cx, |this, cx| this.delete(Motion::Left, cx))))
+        .on_action(cx.listener(|this, _: &Delete, _, cx| this.each(cx, |this, cx| this.delete(Motion::Right, cx))))
+        .on_action(cx.listener(|this, _: &DeleteWordLeft, _, cx| this.each(cx, |this, cx| this.delete(Motion::WordLeft, cx))))
+        .on_action(cx.listener(|this, _: &DeleteWordRight, _, cx| this.each(cx, |this, cx| this.delete(Motion::WordRight, cx))))
+        .on_action(cx.listener(|this, _: &SelectNext, _, cx| this.select_next(cx)))
+        .on_action(cx.listener(|this, _: &SelectAll, _, cx| {
+            this.more.clear();
+            this.move_to(0, cx);
+            this.select_to(this.content.len(), cx);
+        }))
+        .on_action(cx.listener(|this, _: &Newline, _, cx| this.each(cx, |this, cx| this.newline(cx))))
+        .on_action(cx.listener(|this, _: &Indent, _, cx| this.shift_lines(true, cx)))
+        .on_action(cx.listener(|this, _: &Outdent, _, cx| this.shift_lines(false, cx)))
+        .on_action(cx.listener(|this, _: &ToggleTask, _, cx| this.toggle_task(cx)))
+        .on_action(cx.listener(|this, _: &ListBullet, _, cx| this.restyle(ListStyle::Bullet, cx)))
+        .on_action(cx.listener(|this, _: &ListOrdered, _, cx| this.restyle(ListStyle::Ordered, cx)))
+        .on_action(cx.listener(|this, _: &ListTask, _, cx| this.restyle(ListStyle::Task, cx)))
+        .on_action(cx.listener(|this, _: &ListText, _, cx| this.restyle(ListStyle::Text, cx)))
+        .on_action(cx.listener(|this, _: &ListCycle, _, cx| this.cycle_list(cx)))
+        .on_action(cx.listener(|this, _: &TableRowAbove, _, cx| this.table_op(TableOp::RowAbove, cx)))
+        .on_action(cx.listener(|this, _: &TableRowBelow, _, cx| this.table_op(TableOp::RowBelow, cx)))
+        .on_action(cx.listener(|this, _: &TableColLeft, _, cx| this.table_op(TableOp::ColLeft, cx)))
+        .on_action(cx.listener(|this, _: &TableColRight, _, cx| this.table_op(TableOp::ColRight, cx)))
+        .on_action(cx.listener(|this, _: &TableDuplicateRow, _, cx| this.table_op(TableOp::DuplicateRow, cx)))
+        .on_action(cx.listener(|this, _: &TableDuplicateCol, _, cx| this.table_op(TableOp::DuplicateCol, cx)))
+        .on_action(cx.listener(|this, _: &TableMoveRowUp, _, cx| this.table_op(TableOp::MoveRowUp, cx)))
+        .on_action(cx.listener(|this, _: &TableMoveRowDown, _, cx| this.table_op(TableOp::MoveRowDown, cx)))
+        .on_action(cx.listener(|this, _: &TableMoveColLeft, _, cx| this.table_op(TableOp::MoveColLeft, cx)))
+        .on_action(cx.listener(|this, _: &TableMoveColRight, _, cx| this.table_op(TableOp::MoveColRight, cx)))
+        .on_action(cx.listener(|this, _: &TableDeleteRow, _, cx| this.table_op(TableOp::DeleteRow, cx)))
+        .on_action(cx.listener(|this, _: &TableDeleteSpan, _, cx| this.table_delete_span(cx)))
+        .on_action(cx.listener(|this, _: &BlockText, _, cx| this.block_op(BlockOp::Turn(block::Turn::Text), cx)))
+        .on_action(cx.listener(|this, _: &BlockHeading1, _, cx| this.block_op(BlockOp::Turn(block::Turn::Heading(1)), cx)))
+        .on_action(cx.listener(|this, _: &BlockHeading2, _, cx| this.block_op(BlockOp::Turn(block::Turn::Heading(2)), cx)))
+        .on_action(cx.listener(|this, _: &BlockHeading3, _, cx| this.block_op(BlockOp::Turn(block::Turn::Heading(3)), cx)))
+        .on_action(cx.listener(|this, _: &BlockBullet, _, cx| this.block_op(BlockOp::Turn(block::Turn::Bullet), cx)))
+        .on_action(cx.listener(|this, _: &BlockOrdered, _, cx| this.block_op(BlockOp::Turn(block::Turn::Ordered), cx)))
+        .on_action(cx.listener(|this, _: &BlockTask, _, cx| this.block_op(BlockOp::Turn(block::Turn::Task), cx)))
+        .on_action(cx.listener(|this, _: &BlockQuote, _, cx| this.block_op(BlockOp::Turn(block::Turn::Quote), cx)))
+        .on_action(cx.listener(|this, _: &BlockCode, _, cx| this.block_op(BlockOp::Turn(block::Turn::Code), cx)))
+        .on_action(cx.listener(|this, _: &BlockDuplicate, _, cx| this.block_op(BlockOp::Duplicate, cx)))
+        .on_action(cx.listener(|this, _: &BlockUp, _, cx| this.block_op(BlockOp::Up, cx)))
+        .on_action(cx.listener(|this, _: &BlockDown, _, cx| this.block_op(BlockOp::Down, cx)))
+        .on_action(cx.listener(|this, _: &BlockDelete, _, cx| this.block_op(BlockOp::Delete, cx)))
+        .on_action(cx.listener(|this, _: &TableDeleteCol, _, cx| this.table_op(TableOp::DeleteCol, cx)))
+        .on_action(cx.listener(|this, _: &TableDelete, _, cx| this.table_op(TableOp::DeleteTable, cx)))
+        .on_action(cx.listener(|this, _: &TableSortAsc, _, cx| this.table_op(TableOp::SortAsc, cx)))
+        .on_action(cx.listener(|this, _: &TableSortDesc, _, cx| this.table_op(TableOp::SortDesc, cx)))
+        .on_action(cx.listener(|this, _: &TableTranspose, _, cx| this.table_op(TableOp::Transpose, cx)))
+        .on_action(cx.listener(|this, _: &AlignLeft, _, cx| this.align(":--", cx)))
+        .on_action(cx.listener(|this, _: &AlignCenter, _, cx| this.align(":-:", cx)))
+        .on_action(cx.listener(|this, _: &AlignRight, _, cx| this.align("--:", cx)))
+        .on_action(cx.listener(|this, _: &Bold, _, cx| this.each(cx, |this, cx| this.mark(md::BOLD, cx))))
+        .on_action(cx.listener(|this, _: &Italic, _, cx| this.each(cx, |this, cx| this.mark(md::ITALIC, cx))))
+        .on_action(cx.listener(|this, _: &Underline, _, cx| this.each(cx, |this, cx| this.mark(md::UNDER, cx))))
+        .on_action(cx.listener(|this, _: &Strike, _, cx| this.each(cx, |this, cx| this.mark(md::STRIKE, cx))))
+        .on_action(cx.listener(|this, _: &Highlight, _, cx| this.each(cx, |this, cx| this.mark(md::HIGHLIGHT, cx))))
+        .on_action(cx.listener(|this, _: &InlineCode, _, cx| this.each(cx, |this, cx| this.mark(md::CODE, cx))))
+        .on_action(cx.listener(|this, _: &InsertLink, _, cx| this.link(cx)))
+        .on_action(cx.listener(|this, _: &Comment, _, cx| this.comment(cx)))
+        .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(false, cx)))
+        .on_action(cx.listener(|this, _: &Cut, _, cx| this.copy(true, cx)))
+        .on_action(cx.listener(|this, _: &Paste, _, cx| this.each(cx, |this, cx| this.paste(cx))))
+        .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
+        .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
+        .on_action(cx.listener(|this, _: &Find, _, cx| this.open_find(false, cx)))
+        .on_action(cx.listener(|this, _: &FindReplace, _, cx| this.open_find(true, cx)))
+        .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_step(true, cx)))
+        .on_action(cx.listener(|this, _: &FindEnter, _, cx| this.find_enter(cx)))
+        .on_action(cx.listener(|this, _: &FindPrev, _, cx| this.find_step(false, cx)))
+        .on_action(cx.listener(|this, _: &FindClose, _, cx| {
+            this.find = None;
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &FindErase, _, cx| this.find_erase(cx)))
+        .on_action(cx.listener(|this, _: &FindSwitch, _, cx| {
+            if let Some(find) = &mut this.find {
+                find.on_with = !find.on_with && find.with.is_some();
+            }
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &FindCase, _, cx| {
+            if let Some(find) = &mut this.find {
+                find.case ^= true;
+            }
+            this.find_changed(cx);
+        }))
+        .on_action(cx.listener(|this, _: &FindWord, _, cx| {
+            if let Some(find) = &mut this.find {
+                find.word ^= true;
+            }
+            this.find_changed(cx);
+        }))
+        .on_action(cx.listener(|this, _: &FindRegex, _, cx| {
+            if let Some(find) = &mut this.find {
+                find.regex ^= true;
+            }
+            this.find_changed(cx);
+        }))
+        .on_action(cx.listener(|this, _: &FindPaste, _, cx| {
+            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+                this.find_type(text.lines().next().unwrap_or_default(), cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &ReplaceAll, _, cx| this.replace_all(cx)))
+        .on_action(cx.listener(|this, _: &ReplaceInVault, _, cx| this.replace_in_vault(cx)))
+        .on_action(cx.listener(|this, _: &Cancel, _, cx| {
+            // Les pastilles de couleur se referment d'abord.
+            if std::mem::take(&mut this.bar.swatches) || std::mem::take(&mut this.bar.open) {
+                return cx.notify();
+            }
+            // Barre ouverte mais saisie dans la note : Échap la ferme d'abord.
+            if this.find.take().is_some() {
+                return cx.notify();
+            }
+            // Plusieurs curseurs : Échap revient à un seul.
+            if !this.more.is_empty() {
+                this.more.clear();
+                return cx.notify();
+            }
+            // Une poignée tirée est lâchée sans rien déplacer ; ce qu'elle avait pris est relâché.
+            if this.moving.take().is_some() {
+                return cx.notify();
+            }
+            if this.pick.as_ref().is_some_and(|p| p.version == this.version && p.sel == this.sel) {
+                this.pick = None;
+                return cx.notify();
+            }
+            if this.grid.take().is_some() {
+                cx.notify();
+            } else if let Some((start, _)) = this.completion() {
+                this.ac_dismissed = Some(start);
+                cx.notify();
+            } else {
+                // Rien à fermer ici : à la fenêtre de voir (son menu).
+                cx.propagate();
+            }
+        }))
+        .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
+        .on_mouse_down(MouseButton::Right, cx.listener(Self::menu_down))
+        .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
+        .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
+        .on_mouse_move(cx.listener(Self::mouse_move))
+        .on_modifiers_changed(cx.listener(|this, e: &gpui::ModifiersChangedEvent, _, cx| this.aim_hand(this.pointer, e.modifiers, cx)))
+        .on_scroll_wheel(cx.listener(Self::scroll))
+        .child(EditorElement(cx.entity()))
+        .child(counts)
+        .children(toggle)
+        .children(bar)
+        .children(find_bar)
+    }
+}

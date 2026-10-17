@@ -10,7 +10,7 @@ mod layout;
 mod window;
 
 use super::*;
-use crate::{logic::block, ui::theme::contrast, views::grid};
+use crate::{logic::block, ui::theme::contrast, views::editor::grid};
 use gpui::{Hsla, TestAppContext};
 
 static CONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -26,9 +26,12 @@ fn layers_only_depend_downwards() {
         ("src/ui", &["crate::views", "crate::shell", "impl Shell"]),
         ("src/views", &["crate::shell", "impl Shell"]),
     ];
+    fn files(dir: &Path) -> Vec<PathBuf> {
+        let entries = fs::read_dir(dir).unwrap().map(|entry| entry.unwrap().path());
+        entries.flat_map(|path| if path.is_dir() { files(&path) } else { vec![path] }).collect()
+    }
     for (dir, banned) in rules {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
+        for path in files(Path::new(dir)) {
             let code = fs::read_to_string(&path).unwrap();
             // Comments may name anything; only code counts.
             let code: String = code.lines().map(|l| l.split("//").next().unwrap()).collect::<Vec<_>>().join("\n");
