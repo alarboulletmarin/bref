@@ -28,7 +28,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(seen(cx), on_note(&hist_a));
     assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view()), place);
     cx.simulate_input("x");
-    assert!(text(cx).contains("x"), "la saisie est dans la note retrouvée");
+    assert!(text(cx).contains("x"), "input is in the note found again");
     cx.simulate_keystrokes("backspace");
     assert!(shell.read_with(cx, |s, _| s.history.can_forward()));
     cx.simulate_keystrokes(forward);
@@ -48,7 +48,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(seen(cx), on_note(&hist_a));
     cx.simulate_keystrokes(forward);
     assert_eq!(seen(cx).0, Some(hist_csv.clone()));
-    assert_eq!(shell.read_with(cx, |s, cx| s.shown_sheet().unwrap().read(cx).whereabouts().0), (1, 1), "la cellule est retrouvée");
+    assert_eq!(shell.read_with(cx, |s, cx| s.shown_sheet().unwrap().read(cx).whereabouts().0), (1, 1), "the cell is found again");
         // The mouse's back and forward buttons.
     let middle = gpui::point(px(500.), px(400.));
     let navigate = |cx: &mut gpui::VisualTestContext, to| {
@@ -182,7 +182,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("seul");
     assert_eq!(text(cx), "# Pane D\n\nseul");
     cx.simulate_keystrokes("secondary-w");
-    assert_eq!(open(cx).1.len(), 1, "le dernier pane ne se ferme pas");
+    assert_eq!(open(cx).1.len(), 1, "the last pane does not close");
         // With a single pane, dropping a note on the right half opens the second.
     let whole = cx.debug_bounds("pane-0").unwrap();
     let half = gpui::point(whole.right() - px(40.), whole.center().y);

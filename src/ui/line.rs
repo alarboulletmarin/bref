@@ -182,7 +182,9 @@ pub fn keys<E: InteractiveElement, V: 'static>(el: E, cx: &Context<V>, line: fn(
             cx.notify();
         }))
     }
-    let moves: [(fn(E, &Context<V>, fn(&mut V) -> Option<&mut Line>, fn(&mut V, &mut Context<V>), Act) -> E, Act); 20] = [
+    // An action of the context "Line" bound on the element, and what it does to the line.
+    type Handler<E, V> = fn(E, &Context<V>, fn(&mut V) -> Option<&mut Line>, fn(&mut V, &mut Context<V>), Act) -> E;
+    let moves: [(Handler<E, V>, Act); 20] = [
         (on::<Left, E, V>, |l, _| (l.go(To::Left, false), false).1),
         (on::<Right, E, V>, |l, _| (l.go(To::Right, false), false).1),
         (on::<WordLeft, E, V>, |l, _| (l.go(To::WordLeft, false), false).1),

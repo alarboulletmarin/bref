@@ -224,6 +224,6 @@ mod tests {
     fn the_catalog_names_each_action_once() {
         let all = catalog();
         let mut seen = std::collections::HashSet::new();
-        assert!(all.iter().all(|(action, ..)| seen.insert(*action)), "une action en double");
+        assert!(all.iter().all(|(action, ..)| seen.insert(*action)), "an action twice");
     }
 }

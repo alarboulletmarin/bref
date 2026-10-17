@@ -463,7 +463,7 @@ mod tests {
         replace_app(&dmg, &installed).unwrap();
         assert_eq!(fs::read_to_string(program(&dir.join("Applications"))).unwrap(), "nouvelle");
         let left: Vec<_> = fs::read_dir(dir.join("Applications")).unwrap().flatten().collect();
-        assert_eq!(left.len(), 1, "ni .new ni .old ne doivent rester");
+        assert_eq!(left.len(), 1, "neither .new nor .old may be left");
         // An unreadable disk image: the installed app stays as it is.
         fs::write(dir.join("bad.dmg"), "pas un disque").unwrap();
         assert!(replace_app(&dir.join("bad.dmg"), &installed).is_err());

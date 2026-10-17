@@ -659,7 +659,7 @@ impl Editor {
                     let n = self.rows[i..].iter().take_while(|r| r.kind == Kind::Table).count();
                     if n > 0 {
                         let registered = self.big.iter().any(|b| b.rows == (i..i + n));
-                        assert_eq!(registered, n > grid::BIG, "tableau de {n} lignes à la ligne {i}, registre {:?}", self.big.iter().map(|b| b.rows.clone()).collect::<Vec<_>>());
+                        assert_eq!(registered, n > grid::BIG, "table of {n} lines at line {i}, register {:?}", self.big.iter().map(|b| b.rows.clone()).collect::<Vec<_>>());
                     }
                     i += n.max(1);
                 }
@@ -668,13 +668,13 @@ impl Editor {
                 self.relayout(bounds, window, cx);
                 self.force_full = false;
                 self.counts = counts;
-                assert_eq!(reused.len(), self.rows.len(), "nombre de lignes");
+                assert_eq!(reused.len(), self.rows.len(), "number of lines");
                 // Positions add up in floats: the order of additions changes the last digit.
                 let near = |a: i64, b: i64| (a - b).abs() <= 20;
                 for (i, (a, b)) in reused.iter().zip(self.signature()).enumerate() {
                     assert!(
                         a.0 == b.0 && a.1 == b.1 && near(a.2, b.2) && near(a.3, b.3) && near(a.4, b.4) && a.5 == b.5 && a.6 == b.6 && near(a.7, b.7),
-                        "ligne {i} : {a:?} contre {b:?}"
+                        "line {i}: {a:?} against {b:?}"
                     );
                 }
                 let _ = (laid, big);

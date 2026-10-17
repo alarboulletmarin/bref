@@ -61,7 +61,7 @@ fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
         }
         (full, reused, inside) = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).layouts());
     }
-    println!("mises en page : {full} complètes, {reused} reprises, dont {inside} dans un très gros tableau");
-    assert!(inside > 20 || steps < 200, "peu de reprises dans un très gros tableau : {inside}");
+    println!("layouts: {full} full, {reused} reused, {inside} of them in a very big table");
+    assert!(inside > 20 || steps < 200, "few reuses in a very big table: {inside}");
     fs::remove_dir_all(&root).unwrap();
 }

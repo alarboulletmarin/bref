@@ -46,8 +46,8 @@ fn sheet_fuzz(cx: &mut TestAppContext) {
             }
         });
         cx.run_until_parked();
-        println!("{:?} : ouverture + affichage {:?}", file.file_name().unwrap(), start.elapsed());
-        let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("tableau affiché"));
+        println!("{:?}: opening + display {:?}", file.file_name().unwrap(), start.elapsed());
+        let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("table shown"));
         let mut worst = Duration::ZERO;
         for step in 0..600 {
             let begin = Instant::now();
@@ -79,7 +79,7 @@ fn sheet_fuzz(cx: &mut TestAppContext) {
             worst = worst.max(begin.elapsed());
             assert!(step < 10_000);
         }
-        println!("   geste le plus lent : {worst:?}");
+        println!("   slowest gesture: {worst:?}");
     }
     fs::remove_dir_all(&root).unwrap();
 }
@@ -117,31 +117,31 @@ fn sheet_convert(cx: &mut TestAppContext) {
         let start = Instant::now();
         sheet.update(cx, |s, cx| s.export(style, cx));
         cx.run_until_parked();
-        println!("{name:9} copie {copied:?} ({} Mo) · export {:?}", len >> 20, start.elapsed());
+        println!("{name:9} copy {copied:?} ({} MB) · export {:?}", len >> 20, start.elapsed());
     }
     let exported = root.join(format!("gros{}.md", tr(" (selection)", " (sélection)")));
-    println!("note exportée : {} Mo", fs::metadata(&exported).map_or(0, |m| m.len()) >> 20);
+    println!("exported note: {} MB", fs::metadata(&exported).map_or(0, |m| m.len()) >> 20);
     let start = Instant::now();
     shell.update(cx, |s, cx| {
         let (notes, dirs, images) = vault::scan(&root);
         s.sync(notes, dirs, images, cx);
     });
-    println!("rescan du coffre avec cette note : {:?}", start.elapsed());
+    println!("rescan of the vault with this note: {:?}", start.elapsed());
     let start = Instant::now();
     shell.update_in(cx, |s, window, cx| {
         s.open_note(&exported, cx);
         window.focus(&s.pane().editor.focus_handle(cx));
     });
     cx.run_until_parked();
-    println!("ouverture de la note Markdown : {:?}", start.elapsed());
+    println!("opening the Markdown note: {:?}", start.elapsed());
     let start = Instant::now();
     cx.simulate_input("a");
     cx.run_until_parked();
-    println!("une frappe dedans : {:?}", start.elapsed());
+    println!("one keystroke inside: {:?}", start.elapsed());
     let start = Instant::now();
     cx.simulate_keystrokes("down");
     cx.run_until_parked();
-    println!("flèche bas dedans : {:?}", start.elapsed());
+    println!("down arrow inside: {:?}", start.elapsed());
     // Paste the TSV of a big table into a fresh note.
     let tsv: String = (0..300_000).map(|i| format!("{i}\tProduit {}\t{}\n", i % 977, i % 99)).collect();
     cx.write_to_clipboard(ClipboardItem::new_string(tsv));
@@ -152,12 +152,12 @@ fn sheet_convert(cx: &mut TestAppContext) {
     let start = Instant::now();
     cx.simulate_keystrokes("secondary-v");
     cx.run_until_parked();
-    println!("coller 300 000 lignes de TSV dans une note : {:?}", start.elapsed());
+    println!("pasting 300,000 TSV lines into a note: {:?}", start.elapsed());
     for what in ["a", "down", "up", "enter"] {
         let start = Instant::now();
         if what.len() == 1 { cx.simulate_input(what) } else { cx.simulate_keystrokes(what) }
         cx.run_until_parked();
-        println!("   dans la note collée, {what:6} : {:?}", start.elapsed());
+        println!("   in the pasted note, {what:6}: {:?}", start.elapsed());
     }
     fs::remove_dir_all(&root).unwrap();
 }
@@ -198,7 +198,7 @@ fn md_table_scale(cx: &mut TestAppContext) {
         let start = Instant::now();
         cx.simulate_input("a");
         cx.run_until_parked();
-        println!("{n:6} lignes : ouverture {opened:?} · une frappe {:?}", start.elapsed());
+        println!("{n:6} lines: opening {opened:?} · one keystroke {:?}", start.elapsed());
         let start = Instant::now();
         for _ in 0..20 {
             cx.simulate_event(gpui::ScrollWheelEvent {
@@ -208,27 +208,27 @@ fn md_table_scale(cx: &mut TestAppContext) {
             });
             cx.run_until_parked();
         }
-        println!("         défilement : {:?} par geste", start.elapsed() / 20);
+        println!("         scrolling: {:?} per gesture", start.elapsed() / 20);
         if std::env::var("BREF_TYPING").is_ok() {
             let start = Instant::now();
             for _ in 0..30 {
                 cx.simulate_input("a");
                 cx.run_until_parked();
             }
-            println!("         30 frappes de suite : {:?} par frappe", start.elapsed() / 30);
+            println!("         30 keystrokes in a row: {:?} per keystroke", start.elapsed() / 30);
             let start = Instant::now();
             for _ in 0..30 {
                 cx.simulate_input(" ");
                 cx.run_until_parked();
             }
-            println!("         30 espaces de suite : {:?} par espace", start.elapsed() / 30);
+            println!("         30 spaces in a row: {:?} per space", start.elapsed() / 30);
             let start = Instant::now();
             cx.simulate_keystrokes("secondary-z");
             cx.run_until_parked();
-            println!("         annuler : {:?}", start.elapsed());
+            println!("         undo: {:?}", start.elapsed());
             let start = Instant::now();
             shell.update(cx, |s, cx| s.flush(cx));
-            println!("         enregistrement de la note ({} Mo) : {:?}", fs::metadata(&file).map_or(0, |m| m.len()) >> 20, start.elapsed());
+            println!("         saving the note ({} MB): {:?}", fs::metadata(&file).map_or(0, |m| m.len()) >> 20, start.elapsed());
         }
     }
     fs::remove_dir_all(&root).unwrap();
@@ -267,7 +267,7 @@ fn profile_typing(cx: &mut TestAppContext) {
         cx.simulate_input("a");
         cx.run_until_parked();
     }
-    println!("mises en page (complètes, reprises, dans un gros tableau) : {:?}", shell.read_with(cx, |s, cx| s.pane().editor.read(cx).layouts()));
+    println!("layouts (full, reused, in a big table): {:?}", shell.read_with(cx, |s, cx| s.pane().editor.read(cx).layouts()));
     fs::remove_dir_all(&root).unwrap();
 }
 
@@ -380,7 +380,7 @@ fn bench_scale(cx: &mut TestAppContext) {
         cx.run_until_parked();
         fs::remove_dir_all(&root).unwrap();
     }
-    println!("\n| notes | scan (ms) | rescan (ms) | empreinte (ms) | démarrage (ms) | ouverture 5000 l. (ms) | frappe 5000 l. (ms) | enregistrement 5000 l. (ms) | palette : ouvrir (ms) | palette : une lettre (ms) | note écrite ailleurs, fil principal (ms) | mémoire (Mo) |");
+    println!("\n| notes | scan (ms) | rescan (ms) | fingerprint (ms) | startup (ms) | open 5000 l. (ms) | keystroke 5000 l. (ms) | save 5000 l. (ms) | palette: open (ms) | palette: one letter (ms) | note written elsewhere, main thread (ms) | memory (MB) |");
     println!("|---|---|---|---|---|---|---|---|---|---|---|---|");
     rows.iter().for_each(|row| println!("{row}"));
 }
@@ -399,10 +399,10 @@ fn bench(cx: &mut TestAppContext) {
 
     let start = Instant::now();
     let scanned = vault::scan(&root);
-    println!("scan du coffre : {:?}", start.elapsed());
+    println!("vault scan: {:?}", start.elapsed());
     let start = Instant::now();
     let again = vault::rescan(&root, &scanned.0);
-    println!("nouveau scan, rien n'a changé : {:?}", start.elapsed());
+    println!("new scan, nothing changed: {:?}", start.elapsed());
     assert_eq!(again.0.len(), scanned.0.len());
 
     cx.update(bind_keys);
@@ -420,19 +420,19 @@ fn bench(cx: &mut TestAppContext) {
             act(cx);
             cx.run_until_parked();
         }
-        println!("{what} : {:?} par geste", start.elapsed() / 20);
+        println!("{what}: {:?} per gesture", start.elapsed() / 20);
     };
-    time("frappe", cx, &|cx| cx.simulate_input("a"));
-    time("flèche bas", cx, &|cx| cx.simulate_keystrokes("down"));
-    time("Entrée", cx, &|cx| cx.simulate_keystrokes("enter"));
-    time("molette", cx, &|cx| {
+    time("keystroke", cx, &|cx| cx.simulate_input("a"));
+    time("down arrow", cx, &|cx| cx.simulate_keystrokes("down"));
+    time("Enter", cx, &|cx| cx.simulate_keystrokes("enter"));
+    time("wheel", cx, &|cx| {
         cx.simulate_event(gpui::ScrollWheelEvent {
             position: point(px(700.), px(300.)),
             delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-40.))),
             ..Default::default()
         })
     });
-    time("mot puis annulation", cx, &|cx| {
+    time("word then undo", cx, &|cx| {
         cx.simulate_input("mot ");
         cx.simulate_keystrokes("secondary-z");
     });
@@ -441,12 +441,12 @@ fn bench(cx: &mut TestAppContext) {
         let body: String = (0..lines).map(|j| format!("Ligne {j} avec **gras**, `code`, [[Note {}]] et #tag{} -> fin.\n", j % 2000, j % 12)).collect();
         shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(format!("# Note\n\n{body}"), 100, cx)));
         cx.run_until_parked();
-        time(&format!("frappe dans une note de {lines} lignes"), cx, &|cx| cx.simulate_input("a"));
+        time(&format!("keystroke in a {lines}-line note"), cx, &|cx| cx.simulate_input("a"));
     }
     // The same gesture on a short note: what remains is the fixed price of a keystroke.
     shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load("# Courte\n\nun peu de texte\n".into(), 20, cx)));
     cx.run_until_parked();
-    time("frappe dans une note courte", cx, &|cx| cx.simulate_input("a"));
+    time("keystroke in a short note", cx, &|cx| cx.simulate_input("a"));
     // A big table, whose cells wrap.
     let rows: String = (0..400)
         .map(|j| format!("| Ligne {j} | texte moyen avec **gras** et `code` {j} | {}| [[Note {}]] | x | y |\n", "mot ".repeat(j % 30), j))
@@ -454,9 +454,9 @@ fn bench(cx: &mut TestAppContext) {
     let table = format!("# Tableau\n\n| A | B | C | D | E | F |\n| --- | --- | --- | --- | --- | --- |\n{rows}");
     shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(table, 120, cx)));
     cx.run_until_parked();
-    time("frappe dans un tableau de 400 lignes", cx, &|cx| cx.simulate_input("a"));
-    time("flèche bas dans ce tableau", cx, &|cx| cx.simulate_keystrokes("down"));
-    time("molette sur ce tableau", cx, &|cx| {
+    time("keystroke in a 400-row table", cx, &|cx| cx.simulate_input("a"));
+    time("down arrow in this table", cx, &|cx| cx.simulate_keystrokes("down"));
+    time("wheel on this table", cx, &|cx| {
         cx.simulate_event(gpui::ScrollWheelEvent {
             position: point(px(700.), px(300.)),
             delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-40.))),

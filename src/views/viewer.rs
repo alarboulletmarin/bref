@@ -63,6 +63,8 @@ impl Asset for Load {
     type Source = Self;
     type Output = Option<Arc<Doc>>;
 
+    // The future must not borrow `cx`: an `async fn` would.
+    #[allow(clippy::manual_async_fn)]
     fn load(load: Self, _: &mut App) -> impl Future<Output = Self::Output> + Send + 'static {
         async move {
             let svg = match &load.source {
@@ -115,6 +117,8 @@ impl Asset for Tile {
     type Source = Self;
     type Output = Option<Arc<Image>>;
 
+    // The future must not borrow `cx`: an `async fn` would.
+    #[allow(clippy::manual_async_fn)]
     fn load(tile: Self, _: &mut App) -> impl Future<Output = Self::Output> + Send + 'static {
         async move {
             let (w, h) = tile.doc.size();

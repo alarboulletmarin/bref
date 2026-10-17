@@ -127,13 +127,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         });
         cx.simulate_input("x");
         cx.simulate_keystrokes("backspace");
-        assert_eq!(seen(cx).0, Some((400., 120.)), "la figure reste en place pendant qu'elle se redessine");
+        assert_eq!(seen(cx).0, Some((400., 120.)), "the figure stays in place while it is redrawn");
     }
     cx.run_until_parked();
     cx.simulate_input("x");
     cx.simulate_keystrokes("backspace");
     cx.run_until_parked();
-    assert_eq!(seen(cx), (Some((400., 120.)), None, (count, 0)), "ni figure ni dessin de trop");
+    assert_eq!(seen(cx), (Some((400., 120.)), None, (count, 0)), "no extra figure or drawing");
 
         // The same SVG, opened, shows in the viewer: fitted to its width, zoomed from the
         // keyboard, and Escape returns to the note. An unreadable SVG says so, without breaking anything.
@@ -170,7 +170,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let figure = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().figure.as_ref().map(|f| f.read(cx).state()));
     let (loaded, failed, fit, _) = figure(cx).unwrap();
     assert!(loaded && !failed && fit > 0., "{:?}", figure(cx));
-    assert!(text(cx).contains("```mermaid\nflowchart LR"), "la note n'a pas bougé");
+    assert!(text(cx).contains("```mermaid\nflowchart LR"), "the note did not move");
     cx.simulate_keystrokes("+");
     assert!((figure(cx).unwrap().2 - fit * 1.25).abs() < 1e-4);
     cx.simulate_keystrokes("- 0");

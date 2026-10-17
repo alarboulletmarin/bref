@@ -394,7 +394,7 @@ fn push_record<S: AsRef<str>>(out: &mut String, fields: impl Iterator<Item = S>,
 }
 
 fn index(n: usize) -> u32 {
-    u32::try_from(n).expect("table trop grande")
+    u32::try_from(n).expect("table too large")
 }
 
 // ───────────────────────── Table ─────────────────────────
@@ -422,7 +422,7 @@ pub struct Table {
 impl Table {
     /// A single pass over the bytes. `text.len()` must be <= `MAX_BYTES`.
     pub fn parse(text: String, delimiter: u8) -> Table {
-        assert!(text.len() <= MAX_BYTES, "fichier trop gros");
+        assert!(text.len() <= MAX_BYTES, "file too large");
         let b = text.as_bytes();
         let n = b.len();
         let mut recs = Vec::new();
@@ -537,7 +537,7 @@ impl Table {
         }
         match self.recs[row] {
             Rec::Owned(k) => &mut self.owned[k as usize],
-            Rec::Raw(..) => unreachable!("ligne rendue possédée ci-dessus"),
+            Rec::Raw(..) => unreachable!("row made owned above"),
         }
     }
 
@@ -964,8 +964,8 @@ special
         let t = table("nom,age\nbob,3\n", b',');
         assert!(detect_header(&t));
         assert!(!detect_header(&table("bob,3\nann,4\n", b',')));
-        assert!(!detect_header(&table("nom,age\n", b',')), "une seule ligne");
-        assert!(!detect_header(&table("1,5;2\nx,y\n", b';')), "virgule décimale");
+        assert!(!detect_header(&table("nom,age\n", b',')), "a single line");
+        assert!(!detect_header(&table("1,5;2\nx,y\n", b';')), "decimal comma");
     }
 
     #[test]
@@ -1000,7 +1000,7 @@ special
     fn parse_edge_cases() {
         assert_eq!(table("", b',').rows(), 0);
         let t = table("a,b\n\nc\n", b',');
-        assert_eq!(t.rows(), 3, "ligne vide = enregistrement");
+        assert_eq!(t.rows(), 3, "blank line = record");
         assert_eq!(t.row(1), vec![""]);
         assert_eq!(t.row(2).len(), 1);
         assert_eq!(t.cols(), 2);
@@ -1118,22 +1118,22 @@ special
         let timed = |what: &str, start: Instant| eprintln!("{what}: {:?}", start.elapsed());
         let start = Instant::now();
         t.insert_cols(1, 1, &[]);
-        timed("insérer une colonne au milieu", start);
+        timed("insert a column in the middle", start);
         let start = Instant::now();
         let saved = t.remove_cols(1..2);
-        timed("la retirer", start);
+        timed("remove it", start);
         let start = Instant::now();
         t.insert_cols(1, 1, &saved);
-        timed("la remettre", start);
+        timed("put it back", start);
         let start = Instant::now();
         t.move_cols(0..1, 2);
-        timed("déplacer une colonne", start);
+        timed("move a column", start);
         let start = Instant::now();
         let keys: Vec<String> = (1..t.rows()).map(|r| t.cell(r, 0).into_owned()).collect();
         let mut perm: Vec<usize> = (0..keys.len()).collect();
         perm.sort_by(|&a, &b| crate::logic::markdown::cell_order(&keys[a], &keys[b]));
         t.reorder(1, &perm);
-        timed("trier sur une colonne", start);
+        timed("sort on a column", start);
         assert_eq!(t.rows(), rows + 1);
     }
 
@@ -1247,13 +1247,13 @@ special
                 .unwrap();
         }
         let mb = s.len() as f64 / 1_048_576.0;
-        println!("génération : {:?}, texte {mb:.1} Mo, RSS {:.0} Mo", t0.elapsed(), rss_mb());
+        println!("generation: {:?}, text {mb:.1} MB, RSS {:.0} MB", t0.elapsed(), rss_mb());
 
         let rss0 = rss_mb();
         let t0 = Instant::now();
         let mut t = Table::parse(s, b',');
         println!(
-            "parse : {:?} ({} lignes x {} colonnes), RSS {:.0} Mo (+{:.0} Mo)",
+            "parse: {:?} ({} rows x {} columns), RSS {:.0} MB (+{:.0} MB)",
             t0.elapsed(),
             t.rows(),
             t.cols(),
@@ -1267,17 +1267,17 @@ special
         for r in (0..t.rows()).step_by(1000) {
             n += t.cell(r, 7).len() + t.cell(r, 3).len();
         }
-        println!("1000 lectures de cellules : {:?} ({n})", t0.elapsed());
+        println!("1000 cell reads: {:?} ({n})", t0.elapsed());
 
         let t0 = Instant::now();
         let snap = t.snapshot();
-        println!("snapshot : {:?}", t0.elapsed());
+        println!("snapshot: {:?}", t0.elapsed());
         t.set_cell(500_000, 1, "x,y".into());
         let t0 = Instant::now();
         let mut sink = io::sink();
         snap.write_to(&mut sink, Encoding::Utf8).unwrap();
         t.write_to(&mut sink, Encoding::Utf16Le).unwrap();
-        println!("écriture UTF-8 + UTF-16 (vers /dev/null) : {:?}", t0.elapsed());
+        println!("writing UTF-8 + UTF-16 (to /dev/null): {:?}", t0.elapsed());
     }
 
     #[test]

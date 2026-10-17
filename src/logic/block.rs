@@ -341,7 +341,7 @@ mod tests {
         assert_eq!(of("- deux"), Some("- deux"));
         assert_eq!(of("encore\n```"), Some("```\ncode\n\nencore\n```"));
         assert_eq!(of("| - |"), Some("| a | b |\n| - | - |"));
-        assert_eq!(at(NOTE, &top, line("\n\nUn") + 1), None, "une ligne vide est hors des blocs");
+        assert_eq!(at(NOTE, &top, line("\n\nUn") + 1), None, "a blank line is outside the blocks");
         // A list's items are as many places to drop a block, besides the blocks and the end.
         let targets = targets(NOTE, &top);
         assert!(targets.contains(&line("- deux")) && targets.contains(&line("    - sous")) && targets.contains(&NOTE.len()));
@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(turned("# Titre", Turn::Text), "Titre");
         assert_eq!(turned("# Titre", Turn::Bullet), "- Titre");
         assert_eq!(turned("un\ndeux", Turn::Ordered), "1. un\n2. deux");
-        assert_eq!(turned("- un", Turn::Bullet), "- un", "une liste à puces le reste");
+        assert_eq!(turned("- un", Turn::Bullet), "- un", "a bullet list stays one");
         assert_eq!(turned("- un", Turn::Task), "- [ ] un");
         assert_eq!(turned("- [x] fait", Turn::Text), "fait");
         assert_eq!(turned("> cité", Turn::Text), "cité");

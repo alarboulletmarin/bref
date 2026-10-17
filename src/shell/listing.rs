@@ -18,6 +18,9 @@ use crate::{
 use super::*;
 use crate::views::nav::*;
 
+/// A note of a list page: its path and its cells.
+type ListedNote = (PathBuf, Vec<String>);
+
 impl Shell {
     /// Opens the list page of a folder, or of a tag (`#tag`); typing goes to its filter.
     pub(super) fn open_listing(&mut self, of: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -42,7 +45,7 @@ impl Shell {
 
     /// List page: the columns ("Note", then the front-matter keys) and, sorted, the notes of the
     /// folder or tag that the filter keeps, with their cells.
-    pub(super) fn listed(&self, cx: &App) -> Option<(Vec<String>, Vec<(PathBuf, Vec<String>)>)> {
+    pub(super) fn listed(&self, cx: &App) -> Option<(Vec<String>, Vec<ListedNote>)> {
         let Listing { of, by, back, filter, .. } = self.pane().listing.as_ref()?;
         let tag = tag_of(of);
         let inside: Vec<&Note> = self.notes.iter().filter(|note| tag.map_or_else(|| note.path.starts_with(of), |tag| note.tags.iter().any(|t| t == tag))).collect();

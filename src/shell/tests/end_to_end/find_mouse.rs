@@ -190,5 +190,5 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("down enter");
     cx.simulate_input("Archives");
     cx.simulate_keystrokes("enter");
-    assert!(root.join("Archives").is_dir(), "dossier créé depuis la palette");
+    assert!(root.join("Archives").is_dir(), "folder created from the palette");
 }

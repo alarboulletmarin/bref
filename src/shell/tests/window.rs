@@ -15,7 +15,7 @@ fn badge_text_reads_on_every_theme() {
     for (name, _) in THEMES {
         let prefs = Prefs { theme: name.to_string(), ..Prefs::parse("") };
         let t = Theme::of(&prefs, gpui::WindowAppearance::Light);
-        assert!(contrast(t.accent, t.bg) >= 4.5, "{name} : {} sur la pastille", contrast(t.accent, t.bg));
+        assert!(contrast(t.accent, t.bg) >= 4.5, "{name}: {} on the badge", contrast(t.accent, t.bg));
     }
 }
 
@@ -27,9 +27,9 @@ fn folded_bar_button_hides_what_it_covers() {
         let t = Theme::of(&prefs, gpui::WindowAppearance::Light);
         for open in [false, true] {
             let fill = editor::bar_fill(&t, open);
-            assert!(fill.a == 1., "{name} {open} : fond translucide {fill:?}");
+            assert!(fill.a == 1., "{name} {open}: translucent background {fill:?}");
             let sign = if open { t.accent } else { t.soft };
-            assert!(contrast(sign, fill) >= 3., "{name} {open} : signe {} sur le fond", contrast(sign, fill));
+            assert!(contrast(sign, fill) >= 3., "{name} {open}: sign {} on the background", contrast(sign, fill));
         }
     }
 }
@@ -189,10 +189,10 @@ fn capture_window(cx: &mut TestAppContext) {
         let caret_inside = |cx: &mut gpui::VisualTestContext| capture.read_with(cx, |c, cx| c.field.read(cx).caret_inside());
         cx.simulate_input(&long);
         cx.run_until_parked();
-        assert_eq!(caret_inside(cx), Some(true), "le curseur suit la frappe");
+        assert_eq!(caret_inside(cx), Some(true), "the cursor follows the typing");
         cx.simulate_keystrokes("home");
         cx.run_until_parked();
-        assert_eq!(caret_inside(cx), Some(true), "le curseur revient en vue au début");
+        assert_eq!(caret_inside(cx), Some(true), "the cursor comes back into view at the start");
         cx.simulate_keystrokes("end enter");
         cx.run_until_parked();
     }
@@ -234,7 +234,7 @@ fn empty_page(cx: &mut TestAppContext) {
     assert!(pane.size.width < px(360.), "{pane:?}");
     for part in ["empty-today", "empty-key-0", "empty-key-1", "empty-key-2", "empty-recall-0", "empty-recall-1"] {
         let bounds = cx.debug_bounds(part).unwrap_or_else(|| panic!("{part} absent"));
-        assert!(bounds.left() >= pane.left() && bounds.right() <= pane.right(), "{part} dépasse : {bounds:?} hors de {pane:?}");
+        assert!(bounds.left() >= pane.left() && bounds.right() <= pane.right(), "{part} overflows: {bounds:?} outside {pane:?}");
     }
     cx.simulate_resize(size(px(860.), px(720.)));
     cx.run_until_parked();

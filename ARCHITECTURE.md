@@ -55,7 +55,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 
 | To change… | Go to |
 |---|---|
-| how Markdown is read (headings, links, tags, lists, tables) | `logic/markdown.rs` |
+| how Markdown is read (headings, links, tags, styles) | `logic/markdown/` (`mod.rs`; `tables.rs`, `lists.rs`, `front.rs`, `dates.rs`, `search.rs`) |
 | CSV/TSV parsing and writing | `logic/table.rs` |
 | diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram.rs`, `logic/import.rs` |
 | the vault on disk (scan, save, rename, trash, config files) | `platform/vault.rs` |
@@ -66,7 +66,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | what a keystroke costs | `views/editor/layout.rs` (`plan` redoes only the damaged lines) then `paint.rs`; the test `layout_reuse_matches_full_layout` checks every reuse against a full layout |
 | the tree, recent notes, calendar | `views/nav.rs` (state), `shell/sidebar.rs` (drawing) |
 | the command palette | `views/palette.rs`, `shell/palette_open.rs` |
-| the CSV/TSV grid | `views/sheet.rs` |
+| the CSV/TSV grid | `views/sheet/` (`disk.rs` loading and saving, `edit.rs`, `clipboard.rs`, `mouse.rs`, `render.rs`) |
 | a shortcut | `shell/keymap.rs` (`defaults`, `help_sections`), `ui/keys.rs` (how keys are read and shown) |
 | the test of a feature | `shell/tests/` (`end_to_end/` is one session, one file per chapter) |
 

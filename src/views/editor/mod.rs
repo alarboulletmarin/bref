@@ -203,6 +203,9 @@ pub enum EditorEvent {
     View(String),
 }
 
+/// What the footer counter depends on: the text version and the selection.
+type CountKey = (u64, Option<Range<usize>>);
+
 pub struct Editor {
     focus: FocusHandle,
     content: String,
@@ -295,7 +298,7 @@ pub struct Editor {
     /// Counts text changes, and only them: an image that loads or a theme that changes does not move it.
     revision: u64,
     /// Footer counter, kept as long as the text and the selection do not move.
-    counted: Option<((u64, Option<Range<usize>>), String)>,
+    counted: Option<(CountKey, String)>,
     /// The text counted last, its version and its counts: on a keystroke, only the changed
     /// lines are recounted (`md::recount`).
     tally: Option<(u64, String, (usize, usize))>,

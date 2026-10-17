@@ -118,7 +118,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             let counts: Vec<usize> = table.lines().map(|l| markdown::cells(l).len()).collect();
             assert!(
                 table.lines().all(|l| l.starts_with('|')) && counts.iter().all(|&n| n == counts[0]),
-                "{clip:?} collé à {at} : {table:?}"
+                "{clip:?} pasted at {at}: {table:?}"
             );
             cases += 1;
         }
@@ -147,9 +147,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(caret(cx), at("a\\|b") + 4);
     j.load(cx, t, at("Léa"));
     cx.simulate_keystrokes("left");
-    assert_eq!(caret(cx), at("Âge") + "Âge".len(), "la ligne de tirets se saute");
+    assert_eq!(caret(cx), at("Âge") + "Âge".len(), "the dash row is skipped");
     cx.simulate_keystrokes("down");
-    assert!((at("a\\|b")..=at("a\\|b") + 4).contains(&caret(cx)), "descend dans la colonne, tirets sautés : {}", caret(cx));
+    assert!((at("a\\|b")..=at("a\\|b") + 4).contains(&caret(cx)), "goes down the column, dashes skipped: {}", caret(cx));
     j.load(cx, t, t.len() - 1);
     cx.simulate_keystrokes("end right");
     assert_eq!(caret(cx), t.len());
@@ -173,7 +173,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     j.load(cx, &wrapped, start);
     let rows_of = |cx: &mut gpui::VisualTestContext, i: usize| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(i).unwrap());
     let (top, below) = (rows_of(cx, start).y, rows_of(cx, start + 140).y);
-    assert!(below > top + px(30.), "la cellule passe à la ligne : {top:?} {below:?}");
+    assert!(below > top + px(30.), "the cell wraps: {top:?} {below:?}");
     cx.simulate_keystrokes("down");
     let first = caret(cx);
     assert!(first > start && first < start + 80 && rows_of(cx, first).y > top, "{first}");
@@ -279,7 +279,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
                 };
                 gestures += 1;
                 let (now, at) = (text(cx), caret(cx));
-                assert!(at <= now.len() && now.is_char_boundary(at), "curseur {at} dans {now:?}");
+                assert!(at <= now.len() && now.is_char_boundary(at), "cursor {at} in {now:?}");
                 cx.run_until_parked();
                 // Each table that was already well formed (dash line second) keeps the same
                 // number of cells everywhere: typing or pasting undoes none.
@@ -302,7 +302,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
                 let steady = |counts: &[usize]| counts.iter().all(|&n| n == counts[0]);
                 let was: Vec<usize> = formed(&before).into_iter().filter(|(_, c)| steady(c)).map(|(i, _)| i).collect();
                 for (i, counts) in formed(&now) {
-                    assert!(steady(&counts) || !was.contains(&i) || leaves || step.ends_with("-z"), "{counts:?} après {step} (curseur {at}, sélection {span:?}) : {before:?} -> {now:?}");
+                    assert!(steady(&counts) || !was.contains(&i) || leaves || step.ends_with("-z"), "{counts:?} after {step} (cursor {at}, selection {span:?}): {before:?} -> {now:?}");
                 }
             }
         }

@@ -1,5 +1,18 @@
 //! Line-by-line Markdown analysis: pure functions, no dependency on the UI.
 
+
+mod dates;
+mod front;
+mod lists;
+mod search;
+mod tables;
+
+pub use dates::*;
+pub use front::*;
+pub use lists::*;
+pub use search::*;
+pub use tables::*;
+
 use std::ops::Range;
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -126,94 +139,6 @@ pub fn classify(line: &str, in_code: bool) -> (Kind, usize) {
         return (Kind::Ordered, indent + digits + 2);
     }
     (Kind::Para, 0)
-}
-
-/// Year, month, day.
-pub type Date = (i32, u32, u32);
-
-/// Number of days between January 1st 1970 and this Gregorian calendar date.
-pub fn day_number((year, month, day): Date) -> i64 {
-    let y = i64::from(year) - i64::from(month <= 2);
-    let era = y.div_euclid(400);
-    let of_era = y.rem_euclid(400);
-    let of_year = (153 * ((i64::from(month) + 9) % 12) + 2) / 5 + i64::from(day) - 1;
-    era * 146_097 + of_era * 365 + of_era / 4 - of_era / 100 + of_year - 719_468
-}
-
-/// The date of day number `days`: the inverse of `day_number`.
-pub fn day_of(days: i64) -> Date {
-    let z = days + 719_468;
-    let (era, of_era) = (z.div_euclid(146_097), z.rem_euclid(146_097));
-    let year_of_era = (of_era - of_era / 1_460 + of_era / 36_524 - of_era / 146_096) / 365;
-    let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let shifted = (5 * of_year + 2) / 153;
-    let month = (shifted + 2) % 12 + 1;
-    let year = year_of_era + era * 400 + i64::from(month <= 2);
-    (year as i32, month as u32, (of_year - (153 * shifted + 2) / 5 + 1) as u32)
-}
-
-/// The month of `year`: the rank in the week of its first day (0: the first day of the
-/// week, a Monday if `monday`, otherwise a Sunday) and its number of days.
-pub fn month(year: i32, month: u32, monday: bool) -> (u32, u32) {
-    let first = day_number((year, month, 1));
-    let next = if month == 12 { (year + 1, 1, 1) } else { (year, month + 1, 1) };
-        // January 1st 1970 was a Thursday: Monday is 0.
-    let weekday = (first + 3 + i64::from(!monday)).rem_euclid(7);
-    (weekday as u32, (day_number(next) - first) as u32)
-}
-
-/// The same day `by` months later (or earlier), brought back into the target month.
-pub fn add_months((year, month_, day): Date, by: i32) -> Date {
-    let months = year * 12 + month_ as i32 - 1 + by;
-    let (year, month_) = (months.div_euclid(12), months.rem_euclid(12) as u32 + 1);
-    (year, month_, day.min(month(year, month_, true).1))
-}
-
-/// The days named after `@`: (English, French), Monday to Sunday after the three
-/// relative days.
-pub const DAYS: [(&str, &str); 10] = [
-    ("today", "aujourd'hui"),
-    ("tomorrow", "demain"),
-    ("yesterday", "hier"),
-    ("monday", "lundi"),
-    ("tuesday", "mardi"),
-    ("wednesday", "mercredi"),
-    ("thursday", "jeudi"),
-    ("friday", "vendredi"),
-    ("saturday", "samedi"),
-    ("sunday", "dimanche"),
-];
-
-/// The months: (English, French).
-pub const MONTHS: [(&str, &str); 12] = [
-    ("January", "janvier"), ("February", "février"), ("March", "mars"), ("April", "avril"), ("May", "mai"), ("June", "juin"),
-    ("July", "juillet"), ("August", "août"), ("September", "septembre"), ("October", "octobre"), ("November", "novembre"), ("December", "décembre"),
-];
-
-/// The dates `query` (what follows an `@`) can name from `today`: the days whose
-/// English or French name starts that way, with their date, or the written date `2026-10-09`.
-/// A weekday is the next one, never today.
-pub fn dates(query: &str, today: Date) -> Vec<(&'static str, &'static str, Date)> {
-    let query = query.to_lowercase().replace('’', "'");
-    let now = day_number(today);
-    let typed = || {
-        let mut parts = query.split('-').map(|p| p.parse::<u32>().ok());
-        let date = (parts.next()??.try_into().ok()?, parts.next()??, parts.next()??);
-                // A date that exists: it survives the round trip.
-        (parts.next().is_none() && query.len() == 10 && day_of(day_number(date)) == date).then_some(("", "", date))
-    };
-    let named = DAYS.iter().enumerate().filter(|(_, (en, fr))| en.starts_with(&query) || fr.starts_with(&query));
-    let named = named.map(|(i, &(en, fr))| {
-        let ahead = match i {
-            0 => 0,
-            1 => 1,
-            2 => -1,
-                        // January 1st 1970 was a Thursday: Monday is 0.
-            _ => (i as i64 - 3 - (now + 3).rem_euclid(7) - 1).rem_euclid(7) + 1,
-        };
-        (en, fr, day_of(now + ahead))
-    });
-    typed().into_iter().chain(named).collect()
 }
 
 /// An address that can be opened: a known protocol, then something, without a space.
@@ -451,7 +376,7 @@ pub fn highlights(line: &str, table: bool) -> Vec<(Range<usize>, usize)> {
     if !line.contains("==") && !line.contains("<mark") {
         return found;
     }
-    let pieces = if table { cells(line) } else { vec![classify(line, false).1..line.len()] };
+    let pieces: Vec<Range<usize>> = if table { cells(line) } else { std::iter::once(classify(line, false).1..line.len()).collect() };
     for piece in pieces {
         let f = flags(&line[piece.clone()], 0);
         let mut i = 0;
@@ -821,220 +746,6 @@ fn reembed(text: &str, old: &str, new: &str) -> String {
     out
 }
 
-#[derive(PartialEq, Debug)]
-pub enum Enter {
-        /// Text to insert at the cursor.
-    Insert(String),
-        /// Empty item: the line is emptied to leave the list.
-    Clear,
-}
-
-/// Behaviour of the Enter key on `line`, cursor at byte `col`.
-pub fn on_enter(line: &str, col: usize, in_code: bool) -> Enter {
-    let (kind, marker) = classify(line, in_code);
-    let indent = &line[..indent_len(line)];
-    let list = matches!(kind, Kind::Bullet | Kind::Ordered | Kind::Task(_) | Kind::Quote);
-    if !list || col < marker {
-        let keep = if col >= indent.len() { indent } else { "" };
-        return Enter::Insert(format!("\n{keep}"));
-    }
-    if line[marker..].trim().is_empty() {
-        return Enter::Clear;
-    }
-    let m = &line[indent.len()..marker];
-    let next = match kind {
-        Kind::Task(_) => format!("{}[ ] ", &m[..2]),
-        Kind::Ordered => {
-            let digits = m.len() - 2;
-            let n: u64 = m[..digits].parse().unwrap_or(0);
-            format!("{}{}", n + 1, &m[digits..])
-        }
-        _ => m.to_string(),
-    };
-    Enter::Insert(format!("\n{indent}{next}"))
-}
-
-/// A filled template: `{{title}}`, `{{date}}` and `{{time}}` take their value (ignoring
-/// case and spaces inside the braces), `{{cursor}}` marks where the cursor will go and disappears. Any other
-/// `{{word}}`, or a brace never closed, stays as is; what is inserted is not reread. Returns the text
-/// and the cursor's place (the end of the text without `{{cursor}}`).
-pub fn fill(template: &str, title: &str, date: &str, time: &str) -> (String, usize) {
-    let (mut out, mut cursor, mut rest) = (String::with_capacity(template.len()), None, template);
-    while let Some(open) = rest.find("{{") {
-        out.push_str(&rest[..open]);
-        let after = &rest[open + 2..];
-        let Some(close) = after.find("}}") else {
-            rest = &rest[open..];
-            break;
-        };
-        match after[..close].trim().to_lowercase().as_str() {
-            "title" => out.push_str(title),
-            "date" => out.push_str(date),
-            "time" => out.push_str(time),
-            "cursor" => {
-                cursor.get_or_insert(out.len());
-            }
-            _ => out.push_str(&rest[open..open + 2 + close + 2]),
-        }
-        rest = &after[close + 2..];
-    }
-    out.push_str(rest);
-    let at = cursor.unwrap_or(out.len());
-    (out, at)
-}
-
-/// The note written as a template: its first `#` heading becomes `{{title}}` (and one is added at the top if there
-/// is none), so that the note born from the template carries the name it is given.
-pub fn templatize(text: &str) -> String {
-    let start = front_matter(text);
-    let (mut at, mut fenced) = (start, false);
-    for line in text[start..].split_inclusive('\n') {
-        let bare = line.trim_end_matches('\n');
-        if is_fence(bare) {
-            fenced = !fenced;
-        }
-        if !fenced && classify(bare, false).0 == Kind::Heading(1) && line.trim_start().starts_with("# ") {
-            let end = at + line.trim_end_matches('\n').len();
-            return format!("{}# {{{{title}}}}{}", &text[..at], &text[end..]);
-        }
-        at += line.len();
-    }
-    format!("{}# {{{{title}}}}\n\n{}", &text[..start], &text[start..])
-}
-
-/// What lines become: a list kind, or text.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ListStyle {
-    Text,
-    Bullet,
-    Ordered,
-    Task,
-}
-
-/// The lines of `block` (without a final line break) written in style `to`. Returns the new
-/// text and, for each line, where its content starts before and after (in bytes from the start
-/// of the line), to restore the selection. Only paragraphs and list items change:
-/// not headings, tables, quotes, code blocks nor empty lines. If all touched lines
-/// are already in this style, they become text again. Items keep their indent, a numbered
-/// list restarts from 1 at each level, and a checked box stays checked from one task to the other.
-pub fn restyle(block: &str, to: ListStyle) -> (String, Vec<(usize, usize)>) {
-    let mut fenced = false;
-    let lines: Vec<(&str, Option<Kind>)> = block
-        .split('\n')
-        .map(|line| {
-            if is_fence(line) {
-                fenced = !fenced;
-                return (line, None);
-            }
-            if fenced || line.trim().is_empty() {
-                return (line, None);
-            }
-            let kind = classify(line, false).0;
-            (line, matches!(kind, Kind::Para | Kind::Bullet | Kind::Ordered | Kind::Task(_)).then_some(kind))
-        })
-        .collect();
-    let same = |kind: Kind| match to {
-        ListStyle::Text => kind == Kind::Para,
-        ListStyle::Bullet => kind == Kind::Bullet,
-        ListStyle::Ordered => kind == Kind::Ordered,
-        ListStyle::Task => matches!(kind, Kind::Task(_)),
-    };
-    let touched = lines.iter().filter_map(|(_, kind)| *kind);
-    let target = if touched.clone().next().is_some() && touched.clone().all(same) { ListStyle::Text } else { to };
-    let (mut out, mut spans) = (Vec::with_capacity(lines.len()), Vec::with_capacity(lines.len()));
-        // Rank of the last item at each indent, for numbering.
-    let mut counts: Vec<(usize, usize)> = Vec::new();
-    for (line, kind) in lines {
-        let Some(kind) = kind else {
-                        // An empty line lets numbering run on; any other block interrupts it.
-            if !line.trim().is_empty() {
-                counts.clear();
-            }
-            out.push(line.to_string());
-            spans.push((0, 0));
-            continue;
-        };
-        let indent = indent_len(line);
-        let start = if kind == Kind::Para { indent } else { classify(line, false).1 };
-        let pad = if target == ListStyle::Text { "" } else { &line[..indent] };
-        let marker = match target {
-            ListStyle::Text => String::new(),
-            ListStyle::Bullet => "- ".to_string(),
-            ListStyle::Task => format!("- [{}] ", if kind == Kind::Task(true) { 'x' } else { ' ' }),
-            ListStyle::Ordered => {
-                while counts.last().is_some_and(|&(level, _)| level > indent) {
-                    counts.pop();
-                }
-                match counts.last_mut() {
-                    Some((level, n)) if *level == indent => *n += 1,
-                    _ => counts.push((indent, 1)),
-                }
-                format!("{}. ", counts.last().map_or(1, |c| c.1))
-            }
-        };
-        spans.push((start, pad.len() + marker.len()));
-        out.push(format!("{pad}{marker}{}", &line[start..]));
-    }
-    (out.join("\n"), spans)
-}
-
-/// Renumbers the ordered list around the cursor. Returns the new text and
-/// the adjusted cursor, or `None` if nothing changes.
-pub fn renumber(text: &str, cursor: usize) -> Option<(String, usize)> {
-    let lines: Vec<&str> = text.split('\n').collect();
-    let mut starts = Vec::with_capacity(lines.len());
-    let mut off = 0;
-    for l in &lines {
-        starts.push(off);
-        off += l.len() + 1;
-    }
-    let cur = starts.partition_point(|&s| s <= cursor).saturating_sub(1);
-    let ordered = |i: usize| classify(lines[i], false).0 == Kind::Ordered;
-        // After an item is deleted, the list to fix starts below the cursor.
-    let anchor = [cur, cur + 1]
-        .into_iter()
-        .find(|&i| i < lines.len() && ordered(i))?;
-    let level = indent_len(lines[anchor]);
-    let member = |i: usize| {
-        let l = lines[i];
-        (ordered(i) && indent_len(l) == level) || (!l.trim().is_empty() && indent_len(l) > level)
-    };
-    let mut first = anchor;
-    while first > 0 && member(first - 1) {
-        first -= 1;
-    }
-    let mut last = anchor;
-    while last + 1 < lines.len() && member(last + 1) {
-        last += 1;
-    }
-
-    let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
-    let mut new_cursor = cursor as isize;
-    let mut number = None;
-    let mut changed = false;
-    for i in first..=last {
-        let l = lines[i];
-        if !(ordered(i) && indent_len(l) == level) {
-            continue;
-        }
-        let digits = l[level..].bytes().take_while(u8::is_ascii_digit).count();
-        let n = match number {
-            None => l[level..level + digits].parse::<u64>().unwrap_or(1),
-            Some(prev) => prev + 1,
-        };
-        number = Some(n);
-        let fixed = format!("{}{}{}", &l[..level], n, &l[level + digits..]);
-        if fixed != l {
-            if cursor > starts[i] + level {
-                new_cursor += fixed.len() as isize - l.len() as isize;
-            }
-            out[i] = fixed;
-            changed = true;
-        }
-    }
-    changed.then(|| (out.join("\n"), new_cursor.max(0) as usize))
-}
-
 // ----- Callouts and tables -----
 
 /// Kind of callout opened by a `> [!NOTE]` quote (GitHub syntax).
@@ -1045,417 +756,9 @@ pub fn callout(line: &str) -> Option<Range<usize>> {
     Some(open..open + close + 3)
 }
 
-/// Place of each `|` separating two cells: not those that are escaped or
-/// caught in a `[[link|alias]]`.
-pub fn bars(line: &str) -> Vec<usize> {
-    let b = line.as_bytes();
-    let mut bars = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        match b[i] {
-            b'\\' => i += 1,
-            b'[' if line[i..].starts_with("[[") => i += line[i..].find("]]").unwrap_or(0),
-            b'|' => bars.push(i),
-            _ => {}
-        }
-        i += 1;
-    }
-    bars
-}
-
-/// Range of each cell's content in the line, without the surrounding spaces.
-pub fn cells(line: &str) -> Vec<Range<usize>> {
-    let mut bars = bars(line);
-        // Without a final `|`, what follows the last one is still a cell.
-    if bars.last().is_some_and(|&last| !line[last + 1..].trim().is_empty()) {
-        bars.push(line.len());
-    }
-    bars.windows(2)
-        .map(|pair| {
-            let cell = &line[pair[0] + 1..pair[1]];
-                        // Empty cell: the cursor goes one space from the `|`.
-            let lead = if cell.trim().is_empty() { cell.len().min(1) } else { indent_len(cell) };
-            let start = pair[0] + 1 + lead;
-            start..start + cell.trim().len()
-        })
-        .collect()
-}
-
-pub fn is_dashes(row: &[String]) -> bool {
-    !row.is_empty() && row.iter().all(|c| c.contains('-') && c.chars().all(|x| matches!(x, '-' | ':')))
-}
-
-/// Lines of a table (header, dashes, then the rest), all of the same
-/// length; and whether the dash line, missing, had to be added.
-pub fn table(block: &str) -> (Vec<Vec<String>>, bool) {
-    let mut rows: Vec<Vec<String>> =
-        block.lines().map(|l| cells(l).into_iter().map(|r| l[r].to_string()).collect()).collect();
-    let cols = rows.iter().map(Vec::len).max().unwrap_or(0).max(1);
-    let added = rows.len() < 2 || !is_dashes(&rows[1]);
-    if added {
-        rows.insert(rows.len().min(1), vec!["---".to_string(); cols]);
-    }
-    rows.iter_mut().for_each(|row| row.resize(cols, String::new()));
-    rows[1].iter_mut().filter(|c| c.is_empty()).for_each(|c| *c = "---".to_string());
-    (rows, added)
-}
-
-/// Text pasted into a cell: on a single line, `|` escaped.
-pub fn cell_text(text: &str) -> String {
-    let text = text.trim_matches(['\n', '\r']);
-    let joined = text.split(['\n', '\r']).map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ");
-    joined.replace('\t', " ").replace("\\|", "|").replace('|', "\\|")
-}
-
-/// Cells of a text copied from a spreadsheet (tabs) or a Markdown table,
-/// line by line; `None` for ordinary text, which fits in a single cell.
-pub fn paste_grid(text: &str) -> Option<Vec<Vec<String>>> {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    let markdown = !lines.is_empty() && lines.iter().all(|l| l.trim_start().starts_with('|') && bars(l).len() >= 2);
-    let rows: Vec<Vec<String>> = if markdown {
-        let mut rows: Vec<Vec<String>> =
-            lines.iter().map(|l| cells(l).into_iter().map(|r| l[r].to_string()).collect()).collect();
-                // Only the second line can be the dash line: `| - | - |` further down is data.
-        if rows.get(1).is_some_and(|row| is_dashes(row)) {
-            rows.remove(1);
-        }
-        rows
-    } else if lines.iter().any(|l| l.contains('\t')) {
-        lines.iter().map(|l| l.split('\t').map(cell_text).collect()).collect()
-    } else {
-        return None;
-    };
-    (!rows.is_empty()).then_some(rows)
-}
-
-/// Text pasted outside a table that is one, reformatted: a Markdown table of
-/// several lines, or cells separated by tabs (spreadsheet, web page), in
-/// equal number on each line. Code indented with tabs is not one.
-pub fn paste_table(text: &str) -> Option<String> {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() < 2 {
-        return None;
-    }
-    let block = if lines.iter().all(|l| l.trim_start().starts_with('|')) {
-        lines.iter().map(|l| l.trim()).collect::<Vec<_>>().join("\n")
-    } else {
-        let grid = paste_grid(text)?;
-        let cols = grid[0].len();
-        if cols < 2 || grid.iter().any(|row| row.len() != cols) || lines.iter().all(|l| l.starts_with('\t')) {
-            return None;
-        }
-        grid.iter().map(|row| format!("| {} |", row.join(" | "))).collect::<Vec<_>>().join("\n")
-    };
-    Some(format_table(&table(&block).0, ""))
-}
-
-/// Empty table of `cols` columns and `rows` rows, header included.
-pub fn new_table(cols: usize, rows: usize) -> Vec<Vec<String>> {
-    table(&vec![format!("{}|", "| ".repeat(cols)); rows].join("\n")).0
-}
-
 // ----- Gestures on a table: pure functions on the `table` grid (the header, the dash line, the
 // body). A "visible" rank does not count the dash line: 0 is the header, 1 the first body row.
 // Each gesture returns the changed grid, always rectangular and with its dashes; `None` when nothing is left.
-
-/// The table's visible rows (without the dashes), and the dashes.
-fn split_grid(rows: &[Vec<String>]) -> (Vec<Vec<String>>, Vec<String>) {
-    let visible = rows.iter().enumerate().filter(|(i, _)| *i != 1).map(|(_, row)| row.clone()).collect();
-    (visible, rows.get(1).cloned().unwrap_or_default())
-}
-
-fn join_grid(mut visible: Vec<Vec<String>>, dashes: Vec<String>) -> Option<Vec<Vec<String>>> {
-    if visible.is_empty() || dashes.is_empty() {
-        return None;
-    }
-    visible.insert(1.min(visible.len()), dashes);
-    Some(visible)
-}
-
-/// Number of visible rows of a grid (the header counts, the dashes do not).
-pub fn visible_rows(rows: &[Vec<String>]) -> usize {
-    rows.len().saturating_sub(1)
-}
-
-/// An empty row at visible rank `at` (never before the header, never past the end).
-pub fn insert_row(rows: &[Vec<String>], at: usize) -> Vec<Vec<String>> {
-    let (mut visible, dashes) = split_grid(rows);
-    visible.insert(at.clamp(1, visible.len()), vec![String::new(); dashes.len()]);
-    join_grid(visible, dashes).unwrap_or_default()
-}
-
-/// An empty column at place `at`.
-pub fn insert_col(rows: &[Vec<String>], at: usize) -> Vec<Vec<String>> {
-    let mut rows = rows.to_vec();
-    for (i, row) in rows.iter_mut().enumerate() {
-        row.insert(at.min(row.len()), if i == 1 { "---" } else { "" }.to_string());
-    }
-    rows
-}
-
-/// Without the visible rows `range`. Removing the header gives its role to the next row.
-pub fn delete_rows(rows: &[Vec<String>], range: std::ops::Range<usize>) -> Option<Vec<Vec<String>>> {
-    let (visible, dashes) = split_grid(rows);
-    let kept = visible.into_iter().enumerate().filter(|(i, _)| !range.contains(i)).map(|(_, row)| row).collect();
-    join_grid(kept, dashes)
-}
-
-/// Without the columns `range`.
-pub fn delete_cols(rows: &[Vec<String>], range: std::ops::Range<usize>) -> Option<Vec<Vec<String>>> {
-    let rows: Vec<Vec<String>> = rows
-        .iter()
-        .map(|row| row.iter().enumerate().filter(|(c, _)| !range.contains(c)).map(|(_, cell)| cell.clone()).collect())
-        .collect();
-    rows.first().is_some_and(|row| !row.is_empty()).then_some(rows)
-}
-
-/// Visible row `from` moves to rank `to` (the others shift). The header can move: the row
-/// that takes its place becomes the header.
-pub fn move_row(rows: &[Vec<String>], from: usize, to: usize) -> Vec<Vec<String>> {
-    let (mut visible, dashes) = split_grid(rows);
-    if from < visible.len() {
-        let row = visible.remove(from);
-        visible.insert(to.min(visible.len()), row);
-    }
-    join_grid(visible, dashes).unwrap_or_default()
-}
-
-/// Column `from` moves to place `to`, with its alignment.
-pub fn move_col(rows: &[Vec<String>], from: usize, to: usize) -> Vec<Vec<String>> {
-    let mut rows = rows.to_vec();
-    for row in &mut rows {
-        if from < row.len() {
-            let cell = row.remove(from);
-            row.insert(to.min(row.len()), cell);
-        }
-    }
-    rows
-}
-
-/// Visible row `r` copied just below (the header: at the top of the body).
-pub fn duplicate_row(rows: &[Vec<String>], r: usize) -> Vec<Vec<String>> {
-    let (mut visible, dashes) = split_grid(rows);
-    if let Some(row) = visible.get(r).cloned() {
-        visible.insert(r + 1, row);
-    }
-    join_grid(visible, dashes).unwrap_or_default()
-}
-
-/// Column `c` copied just to the right.
-pub fn duplicate_col(rows: &[Vec<String>], c: usize) -> Vec<Vec<String>> {
-    let mut rows = rows.to_vec();
-    for row in &mut rows {
-        if let Some(cell) = row.get(c).cloned() {
-            row.insert(c + 1, cell);
-        }
-    }
-    rows
-}
-
-/// The body sorted on column `c` (natural sort, empty cells at the end); the header stays in place.
-pub fn sort_rows(rows: &[Vec<String>], c: usize, ascending: bool) -> Vec<Vec<String>> {
-    let (mut visible, dashes) = split_grid(rows);
-    let blank = |row: &Vec<String>| row.get(c).is_none_or(|cell| cell.trim().is_empty());
-    visible[1..].sort_by(|a, b| {
-        let order = cell_order(a.get(c).map_or("", |s| s), b.get(c).map_or("", |s| s));
-                // Empty cells stay at the end in both directions.
-        match (blank(a), blank(b)) {
-            (true, true) => std::cmp::Ordering::Equal,
-            (true, false) => std::cmp::Ordering::Greater,
-            (false, true) => std::cmp::Ordering::Less,
-            _ => if ascending { order } else { order.reverse() },
-        }
-    });
-    join_grid(visible, dashes).unwrap_or_default()
-}
-
-/// Rows become columns: the first row becomes the first column, and the header.
-pub fn transpose(rows: &[Vec<String>]) -> Vec<Vec<String>> {
-    let (visible, dashes) = split_grid(rows);
-    let flipped: Vec<Vec<String>> =
-        (0..dashes.len()).map(|c| visible.iter().map(|row| row.get(c).cloned().unwrap_or_default()).collect()).collect();
-    let cols = flipped.first().map_or(0, Vec::len);
-    join_grid(flipped, vec!["---".to_string(); cols]).unwrap_or_default()
-}
-
-/// Width of a line written in text columns: ideographs and emojis take two.
-fn columns(text: &str) -> usize {
-    UnicodeWidthStr::width(text)
-}
-
-/// Beyond this width, columns are no longer aligned: a long cell
-/// would pad every line of the file with spaces. The table displays the same.
-const ALIGNED: usize = 100;
-
-/// The table written as Markdown, columns aligned as long as it fits in `ALIGNED`.
-pub fn format_table(rows: &[Vec<String>], indent: &str) -> String {
-        // The width of each cell, counted once.
-    let shown: Vec<Vec<usize>> = rows.iter().map(|row| row.iter().map(|cell| columns(cell)).collect()).collect();
-    let cols = rows.first().map_or(0, Vec::len);
-    let mut widths: Vec<usize> = (0..cols)
-        .map(|c| shown.iter().enumerate().filter(|(i, _)| *i != 1).map(|(_, row)| row[c]).max().unwrap_or(0).max(3))
-        .collect();
-    if widths.iter().map(|w| w + 3).sum::<usize>() + 1 > ALIGNED {
-        widths.fill(0);
-    }
-    let mut text = String::with_capacity(rows.len() * (indent.len() + widths.iter().sum::<usize>() + 3 * cols + 2));
-    for (i, row) in rows.iter().enumerate() {
-        if i > 0 {
-            text.push('\n');
-        }
-        text.push_str(indent);
-        text.push('|');
-        for (c, cell) in row.iter().enumerate() {
-            text.push(' ');
-            if i == 1 {
-                                // The alignment colons stay at the ends of the dashes.
-                let (left, right) = (cell.starts_with(':'), cell.len() > 1 && cell.ends_with(':'));
-                text.push_str(if left { ":" } else { "" });
-                text.extend(std::iter::repeat_n('-', widths[c].max(3) - left as usize - right as usize));
-                text.push_str(if right { ":" } else { "" });
-            } else {
-                text.push_str(cell);
-                text.extend(std::iter::repeat_n(' ', widths[c].saturating_sub(shown[i][c])));
-            }
-            text.push_str(" |");
-        }
-    }
-    text
-}
-
-/// Length of the front matter block, its closing line and that line's line ending
-/// included; zero if there is none. It starts on line 1 with `---` and closes with `---`
-/// or `...`; without a closing line, it is not a block.
-pub fn front_matter(text: &str) -> usize {
-    let mut at = 0;
-    for (i, line) in text.split_inclusive('\n').enumerate() {
-        at += line.len();
-        match (i, line.trim_end()) {
-            (0, "---") => {}
-            (0, _) => return 0,
-            (_, "---" | "...") => return at,
-            _ => {}
-        }
-    }
-    0
-}
-
-/// Where to put the cursor when a note opens: at the start of its body, after the front matter,
-/// the title line and the empty lines that follow it. The first key typed thus goes into
-/// the text, without breaking the front matter nor renaming the note through its title.
-pub fn body_start(text: &str) -> usize {
-    let start = front_matter(text);
-    let rest = &text[start..];
-    let Some(title) = rest.find('\n') else {
-                // A single line, with no ending: the cursor follows it, as it was left.
-        return text.len();
-    };
-    let mut at = start + title + 1;
-    for line in text[at..].split_inclusive('\n') {
-        if !line.trim().is_empty() {
-            break;
-        }
-        at += line.len();
-    }
-    at
-}
-
-/// Values of key `key` in the front matter, quotes removed: inline list (`[a, b]`),
-/// comma-separated values, or a dash list on the following lines.
-// ponytail: read by hand, for the two keys the app uses; no nested YAML nor indented
-// key. A YAML library if other keys or richer values need reading.
-pub fn front_values(text: &str, key: &str) -> Vec<String> {
-    let clean = |value: &str| value.trim().trim_matches(['"', '\'']).trim().to_string();
-    let mut lines = text[..front_matter(text)].lines().skip(1);
-    let Some(rest) = lines.find_map(|line| Some(line.strip_prefix(key)?.strip_prefix(':')?.trim())) else {
-        return Vec::new();
-    };
-    let values: Vec<String> = match rest.is_empty() {
-        true => lines.map_while(|line| line.trim_start().strip_prefix("- ")).map(clean).collect(),
-        false => rest.strip_prefix('[').and_then(|list| list.strip_suffix(']')).unwrap_or(rest).split(',').map(clean).collect(),
-    };
-    values.into_iter().filter(|value| !value.is_empty()).collect()
-}
-
-/// Front matter keys, in the order they are written.
-pub fn front_keys(text: &str) -> Vec<&str> {
-    let lines = text[..front_matter(text)].lines().skip(1);
-    let keys = lines.filter_map(|line| line.split_once(':')).map(|(key, _)| key);
-    keys.filter(|key| !key.is_empty() && !key.starts_with([' ', '\t', '-', '#'])).collect()
-}
-
-/// Table of notes: one column per key of their front matter, in order of appearance,
-/// and for each note its values (several values: separated by commas).
-pub fn list_table(notes: &[&str]) -> (Vec<String>, Vec<Vec<String>>) {
-    let mut keys: Vec<String> = Vec::new();
-    for key in notes.iter().flat_map(|text| front_keys(text)) {
-        if !keys.iter().any(|known| known == key) {
-            keys.push(key.to_string());
-        }
-    }
-    let rows = notes.iter().map(|text| keys.iter().map(|key| front_values(text, key).join(", ")).collect()).collect();
-    (keys, rows)
-}
-
-/// The note once key `key` of its front matter is set to `value`; nothing else changes
-/// in the file. A missing key is added at the end of the front matter, created if needed; an empty
-/// value removes the key, and the front matter if nothing is left in it. A list (`[a, b]` or dashed) stays
-/// a list, written inline.
-pub fn set_front(text: &str, key: &str, value: &str) -> String {
-    let value = value.trim();
-    let block = front_matter(text);
-    if block == 0 {
-        return if value.is_empty() { text.to_string() } else { format!("---\n{key}: {value}\n---\n{text}") };
-    }
-    let lines: Vec<&str> = text[..block].split_inclusive('\n').collect();
-    let rest_of = |line: &str| Some(line.strip_prefix(key)?.strip_prefix(':')?.trim().to_string());
-        // The key spans its line, plus those of its dash list.
-    let (first, rest) = match lines.iter().enumerate().skip(1).find_map(|(i, line)| Some((i, rest_of(line)?))) {
-        Some(found) => found,
-        None if value.is_empty() => return text.to_string(),
-        None => {
-            let close = block - lines[lines.len() - 1].len();
-            return format!("{}{key}: {value}\n{}", &text[..close], &text[close..]);
-        }
-    };
-    let dashes = if rest.is_empty() { lines[first + 1..].iter().take_while(|line| line.trim_start().starts_with("- ")).count() } else { 0 };
-    let end = if lines[first].ends_with("\r\n") { "\r\n" } else { "\n" };
-    let written = match (value.is_empty(), dashes > 0 || rest.starts_with('[')) {
-        (true, _) => String::new(),
-        (_, true) => format!("{key}: [{}]{end}", value.split(',').map(str::trim).filter(|v| !v.is_empty()).collect::<Vec<_>>().join(", ")),
-        (_, false) => format!("{key}: {value}{end}"),
-    };
-    let head: String = lines[..first].concat() + &written + &lines[first + 1 + dashes..].concat();
-        // Only the opening and closing lines are left: no more front matter.
-    let emptied = head.lines().count() == 2;
-    format!("{}{}", if emptied { "" } else { &head }, &text[block..])
-}
-
-/// A table row passes the filter: the text is searched in all its cells, or,
-/// written `key:text`, in that key's column; ignoring case.
-pub fn row_kept(keys: &[String], cells: &[String], filter: &str) -> bool {
-    let filter = filter.trim().to_lowercase();
-    let column = filter.split_once(':').and_then(|(key, word)| Some((keys.iter().rposition(|k| k.to_lowercase() == key.trim())?, word.trim().to_string())));
-    match column {
-        Some((at, word)) => cells.get(at).is_some_and(|cell| cell.to_lowercase().contains(&word)),
-        None => cells.iter().any(|cell| cell.to_lowercase().contains(&filter)),
-    }
-}
-
-/// Order of two table cells: numbers by their value, the rest ignoring case;
-/// an empty cell comes after the others.
-pub fn cell_order(a: &str, b: &str) -> std::cmp::Ordering {
-    match (a.trim().replace(',', ".").parse::<f64>(), b.trim().replace(',', ".").parse::<f64>()) {
-        (Ok(x), Ok(y)) => x.total_cmp(&y),
-        _ => a.is_empty().cmp(&b.is_empty()).then_with(|| a.to_lowercase().cmp(&b.to_lowercase())),
-    }
-}
-
-/// Other names of the note, given by the `aliases` key of its front matter: a `[[link]]` can
-/// target it by one of them.
-pub fn aliases(text: &str) -> Vec<String> {
-    front_values(text, "aliases")
-}
 
 /// Headings of the text: level (1 to 6), label, start of their line. A code block line
 /// is not a heading, nor is a front matter line; as on screen, a ``` without a
@@ -1511,114 +814,6 @@ pub fn all_comments(text: &str) -> Vec<(&str, &str, usize)> {
         at += line.len() + 1;
     }
     found
-}
-
-/// Spans of `text` equal to `query`, without overlap. `case`: case matters;
-/// `word`: the span touches no letter nor digit. The text is the file's: Markdown
-/// marks are searched like the rest.
-pub fn find(text: &str, query: &str, case: bool, word: bool) -> Vec<Range<usize>> {
-    let fold = |c: char| -> Vec<char> { if case { vec![c] } else { c.to_lowercase().collect() } };
-    let query: Vec<char> = query.chars().flat_map(fold).collect();
-        // Length of the span that starts `rest` and equals the search, if there is one.
-    let matched = |rest: &str| -> Option<usize> {
-        let mut k = 0;
-        for (i, c) in rest.char_indices() {
-            if k == query.len() {
-                return Some(i);
-            }
-            for folded in fold(c) {
-                if query.get(k) != Some(&folded) {
-                    return None;
-                }
-                k += 1;
-            }
-        }
-        (k == query.len()).then_some(rest.len())
-    };
-    let inside = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
-    let mut found = Vec::new();
-    let mut at = 0;
-    while !query.is_empty() && at < text.len() {
-        let step = text[at..].chars().next().map_or(1, char::len_utf8);
-        match matched(&text[at..]) {
-            Some(len) if !word || !(inside(text[..at].chars().next_back()) || inside(text[at + len..].chars().next())) => {
-                found.push(at..at + len);
-                at += len.max(step);
-            }
-            _ => at += step,
-        }
-    }
-    found
-}
-
-/// The spans of `text` that `query` names, and the text that replaces each. With `regex`,
-/// `query` is a regular expression (`^` and `$` apply to each line) and `with` can
-/// reuse its groups (`$1`, `${name}`); a badly written expression finds nothing.
-pub fn replacements(text: &str, query: &str, with: &str, case: bool, word: bool, regex: bool) -> Vec<(Range<usize>, String)> {
-    if !regex {
-        return find(text, query, case, word).into_iter().map(|hit| (hit, with.to_string())).collect();
-    }
-    let pattern = if word { format!(r"\b(?:{query})\b") } else { query.to_string() };
-    let Ok(pattern) = regex::RegexBuilder::new(&pattern).case_insensitive(!case).multi_line(true).build() else {
-        return Vec::new();
-    };
-    let found = pattern.captures_iter(text).filter(|groups| !groups[0].is_empty());
-    found
-        .map(|groups| {
-            let mut put = String::new();
-            groups.expand(with, &mut put);
-            (groups.get(0).map_or(0..0, |all| all.range()), put)
-        })
-        .collect()
-}
-
-/// What is searched and what replaces it, with the find bar's settings.
-#[derive(Clone, PartialEq, Debug)]
-pub struct Swap {
-    pub query: String,
-    pub with: String,
-    pub case: bool,
-    pub word: bool,
-    pub regex: bool,
-}
-
-/// `text` once all its matches are replaced, and their number; `None` if there are none.
-pub fn swap(text: &str, swap: &Swap) -> Option<(String, usize)> {
-    let hits = replacements(text, &swap.query, &swap.with, swap.case, swap.word, swap.regex);
-    let (mut put, mut done) = (String::with_capacity(text.len()), 0);
-    for (hit, with) in &hits {
-        put.push_str(&text[done..hit.start]);
-        put.push_str(with);
-        done = hit.end;
-    }
-    put.push_str(&text[done..]);
-    (!hits.is_empty()).then_some((put, hits.len()))
-}
-
-/// Number of words and characters of the text, as written: Markdown marks
-/// count as characters, line endings do not.
-pub fn counts(text: &str) -> (usize, usize) {
-    (text.unicode_words().count(), text.graphemes(true).filter(|g| !matches!(*g, "\n" | "\r\n")).count())
-}
-
-/// The counts of `new`, knowing those of `old` (`was`): only the lines that differ
-/// are recounted. No word nor character spans a line ending: the lines'
-/// counts add up.
-pub fn recount(old: &str, was: (usize, usize), new: &str) -> (usize, usize) {
-    let (a, b) = (old.as_bytes(), new.as_bytes());
-        // By blocks first (a memory comparison), then byte by byte in the block that differs.
-    const BLOCK: usize = 4096;
-    let blocks = a.as_chunks::<BLOCK>().0.iter().zip(b.as_chunks::<BLOCK>().0).take_while(|(x, y)| x == y).count() * BLOCK;
-    let same = blocks + a[blocks..].iter().zip(&b[blocks..]).take_while(|(x, y)| x == y).count();
-        // The common start stops after a line ending, the common end starts after another.
-    let head = a[..same].iter().rposition(|&c| c == b'\n').map_or(0, |i| i + 1);
-    let (a, b) = (&a[head..], &b[head..]);
-    let blocks = a.rchunks_exact(BLOCK).zip(b.rchunks_exact(BLOCK)).take_while(|(x, y)| x == y).count() * BLOCK;
-    let (x, y) = (&a[..a.len() - blocks], &b[..b.len() - blocks]);
-    let tail = blocks + x.iter().rev().zip(y.iter().rev()).take_while(|(x, y)| x == y).count();
-    let tail = a[a.len() - tail..].iter().position(|&c| c == b'\n').map_or(0, |i| tail - i - 1);
-    let (gone, come) = (counts(&old[head..old.len() - tail]), counts(&new[head..new.len() - tail]));
-    (was.0 + come.0 - gone.0, was.1 + come.1 - gone.1)
 }
 
 #[cfg(test)]
@@ -1771,14 +966,14 @@ mod tests {
         assert!(f[2..5].iter().all(|x| *x == DIM) && f[5] == UNDER && f[6..10].iter().all(|x| *x == DIM | UNDER) && f[10] == 0);
                 // Not an operator `==`, nor a single `==`, nor a `<u>` never closed, nor a lone `</u>`.
         for line in ["a == b == c", "a ==b", "x==y==z", "====", "a === b ===", "<u>ouvert", "fermé</u>", "base64 abc== et def== fin", "?q==a&r==b"] {
-            assert!(on(line).iter().all(|x| x & (HIGHLIGHT | UNDER) == 0 && *x & DIM == 0), "{line} : {:?}", on(line));
+            assert!(on(line).iter().all(|x| x & (HIGHLIGHT | UNDER) == 0 && *x & DIM == 0), "{line}: {:?}", on(line));
         }
                 // The `{==`…`==}` of a comment stay a comment, even next to a highlight.
         let line = "==a== puis {==mot==}{>>note<<} et ==b==";
         let f = on(line);
         assert!(f[2] == HIGHLIGHT && f[line.find("mot").unwrap()] == 0 && f[line.find("b==").unwrap()] == HIGHLIGHT, "{f:?}");
         let f = on("==a {==mot==}{>>n<<}");
-        assert!(f.iter().all(|x| x & HIGHLIGHT == 0), "un ouvrant sans fermant propre : {f:?}");
+        assert!(f.iter().all(|x| x & HIGHLIGHT == 0), "an opener without a clean closer: {f:?}");
                 // In inline code, nothing changes; with other styles, flags add up.
         assert!(on("`==a==` `<u>b</u>`").iter().all(|x| x & (HIGHLIGHT | UNDER) == 0));
         let f = on("**==a <u>é</u>==**");
@@ -1981,11 +1176,13 @@ mod tests {
         assert_eq!(find(text, "été", false, false).len(), 5);
         assert_eq!(find(text, "été", true, false).len(), 3);
         assert_eq!(find(text, "été", false, true).len(), 4);
-        assert_eq!(find(text, "**été**", true, true), [text.find("**").unwrap()..text.find('\n').unwrap()]);
+        let bold = find(text, "**été**", true, true);
+        assert_eq!((bold.len(), bold[0].clone()), (1, text.find("**").unwrap()..text.find('\n').unwrap()));
         assert_eq!(find("aaaa", "aa", true, false), [0..2, 2..4]);
         assert!(find(text, "", false, false).is_empty() && find("", "a", false, false).is_empty());
-                // A letter that grows when lowercased ("İ": two characters) shifts nothing.
-        assert_eq!(find("İstanbul", "stan", false, false), ["İ".len().."İstan".len()]);
+        // A letter that grows when lowercased ("İ": two characters) shifts nothing.
+        let found = find("İstanbul", "stan", false, false);
+        assert_eq!((found.len(), found[0].clone()), (1, "İ".len().."İstan".len()));
     }
 
     #[test]
@@ -2004,8 +1201,8 @@ mod tests {
         let long: String = (0..2000).map(|i| format!("ligne {i} d'été\n")).collect();
         for at in [0, 7, long.len() / 2, long.len() - 1, long.len()] {
             let typed = format!("{}mot {}", &long[..at], &long[at..]);
-            assert_eq!(recount(&long, counts(&long), &typed), counts(&typed), "frappe à {at}");
-            assert_eq!(recount(&typed, counts(&typed), &long), counts(&long), "retrait à {at}");
+            assert_eq!(recount(&long, counts(&long), &typed), counts(&typed), "keystroke at {at}");
+            assert_eq!(recount(&typed, counts(&typed), &long), counts(&long), "indent at {at}");
         }
                 // Random edits (always the same): insert, delete, replace, anywhere.
         let bits = ["a", " ", "\n", "\r\n", "\r", "é", "👨‍👩‍👧", "l'idée", "3.14", "mot mot\n", "", "\n\n"];
@@ -2026,7 +1223,7 @@ mod tests {
             let to = cut(&text, (from + next(6)).min(text.len())).max(from);
             let fresh = format!("{}{}{}", &text[..from], bits[next(bits.len())], &text[to..]);
             known = recount(&text, known, &fresh);
-            assert_eq!(known, counts(&fresh), "retouche {step} : {text:?} -> {fresh:?}");
+            assert_eq!(known, counts(&fresh), "edit {step}: {text:?} -> {fresh:?}");
             text = fresh;
         }
     }
@@ -2167,23 +1364,23 @@ mod tests {
                 .collect();
             let (grid, _) = table(&lines.join("\n"));
             let width = grid[0].len();
-            assert!(grid.iter().all(|row| row.len() == width), "cas {case}: {grid:?}");
+            assert!(grid.iter().all(|row| row.len() == width), "case {case}: {grid:?}");
             let text = format_table(&grid, "");
                         // Same number of cells on each row, whatever the content.
             for line in text.lines() {
-                assert_eq!(cells(line).len(), width, "cas {case}: {line}");
+                assert_eq!(cells(line).len(), width, "case {case}: {line}");
             }
                         // Read back, the written table gives the same cells, and the same text.
             let (again, added) = table(&text);
-            assert!(!added, "cas {case}");
+            assert!(!added, "case {case}");
                         // The dash line reads back at its written width; the rest identically.
             let data = |g: &[Vec<String>]| g.iter().enumerate().filter(|(i, _)| *i != 1).map(|(_, r)| r.clone()).collect::<Vec<_>>();
-            assert_eq!(data(&again), data(&grid), "cas {case}");
-            assert_eq!(format_table(&again, ""), text, "cas {case}");
+            assert_eq!(data(&again), data(&grid), "case {case}");
+            assert_eq!(format_table(&again, ""), text, "case {case}");
                         // Pasted from another table, it stays a grid of the same shape.
             let pasted = paste_grid(&text).unwrap();
-            assert_eq!(pasted.len(), grid.len() - 1, "cas {case}");
-            assert!(pasted.iter().all(|row| row.len() == width), "cas {case}");
+            assert_eq!(pasted.len(), grid.len() - 1, "case {case}");
+            assert!(pasted.iter().all(|row| row.len() == width), "case {case}");
         }
     }
 
@@ -2263,10 +1460,10 @@ mod tests {
                 };
                 let Some(next_grid) = done else { break };
                 g = next_grid;
-                assert!(g.len() >= 2 && is_dashes(&g[1]) && g.iter().all(|row| row.len() == g[0].len() && !row.is_empty()), "cas {case} geste {step}: {g:?}");
+                assert!(g.len() >= 2 && is_dashes(&g[1]) && g.iter().all(|row| row.len() == g[0].len() && !row.is_empty()), "case {case} geste {step}: {g:?}");
                                 // Written then read back, it does not change shape.
                 let again = table(&format_table(&g, "")).0;
-                assert_eq!((again.len(), again[0].len()), (g.len(), g[0].len()), "cas {case} geste {step}");
+                assert_eq!((again.len(), again[0].len()), (g.len(), g[0].len()), "case {case} geste {step}");
             }
         }
     }

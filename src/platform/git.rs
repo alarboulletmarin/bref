@@ -452,7 +452,7 @@ mod tests {
                     return merged;
                 }
             }
-            panic!("toujours refusé");
+            panic!("always refused");
         }
 
         fn files(&self, root: &Path) -> Vec<(String, String)> {
@@ -514,7 +514,7 @@ mod tests {
         // The note keeps the local version, the other side's is written next to it; nothing is lost
         // and no marker gets into a note.
         let other = lab.b.join("Note (conflict 2026-10-09 pc).md");
-        assert_eq!(merged.conflicts, [other.clone()]);
+        assert_eq!(merged.conflicts, std::slice::from_ref(&other));
         assert_eq!(fs::read_to_string(lab.b.join("Note.md")).unwrap(), "# Note\n\nun\nB\ntrois\n");
         assert_eq!(fs::read_to_string(&other).unwrap(), "# Note\n\nun\nA\ntrois\n");
         // Edited against deleted: the edited version stays.

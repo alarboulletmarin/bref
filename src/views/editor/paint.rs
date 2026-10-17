@@ -33,6 +33,8 @@ impl gpui::Asset for Job {
     type Source = Self;
     type Output = Drawing;
 
+    // The future must not borrow `cx`: an `async fn` would.
+    #[allow(clippy::manual_async_fn)]
     fn load(job: Self, _: &mut App) -> impl Future<Output = Drawing> + Send + 'static {
         async move {
             let tree = svg::parse(&(job.make)()?)?;

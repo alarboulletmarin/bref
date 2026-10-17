@@ -778,18 +778,18 @@ mod tests {
             assert_eq!(widths.len(), cols);
             let total: f32 = widths.iter().sum();
             let floor = cols as f32 * NARROWEST;
-            assert!(total <= avail.max(floor) + 0.01, "cas {case}: {total} pour {avail}");
+            assert!(total <= avail.max(floor) + 0.01, "case {case}: {total} for {avail}");
             for ((w, n), x) in widths.iter().zip(&narrow).zip(&wide) {
-                assert!(*w <= x + 0.01, "cas {case}: {w} > {x}");
-                assert!(*w >= n.min(NARROWEST).min(*x) - 0.01, "cas {case}: {w} < {n}");
+                assert!(*w <= x + 0.01, "case {case}: {w} > {x}");
+                assert!(*w >= n.min(NARROWEST).min(*x) - 0.01, "case {case}: {w} < {n}");
             }
             // Everything fits on one line if the page allows it.
             if wide.iter().sum::<f32>() <= avail {
-                assert_eq!(widths, wide, "cas {case}");
+                assert_eq!(widths, wide, "case {case}");
             }
             // If the longest words fit, none is cut.
             if narrow.iter().sum::<f32>() <= avail {
-                assert!(widths.iter().zip(&narrow).all(|(w, n)| w + 0.01 >= *n), "cas {case}");
+                assert!(widths.iter().zip(&narrow).all(|(w, n)| w + 0.01 >= *n), "case {case}");
             }
         }
     }

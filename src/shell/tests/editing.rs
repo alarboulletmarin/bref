@@ -42,11 +42,11 @@ fn commands_are_found(cx: &mut TestAppContext) {
     assert_eq!(mode(cx), None);
     assert_eq!(text(cx), "**mot**");
     // The rail's first button opens it too; a click on a command runs it.
-    let at = cx.debug_bounds("nav-commands").expect("le bouton du rail").center();
+    let at = cx.debug_bounds("nav-commands").expect("the rail button").center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert_eq!(mode(cx).map(|m| m.0), Some(true));
     cx.simulate_input("raccourcis");
-    let at = cx.debug_bounds("command-app::ToggleHelp").expect("la commande est affichée").center();
+    let at = cx.debug_bounds("command-app::ToggleHelp").expect("the command is shown").center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.help.open));
     shell.update_in(cx, |s, window, cx| s.set_help(false, window, cx));
@@ -97,14 +97,14 @@ fn commands_are_found(cx: &mut TestAppContext) {
     cx.run_until_parked();
     // A pointer move makes the test window redraw.
     cx.simulate_mouse_move(gpui::point(px(400.), px(300.)), None, gpui::Modifiers::none());
-    let at = cx.debug_bounds("sheet-span-editor::TableColRight").expect("le geste est dans la barre").center();
+    let at = cx.debug_bounds("sheet-span-editor::TableColRight").expect("the gesture is in the bar").center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cols()), 3);
     sheet.update(cx, |sheet, cx| sheet.pick("row", 1, cx));
     cx.run_until_parked();
     // A pointer move makes the test window redraw.
     cx.simulate_mouse_move(gpui::point(px(400.), px(300.)), None, gpui::Modifiers::none());
-    let at = cx.debug_bounds("sheet-span-sheet::DeleteRows").expect("une ligne entière a ses gestes").center();
+    let at = cx.debug_bounds("sheet-span-sheet::DeleteRows").expect("a whole row has its gestures").center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert_eq!(sheet.read_with(cx, |sheet, _| (sheet.table().rows(), sheet.table().cell(1, 0).to_string())), (2, "Bob".to_string()));
     fs::remove_dir_all(&root).unwrap();
@@ -144,7 +144,7 @@ fn block_handles(cx: &mut TestAppContext) {
         cx.simulate_mouse_move(at, None, none);
         shell.read_with(cx, |s, cx| s.pane().editor.read(cx).hovered_block().map(str::to_string))
     };
-    let handle = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).block_handle()).expect("la poignée est là");
+    let handle = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).block_handle()).expect("the handle is there");
 
     // Hovering a line shows its block's handle: an item carries its sub-items. The
     // title, which names the note, has none.
@@ -205,7 +205,7 @@ fn block_handles(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("alt-up");
     assert_eq!(text(cx), note);
     cx.simulate_keystrokes("alt-up");
-    assert_eq!(text(cx), note, "rien ne monte au-dessus du titre");
+    assert_eq!(text(cx), note, "nothing goes above the title");
     place(cx, "- a");
     cx.simulate_keystrokes("alt-down");
     assert_eq!(text(cx), "# Titre\n\nUn\n\nDeux\n\n- b\n- a\n    - sous\n");
@@ -268,7 +268,7 @@ fn templates_journey(cx: &mut TestAppContext) {
     rescan(cx);
     let kept = shell.read_with(cx, |s, _| s.notes.iter().filter(|n| n.name == "Réunion" || n.name == "Idée").map(|n| (n.tags.len(), n.links.len())).collect::<Vec<_>>());
     assert_eq!(kept, [(0, 0), (0, 0)]);
-    assert!(shell.read_with(cx, |s, _| s.wiki_path("Réunion").is_none() && s.wiki_path("modele").is_none()), "un lien ne vise pas un modèle");
+    assert!(shell.read_with(cx, |s, _| s.wiki_path("Réunion").is_none() && s.wiki_path("modele").is_none()), "a link does not target a template");
     // A note is born from the template, with the chosen name: title, date, time, cursor at its mark.
     palette(cx, "nouvelle note depuis");
     cx.simulate_input("Réu");
@@ -281,10 +281,10 @@ fn templates_journey(cx: &mut TestAppContext) {
     let day = date_name(today());
     let body = fs::read_to_string(&made).unwrap();
     let stamp = body.split(&format!("Le {day} à ")).nth(1).map(|rest| rest[..5].to_string()).unwrap_or_default();
-    assert!(stamp.len() == 5 && stamp.as_bytes()[2] == b':' && stamp.bytes().filter(u8::is_ascii_digit).count() == 4, "heure : {stamp:?} dans {body}");
+    assert!(stamp.len() == 5 && stamp.as_bytes()[2] == b':' && stamp.bytes().filter(u8::is_ascii_digit).count() == 4, "time: {stamp:?} in {body}");
     assert!(body.starts_with("# Lundi 3\n\nLe ") && body.contains("[[Lundi 3]]") && !body.contains("{{"), "{body}");
     assert_eq!(text(cx), body);
-    assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).position()), body.len() - 1, "le curseur est à la marque {{cursor}}");
+    assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).position()), body.len() - 1, "the cursor is at the {{cursor}} mark");
     // The keyboard goes to the editor: one can type right away, at the mark.
     cx.simulate_input("!");
     assert!(text(cx).ends_with("## Notes\n\n!\n"), "{}", text(cx));
@@ -305,7 +305,7 @@ fn templates_journey(cx: &mut TestAppContext) {
     start(cx, TemplateAct::New);
     cx.simulate_input("Idée");
     cx.simulate_keystrokes("enter enter");
-    assert_eq!(files(&root), before, "un nom vide ne crée rien");
+    assert_eq!(files(&root), before, "an empty name creates nothing");
     start(cx, TemplateAct::New);
     cx.simulate_input("Idée");
     cx.simulate_keystrokes("enter");
@@ -409,15 +409,15 @@ fn formatting_journey(cx: &mut TestAppContext) {
         assert_eq!(styles(cx), 0, "{key}");
         cx.simulate_keystrokes(key);
         assert_eq!((text(cx), selected(cx).as_str()), (shown.to_string(), "mot"), "{key}");
-        assert_eq!(styles(cx), flag, "{key} : le bouton s'allume");
+        assert_eq!(styles(cx), flag, "{key}: the button lights up");
         cx.simulate_keystrokes(key);
-        assert_eq!((text(cx), selected(cx).as_str()), ("un mot ici".to_string(), "mot"), "{key} retiré");
+        assert_eq!((text(cx), selected(cx).as_str()), ("un mot ici".to_string(), "mot"), "{key} removed");
         // A single Backspace undoes the insertion; redo puts it back.
         cx.simulate_keystrokes(key);
         cx.simulate_keystrokes("secondary-z");
-        assert_eq!(text(cx), "un mot ici", "{key} annulé");
+        assert_eq!(text(cx), "un mot ici", "{key} undone");
         cx.simulate_keystrokes("secondary-shift-z");
-        assert_eq!(text(cx), shown, "{key} rétabli");
+        assert_eq!(text(cx), shown, "{key} redone");
     }
     // Several styles on a word, then one in the middle is removed: the others stay.
     pick(cx, "un mot ici", 3, 3);
@@ -628,19 +628,19 @@ fn formatting_journey(cx: &mut TestAppContext) {
         // The bounds of a vanished element stay in memory in the test: the editor is what says what is on screen.
         let (shown, folded) = shell.read_with(cx, |s, cx| (s.pane().editor.read(cx).bar_shown(), s.pane().editor.read(cx).bar_folded()));
         let (counts, pane) = (cx.debug_bounds("counts").unwrap(), cx.debug_bounds("pane-0").unwrap());
-        assert!(counts.left() >= pane.left() && counts.right() <= pane.right(), "{width} : {counts:?} {pane:?}");
-        assert!(shown != folded, "{width} : la barre est là, ou repliée en un bouton : {shown} {folded}");
+        assert!(counts.left() >= pane.left() && counts.right() <= pane.right(), "{width}: {counts:?} {pane:?}");
+        assert!(shown != folded, "{width}: the bar is there, or folded into a button: {shown} {folded}");
         if shown {
             let bar = cx.debug_bounds("format-bar").unwrap();
-            assert!(bar.right() <= counts.left() && bar.left() >= pane.left() + px(8.) - px(0.5), "{width} : {bar:?} {counts:?} {pane:?}");
+            assert!(bar.right() <= counts.left() && bar.left() >= pane.left() + px(8.) - px(0.5), "{width}: {bar:?} {counts:?} {pane:?}");
             if width >= 1400. {
-                assert!((bar.center().x - pane.center().x).abs() <= px(1.), "{width} : au milieu de la page {bar:?} {pane:?}");
+                assert!((bar.center().x - pane.center().x).abs() <= px(1.), "{width}: in the middle of the page {bar:?} {pane:?}");
             }
         } else {
             // Folded: the button is in the note, at the left edge, and the counter does not go under it.
             let toggle = cx.debug_bounds("format-toggle").unwrap();
-            assert!(toggle.left() >= pane.left() && toggle.right() <= counts.left().max(toggle.right()) && toggle.bottom() <= pane.bottom(), "{width} : {toggle:?} {counts:?} {pane:?}");
-            assert!(counts.left() >= toggle.right() || counts.size.width == px(0.), "{width} : le compteur passe sous le bouton {toggle:?} {counts:?}");
+            assert!(toggle.left() >= pane.left() && toggle.right() <= counts.left().max(toggle.right()) && toggle.bottom() <= pane.bottom(), "{width}: {toggle:?} {counts:?} {pane:?}");
+            assert!(counts.left() >= toggle.right() || counts.size.width == px(0.), "{width}: the counter goes under the button {toggle:?} {counts:?}");
             // Open: all buttons are in the note, wrapped if it is narrow, above the button; a click acts.
             pick(cx, "un mot ici", 3, 3);
             let at = cx.debug_bounds("format-toggle").unwrap().center();
@@ -650,12 +650,12 @@ fn formatting_journey(cx: &mut TestAppContext) {
                 cx.update(|window, _| window.refresh());
                 cx.run_until_parked();
             }
-            assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_shown()), "{width} : le bouton ouvre la barre");
+            assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_shown()), "{width}: the button opens the bar");
             let (bar, toggle) = (cx.debug_bounds("format-bar").unwrap(), cx.debug_bounds("format-toggle").unwrap());
-            assert!(bar.left() >= pane.left() && bar.right() <= pane.right() && bar.bottom() <= toggle.top() && bar.top() >= pane.top(), "{width} : {bar:?} {toggle:?} {pane:?}");
+            assert!(bar.left() >= pane.left() && bar.right() <= pane.right() && bar.bottom() <= toggle.top() && bar.top() >= pane.top(), "{width}: {bar:?} {toggle:?} {pane:?}");
             for name in NAMES {
                 let button = cx.debug_bounds(name).unwrap();
-                assert!(bar.contains(&button.center()) && button.left() >= bar.left() && button.right() <= bar.right(), "{width} : {name} {button:?} hors de {bar:?}");
+                assert!(bar.contains(&button.center()) && button.left() >= bar.left() && button.right() <= bar.right(), "{width}: {name} {button:?} outside {bar:?}");
             }
             click(cx, 0);
             assert_eq!((text(cx), selected(cx).as_str()), ("un **mot** ici".to_string(), "mot"), "{width}");
@@ -667,7 +667,7 @@ fn formatting_journey(cx: &mut TestAppContext) {
             cx.update(|window, _| window.refresh());
             cx.run_until_parked();
             let (pops, bar) = (cx.debug_bounds("format-swatches").unwrap(), cx.debug_bounds("format-bar").unwrap());
-            assert!(pops.left() >= pane.left() && pops.right() <= pane.right() && pops.bottom() <= bar.top(), "{width} : {pops:?} {bar:?} {pane:?}");
+            assert!(pops.left() >= pane.left() && pops.right() <= pane.right() && pops.bottom() <= bar.top(), "{width}: {pops:?} {bar:?} {pane:?}");
             let green = cx.debug_bounds("swatch-1").unwrap().center();
             cx.simulate_click(green, gpui::Modifiers::none());
             assert_eq!(text(cx), "un <mark class=\"green\">mot</mark> ici", "{width}");
@@ -682,7 +682,7 @@ fn formatting_journey(cx: &mut TestAppContext) {
         }
         seen.push(shown);
     }
-    assert!(seen[0] && !seen[8] && seen.windows(2).all(|w| w[0] >= w[1]), "elle se replie d'un seul bord, sans revenir en arrière : {seen:?}");
+    assert!(seen[0] && !seen[8] && seen.windows(2).all(|w| w[0] >= w[1]), "it folds from one edge only, never going back: {seen:?}");
     // Two panes: a single bar, the one of the pane being typed in.
     cx.simulate_resize(size(px(1400.), px(600.)));
     cx.run_until_parked();
@@ -693,7 +693,7 @@ fn formatting_journey(cx: &mut TestAppContext) {
         cx.run_until_parked();
     }
     let bars = shell.read_with(cx, |s, cx| s.panes.iter().filter(|p| p.editor.read(cx).bar_shown()).count());
-    assert_eq!(bars, 1, "une seule barre pour deux panes");
+    assert_eq!(bars, 1, "one bar for two panes");
     cx.dispatch_action(ClosePane);
     cx.run_until_parked();
     assert_eq!(shell.read_with(cx, |s, _| s.panes.len()), 1);

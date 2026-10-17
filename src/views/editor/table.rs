@@ -2,6 +2,13 @@
 
 use super::*;
 
+/// The table around a byte: its range in the text, its rows, and the cell (row, column) of that byte.
+pub(super) type TableAt = (Range<usize>, Vec<Vec<String>>, (usize, usize));
+
+/// What a test reads of the table on screen: tallest row, rows, frame, text width and view.
+#[cfg(test)]
+pub(super) type TableState = (Pixels, i32, Bounds<Pixels>, Pixels, Bounds<Pixels>);
+
 /// Room kept under a table for the button that adds a row to it, and
 /// thickness of that button.
 pub(super) const TABLE_GAP: Pixels = px(18.);
@@ -146,7 +153,7 @@ impl Editor {
     /// First table: how far it scrolled, largest number of visual lines of one
     /// of its rows, its frame, the text width and the view.
     #[cfg(test)]
-    pub fn table_state(&self) -> Option<(Pixels, i32, Bounds<Pixels>, Pixels, Bounds<Pixels>)> {
+    pub fn table_state(&self) -> Option<TableState> {
         let rows = self.rows.iter().filter(|r| r.kind == Kind::Table);
         let tall = rows.clone().map(Row::visual_rows).max()?;
         let frame = self.tables.first()?.1;
@@ -392,7 +399,7 @@ impl Editor {
         self.row_at(at).is_some_and(|r| self.big.iter().any(|b| b.rows.contains(&r)))
     }
 
-    pub(super) fn table_at(&self, at: usize) -> Option<(Range<usize>, Vec<Vec<String>>, (usize, usize))> {
+    pub(super) fn table_at(&self, at: usize) -> Option<TableAt> {
         // ponytail: a very big table (thousands of rows) is not reread nor realigned as a whole on each
         // keystroke: no column alignment, no row added with Tab or Enter. Tab goes to the next cell.
         if self.in_big(at) {

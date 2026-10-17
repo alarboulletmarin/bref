@@ -20,7 +20,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     shell.update(cx, |s, cx| s.open_note(&here.join("Carnet.md"), cx));
         // A vault without git: « Synchroniser » asks for the repository address, then links it.
     cx.simulate_keystrokes("secondary-shift-s");
-    assert!(shell.read_with(cx, |s, _| s.palette.is_some()), "l'adresse est demandée");
+    assert!(shell.read_with(cx, |s, _| s.palette.is_some()), "the address is asked for");
     cx.simulate_keystrokes("escape");
     shell.update(cx, |s, cx| s.git_connect(url.clone(), cx));
     cx.run_until_parked();
@@ -67,7 +67,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(shell.read_with(cx, |s, _| s.told(Tone::Done, "conflit")));
     let copy = fs::read_dir(&here).unwrap().flatten().map(|e| e.path()).find(|p| p.file_name().unwrap().to_string_lossy().starts_with("Carnet (conflict ")).unwrap();
     assert_eq!(fs::read_to_string(&copy).unwrap(), "# Carnet\n\nzéro\nUN (ailleurs)\ndeux\ntrois\n");
-    assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|note| note.path == copy)), "la copie est dans le coffre");
+    assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|note| note.path == copy)), "the copy is in the vault");
         // The other machine receives both versions.
     other(&|| ());
     assert_eq!(fs::read_to_string(there.join("Carnet.md")).unwrap(), "# Carnet\n\nzéro\nun (ici)\ndeux\ntrois\n");

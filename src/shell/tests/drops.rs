@@ -41,16 +41,16 @@ fn drops_journey(cx: &mut TestAppContext) {
     // On a tree folder: the files are copied there, the tree shows them, a notice says so.
     drop(cx, &["rapport.pdf", "clip final.mp4"], Aim::Folder(root.join("Dossier")));
     assert!(root.join("Dossier/rapport.pdf").is_file() && root.join("Dossier/clip final.mp4").is_file());
-    assert!(known(cx, root.join("Dossier/rapport.pdf")) && known(cx, root.join("Dossier/clip final.mp4")), "les pièces jointes sont dans l'arbre");
+    assert!(known(cx, root.join("Dossier/rapport.pdf")) && known(cx, root.join("Dossier/clip final.mp4")), "the attachments are in the tree");
     assert!(told(cx, Tone::Done, "Copié 2 fichiers dans Dossier"), "{:?}", shell.read_with(cx, |s, _| s.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>()));
-    assert!(ext.join("rapport.pdf").is_file(), "l'original ne bouge pas");
+    assert!(ext.join("rapport.pdf").is_file(), "the original does not move");
     // The same again: numbers, nothing is overwritten. A hidden file, an unknown type, a missing path.
     fs::write(root.join("Dossier/rapport.pdf"), "le mien").unwrap();
     drop(cx, &["rapport.pdf", ".secret", "inconnu.exe", "n'existe-pas.png"], Aim::Folder(root.join("Dossier")));
     assert_eq!(fs::read_to_string(root.join("Dossier/rapport.pdf")).unwrap(), "le mien");
     assert!(root.join("Dossier/rapport 2.pdf").is_file() && root.join("Dossier/inconnu.exe").is_file() && !root.join("Dossier/.secret").exists());
     assert!(told(cx, Tone::Info, "2 laissés de côté"), "{:?}", shell.read_with(cx, |s, _| s.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>()));
-    assert!(!known(cx, root.join("Dossier/inconnu.exe")), "un type inconnu est copié mais pas listé");
+    assert!(!known(cx, root.join("Dossier/inconnu.exe")), "an unknown type is copied but not listed");
     // Nothing copyable: a failure notice, and nothing changes. An empty list: nothing at all.
     let before = fs::read_dir(root.join("Dossier")).unwrap().count();
     drop(cx, &["n'existe-pas.png", ".secret"], Aim::Folder(root.join("Dossier")));
@@ -72,10 +72,10 @@ fn drops_journey(cx: &mut TestAppContext) {
         editor.read_with(cx, |e, _| e.drop_point(spot))
     };
     assert_eq!(at(cx, "premier", -4.), line(notebook, "premier"));
-    assert_eq!(at(cx, "premier", 9.), line(notebook, "premier") + "premier\n".len(), "moitié basse : la ligne suivante, ici la vide");
-    assert_eq!(at(cx, "| 1 | 2 |", -2.), line(notebook, "```") - 1, "dans un tableau : après lui (la ligne vide qui le suit)");
-    assert_eq!(at(cx, "| a | b |", -8.), line(notebook, "| a | b |"), "avant la première ligne du tableau, c'est le bord du bloc");
-    assert_eq!(at(cx, "code", 2.), line(notebook, "fin") - 1, "dans un bloc de code : après sa clôture");
+    assert_eq!(at(cx, "premier", 9.), line(notebook, "premier") + "premier\n".len(), "lower half: the next line, here the blank one");
+    assert_eq!(at(cx, "| 1 | 2 |", -2.), line(notebook, "```") - 1, "in a table: after it (the blank line that follows it)");
+    assert_eq!(at(cx, "| a | b |", -8.), line(notebook, "| a | b |"), "before the first row of the table, it is the edge of the block");
+    assert_eq!(at(cx, "code", 2.), line(notebook, "fin") - 1, "in a code block: after its closing fence");
     assert_eq!(at(cx, "fin", 40.), notebook.len());
     // The drop on the note: one line per item, in place, in the note's folder; a single undo
     // step; the line and the label disappear.
@@ -84,7 +84,7 @@ fn drops_journey(cx: &mut TestAppContext) {
     let lines = "![[photo.png]]\n[[rapport.pdf]]\n[[Idées]]\n[[Photos 2]]\n";
     assert_eq!(text(cx), format!("# Carnet\n\n{lines}premier{}", &notebook["# Carnet\n\npremier".len()..]));
     assert!(root.join("photo.png").is_file() && root.join("Photos 2/a.png").is_file() && root.join("inconnu.exe").is_file());
-    assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Idées")), "la note déposée est une note du coffre");
+    assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Idées")), "the dropped note is a note of the vault");
     shell.update_in(cx, |s, window, cx| window.focus(&s.pane().editor.focus_handle(cx)));
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(text(cx), notebook);
@@ -96,7 +96,7 @@ fn drops_journey(cx: &mut TestAppContext) {
     shell.update(cx, |s, cx| s.open_note(&root.join("Dossier/Autre.md"), cx));
     let (version, top) = (shell.read_with(cx, |s, cx| s.pane().editor.read(cx).revision()), 0);
     drop(cx, &["photo.png"], Aim::Note { pane: 0, at: top, version });
-    assert!(root.join("Dossier/photo.png").is_file(), "dans le dossier de la note, comme une image collée");
+    assert!(root.join("Dossier/photo.png").is_file(), "in the note's folder, like a pasted image");
     assert!(text(cx).starts_with("![[photo.png]]\n# Autre"));
     cx.simulate_keystrokes("secondary-z");
     // The text changed during the copy: the lines go where the cursor is, not where the line was.
@@ -109,9 +109,9 @@ fn drops_journey(cx: &mut TestAppContext) {
     let notes = shell.read_with(cx, |s, _| s.notes.len());
     shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("rapport.pdf".into()), window, cx));
     shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("RAPPORT.PDF".into()), window, cx));
-    assert_eq!(shell.read_with(cx, |s, _| s.notes.len()), notes, "ouvrir une pièce jointe ne crée pas de note");
+    assert_eq!(shell.read_with(cx, |s, _| s.notes.len()), notes, "opening an attachment creates no note");
     let opened = shell.read_with(cx, |s, _| s.opened.clone());
-    assert!(opened.len() == 2 && opened.iter().all(|p| p.file_name().unwrap() == "rapport.pdf"), "le système ouvre la pièce jointe, sans tenir compte de la casse : {opened:?}");
+    assert!(opened.len() == 2 && opened.iter().all(|p| p.file_name().unwrap() == "rapport.pdf"), "the system opens the attachment, whatever its case: {opened:?}");
     shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("Photos".into()), window, cx));
     assert_eq!(shell.read_with(cx, |s, _| s.pane().listing.as_ref().map(|l| l.of.clone())), Some(root.join("Photos")));
     shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("nuage".into()), window, cx));
@@ -123,7 +123,7 @@ fn drops_journey(cx: &mut TestAppContext) {
         shell.update(cx, |s, cx| s.aim_drop(Some(DropAim { aim: Aim::Folder(root.join("Dossier")), items: 12, pointer }), cx));
         cx.run_until_parked();
         let chip = cx.debug_bounds("drop-chip").unwrap();
-        assert!(chip.left() >= px(0.) && chip.top() >= px(0.) && chip.right() <= view.width && chip.bottom() <= view.height, "{pointer:?} : {chip:?}");
+        assert!(chip.left() >= px(0.) && chip.top() >= px(0.) && chip.right() <= view.width && chip.bottom() <= view.height, "{pointer:?}: {chip:?}");
     }
     // The drag over, the label goes away by itself on the next draw.
     shell.update(cx, |s, cx| {

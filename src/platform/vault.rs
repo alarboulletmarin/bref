@@ -1239,14 +1239,14 @@ mod tests {
         let root = env::temp_dir().join(format!("bref-watch-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let changed = Arc::new(Signal::default());
-        let _watcher = watch(&root, changed.clone()).expect("le système doit pouvoir surveiller un dossier");
+        let _watcher = watch(&root, changed.clone()).expect("the system must be able to watch a folder");
         // No simulated clock here: the system takes a few milliseconds (FSEvents, a bit more).
         fs::write(root.join("neuve.md"), "x").unwrap();
         let start = std::time::Instant::now();
         while !changed.raised.load(Ordering::Acquire) && start.elapsed() < std::time::Duration::from_secs(10) {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        assert!(changed.take(), "aucun événement en 10 s");
+        assert!(changed.take(), "no event in 10 s");
         fs::remove_dir_all(&root).unwrap();
     }
 }

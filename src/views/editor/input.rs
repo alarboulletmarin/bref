@@ -118,7 +118,7 @@ impl EntityInputHandler for Editor {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let i = self.from_utf16(range_utf16.start);
+        let i = self.offset_from_utf16(range_utf16.start);
         let row = &self.rows[self.row_at(i)?];
         let p = row.pos(i.saturating_sub(row.start));
         Some(Bounds::new(
@@ -133,12 +133,12 @@ impl EntityInputHandler for Editor {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<usize> {
-        Some(self.to_utf16(self.index_at(point)))
+        Some(self.offset_to_utf16(self.index_at(point)))
     }
 }
 
 impl Editor {
-    pub(super) fn from_utf16(&self, offset: usize) -> usize {
+    pub(super) fn offset_from_utf16(&self, offset: usize) -> usize {
         let mut utf16 = 0;
         for (i, ch) in self.content.char_indices() {
             if utf16 >= offset {
@@ -149,15 +149,15 @@ impl Editor {
         self.content.len()
     }
 
-    pub(super) fn to_utf16(&self, offset: usize) -> usize {
+    pub(super) fn offset_to_utf16(&self, offset: usize) -> usize {
         self.content[..offset].encode_utf16().count()
     }
 
     pub(super) fn range_to_utf16(&self, r: &Range<usize>) -> Range<usize> {
-        self.to_utf16(r.start)..self.to_utf16(r.end)
+        self.offset_to_utf16(r.start)..self.offset_to_utf16(r.end)
     }
 
     pub(super) fn range_from_utf16(&self, r: &Range<usize>) -> Range<usize> {
-        self.from_utf16(r.start)..self.from_utf16(r.end)
+        self.offset_from_utf16(r.start)..self.offset_from_utf16(r.end)
     }
 }

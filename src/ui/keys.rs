@@ -22,7 +22,7 @@ pub type Changes = BTreeMap<String, String>;
 
 /// A binding from the default table; unreadable keys there are a bug in the code.
 pub fn bind(keys: &str, action: &dyn Action, context: Option<&'static str>) -> Bind {
-    Bind { keys: canon(keys).expect("touches par défaut illisibles"), action: action.name(), context }
+    Bind { keys: canon(keys).expect("default keys unreadable"), action: action.name(), context }
 }
 
 /// The keys in force for an action, read from the app's bindings: for the hints
@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(canon("secondary--").as_deref(), Some("secondary--"));
         assert_eq!(canon("alt-F3").as_deref(), Some("alt-f3"));
         let other = if cfg!(target_os = "macos") { "ctrl-k" } else { "cmd-k" };
-        assert_eq!(canon(other).as_deref(), Some(other), "la touche qui n'est pas « secondary » garde son nom");
+        assert_eq!(canon(other).as_deref(), Some(other), "a key other than `secondary` keeps its name");
                 // Unreadable: nothing, two keys, an unknown key name.
         assert_eq!(canon(""), None);
         assert_eq!(canon("a-b"), None);

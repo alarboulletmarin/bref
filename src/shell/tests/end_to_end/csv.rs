@@ -15,7 +15,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         s.sync(notes, dirs, images, cx);
         s.open_note(&cols, cx);
     });
-    let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("le tableau est affiché"));
+    let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("the table is shown"));
     shell.update_in(cx, |s, window, cx| window.focus(&s.shown_sheet().unwrap().focus_handle(cx)));
     let all = |cx: &mut gpui::VisualTestContext| {
         sheet.read_with(cx, |sheet, _| (0..sheet.table().rows()).map(|r| sheet.table().row(r).join("|")).collect::<Vec<_>>().join("/"))
@@ -42,7 +42,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(on_disk(cx), "id,name,score\n3,Zoé,10\n2,Léa,9\n1,Max,\n");
     cx.simulate_keystrokes("secondary-z secondary-z");
     assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
-    assert_eq!(on_disk(cx), original, "annulé, le fichier retrouve ses octets");
+    assert_eq!(on_disk(cx), original, "undone, the file gets its bytes back");
     // An empty column on the right, a copy, a move, then everything undone.
     // Far right: the column exists, without writing anything to the file while it is empty.
     let width = |cx: &mut gpui::VisualTestContext| sheet.read_with(cx, |sheet, _| sheet.table().cols());
@@ -79,7 +79,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(all(cx), "name|score/Max|/Zoé|10/Léa|9");
     cx.simulate_keystrokes("secondary-a");
     table_op(cx, editor::TableOp::DeleteCol);
-    assert_eq!(all(cx), "name|score/Max|/Zoé|10/Léa|9", "toutes les colonnes ne se suppriment pas");
+    assert_eq!(all(cx), "name|score/Max|/Zoé|10/Léa|9", "not every column can be deleted");
     cx.simulate_keystrokes("secondary-z secondary-z");
     assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
     assert_eq!(on_disk(cx), original);
@@ -100,7 +100,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         s.sync(notes, dirs, images, cx);
         s.open_note(&one, cx);
     });
-    let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("le tableau est affiché"));
+    let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("the table is shown"));
     let undone = sheet.read_with(cx, |sheet, _| sheet.undo_len());
     for op in [editor::TableOp::SortAsc, editor::TableOp::SortDesc, editor::TableOp::MoveRowUp, editor::TableOp::MoveRowDown, editor::TableOp::MoveColLeft] {
         sheet.update(cx, |sheet, cx| sheet.table_op(op, cx));
@@ -118,7 +118,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         s.sync(notes, dirs, images, cx);
         s.open_note(&csv, cx);
     });
-    let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("le tableau est affiché"));
+    let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("the table is shown"));
     let format = sheet.read_with(cx, |sheet, _| sheet.format());
     assert_eq!((format.delimiter, format.encoding, format.header), (b';', table::Encoding::Windows1252, true));
     assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cell(1, 0).to_string()), "Anaïs");
@@ -216,7 +216,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
     sheet.update(cx, |sheet, _| sheet.scroll_by(0., 2000.));
     let before = sheet.read_with(cx, |sheet, _| sheet.view_state().0);
-    assert!(before.1 > 1000., "la vue est bien descendue : {before:?}");
+    assert!(before.1 > 1000., "the view did scroll down: {before:?}");
     for (what, n, cells) in [("col", 2, (0..400, 2..3)), ("row", 300, (300..301, 0..4)), ("all", 0, (0..400, 0..4))] {
         sheet.update(cx, |sheet, cx| sheet.pick(what, n, cx));
         let (scroll, selected) = sheet.read_with(cx, |sheet, _| sheet.view_state());

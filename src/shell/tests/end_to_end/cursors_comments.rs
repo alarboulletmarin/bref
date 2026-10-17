@@ -85,8 +85,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         j.load(cx, &many(n), 0);
         let (badge, toggle) = (cx.debug_bounds("comments-badge").unwrap(), cx.debug_bounds("comments-toggle").unwrap());
         let window = cx.update(|window, _| window.viewport_size());
-        assert!(badge.right() <= window.width - px(47.), "{n} : la pastille touche le bouton de copie {badge:?}");
-        assert!(badge.left() >= toggle.left() - px(12.) && badge.top() >= toggle.top() - px(4.) && badge.size.height == px(15.), "{n} : {badge:?} {toggle:?}");
+        assert!(badge.right() <= window.width - px(47.), "{n}: the badge touches the copy button {badge:?}");
+        assert!(badge.left() >= toggle.left() - px(12.) && badge.top() >= toggle.top() - px(4.) && badge.size.height == px(15.), "{n}: {badge:?} {toggle:?}");
         seen.push(badge);
     }
     // One digit: round; "9+": wider, at the same right edge, likewise for 10, 12 and 120.
@@ -107,7 +107,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     };
     let within = |cx: &mut gpui::VisualTestContext, part: &'static str, zone: &'static str| {
         let (part_at, zone_at) = (cx.debug_bounds(part).unwrap_or_else(|| panic!("{part} absent")), cx.debug_bounds(zone).unwrap());
-        assert!(part_at.left() >= zone_at.left() && part_at.right() <= zone_at.right(), "{part} dépasse de {zone} : {part_at:?} hors de {zone_at:?}");
+        assert!(part_at.left() >= zone_at.left() && part_at.right() <= zone_at.right(), "{part} overflows {zone}: {part_at:?} outside {zone_at:?}");
     };
     // A 600 px panel in an 860 window: it gives back room to the note and the comments.
     lay(cx, 860., Mode::Tree, Panel::Split, 600.);

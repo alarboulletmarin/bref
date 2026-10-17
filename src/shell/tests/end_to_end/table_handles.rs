@@ -23,7 +23,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("alt-up");
     assert_eq!(flat(cx), "Nom|Âge/---|---/Zoé|/Léa|31/Max|7");
     cx.simulate_keystrokes("alt-up");
-    assert_eq!(flat(cx), "Nom|Âge/---|---/Zoé|/Léa|31/Max|7", "la première ligne ne monte pas plus haut");
+    assert_eq!(flat(cx), "Nom|Âge/---|---/Zoé|/Léa|31/Max|7", "the first line goes no higher");
     op(cx, ColRight);
     cx.simulate_input("Ville");
     assert_eq!(flat(cx), "Nom||Âge/---|---|---/Zoé|Ville|/Léa||31/Max||7");
@@ -116,7 +116,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.simulate_mouse_down(from, MouseButton::Left, none);
         cx.simulate_mouse_move(to, MouseButton::Left, none);
         cx.simulate_mouse_up(to, MouseButton::Left, none);
-        assert_eq!(flat(cx), before, "ligne {row} lâchée sur le trait {to}");
+        assert_eq!(flat(cx), before, "row {row} dropped on line {to}");
     }
     let (from, to) = (center(cx, Part::Col(0)), center(cx, Part::JoinCol(2)));
     cx.simulate_mouse_down(from, MouseButton::Left, none);

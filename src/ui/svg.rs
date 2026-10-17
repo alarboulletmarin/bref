@@ -545,7 +545,7 @@ mod tests {
         }
         // Bold and dark theme color, without the "Text is not SVG" fallback.
         assert!(svg.contains(r#"font-weight="bold" font-style="normal" fill="\#ffffff">Titre"#.replace('\\', "").as_str()));
-        assert_eq!(found.iter().filter(|l| l.2.contains("not SVG")).count(), 1, "le repli reste, mais `switch` prend le premier");
+        assert_eq!(found.iter().filter(|l| l.2.contains("not SVG")).count(), 1, "the fallback stays, but `switch` takes the first");
     }
 
     #[test]

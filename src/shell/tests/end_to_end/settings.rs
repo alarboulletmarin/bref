@@ -30,7 +30,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-a");
     cx.simulate_input("zzz");
     assert!(rows(cx).is_empty());
-    assert_eq!(text(cx), "# Idées\n\n", "rien n'est tapé dans la note");
+    assert_eq!(text(cx), "# Idées\n\n", "nothing is typed in the note");
     // Escape first clears the field, then closes the panel.
     cx.simulate_keystrokes("escape");
     assert!(shell.read_with(cx, |s, _| s.help.open));
@@ -57,7 +57,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Refused, with the reason: a single key that types, a key reserved for text.
     cx.simulate_keystrokes("a");
     assert!(matches!(editing(cx), Some((_, Some(KeyIssue::Refused(_))))));
-    assert_eq!(shell.read_with(cx, |s, cx| s.help.find.as_ref().unwrap().read(cx).line.text.clone()), "graphe des notes", "la touche n'est pas tapée");
+    assert_eq!(shell.read_with(cx, |s, cx| s.help.find.as_ref().unwrap().read(cx).line.text.clone()), "graphe des notes", "the key is not typed");
     cx.simulate_keystrokes("enter");
     assert!(matches!(editing(cx), Some((_, Some(KeyIssue::Refused(_))))));
     cx.simulate_keystrokes("secondary-shift-y");
@@ -96,7 +96,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(keys_of(cx, "nav::ShowGraph"), (String::new(), true));
     cx.simulate_keystrokes("enter escape");
     assert_eq!((editing(cx), shell.read_with(cx, |s, _| s.help.open)), (None, true));
-    assert_eq!(rows(cx).len(), 1, "la recherche n'a pas bougé");
+    assert_eq!(rows(cx).len(), 1, "the search did not move");
     // A click on the keys waits too; « défaut » restores the original ones.
     let at = cx.debug_bounds("key-nav::ShowGraph").unwrap().center();
     cx.simulate_click(at, gpui::Modifiers::none());
