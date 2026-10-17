@@ -58,7 +58,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
     ui::theme::Wide,
-    ui::theme::Theme, logic::block, logic::diagram::Diagram, ui::figure, views::graph, ui::svg, ui::assets::mono, ui::assets::sans, lang::tr, platform::vault,
+    ui::theme::Theme, logic::block, logic::diagram::Diagram, ui::figure, views::graph, views::viewer::Source, ui::svg, ui::assets::mono, ui::assets::sans, lang::tr, platform::vault,
     logic::markdown::{self as md, Enter, Kind, Link, ListStyle},
 };
 
@@ -202,8 +202,8 @@ pub enum EditorEvent {
     Menu(Point<Pixels>, Option<Link>, bool),
     /// Click on a block handle: its menu, at that spot.
     BlockMenu(Point<Pixels>),
-    /// A Mermaid diagram to view large: its source.
-    View(String),
+    /// A diagram, formula or picture to view large.
+    View(Source),
 }
 
 /// What the footer counter depends on: the text version and the selection.
@@ -240,9 +240,12 @@ pub struct Editor {
     hover: Option<usize>,
     /// Line whose "full size" button is hovered.
     view_hover: Option<usize>,
+    /// Line whose picture, formula or figure is under the pointer (its "enlarge" button shows).
+    big_hover: Option<usize>,
     /// Areas of the copy buttons, by line start: they turn the pointer into a hand.
     copy_hitboxes: Vec<(usize, Hitbox)>,
     view_hitboxes: Vec<(usize, Hitbox)>,
+    big_hitboxes: Vec<(usize, Hitbox)>,
     /// Diagrams and formulas of the last frame, by hash of their source.
     figures: Figures,
     /// Figures being drawn.
@@ -376,8 +379,10 @@ impl Editor {
             copied: None,
             hover: None,
             view_hover: None,
+            big_hover: None,
             copy_hitboxes: Vec::new(),
             view_hitboxes: Vec::new(),
+            big_hitboxes: Vec::new(),
             figures: FastMap::default(),
             waiting: Vec::new(),
             shaped: FastMap::default(),
@@ -516,6 +521,14 @@ impl Editor {
     pub fn view_button(&self, prefix: &str) -> Option<Point<Pixels>> {
         let row = self.rows.iter().find(|r| self.views(r) && self.content[r.start..].starts_with(prefix))?;
         Some(self.view_bounds(row).center())
+    }
+
+    /// Every picture, formula or figure that can be enlarged: its line's start, its bounds in the
+    /// window, its button's, and whether the button is shown.
+    #[cfg(test)]
+    pub fn enlargeable(&self) -> Vec<(usize, Bounds<Pixels>, Bounds<Pixels>, bool)> {
+        let rows = self.rows.iter();
+        rows.filter_map(|r| Some((r.start, self.image_bounds(r)?, self.big_bounds(r)?, self.big_hover == Some(r.start)))).collect()
     }
 
     /// Kept figures, and figures being drawn.

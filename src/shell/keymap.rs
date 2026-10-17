@@ -109,6 +109,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 t(tr("Wheel / + - 0", "Molette / + - 0"), tr("Move the view / zoom in, out, fit all", "Déplacer la vue / zoomer, dézoomer, tout cadrer")),
                 t("![](Schéma.svg)", tr("Show the diagram in a note", "Afficher le schéma dans une note")),
                 t(".svg", tr("An SVG from elsewhere (draw.io, Mermaid.js…) opens in a viewer: drag or wheel to move, + - 0 to zoom", "Un SVG d'ailleurs (draw.io, Mermaid.js…) s'ouvre dans une visionneuse : glisser ou molette pour se déplacer, + - 0 pour zoomer")),
+                t(tr("Picture, formula, diagram", "Image, formule, schéma"), tr("Point at one in a note: a button at its corner shows it full size, to zoom and move around (Esc goes back)", "Pointer l'un d'eux dans une note : un bouton à son coin l'affiche en grand, pour zoomer et se déplacer (Échap revient)")),
                 p("import", tr("Bring in an Excalidraw or draw.io file", "Reprendre un fichier Excalidraw ou draw.io")),
             ],
         ),

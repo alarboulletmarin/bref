@@ -278,8 +278,21 @@ impl Editor {
                 }
             });
             if let Some((image, s)) = &row.image {
-                let at = block(px(0.), top + row.height - s.height, s.width, s.height);
+                let at = block(px(0.), o.y + row.image_top(), s.width, s.height);
                 window.paint_image(at, Corners::all(px(6.)), image.clone(), 0, false).ok();
+            }
+            // "Enlarge" button, on the picture, formula or figure the pointer is over.
+            if self.big_hover == Some(row.start)
+                && let Some(bounds) = self.big_bounds(row)
+            {
+                let over = bounds.contains(&self.pointer);
+                window.paint_quad(fill(bounds, if over { t.border } else { t.panel }).corner_radii(px(6.)).border_widths(px(1.)).border_color(t.border));
+                let inset = (COPY_SIZE - px(16.)) / 2.;
+                let at = Bounds::new(bounds.origin + point(inset, inset), size(px(16.), px(16.)));
+                window.paint_svg(at, "c-zoom-in.svg".into(), TransformationMatrix::unit(), t.text, cx).ok();
+                if let Some((_, hitbox)) = self.big_hitboxes.iter().find(|(s, _)| *s == row.start) {
+                    window.set_cursor_style(CursorStyle::PointingHand, hitbox);
+                }
             }
             // Copy button of the block: the same icon as for copying the note.
             if row.opens {

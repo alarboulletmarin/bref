@@ -225,6 +225,45 @@ impl Editor {
         Some(row.start)
     }
 
+    /// Where the picture or figure of the row is drawn, in the window.
+    pub(super) fn image_bounds(&self, row: &Row) -> Option<Bounds<Pixels>> {
+        let (_, s) = row.image.as_ref()?;
+        Some(Bounds::new(self.origin + point(px(0.), row.image_top()), *s))
+    }
+
+    /// The "enlarge" button of a picture or SVG: in its top right corner, or, if it is too small to
+    /// hold it, beside it (at the right edge when the line is full). A formula has no background to
+    /// hide the button's place: it is always beside.
+    pub(super) fn big_bounds(&self, row: &Row) -> Option<Bounds<Pixels>> {
+        row.enlarge.as_ref()?;
+        let image = self.image_bounds(row)?;
+        let (inset, s) = (px(6.), image.size);
+        let roomy = s.width >= COPY_SIZE * 2. && s.height >= COPY_SIZE * 2. && !matches!(row.enlarge, Some(Source::Formula(..)));
+        let at = if roomy {
+            point(s.width - COPY_SIZE - inset, inset)
+        } else {
+            point((s.width + px(4.)).min(self.width - COPY_SIZE), ((s.height - COPY_SIZE) / 2.).max(px(0.)))
+        };
+        // A tall picture scrolled up keeps its button in view.
+        let (low, high) = (self.viewport.top() + inset, image.top() + s.height.max(COPY_SIZE) - COPY_SIZE);
+        let y = (image.origin.y + at.y).max(low).min(high);
+        Some(Bounds::new(point(image.origin.x + at.x, y), size(COPY_SIZE, COPY_SIZE)))
+    }
+
+    /// Start of the line whose picture, or whose "enlarge" button, is under the pointer.
+    pub(super) fn big_at(&self, at: Point<Pixels>) -> Option<usize> {
+        let over = |r: &&Row| {
+            self.image_bounds(r).is_some_and(|b| b.contains(&at)) || self.big_bounds(r).is_some_and(|b| b.contains(&at))
+        };
+        self.rows.iter().filter(|r| r.enlarge.is_some()).find(over).map(|r| r.start)
+    }
+
+    /// What the "enlarge" button under the pointer opens.
+    fn big_source(&self, at: Point<Pixels>) -> Option<Source> {
+        let row = self.rows.iter().find(|r| self.big_bounds(r).is_some_and(|b| b.contains(&at)))?;
+        row.enlarge.clone()
+    }
+
     pub(super) fn index_at(&self, pos: Point<Pixels>) -> usize {
         let y = pos.y - self.origin.y;
         let Some(row) = self.rows.iter().find(|r| y < r.y + r.height).or(self.rows.last()) else {
@@ -238,11 +277,15 @@ impl Editor {
         if let Some(find) = &mut self.find {
             find.active = false;
         }
+        // Picture, formula or figure enlarged, in the viewer.
+        if let Some(source) = self.big_source(e.position) {
+            return cx.emit(EditorEvent::View(source));
+        }
         // Mermaid diagram enlarged, in the viewer.
         if let Some(start) = self.view_at(e.position)
             && let Some(block) = md::code_block(&self.content, self.line_range(start).end + 1)
         {
-            return cx.emit(EditorEvent::View(self.content[block].to_string()));
+            return cx.emit(EditorEvent::View(Source::Mermaid(self.content[block].to_string())));
         }
         // Copy button, right of a code block's opening.
         if let Some(start) = self.copy_at(e.position)
@@ -424,9 +467,9 @@ impl Editor {
             self.part_hover = part;
             cx.notify();
         }
-        let hover = (self.copy_at(e.position), self.view_at(e.position));
-        if hover != (self.hover, self.view_hover) {
-            (self.hover, self.view_hover) = hover;
+        let hover = (self.copy_at(e.position), self.view_at(e.position), self.big_at(e.position));
+        if hover != (self.hover, self.view_hover, self.big_hover) {
+            (self.hover, self.view_hover, self.big_hover) = hover;
             cx.notify();
         }
         if let Some(cell) = self.grid_at(e.position)

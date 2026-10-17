@@ -205,6 +205,8 @@ pub(super) struct Row {
     /// Picture the line points to, or figure (diagram, formula) it
     /// ends, drawn below, and its size on screen.
     pub(super) image: Option<(Arc<RenderImage>, Size<Pixels>)>,
+    /// What the viewer shows when that image is enlarged (its button appears on hover).
+    pub(super) enlarge: Option<Source>,
     /// The line opens a code block: it carries the copy button.
     pub(super) opens: bool,
     /// Room left under the last line of a table.
@@ -243,7 +245,13 @@ impl Row {
     }
 
     pub(super) fn image_height(&self) -> Pixels {
-        self.image.as_ref().map_or(px(0.), |(_, s)| s.height + IMAGE_GAP)
+        self.image.as_ref().map_or(px(0.), |(_, s)| s.height.max(COPY_SIZE) + IMAGE_GAP)
+    }
+
+    /// Top of the picture's band: at least as tall as the enlarge button, so that a tiny
+    /// picture's button never lands on the next line.
+    pub(super) fn image_top(&self) -> Pixels {
+        self.y + self.height - self.image_height() + IMAGE_GAP
     }
 
     pub(super) fn index_at(&self, p: Point<Pixels>) -> usize {
@@ -858,6 +866,7 @@ impl Editor {
                     kind: Kind::Table,
                     shaped: empty.clone(),
                     image: None,
+                    enlarge: None,
                     opens: false,
                     gap: px(0.),
                     tint: None,
@@ -871,6 +880,7 @@ impl Editor {
             let (mut kind, mut marker) = if offset < meta { (Kind::Meta, 0) } else { md::classify(line, in_code) };
             let mut opens = false;
             let mut drawing = None;
+            let mut enlarge = None;
             if kind == Kind::Fence && orphan != Some(offset) {
                 opens = !in_code && fences > 1;
                 in_code = opens;
@@ -903,6 +913,7 @@ impl Editor {
                         drawing = cached(&mut old, &mut kept, key(1, &source), false, || {
                             vector(figure::latex(&source, true, rgb(t.text), t.size * MATH_SCALE))
                         });
+                        enlarge = drawing.is_some().then_some(Source::Formula(source, true));
                     }
                     // As for ```: a `$$` without a closing one opens nothing.
                     None if dollars > 0 => block = Some((offset, String::new())),
@@ -952,6 +963,7 @@ impl Editor {
                             kind: Kind::Table,
                             shaped: empty.clone(),
                             image: None,
+                            enlarge: None,
                             opens: false,
                             gap: px(0.),
                             tint: None,
@@ -1107,6 +1119,12 @@ impl Editor {
                 })
             });
             let svg = file.as_ref().is_some_and(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")));
+            // The picture wins over a formula on the same line: it is what is drawn.
+            enlarge = file
+                .as_ref()
+                .map(|f| if svg { Source::File(f.clone(), None) } else { Source::Raster(f.clone()) })
+                .or(enlarge)
+                .or_else(|| made.formula.clone().map(|(source, display)| Source::Formula(source, display)));
             // An SVG is redrawn in the theme's colors, and every time its file
             // changes: its date is part of its key. A Bref diagram takes the ink of the
             // text; an SVG from elsewhere is made readable (HTML text, `light-dark()`).
@@ -1142,6 +1160,7 @@ impl Editor {
                 let scale = (width / s.width).min(1.);
                 Some((image, size(s.width * scale, s.height * scale)))
             });
+            let enlarge = enlarge.filter(|_| image.is_some());
 
             let text_height = made.line.as_ref().map_or(lh, |l| l.size(lh).height);
             let (pad, lh, height) = match &grid_row {
@@ -1161,6 +1180,7 @@ impl Editor {
                 kind,
                 shaped: made,
                 image,
+                enlarge,
                 opens,
                 gap: px(0.),
                 tint,
@@ -1340,6 +1360,11 @@ impl Editor {
             .map(|&i| &self.rows[i])
             .filter(|r| self.views(r))
             .map(|r| (r.start, window.insert_hitbox(self.view_bounds(r), HitboxBehavior::Normal)))
+            .collect();
+        self.big_hitboxes = self
+            .rows
+            .iter()
+            .filter_map(|r| Some((r.start, window.insert_hitbox(self.big_bounds(r)?, HitboxBehavior::Normal))))
             .collect();
         let grid = self.grid.and_then(|_| self.popup_at(Self::grid_size()));
         self.grid_hitbox = grid.map(|at| window.insert_hitbox(Bounds::new(at, Self::grid_size()), HitboxBehavior::Normal));

@@ -394,9 +394,9 @@ impl Shell {
                 self.menu = Some(nav::Menu { at: *at, target: None, text: Some(None), commented: false, block: true });
                 cx.notify();
             }
-            // The diagram takes the note's place, like a picture; Escape returns to it.
+            // The diagram, formula or picture takes the note's place; Escape returns to it.
             EditorEvent::View(source) => {
-                let (source, theme) = (viewer::Source::Mermaid(source.clone()), self.theme);
+                let (source, theme) = (source.clone(), self.theme);
                 let figure = cx.new(|cx| viewer::Viewer::new(source, theme, cx));
                 window.focus(&figure.focus_handle(cx));
                 self.pane_mut().figure = Some(figure);

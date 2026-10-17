@@ -5,6 +5,7 @@
 mod benches;
 mod drops;
 mod editing;
+mod enlarge;
 mod end_to_end;
 mod keycaps;
 mod layout;

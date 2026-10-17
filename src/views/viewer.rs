@@ -10,8 +10,8 @@ use std::time::SystemTime;
 
 use gpui::{
     App, Asset, Bounds, ContentMask, Context, Corners, CursorStyle, FocusHandle, Focusable, Image, ImageFormat,
-    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Rgba, ScrollWheelEvent, Window, canvas, div,
-    fill, point, prelude::*, px,
+    ImgResourceLoader, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, RenderImage, Resource, Rgba,
+    ScrollWheelEvent, Window, canvas, div, fill, point, prelude::*, px,
 };
 use resvg::usvg;
 
@@ -50,7 +50,14 @@ pub enum Source {
     File(PathBuf, Option<SystemTime>),
     /// The source of a Mermaid diagram.
     Mermaid(String),
+    /// A LaTeX formula of the note: its source, and whether it is display math.
+    Formula(String, bool),
+    /// A picture (PNG, JPEG, GIF, WebP…): drawn whole by the graphics card, not in tiles.
+    Raster(PathBuf),
 }
+
+/// Em size of a formula in the viewer, in pixels: sharp when zoomed in.
+const FORMULA: f32 = 24.;
 
 /// What to read, in the theme's colors.
 #[derive(Clone, Hash, PartialEq)]
@@ -70,6 +77,11 @@ impl Asset for Load {
             let svg = match &load.source {
                 Source::File(path, _) => svg::readable(&std::fs::read_to_string(path).ok()?, load.look.dark),
                 Source::Mermaid(text) => figure::mermaid(text, &load.look)?,
+                Source::Formula(text, display) => {
+                    let ink = |i: usize| u8::from_str_radix(load.look.text.get(i..i + 2)?, 16).ok();
+                    figure::latex(text, *display, [ink(1)?, ink(3)?, ink(5)?], FORMULA)?.0
+                }
+                Source::Raster(_) => return None,
             };
             let tree = svg::parse(&svg)?;
             let mut hasher = DefaultHasher::new();
@@ -148,6 +160,8 @@ pub struct Viewer {
     /// The document shown, and what was read to get it; it stays on screen while
     /// the next one is prepared (other theme, modified file).
     doc: Option<(Load, Arc<Doc>)>,
+    /// A picture (`Source::Raster`) once loaded.
+    picture: Option<Arc<RenderImage>>,
     /// The file could not be read.
     failed: bool,
     /// Reading in progress.
@@ -178,6 +192,7 @@ impl Viewer {
             source,
             theme,
             doc: None,
+            picture: None,
             failed: false,
             waiting: None,
             pan: (0., 0.),
@@ -197,7 +212,13 @@ impl Viewer {
 
     #[cfg(test)]
     pub fn state(&self) -> (bool, bool, f32, (f32, f32)) {
-        (self.doc.is_some(), self.failed, self.zoom, self.pan)
+        (self.doc.is_some() || self.picture.is_some(), self.failed, self.zoom, self.pan)
+    }
+
+    /// Corner of the viewer in the window.
+    #[cfg(test)]
+    pub fn origin(&self) -> Point<Pixels> {
+        self.bounds.origin
     }
 
     fn bg(&self) -> [u8; 3] {
@@ -280,6 +301,17 @@ impl Viewer {
         self.doc.as_ref().map(|(_, doc)| doc.clone())
     }
 
+    /// The picture on screen, read by gpui in the background (animated GIF: its first frame).
+    fn picture(&mut self, window: &mut Window, cx: &mut App) -> Option<Arc<RenderImage>> {
+        let Source::Raster(path) = &self.source else { return None };
+        match window.use_asset::<ImgResourceLoader>(&Resource::Path(path.clone().into()), cx) {
+            Some(Ok(image)) => self.picture = Some(image),
+            Some(Err(_)) => self.failed = self.picture.is_none(),
+            None => {}
+        }
+        self.picture.clone()
+    }
+
     /// A tile's image, if it is ready; keeps it among the last requested. A tile
     /// never requested waits its turn if `FLYING` are already in progress.
     fn tile(&mut self, tile: Tile, window: &mut Window, cx: &mut App) -> Option<Arc<gpui::RenderImage>> {
@@ -322,9 +354,23 @@ impl Viewer {
     fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         self.bounds = bounds;
         let t = self.theme;
-        let Some(doc) = self.document(window, cx) else { return };
+        let picture = matches!(self.source, Source::Raster(_)).then(|| self.picture(window, cx));
+        let doc = match picture {
+            Some(_) => None,
+            None => match self.document(window, cx) {
+                Some(doc) => Some(doc),
+                None => return,
+            },
+        };
         self.landed(window, cx);
-        let (w, h) = doc.size();
+        let (w, h) = match (&doc, &picture) {
+            (Some(doc), _) => doc.size(),
+            (None, Some(Some(image))) => {
+                let size = image.size(0);
+                (size.width.0 as f32, size.height.0 as f32)
+            }
+            _ => return,
+        };
         if std::mem::take(&mut self.fit) {
             self.frame((w, h));
         }
@@ -333,6 +379,12 @@ impl Viewer {
         let at = move |x: f32, y: f32| point(o.x + px(pan.0 + x * zoom), o.y + px(pan.1 + y * zoom));
         let whole = Bounds::from_corners(at(0., 0.), at(w, h));
         window.paint_quad(fill(whole, t.bg).border_widths(px(1.)).border_color(t.border));
+        let Some(doc) = doc else {
+            if let Some(Some(image)) = picture {
+                window.paint_image(whole, Corners::default(), image, 0, false).ok();
+            }
+            return;
+        };
         let bg = self.bg();
         let base = Tile { doc: doc.clone(), level: None, x: 0, y: 0, bg };
         if let Some(image) = self.tile(base, window, cx) {
@@ -368,8 +420,10 @@ impl Viewer {
 }
 
 impl Render for Viewer {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        // A picture is read from here: gpui draws this view again once it is ready.
+        self.picture(window, cx);
         let this = cx.entity();
         let drawing = canvas(
             |_, _, _| (),
@@ -410,9 +464,10 @@ impl Render for Viewer {
             )
             .child(button("v-zoom-in", "plus.svg", false, t).tooltip(tip(tr("Zoom in", "Zoomer"), "+".into(), t)).on_click(cx.listener(|this, _, _, cx| this.zoom_by(1.25, cx))));
         let note = |text: &'static str| div().absolute().inset_0().flex().items_center().justify_center().text_color(t.soft).child(text);
-        let status = match (&self.doc, self.failed) {
-            (None, true) => Some(note(tr("This drawing cannot be read", "Ce dessin ne peut pas être lu"))),
-            (None, false) => Some(note(tr("Drawing…", "Dessin en cours…"))),
+        let shown = self.doc.is_some() || self.picture.is_some();
+        let status = match (shown, self.failed) {
+            (false, true) => Some(note(tr("This drawing cannot be read", "Ce dessin ne peut pas être lu"))),
+            (false, false) => Some(note(tr("Drawing…", "Dessin en cours…"))),
             _ => None,
         };
         div()
