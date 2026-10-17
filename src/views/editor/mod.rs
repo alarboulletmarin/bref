@@ -166,6 +166,9 @@ actions!(
     ]
 );
 
+/// Band kept at the bottom of the note for the counter and the formatting bar or its button:
+/// the text scrolls behind it, and the cursor and the popups stay above it.
+pub(super) const FOOTER: Pixels = px(56.);
 const TOP: Pixels = px(20.);
 pub const MAX_WIDTH: Pixels = px(720.);
 /// Margin kept on each side of the page, narrow or full.

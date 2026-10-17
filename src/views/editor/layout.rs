@@ -1314,8 +1314,8 @@ impl Editor {
                 let margin = px(24.);
                 if to_top || top - self.scroll_y < margin {
                     self.scroll_y = top - margin;
-                } else if top + row.lh - self.scroll_y > bounds.size.height - margin {
-                    self.scroll_y = top + row.lh - bounds.size.height + margin;
+                } else if top + row.lh - self.scroll_y > bounds.size.height - FOOTER - margin {
+                    self.scroll_y = top + row.lh - bounds.size.height + FOOTER + margin;
                 }
             }
         }

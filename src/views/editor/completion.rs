@@ -49,12 +49,12 @@ impl Editor {
         let p = row.pos(c - row.start);
         let top = self.origin.y + row.y + row.pad + p.y;
         let (below, above) = (top + row.lh + px(4.), top - panel.height - px(4.));
-        let fits = below + panel.height <= self.viewport.bottom() || above < self.viewport.top();
+        let fits = below + panel.height <= self.viewport.bottom() - FOOTER || above < self.viewport.top();
         let x = (self.origin.x + p.x).min(self.viewport.right() - panel.width - px(8.));
         Some(point(x.max(self.viewport.left()), if fits { below } else { above }))
     }
 
-        /// Start of the query (after `[[` or `/`) and what matches it.
+    /// Start of the query (after `[[` or `/`) and what matches it.
     pub(super) fn completion(&self) -> Option<(usize, Vec<Choice<'_>>)> {
         if !self.sel.is_empty() || !self.more.is_empty() {
             return None;
@@ -66,7 +66,7 @@ impl Editor {
         (!items.is_empty() && self.ac_dismissed != Some(start)).then_some((start, items))
     }
 
-        /// After `[[`: the vault's notes; after `![[`: its images and diagrams.
+    /// After `[[`: the vault's notes; after `![[`: its images and diagrams.
     pub(super) fn names(&self, before: &str, c: usize) -> Option<(usize, Vec<Choice<'_>>)> {
         let open = before.rfind("[[")?;
         let query = &before[open + 2..];

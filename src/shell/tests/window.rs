@@ -275,3 +275,47 @@ fn empty_page(cx: &mut TestAppContext) {
     assert_eq!(text_of(cx), "x");
     let _ = fs::remove_dir_all(&root);
 }
+
+/// A long note at three widths: the text scrolls behind the band at the bottom of the note, which
+/// holds the counter and the formatting bar or its button; going down line by line, the cursor
+/// stays above the band, never under them.
+#[gpui::test]
+fn bottom_band_keeps_the_text_clear(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-band-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let _config = isolated_config(&root);
+    let lines: String = (0..200).map(|i| format!("Ligne {i} du texte\n")).collect();
+    let note = root.join("Longue.md");
+    fs::write(&note, format!("# Longue\n\n{lines}")).unwrap();
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), vec![note.clone()], window, cx));
+    cx.run_until_parked();
+    let settle = |cx: &mut gpui::VisualTestContext| {
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+    };
+    for width in [420., 860., 1400.] {
+        cx.simulate_resize(size(px(width), px(600.)));
+        cx.simulate_keystrokes("secondary-home");
+        settle(cx);
+        for step in 0..45 {
+            cx.simulate_keystrokes("down");
+            settle(cx);
+            let band = cx.debug_bounds("note-band").expect("the note has a band at its bottom");
+            let counts = cx.debug_bounds("counts").unwrap();
+            assert!(counts.top() >= band.top(), "{width} {step}: the counter sits in the band {counts:?} {band:?}");
+            let (folded, caret) = shell.read_with(cx, |s, cx| {
+                let editor = s.pane().editor.read(cx);
+                (editor.bar_folded(), editor.point_of(editor.caret()).unwrap())
+            });
+            let control = cx.debug_bounds(if folded { "format-toggle" } else { "format-bar" }).unwrap();
+            assert!(control.top() >= band.top(), "{width} {step}: the bar or its button sits in the band {control:?} {band:?}");
+            assert!(caret.y + px(10.) <= band.top(), "{width} {step}: the cursor stays above the band {caret:?} {band:?}");
+        }
+    }
+    let _ = fs::remove_dir_all(&root);
+}

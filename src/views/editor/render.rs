@@ -31,6 +31,17 @@ impl Render for Editor {
                 .text_color(self.theme.soft)
                 .child(div().min_w_0().truncate().child(self.counts())),
         );
+        // The text scrolls behind this band: it fades into the page, then hides what lies under
+        // the counter and the bar.
+        let t = self.theme;
+        let band = div()
+            .debug_selector(|| "note-band".into())
+            .absolute()
+            .left_0()
+            .right_0()
+            .bottom_0()
+            .h(FOOTER)
+            .bg(gpui::linear_gradient(0., gpui::linear_color_stop(t.bg, 0.7), gpui::linear_color_stop(t.bg.opacity(0.), 1.)));
         // Before drawing: matches follow a note changed while the bar is open.
         self.refresh_find();
         let finding = self.find.as_ref().is_some_and(|find| find.active);
@@ -207,6 +218,7 @@ impl Render for Editor {
         .on_modifiers_changed(cx.listener(|this, e: &gpui::ModifiersChangedEvent, _, cx| this.aim_hand(this.pointer, e.modifiers, cx)))
         .on_scroll_wheel(cx.listener(Self::scroll))
         .child(EditorElement(cx.entity()))
+        .child(band)
         .child(counts)
         .children(toggle)
         .children(bar)
