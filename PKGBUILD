@@ -17,7 +17,7 @@ conflicts=('encre')
 replaces=('encre')
 # Pinned by scripts/release.sh once the release tarball exists.
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('9ecd9470fcbb87523dc8675ad36c28d4775192f4deea6483951a3c1b129b5e25')
+sha256sums=('e788c91944de64f21bf4694e14ad8ab718c7e3f1bb11174af9f43a8f1a37eb72')
 
 prepare() {
     cd "$pkgname-$pkgver"
