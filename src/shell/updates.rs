@@ -91,16 +91,18 @@ impl Shell {
     pub(super) fn render_update_banner(&self, cx: &mut Context<Self>) -> Option<Div> {
         let t = self.theme;
         self.update.clone().map(|release| {
-            let banner = status_card(t).max_w_full();
+            let banner = status_card(t).max_w_full().flex_wrap().justify_center().gap_y_1().debug_selector(|| "update-banner".into());
+            // A row of the window, under the panes: it takes room instead of floating over the note.
+            let row = |card: Div| div().flex_none().w_full().flex().justify_center().px_4().py_2().border_t_1().border_color(t.border).bg(t.bg).child(card);
             if self.updating {
-                return banner.pr_3().child(tr("Updating, Bref restarts…", "Mise à jour, Bref redémarre…"));
+                return row(banner.pr_3().child(tr("Updating, Bref restarts…", "Mise à jour, Bref redémarre…")));
             }
             // "Update" when the app can do it alone, otherwise the download page.
             let (action, install) = match release.asset {
                 Some(_) => (tr("Update", "Mettre à jour"), true),
                 None => (tr("Download", "Télécharger"), false),
             };
-            banner
+            row(banner
                 .child(format!("{} {}", tr("New version:", "Nouvelle version :"), release.version))
                 .child(
                     div()
@@ -134,7 +136,7 @@ impl Shell {
                                 cx.notify();
                             }),
                         ),
-                )
+                ))
         })
     }
 }

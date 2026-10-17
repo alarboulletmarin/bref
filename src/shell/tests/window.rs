@@ -319,3 +319,84 @@ fn bottom_band_keeps_the_text_clear(cx: &mut TestAppContext) {
     }
     let _ = fs::remove_dir_all(&root);
 }
+
+/// The new-version banner is a row of the window under the panes: it never covers the formatting bar (inline, or
+/// folded and open with its colour badges), the counter or the note, whatever the width, the panel or the version.
+#[gpui::test]
+fn update_banner_stays_clear_of_the_formatting_bar(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-banner-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let _config = isolated_config(&root);
+    let note = root.join("Note.md");
+    fs::write(&note, "un mot ici\n").unwrap();
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), vec![note.clone()], window, cx));
+    cx.run_until_parked();
+    let settle = |cx: &mut gpui::VisualTestContext| {
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+    };
+    let release = |version: &str| update::Release { version: version.into(), asset: Some("https://x/y".into()), sha256: None };
+    let mut checked = 0;
+    for panel in [Panel::Rail, Panel::Split] {
+      for second_pane in [false, true] {
+        if second_pane {
+            cx.simulate_keystrokes("secondary-\\");
+        }
+        for width in [1400., 900., 860., 560., 420., 320., 240.] {
+            for (version, updating) in [(None, false), (Some("0.4.0"), false), (Some("100.200.300"), false), (Some("0.4.0"), true)] {
+                shell.update(cx, |s, cx| {
+                    s.nav.panel = panel;
+                    s.nav.list_w = px(600.);
+                    s.update = version.map(release);
+                    s.updating = updating;
+                    cx.notify();
+                });
+                cx.simulate_resize(size(px(width), px(600.)));
+                settle(cx);
+                // Folded, the bar is open as well: its buttons and colour badges are the highest thing in the footer.
+                let folded = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_folded());
+                if folded {
+                    let at = cx.debug_bounds("format-toggle").unwrap().center();
+                    cx.simulate_click(at, gpui::Modifiers::none());
+                    settle(cx);
+                    let at = cx.debug_bounds("format-colors").unwrap().center();
+                    cx.simulate_click(at, gpui::Modifiers::none());
+                    settle(cx);
+                }
+                let what = format!("{panel:?} two panes {second_pane} {width} {version:?} updating {updating} folded {folded}");
+                let window = cx.debug_bounds("pane-0").unwrap();
+                let mut footer = vec![cx.debug_bounds("counts").unwrap(), cx.debug_bounds(if folded { "format-toggle" } else { "format-bar" }).unwrap()];
+                if folded {
+                    footer.extend(["format-bar", "format-swatches"].map(|name| cx.debug_bounds(name).unwrap()));
+                }
+                if version.is_some() {
+                    let banner = cx.debug_bounds("update-banner").expect("the banner is drawn");
+                    for part in &footer {
+                        assert!(!banner.intersects(part), "{what}: the banner covers {part:?}, banner {banner:?}");
+                    }
+                    assert!(banner.top() >= window.bottom(), "{what}: the banner is under the note {banner:?} {window:?}");
+                    assert!(banner.left() >= px(0.) && banner.right() <= px(width), "{what}: the banner fits the window {banner:?}");
+                    assert!(banner.size.width > px(0.) && banner.size.height > px(20.), "{what}: {banner:?}");
+                }
+                checked += 1;
+                // Close what was opened: the next round starts from a folded bar.
+                if folded {
+                    cx.simulate_keystrokes("escape");
+                    settle(cx);
+                }
+            }
+        }
+        if second_pane {
+            cx.dispatch_action(ClosePane);
+            cx.run_until_parked();
+        }
+      }
+    }
+    assert_eq!(checked, 2 * 2 * 7 * 4);
+    let _ = fs::remove_dir_all(&root);
+}

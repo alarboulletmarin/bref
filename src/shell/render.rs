@@ -127,17 +127,11 @@ impl Render for Shell {
                 self.panes_saved = state;
             }
             let toasts = self.render_toasts(cx);
-            let banner = self.render_update_banner(cx);
-            // The banner sits left of the word counter; in a narrow window, where it would
-            // cover it, it joins the message stack, above it.
-            let narrow = self.nav.total < px(640.);
-            let (low, stacked) = if narrow { (None, banner) } else { (banner, None) };
-            let toasts = div().absolute().bottom(px(54.)).left_4().right_4().flex().flex_col().items_end().gap_2().children(stacked).children(toasts);
+            let toasts = div().absolute().bottom(px(54.)).left_4().right_4().flex().flex_col().items_end().gap_2().children(toasts);
             body.flex()
                 .child(self.render_nav(cx))
                 .when(self.nav.panel != Panel::Full, |d| d.child(note).children(comments))
                 .children(self.palette.clone())
-                .children(low.map(|banner| banner.absolute().bottom_3().left_16()))
                 .child(toasts)
         };
 
@@ -273,6 +267,8 @@ impl Render for Shell {
             }))
             .key_context("Shell")
             .child(body)
+            // Its own row under the panes, never over the note's footer (counter, formatting bar).
+            .children(self.render_update_banner(cx))
             .when(client, |d| d.child(pill))
             .children(self.render_menu(window, cx))
             .children(self.render_icons(window, cx))
