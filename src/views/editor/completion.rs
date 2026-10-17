@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// Choix affichés à la fois dans la liste de complétion.
+/// Choices shown at once in the completion list.
 pub(super) const SHOWN: usize = 8;
 
 pub(super) type Command = (&'static str, &'static str, &'static str, &'static str, &'static str);
@@ -31,18 +31,18 @@ pub(super) const COMMANDS: &[Command] = &[
     ("image", "Picture or diagram", "Image ou schéma", "![[", ""),
 ];
 
-/// Ce que la complétion propose : un nom à poser après `[[`, ou une commande.
+/// What completion offers: a name to put after `[[`, or a command.
 #[derive(Clone, Copy)]
 pub(super) enum Choice<'a> {
     Name(&'a str),
     Command(&'static Command),
-    /// Jour proposé après `@` : son nom anglais et français, sa date.
+        /// Day offered after `@`: its English and French name, its date.
     Date(&'static str, &'static str, md::Date),
 }
 
 impl Editor {
-    /// Coin d'un panneau flottant de taille `panel` : sous le curseur, ou
-    /// au-dessus s'il n'y tient pas.
+        /// Corner of a floating panel of size `panel`: below the cursor, or
+        /// above if it does not fit.
     pub(super) fn popup_at(&self, panel: Size<Pixels>) -> Option<Point<Pixels>> {
         let c = self.cursor();
         let row = &self.rows[self.row_at(c)?];
@@ -54,7 +54,7 @@ impl Editor {
         Some(point(x.max(self.viewport.left()), if fits { below } else { above }))
     }
 
-    /// Début de la requête (après `[[` ou `/`) et ce qui lui correspond.
+        /// Start of the query (after `[[` or `/`) and what matches it.
     pub(super) fn completion(&self) -> Option<(usize, Vec<Choice<'_>>)> {
         if !self.sel.is_empty() || !self.more.is_empty() {
             return None;
@@ -66,7 +66,7 @@ impl Editor {
         (!items.is_empty() && self.ac_dismissed != Some(start)).then_some((start, items))
     }
 
-    /// Après `[[` : les notes du coffre ; après `![[` : ses images et ses schémas.
+        /// After `[[`: the vault's notes; after `![[`: its images and diagrams.
     pub(super) fn names(&self, before: &str, c: usize) -> Option<(usize, Vec<Choice<'_>>)> {
         let open = before.rfind("[[")?;
         let query = &before[open + 2..];
@@ -75,8 +75,8 @@ impl Editor {
         }
         let start = c - query.len();
         let query = query.to_lowercase();
-        // `![[` affiche un fichier : ce sont les images et les schémas du coffre
-        // qu'on propose, par leur nom de fichier ; `[[` propose les notes.
+                // `![[` displays a file: the vault's images and diagrams are
+                // offered, by file name; `[[` offers notes.
         let embed = before[..open].ends_with('!');
         let mut items: Vec<&str> = match embed {
             true => self.images.values().filter_map(|p| p.file_name()?.to_str()).collect(),
@@ -90,8 +90,8 @@ impl Editor {
         Some((start, items.into_iter().map(Choice::Name).collect()))
     }
 
-    /// Après un `/` en début de ligne ou de mot, hors du code : les commandes dont
-    /// le nom commence par la requête, puis celles dont le libellé la contient.
+        /// After a `/` at the start of a line or word, outside code: the commands whose
+        /// name starts with the query, then those whose label contains it.
     pub(super) fn commands(&self, before: &str, c: usize, line: usize) -> Option<(usize, Vec<Choice<'_>>)> {
         let slash = before.rfind('/')?;
         let query = before[slash + 1..].to_lowercase();
@@ -107,8 +107,8 @@ impl Editor {
         Some((c - query.len(), items.into_iter().map(Choice::Command).collect()))
     }
 
-    /// Après un `@` en début de ligne ou de mot, hors du code : les jours que désigne la suite
-    /// (`@demain`, `@lundi`, `@2026-10-09`). Une adresse `nom@domaine` n'ouvre rien.
+        /// After an `@` at the start of a line or word, outside code: the days the rest names
+        /// (`@demain`, `@lundi`, `@2026-10-09`). An address `name@domain` opens nothing.
     pub(super) fn days(&self, before: &str, c: usize, line: usize) -> Option<(usize, Vec<Choice<'_>>)> {
         let at = before.rfind('@')?;
         let query = &before[at + 1..];
@@ -135,7 +135,7 @@ impl Editor {
                     self.splice(end..end + 2, "", cx);
                 }
             }
-            // Le jour devient un lien vers sa note du jour, créée à sa première ouverture.
+                        // The day becomes a link to its daily note, created when first opened.
             Choice::Date(_, _, date) => {
                 self.push_undo(true);
                 self.edit(start - 1..c, &format!("[[{}]]", crate::lang::date_name(date)), cx);
@@ -149,8 +149,8 @@ impl Editor {
                     self.grid_typed.clear();
                     return true;
                 }
-                // L'en-tête YAML se pose en tête de note, où qu'on le demande ; s'il y est déjà,
-                // le curseur y va. Dans les deux cas il attend entre les crochets des tags.
+                                // The front matter goes at the top of the note, wherever it is asked for; if it is already there,
+                                // the cursor goes to it. Either way it waits between the tag brackets.
                 if name == "meta" {
                     self.edit(slash..c, "", cx);
                     if md::front_matter(&self.content) == 0 {
@@ -161,12 +161,12 @@ impl Editor {
                     self.move_to(at, cx);
                     return true;
                 }
-                // La date du jour s'écrit là où on la demande.
+                                // Today's date is written where it is asked for.
                 if name == "date" {
                     self.edit(slash..c, &crate::lang::date_name(crate::platform::clock::today()), cx);
                     return true;
                 }
-                // Un lien se pose dans la phrase ; tout le reste commence sa ligne.
+                                // A link goes in the sentence; everything else starts its own line.
                 let line = self.line_range(c);
                 let inline = before.ends_with("[[") || self.content[line.start..slash].trim().is_empty();
                 let lead = if inline { "" } else { "\n" };

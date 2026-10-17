@@ -3,10 +3,10 @@
 use super::*;
 
 impl Shell {
-    /// Remplacement dans tout le coffre : compte d'abord, et n'écrit qu'une fois le compte
-    /// accepté. Chaque note réécrite est gardée telle qu'elle était, pour tout défaire.
+    /// Replace in the whole vault: counts first, and writes only once the count
+    /// is accepted. Each rewritten note is kept as it was, to undo everything.
     pub(super) fn replace_in_vault(&mut self, swap: markdown::Swap, window: &mut Window, cx: &mut Context<Self>) {
-        // La note ouverte est d'abord enregistrée : le remplacement part de ce qui est à l'écran.
+        // The open note is saved first: the replacement starts from what is on screen.
         self.flush(cx);
         let found: Vec<(PathBuf, String, usize)> = (self.notes.iter())
             .filter_map(|note| markdown::swap(&note.body, &swap).map(|(text, count)| (note.path.clone(), text, count)))
@@ -37,7 +37,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Écrit le nouveau texte de chaque note, et retient l'ancien.
+    /// Writes the new text of each note, and keeps the old one.
     pub(super) fn swap_notes(&mut self, found: Vec<(PathBuf, String, usize)>, cx: &mut Context<Self>) {
         self.swapped.clear();
         let mut count = 0;
@@ -58,8 +58,8 @@ impl Shell {
         self.say(Tone::Done, done, cx);
     }
 
-    /// Défait le dernier remplacement dans le coffre : chaque note retrouve son texte d'avant,
-    /// sauf celles qui ont changé depuis, laissées telles quelles.
+    /// Undoes the last vault replacement: each note gets its previous text back,
+    /// except those changed since, left as they are.
     pub(super) fn undo_swap(&mut self, cx: &mut Context<Self>) {
         self.flush(cx);
         let (mut back, mut kept) = (0, 0);
@@ -83,7 +83,7 @@ impl Shell {
         self.say(if back + kept == 0 { Tone::Info } else { Tone::Done }, if back + kept == 0 { tr("No replacement to undo", "Aucun remplacement à annuler").to_string() } else { done }, cx);
     }
 
-    /// Après une réécriture de notes : celle qui est ouverte est relue, le graphe suit.
+    /// After notes are rewritten: the open one is reread, the graph follows.
     pub(super) fn after_swap(&mut self, cx: &mut Context<Self>) {
         self.graph_stale = true;
         self.refresh_graph(cx);

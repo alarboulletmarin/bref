@@ -2,16 +2,16 @@
 
 use super::*;
 
-/// Une figure dessinée hors du fil de l'interface : la mise en page d'un gros diagramme
-/// Mermaid peut prendre une seconde, et resvg autant pour un SVG chargé de texte.
+/// A figure drawn off the UI thread: laying out a large Mermaid diagram
+/// can take a second, and resvg as much for a text-heavy SVG.
 #[derive(Clone)]
 pub(super) struct Job {
     pub(super) key: u64,
-    /// La clé de la source seule : une figure à la fois par source.
+    /// The key of the source alone: one figure at a time per source.
     pub(super) family: u64,
-    /// Le SVG à dessiner ; `None` si la source est invalide.
+    /// The SVG to draw; `None` if the source is invalid.
     pub(super) make: Arc<dyn Fn() -> Option<String> + Send + Sync>,
-    /// Largeur d'affichage au plus, densité de l'écran, et fond.
+    /// Display width at most, screen density, and background.
     pub(super) room: f32,
     pub(super) density: f32,
     pub(super) bg: [u8; 3],
@@ -37,8 +37,8 @@ impl gpui::Asset for Job {
         async move {
             let tree = svg::parse(&(job.make)()?)?;
             let (w, h) = (tree.size().width(), tree.size().height());
-            // Pas plus fin que l'écran à la plus grande largeur d'affichage : un schéma très
-            // large ou très haut ne pèse pas plus que ce qu'on en voit.
+            // No finer than the screen at the largest display width: a very wide
+            // or very tall diagram weighs no more than what is seen of it.
             let scale = svg::scale_for(w, h, job.density * (job.room / w).min(1.));
             let bytes = svg::bmp(&tree, scale, (0, 0, (w * scale).ceil() as u32, (h * scale).ceil() as u32), job.bg)?;
             Some((Arc::new(Image::from_bytes(ImageFormat::Bmp, bytes)), size(px(w), px(h))))
@@ -46,9 +46,9 @@ impl gpui::Asset for Job {
     }
 }
 
-/// La figure de `job` si elle est prête ; sinon elle se dessine (`waiting`), et la note sera
-/// remise en page. Une seule à la fois par source (`before` : celles qu'on attendait) : parcourir
-/// vite les thèmes ne lance pas un dessin par thème.
+/// The figure of `job` if it is ready; otherwise it is drawn (`waiting`), and the note will be
+/// laid out again. Only one at a time per source (`before`: the ones being waited for): going
+/// quickly through themes does not start one drawing per theme.
 pub(super) fn drawn(job: Job, before: &[Job], waiting: &mut Vec<Job>, window: &mut Window, cx: &mut App) -> Option<Drawing> {
     if let Some(running) = before.iter().find(|j| j.family == job.family && j.id() != job.id()) {
         if window.use_asset::<Job>(running, cx).is_none() {
@@ -58,7 +58,7 @@ pub(super) fn drawn(job: Job, before: &[Job], waiting: &mut Vec<Job>, window: &m
         cx.remove_asset::<Job>(running);
     }
     let drawing = window.use_asset::<Job>(&job, cx);
-    // Prête quand son image est décodée : jusque-là, l'ancienne version reste à l'écran.
+    // Ready when its image is decoded: until then, the old version stays on screen.
     let ready = match &drawing {
         Some(Some((image, _))) => image.clone().use_render_image(window, cx).is_some(),
         Some(None) => true,
@@ -68,7 +68,7 @@ pub(super) fn drawn(job: Job, before: &[Job], waiting: &mut Vec<Job>, window: &m
         waiting.push(job);
         return None;
     }
-    // La figure est gardée par l'éditeur : gpui n'a plus à la retenir.
+    // The figure is kept by the editor: gpui no longer has to hold it.
     cx.remove_asset::<Job>(&job);
     drawing
 }
@@ -120,7 +120,7 @@ impl Element for EditorElement {
         self.0.update(cx, |editor, cx| {
             let before = editor.viewport.size.width;
             editor.layout(bounds, window, cx);
-            // La place de la barre de mise en forme suit la largeur de la note : l'image suivante la déplace.
+            // The formatting bar's place follows the note's width: the next frame moves it.
             if before != editor.viewport.size.width {
                 cx.notify();
             }
@@ -195,7 +195,7 @@ impl Editor {
                 }
                 _ => {}
             }
-            // Un tableau plus large que la page est coupé à ses bords.
+            // A table wider than the page is cut at its edges.
             let mask = (row.kind == Kind::Table).then(|| {
                 let frame = self.tables.iter().find(|(range, _)| range.contains(&row.start)).map(|(_, frame)| *frame);
                 let (left, wide) = frame.map_or((o.x, w), |f| (f.left(), f.size.width));
@@ -205,12 +205,12 @@ impl Editor {
                 continue;
             }
             window.with_content_mask(mask, |window| {
-                // Dans un tableau, le fond de l'en-tête passe sous la sélection.
+                // In a table, the header background goes under the selection.
                 let table_top = point(o.x - row.dx, top);
                 if let Some(grid) = &row.grid {
                     grid.paint_back(table_top, row.height - row.gap, &t, window);
                 }
-                // Fond d'un passage du texte sur cette ligne : la sélection, les passages trouvés.
+                // Background of a passage of text on this line: the selection, the found passages.
                 let mark = |range: &Range<usize>, color: Hsla, window: &mut Window| {
                     let a = row.pos(range.start.max(row.start) - row.start);
                     let b = row.pos(range.end.min(end) - row.start);
@@ -230,7 +230,7 @@ impl Editor {
                         rect(px(0.), b.y, b.x + tail, row.lh);
                     }
                 };
-                // Le texte surligné (`==texte==`), sous la sélection ; les trouvailles et commentaires passent dessus.
+                // Highlighted text (`==text==`), under the selection; matches and comments go over it.
                 if !matches!(row.kind, Kind::Code | Kind::Fence | Kind::Meta | Kind::Rule) {
                     for (r, color) in md::highlights(&self.content[row.start..end], row.kind == Kind::Table) {
                         mark(&(row.start + r.start..row.start + r.end), highlight(color), window);
@@ -242,7 +242,7 @@ impl Editor {
                 for (other, _) in self.more.iter().filter(|(other, _)| !other.is_empty() && other.start <= end && other.end > row.start) {
                     mark(other, t.selection, window);
                 }
-                // Le texte qui porte un commentaire est surligné.
+                // Text that carries a comment is highlighted.
                 if !matches!(row.kind, Kind::Code | Kind::Fence) {
                     for (_, noted, _) in md::comments(&self.content[row.start..end]) {
                         mark(&(row.start + noted.start..row.start + noted.end), t.accent.opacity(0.22), window);
@@ -265,7 +265,7 @@ impl Editor {
                     let caret = block(p.x, text_top + p.y + row.lh * 0.14, px(2.), row.lh * 0.72);
                     window.paint_quad(fill(caret, t.accent));
                 }
-                // Les autres curseurs, quand la note a la saisie.
+                // The other cursors, when the note has input.
                 for (other, back) in self.more.iter().filter(|_| focused && row.grid.is_none()) {
                     let at = if *back { other.start } else { other.end };
                     if other.is_empty() && (row.start..=end).contains(&at) {
@@ -279,7 +279,7 @@ impl Editor {
                 let at = block(px(0.), top + row.height - s.height, s.width, s.height);
                 window.paint_image(at, Corners::all(px(6.)), image.clone(), 0, false).ok();
             }
-            // Bouton de copie du bloc : la même icône que pour copier la note.
+            // Copy button of the block: the same icon as for copying the note.
             if row.opens {
                 let bounds = self.copy_bounds(row);
                 if self.hover == Some(row.start) {
@@ -306,7 +306,7 @@ impl Editor {
             }
         }
         if self.content.is_empty() {
-            // Le reste de la page vide (date, touches, notes à relire) est à `Shell::render_empty`.
+            // The rest of the empty page (date, keys, notes to reread) is in `Shell::render_empty`.
             label(tr("Write here…", "Écris ici…"), t.soft, window)
                 .paint(point(o.x + px(8.), o.y + px(3.)), px(22.), window, cx)
                 .ok();
@@ -314,7 +314,7 @@ impl Editor {
         for thumb in &self.thumbs {
             window.paint_quad(fill(*thumb, t.dim.opacity(0.5)).corner_radii(px(1.5)));
         }
-        // Le trait où se poseraient des fichiers glissés sur la note.
+        // The line where files dragged onto the note would land.
         if let Some(mark) = self.drop_mark
             && let Some(last) = self.rows.last()
         {
@@ -341,8 +341,8 @@ impl Editor {
                 }
             }
         }
-        // Poignées d'un tableau : une pastille à trois points sur la colonne et la ligne que le pointeur
-        // survole (et sur ce qu'on a pris), ce qu'elles ont pris, et le trait où l'on dépose ce qu'on tire.
+        // Table handles: a three-dot badge on the column and row the pointer
+        // hovers (and on what was grabbed), what they grabbed, and the line where the dragged thing drops.
         for geo in &self.geos {
             let hot = self.part_hover.filter(|(at, _)| *at == geo.start).map(|(_, part)| part);
             let (near, pick) = (geo.near(self.pointer), self.live_pick(geo.start));
@@ -374,7 +374,7 @@ impl Editor {
                     }
                     continue;
                 }
-                // Au repos : un fond clair et un filet ; sous le pointeur : l'accent en transparence ; pris : l'accent.
+                // At rest: a light background and a thin rule; under the pointer: translucent accent; grabbed: the accent.
                 let (back, edge, dots) = if held(part) {
                     (t.accent, t.accent, t.bg)
                 } else if hot == Some(part) {
@@ -383,7 +383,7 @@ impl Editor {
                     (t.bg, t.border, t.soft)
                 };
                 window.paint_quad(quad(zone, zone.size.width.min(zone.size.height) / 2., back, px(1.), edge, BorderStyle::default()));
-                // Trois points dans le sens de la poignée ; le coin n'en a pas.
+                // Three dots along the handle; the corner has none.
                 if part != Part::Corner {
                     let lengthwise = zone.size.width > zone.size.height;
                     for k in [-1., 0., 1.] {
@@ -405,14 +405,13 @@ impl Editor {
                 window.paint_quad(fill(line, t.accent));
             }
         }
-        // Le bloc qu'on tire : teinté, et un trait là où il se poserait.
-        if let Some(drag) = self.handles.drag.as_ref().filter(|drag| drag.moved) {
-            if let Some(y) = drag.to.and_then(|to| self.line_top(to)) {
+        // The block being dragged: tinted, and a line where it would land.
+        if let Some(drag) = self.handles.drag.as_ref().filter(|drag| drag.moved)
+            && let Some(y) = drag.to.and_then(|to| self.line_top(to)) {
                 let line = Bounds::new(point(self.origin.x - px(8.), y - px(1.)), size(self.width + px(16.), px(2.)));
                 window.paint_quad(fill(line, t.accent).corner_radii(px(1.)));
             }
-        }
-        // La poignée du bloc sous le pointeur, et son « + ».
+        // The handle of the block under the pointer, and its "+".
         if let Some((grip, plus)) = self.handle_bounds() {
             let on = |b: Bounds<Pixels>| b.contains(&self.pointer) || (self.handles.drag.is_some() && b == grip);
             for (spot, icon) in [(Some(grip), "grip.svg"), (plus, "plus.svg")] {
@@ -430,7 +429,7 @@ impl Editor {
                 }
             }
         }
-        // Sélecteur de tableau : la grille, et la taille choisie dessous.
+        // Table picker: the grid, and the chosen size under it.
         if focused
             && let Some((cols, rows)) = self.grid
             && let Some(at) = self.popup_at(Self::grid_size())
@@ -456,7 +455,7 @@ impl Editor {
         }
         if focused && let Some((_, items)) = self.completion() {
             let chosen = self.ac_index.min(items.len() - 1);
-            // La liste suit le choix quand elle dépasse ce qu'elle montre.
+            // The list follows the choice when it goes beyond what it shows.
             let first = chosen.saturating_sub(SHOWN - 1);
             let shown = &items[first..items.len().min(first + SHOWN)];
             let item_h = px(28.);
@@ -471,8 +470,8 @@ impl Editor {
                     let hl = Bounds::new(point(at.x + px(4.), y), size(px(272.), item_h));
                     window.paint_quad(fill(hl, t.selection).corner_radii(px(5.)));
                 }
-                // Le libellé à gauche, sa précision à droite, calée sur le bord : un libellé trop
-                // long est coupé avant elle, jamais dessiné dessous.
+                // The label on the left, its detail on the right, against the edge: a label too
+                // long is cut before it, never drawn under it.
                 let mut write = |text: &str, detail: &str| {
                     let detail = label(detail, t.soft, window);
                     let right = at.x + panel.width - px(12.) - detail.width;

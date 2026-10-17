@@ -3,7 +3,7 @@
 use super::*;
 
 impl Shell {
-    /// Ce qui est affiché à la place de la note ; rien pour une note neuve pas encore enregistrée.
+    /// What is shown in place of the note; nothing for a new note not saved yet.
     pub(super) fn shown(&self) -> Option<Shown> {
         match (&self.pane().listing, self.pane().file_path(), &self.pane().path) {
             (Some(listing), ..) => Some(Shown::List(listing.of.clone())),
@@ -13,8 +13,8 @@ impl Shell {
         }
     }
 
-    /// Retient, dans l'entrée courante de l'historique, où l'on en est dans ce qu'elle montre :
-    /// à appeler tant que la vue qu'on quitte existe encore.
+    /// Remembers, in the current history entry, where we are in what it shows:
+    /// to call while the view being left still exists.
     pub(super) fn mark_place(&mut self, cx: &App) {
         let Some(shown) = self.history.current().map(|entry| entry.shown.clone()) else { return };
         let place = match &shown {
@@ -34,9 +34,9 @@ impl Shell {
         self.history.mark(&shown, place);
     }
 
-    /// Le seul endroit où l'historique avance : à chaque rendu, ce qui est affiché est comparé à
-    /// son entrée courante. Un aperçu ne compte pas ; revenir en arrière ou repartir non plus,
-    /// puisque l'entrée courante est alors déjà ce qu'on affiche.
+    /// The only place where history moves forward: at each render, what is shown is compared to
+    /// its current entry. A preview does not count; neither does going back or forward,
+    /// since the current entry is then already what is shown.
     pub(super) fn track(&mut self, cx: &App) {
         if self.pane().peek {
             return;
@@ -48,11 +48,11 @@ impl Shell {
         }
     }
 
-    /// Précédent ou suivant dans ce qui a été affiché ; ce qui n'existe plus est sauté.
+    /// Back or forward in what was shown; what no longer exists is skipped.
     pub(super) fn travel(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.mark_place(cx);
-        // Sur ce que l'historique ne retient pas (un aperçu, une note neuve), « précédent »
-        // ramène à l'entrée courante : c'est de là qu'on venait.
+        // On what the history does not keep (a preview, a new note), "back"
+        // returns to the current entry: that is where we came from.
         let mut stay = !forward && self.history.current().is_some_and(|entry| Some(&entry.shown) != self.shown().as_ref());
         loop {
             let entry = match (std::mem::take(&mut stay), forward) {
@@ -72,14 +72,14 @@ impl Shell {
                 self.show(entry, window, cx);
                 break;
             }
-            // Supprimé par un autre programme : l'entrée part, celle d'avant devient la courante.
+            // Deleted by another program: the entry goes, the one before becomes current.
             self.history.remove(entry.shown.path());
             stay = !forward;
         }
         cx.notify();
     }
 
-    /// Affiche une entrée de l'historique, là où on l'avait laissée.
+    /// Shows a history entry, where it was left.
     pub(super) fn show(&mut self, entry: history::Entry, window: &mut Window, cx: &mut Context<Self>) {
         self.pane_mut().peek = false;
         if self.nav.panel == nav::Panel::Full {
@@ -96,7 +96,7 @@ impl Shell {
             }
             Shown::File(path) => {
                 self.load_note(&path, cx);
-                // Un tableau reprend sa cellule et la saisie ; une image n'a rien à reprendre.
+                // A table takes back its cell and input; an image has nothing to take back.
                 if let Some(sheet) = self.shown_sheet() {
                     sheet.update(cx, |sheet, cx| sheet.set_view(entry.place.at, entry.place.scroll, cx));
                     window.focus(&sheet.focus_handle(cx));

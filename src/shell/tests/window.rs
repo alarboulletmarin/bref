@@ -11,7 +11,7 @@ fn badge_shows_the_count_up_to_nine() {
 
 #[test]
 fn badge_text_reads_on_every_theme() {
-    // Le chiffre est dans la couleur du fond, sur la pastille d'accent : il se lit comme le texte d'un lien.
+    // The number is in the background colour, on the accent badge: it reads like a link's text.
     for (name, _) in THEMES {
         let prefs = Prefs { theme: name.to_string(), ..Prefs::parse("") };
         let t = Theme::of(&prefs, gpui::WindowAppearance::Light);
@@ -21,7 +21,7 @@ fn badge_text_reads_on_every_theme() {
 
 #[test]
 fn folded_bar_button_hides_what_it_covers() {
-    // Le bouton de la barre repliée passe sur du texte : opaque, fermé ou ouvert, et son signe s'y lit, sur tous les thèmes.
+    // The folded bar's button sits over text: opaque, closed or open, and its sign is readable, on every theme.
     for (name, _) in THEMES {
         let prefs = Prefs { theme: name.to_string(), ..Prefs::parse("") };
         let t = Theme::of(&prefs, gpui::WindowAppearance::Light);
@@ -34,8 +34,8 @@ fn folded_bar_button_hides_what_it_covers() {
     }
 }
 
-/// Les raccourcis changés sont relus au lancement ; une ligne fautive du fichier est écartée
-/// et signalée, les autres s'appliquent.
+/// Changed shortcuts are read again at launch; a faulty line in the file is set aside
+/// and reported, the others apply.
 #[gpui::test]
 fn keys_survive_a_restart(cx: &mut TestAppContext) {
     let root = std::env::temp_dir().join(format!("bref-keys-{}", std::process::id()));
@@ -53,12 +53,12 @@ fn keys_survive_a_restart(cx: &mut TestAppContext) {
     assert_ne!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tags);
     cx.simulate_keystrokes("secondary-shift-y");
     assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tags);
-    // Un fichier d'avant cette version, ou vide : les raccourcis d'origine.
+    // A file from before this version, or empty: the original shortcuts.
     let _ = fs::remove_dir_all(&root);
 }
 
-/// Le second pane revient au lancement, avec sa largeur ; un fichier disparu, ou une config
-/// d'avant les panes, laisse un seul pane.
+/// The second pane comes back at launch, with its width; a vanished file, or a config
+/// from before panes, leaves a single pane.
 #[gpui::test]
 fn panes_come_back(cx: &mut TestAppContext) {
     let root = std::env::temp_dir().join(format!("bref-panes-{}", std::process::id()));
@@ -71,7 +71,7 @@ fn panes_come_back(cx: &mut TestAppContext) {
     vault::save_file("panes", &format!("0.4\n{}\n", right.display()));
     cx.update(bind_keys);
     cx.update(init_fonts);
-    // La note de droite est la dernière ouverte : le premier pane prend la suivante.
+    // The right note is the last opened: the first pane takes the next one.
     let recent = vec![right.clone(), left.clone()];
     let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), recent, window, cx));
     cx.run_until_parked();
@@ -82,7 +82,7 @@ fn panes_come_back(cx: &mut TestAppContext) {
     let _ = fs::remove_dir_all(&root);
 }
 
-/// Sans coffre, l'accueil en crée un d'un clic, dans `Notes` du dossier personnel.
+/// Without a vault, the welcome screen creates one with a click, in `Notes` of the home folder.
 #[gpui::test]
 fn starts_in_a_new_vault(cx: &mut TestAppContext) {
     let root = std::env::temp_dir().join(format!("bref-start-{}", std::process::id()));
@@ -99,15 +99,15 @@ fn starts_in_a_new_vault(cx: &mut TestAppContext) {
     let notes = root.join(".config").join("Notes");
     assert!(notes.is_dir());
     assert_eq!(shell.read_with(cx, |s, _| s.vault.clone()), Some(notes.clone()));
-    // Sous Windows, le chemin se montre en entier.
+    // On Windows, the path is shown in full.
     if !cfg!(windows) {
         assert_eq!(vault::shown(&notes), "~/Notes");
     }
     let _ = fs::remove_dir_all(&root);
 }
 
-/// Une note s'ouvre sur son corps : la première touche ne casse pas l'en-tête YAML et ne
-/// renomme pas la note par son titre, ce qui réécrirait les liens des autres notes.
+/// A note opens on its body: the first key does not break the front matter and does not
+/// rename the note after its title, which would rewrite the other notes' links.
 #[gpui::test]
 fn opens_on_the_body(cx: &mut TestAppContext) {
     let root = std::env::temp_dir().join(format!("bref-body-{}", std::process::id()));
@@ -127,7 +127,7 @@ fn opens_on_the_body(cx: &mut TestAppContext) {
     assert_eq!(fs::read_to_string(&plan).unwrap(), "---\ntags: [a]\n---\n# Plan\n\nxÉtapes\n");
     assert_eq!(fs::read_to_string(root.join("Accueil.md")).unwrap(), "# Accueil\n\n[[Plan]]\n");
 
-    // Une nouvelle note écrite puis vidée ne laisse rien en partant.
+    // A new note written then emptied leaves nothing behind when leaving.
     cx.simulate_keystrokes("secondary-n");
     cx.simulate_input("Brouillon");
     cx.executor().advance_clock(Duration::from_millis(500));
@@ -144,8 +144,8 @@ fn opens_on_the_body(cx: &mut TestAppContext) {
     let _ = fs::remove_dir_all(&root);
 }
 
-/// La capture (`bref --capture`) : une ligne tapée, Entrée, elle est dans la note du jour
-/// et la fenêtre s'est refermée. Échap referme sans rien écrire.
+/// Capture (`bref --capture`): a line typed, Enter, it is in the daily note
+/// and the window has closed. Escape closes without writing anything.
 #[gpui::test]
 fn capture_window(cx: &mut TestAppContext) {
     let root = std::env::temp_dir().join(format!("bref-capture-window-{}", std::process::id()));
@@ -163,7 +163,7 @@ fn capture_window(cx: &mut TestAppContext) {
     {
         let (capture, cx) = cx.add_window_view(|window, cx| Capture::new(root.clone(), window, cx));
         cx.run_until_parked();
-        // Un champ de saisie ne propose rien, même avant la première frappe.
+        // An input field suggests nothing, even before the first keystroke.
         assert_eq!(capture.read_with(cx, |c, cx| c.field.read(cx).listed()), 0);
         cx.simulate_input("rappeler le plombier");
         cx.simulate_keystrokes("enter");
@@ -180,8 +180,8 @@ fn capture_window(cx: &mut TestAppContext) {
     }
     assert!(!fs::read_to_string(&note).unwrap().contains("oublier"));
     assert_eq!(closed.get(), 2);
-    // Une très longue ligne : rien n'est coupé ni refusé. Le texte défile sous le curseur,
-    // qui reste dans le cadre, à la frappe comme au retour en début de ligne.
+    // A very long line: nothing is cut or refused. The text scrolls under the cursor,
+    // which stays in the frame, while typing as when going back to the start of the line.
     let long = "mot ".repeat(250);
     {
         let (capture, cx) = cx.add_window_view(|window, cx| Capture::new(root.clone(), window, cx));
@@ -201,8 +201,8 @@ fn capture_window(cx: &mut TestAppContext) {
     let _ = fs::remove_dir_all(&root);
 }
 
-/// La page vide : la date du jour, les touches utiles et les notes à relire, sous la ligne
-/// où l'on écrit. Tout tient dans une fenêtre étroite, et s'efface à la première frappe.
+/// The empty page: today's date, the useful keys and the notes to revisit, under the line
+/// where one writes. Everything fits in a narrow window, and disappears on the first keystroke.
 #[gpui::test]
 fn empty_page(cx: &mut TestAppContext) {
     let root = std::env::temp_dir().join(format!("bref-empty-{}", std::process::id()));
@@ -223,11 +223,11 @@ fn empty_page(cx: &mut TestAppContext) {
     let text_of = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
     assert_eq!(open(cx), None);
 
-    // Le logo est dans le rail, quel que soit le système.
+    // The logo is in the rail, whatever the system.
     assert!(cx.debug_bounds("rail-logo").is_some());
-    // Les notes à relire : la note du jour d'il y a une semaine, puis une note ancienne.
+    // The notes to revisit: the daily note from a week ago, then an old note.
     assert_eq!(shell.read_with(cx, |s, _| s.recalled().iter().map(|r| r.name.clone()).collect::<Vec<_>>()), [week.clone(), "Ancienne".to_string()]);
-    // Dans la fenêtre la plus étroite, rien ne dépasse du pane.
+    // In the narrowest window, nothing overflows the pane.
     cx.simulate_resize(size(px(360.), px(640.)));
     cx.run_until_parked();
     let pane = cx.debug_bounds("pane-0").unwrap();
@@ -239,19 +239,19 @@ fn empty_page(cx: &mut TestAppContext) {
     cx.simulate_resize(size(px(860.), px(720.)));
     cx.run_until_parked();
 
-    // Un clic sur une note à relire l'ouvre.
+    // A click on a note to revisit opens it.
     let at = cx.debug_bounds("empty-recall-1").unwrap().center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert_eq!(open(cx), Some(old.clone()));
-    // Une note qui a du texte ne montre pas la page vide : là où était la date, le clic
-    // tombe dans la note. (gpui garde les bornes d'un élément disparu : on clique.)
+    // A note with text does not show the empty page: where the date was, the click
+    // lands in the note. (gpui keeps the bounds of a vanished element: we click.)
     cx.run_until_parked();
     let at = cx.debug_bounds("empty-today").unwrap().center();
     cx.simulate_click(at, gpui::Modifiers::none());
     cx.run_until_parked();
     assert_eq!(open(cx), Some(old.clone()));
 
-    // Une touche de la page vide se clique : ici la palette.
+    // A key of the empty page can be clicked: here the palette.
     cx.simulate_keystrokes("secondary-n");
     cx.run_until_parked();
     let at = cx.debug_bounds("empty-key-0").unwrap().center();
@@ -259,13 +259,13 @@ fn empty_page(cx: &mut TestAppContext) {
     assert!(shell.read_with(cx, |s, _| s.palette.is_some()));
     cx.simulate_keystrokes("escape");
 
-    // La date ouvre la note du jour.
+    // The date opens the daily note.
     let at = cx.debug_bounds("empty-today").unwrap().center();
     cx.simulate_click(at, gpui::Modifiers::none());
     cx.run_until_parked();
     assert_eq!(open(cx), Some(root.join(format!("{}.md", date_name(today())))));
 
-    // La première frappe efface tout : la page est à ce qu'on écrit.
+    // The first keystroke clears everything: the page belongs to what is written.
     cx.simulate_keystrokes("secondary-n");
     cx.run_until_parked();
     cx.simulate_input("x");

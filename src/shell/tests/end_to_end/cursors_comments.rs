@@ -5,9 +5,9 @@ use super::*;
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let shell = &j.shell;
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
-    // Plusieurs curseurs : Ctrl+D prend le mot, puis ses occurrences suivantes ; la frappe,
-    // l'effacement et les déplacements valent pour tous, un seul Ctrl+Z défait le tout,
-    // Échap revient à un curseur. Alt+clic en pose un de plus.
+    // Multiple cursors: Ctrl+D takes the word, then its next occurrences; typing,
+    // deleting and moving apply to all, a single Ctrl+Z undoes it all,
+    // Escape returns to one cursor. Alt+click adds one more.
     let cursors = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).cursors());
     j.load(cx, "un chat\nun chien\nun rat", 0);
     cx.simulate_keystrokes("secondary-d secondary-d secondary-d");
@@ -22,14 +22,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!((text(cx), cursors(cx)), ("e chats\ne chiens\ne rats".to_string(), 3));
     cx.simulate_keystrokes("shift-end secondary-b");
     assert_eq!(text(cx), "**e chats**\n**e chiens**\n**e rats**");
-    // Une étape d'annulation défait le geste pour les trois curseurs à la fois, et lui seul.
+    // One undo step reverts the gesture for the three cursors at once, and only it.
     cx.simulate_keystrokes("secondary-z");
     assert_eq!((text(cx), cursors(cx)), ("e chats\ne chiens\ne rats".to_string(), 1));
     j.load(cx, "un chat\nun chien\nun rat", 0);
     cx.simulate_keystrokes("secondary-d secondary-d escape");
     assert_eq!(cursors(cx), 1);
     cx.simulate_input("X");
-    // Le dernier curseur posé reste : celui de la deuxième occurrence.
+    // The last cursor added stays: the one of the second occurrence.
     assert_eq!(text(cx), "un chat\nX chien\nun rat");
     j.load(cx, "ab\ncd", 0);
     let middle = cx.update(|window, _| window.viewport_size());
@@ -38,8 +38,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("X");
     assert_eq!((text(cx).matches('X').count(), cursors(cx)), (2, 2));
     cx.simulate_keystrokes("escape");
-    // Commentaires : Ctrl+Maj+M commente la sélection (sans elle, la ligne, après sa puce),
-    // la palette les liste et y mène, le même raccourci sur un commentaire le résout.
+    // Comments: Ctrl+Shift+M comments the selection (without one, the line, after its bullet),
+    // the palette lists them and leads there, the same shortcut on a comment resolves it.
     j.load(cx, "- un mot ici\nfin", 5);
     cx.simulate_keystrokes("shift-right shift-right shift-right secondary-shift-m");
     cx.simulate_input("à revoir");
@@ -47,8 +47,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("down secondary-shift-m");
     cx.simulate_input("ok");
     assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\n{==fin==}{>>ok<<}");
-    // Le panneau, à droite de la note : un clic sur une carte mène dans son commentaire,
-    // sa coche le résout ; refermé, il revient quand la palette liste les commentaires.
+    // The panel, right of the note: a click on a card leads into its comment,
+    // its check mark resolves it; closed, it comes back when the palette lists comments.
     cx.run_until_parked();
     let view = cx.update(|window, _| window.viewport_size());
     cx.simulate_click(point(view.width - px(150.), px(125.)), gpui::Modifiers::none());
@@ -56,10 +56,10 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.resolve_comment(34, cx)));
     assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\nfin");
     cx.simulate_keystrokes("secondary-z");
-    // Le bouton du coin, à gauche de la copie, referme le panneau (et le rouvre).
+    // The corner button, left of the copy one, closes the panel (and reopens it).
     cx.run_until_parked();
     let corner = cx.update(|window, _| window.viewport_size());
-    // Deux commentaires : la pastille est au coin du bouton, dans la fenêtre.
+    // Two comments: the badge is at the button's corner, inside the window.
     let badge = cx.debug_bounds("comments-badge").unwrap();
     assert!(badge.right() <= corner.width && badge.size.width >= px(15.), "{badge:?}");
     let closed = shell.read_with(cx, |s, _| s.comments_shut);
@@ -75,9 +75,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(text(cx), "- un mot ici\n{==fin==}{>>ok<<}");
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\n{==fin==}{>>ok<<}");
-    // La pastille aux limites : dix commentaires, douze, cent vingt. Elle ne grossit que vers la
-    // gauche (son bord droit ne bouge pas), reste dans la fenêtre et loin du bouton de copie,
-    // et sa hauteur ne change pas.
+    // The badge at its limits: ten comments, twelve, a hundred and twenty. It only grows to the
+    // left (its right edge does not move), stays in the window and away from the copy button,
+    // and its height does not change.
     let kept = text(cx);
     let many = |n: usize| format!("# T\n\n{}\n", (0..n).map(|i| format!("mot{{=={i}==}}{{>>c{i}<<}}")).collect::<Vec<_>>().join(" "));
     let mut seen = Vec::new();
@@ -89,12 +89,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         assert!(badge.left() >= toggle.left() - px(12.) && badge.top() >= toggle.top() - px(4.) && badge.size.height == px(15.), "{n} : {badge:?} {toggle:?}");
         seen.push(badge);
     }
-    // Un chiffre : ronde ; « 9+ » : plus large, au même bord droit, pareil pour 10, 12 et 120.
+    // One digit: round; "9+": wider, at the same right edge, likewise for 10, 12 and 120.
     assert!(seen[0].size.width == seen[1].size.width && seen[2].size.width > seen[1].size.width, "{seen:?}");
     assert!(seen.iter().all(|b| b.right() == seen[0].right()) && seen[2..].iter().all(|b| b.size.width == seen[2].size.width), "{seen:?}");
     j.load(cx, &kept, 0);
-    // Fenêtre étroite ou panneau trop large : rien ne passe sous son voisin ni hors de la
-    // fenêtre. La note garde 200 px, le panneau puis la colonne des commentaires lui cèdent.
+    // Narrow window or panel too wide: nothing slips under its neighbor or out of the
+    // window. The note keeps 200 px, the panel then the comments column give way to it.
     let before = shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel, s.nav.list_w));
     let whole = cx.update(|window, _| window.viewport_size());
     let lay = |cx: &mut gpui::VisualTestContext, width: f32, mode: Mode, panel: Panel, list: f32| {
@@ -109,16 +109,16 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         let (part_at, zone_at) = (cx.debug_bounds(part).unwrap_or_else(|| panic!("{part} absent")), cx.debug_bounds(zone).unwrap());
         assert!(part_at.left() >= zone_at.left() && part_at.right() <= zone_at.right(), "{part} dépasse de {zone} : {part_at:?} hors de {zone_at:?}");
     };
-    // Un panneau de 600 px dans une fenêtre de 860 : il rend la place de la note et des commentaires.
+    // A 600 px panel in an 860 window: it gives back room to the note and the comments.
     lay(cx, 860., Mode::Tree, Panel::Split, 600.);
     let (panel, pane, said) = (cx.debug_bounds("nav-panel").unwrap(), cx.debug_bounds("pane-0").unwrap(), cx.debug_bounds("comments").unwrap());
     assert!(pane.size.width >= px(199.) && said.size.width == px(270.) && said.right() <= px(860.), "{pane:?} {said:?}");
     assert!(panel.right() <= pane.left() && pane.right() <= said.left(), "{panel:?} {pane:?} {said:?}");
-    // 420 px avec le panneau : plus de place pour les commentaires, la note garde la sienne.
+    // 420 px with the panel: no more room for the comments, the note keeps its own.
     lay(cx, 420., Mode::Tree, Panel::Split, 600.);
     let pane = cx.debug_bounds("pane-0").unwrap();
     assert!(pane.size.width >= px(199.) && pane.right() == px(420.), "{pane:?}");
-    // Panneau replié : la colonne revient, plus étroite ; la recherche et le compteur tiennent dans la note.
+    // Panel collapsed: the column comes back, narrower; search and the counter fit in the note.
     lay(cx, 420., Mode::Tree, Panel::Rail, 600.);
     let (pane, said) = (cx.debug_bounds("pane-0").unwrap(), cx.debug_bounds("comments").unwrap());
     assert!(pane.size.width >= px(199.) && said.size.width == px(180.) && said.right() <= px(420.), "{pane:?} {said:?}");
@@ -127,7 +127,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     within(cx, "find-bar", "pane-0");
     within(cx, "counts", "pane-0");
     cx.simulate_keystrokes("escape");
-    // Le calendrier ne descend pas sous 170 px, et son mois tient dans le panneau.
+    // The calendar does not go below 170 px, and its month fits in the panel.
     lay(cx, 420., Mode::Calendar, Panel::Split, 120.);
     assert_eq!(cx.debug_bounds("nav-panel").unwrap().size.width, px(170.));
     within(cx, "calendar", "nav-panel");

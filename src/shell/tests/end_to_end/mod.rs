@@ -53,8 +53,8 @@ impl Journey {
     }
 }
 
-/// `secondary` = Cmd sur macOS, Ctrl ailleurs, comme dans `bind_keys`.
-/// Parcours complet au clavier : saisie, listes, enregistrement, palette, wikilien.
+/// `secondary` = Cmd on macOS, Ctrl elsewhere, as in `bind_keys`.
+/// Full keyboard run: typing, lists, saving, palette, wikilink.
 #[gpui::test]
 fn end_to_end(cx: &mut TestAppContext) {
     let root = std::env::temp_dir().join(format!("bref-e2e-{}", std::process::id()));
@@ -62,9 +62,9 @@ fn end_to_end(cx: &mut TestAppContext) {
     fs::write(root.join("Courses.md"), "# Courses\n\n- lait #maison\n").unwrap();
     fs::create_dir(root.join("Projets")).unwrap();
     fs::write(root.join("Projets/Plan.md"), "# Plan\n\n[[Courses]]\n").unwrap();
-    // La config de test ne doit pas toucher celle de l'utilisateur.
+        // The test config must not touch the user's.
     let _config = isolated_config(&root);
-    // Ce qu'une version nommée « encre » a laissé est relu tant que rien n'existe sous le nouveau nom.
+        // What a version named "encre" left is read again as long as nothing exists under the new name.
     let old = vault::config_dir().join("encre");
     fs::create_dir_all(&old).unwrap();
     fs::write(old.join("config"), format!("{}\n", root.display())).unwrap();

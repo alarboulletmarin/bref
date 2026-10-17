@@ -5,8 +5,8 @@ use super::*;
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let (shell, root) = (&j.shell, &j.root);
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
-    // Bloc de code : Entrée pose la clôture ; curseur dedans, la copie rapide ne
-    // prend que le bloc, et le bouton « Copier » de son ouverture fait de même.
+        // Code block: Enter adds the closing fence; cursor inside, quick copy only
+        // takes the block, and the « Copier » button on its opening line does the same.
     cx.simulate_keystrokes("secondary-end enter");
     cx.simulate_input("```rust");
     cx.simulate_keystrokes("enter");
@@ -21,8 +21,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_click(button, gpui::Modifiers::none());
     assert_eq!(clipboard(cx).as_deref(), Some("let x = 1;"));
 
-    // Image : la ligne qui la désigne porte l'image, trouvée à côté de la note.
-    // Les signes (`->`) ne s'affichent que hors de la ligne du curseur, sans toucher au texte.
+        // Image: the line that names it carries the image, found next to the note.
+        // Symbols (`->`) only display outside the cursor's line, without touching the text.
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20"/></svg>"#;
     fs::write(root.join("carré.svg"), svg).unwrap();
     cx.simulate_keystrokes("secondary-end enter");
@@ -35,7 +35,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!((signs, image), (1, Some((40., 20.))));
     assert!(text(cx).ends_with("a -> b ![](carré.svg)\nfin"));
 
-    // Coller une image l'enregistre à côté de la note, qui la désigne.
+        // Pasting an image saves it next to the note, which names it.
     let image = gpui::Image::from_bytes(gpui::ImageFormat::Svg, svg.as_bytes().to_vec());
     cx.write_to_clipboard(ClipboardItem::new_image(&image));
     cx.simulate_keystrokes("enter secondary-v");
@@ -44,8 +44,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(pasted.starts_with("image-") && pasted.ends_with(".svg"));
     assert_eq!(fs::read_to_string(root.join(pasted)).unwrap(), svg);
 
-    // Diagramme Mermaid, dessiné sous son bloc une fois le curseur sorti, et
-    // formule LaTeX, sous sa ligne.
+        // Mermaid diagram, drawn below its block once the cursor has left, and
+        // LaTeX formula, below its line.
     cx.simulate_keystrokes("enter");
     cx.simulate_input("```mermaid");
     cx.simulate_keystrokes("enter");
@@ -64,8 +64,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     });
     assert_eq!(figures, [true, true, true]);
 
-    // Les images du coffre sont suivies comme les notes. Celles qu'une note affiche
-    // ont leur nœud dans le graphe ; en choisir une l'affiche à la place de la note.
+        // The vault's images are tracked like notes. Those a note displays
+        // have their node in the graph; choosing one shows it in place of the note.
     for _ in 0..2 {
         cx.executor().advance_clock(Duration::from_secs(3));
         cx.run_until_parked();
@@ -76,7 +76,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         (s.images.len(), s.notes.len(), s.graph.read(cx).size().0)
     });
     assert_eq!((images, nodes), (2, notes + 2));
-    // Une image qu'aucune note n'affiche a aussi son nœud, sans lien.
+        // An image no note displays also has its node, without a link.
     fs::write(root.join("seule.svg"), svg).unwrap();
     for _ in 0..2 {
         cx.executor().advance_clock(Duration::from_secs(3));
@@ -86,8 +86,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     shell.update(cx, |s, cx| s.preview_note(&root.join("carré.svg"), cx));
     assert_eq!(shell.read_with(cx, |s, _| s.pane().file_path().cloned()), Some(root.join("carré.svg")));
     assert!(text(cx).ends_with("fin"));
-    // Revenir d'une image à la note qu'elle cachait se fait en une sélection, comme
-    // d'une note à une autre.
+        // Going back from an image to the note it hid takes one selection, as
+        // from one note to another.
     shell.update(cx, |s, cx| {
         let note = s.pane().path.clone().unwrap();
         s.preview_note(&note, cx);
@@ -98,9 +98,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     assert_eq!(shell.read_with(cx, |s, _| s.pane().file_path().cloned()), None);
 
-    // Un SVG d'ailleurs (draw.io : texte en HTML, couleurs `light-dark()`) s'affiche dans la
-    // note, dessiné en tâche de fond. Changer de thème, même vite et plusieurs fois, garde la
-    // figure à sa place (l'ancienne reste le temps que la nouvelle se dessine) et n'accumule rien.
+        // A foreign SVG (draw.io: HTML text, `light-dark()` colors) shows in the
+        // note, drawn in the background. Switching theme, even fast and several times, keeps the
+        // figure in place (the old one stays while the new one draws) and accumulates nothing.
     let drawio = r##"<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120" style="background: light-dark(#fff, #121212)"><rect width="400" height="120" style="fill: light-dark(#ffffff, #121212)"/><switch><foreignObject width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 200px; height: 1px; padding-top: 60px; margin-left: 100px;"><div style="text-align: center;"><div style="display: inline-block; font-size: 12px; color: light-dark(#000, #fff); white-space: normal;"><b>Étape</b><br/>texte</div></div></div></foreignObject><text x="200" y="64">Text is not SVG - cannot display</text></switch></svg>"##;
     fs::write(root.join("drawio.svg"), drawio).unwrap();
     fs::write(root.join("cassé.svg"), "<svg pas fermé").unwrap();
@@ -135,14 +135,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     assert_eq!(seen(cx), (Some((400., 120.)), None, (count, 0)), "ni figure ni dessin de trop");
 
-    // Le même SVG, ouvert, s'affiche dans la visionneuse : cadré sur sa largeur, zoomé au
-    // clavier, et Échap ramène à la note. Un SVG illisible le dit, sans rien casser.
-    // Ouvert depuis l'arbre, il prend la saisie : la note ne la garde pas.
+        // The same SVG, opened, shows in the viewer: fitted to its width, zoomed from the
+        // keyboard, and Escape returns to the note. An unreadable SVG says so, without breaking anything.
+        // Opened from the tree, it takes input: the note does not keep it.
     shell.update_in(cx, |s, window, cx| {
         s.preview_note(&root.join("drawio.svg"), cx);
         s.focus_pane(0, window, cx);
     });
-    // La plateforme de test ne redessine pas d'elle-même quand un dessin en tâche de fond aboutit.
+        // The test platform does not redraw by itself when a background drawing completes.
     let settle = |cx: &mut gpui::VisualTestContext| {
         for _ in 0..3 {
             cx.run_until_parked();
@@ -162,8 +162,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, _| s.pane().file.is_none() && s.pane().viewer().is_none()));
-    // La loupe d'un bloc Mermaid montre le diagramme en grand, à la place de la note ; + et -
-    // zooment ; Échap ramène à la note.
+        // A Mermaid block's magnifier shows the diagram large, in place of the note; + and -
+        // zoom; Escape returns to the note.
     let button = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view_button("```mermaid")).unwrap();
     cx.simulate_click(button, gpui::Modifiers::none());
     settle(cx);

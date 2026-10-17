@@ -3,7 +3,7 @@
 use super::*;
 
 impl Shell {
-    /// Les modèles du coffre, par nom.
+    /// The vault's templates, by name.
     pub(super) fn templates(&self) -> Vec<PathBuf> {
         let Some(root) = &self.vault else {
             return Vec::new();
@@ -13,13 +13,13 @@ impl Shell {
         found
     }
 
-    /// Le modèle de la note du jour : celui qui s'appelle `Daily`, `Journal`, `Today`, `Note du jour`…
+    /// The daily note template: the one called `Daily`, `Journal`, `Today`, `Note du jour`…
     pub(super) fn daily_template(&self) -> Option<PathBuf> {
         const NAMES: [&str; 5] = ["daily", "journal", "today", "note du jour", "aujourd'hui"];
         self.templates().into_iter().find(|path| NAMES.contains(&lang::fold(&vault::stem(path)).as_str()))
     }
 
-    /// Un modèle à choisir, puis, pour une nouvelle note, son nom ; ou, pour l'insérer, rien d'autre.
+    /// A template to choose, then, for a new note, its name; or, to insert it, nothing else.
     pub(super) fn open_templates(&mut self, act: TemplateAct, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() {
             return;
@@ -48,11 +48,11 @@ impl Shell {
             window.focus(&this.pane().editor.focus_handle(cx));
             match (chosen, act) {
                 (Some(template), TemplateAct::New) => {
-                    // La note naît dans le dossier choisi dans l'arbre, jamais dans celui des modèles.
+                    // The note is born in the folder chosen in the tree, never in the templates one.
                     let root = this.vault.clone().unwrap_or_default();
                     let dir = this.nav.target_dir().filter(|dir| !vault::in_templates(&root, &dir.join("x.md"))).unwrap_or(root);
                     this.ask(tr("Name of the note", "Nom de la note"), "", window, cx, move |this, name, window, cx| {
-                        // La note née, on écrit : le curseur est à sa marque, le focus à l'éditeur.
+                        // Note born, we write: the cursor is at its mark, focus in the editor.
                         if this.create_from(&template, &name, &dir, cx).is_some() {
                             window.focus(&this.pane().editor.focus_handle(cx));
                         }
@@ -69,8 +69,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// La note `name` dans `dir`, écrite d'après le modèle, ouverte, le curseur à sa marque. Rien n'est
-    /// écrasé : un nom pris est refusé. `None` si elle n'a pas pu naître.
+    /// Note `name` in `dir`, written from the template, opened, the cursor at its mark. Nothing is
+    /// overwritten: a taken name is refused. `None` if it could not be born.
     pub(super) fn create_from(&mut self, template: &Path, name: &str, dir: &Path, cx: &mut Context<Self>) -> Option<PathBuf> {
         let root = self.vault.clone()?;
         let text = match fs::read_to_string(template) {
@@ -97,7 +97,7 @@ impl Shell {
         Some(path)
     }
 
-    /// Le modèle, rempli au nom de la note ouverte, à la place du curseur.
+    /// The template, filled with the open note's name, in place of the cursor.
     pub(super) fn insert_template(&mut self, template: &Path, cx: &mut Context<Self>) {
         let text = match fs::read_to_string(template) {
             Ok(text) => text,
@@ -108,7 +108,7 @@ impl Shell {
         self.pane().editor.update(cx, |editor, cx| editor.insert_filled(&body, cursor, cx));
     }
 
-    /// La note ouverte, rangée comme modèle : son titre devient `{{title}}`.
+    /// The open note, saved as a template: its title becomes `{{title}}`.
     pub(super) fn save_as_template(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() || self.pane().file.is_some() || self.pane().listing.is_some() {
             return;
@@ -134,13 +134,13 @@ impl Shell {
         });
     }
 
-    /// Dessine le pane `pane` (l'appelant l'a rendu actif le temps du dessin) : ce qu'il montre,
-    /// et le panneau de ses commentaires. `active` : c'est lui qui a la saisie.
-    /// Les notes que le coffre remet sous les yeux aujourd'hui (voir `recall::recall`).
-    // ponytail: recalculé à chaque rendu d'une page vide (un hachage par note, 5 000 notes :
-    // une fraction de milliseconde) ; le garder d'un rendu à l'autre si de bien plus gros
-    // coffres le font sentir.
-    /// La note est un modèle du coffre.
+    /// Draws pane `pane` (the caller made it active for the drawing): what it shows,
+    /// and its comments panel. `active`: it is the one with input.
+    /// The notes the vault brings back to view today (see `recall::recall`).
+    // ponytail: recomputed on every render of an empty page (one hash per note, 5,000 notes:
+    // a fraction of a millisecond); keep it from one render to the next if much bigger
+    // vaults make it felt.
+    /// The note is a vault template.
     pub(super) fn is_template(&self, note: &Note) -> bool {
         self.vault.as_ref().is_some_and(|root| vault::in_templates(root, &note.path))
     }

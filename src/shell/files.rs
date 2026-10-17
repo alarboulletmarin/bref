@@ -10,7 +10,7 @@ use super::*;
 use crate::views::nav::*;
 
 impl Shell {
-    /// Ctrl+Maj+N : nouveau dossier dans l'arbre, à côté de la sélection.
+    /// Ctrl+Shift+N: new folder in the tree, next to the selection.
     pub(super) fn new_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() {
             return;
@@ -25,15 +25,15 @@ impl Shell {
         self.say(Tone::Failed, format!("{what} : {e}"), cx);
     }
 
-    /// Range dans le dossier `dir` tout ce qui a été glissé.
+    /// Moves everything that was dragged into the folder `dir`.
     pub(super) fn move_all(&mut self, from: &[PathBuf], dir: &Path, cx: &mut Context<Self>) {
         from.iter().for_each(|path| self.move_into(path, dir, cx));
         self.nav.marked.clear();
     }
 
-    /// Range la note ou le dossier `from` dans le dossier `dir`.
+    /// Moves the note or folder `from` into the folder `dir`.
     pub(super) fn move_into(&mut self, from: &Path, dir: &Path, cx: &mut Context<Self>) {
-        // Déjà dans ce dossier, ou dossier déposé dans lui-même : rien à faire.
+        // Already in this folder, or folder dropped into itself: nothing to do.
         if from.parent() == Some(dir) || dir.starts_with(from) {
             return;
         }
@@ -51,7 +51,7 @@ impl Shell {
         }
     }
 
-    /// `from` est devenu `to` sur le disque : tout ce que l'app en sait suit.
+    /// `from` became `to` on disk: everything the app knows about it follows.
     pub(super) fn relocate(&mut self, from: &Path, to: &Path, reload: bool, cx: &mut Context<Self>) {
         self.history.rename(from, to);
         let shift = |p: &PathBuf| match p.strip_prefix(from) {
@@ -66,7 +66,7 @@ impl Shell {
         self.dirs = self.dirs.iter().map(shift).collect();
         self.images = self.images.iter().map(shift).collect();
         self.recent = self.recent.iter().map(shift).collect();
-        // Les icônes suivent leur note ou leur dossier, et ce qu'il contient.
+        // Icons follow their note or folder, and what it contains.
         if self.icons.keys().any(|p| p.starts_with(from)) {
             self.icons = self.icons.drain().map(|(path, icon)| (shift(&path), icon)).collect();
             self.save_icons(cx);
@@ -90,7 +90,7 @@ impl Shell {
         self.files_changed(cx);
     }
 
-    /// Met à la corbeille du coffre (`.trash`) la note ou le dossier.
+    /// Moves the note or folder to the vault's trash (`.trash`).
     pub(super) fn trash(&mut self, root: &Path, path: &Path, cx: &mut Context<Self>) {
         self.flush(cx);
         if let Err(e) = vault::trash(root, path) {
@@ -115,7 +115,7 @@ impl Shell {
         self.files_changed(cx);
     }
 
-    /// Après un déplacement ou une suppression : config, complétion et graphe à jour.
+    /// After a move or a deletion: config, completion and graph up to date.
     pub(super) fn files_changed(&mut self, cx: &mut Context<Self>) {
         if let Some(root) = &self.vault {
             vault::save_config(root, &self.recent);

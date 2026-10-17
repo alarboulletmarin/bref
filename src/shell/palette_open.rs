@@ -3,7 +3,7 @@
 use super::*;
 
 impl Shell {
-    /// Demande une ligne de texte libre (une adresse) dans la palette, puis la passe à `then`.
+    /// Asks for a line of free text (a URL) in the palette, then passes it to `then`.
     pub(super) fn ask_text(&mut self, label: &'static str, window: &mut Window, cx: &mut Context<Self>, then: fn(&mut Self, String, &mut Window, &mut Context<Self>)) {
         let theme = self.theme;
         let palette = cx.new(|cx| Palette::prompt(label, "", theme, cx));
@@ -26,9 +26,9 @@ impl Shell {
         cx.notify();
     }
 
-    /// Plan de la note, comme celui de Zed : la liste de ses titres, celui de la section en
-    /// cours présélectionné. Le titre parcouru se montre en aperçu, Entrée y laisse le curseur,
-    /// Échap le remet où il était.
+    /// Outline of the note, like Zed's: the list of its headings, the one of the current
+    /// section preselected. The heading browsed shows as a preview, Enter leaves the cursor there,
+    /// Escape puts it back where it was.
     pub(super) fn open_outline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let heads = markdown::headings(self.pane().editor.read(cx).text())
             .into_iter()
@@ -38,8 +38,8 @@ impl Shell {
         self.open_places(tr("Outline", "Plan"), none, heads, window, cx)
     }
 
-    /// Les commentaires de la note, dans la même liste que son plan : le texte commenté, puis
-    /// ce qu'on en dit.
+    /// The note's comments, in the same list as its outline: the commented text, then
+    /// what is said about it.
     pub(super) fn open_comments(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.comments_shut = false;
         let said = markdown::all_comments(self.pane().editor.read(cx).text())
@@ -50,8 +50,8 @@ impl Shell {
         self.open_places(tr("Comments", "Commentaires"), none, said, window, cx)
     }
 
-    /// Liste d'endroits de la note (libellé, octet), celui où l'on est présélectionné ; sans
-    /// aucun, `none` le dit.
+    /// List of places in the note (label, byte), the one we are at preselected; with
+    /// none, `none` says so.
     pub(super) fn open_places(&mut self, title: &str, none: &str, heads: Vec<(String, usize)>, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() || self.pane().file.is_some() {
             return;
@@ -89,7 +89,7 @@ impl Shell {
         self.show_palette(query, false, window, cx)
     }
 
-    /// Recherche dans le texte de tout le coffre : la palette, où chaque choix est une ligne.
+    /// Search in the text of the whole vault: the palette, where each choice is a line.
     pub(super) fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_palette("", true, window, cx)
     }
@@ -109,7 +109,7 @@ impl Shell {
                 body: n.body.clone(),
                 lower: n.lower.clone(),
             })
-            // Les autres fichiers du coffre (tableaux, images, schémas) se trouvent aussi par leur nom.
+            // The vault's other files (tables, images, diagrams) are also found by their name.
             .chain(self.images.iter().map(|path| Entry {
                 name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
                 path: path.clone(),
@@ -135,7 +135,7 @@ impl Shell {
                 .with_undo_swap(swap)
                 .with_commands(commands, here, context),
         });
-        // Une commande choisie dans la palette va à ce qui avait la saisie avant elle.
+        // A command chosen in the palette goes to what had input before it.
         let back = window.focused(cx);
         cx.subscribe_in(&palette, window, move |this, palette, event, window, cx| {
             this.palette = None;
@@ -145,7 +145,7 @@ impl Shell {
                 PaletteEvent::Open(path) if aside => this.open_aside(path, window, cx),
                 PaletteEvent::Open(path) => {
                     this.open_note(path, cx);
-                    // Un tableau, une image ou un schéma prend la saisie : rendue à la note, elle les effacerait.
+                    // A table, an image or a diagram takes input: given back to the note, it would erase them.
                     this.focus_pane(this.active, window, cx);
                 }
                 PaletteEvent::OpenAt(path, row, query) => {
@@ -167,7 +167,7 @@ impl Shell {
                 PaletteEvent::Template(TemplateAct::Save) => this.save_as_template(window, cx),
                 PaletteEvent::Template(act) => this.open_templates(*act, window, cx),
                 PaletteEvent::Grid(op) => {
-                    // Le geste va à ce qui est affiché : la feuille d'un CSV, ou la note.
+                    // The gesture goes to what is shown: a CSV's sheet, or the note.
                     match this.shown_sheet() {
                         Some(sheet) => window.focus(&sheet.focus_handle(cx)),
                         None => window.focus(&this.pane().editor.focus_handle(cx)),
@@ -198,7 +198,7 @@ impl Shell {
                 PaletteEvent::Terminal => this.open_terminal(cx),
                 PaletteEvent::CaptureKey => this.capture_shortcut(cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
-                // Refermée sans choix : on retrouve ce que le pane montrait, tableau ou schéma compris.
+                // Closed without a choice: we get back what the pane showed, table or diagram included.
                 PaletteEvent::Dismiss => this.focus_pane(this.active, window, cx),
                 PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
             }
@@ -210,8 +210,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Les commandes du catalogue que la vue sait faire, avec leurs touches, celles de la vue d'abord
-    /// (combien : le second nombre). Celles qu'elle ne sait pas faire ne sont pas proposées.
+    /// The catalogue commands the view can do, with their keys, the view's own first
+    /// (how many: the second number). Those it cannot do are not offered.
     pub(super) fn palette_commands(&self, window: &mut Window, cx: &mut Context<Self>) -> (Vec<commands::Command>, usize) {
         use commands::Group;
         let available: std::collections::HashSet<&str> = window.available_actions(cx).iter().map(|action| action.name()).collect();
@@ -219,7 +219,7 @@ impl Shell {
         let list = commands::catalog()
             .into_iter()
             .filter(|(action, ..)| available.contains(action))
-            // Les gestes d'un bloc, d'un tableau ou d'un schéma ne valent que là : ailleurs, ils ne feraient rien.
+            // Gestures of a block, a table or a diagram only count there: elsewhere, they would do nothing.
             .filter(|&(_, _, _, group)| !matches!(group, Group::Block | Group::Table | Group::Diagram) || Some(group) == here)
             .filter_map(|(action, label, icon, group)| {
                 let keys = keys::of(cx, cx.build_action(action, None).ok()?.as_ref());
@@ -229,7 +229,7 @@ impl Shell {
         commands::arrange(list, here)
     }
 
-    /// La palette des commandes (F10, ou le premier bouton du rail) : la palette, rien que les commandes.
+    /// The command palette (F10, or the rail's first button): the palette, only the commands.
     pub(super) fn open_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.palette.is_some() {
             return;

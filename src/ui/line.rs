@@ -1,7 +1,7 @@
-//! Ligne de saisie : le texte d'un champ d'une ligne (carte du kanban, cellule de la grille,
-//! palette), son curseur et sa sélection. Les mêmes touches partout : flèches, mot à mot, début
-//! et fin, sélection, effacement, presse-papiers. Le champ qui s'en sert ajoute « Line » à son
-//! contexte de touches et branche les gestes par `keys`.
+//! Input line: the text of a one-line field (kanban card, grid cell,
+//! palette), its cursor and its selection. The same keys everywhere: arrows, word by word, start
+//! and end, selection, erasing, clipboard. The field using it adds "Line" to its
+//! key context and wires the gestures through `keys`.
 
 use std::ops::Range;
 
@@ -35,13 +35,13 @@ pub enum To {
 #[derive(Default)]
 pub struct Line {
     pub text: String,
-    /// Le curseur, et l'autre bout de la sélection (le même octet s'il n'y en a pas).
+    /// The cursor, and the other end of the selection (the same byte if there is none).
     at: usize,
     anchor: usize,
 }
 
 impl Line {
-    /// Le texte, curseur à la fin.
+    /// The text, cursor at the end.
     pub fn new(text: impl Into<String>) -> Self {
         let text = text.into();
         Self { at: text.len(), anchor: text.len(), text }
@@ -67,8 +67,8 @@ impl Line {
         }
     }
 
-    /// Déplace le curseur ; `select` étend la sélection. Sans lui, une flèche sur une sélection
-    /// la referme de son côté.
+    /// Moves the cursor; `select` extends the selection. Without it, an arrow on a selection
+    /// collapses it on its side.
     pub fn go(&mut self, to: To, select: bool) {
         let chosen = self.selection();
         self.at = match to {
@@ -81,7 +81,7 @@ impl Line {
         }
     }
 
-    /// Pose le curseur à cet octet, ramené sur une limite de caractère.
+    /// Puts the cursor at this byte, brought back to a character boundary.
     pub fn place(&mut self, at: usize) {
         self.at = (0..=at.min(self.text.len())).rev().find(|&i| self.text.is_char_boundary(i)).unwrap_or(0);
         self.anchor = self.at;
@@ -91,7 +91,7 @@ impl Line {
         (self.anchor, self.at) = (0, self.text.len());
     }
 
-    /// Écrit à la place de la sélection ; un champ d'une ligne n'a pas de retour à la ligne.
+    /// Writes in place of the selection; a one-line field has no newline.
     pub fn insert(&mut self, text: &str) {
         let text = text.replace("\r\n", " ").replace(['\n', '\r'], " ");
         let chosen = self.selection();
@@ -100,7 +100,7 @@ impl Line {
         self.anchor = self.at;
     }
 
-    /// Efface la sélection, sinon du curseur jusqu'à `to`.
+    /// Erases the selection, otherwise from the cursor to `to`.
     pub fn delete(&mut self, to: To) {
         if self.selection().is_empty() {
             self.anchor = self.target(to);
@@ -112,16 +112,16 @@ impl Line {
         &self.text[self.selection()]
     }
 
-    /// La sélection telle que la demande la saisie du système (unités UTF-16).
+    /// The selection as the system's input asks for it (UTF-16 units).
     pub fn utf16(&self) -> UTF16Selection {
         let chosen = self.selection();
         let units = |to: usize| self.text[..to].encode_utf16().count();
         UTF16Selection { range: units(chosen.start)..units(chosen.end), reversed: self.at < self.anchor }
     }
 
-    /// Le texte, sa sélection et son curseur ; la mise en page sert à poser le curseur au clic.
+    /// The text, its selection and its cursor; the layout is used to place the cursor on click.
     pub fn shown(&self, t: Theme) -> (gpui::Div, TextLayout) {
-        // Une ligne vide garde sa hauteur, et de quoi placer le curseur.
+        // An empty line keeps its height, and something to place the cursor.
         let text = if self.text.is_empty() { " ".to_string() } else { self.text.clone() };
         let chosen = Some(self.selection()).filter(|chosen| !chosen.is_empty());
         let styled = StyledText::new(text).with_highlights(chosen.map(|chosen| (chosen, HighlightStyle { background_color: Some(t.selection), ..Default::default() })));
@@ -138,8 +138,8 @@ impl Line {
     }
 }
 
-/// Les touches d'une ligne de saisie, pour le contexte « Line ». À lier après celles des champs
-/// qui s'en servent : à profondeur égale, la dernière liaison l'emporte.
+/// The keys of an input line, for the "Line" context. Bind after those of the fields
+/// that use it: at equal depth, the last binding wins.
 pub fn bindings(word: &str) -> Vec<Bind> {
     let c = Some("Line");
     vec![
@@ -166,10 +166,10 @@ pub fn bindings(word: &str) -> Vec<Bind> {
     ]
 }
 
-/// Branche les gestes d'une ligne de saisie sur l'élément `el` d'une vue : `line` donne la ligne
-/// en cours (aucune : le geste ne fait rien), `changed` est appelé quand son texte a changé.
+/// Wires the gestures of an input line onto a view's element `el`: `line` gives the current
+/// line (none: the gesture does nothing), `changed` is called when its text has changed.
 pub fn keys<E: InteractiveElement, V: 'static>(el: E, cx: &Context<V>, line: fn(&mut V) -> Option<&mut Line>, changed: fn(&mut V, &mut Context<V>)) -> E {
-    /// Un geste : ce qu'il fait à la ligne ; vrai s'il en change le texte.
+    /// A gesture: what it does to the line; true if it changes its text.
     type Act = fn(&mut Line, &mut App) -> bool;
     fn on<A: Action, E: InteractiveElement, V: 'static>(el: E, cx: &Context<V>, line: fn(&mut V) -> Option<&mut Line>, changed: fn(&mut V, &mut Context<V>), act: Act) -> E {
         el.on_action(cx.listener(move |this, _: &A, _, cx| {
@@ -214,12 +214,12 @@ mod tests {
     #[test]
     fn edits_a_line() {
         let mut line = Line::new("Écrire le brouillon");
-        // Ctrl+Retour arrière : le mot d'avant, puis l'espace et le mot suivant.
+        // Ctrl+Backspace: the previous word, then the space and the next word.
         line.delete(To::WordLeft);
         assert_eq!((line.text.as_str(), line.cursor()), ("Écrire le ", 11));
         line.delete(To::WordLeft);
         assert_eq!(line.text, "Écrire ");
-        // Les flèches passent les caractères entiers, accents compris ; Maj sélectionne.
+        // Arrows skip whole characters, accents included; Shift selects.
         line.go(To::Start, false);
         line.go(To::Right, true);
         assert_eq!((line.selected(), line.utf16().range), ("É", 0..1));
@@ -227,7 +227,7 @@ mod tests {
         assert_eq!((line.text.as_str(), line.cursor()), ("Ecrire ", 1));
         line.go(To::WordRight, true);
         assert_eq!(line.selected(), "crire");
-        // Une flèche sans Maj referme la sélection de son côté.
+        // An arrow without Shift collapses the selection on its side.
         line.go(To::Left, false);
         assert_eq!((line.cursor(), line.selection()), (1, 1..1));
         line.delete(To::Left);

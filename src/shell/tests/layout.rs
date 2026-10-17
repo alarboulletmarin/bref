@@ -2,8 +2,8 @@
 
 use super::*;
 
-/// Des milliers de modifications au hasard sur des notes variées : chaque mise en page reprise est
-/// comparée (dans `Editor::layout`, en test) à une mise en page complète.
+/// Thousands of random edits on varied notes: each reused layout is
+/// compared (in `Editor::layout`, under test) with a full layout.
 #[gpui::test]
 fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
     let root = std::env::temp_dir().join(format!("bref-reuse-{}", std::process::id()));
@@ -39,9 +39,9 @@ fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
     let (mut full, mut reused, mut inside) = (0, 0, 0);
     for (n, doc) in docs.into_iter().enumerate() {
         let len = doc.len();
-        // Un ``` ou un `$$` tapé change le contexte de tout ce qui suit : sur le gros tableau, on les évite
-        // pour que le test passe par l'intérieur du tableau.
-        // Sur le gros tableau, on reste à l'intérieur de ses lignes : de quoi ne pas le couper en deux.
+        // A typed ``` or `$$` changes the context of everything after it: on the big table, they are avoided
+        // so the test goes through the inside of the table.
+        // On the big table, we stay inside its rows: enough not to cut it in two.
         let pieces: Vec<&str> = if n == 1 { vec!["a", "é", " ", "texte", "x y", "12", ","] } else { pieces.to_vec() };
         let keys: Vec<&str> = if n == 1 { vec!["left", "right", "up", "down", "end", "backspace"] } else { keys.to_vec() };
         shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(doc, len / 2, cx)));

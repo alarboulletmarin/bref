@@ -5,17 +5,17 @@ use super::*;
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let shell = &j.shell;
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
-    // Copie rapide de toute la note.
+    // Quick copy of the whole note.
     cx.simulate_keystrokes("secondary-shift-c");
     let clipboard = cx.read_from_clipboard().and_then(|item| item.text());
     assert_eq!(clipboard.as_deref(), Some("# Idées\n\n"));
 
 
-    // Panneau d'aide : F1 l'ouvre, Échap le ferme et rend la main à l'éditeur.
+    // Help panel: F1 opens it, Escape closes it and gives control back to the editor.
     cx.simulate_keystrokes("f1");
     assert!(shell.read_with(cx, |s, _| s.help.open));
-    // La frappe va au champ de recherche, qui filtre les lignes : touches ou effet, sans
-    // les accents.
+    // Typing goes to the search field, which filters the lines: keys or effect, ignoring
+    // accents.
     let rows = |cx: &mut gpui::VisualTestContext| {
         shell.read_with(cx, |s, cx| s.help_rows(cx).into_iter().flat_map(|(_, rows)| rows).collect::<Vec<_>>())
     };
@@ -31,7 +31,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("zzz");
     assert!(rows(cx).is_empty());
     assert_eq!(text(cx), "# Idées\n\n", "rien n'est tapé dans la note");
-    // Échap vide d'abord le champ, puis ferme le panneau.
+    // Escape first clears the field, then closes the panel.
     cx.simulate_keystrokes("escape");
     assert!(shell.read_with(cx, |s, _| s.help.open));
     assert_eq!(rows(cx).len(), all);
@@ -40,8 +40,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("ok");
     assert_eq!(text(cx), "# Idées\n\nok");
 
-    // Raccourcis modifiables : Entrée sur une ligne de l'aide attend des touches, les
-    // suivantes deviennent le raccourci, tout de suite et dans le fichier `keys`.
+    // Editable shortcuts: Enter on a help line waits for keys, the
+    // following ones become the shortcut, right away and in the `keys` file.
     let (mode, panel) = shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel));
     let keys_of = |cx: &mut gpui::VisualTestContext, action: &str| {
         let row = rows(cx).into_iter().find(|row| row.action == Some(action)).unwrap();
@@ -54,7 +54,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(keys_of(cx, "nav::ShowGraph"), (graph.clone(), false));
     cx.simulate_keystrokes("down enter");
     assert_eq!(editing(cx), Some(("nav::ShowGraph", None)));
-    // Refusées, avec la raison : une touche seule qui écrit, une touche réservée au texte.
+    // Refused, with the reason: a single key that types, a key reserved for text.
     cx.simulate_keystrokes("a");
     assert!(matches!(editing(cx), Some((_, Some(KeyIssue::Refused(_))))));
     assert_eq!(shell.read_with(cx, |s, cx| s.help.find.as_ref().unwrap().read(cx).line.text.clone()), "graphe des notes", "la touche n'est pas tapée");
@@ -66,21 +66,21 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(vault::load_file("keys"), "nav::ShowGraph=secondary-shift-y\n");
     cx.simulate_keystrokes("escape escape");
     assert!(!shell.read_with(cx, |s, _| s.help.open));
-    // Sans redémarrer : les anciennes touches ne font plus rien, les nouvelles agissent.
+    // Without restarting: the old keys do nothing anymore, the new ones act.
     cx.simulate_keystrokes("secondary-e");
     assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tree);
     cx.simulate_keystrokes("secondary-g");
     assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tree);
     cx.simulate_keystrokes("secondary-shift-y");
     assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Graph);
-    // Des touches déjà prises : la ligne dit par quoi, et rien n'est pris sans « remplacer ».
+    // Keys already taken: the line says by what, and nothing is taken without « remplacer ».
     cx.simulate_keystrokes("f1");
     cx.simulate_input("graphe des notes");
     cx.simulate_keystrokes("down enter secondary-p");
     assert_eq!(editing(cx), Some(("nav::ShowGraph", Some(KeyIssue::Taken(vec!["app::OpenPalette"])))));
     assert!(shell.read_with(cx, |s, _| s.palette.is_none()));
     assert_eq!(keys_of(cx, "nav::ShowGraph").0, format!("{MOD}+Maj+Y"));
-    // Entrée remplace : l'autre action perd son raccourci, et la liste le montre.
+    // Enter replaces: the other action loses its shortcut, and the list shows it.
     cx.simulate_keystrokes("enter");
     assert_eq!(editing(cx), None);
     assert_eq!(keys_of(cx, "nav::ShowGraph"), (format!("{MOD}+P"), true));
@@ -89,7 +89,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(keys_of(cx, "app::OpenPalette"), (String::new(), true));
     cx.simulate_keystrokes("escape escape secondary-e secondary-p");
     assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.palette.is_none())), (nav::Mode::Graph, true));
-    // Retour arrière : aucun raccourci. Échap pendant la saisie n'annule qu'elle.
+    // Backspace: no shortcut. Escape during capture cancels only it.
     cx.simulate_keystrokes("f1");
     cx.simulate_input("graphe des notes");
     cx.simulate_keystrokes("down enter backspace");
@@ -97,7 +97,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("enter escape");
     assert_eq!((editing(cx), shell.read_with(cx, |s, _| s.help.open)), (None, true));
     assert_eq!(rows(cx).len(), 1, "la recherche n'a pas bougé");
-    // Un clic sur les touches attend aussi ; « défaut » remet celles d'origine.
+    // A click on the keys waits too; « défaut » restores the original ones.
     let at = cx.debug_bounds("key-nav::ShowGraph").unwrap().center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert_eq!(editing(cx), Some(("nav::ShowGraph", None)));
@@ -106,7 +106,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_click(at, gpui::Modifiers::none());
     assert_eq!(keys_of(cx, "nav::ShowGraph"), (graph, false));
     assert_eq!(vault::load_file("keys"), "app::OpenPalette=\n");
-    // « Tout rétablir » : plus rien de changé.
+    // « Tout rétablir »: nothing changed anymore.
     let at = cx.debug_bounds("keys-reset").unwrap().center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert!(shell.read_with(cx, |s, _| s.changes.is_empty()));
@@ -121,8 +121,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     assert_eq!(text(cx), "# Idées\n\nok");
 
-    // Thème : la liste des thèmes (icône du rail, palette), celui qu'on parcourt s'applique en
-    // aperçu ; Échap revient au précédent, Entrée garde le choix et le mémorise.
+    // Theme: the theme list (rail icon, palette), the one being browsed applies as a
+    // preview; Escape goes back to the previous one, Enter keeps the choice and remembers it.
     let look = |cx: &mut gpui::VisualTestContext| {
         shell.read_with(cx, |s, _| (s.prefs.theme.clone(), s.theme.bg))
     };
@@ -135,7 +135,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.dispatch_action(ChooseTheme);
     cx.simulate_keystrokes("down down enter");
     assert_eq!(look(cx), ("Bref Light".to_string(), Hsla::from(rgb(0xfbfaf8))));
-    // Police du code, depuis la palette ; taille du texte au clavier.
+    // Code font, from the palette; text size from the keyboard.
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("police du");
     cx.simulate_keystrokes("down enter");

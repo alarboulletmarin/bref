@@ -19,12 +19,12 @@ use super::*;
 use crate::views::nav::*;
 
 impl Shell {
-    /// Ouvre la page liste d'un dossier, ou d'un tag (`#tag`) ; la frappe va à son filtre.
+    /// Opens the list page of a folder, or of a tag (`#tag`); typing goes to its filter.
     pub(super) fn open_listing(&mut self, of: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         let theme = self.theme;
         let filter = cx.new(|cx| Field::new("", theme, cx));
         cx.observe(&filter, |_, _, cx| cx.notify()).detach();
-        // Échap vide le filtre.
+        // Escape clears the filter.
         cx.subscribe(&filter, |_, filter, event: &FieldEvent, cx| {
             if let FieldEvent::Cancel = event {
                 filter.update(cx, |filter, cx| {
@@ -40,8 +40,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Page liste : les colonnes (« Note », puis les clés des en-têtes) et, triées, les notes du
-    /// dossier ou du tag que le filtre garde, avec leurs cellules.
+    /// List page: the columns ("Note", then the front-matter keys) and, sorted, the notes of the
+    /// folder or tag that the filter keeps, with their cells.
     pub(super) fn listed(&self, cx: &App) -> Option<(Vec<String>, Vec<(PathBuf, Vec<String>)>)> {
         let Listing { of, by, back, filter, .. } = self.pane().listing.as_ref()?;
         let tag = tag_of(of);
@@ -63,7 +63,7 @@ impl Shell {
         Some((keys, rows))
     }
 
-    /// Trie la page liste par cette colonne ; la redemander inverse l'ordre.
+    /// Sorts the list page by this column; asking again reverses the order.
     pub(super) fn sort_listing(&mut self, col: usize, cx: &mut Context<Self>) {
         if let Some(Listing { by, back, .. }) = &mut self.pane_mut().listing {
             (*back, *by) = (*by == col && !*back, col);
@@ -71,8 +71,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ouvre une cellule de la page liste : la valeur de la clé `key` de cette note, à réécrire.
-    /// Celle qu'on écrivait est d'abord validée.
+    /// Opens a list page cell: the value of key `key` of this note, to rewrite.
+    /// The one being written is confirmed first.
     pub(super) fn list_write(&mut self, path: PathBuf, key: String, window: &mut Window, cx: &mut Context<Self>) {
         self.list_commit(window, cx);
         let Some(note) = self.notes.iter().find(|note| note.path == path) else {
@@ -92,7 +92,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Referme la cellule ouverte sans rien écrire ; la frappe revient au filtre.
+    /// Closes the open cell without writing anything; typing goes back to the filter.
     pub(super) fn list_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(listing) = &mut self.pane_mut().listing
             && listing.edit.take().is_some()
@@ -102,13 +102,13 @@ impl Shell {
         }
     }
 
-    /// Valide la cellule ouverte : sa clé est réécrite dans l'en-tête de la note, et rien d'autre.
+    /// Confirms the open cell: its key is rewritten in the note's front matter, and nothing else.
     pub(super) fn list_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some((path, key, field)) = self.pane_mut().listing.as_mut().and_then(|listing| listing.edit.clone()) else {
             return;
         };
         self.list_close(window, cx);
-        // La note ouverte est d'abord enregistrée : c'est le fichier qu'on réécrit.
+        // The open note is saved first: it is the file being rewritten.
         self.flush(cx);
         let value = field.read(cx).line.text.clone();
         let Ok(old) = fs::read_to_string(&path) else {
@@ -128,7 +128,7 @@ impl Shell {
         }
         self.graph_stale = true;
         self.refresh_graph(cx);
-        // La note affichée sous la liste est relue : elle vient de changer sur le disque.
+        // The note shown under the list is reloaded: it just changed on disk.
         self.each_pane(|this| {
             if this.pane().path.as_ref() == Some(&path) {
                 this.reload(cx);
@@ -137,11 +137,11 @@ impl Shell {
         cx.notify();
     }
 
-    /// La page liste, à la place de la note : la frappe filtre les lignes (`clé:texte` dans une
-    /// seule colonne), un clic sur un titre de colonne trie, un clic sur le nom d'une note
-    /// l'ouvre, un clic sur une autre cellule la réécrit (Entrée valide, Échap renonce).
-    // ponytail: toutes les lignes sont dessinées ; passer par la grille virtualisée de
-    // `sheet.rs` pour un dossier de milliers de notes. Le nom d'une note ne se change pas ici.
+    /// The list page, in place of the note: typing filters the rows (`key:text` for a
+    /// single column), a click on a column title sorts, a click on a note's name
+    /// opens it, a click on another cell rewrites it (Enter confirms, Escape gives up).
+    // ponytail: every row is drawn; go through the virtualized grid of
+    // `sheet.rs` for a folder of thousands of notes. A note's name is not changed here.
     pub(super) fn render_listing(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let (keys, rows) = self.listed(cx).unwrap_or_default();
@@ -149,8 +149,8 @@ impl Shell {
             return div().into_any_element();
         };
         let (by, back, count) = (*by, *back, rows.len());
-        // Les colonnes se partagent la largeur de la fenêtre, entre deux bornes ; au-delà, la
-        // page défile.
+        // The columns share the window width, between two bounds; beyond that, the
+        // page scrolls.
         let wide = |first: bool| div().flex_1().min_w(px(if first { 130. } else { 80. })).max_w(px(if first { 260. } else { 200. })).px_2();
         let cell = |first: bool| wide(first).truncate();
         let head = keys.iter().enumerate().map(|(i, key)| {
@@ -169,7 +169,7 @@ impl Shell {
                 let writing = edit.as_ref().filter(|(open, key, _)| *open == path && *key == keys[c] && c > 0);
                 let path = path.clone();
                 let one = match (c, writing) {
-                    // La cellule qu'on écrit montre tout son texte : elle passe à la ligne, sa ligne grandit.
+                    // The cell being written shows all its text: it wraps, its row grows.
                     (_, Some((_, _, field))) => wide(false).py(px(3.)).rounded(px(4.)).border_1().border_color(t.accent).child(field.clone()).into_any_element(),
                     (0, _) => cell(true)
                         .id(("list-name", i))
@@ -228,7 +228,7 @@ impl Shell {
             .flex()
             .flex_col()
             .overflow_scroll()
-            // Un clic à côté valide la cellule qu'on écrivait.
+            // A click elsewhere confirms the cell being written.
             .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.list_commit(window, cx)))
             .child(
                 div()

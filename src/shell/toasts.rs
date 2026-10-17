@@ -2,13 +2,13 @@
 
 use super::*;
 
-/// Ton d'un message d'état : il choisit son icône, et s'il part de lui-même.
+/// Tone of a status message: it picks its icon, and whether it goes away by itself.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(super) enum Tone {
     Info,
     Done,
     Failed,
-    /// Opération en cours : reste affiché jusqu'au message qui en donne l'issue.
+    /// Operation in progress: stays shown until the message that gives its outcome.
     Busy,
 }
 
@@ -18,14 +18,14 @@ pub(super) struct Toast {
     pub(super) text: String,
 }
 
-/// Durée d'affichage d'un message d'état.
+/// Display duration of a status message.
 pub(super) const TOAST: Duration = Duration::from_secs(4);
 
 impl Shell {
-    /// Affiche un message d'état, qui part au clic ou après `TOAST`. Il remplace le message
-    /// « en cours », dont il est l'issue.
-    // ponytail: une seule opération « en cours » à la fois ; rendre le numéro du message à
-    // l'appelant le jour où deux opérations longues peuvent se chevaucher.
+    /// Shows a status message, which goes on click or after `TOAST`. It replaces the
+    /// "in progress" message whose outcome it is.
+    // ponytail: a single "in progress" operation at a time; return the message number to
+    // the caller the day two long operations can overlap.
     pub(super) fn say(&mut self, tone: Tone, text: impl Into<String>, cx: &mut Context<Self>) {
         self.toasts.retain(|t| t.tone != Tone::Busy);
         self.toasted += 1;
@@ -45,19 +45,19 @@ impl Shell {
         cx.notify();
     }
 
-    /// Une réussite retire les erreurs encore affichées.
+    /// A success removes the errors still shown.
     pub(super) fn calm(&mut self) {
         self.toasts.retain(|t| t.tone != Tone::Failed);
     }
 
-    /// Un message de ce ton contient `part`.
+    /// A message of this tone contains `part`.
     #[cfg(test)]
     pub(super) fn told(&self, tone: Tone, part: &str) -> bool {
         self.toasts.iter().any(|t| t.tone == tone && t.text.contains(part))
     }
 }
 
-/// Fond d'un message d'état ou de la bannière de mise à jour.
+/// Background of a status message or of the update banner.
 pub(super) fn status_card(t: Theme) -> Div {
         div()
             .pl_3()
@@ -74,7 +74,7 @@ pub(super) fn status_card(t: Theme) -> Div {
 }
 
 impl Shell {
-    /// Messages d'état, empilés au-dessus du compteur de mots : un clic les retire.
+    /// Status messages, stacked above the word counter: a click removes them.
     pub(super) fn render_toasts(&self, cx: &mut Context<Self>) -> Vec<Div> {
         let t = self.theme;
         self.toasts.iter().map(|toast| {

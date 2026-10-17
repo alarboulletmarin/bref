@@ -7,24 +7,24 @@ use super::*;
 #[derive(Default)]
 pub(super) struct Help {
     pub(super) open: bool,
-    /// Champ de recherche du panneau d'aide, tant qu'il est ouvert.
+    /// Search field of the help panel, while it is open.
     pub(super) find: Option<Entity<kanban::Field>>,
-    /// La ligne de l'aide choisie au clavier, et le raccourci en cours de saisie.
+    /// The help row picked with the keyboard, and the shortcut being typed.
     pub(super) sel: Option<&'static str>,
     pub(super) edit: Option<KeyEdit>,
-    /// Reçoit chaque frappe avant les raccourcis, pour celle qu'on attend.
+    /// Receives each keystroke before shortcuts, for the one being awaited.
     pub(super) key_tap: Option<gpui::Subscription>,
 }
 
-/// Ce qui empêche des touches de devenir un raccourci telles quelles.
+/// What prevents keys from becoming a shortcut as they are.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum KeyIssue {
-    /// Déjà prises par ces actions : à remplacer, ou à laisser.
+    /// Already taken by these actions: to replace, or to leave.
     Taken(Vec<&'static str>),
     Refused(&'static str),
 }
 
-/// Un raccourci attendu dans le panneau d'aide : la prochaine frappe le devient.
+/// A shortcut awaited in the help panel: the next keystroke becomes it.
 pub(super) struct KeyEdit {
     pub(super) action: &'static str,
     pub(super) keys: String,
@@ -34,7 +34,7 @@ pub(super) struct KeyEdit {
 pub(super) const KOFI: &str = "https://ko-fi.com/T6T01WC5ZC";
 
 impl Shell {
-    /// Affiche ou masque le panneau des raccourcis ; le focus suit.
+    /// Shows or hides the shortcuts panel; focus follows.
     pub(super) fn set_help(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.help.open = open;
         self.help.find = None;
@@ -44,10 +44,10 @@ impl Shell {
             let theme = self.theme;
             let find = cx.new(|cx| kanban::Field::new("", theme, cx));
             cx.observe(&find, |_, _, cx| cx.notify()).detach();
-            // Échap vide le champ, puis ferme le panneau.
+            // Escape clears the field, then closes the panel.
             cx.subscribe_in(&find, window, |this, find, event: &kanban::FieldEvent, window, cx| {
                 if let kanban::FieldEvent::Done = event {
-                    // Entrée sur la ligne choisie : ses touches sont attendues.
+                    // Enter on the picked row: its keys are awaited.
                     if let Some(action) = this.help.sel.filter(|sel| this.help_actions(cx).contains(sel)) {
                         this.key_edit(action, cx);
                     }
@@ -68,20 +68,20 @@ impl Shell {
         } else if self.vault.is_none() {
             window.focus(&self.focus);
         } else {
-            // À ce que le pane montre : rendue à la note, la saisie effacerait un tableau ou un schéma.
+            // To what the pane shows: given to the note, input would clear a table or a diagram.
             self.focus_pane(self.active, window, cx);
         }
         cx.notify();
     }
 
-    /// Les actions des lignes que l'aide montre, dans l'ordre.
+    /// The actions of the rows the help shows, in order.
     pub(super) fn help_actions(&self, cx: &App) -> Vec<&'static str> {
         self.help_rows(cx).into_iter().flat_map(|(_, rows)| rows).filter_map(|row| row.action).collect()
     }
 
-    /// Haut et bas dans l'aide : la ligne choisie, parmi celles dont les touches se changent.
-    // ponytail: la liste ne défile pas jusqu'à la ligne choisie ; la recherche la ramène à
-    // l'écran. Un `ScrollHandle` par section si le besoin se confirme.
+    /// Up and down in the help: the picked row, among those whose keys can be changed.
+    // ponytail: the list does not scroll to the picked row; searching brings it back
+    // on screen. One `ScrollHandle` per section if the need is confirmed.
     pub(super) fn help_step(&mut self, down: bool, cx: &mut Context<Self>) {
         let actions = self.help_actions(cx);
         let at = self.help.sel.and_then(|sel| actions.iter().position(|action| *action == sel));
@@ -95,16 +95,16 @@ impl Shell {
         cx.notify();
     }
 
-    /// Attend les touches du raccourci de `action`.
+    /// Awaits the keys of the shortcut for `action`.
     pub(super) fn key_edit(&mut self, action: &'static str, cx: &mut Context<Self>) {
         self.help.sel = Some(action);
         self.help.edit = Some(KeyEdit { action, keys: String::new(), issue: None });
         cx.notify();
     }
 
-    /// Une frappe pendant qu'un raccourci est attendu : elle le devient, sauf Échap (renoncer),
-    /// Retour arrière (aucun raccourci) et Entrée sur des touches déjà prises (remplacer).
-    /// `false` quand rien n'est attendu : la frappe suit son cours.
+    /// A keystroke while a shortcut is awaited: it becomes the shortcut, except Escape (give up),
+    /// Backspace (no shortcut) and Enter on keys already taken (replace).
+    /// `false` when nothing is awaited: the keystroke goes on its way.
     pub(super) fn key_pressed(&mut self, stroke: &gpui::Keystroke, cx: &mut Context<Self>) -> bool {
         let Some(edit) = &self.help.edit else { return false };
         let (action, taken) = (edit.action, matches!(edit.issue, Some(KeyIssue::Taken(_))));
@@ -139,18 +139,18 @@ impl Shell {
         true
     }
 
-    /// « Remplacer » : les touches proposées vont à l'action, celles qui les avaient les perdent.
+    /// "Replace": the proposed keys go to the action, those that had them lose them.
     pub(super) fn key_replace(&mut self, cx: &mut Context<Self>) {
         if let Some(KeyEdit { action, keys, issue: Some(KeyIssue::Taken(others)) }) = self.help.edit.take() {
             self.key_set(action, keys, &others, cx);
         }
     }
 
-    /// Donne `keys` à `action` (vides : aucun raccourci) et les retire à `losers`.
+    /// Gives `keys` to `action` (empty: no shortcut) and takes them from `losers`.
     pub(super) fn key_set(&mut self, action: &'static str, keys: String, losers: &[&'static str], cx: &mut Context<Self>) {
         let mut usual: Vec<String> = defaults().into_iter().filter(|bind| bind.action == action).map(|bind| bind.keys).collect();
         usual.dedup();
-        // Revenu à ses touches d'origine : plus rien à retenir pour cette action.
+        // Back to its original keys: nothing left to remember for this action.
         if usual == [keys.clone()] {
             self.changes.remove(action);
         } else {
@@ -167,7 +167,7 @@ impl Shell {
         vault::save_file("keys", &keys::write(&self.changes));
     }
 
-    /// Remet les touches d'origine d'une action, ou de toutes.
+    /// Restores the original keys of one action, or of all.
     pub(super) fn key_reset(&mut self, action: Option<&'static str>, cx: &mut Context<Self>) {
         match action {
             Some(action) => drop(self.changes.remove(action)),
@@ -178,7 +178,7 @@ impl Shell {
         vault::save_file("keys", &keys::write(&self.changes));
     }
 
-    /// Applique `changes` : les liaisons en vigueur changent tout de suite, sans redémarrer.
+    /// Applies `changes`: the bindings in effect change right away, without restarting.
     pub(super) fn rebind(&mut self, cx: &mut Context<Self>) {
         let open = editable();
         self.bound = keys::effective(&defaults(), &self.changes, &|action| open.contains(action));
@@ -186,11 +186,11 @@ impl Shell {
         cx.notify();
     }
 
-    /// Les lignes de l'aide que la recherche garde.
+    /// The help rows the search keeps.
     pub(super) fn help_rows(&self, cx: &App) -> keys::Sections {
         let query = self.help.find.as_ref().map(|find| find.read(cx).line.text.clone()).unwrap_or_default();
         let mut sections = keys::filter(help_sections(&self.bound, &self.changes), &query);
-        // Ouvert sur un tableau ou un schéma, le panneau commence par ses touches.
+        // Opened on a table or a diagram, the panel starts with its keys.
         if let Some(at) = self.here(cx).and_then(|here| sections.iter().position(|(title, _)| *title == here)) {
             let first = sections.remove(at);
             sections.insert(0, first);
@@ -198,8 +198,8 @@ impl Shell {
         sections
     }
 
-    /// La section de l'aide qui parle de ce qui est affiché : un tableau CSV, un schéma, un tableau
-    /// de la note sous le curseur ; aucune pour une note ordinaire, l'aide commence par les notes.
+    /// The help section about what is shown: a CSV table, a diagram, a table
+    /// of the note under the cursor; none for an ordinary note, the help starts with notes.
     pub(super) fn here(&self, cx: &App) -> Option<&'static str> {
         if self.shown_sheet().is_some() {
             Some(tr("CSV tables", "Tableaux CSV"))
@@ -212,8 +212,8 @@ impl Shell {
         }
     }
 
-    /// Le groupe des commandes de ce qu'on regarde, et son nom pour le champ de la palette : un tableau
-    /// CSV, un schéma, un tableau de la note sous le curseur, sinon le bloc du curseur.
+    /// The group of commands for what is being looked at, and its name for the palette field: a CSV
+    /// table, a diagram, a table of the note under the cursor, otherwise the cursor's block.
     pub(super) fn here_group(&self, cx: &App) -> (Option<commands::Group>, &'static str) {
         use commands::Group;
         if self.shown_sheet().is_some() {
@@ -229,7 +229,7 @@ impl Shell {
         }
     }
 
-    /// `short` : la fenêtre est basse, le pied « à propos » défile avec la liste au lieu de lui prendre sa place.
+    /// `short`: the window is low, the "about" footer scrolls with the list instead of taking its place.
     pub(super) fn render_help(&self, short: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let rows = self.help_rows(cx);
@@ -287,7 +287,7 @@ impl Shell {
                 .children(rows.into_iter().map(|row| {
                     let edit = self.help.edit.as_ref().filter(|edit| Some(edit.action) == row.action);
                     let chosen = row.action.is_some() && row.action == self.help.sel;
-                    // Les touches : un bouton quand elles se changent, du texte sinon.
+                    // The keys: a button when they can be changed, text otherwise.
                     let keys = match row.action {
                         None => div().w(px(156.)).flex_none().font_family(mono()).text_size(px(12.)).child(row.keys.clone()),
                         Some(action) => {
@@ -324,7 +324,7 @@ impl Shell {
                                 .when(row.changed && edit.is_none(), |d| d.child(reset))
                         }
                     };
-                    // Sous la ligne en cours de saisie : quoi faire, ou ce qui coince.
+                    // Under the row being typed: what to do, or what is wrong.
                     let note = edit.map(|edit| match &edit.issue {
                         None => div().text_size(px(12.)).text_color(t.soft).child(tr(
                             "Backspace: no shortcut · Esc: cancel",
@@ -363,7 +363,7 @@ impl Shell {
                         .children(note)
                 }))
         });
-        // À propos, en pied de panneau : ce qu'est l'app, et où la trouver.
+        // About, at the foot of the panel: what the app is, and where to find it.
         let link = |id: &'static str, icon: &'static str, label: &'static str, url: &'static str| {
             div()
                 .id(id)
@@ -404,7 +404,7 @@ impl Shell {
             .occlude()
             .p_4()
             .flex()
-            // Calé en haut : le champ de recherche ne bouge pas quand la liste raccourcit.
+            // Pinned at the top: the search field does not move when the list gets shorter.
             .items_start()
             .justify_center()
             .on_mouse_down(
@@ -414,7 +414,7 @@ impl Shell {
             .child(
                 div()
                     .id("help")
-                    // Deux colonnes si la fenêtre est assez large, une seule sinon.
+                    // Two columns if the window is wide enough, one otherwise.
                     .w(px(812.))
                     .max_w_full()
                     .max_h_full()
@@ -426,7 +426,7 @@ impl Shell {
                     .rounded(px(10.))
                     .shadow_lg()
                     .text_size(px(13.))
-                    // Un clic dans le panneau ne le ferme pas.
+                    // A click in the panel does not close it.
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_action(cx.listener(|this, _: &palette::Prev, _, cx| this.help_step(false, cx)))
                     .on_action(cx.listener(|this, _: &palette::Next, _, cx| this.help_step(true, cx)))

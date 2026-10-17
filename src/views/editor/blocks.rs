@@ -12,8 +12,8 @@ pub(super) struct BlockHandles {
     pub(super) hitboxes: Option<(Hitbox, Option<Hitbox>)>,
 }
 
-/// Un geste sur un bloc de la note, depuis sa poignée, le clavier ou la palette : le transformer, le
-/// doubler, le déplacer d'un bloc, le supprimer (voir `block`).
+/// A gesture on a block of the note, from its handle, the keyboard or the palette: transform it,
+/// duplicate it, move it by one block, delete it (see `block`).
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum BlockOp {
     Turn(block::Turn),
@@ -59,7 +59,7 @@ impl BlockOp {
         }
     }
 
-    /// Ce que dit l'aide : le geste, et sur quoi il porte.
+        /// What the help says: the gesture, and what it applies to.
     pub fn effect(self) -> &'static str {
         use block::Turn;
         match self {
@@ -79,7 +79,7 @@ impl BlockOp {
         }
     }
 
-    /// L'action qui fait la même chose au clavier.
+        /// The action that does the same from the keyboard.
     pub fn action(self) -> Box<dyn gpui::Action> {
         use block::Turn;
         match self {
@@ -100,8 +100,8 @@ impl BlockOp {
     }
 }
 
-/// Un bloc tiré par sa poignée : où on l'a pris, où il se poserait, et s'il a déjà bougé (sinon,
-/// lâché sur place, c'est un clic, qui ouvre son menu).
+/// A block dragged by its handle: where it was grabbed, where it would land, and whether it has moved yet (otherwise,
+/// dropped in place, it is a click, which opens its menu).
 pub(super) struct BlockDrag {
     pub(super) block: Range<usize>,
     pub(super) from: Point<Pixels>,
@@ -109,19 +109,19 @@ pub(super) struct BlockDrag {
     pub(super) moved: bool,
 }
 
-/// Une poignée est une pastille de 10 px sur 24 ; elle flotte à 5 px du tableau.
+/// A handle is a 10 by 24 px badge; it floats 5 px from the table.
 pub(super) const GRIP: Pixels = px(10.);
 
 pub(super) const GRIP_LONG: Pixels = px(24.);
 
 pub(super) const GRIP_GAP: Pixels = px(5.);
 
-/// Jusqu'où, autour d'un tableau, le pointeur fait paraître la poignée de sa colonne ou de sa ligne.
+/// How far around a table the pointer makes the handle of its column or row appear.
 pub(super) const GRIP_REACH: Pixels = px(24.);
 
 impl Editor {
-    /// Ce qui se clique sous le pointeur prend la main : une poignée de tableau (ouverte, fermée
-    /// quand on la tire), un trait où insérer, une case à cocher, un lien quand `Ctrl` est tenu.
+        /// What is clickable under the pointer takes over: a table handle (open, closed
+        /// when dragged), a line to insert at, a checkbox, a link when `Ctrl` is held.
     pub(super) fn hand_at(&self, at: Point<Pixels>, held: gpui::Modifiers) -> Option<CursorStyle> {
         if self.moving.is_some() {
             return Some(CursorStyle::ClosedHand);
@@ -159,14 +159,14 @@ impl Editor {
         }
     }
 
-    /// Les blocs de premier niveau de la note, refaits une fois par version du texte.
+        /// The note's top-level blocks, rebuilt once per text version.
     pub(super) fn top_blocks(&mut self) -> Rc<Vec<Range<usize>>> {
         match &self.blocks {
             Some((version, blocks)) if *version == self.version => blocks.clone(),
             _ => {
                 let mut blocks = block::blocks(&self.content);
-                // La première ligne est le titre de la note, et le nom de son fichier : elle n'a pas de
-                // poignée, et rien ne passe devant elle.
+                                // The first line is the note's title, and its file name: it has no
+                                // handle, and nothing goes before it.
                 if !blocks.is_empty() {
                     blocks.remove(0);
                 }
@@ -177,8 +177,8 @@ impl Editor {
         }
     }
 
-    /// Le bloc que montre la poignée : celui qu'on tire, sinon celui sous le pointeur, tant que le texte
-    /// n'a pas changé depuis.
+        /// The block the handle shows: the one being dragged, otherwise the one under the pointer, as long as the text
+        /// has not changed since.
     pub(super) fn handled(&self) -> Option<Range<usize>> {
         if let Some(drag) = &self.handles.drag {
             return Some(drag.block.clone());
@@ -186,9 +186,9 @@ impl Editor {
         self.handles.hover.clone().filter(|(_, version)| *version == self.version).map(|(block, _)| block)
     }
 
-    /// Bord gauche de ce qu'occupe la ligne qui commence en `at` : la page, ou le cadre de son tableau
-    /// (plus large qu'elle, et dont les poignées prennent déjà la marge proche).
-    /// Un item en retrait a sa poignée à son retrait.
+        /// Left edge of what the line starting at `at` occupies: the page, or its table's frame
+        /// (wider than the line, and whose handles already take the near margin).
+        /// An indented item has its handle at its indent.
     pub(super) fn block_left(&self, at: usize) -> Pixels {
         if let Some((_, frame)) = self.tables.iter().find(|(range, _)| range.contains(&at)) {
             return frame.left() - px(20.);
@@ -199,7 +199,7 @@ impl Editor {
         self.origin.x + lead
     }
 
-    /// La poignée du bloc montré et son « + » (absent quand la marge est trop étroite pour lui).
+        /// The handle of the shown block and its "+" (absent when the margin is too narrow for it).
     pub(super) fn handle_bounds(&self) -> Option<(Bounds<Pixels>, Option<Bounds<Pixels>>)> {
         let block = self.handled()?;
         let row = &self.rows[self.row_at(block.start)?];
@@ -216,7 +216,7 @@ impl Editor {
         Some((grip, (plus.left() >= self.viewport.left()).then_some(plus)))
     }
 
-    /// Le haut de la ligne qui commence en `at` à l'écran ; la fin du texte : le bas de la dernière ligne.
+        /// The top of the line starting at `at` on screen; the end of the text: the bottom of the last line.
     pub(super) fn line_top(&self, at: usize) -> Option<Pixels> {
         if at >= self.content.len() {
             let row = self.rows.iter().rev().find(|r| !r.hidden())?;
@@ -226,7 +226,7 @@ impl Editor {
         Some(self.origin.y + row.y)
     }
 
-    /// Le bloc sous le pointeur prend une poignée ; le pointeur sur la poignée la garde.
+        /// The block under the pointer gets a handle; the pointer on the handle keeps it.
     pub(super) fn aim_block(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
         if self.handles.drag.is_some() || self.selecting || self.moving.is_some() {
             return;
@@ -241,7 +241,7 @@ impl Editor {
         }
     }
 
-    /// Le bloc de la ligne sous le pointeur, s'il est sur la page ou dans sa marge de gauche.
+        /// The block of the line under the pointer, if it is on the page or in its left margin.
     pub(super) fn block_under(&mut self, at: Point<Pixels>) -> Option<Range<usize>> {
         if self.rows.is_empty() || !self.viewport.contains(&at) || at.x < self.origin.x - px(140.) || at.x > self.origin.x + self.width + px(24.) {
             return None;
@@ -250,7 +250,7 @@ impl Editor {
         let line = self.line_range(i).start;
         let row = &self.rows[self.row_at(line)?];
         let top = self.origin.y + row.y;
-        // Sous la dernière ligne, ou dans l'espace entre deux : aucune.
+                // Below the last line, or in the space between two: none.
         let last = &self.rows[self.row_at(self.line_range(i).end)?];
         if at.y < top || at.y > self.origin.y + last.y + last.height {
             return None;
@@ -259,7 +259,7 @@ impl Editor {
         block::at(&self.content, &top_blocks, line)
     }
 
-    /// Le bloc visé par un geste : celui de la poignée tant que le curseur y est, sinon celui du curseur.
+        /// The block a gesture targets: the handle's as long as the cursor is there, otherwise the cursor's.
     pub(super) fn block_target(&mut self) -> Option<Range<usize>> {
         let cursor = self.cursor();
         if let Some((block, version)) = self.handles.menu.clone()
@@ -272,12 +272,12 @@ impl Editor {
         block::at(&self.content, &top, self.line_range(cursor).start)
     }
 
-    /// Fait un geste sur le bloc visé ; le bloc qui en sort reste sélectionné, et visé.
+        /// Performs a gesture on the targeted block; the resulting block stays selected, and targeted.
     pub fn block_op(&mut self, op: BlockOp, cx: &mut Context<Self>) {
         if !self.more.is_empty() {
             return;
         }
-        // Dans un tableau, monter et descendre déplacent sa ligne, comme avant.
+                // In a table, up and down move its row, as before.
         if matches!(op, BlockOp::Up | BlockOp::Down) && self.table_at(self.cursor()).is_some() {
             return self.table_op(if op == BlockOp::Up { TableOp::MoveRowUp } else { TableOp::MoveRowDown }, cx);
         }
@@ -299,9 +299,9 @@ impl Editor {
             BlockOp::Up | BlockOp::Down => {
                 let targets = block::targets(&old, &top);
                 let to = match op {
-                    // Avant le bloc qui précède.
+                                        // Before the preceding block.
                     BlockOp::Up => targets.iter().rev().find(|&&t| t < block.start).copied(),
-                    // Après le bloc qui suit : avant celui d'après, ou à la fin.
+                                        // After the following block: before the one after it, or at the end.
                     _ => targets.iter().find(|&&t| t > block.end).and_then(|&next| {
                         let next = block::at(&old, &top, next).map_or(next, |b| b.end);
                         targets.iter().find(|&&t| t > next).copied()
@@ -322,8 +322,8 @@ impl Editor {
         cx.notify();
     }
 
-    /// Passe de `old` (le texte actuel) à `new` en ne remplaçant que ce qui change, en une seule
-    /// étape d'annulation : `splice` en poserait une seconde pour un texte de plusieurs lignes.
+        /// Goes from `old` (the current text) to `new` replacing only what changes, in a single
+        /// undo step: `splice` would add a second one for a multi-line text.
     pub(super) fn replace_block(&mut self, old: &str, new: &str, cx: &mut Context<Self>) {
         let (span, text) = block::diff(old, new);
         self.push_undo(true);
@@ -332,8 +332,8 @@ impl Editor {
         self.held = false;
     }
 
-    /// Le « + » d'un bloc : une ligne neuve sous lui, séparée comme les blocs qui l'entourent, où
-    /// `/` ouvre déjà la liste des composants à poser.
+        /// A block's "+": a new line below it, separated like the surrounding blocks, where
+        /// `/` already opens the list of components to insert.
     pub(super) fn add_block_after(&mut self, block: Range<usize>, cx: &mut Context<Self>) {
         let rest = &self.content[block.end..];
         let gap = rest.len() - rest.trim_start_matches('\n').len();
@@ -349,7 +349,7 @@ impl Editor {
         cx.notify();
     }
 
-    /// Le bloc tiré suit le pointeur : il se poserait à la place la plus proche.
+        /// The dragged block follows the pointer: it would land at the nearest place.
     pub(super) fn drag_block(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
         let Some(drag) = &self.handles.drag else { return };
         let moved = drag.moved || (at - drag.from).magnitude() > 4.;
@@ -366,7 +366,7 @@ impl Editor {
         cx.notify();
     }
 
-    /// Lâché : posé à sa nouvelle place ; sans avoir bougé, c'est un clic, qui prend le bloc et ouvre son menu.
+        /// Dropped: put at its new place; without having moved, it is a click, which takes the block and opens its menu.
     pub(super) fn drop_block(&mut self, cx: &mut Context<Self>) {
         let Some(drag) = self.handles.drag.take() else { return };
         if !drag.moved {
@@ -393,13 +393,13 @@ impl Editor {
         Some(Bounds::new(point(self.block_left(block.start) - px(24.), mid - px(10.)), size(px(18.), px(20.))))
     }
 
-    /// Où est la poignée du bloc sous le pointeur, pour les tests.
+        /// Where the handle of the block under the pointer is, for tests.
     #[cfg(test)]
     pub fn block_handle(&self) -> Option<(Bounds<Pixels>, Option<Bounds<Pixels>>)> {
         self.handle_bounds()
     }
 
-    /// Le bloc sous la poignée, pour les tests.
+        /// The block under the handle, for tests.
     #[cfg(test)]
     pub fn hovered_block(&self) -> Option<&str> {
         self.handled().map(|block| &self.content[block])

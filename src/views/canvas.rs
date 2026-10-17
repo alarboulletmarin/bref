@@ -1,6 +1,6 @@
-//! Canevas : l'éditeur de schémas. On y pose des formes et des flèches à la
-//! souris, on les déplace, on écrit dedans ; les outils se choisissent d'une
-//! lettre, comme dans Excalidraw. Le dessin lui-même vit dans `diagram`.
+//! Canvas: the diagram editor. Shapes and arrows are placed with the
+//! mouse, moved, written in; tools are chosen with one
+//! letter, as in Excalidraw. The drawing itself lives in `diagram`.
 
 use std::ops::Range;
 
@@ -21,9 +21,9 @@ use crate::{
 actions!(canvas, [ZoomIn, ZoomOut, ZoomFit, Erase, EraseNext, Duplicate, SelectAll, Undo, Redo, Confirm, Cancel, Left, Right, Up, Down, Paste]);
 
 pub enum CanvasEvent {
-    /// Le schéma a changé : il est à enregistrer.
+    /// The diagram changed: it needs saving.
     Changed,
-    /// Une image PNG du schéma est demandée.
+    /// A PNG image of the diagram is requested.
     Export,
 }
 
@@ -31,11 +31,11 @@ pub enum CanvasEvent {
 pub enum Tool {
     Select,
     Shape(Form),
-    /// Trait ou flèche, selon sa pointe.
+    /// Line or arrow, depending on its head.
     Link(Head),
 }
 
-/// Outils de la barre : (outil, icône, lettre).
+/// Bar tools: (tool, icon, letter).
 const TOOLS: [(Tool, &str, &str); 11] = [
     (Tool::Select, "d-select.svg", "v"),
     (Tool::Shape(Form::Rect), "d-rect.svg", "r"),
@@ -50,7 +50,7 @@ const TOOLS: [(Tool, &str, &str); 11] = [
     (Tool::Link(Head::None), "d-line.svg", "l"),
 ];
 
-/// Nom d'un outil de la barre, pour sa bulle.
+/// Name of a bar tool, for its tooltip.
 fn tool_label(tool: Tool) -> &'static str {
     match tool {
         Tool::Select => tr("Select", "Sélection"),
@@ -67,7 +67,7 @@ fn tool_label(tool: Tool) -> &'static str {
     }
 }
 
-/// Forme tirée depuis la barre d'outils, dessinée sous le pointeur jusqu'au canevas.
+/// Shape dragged from the toolbar, drawn under the pointer up to the canvas.
 #[derive(Clone)]
 struct Placing(Form, &'static str, Theme);
 
@@ -77,7 +77,7 @@ impl Render for Placing {
     }
 }
 
-/// Taille d'une forme posée d'un clic ou déposée depuis la barre.
+/// Size of a shape placed with a click or dropped from the bar.
 fn usual(form: Form) -> (f32, f32) {
     match form {
         Form::Text => (80., diagram::LINE),
@@ -88,17 +88,17 @@ fn usual(form: Form) -> (f32, f32) {
     }
 }
 
-/// Geste en cours à la souris ; les points sont dans le repère du schéma.
+/// Mouse gesture in progress; points are in the diagram's coordinates.
 #[derive(Clone, Copy, PartialEq)]
 enum Drag {
     None,
-    /// Déplacement de la sélection, depuis `last` ; `begun` dès qu'elle a bougé.
+    /// Moving the selection, from `last`; `begun` once it has moved.
     Move { last: (f32, f32), begun: bool },
-    /// Coin tiré d'une forme : le coin opposé, `fixed`, ne bouge pas.
+    /// Dragged corner of a shape: the opposite corner, `fixed`, does not move.
     Resize { id: u32, fixed: (f32, f32) },
     Marquee { from: (f32, f32), to: (f32, f32) },
     Create { id: u32, from: (f32, f32) },
-    /// Bout d'une flèche (`to` : son arrivée) qu'on tire.
+    /// End of an arrow (`to`: its head) being dragged.
     Tip { id: u32, to: bool },
     Pan { last: Point<Pixels> },
 }
@@ -106,27 +106,27 @@ enum Drag {
 pub struct Canvas {
     focus: FocusHandle,
     theme: Theme,
-    /// L'app dessine les boutons de la fenêtre : la barre d'outils leur laisse la place.
+    /// The app draws the window buttons: the toolbar leaves room for them.
     client: bool,
     diagram: Diagram,
     selected: Vec<u32>,
     tool: Tool,
     drag: Drag,
-    /// Décalage (px) de l'origine du schéma dans la vue, et pixels par unité.
+    /// Offset (px) of the diagram's origin in the view, and pixels per unit.
     pan: (f32, f32),
     zoom: f32,
-    /// Cadrer tout le schéma à la prochaine frame.
+    /// Fit the whole diagram on the next frame.
     fit: bool,
-    /// Élément dont on écrit le texte, et place du curseur (octet).
+    /// Element whose text is being written, and cursor position (byte).
     editing: Option<(u32, usize)>,
     undo: Vec<Diagram>,
     redo: Vec<Diagram>,
-    /// La forme du pointeur, selon ce qu'il survole et ce qu'on tire.
+    /// The pointer's shape, depending on what it hovers and what is dragged.
     hand: CursorStyle,
     bounds: Bounds<Pixels>,
-    /// L'image PNG vient d'être enregistrée : le bouton le montre un instant.
+    /// The PNG image was just saved: the button shows it for a moment.
     exported: bool,
-    /// Tracé des prochaines flèches : le dernier choisi.
+    /// Path of the next arrows: the last one chosen.
     route: Route,
 }
 
@@ -165,7 +165,7 @@ impl Canvas {
         &self.diagram
     }
 
-    /// Le thème, tel que la fenêtre le connaît.
+    /// The theme, as the window knows it.
     pub fn sync(&mut self, theme: Theme, client: bool) {
         (self.theme, self.client) = (theme, client);
     }
@@ -184,8 +184,8 @@ impl Canvas {
         .detach();
     }
 
-    /// Position à l'écran d'un point du schéma.
-    /// Nombre de formes et de flèches sélectionnées.
+    /// Screen position of a diagram point.
+    /// Number of selected shapes and arrows.
     #[cfg(test)]
     pub fn picked(&self) -> usize {
         self.selected.len()
@@ -201,7 +201,7 @@ impl Canvas {
         ((f32::from(at.x - o.x) - self.pan.0) / self.zoom, (f32::from(at.y - o.y) - self.pan.1) / self.zoom)
     }
 
-    /// Couleur d'un élément : le neutre prend la couleur de texte du thème.
+    /// Colour of an element: neutral takes the theme's text colour.
     fn ink(&self, color: u8) -> Hsla {
         match color {
             0 => self.theme.text,
@@ -209,8 +209,8 @@ impl Canvas {
         }
     }
 
-    // ponytail: l'annulation garde des copies entières du schéma (100 max) : un
-    // schéma pèse quelques Ko. Passer à un journal d'opérations s'ils grossissent.
+    // ponytail: undo keeps whole copies of the diagram (100 max): a
+    // diagram weighs a few KB. Switch to an operation log if they grow.
     fn remember(&mut self) {
         self.undo.push(self.diagram.clone());
         if self.undo.len() > 100 {
@@ -258,7 +258,7 @@ impl Canvas {
 
     fn stop_editing(&mut self, cx: &mut Context<Self>) {
         if let Some((id, _)) = self.editing.take() {
-            // Un texte laissé vide ne laisse rien derrière lui.
+            // A text left empty leaves nothing behind.
             let empty = self.diagram.shape(id).is_some_and(|s| s.form == Form::Text && s.text.trim().is_empty());
             if empty {
                 self.diagram.remove(&[id]);
@@ -268,7 +268,7 @@ impl Canvas {
         }
     }
 
-    /// Insère `text` au curseur ; hors écriture, une lettre choisit un outil.
+    /// Inserts `text` at the cursor; outside writing, a letter picks a tool.
     fn typed(&mut self, text: &str, cx: &mut Context<Self>) {
         let Some((id, at)) = self.editing else {
             match text {
@@ -290,7 +290,7 @@ impl Canvas {
         }
     }
 
-    /// Déplace le curseur d'un caractère, ou l'efface si `erase`.
+    /// Moves the cursor by one character, or erases it if `erase`.
     fn step(&mut self, forward: bool, erase: bool, cx: &mut Context<Self>) {
         let Some((id, at)) = self.editing else { return };
         let Some(text) = self.text_of(id) else { return };
@@ -320,7 +320,7 @@ impl Canvas {
         }
     }
 
-    /// Flèches du clavier : le curseur en écriture, sinon la sélection, d'un pas de grille.
+    /// Arrow keys: the cursor while writing, otherwise the selection, by one grid step.
     fn nudge(&mut self, dx: f32, dy: f32, cx: &mut Context<Self>) {
         if self.editing.is_some() {
             if dx != 0. {
@@ -333,7 +333,7 @@ impl Canvas {
         }
     }
 
-    /// Déplace la sélection ; une flèche emporte ses bouts libres.
+    /// Moves the selection; an arrow carries its free ends.
     fn shift(&mut self, dx: f32, dy: f32) {
         let moved = |end: &mut End| {
             if let End::Point(x, y) = end {
@@ -350,7 +350,7 @@ impl Canvas {
         }
     }
 
-    /// Applique un réglage aux éléments sélectionnés.
+    /// Applies a setting to the selected elements.
     fn style(&mut self, cx: &mut Context<Self>, set: impl Fn(Option<&mut diagram::Shape>, Option<&mut diagram::Link>)) {
         self.remember();
         for id in self.selected.clone() {
@@ -363,14 +363,14 @@ impl Canvas {
         self.changed(cx);
     }
 
-    /// Coins de la forme, dans l'ordre : haut-gauche, haut-droit, bas-droit, bas-gauche.
+    /// Corners of the shape, in order: top-left, top-right, bottom-right, bottom-left.
     fn corners(shape: &diagram::Shape) -> [(f32, f32); 4] {
         let (x, y, x1, y1) = (shape.x, shape.y, shape.x + shape.w, shape.y + shape.h);
         [(x, y), (x1, y), (x1, y1), (x, y1)]
     }
 
-    /// Bout de flèche pour ce point : accroché à la forme qui s'y trouve, au
-    /// bord si l'on en est près ; sinon le point aimanté.
+    /// Arrow end for this point: attached to the shape found there, at the
+    /// edge if close to it; otherwise the snapped point.
     fn end_at(&self, p: (f32, f32), not: Option<u32>) -> End {
         let shape = self.diagram.shape_at(p.0, p.1).filter(|id| Some(*id) != not).and_then(|id| self.diagram.shape(id));
         match shape {
@@ -379,7 +379,7 @@ impl Canvas {
         }
     }
 
-    /// Zoome autour du centre de la vue.
+    /// Zooms around the centre of the view.
     fn zoom_by(&mut self, by: f32, cx: &mut Context<Self>) {
         let zoom = (self.zoom * by).clamp(0.2, 4.);
         let (mx, my) = (f32::from(self.bounds.size.width) / 2., f32::from(self.bounds.size.height) / 2.);
@@ -394,7 +394,7 @@ impl Canvas {
         cx.notify();
     }
 
-    /// Pose une forme à sa taille habituelle, centrée sur ce point de l'écran.
+    /// Places a shape at its usual size, centred on this screen point.
     fn place(&mut self, form: Form, at: Point<Pixels>, cx: &mut Context<Self>) {
         self.stop_editing(cx);
         self.remember();
@@ -445,7 +445,7 @@ impl Canvas {
                         drag
                     }
                     (None, Some(id)) => {
-                        // Maj+clic ou Ctrl+clic : la forme rejoint la sélection, ou la quitte.
+                        // Shift+click or Ctrl+click: the shape joins the selection, or leaves it.
                         if e.modifiers.shift || e.modifiers.secondary() {
                             match self.selected.iter().position(|s| *s == id) {
                                 Some(i) => drop(self.selected.remove(i)),
@@ -461,7 +461,7 @@ impl Canvas {
                             Drag::Move { last: p, begun: false }
                         }
                     }
-                    // Double-clic dans le vide : un texte, à cet endroit.
+                    // Double-click on empty space: a text, at that spot.
                     (None, None) if e.click_count >= 2 => {
                         self.remember();
                         let id = self.diagram.add_shape(Form::Text, diagram::snap(p.0), diagram::snap(p.1), 80., diagram::LINE);
@@ -480,8 +480,8 @@ impl Canvas {
         cx.notify();
     }
 
-    /// Ce que le pointeur annonce : une forme ou une flèche se prend (main), un coin se tire en
-    /// diagonale, un bout de flèche se raccroche, la vue tirée se tient, un outil dessine.
+    /// What the pointer announces: a shape or an arrow can be grabbed (hand), a corner drags
+    /// diagonally, an arrow end reattaches, the dragged view is held, a tool draws.
     fn hand_at(&self, at: Point<Pixels>) -> CursorStyle {
         match self.drag {
             Drag::Pan { .. } | Drag::Move { begun: true, .. } => return CursorStyle::ClosedHand,
@@ -543,7 +543,7 @@ impl Canvas {
                 }
             }
             Drag::Tip { id, to } => {
-                // Un bout ne s'accroche pas à la forme d'où part l'autre.
+                // An end does not attach to the shape the other end starts from.
                 let other = self.diagram.link(id).map(|l| if to { l.from } else { l.to });
                 let not = other.and_then(End::shape);
                 let end = self.end_at(p, not);
@@ -581,7 +581,7 @@ impl Canvas {
         match drag {
             Drag::Create { id, .. } => {
                 let Some(shape) = self.diagram.shape_mut(id) else { return };
-                // Un simple clic pose la forme à sa taille habituelle.
+                // A simple click places the shape at its usual size.
                 if shape.w < diagram::GRID || shape.h < diagram::GRID {
                     (shape.w, shape.h) = usual(shape.form);
                 }
@@ -593,7 +593,7 @@ impl Canvas {
                 self.changed(cx);
             }
             Drag::Tip { id, .. } => {
-                // Un trait sans longueur n'a pas lieu d'être.
+                // A line with no length has no reason to exist.
                 let flat = self.diagram.link(id).and_then(|l| self.diagram.ends(l));
                 if flat.is_none_or(|(a, b)| (a.0 - b.0).hypot(a.1 - b.1) < diagram::GRID) {
                     self.diagram.remove(&[id]);
@@ -622,7 +622,7 @@ impl Canvas {
         }
     }
 
-    /// La molette déplace la vue ; avec Ctrl (Cmd), elle zoome autour du pointeur.
+    /// The wheel moves the view; with Ctrl (Cmd), it zooms around the pointer.
     fn scroll(&mut self, e: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
         let delta = e.delta.pixel_delta(px(26.));
         if e.modifiers.secondary() {
@@ -639,7 +639,7 @@ impl Canvas {
         cx.notify();
     }
 
-    /// La forme en cours d'écriture s'agrandit pour contenir son texte.
+    /// The shape being written in grows to hold its text.
     fn fit_text(&mut self, window: &mut Window) {
         let Some(shape) = self.editing.and_then(|(id, _)| self.diagram.shape(id)) else { return };
         let (lines, _) = shape.text_lines();
@@ -726,7 +726,7 @@ impl Canvas {
             line.paint(origin, px(diagram::LINE * zoom), window, cx).ok();
         };
 
-        // Curseur du texte en cours d'écriture : (ligne, octet dans la ligne).
+        // Cursor of the text being written: (line, byte in the line).
         let caret = self.editing.and_then(|(id, at)| {
             let text = self.diagram.shape(id).map(|s| &s.text).or_else(|| self.diagram.link(id).map(|l| &l.text))?;
             let before = &text[..at];
@@ -747,8 +747,8 @@ impl Canvas {
             for y in rules {
                 stroke(window, &[Cmd::Move(shape.x, y), Cmd::Line(shape.x + shape.w, y)], false, ink);
             }
-            // Les traits de séparation ne sont pas des lignes de texte : on retrouve
-            // celle du curseur par sa place dans le texte.
+            // Separator strokes are not text lines: the cursor's line
+            // is found by its place in the text.
             let starts: Vec<usize> = shape.text.split('\n').scan(0, |at, l| Some(std::mem::replace(at, *at + l.len() + 1))).collect();
             for line in &lines {
                 write(self, window, cx, line.x, line.y, line.text, line.centered, line.bold, ink);
@@ -786,7 +786,7 @@ impl Canvas {
             }
         }
 
-        // Sélection : un cadre, et des poignées aux coins d'une forme seule.
+        // Selection: a frame, and handles at the corners of a single shape.
         let frame = |window: &mut Window, x0: f32, y0: f32, x1: f32, y1: f32, color: Hsla| {
             let path = [Cmd::Move(x0, y0), Cmd::Line(x1, y0), Cmd::Line(x1, y1), Cmd::Line(x0, y1), Cmd::Close];
             let mut builder = PathBuilder::stroke(px(1.)).dash_array(&[px(4.), px(3.)]);
@@ -812,7 +812,7 @@ impl Canvas {
                 knob(window, b);
             }
         }
-        // Pendant qu'on tire un bout sur une forme : ses points d'accroche.
+        // While dragging an end over a shape: its attachment points.
         if let Drag::Tip { id, to } = self.drag
             && let Some(link) = self.diagram.link(id)
             && let Some(shape) = (if to { link.to } else { link.from }).shape().and_then(|id| self.diagram.shape(id))
@@ -839,7 +839,7 @@ impl Canvas {
                 "Pick a shape above, or press R, O, D, A, T…, then drag. Double-click to write.",
                 "Choisis une forme ci-dessus, ou tape R, O, D, A, T…, puis fais glisser. Double-clic pour écrire.",
             );
-            // Mot à mot : l'indication passe à la ligne dans un canevas étroit.
+            // Word by word: the hint wraps in a narrow canvas.
             let room = bounds.size.width - px(32.);
             let mut lines: Vec<String> = Vec::new();
             for word in hint.split(' ') {
@@ -859,9 +859,9 @@ impl Canvas {
     }
 }
 
-// ponytail: saisie au fil de l'eau, sans composition IME (le texte composé est
-// inséré tel quel) ni sélection dans le texte ; reprendre le gestionnaire de
-// l'éditeur si l'on écrit des schémas en japonais ou en chinois.
+// ponytail: input as it comes, without IME composition (composed text is
+// inserted as is) nor selection in the text; reuse the editor's handler
+// if diagrams are written in Japanese or Chinese.
 impl EntityInputHandler for Canvas {
     fn text_for_range(&mut self, _: Range<usize>, _: &mut Option<Range<usize>>, _: &mut Window, _: &mut Context<Self>) -> Option<String> {
         None
@@ -909,7 +909,7 @@ impl Render for Canvas {
         )
         .size_full();
 
-        // Un outil se choisit d'un clic ; une forme peut aussi se tirer jusqu'au canevas.
+        // A tool is chosen with a click; a shape can also be dragged to the canvas.
         let tools = TOOLS.iter().map(|&(tool, icon, key)| {
             let tool_button = button(icon, icon, self.tool == tool, t).tooltip(tip(tool_label(tool), key.to_uppercase(), t)).on_click(cx.listener(move |this, _, _, cx| this.set_tool(tool, cx)));
             match tool {
@@ -943,7 +943,7 @@ impl Render for Canvas {
                     .on_click(cx.listener(|this, _, _, cx| this.zoom_fit(cx))),
             )
             .child(button("d-zoom-in", "plus.svg", false, t).tooltip(tip(tr("Zoom in", "Zoomer"), "+".into(), t)).on_click(cx.listener(|this, _, _, cx| this.zoom_by(1.25, cx))));
-        // Réglages de la sélection : couleur, fond, pointillé, pointes des flèches.
+        // Selection settings: colour, fill, dashes, arrow heads.
         let any = !self.selected.is_empty();
         let links = self.selected.iter().any(|id| self.diagram.shape(*id).is_none());
         let swatches = (0..diagram::COLORS.len() as u8).map(|i| {
@@ -970,7 +970,7 @@ impl Render for Canvas {
         let toggle = |id, icon, cx: &Context<Self>, set: fn(Option<&mut diagram::Shape>, Option<&mut diagram::Link>)| {
             button(id, icon, false, t).on_click(cx.listener(move |this, _, _, cx| this.style(cx, set)))
         };
-        // Dans une fenêtre étroite, la barre passe à la ligne : aucun outil n'est hors d'atteinte.
+        // In a narrow window, the bar wraps: no tool is out of reach.
         let bar = div()
             .flex_none()
             .min_h(px(44.))
@@ -1002,7 +1002,7 @@ impl Render for Canvas {
             })
             .when(links, |d| {
                 d.child(button("d-route", "d-route.svg", false, t).tooltip(tip(tr("Route: elbowed, straight or curved", "Tracé : coudé, droit ou courbe"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {
-                    // Le tracé choisi vaut aussi pour les flèches à venir.
+                    // The chosen path also applies to arrows to come.
                     let first = this.selected.iter().find_map(|id| this.diagram.link(*id)).map(|l| l.route.next());
                     if let Some(route) = first {
                         this.route = route;
@@ -1060,13 +1060,13 @@ impl Render for Canvas {
                     this.typed(&text, cx);
                 }
             }))
-            // Entrée : écrire dans l'élément sélectionné ; en écriture, aller à la ligne.
+            // Enter: write in the selected element; while writing, new line.
             .on_action(cx.listener(|this, _: &Confirm, _, cx| match (this.editing, this.selected.as_slice()) {
                 (Some(_), _) => this.typed("\n", cx),
                 (None, &[id]) => this.start_editing(id, cx),
                 _ => {}
             }))
-            // Échap : finir d'écrire, lâcher l'outil, puis la sélection ; sinon la fenêtre décide.
+            // Escape: finish writing, drop the tool, then the selection; otherwise the window decides.
             .on_action(cx.listener(|this, _: &Cancel, _, cx| {
                 if this.editing.is_some() {
                     this.stop_editing(cx);
@@ -1104,8 +1104,8 @@ impl Render for Canvas {
     }
 }
 
-/// Couleur de texte du thème en `0xrrggbb`, pour le trait neutre d'un schéma
-/// dessiné hors du canevas.
+/// Theme text colour as `0xrrggbb`, for the neutral stroke of a diagram
+/// drawn outside the canvas.
 pub fn neutral(theme: Theme) -> u32 {
     let c = Rgba::from(theme.text);
     let byte = |v: f32| (v * 255.) as u32;

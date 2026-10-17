@@ -1,4 +1,4 @@
-//! Coffre : un dossier de fichiers `.md`, plus la petite config de l'app.
+//! Vault: a folder of `.md` files, plus the app's small config.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -18,7 +18,7 @@ use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use crate::{logic::markdown, lang::tr};
 use crate::logic::note::{Note, lowered};
 
-/// Dossier de configuration de l'utilisateur, selon la plateforme.
+/// The user's configuration folder, per platform.
 pub fn config_dir() -> PathBuf {
     let var = |key: &str| env::var_os(key).map(PathBuf::from);
     let dir = if cfg!(windows) {
@@ -35,9 +35,9 @@ fn config_path() -> PathBuf {
     config_dir().join("bref/config")
 }
 
-/// (coffre, notes ouvertes de la plus récente à la plus ancienne) : une ligne chacun.
+/// (vault, open notes from most recent to oldest): one line each.
 pub fn load_config() -> (Option<PathBuf>, Vec<PathBuf>) {
-    // Repli sur la config des anciens noms de l'app ; elle n'est jamais réécrite.
+    // Falls back to the config of the app's old names; it is never rewritten.
     let text = fs::read_to_string(config_path())
         .or_else(|_| fs::read_to_string(config_dir().join("encre/config")))
         .or_else(|_| fs::read_to_string(config_dir().join("onenote/config")))
@@ -62,7 +62,7 @@ pub fn save_config(vault: &Path, recent: &[PathBuf]) {
 }
 
 pub fn load_file(name: &str) -> String {
-    // Même repli que pour la config : les réglages laissés sous l'ancien nom sont relus.
+    // Same fallback as for the config: settings left under the old name are read again.
     fs::read_to_string(config_dir().join("bref").join(name))
         .or_else(|_| fs::read_to_string(config_dir().join("encre").join(name)))
         .unwrap_or_default()
@@ -70,11 +70,11 @@ pub fn load_file(name: &str) -> String {
 
 pub fn save_file(name: &str, text: &str) {
     let path = config_dir().join("bref").join(name);
-    // Simple confort : si l'écriture échoue, l'app rouvrira avec ses réglages d'origine.
+    // Mere convenience: if writing fails, the app will reopen with its original settings.
     let _ = path.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(path, text));
 }
 
-/// Disposition du panneau de navigation, mémorisée telle quelle sur une ligne.
+/// Layout of the navigation panel, kept as is on one line.
 pub fn load_layout() -> String {
     load_file("layout")
 }
@@ -83,7 +83,7 @@ pub fn save_layout(text: &str) {
     save_file("layout", text)
 }
 
-/// Apparence choisie (thème, polices, taille) : une ligne `clé=valeur` par réglage.
+/// Chosen appearance (theme, fonts, size): one `key=value` line per setting.
 pub fn load_settings() -> String {
     load_file("settings")
 }
@@ -92,15 +92,15 @@ pub fn save_settings(text: &str) {
     save_file("settings", text)
 }
 
-/// Dossier proposé pour un premier coffre : `Notes` dans les Documents de l'utilisateur, ou
-/// dans son dossier personnel s'il n'a pas de Documents.
+/// Folder offered for a first vault: `Notes` in the user's Documents, or
+/// in their home folder if they have no Documents.
 pub fn default_vault() -> Option<PathBuf> {
     let home = env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)?;
     let documents = home.join("Documents");
     Some(if documents.is_dir() { documents } else { home }.join("Notes"))
 }
 
-/// Un chemin tel qu'on le montre : le dossier personnel abrégé en `~` hors de Windows.
+/// A path as shown: the home folder shortened to `~` outside Windows.
 pub fn shown(path: &Path) -> String {
     let home = env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
     match home.as_deref().and_then(|home| path.strip_prefix(home).ok()) {
@@ -109,15 +109,15 @@ pub fn shown(path: &Path) -> String {
     }
 }
 
-/// Morceau d'un nom pour le tri naturel : un nombre se compare par sa valeur, avant le texte.
+/// Piece of a name for natural sort: a number compares by its value, before text.
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum Chunk {
     Number(u128),
     Text(String),
 }
 
-/// Clé de tri « naturel », comme celle des gestionnaires de fichiers : `Note 2` avant
-/// `Note 10`, sans tenir compte de la casse.
+/// "Natural" sort key, like file managers use: `Note 2` before
+/// `Note 10`, ignoring case.
 pub fn natural(name: &str) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     let mut rest = name;
@@ -140,7 +140,7 @@ pub fn stem(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Les noms du dossier des modèles, à la racine du coffre (sans tenir compte de la casse ni des accents).
+/// The names of the templates folder, at the vault root (ignoring case and accents).
 const TEMPLATE_DIRS: [&str; 2] = ["templates", "modeles"];
 
 fn is_template_dir(name: &str) -> bool {
@@ -148,13 +148,13 @@ fn is_template_dir(name: &str) -> bool {
     TEMPLATE_DIRS.contains(&name.as_str())
 }
 
-/// Le dossier des modèles du coffre : `Templates` ou `Modèles`, parmi ses dossiers.
+/// The vault's templates folder: `Templates` or `Modèles`, among its folders.
 pub fn template_dir(root: &Path, dirs: &[PathBuf]) -> Option<PathBuf> {
     dirs.iter().find(|d| d.parent() == Some(root) && d.file_name().is_some_and(|n| is_template_dir(&n.to_string_lossy()))).cloned()
 }
 
-/// La note est un modèle : elle est dans le dossier des modèles, où qu'elle soit sous lui. Un modèle
-/// n'est ni dans le graphe, ni dans les tags et les liens : ses `{{mots}}` ne sont pas des liens.
+/// The note is a template: it is in the templates folder, however deep under it. A template
+/// is neither in the graph nor in tags and links: its `{{words}}` are not links.
 pub fn in_templates(root: &Path, path: &Path) -> bool {
     let Ok(rel) = path.strip_prefix(root) else {
         return false;
@@ -163,7 +163,7 @@ pub fn in_templates(root: &Path, path: &Path) -> bool {
     parts.next_back().is_some() && parts.next().is_some_and(|first| is_template_dir(&first.as_os_str().to_string_lossy()))
 }
 
-/// Le fichier est une image que l'app sait afficher.
+/// The file is an image the app can display.
 pub fn is_image(path: &Path) -> bool {
     let known = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tif", "tiff", "avif"];
     path.extension()
@@ -171,8 +171,8 @@ pub fn is_image(path: &Path) -> bool {
         .is_some_and(|e| known.iter().any(|k| e.eq_ignore_ascii_case(k)))
 }
 
-/// Les fichiers qu'on range dans le coffre sans les lire : ils se listent dans l'arbre, se trouvent dans
-/// la palette, se visent par `[[nom.pdf]]` et s'ouvrent dans l'application du système.
+/// Files kept in the vault without being read: they are listed in the tree, found in
+/// the palette, targeted by `[[name.pdf]]` and opened in the system's application.
 const ATTACHMENTS: [&str; 34] = [
     "pdf", "mp4", "m4v", "mov", "mkv", "webm", "avi", "mp3", "m4a", "wav", "ogg", "opus", "flac", "zip", "7z", "tar", "gz", "rar",
     "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "epub", "txt", "json", "xml", "html", "rtf", "log",
@@ -182,36 +182,36 @@ pub fn is_attachment(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| ATTACHMENTS.iter().any(|k| e.eq_ignore_ascii_case(k)))
 }
 
-/// Le fichier est une image, un tableau ou une pièce jointe : ce que l'arbre montre en plus des notes.
+/// The file is an image, a table or an attachment: what the tree shows besides notes.
 pub fn is_file_shown(path: &Path) -> bool {
     is_image(path) || is_table(path) || is_attachment(path)
 }
 
-/// Le fichier est un tableau (CSV ou TSV) que l'app ouvre dans une grille.
+/// The file is a table (CSV or TSV) the app opens in a grid.
 pub fn is_table(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| ["csv", "tsv"].iter().any(|k| e.eq_ignore_ascii_case(k)))
 }
 
-/// Les images parmi les fichiers du coffre (le graphe et les liens `![[…]]` ignorent les tableaux).
+/// The images among the vault's files (the graph and `![[…]]` links ignore tables).
 pub fn pictures(files: &[PathBuf]) -> Vec<PathBuf> {
     files.iter().filter(|p| is_image(p)).cloned().collect()
 }
 
-/// Vrai la première fois qu'on entre dans ce dossier. Un lien symbolique qui remonte vers un
-/// dossier parent (ou deux liens vers le même) ne doit ni boucler ni dupliquer les notes.
+/// True the first time this folder is entered. A symbolic link that points back up to a
+/// parent folder (or two links to the same one) must neither loop nor duplicate notes.
 fn first_visit(visited: &mut HashSet<PathBuf>, dir: &Path) -> bool {
     visited.insert(fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()))
 }
 
-/// L'entrée est un dossier, lien suivi. Son type vient avec la liste du dossier : on n'interroge
-/// le disque que pour un lien, pas une fois par fichier du coffre.
+/// The entry is a folder, link followed. Its type comes with the folder listing: the disk
+/// is queried only for a link, not once per file in the vault.
 fn is_dir(entry: &fs::DirEntry) -> bool {
     entry.file_type().is_ok_and(|kind| kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()))
 }
 
-/// Empreinte de l'état du coffre : les chemins de ses notes, images et dossiers,
-/// et la date de chaque note. Elle change dès qu'un autre programme y touche, sans
-/// qu'il faille lire un seul fichier.
+/// Fingerprint of the vault's state: the paths of its notes, images and folders,
+/// and the date of each note. It changes as soon as another program touches it, without
+/// reading a single file.
 pub fn fingerprint(root: &Path) -> u64 {
     let mut seen = Vec::new();
     let mut visited = HashSet::new();
@@ -233,20 +233,20 @@ pub fn fingerprint(root: &Path) -> u64 {
             } else if is_image(&path) {
                 seen.push((path, None));
             } else if is_table(&path) {
-                // Un autre programme qui réécrit le tableau ouvert doit se voir.
+                // Another program rewriting the open table must be seen.
                 seen.push((path, entry.metadata().and_then(|m| m.modified()).ok()));
             }
         }
     }
-    // L'ordre de lecture d'un dossier n'est pas garanti.
+    // The order in which a folder is read is not guaranteed.
     seen.sort();
     let mut hasher = DefaultHasher::new();
     seen.hash(&mut hasher);
     hasher.finish()
 }
 
-/// Un changement du coffre qui mérite de relire le disque : pas une simple lecture,
-/// et pas un fichier ou un dossier caché (`.trash`, `.git`…).
+/// A vault change worth rereading the disk for: not a mere read,
+/// and not a hidden file or folder (`.trash`, `.git`…).
 fn matters(root: &Path, event: &Event) -> bool {
     let hidden = |path: &PathBuf| {
         path.strip_prefix(root)
@@ -255,8 +255,8 @@ fn matters(root: &Path, event: &Event) -> bool {
     !event.kind.is_access() && (event.paths.is_empty() || !event.paths.iter().all(hidden))
 }
 
-/// Un signal qui réveille la tâche qui l'attend, sans qu'elle ait à le guetter : le thread
-/// du système le lève, la tâche dort jusque-là.
+/// A signal that wakes the task waiting on it, without it having to poll: the system's
+/// thread raises it, the task sleeps until then.
 #[derive(Default)]
 pub struct Signal {
     raised: AtomicBool,
@@ -271,19 +271,19 @@ impl Signal {
         }
     }
 
-    /// Vrai, et le signal retombe, s'il a été levé depuis le dernier appel.
+    /// True, and the signal drops, if it was raised since the last call.
     pub fn take(&self) -> bool {
         self.raised.swap(false, Ordering::AcqRel)
     }
 
-    /// Attend que le signal soit levé (vrai) ou que `deadline` finisse (faux).
+    /// Waits until the signal is raised (true) or `deadline` passes (false).
     pub async fn wait<D: std::future::Future<Output = ()> + Unpin>(&self, mut deadline: D) -> bool {
         std::future::poll_fn(|cx| {
             if self.take() {
                 return std::task::Poll::Ready(true);
             }
             *self.waker.lock().unwrap() = Some(cx.waker().clone());
-            // Levé entre-temps, avant que le réveil soit en place : on ne le manque pas.
+            // Raised in the meantime, before the waker is in place: it is not missed.
             if self.take() {
                 return std::task::Poll::Ready(true);
             }
@@ -293,14 +293,14 @@ impl Signal {
     }
 }
 
-/// Demande au système de signaler tout changement du coffre : `changed` est levé
-/// dès qu'il y en a un. `None` si le système ne sait pas le faire (limite d'inotify
-/// atteinte, dossier réseau) : l'appelant relit alors le coffre à intervalle régulier.
-/// La surveillance s'arrête quand le résultat est lâché.
+/// Asks the system to report any change in the vault: `changed` is raised
+/// as soon as there is one. `None` if the system cannot do it (inotify limit
+/// reached, network folder): the caller then rereads the vault at regular intervals.
+/// Watching stops when the result is dropped.
 pub fn watch(root: &Path, changed: Arc<Signal>) -> Option<RecommendedWatcher> {
     let base = root.to_path_buf();
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<Event>| {
-        // Une erreur du système : des événements ont pu être perdus, mieux vaut relire.
+        // A system error: events may have been lost, better reread.
         if event.map_or(true, |e| matters(&base, &e)) {
             changed.raise();
         }
@@ -310,13 +310,13 @@ pub fn watch(root: &Path, changed: Arc<Signal>) -> Option<RecommendedWatcher> {
     Some(watcher)
 }
 
-/// Toutes les notes du coffre (récursif, dossiers cachés ignorés), plus récentes
-/// d'abord, tous ses dossiers, même vides, et ses autres fichiers : images et tableaux.
+/// All the vault's notes (recursive, hidden folders ignored), most recent
+/// first, all its folders, even empty, and its other files: images and tables.
 pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
     rescan(root, &[])
 }
 
-/// Comme `scan`, sans relire les notes de `known` dont la date n'a pas changé.
+/// Like `scan`, without rereading the notes of `known` whose date has not changed.
 pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
     let known: HashMap<&Path, &Note> = known.iter().map(|n| (n.path.as_path(), n)).collect();
     let mut files = Vec::new();
@@ -357,30 +357,30 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
                 (tags.into(), links.into(), markdown::aliases(&body).into(), body, lower)
             }
         };
-        // Un modèle n'a ni tags, ni liens, ni alias : ce qu'il écrit entre `{{ }}` ou sous `#` n'est pas à lui.
+        // A template has no tags, links or aliases: what it writes between `{{ }}` or after `#` is not its own.
         let (tags, links, aliases) =
             if in_templates(root, path) { (Vec::new().into(), Vec::new().into(), Vec::new().into()) } else { (tags, links, aliases) };
         Note { name: stem(path), tags, links, aliases, mtime: *mtime, path: path.clone(), body, lower }
     };
     let mut notes: Vec<Note> = files.iter().map(note).collect();
-    notes.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    notes.sort_by_key(|note| std::cmp::Reverse(note.mtime));
     (notes, found, images)
 }
 
-/// Nom de fichier ou de dossier débarrassé de ce qu'un système de fichiers ou
-/// un wikilien refuse ; `None` s'il n'en reste rien.
+/// File or folder name stripped of what a file system or
+/// a wikilink refuses; `None` if nothing is left.
 pub fn clean_name(name: &str) -> Option<String> {
     let name: String = name
         .chars()
         .filter(|c| !c.is_control() && !r#"/\:*?"<>|#^[]"#.contains(*c))
         .take(80)
         .collect();
-    // Ni point en tête (fichier caché) ni en fin (refusé par Windows).
+    // No leading dot (hidden file) nor trailing one (refused by Windows).
     let name = name.trim().trim_matches('.').trim();
     (!name.is_empty()).then(|| name.to_string())
 }
 
-/// Déplace ou renomme, sans jamais écraser ce qui porte déjà ce nom.
+/// Moves or renames, never overwriting what already has that name.
 pub fn rename(from: &Path, to: &Path) -> io::Result<()> {
     if to.exists() {
         let taken = tr("this name is already taken", "ce nom est déjà pris");
@@ -389,13 +389,13 @@ pub fn rename(from: &Path, to: &Path) -> io::Result<()> {
     fs::rename(from, to)
 }
 
-/// Renomme une note et renvoie son chemin. Si son nom suivait son titre, la
-/// première ligne est réécrite pour qu'ils restent accordés.
+/// Renames a note and returns its path. If its name followed its title, the
+/// first line is rewritten so they stay in step.
 pub fn rename_note(path: &Path, name: &str) -> io::Result<PathBuf> {
     let content = fs::read_to_string(path)?;
     let to = path.with_file_name(format!("{name}.md"));
     rename(path, &to)?;
-    // L'en-tête YAML reste tel quel : le titre est la première ligne qui le suit.
+    // The front matter stays as is: the title is the first line after it.
     let (meta, body) = content.split_at(markdown::front_matter(&content));
     if stem(path) == title_of(&content)
         && let Some(first) = body.lines().find(|l| !l.trim().is_empty())
@@ -407,8 +407,8 @@ pub fn rename_note(path: &Path, name: &str) -> io::Result<PathBuf> {
     Ok(to)
 }
 
-/// Met la note ou le dossier à la corbeille du coffre : le dossier caché
-/// `.trash`, que l'index ignore. Rien n'est détruit.
+/// Moves the note or folder to the vault's trash: the hidden folder
+/// `.trash`, which the index ignores. Nothing is destroyed.
 pub fn trash(root: &Path, path: &Path) -> io::Result<()> {
     let bin = root.join(".trash");
     fs::create_dir_all(&bin)?;
@@ -423,11 +423,11 @@ pub fn trash(root: &Path, path: &Path) -> io::Result<()> {
     fs::rename(path, free)
 }
 
-/// Fichier du coffre qui retient les icônes : une ligne `icône<tabulation>chemin` par élément,
-/// le chemin relatif au coffre et écrit avec des `/`. Il voyage avec le coffre.
+/// Vault file that keeps the icons: one `icon<tab>path` line per item,
+/// the path relative to the vault and written with `/`. It travels with the vault.
 const ICONS: &str = ".bref-icons";
 
-/// Icônes choisies pour des notes, des fichiers et des dossiers du coffre, par chemin.
+/// Icons chosen for notes, files and folders of the vault, by path.
 pub fn load_icons(root: &Path) -> HashMap<PathBuf, String> {
     let text = fs::read_to_string(root.join(ICONS)).unwrap_or_default();
     text.lines().filter_map(|line| line.split_once('\t')).map(|(icon, path)| (root.join(path), icon.to_string())).collect()
@@ -443,17 +443,17 @@ pub fn save_icons(root: &Path, icons: &HashMap<PathBuf, String>) -> io::Result<(
     write(&root.join(ICONS), &lines.concat())
 }
 
-/// Les commandes à essayer, dans l'ordre, pour ouvrir un terminal dans `dir` sous le système
-/// `os` (`std::env::consts::OS`) : le programme et ses arguments. `preferred` est le terminal
-/// que l'utilisateur nomme dans `$TERMINAL`.
+/// The commands to try, in order, to open a terminal in `dir` under the system
+/// `os` (`std::env::consts::OS`): the program and its arguments. `preferred` is the terminal
+/// the user names in `$TERMINAL`.
 pub fn terminals(os: &str, dir: &str, preferred: Option<&str>) -> Vec<(String, Vec<String>)> {
     let command = |program: &str, args: &[&str]| (program.to_string(), args.iter().map(|a| a.to_string()).collect());
     match os {
         "macos" => vec![command("open", &["-a", "Terminal", dir])],
-        // Windows Terminal s'il est installé, sinon la console de toujours.
+        // Windows Terminal if installed, otherwise the classic console.
         "windows" => vec![command("wt", &["-d", dir]), command("cmd", &["/c", "start", "cmd"])],
-        // Linux n'a pas de réponse unique. Ceux qui ne font que prévenir une instance déjà
-        // lancée ignorent le dossier courant : il leur est donné en argument.
+        // Linux has no single answer. Those that merely notify an already running instance
+        // ignore the current folder: it is given to them as an argument.
         _ => {
             let mut all: Vec<_> = preferred.iter().map(|p| command(p, &[])).collect();
             all.extend([
@@ -474,41 +474,41 @@ pub fn terminals(os: &str, dir: &str, preferred: Option<&str>) -> Vec<(String, V
     }
 }
 
-/// Ouvre le terminal du système dans `dir` : le premier de `terminals` qui démarre. Faux si
-/// aucun n'est installé. Les tests n'ouvrent rien.
+/// Opens the system terminal in `dir`: the first of `terminals` that starts. False if
+/// none is installed. Tests open nothing.
 pub fn open_terminal(dir: &Path) -> bool {
     let preferred = env::var("TERMINAL").ok().filter(|t| !t.trim().is_empty());
     let found = terminals(env::consts::OS, &dir.to_string_lossy(), preferred.as_deref());
     !cfg!(test)
         && found.into_iter().any(|(program, args)| {
-            // Sans console pour le lanceur (`cmd /c start`) ; le terminal, lui, ouvre la sienne.
+            // No console for the launcher (`cmd /c start`); the terminal opens its own.
             let child = crate::platform::command(&program).args(args).current_dir(dir).stdin(std::process::Stdio::null()).spawn();
-            // Le terminal fermé, son processus est recueilli : pas de zombie tant que Bref tourne.
+            // Once the terminal is closed, its process is reaped: no zombie while Bref runs.
             child.map(|mut child| std::thread::spawn(move || child.wait())).is_ok()
         })
 }
 
-/// Touches proposées pour la capture ; libres sur un GNOME d'origine.
+/// Keys offered for capture; free on a stock GNOME.
 const CAPTURE_KEYS: &str = "<Super><Shift>n";
 const GNOME_KEYS: &str = "org.gnome.settings-daemon.plugins.media-keys";
-/// Un chemin à nous dans les raccourcis personnalisés de GNOME : le redemander ne double rien.
+/// A path of our own in GNOME's custom shortcuts: asking again doubles nothing.
 const GNOME_PATH: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/bref-capture/";
 
-/// Ce qu'a donné la demande d'un raccourci de capture.
+/// What asking for a capture shortcut gave.
 #[derive(Debug, PartialEq)]
 pub enum Shortcut {
-    /// Posé dans les réglages du bureau : les touches, telles qu'on les lit.
+    /// Set in the desktop settings: the keys, as read.
     Bound(String),
-    /// Posé sans touches, celles proposées étant prises : les voici, à choisir dans les réglages.
+    /// Set without keys, the offered ones being taken: here they are, to choose in the settings.
     Unbound(String),
-    /// Ce bureau ne se règle pas d'ici : la commande à lier soi-même.
+    /// This desktop cannot be set from here: the command to bind yourself.
     Manual(String),
 }
 
-/// Lie `exe --capture` à un raccourci du bureau, sans jamais prendre des touches déjà
-/// utilisées. Sous GNOME c'est fait d'ici ; ailleurs la commande est rendue, à lier à la main.
-/// Bloquant (quelques appels à `gsettings`) : à lancer hors du thread UI. Les tests ne
-/// touchent à aucun réglage.
+/// Binds `exe --capture` to a desktop shortcut, never taking keys already
+/// in use. Under GNOME it is done from here; elsewhere the command is returned, to bind by hand.
+/// Blocking (a few `gsettings` calls): run off the UI thread. Tests
+/// touch no setting.
 pub fn capture_shortcut(exe: &Path) -> Shortcut {
     let exe = exe.to_string_lossy();
     let command = if exe.contains(' ') { format!("'{exe}' --capture") } else { format!("{exe} --capture") };
@@ -516,15 +516,15 @@ pub fn capture_shortcut(exe: &Path) -> Shortcut {
     gnome.then(|| gnome_shortcut(&command)).flatten().unwrap_or(Shortcut::Manual(command))
 }
 
-/// Ce que répond `gsettings`, s'il est là et accepte.
+/// What `gsettings` answers, if it is there and accepts.
 fn gsettings(args: &[&str]) -> Option<String> {
     let out = crate::platform::command("gsettings").args(args).stdin(std::process::Stdio::null()).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Le raccourci personnalisé « Bref : capture » de GNOME : créé avec `CAPTURE_KEYS` si rien
-/// ne s'en sert, sinon sans touches. S'il existe déjà, seule sa commande est remise à jour (le
-/// binaire a pu changer de place) : les touches que l'utilisateur lui a données restent.
+/// GNOME's custom shortcut "Bref: capture": created with `CAPTURE_KEYS` if nothing
+/// uses them, otherwise without keys. If it already exists, only its command is updated (the
+/// binary may have moved): the keys the user gave it stay.
 fn gnome_shortcut(command: &str) -> Option<Shortcut> {
     let entry = format!("{GNOME_KEYS}.custom-keybinding:{GNOME_PATH}");
     let list = gsettings(&["get", GNOME_KEYS, "custom-keybindings"])?;
@@ -535,7 +535,7 @@ fn gnome_shortcut(command: &str) -> Option<Shortcut> {
         let keys = keys.trim_matches('\'');
         return Some(if keys.is_empty() { Shortcut::Unbound(spell_keys(CAPTURE_KEYS)) } else { Shortcut::Bound(spell_keys(keys)) });
     };
-    // Prises : par un raccourci du système, ou par un autre raccourci personnalisé.
+    // Taken: by a system shortcut, or by another custom shortcut.
     let wanted = format!("'{}'", CAPTURE_KEYS.to_lowercase());
     let others = list.split('\'').skip(1).step_by(2).filter_map(|path| gsettings(&["get", &format!("{GNOME_KEYS}.custom-keybinding:{path}"), "binding"]));
     let taken = gsettings(&["list-recursively"]).is_some_and(|all| all.to_lowercase().contains(&wanted))
@@ -549,8 +549,8 @@ fn gnome_shortcut(command: &str) -> Option<Shortcut> {
     Some(if taken { Shortcut::Unbound(spell_keys(CAPTURE_KEYS)) } else { Shortcut::Bound(spell_keys(CAPTURE_KEYS)) })
 }
 
-/// La liste `['a', 'b']` de `gsettings` (ou `@as []`, vide) avec `path` en plus ; `None` s'il
-/// y est déjà.
+/// The `['a', 'b']` list from `gsettings` (or `@as []`, empty) with `path` added; `None` if it
+/// is already there.
 fn with_keybinding(list: &str, path: &str) -> Option<String> {
     let mut paths: Vec<&str> = list.split('\'').skip(1).step_by(2).collect();
     if paths.contains(&path) {
@@ -560,7 +560,7 @@ fn with_keybinding(list: &str, path: &str) -> Option<String> {
     Some(format!("[{}]", paths.iter().map(|p| format!("'{p}'")).collect::<Vec<_>>().join(", ")))
 }
 
-/// `<Super><Shift>n`, comme GNOME l'écrit, tel qu'on le lit : `Super+Maj+N`.
+/// `<Super><Shift>n`, as GNOME writes it, as read: `Super+Shift+N`.
 fn spell_keys(keys: &str) -> String {
     let parts = keys.split(['<', '>']).filter(|part| !part.is_empty()).map(|part| match part {
         "Shift" => tr("Shift", "Maj").to_string(),
@@ -573,22 +573,22 @@ fn spell_keys(keys: &str) -> String {
     parts.collect::<Vec<_>>().join("+")
 }
 
-/// Sauvegarde : tout le coffre (corbeille comprise) dans une archive `<coffre> <date>.tar.gz`
-/// du dossier `dir`, numérotée si le nom est pris. Bloquant : à lancer hors du thread UI.
-// ponytail: le `tar` du système (livré avec Linux, macOS et Windows 10) plutôt qu'une
-// bibliothèque d'archives en dépendance ; écrire un `.zip` nous-mêmes si le `.tar.gz` gêne
-// sous Windows.
+/// Backup: the whole vault (trash included) in a `<vault> <date>.tar.gz` archive
+/// in folder `dir`, numbered if the name is taken. Blocking: run off the UI thread.
+// ponytail: the system's `tar` (shipped with Linux, macOS and Windows 10) rather than an
+// archive library as a dependency; write a `.zip` ourselves if `.tar.gz` is a problem
+// on Windows.
 pub fn backup(root: &Path, dir: &Path, date: &str) -> io::Result<PathBuf> {
     let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
         return Err(io::Error::other(tr("this vault has no parent folder", "ce coffre n'a pas de dossier parent")));
     };
-    // Dans le coffre, l'archive se contiendrait elle-même.
+    // Inside the vault, the archive would contain itself.
     if dir.starts_with(root) {
         return Err(io::Error::other(tr("choose a folder outside the vault", "choisir un dossier hors du coffre")));
     }
     let to = free_path(dir, &format!("{} {date}", name.to_string_lossy()), "tar.gz");
-    // L'archive est nommée depuis `dir` : le `tar` de Git pour Windows prendrait `C:\…` pour
-    // une machine distante.
+    // The archive is named from `dir`: Git for Windows' `tar` would take `C:\…` for
+    // a remote machine.
     let status = crate::platform::command("tar")
         .current_dir(dir)
         .arg("-czf")
@@ -603,14 +603,14 @@ pub fn backup(root: &Path, dir: &Path, date: &str) -> io::Result<PathBuf> {
     match status {
         Ok(status) if status.success() => Ok(to),
         failed => {
-            // Une archive incomplète ne doit pas passer pour une sauvegarde.
+            // An incomplete archive must not pass for a backup.
             let _ = fs::remove_file(&to);
             Err(failed.err().unwrap_or_else(|| io::Error::other(tr("tar failed", "tar a échoué"))))
         }
     }
 }
 
-/// Contenu de la corbeille du coffre, du plus récemment modifié au plus ancien.
+/// Contents of the vault's trash, most recently modified first.
 pub fn trashed(root: &Path) -> Vec<PathBuf> {
     let entries = fs::read_dir(root.join(".trash")).into_iter().flatten().flatten();
     let mut found: Vec<(SystemTime, PathBuf)> =
@@ -619,8 +619,8 @@ pub fn trashed(root: &Path) -> Vec<PathBuf> {
     found.into_iter().map(|(_, path)| path).collect()
 }
 
-/// Sort `path` de la corbeille et le remet à la racine du coffre (la corbeille ne retient pas
-/// d'où il venait), sous son nom, numéroté s'il est pris : rien n'est écrasé.
+/// Takes `path` out of the trash and puts it back at the vault root (the trash does not keep
+/// where it came from), under its name, numbered if taken: nothing is overwritten.
 pub fn restore(root: &Path, path: &Path) -> io::Result<PathBuf> {
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     let extension = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
@@ -635,8 +635,8 @@ pub fn restore(root: &Path, path: &Path) -> io::Result<PathBuf> {
     Ok(free)
 }
 
-/// Chemin libre dans `dir` pour un fichier `name.extension` : le nom est suivi
-/// d'un numéro s'il est déjà pris.
+/// Free path in `dir` for a file `name.extension`: the name is followed
+/// by a number if already taken.
 pub fn free_path(dir: &Path, name: &str, extension: &str) -> PathBuf {
     let numbered = (1..).map(|n| match n {
         1 => dir.join(format!("{name}.{extension}")),
@@ -645,7 +645,7 @@ pub fn free_path(dir: &Path, name: &str, extension: &str) -> PathBuf {
     numbered.into_iter().find(|p| !p.exists()).unwrap()
 }
 
-/// Nom de fichier (sans extension) tiré de la première ligne non vide.
+/// File name (without extension) taken from the first non-empty line.
 pub fn title_of(content: &str) -> String {
     let content = &content[markdown::front_matter(content)..];
     let first = content.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
@@ -653,14 +653,14 @@ pub fn title_of(content: &str) -> String {
         .unwrap_or_else(|| tr("Untitled", "Sans titre").to_string())
 }
 
-/// Titre `# …` en tête de note, sous la forme d'un nom de fichier.
+/// `# …` title at the top of the note, as a file name.
 pub fn h1_of(content: &str) -> Option<String> {
     let content = &content[markdown::front_matter(content)..];
     let first = content.lines().find(|l| !l.trim().is_empty())?;
     clean_name(first.trim_start().strip_prefix("# ")?)
 }
 
-/// Un élément déposé, rangé dans le coffre : où il est, si c'est un dossier, combien de fichiers il compte.
+/// A dropped item, stored in the vault: where it is, whether it is a folder, how many files it holds.
 #[derive(Debug, PartialEq)]
 pub struct Imported {
     pub to: PathBuf,
@@ -668,7 +668,7 @@ pub struct Imported {
     pub files: usize,
 }
 
-/// Un nom libre dans `dir` : `nom.ext`, puis `nom 2.ext`, `nom 3.ext`… Rien n'est jamais écrasé.
+/// A free name in `dir`: `name.ext`, then `name 2.ext`, `name 3.ext`… Nothing is ever overwritten.
 fn free_name(dir: &Path, name: &std::ffi::OsStr, folder: bool) -> PathBuf {
     let as_path = Path::new(name);
     let (stem, ext) = match (folder, as_path.extension()) {
@@ -687,9 +687,9 @@ fn free_name(dir: &Path, name: &std::ffi::OsStr, folder: bool) -> PathBuf {
         .unwrap()
 }
 
-/// Copie `from` en `to` : un fichier est d'abord écrit sous un nom caché puis renommé, pour qu'une copie
-/// interrompue ne laisse jamais un fichier à moitié. Rend le nombre de fichiers copiés et d'éléments
-/// laissés de côté (liens symboliques, fichiers cachés, autres que des fichiers).
+/// Copies `from` to `to`: a file is first written under a hidden name then renamed, so an interrupted
+/// copy never leaves a half file. Returns the number of files copied and of items
+/// left out (symbolic links, hidden files, things other than files).
 fn copy_into(from: &Path, to: &Path, skipped: &mut usize) -> io::Result<usize> {
     if from.is_dir() {
         fs::create_dir(to)?;
@@ -714,9 +714,9 @@ fn copy_into(from: &Path, to: &Path, skipped: &mut usize) -> io::Result<usize> {
     copied.map(|()| 1)
 }
 
-/// Range dans `dir` des fichiers et des dossiers venus d'ailleurs (un dépôt) : chacun sous un nom libre, un
-/// dossier avec tout ce qu'il contient sauf ce qui est caché ou lien symbolique. Rend ce qui est rangé et,
-/// pour chaque chose laissée de côté, pourquoi. Un dossier ne se copie jamais dans lui-même.
+/// Stores in `dir` files and folders from elsewhere (a drop): each under a free name, a
+/// folder with everything it holds except what is hidden or a symbolic link. Returns what was stored and,
+/// for each thing left out, why. A folder is never copied into itself.
 pub fn import(sources: &[PathBuf], dir: &Path) -> (Vec<Imported>, Vec<String>) {
     let (mut done, mut problems) = (Vec::new(), Vec::new());
     for from in sources {
@@ -739,7 +739,7 @@ pub fn import(sources: &[PathBuf], dir: &Path) -> (Vec<Imported>, Vec<String>) {
                         done.push(Imported { to, dir: kind.is_dir(), files });
                     }
                     Err(e) => {
-                        // Un dossier à moitié copié part tout entier : rien ne reste en route.
+                        // A half-copied folder goes entirely: nothing is left behind.
                         if kind.is_dir() {
                             let _ = fs::remove_dir_all(&to);
                         }
@@ -752,7 +752,7 @@ pub fn import(sources: &[PathBuf], dir: &Path) -> (Vec<Imported>, Vec<String>) {
     (done, problems)
 }
 
-/// Enregistre une image collée dans `dir`, sous un nom libre, et renvoie ce nom.
+/// Saves a pasted image in `dir`, under a free name, and returns that name.
 pub fn save_image(dir: &Path, extension: &str, bytes: &[u8]) -> io::Result<String> {
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let name = (1..)
@@ -766,10 +766,10 @@ pub fn save_image(dir: &Path, extension: &str, bytes: &[u8]) -> io::Result<Strin
     Ok(name)
 }
 
-/// Ajoute la ligne `text` au bas de la note nommée `name` (la note du jour), où qu'elle soit
-/// rangée dans le coffre ; à défaut la crée à la racine, titrée de son nom. Rend son fichier.
-/// Une capture ne lit que les noms des fichiers, jamais les notes : elle reste immédiate
-/// dans un gros coffre.
+/// Appends the line `text` at the bottom of the note named `name` (the daily note), wherever it is
+/// stored in the vault; failing that creates it at the root, titled with its name. Returns its file.
+/// A capture reads only file names, never notes: it stays instant
+/// in a big vault.
 pub fn capture(root: &Path, name: &str, text: &str) -> io::Result<PathBuf> {
     let file = format!("{name}.md");
     let mut visited = HashSet::new();
@@ -800,27 +800,27 @@ pub fn capture(root: &Path, name: &str, text: &str) -> io::Result<PathBuf> {
     if !body.ends_with('\n') {
         body.push('\n');
     }
-    // Une ligne de liste, sauf si elle est déjà écrite ainsi (`- [ ] …`).
+    // A list line, unless it is already written that way (`- [ ] …`).
     let text = text.trim();
     body.push_str(&if text.starts_with("- ") { format!("{text}\n") } else { format!("- {text}\n") });
     write(&path, &body)?;
     Ok(path)
 }
 
-/// Écriture atomique : un crash ne laisse jamais une note tronquée.
+/// Atomic write: a crash never leaves a truncated note.
 pub fn write(path: &Path, content: &str) -> io::Result<()> {
     let tmp = path.with_file_name(format!(".{}.tmp", stem(path)));
     let mut file = fs::File::create(&tmp)?;
     file.write_all(content.as_bytes())?;
-    // Sans `fsync`, une coupure de courant peut laisser le renommage sans les données.
+    // Without `fsync`, a power cut can leave the rename without the data.
     file.sync_all()?;
     fs::rename(&tmp, path)
 }
 
-/// Enregistre la note et renvoie son chemin ; une nouvelle note est créée dans
-/// `dir`. Si `synced` (le nom du fichier
-/// suivait déjà le titre), le fichier est renommé quand le titre change, sauf
-/// si le nouveau nom est déjà pris.
+/// Saves the note and returns its path; a new note is created in
+/// `dir`. If `synced` (the file name
+/// already followed the title), the file is renamed when the title changes, unless
+/// the new name is already taken.
 pub fn save(
     dir: &Path,
     current: Option<&Path>,
@@ -867,7 +867,7 @@ mod tests {
         let path = "/org/gnome/x/bref-capture/";
         assert_eq!(with_keybinding("@as []", path).as_deref(), Some("['/org/gnome/x/bref-capture/']"));
         assert_eq!(with_keybinding("['/org/gnome/x/custom0/', '/org/gnome/x/custom1/']", path).as_deref(), Some("['/org/gnome/x/custom0/', '/org/gnome/x/custom1/', '/org/gnome/x/bref-capture/']"));
-        // Déjà là : rien à ajouter, la demande peut se répéter sans rien doubler.
+        // Already there: nothing to add, the request can repeat without doubling anything.
         assert_eq!(with_keybinding("['/org/gnome/x/custom0/', '/org/gnome/x/bref-capture/']", path), None);
     }
 
@@ -878,8 +878,8 @@ mod tests {
         assert_eq!(spell_keys("F9"), "F9");
     }
 
-    /// Le vrai `gsettings`, sur des réglages jetables (fichier clé-valeur dans un dossier
-    /// temporaire) : `cargo test -- --ignored gnome_shortcut_is_registered`, sur un poste GNOME.
+    /// The real `gsettings`, on throwaway settings (key-value file in a temporary
+    /// folder): `cargo test -- --ignored gnome_shortcut_is_registered`, on a GNOME machine.
     #[test]
     #[ignore]
     fn gnome_shortcut_is_registered() {
@@ -893,7 +893,7 @@ mod tests {
         assert_eq!(gnome_shortcut("/usr/bin/bref --capture"), Some(Shortcut::Bound("Super+Maj+N".into())));
         let saved = fs::read_to_string(dir.join("glib-2.0/settings/keyfile")).unwrap();
         assert!(saved.contains("command='/usr/bin/bref --capture'") && saved.contains("binding='<Super><Shift>n'"), "{saved}");
-        // Redemandé après un déplacement du binaire : la commande suit, la touche choisie reste.
+        // Asked again after the binary moved: the command follows, the chosen key stays.
         gsettings(&["set", &format!("{GNOME_KEYS}.custom-keybinding:{GNOME_PATH}"), "binding", "<Super>F9"]).unwrap();
         assert_eq!(gnome_shortcut("/opt/bref --capture"), Some(Shortcut::Bound("Super+F9".into())));
         let saved = fs::read_to_string(dir.join("glib-2.0/settings/keyfile")).unwrap();
@@ -907,14 +907,14 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("Journal")).unwrap();
         fs::create_dir_all(root.join(".trash")).unwrap();
-        // Pas de note du jour : elle est créée à la racine, titrée de son nom.
+        // No daily note: it is created at the root, titled with its name.
         let made = capture(&root, "2026-10-10", "appeler Léa").unwrap();
         assert_eq!(made, root.join("2026-10-10.md"));
         assert_eq!(fs::read_to_string(&made).unwrap(), "# 2026-10-10\n\n- appeler Léa\n");
-        // La suivante s'ajoute dessous ; une ligne déjà écrite en liste reste telle quelle.
+        // The next one goes below; a line already written as a list stays as is.
         capture(&root, "2026-10-10", "- [ ] acheter du pain").unwrap();
         assert_eq!(fs::read_to_string(&made).unwrap(), "# 2026-10-10\n\n- appeler Léa\n- [ ] acheter du pain\n");
-        // La note du jour rangée dans un dossier est retrouvée ; celle de la corbeille, non.
+        // The daily note stored in a folder is found; the one in the trash is not.
         let filed = root.join("Journal/2026-10-11.md");
         fs::write(&filed, "# 2026-10-11\n\nsans fin de ligne").unwrap();
         fs::write(root.join(".trash/2026-10-11.md"), "jetée").unwrap();
@@ -924,7 +924,7 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// Exécute un futur sur le thread courant, qui dort entre deux réveils.
+    /// Runs a future on the current thread, which sleeps between wakeups.
     fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
         struct Unpark(std::thread::Thread);
         impl std::task::Wake for Unpark {
@@ -946,13 +946,13 @@ mod tests {
     #[test]
     fn signal_wakes_a_sleeping_task() {
         let signal = Arc::new(Signal::default());
-        // Levé avant l'attente : pas de sommeil. Retombé ensuite.
+        // Raised before the wait: no sleep. Dropped afterwards.
         signal.raise();
         assert!(block_on(signal.wait(std::future::pending())));
         assert!(!signal.take());
-        // L'échéance finie, sans signal : faux.
+        // Deadline passed, no signal: false.
         assert!(!block_on(signal.wait(std::future::ready(()))));
-        // Levé par un autre thread pendant que la tâche dort.
+        // Raised by another thread while the task sleeps.
         let other = signal.clone();
         let thread = std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(100));
@@ -980,41 +980,41 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let a = save(&root, None, true, "# A\n").unwrap();
         assert_eq!(a, root.join("A.md"));
-        // Nouvelle note de même titre : pas d'écrasement.
+        // New note with the same title: no overwrite.
         assert_eq!(save(&root, None, true, "# A\n").unwrap(), root.join("A 2.md"));
-        // Le titre change : le fichier suit.
+        // The title changes: the file follows.
         let b = save(&root, Some(&a), true, "# B\n").unwrap();
         assert_eq!(b, root.join("B.md"));
         assert!(!a.exists());
-        // Nom déjà pris ou note non synchronisée : on garde le fichier.
+        // Name already taken or note not synced: the file is kept.
         assert_eq!(save(&root, Some(&b), true, "# A 2\n").unwrap(), b);
         assert_eq!(save(&root, Some(&b), false, "# Z\n").unwrap(), b);
         assert_eq!(fs::read_to_string(&b).unwrap(), "# Z\n");
         assert_eq!(scan(&root).0.len(), 2);
-        // En-tête YAML : le nom vient du titre qui le suit, et renommer ne touche que ce titre.
+        // Front matter: the name comes from the title after it, and renaming touches only that title.
         let meta = "---\ntitle: autre\n---\n";
         let c = save(&root, None, true, &format!("{meta}# Fiche\n---\n")).unwrap();
         assert_eq!((c.clone(), h1_of(&format!("{meta}\n# Fiche\n"))), (root.join("Fiche.md"), Some("Fiche".into())));
         let c = rename_note(&c, "Carte").unwrap();
         assert_eq!(fs::read_to_string(&c).unwrap(), format!("{meta}# Carte\n---\n"));
         fs::remove_file(&c).unwrap();
-        // L'empreinte du coffre suit ce qu'un autre programme y change.
+        // The vault's fingerprint follows what another program changes in it.
         let before = fingerprint(&root);
         assert_eq!(before, fingerprint(&root));
         fs::write(root.join("ailleurs.md"), "x").unwrap();
         assert_ne!(before, fingerprint(&root));
         fs::remove_file(root.join("ailleurs.md")).unwrap();
 
-        // Renommer une note accordée à son titre réécrit ce titre ; sinon le texte reste tel quel.
+        // Renaming a note in step with its title rewrites that title; otherwise the text stays as is.
         let c = rename_note(&root.join("A 2.md"), "C").unwrap();
         assert_eq!(fs::read_to_string(&c).unwrap(), "# A\n");
         fs::write(root.join("D.md"), "\n## D\ntexte D\n").unwrap();
         let e = rename_note(&root.join("D.md"), "E").unwrap();
         assert_eq!(fs::read_to_string(&e).unwrap(), "\n## E\ntexte D\n");
-        // Jamais d'écrasement.
+        // Never overwrite.
         assert!(rename_note(&e, "C").is_err() && e.exists());
 
-        // Corbeille : rien n'est détruit, et l'index ne la voit pas.
+        // Trash: nothing is destroyed, and the index does not see it.
         fs::create_dir(root.join("vide")).unwrap();
         trash(&root, &c).unwrap();
         fs::write(&c, "autre").unwrap();
@@ -1024,7 +1024,7 @@ mod tests {
         fs::write(root.join("vide/Photo.PNG"), "").unwrap();
         let (notes, dirs, images) = scan(&root);
         assert_eq!((notes.len(), dirs), (2, vec![root.join("vide")]));
-        // Chaque note garde son texte tel quel, et le même en minuscules pour la recherche.
+        // Each note keeps its text as is, and the same in lowercase for search.
         assert!(notes.iter().all(|n| !n.body.is_empty() && *n.lower == n.body.to_lowercase()));
         assert!(notes.iter().any(|n| n.lower != n.body));
         assert_eq!(images, [root.join("vide/Photo.PNG")]);
@@ -1050,7 +1050,7 @@ mod tests {
         let programs = |os, preferred| terminals(os, "/coffre", preferred).into_iter().map(|(p, _)| p).collect::<Vec<_>>();
         assert_eq!(terminals("macos", "/coffre", None), [("open".to_string(), vec!["-a".to_string(), "Terminal".into(), "/coffre".into()])]);
         assert_eq!(programs("windows", Some("kitty")), ["wt", "cmd"]);
-        // `$TERMINAL` passe devant ; sans lui, le choix du bureau d'abord.
+        // `$TERMINAL` comes first; without it, the desktop's choice first.
         assert_eq!(programs("linux", Some("foot"))[..2], ["foot", "xdg-terminal-exec"]);
         assert_eq!(programs("linux", None)[0], "xdg-terminal-exec");
         let gnome = terminals("linux", "/coffre", None).into_iter().find(|(p, _)| p == "gnome-terminal").unwrap();
@@ -1067,12 +1067,12 @@ mod tests {
         fs::write(root.join(".trash/Vieux.md"), "jeté").unwrap();
         let first = backup(&root, &out, "2026-10-09").unwrap();
         assert_eq!(first, out.join("Mon coffre 2026-10-09.tar.gz"));
-        // Le même jour : une seconde archive, la première reste.
+        // Same day: a second archive, the first one stays.
         assert_eq!(backup(&root, &out, "2026-10-09").unwrap(), out.join("Mon coffre 2026-10-09 2.tar.gz"));
         let listed = crate::platform::command("tar").current_dir(&out).arg("-tzf").arg(first.file_name().unwrap()).output().unwrap();
         let listed = String::from_utf8_lossy(&listed.stdout).replace('\\', "/");
         assert!(listed.contains("Mon coffre/A.md") && listed.contains("Mon coffre/.trash/Vieux.md"), "{listed}");
-        // Dans le coffre, l'archive se contiendrait elle-même : refusé, rien n'est écrit.
+        // Inside the vault, the archive would contain itself: refused, nothing is written.
         assert!(backup(&root, &root.join(".trash"), "2026-10-09").is_err());
         assert_eq!(fs::read_dir(root.join(".trash")).unwrap().count(), 1);
         fs::remove_dir_all(&base).unwrap();
@@ -1088,7 +1088,7 @@ mod tests {
         }
         trash(&root, &root.join("A.md")).unwrap();
         trash(&root, &root.join("Dossier")).unwrap();
-        // Le nom est repris entre-temps : la note restaurée en prend un autre, rien n'est écrasé.
+        // The name was taken in the meantime: the restored note gets another, nothing is overwritten.
         fs::write(root.join("A.md"), "second").unwrap();
         let mut names: Vec<String> = trashed(&root).iter().map(|p| stem(p)).collect();
         names.sort();
@@ -1114,13 +1114,13 @@ mod tests {
 
         assert!(!matters(root, &event(created, ".git/objects/ab")));
         assert!(!matters(root, &event(EventKind::Access(AccessKind::Read), "a.md")));
-        // Hors du coffre ou sans chemin : dans le doute, on relit.
+        // Outside the vault or without a path: when in doubt, reread.
         assert!(matters(root, &Event::new(created).add_path("/ailleurs/.x".into())));
         assert!(matters(root, &Event::new(created)));
     }
 
-    /// Un lien symbolique qui remonte au coffre, ou un second lien vers un dossier déjà
-    /// parcouru, ne boucle pas et ne duplique aucune note.
+    /// A symbolic link that points back up to the vault, or a second link to an already
+    /// walked folder, does not loop and duplicates no note.
     #[cfg(unix)]
     #[test]
     fn scan_survives_symlink_loops() {
@@ -1133,7 +1133,7 @@ mod tests {
         let (notes, dirs, _) = scan(&root);
         assert_eq!(notes.len(), 1, "{:?}", notes.iter().map(|n| &n.path).collect::<Vec<_>>());
         assert!(dirs.len() <= 3, "{dirs:?}");
-        // L'empreinte, elle aussi, se calcule sans boucler et ne bouge pas.
+        // The fingerprint, too, is computed without looping and does not move.
         assert_eq!(fingerprint(&root), fingerprint(&root));
         fs::remove_dir_all(&root).unwrap();
     }
@@ -1143,14 +1143,14 @@ mod tests {
         let root = Path::new("/v");
         let dirs: Vec<PathBuf> = ["/v/Notes", "/v/Modèles", "/v/Notes/Templates"].into_iter().map(PathBuf::from).collect();
         assert_eq!(template_dir(root, &dirs), Some(PathBuf::from("/v/Modèles")));
-        // Casse et accents ne comptent pas ; seul un dossier de la racine est le dossier des modèles.
+        // Case and accents do not count; only a folder at the root is the templates folder.
         for name in ["templates", "TEMPLATES", "Modeles", "MODÈLES", "modèles"] {
             assert_eq!(template_dir(root, &[root.join(name)]), Some(root.join(name)), "{name}");
         }
         assert_eq!(template_dir(root, &[PathBuf::from("/v/Notes/Templates"), root.join("Template"), root.join("Modèle")]), None);
         assert_eq!(template_dir(root, &[]), None);
-        // Un modèle est un fichier sous ce dossier, à n'importe quelle profondeur ; le dossier lui-même, un
-        // fichier de même nom, une note à côté ou ailleurs ne le sont pas.
+        // A template is a file under this folder, at any depth; the folder itself, a
+        // file of the same name, a note beside it or elsewhere are not.
         assert!(in_templates(root, Path::new("/v/Templates/Réunion.md")));
         assert!(in_templates(root, Path::new("/v/modèles/Projets/Plan.md")));
         assert!(!in_templates(root, Path::new("/v/Templates")));
@@ -1188,11 +1188,11 @@ mod tests {
         assert_eq!(names, ["rapport.pdf", "Photos", "vide.txt", "sans-extension", "a.tar.gz", "Dossier vide"]);
         assert_eq!(done.iter().map(|d| (d.dir, d.files)).collect::<Vec<_>>(), [(false, 1), (true, 2), (false, 1), (false, 1), (false, 1), (true, 0)]);
         assert_eq!(fs::read_to_string(vault.join("Photos/été/b.jpg")).unwrap(), "bé");
-        // Le caché et le lien symbolique restent dehors, et on le dit ; les sources n'ont pas bougé.
+        // The hidden one and the symbolic link stay out, and we say so; the sources have not moved.
         assert!(!vault.join("Photos/.cache").exists() && !vault.join("Photos/lien.pdf").exists());
-        assert_eq!(problems.len(), if cfg!(unix) { 1 } else { 1 }, "{problems:?}");
+        assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(outside.join("Photos/a.png").is_file());
-        // Les mêmes encore : chaque nom prend un numéro, les fichiers déjà là gardent leur contenu.
+        // The same again: each name takes a number, files already there keep their content.
         fs::write(vault.join("rapport.pdf"), "le mien").unwrap();
         let (again, _) = import(&all, &vault);
         let names: Vec<_> = again.iter().map(|d| d.to.file_name().unwrap().to_string_lossy().into_owned()).collect();
@@ -1200,7 +1200,7 @@ mod tests {
         assert_eq!(fs::read_to_string(vault.join("rapport.pdf")).unwrap(), "le mien");
         let (third, _) = import(&[outside.join("rapport.pdf")], &vault);
         assert_eq!(third[0].to, vault.join("rapport 3.pdf"));
-        // Aucune copie à moitié ne reste en route.
+        // No half copy is left behind.
         assert!(fs::read_dir(&vault).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().ends_with(".bref-part")));
         let _ = fs::remove_dir_all(&base);
     }
@@ -1211,8 +1211,8 @@ mod tests {
         let vault = base.join("coffre");
         fs::create_dir_all(vault.join("Sous")).unwrap();
         fs::write(base.join("f.md"), "# f").unwrap();
-        // Un dossier ne va pas dans lui-même ni dans un de ses sous-dossiers ; une source absente, un nom caché,
-        // un dossier de destination absent : refusés avec la raison, le reste passe.
+        // A folder does not go into itself or into one of its subfolders; a missing source, a hidden name,
+        // a missing destination folder: refused with the reason, the rest goes through.
         let (done, problems) = import(&[base.join("coffre"), vault.join("Sous"), base.join("absent.png"), base.join("f.md")], &vault.join("Sous"));
         assert_eq!(done.len(), 1);
         assert_eq!(done[0].to, vault.join("Sous/f.md"));
@@ -1224,7 +1224,7 @@ mod tests {
         let (none, problems) = import(&[base.join("f.md")], &base.join("nulle/part"));
         assert!(none.is_empty() && problems.len() == 1, "{problems:?}");
         assert_eq!(import(&[], &vault), (Vec::new(), Vec::new()));
-        // Les pièces jointes se reconnaissent à leur extension, sans tenir compte de la casse.
+        // Attachments are recognised by their extension, ignoring case.
         for name in ["a.PDF", "b.Mp4", "c.docx"] {
             assert!(is_attachment(Path::new(name)) && is_file_shown(Path::new(name)), "{name}");
         }
@@ -1240,7 +1240,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let changed = Arc::new(Signal::default());
         let _watcher = watch(&root, changed.clone()).expect("le système doit pouvoir surveiller un dossier");
-        // Pas d'horloge simulée ici : le système met quelques millisecondes (FSEvents, un peu plus).
+        // No simulated clock here: the system takes a few milliseconds (FSEvents, a bit more).
         fs::write(root.join("neuve.md"), "x").unwrap();
         let start = std::time::Instant::now();
         while !changed.raised.load(Ordering::Acquire) && start.elapsed() < std::time::Duration::from_secs(10) {

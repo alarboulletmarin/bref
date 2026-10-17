@@ -1,7 +1,7 @@
-//! Tableau : un fichier CSV ou TSV ouvert dans une grille qu'on lit et qu'on écrit
-//! directement. Le délimiteur et l'encodage se détectent, se changent et se retiennent
-//! par fichier. Seules les cellules visibles sont construites ; l'analyse du fichier vit
-//! dans `table`.
+//! Table: a CSV or TSV file open in a grid that is read and written
+//! directly. Delimiter and encoding are detected, changed and remembered
+//! per file. Only visible cells are built; parsing the file lives
+//! in `table`.
 
 use std::{
     fs,
@@ -42,17 +42,17 @@ actions!(
 const ROW: f32 = 26.;
 const GUTTER: f32 = 52.;
 const PAD: f32 = 8.;
-/// Largeur d'une colonne : celle de ses plus longues cellules parmi les premières lignes.
+/// Width of a column: that of its longest cells among the first rows.
 const SAMPLE: usize = 200;
 const MIN_CHARS: usize = 4;
 const MAX_CHARS: usize = 40;
-/// Épaisseur de la zone où l'on attrape une barre de défilement.
+/// Thickness of the area where a scrollbar is grabbed.
 const EDGE: f32 = 12.;
 const UNDO_DEPTH: usize = 200;
-/// Un réglage ou une édition attend ce délai avant d'être écrit sur le disque.
+/// A setting or an edit waits this long before being written to disk.
 const SAVE_DELAY: Duration = Duration::from_millis(400);
 
-/// Réglage ou geste du tableau proposé par la palette et par la barre.
+/// Table setting or gesture offered by the palette and the bar.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Pick {
     Delimiter,
@@ -65,7 +65,7 @@ pub enum Pick {
 impl Pick {
     pub const ALL: [Pick; 5] = [Pick::Delimiter, Pick::Encoding, Pick::Header, Pick::CopyAs, Pick::Export];
 
-    /// L'action que l'app écoute pour ouvrir le choix : elle remonte jusqu'à elle depuis n'importe quel focus.
+    /// The action the app listens to to open the choice: it bubbles up to it from any focus.
     pub fn action(self) -> Box<dyn Action> {
         match self {
             Pick::Delimiter => PickDelimiter.boxed_clone(),
@@ -89,22 +89,22 @@ impl Pick {
 
 pub enum SheetEvent {
     Error(String),
-    /// Un fichier vient d'être écrit à côté du tableau.
+    /// A file was just written next to the table.
     Exported,
 }
 
-/// Un geste d'édition, et son contraire : annuler applique le contraire et obtient le geste.
+/// An edit gesture, and its inverse: undo applies the inverse and gets the gesture back.
 enum Change {
-    /// Valeurs à poser : (ligne, colonne, texte).
+    /// Values to set: (row, column, text).
     Set(Vec<(usize, usize, String)>),
     Insert(usize, Vec<Vec<String>>),
     Remove(Range<usize>),
-    /// `n` colonnes avant `at`, avec leurs cellules d'avant (rien : vides).
+    /// `n` columns before `at`, with their previous cells (none: empty).
     InsertCols(usize, usize, Vec<Vec<String>>),
     RemoveCols(Range<usize>),
-    /// Les colonnes vont commencer en `to` (compté une fois retirées).
+    /// The columns will start at `to` (counted once removed).
     MoveCols(Range<usize>, usize),
-    /// Les lignes d'une fenêtre qui commence à `start` : la ligne `i` devient l'ancienne `perm[i]`.
+    /// The rows of a window starting at `start`: row `i` becomes the old `perm[i]`.
     Reorder(usize, Vec<usize>),
 }
 
@@ -114,7 +114,7 @@ enum Drag {
     Cells,
     Rows,
     Cols,
-    /// Barre de défilement : verticale ou non.
+    /// Scrollbar: vertical or not.
     Bar(bool),
 }
 
@@ -126,7 +126,7 @@ enum Hit {
     Bar(bool),
 }
 
-/// Le fichier tel qu'il vient d'être lu.
+/// The file as just read.
 pub struct Loaded {
     table: Table,
     format: Format,
@@ -138,23 +138,23 @@ fn stamp_of(path: &Path) -> Option<(SystemTime, u64)> {
     Some((meta.modified().ok()?, meta.len()))
 }
 
-/// Lit le fichier. Sans `forced`, encodage, délimiteur et en-tête sont devinés, sauf
-/// ceux que l'utilisateur a déjà choisis pour ce fichier.
+/// Reads the file. Without `forced`, encoding, delimiter and header are guessed, except
+/// those the user has already chosen for this file.
 pub fn load(path: &Path, forced: Option<Format>) -> Result<Loaded, String> {
     let fail = |e: std::io::Error| format!("{} {} : {e}", tr("Cannot open", "Impossible d'ouvrir"), path.display());
     let size = fs::metadata(path).map_err(fail)?.len();
     if size > table::MAX_BYTES as u64 {
         return Err(format!("{} : {}", path.display(), tr("file too large", "fichier trop gros")));
     }
-    // ponytail: lecture et analyse synchrones (100 Mo : environ 0,3 s) ; passer en tâche
-    // de fond avec un état « chargement » si l'on ouvre des fichiers de plusieurs centaines de Mo.
+    // ponytail: synchronous read and parse (100 MB: about 0.3 s); move to a background
+    // task with a "loading" state if files of several hundred MB get opened.
     let bytes = fs::read(path).map_err(fail)?;
     let format = forced.or_else(|| saved_format(path)).unwrap_or_else(|| table::detect(&bytes));
     let table = Table::parse(table::decode(bytes, format.encoding), format.delimiter);
     Ok(Loaded { table, format, stamp: stamp_of(path) })
 }
 
-/// Réglages que l'utilisateur a choisis pour ce fichier : `chemin ⇥ délimiteur ⇥ encodage ⇥ en-tête`.
+/// Settings the user chose for this file: `path ⇥ delimiter ⇥ encoding ⇥ header`.
 fn saved_format(path: &Path) -> Option<Format> {
     let key = path.to_str()?;
     vault::load_file("tables").lines().find_map(|line| {
@@ -180,7 +180,7 @@ fn remember_format(path: &Path, format: Option<Format>) {
     vault::save_file("tables", &lines.join("\n"));
 }
 
-/// Dernière génération écrite : une écriture en retard ne remplace jamais une plus récente.
+/// Last generation written: a late write never replaces a newer one.
 #[derive(Default)]
 struct Disk(Mutex<usize>);
 
@@ -190,7 +190,7 @@ impl Disk {
         if *last >= generation {
             return Ok(());
         }
-        // Écriture atomique : un crash ne laisse jamais un tableau tronqué.
+        // Atomic write: a crash never leaves a truncated table.
         let tmp = path.with_file_name(format!(".{}.tmp", path.file_name().unwrap_or_default().to_string_lossy()));
         let result = (|| {
             let file = fs::File::create(&tmp)?;
@@ -200,7 +200,7 @@ impl Disk {
             let mut out = BufWriter::with_capacity(1 << 16, file);
             table.write_to(&mut out, encoding)?;
             let file = out.into_inner().map_err(|e| e.into_error())?;
-            // Sans `fsync`, une coupure de courant peut laisser le renommage sans les données.
+            // Without `fsync`, a power cut can leave the rename without the data.
             file.sync_all()?;
             fs::rename(&tmp, path)?;
             Ok(())
@@ -214,7 +214,7 @@ impl Disk {
     }
 }
 
-/// Délimiteur tel que la liste de choix et la barre le montrent : son nom, puis le signe.
+/// Delimiter as the choice list and the bar show it: its name, then the sign.
 pub fn delimiter_option(d: u8) -> String {
     let sign = match d {
         b'\t' => "⇥".to_string(),
@@ -224,7 +224,7 @@ pub fn delimiter_option(d: u8) -> String {
     format!("{}  {sign}", table::delimiter_label(d))
 }
 
-/// Nom de colonne à la manière des tableurs : A, B… Z, AA, AB…
+/// Column name the spreadsheet way: A, B… Z, AA, AB…
 fn letters(mut c: usize) -> String {
     let mut name = Vec::new();
     loop {
@@ -244,19 +244,19 @@ pub struct Sheet {
     path: PathBuf,
     format: Format,
     table: Table,
-    /// Date et taille du fichier tel que lu ou écrit : un autre programme l'a touché si elles changent.
+    /// Date and size of the file as read or written: another program touched it if they change.
     stamp: Option<(SystemTime, u64)>,
-    /// Cellule active, et ancre de la sélection (qui va de l'une à l'autre).
+    /// Active cell, and selection anchor (the selection goes from one to the other).
     cursor: (usize, usize),
     anchor: (usize, usize),
-    /// Sélections gardées par Ctrl+clic (ancre, curseur), en plus de celle en cours.
+    /// Selections kept by Ctrl+click (anchor, cursor), on top of the current one.
     more: Vec<((usize, usize), (usize, usize))>,
-    /// Texte en cours de frappe dans la cellule active.
+    /// Text being typed in the active cell.
     edit: Option<Line>,
-    /// Largeur de chaque colonne, et abscisse de son bord gauche (une de plus, pour le total).
+    /// Width of each column, and x of its left edge (one more, for the total).
     widths: Vec<f32>,
     xs: Vec<f32>,
-    /// Décalage de la vue, en pixels (x, y).
+    /// View offset, in pixels (x, y).
     scroll: (f32, f32),
     body: Bounds<Pixels>,
     drag: Drag,
@@ -265,7 +265,7 @@ pub struct Sheet {
     dirty: bool,
     generation: usize,
     disk: Arc<Disk>,
-    /// La sélection vient d'être copiée : l'icône le montre un instant.
+    /// The selection was just copied: the icon shows it for a moment.
     copied: bool,
     client: bool,
 }
@@ -308,8 +308,8 @@ impl Sheet {
         this
     }
 
-    /// Thème courant, et la fenêtre dessine-t-elle sa barre de titre (la pastille cache alors
-    /// le coin de la barre du tableau, qui sert de poignée de déplacement).
+    /// Current theme, and whether the window draws its title bar (the badge then hides
+    /// the corner of the table bar, which serves as a drag handle).
     pub fn sync(&mut self, theme: Theme, client: bool) {
         let resized = theme.size != self.theme.size;
         (self.theme, self.client) = (theme, client);
@@ -322,9 +322,9 @@ impl Sheet {
         self.path = path;
     }
 
-    // ----- Fichier -----
+    // ----- File -----
 
-    /// Un tableau vide garde une ligne vide où écrire.
+    /// An empty table keeps one empty row to write in.
     fn fresh_table(&mut self) {
         if self.table.rows() == 0 {
             self.table.insert_row(0);
@@ -332,7 +332,7 @@ impl Sheet {
         self.measure();
     }
 
-    /// Prend une version relue du disque, en gardant la place du curseur.
+    /// Takes a version reread from disk, keeping the cursor's place.
     fn replace(&mut self, loaded: Loaded) {
         self.format = loaded.format;
         self.table = loaded.table;
@@ -345,7 +345,7 @@ impl Sheet {
         self.clamp();
     }
 
-    /// Un autre programme a réécrit le fichier et rien n'attend ici : on le relit.
+    /// Another program rewrote the file and nothing is pending here: reread it.
     pub fn reload_if_changed(&mut self, cx: &mut Context<Self>) {
         if self.dirty || self.stamp == stamp_of(&self.path) {
             return;
@@ -357,8 +357,8 @@ impl Sheet {
         cx.notify();
     }
 
-    /// Change les réglages de lecture de ce fichier (`None` : les deviner de nouveau) :
-    /// ce qui attend est écrit, puis le fichier est relu ainsi, et le choix retenu.
+    /// Changes the read settings of this file (`None`: guess them again):
+    /// what is pending is written, then the file is reread that way, and the choice remembered.
     pub fn reformat(&mut self, format: Option<Format>, cx: &mut Context<Self>) {
         self.flush(cx);
         if self.dirty {
@@ -383,7 +383,7 @@ impl Sheet {
         cx.notify();
     }
 
-    /// Une modification : le disque la reçoit après un court délai, ou tout de suite à `flush`.
+    /// A change: the disk gets it after a short delay, or right away on `flush`.
     fn changed(&mut self, cx: &mut Context<Self>) {
         self.dirty = true;
         self.generation += 1;
@@ -400,7 +400,7 @@ impl Sheet {
         .detach();
     }
 
-    /// Écrit en tâche de fond : un gros fichier ne fige pas la fenêtre.
+    /// Writes in the background: a big file does not freeze the window.
     fn save(&mut self, cx: &mut Context<Self>) {
         if !self.dirty {
             return;
@@ -428,7 +428,7 @@ impl Sheet {
         format!("{} : {e}", tr("Table not saved", "Tableau non enregistré"))
     }
 
-    /// Écrit tout de suite ce qui attend (changement de fichier, fermeture).
+    /// Writes what is pending right away (file change, close).
     pub fn flush(&mut self, cx: &mut Context<Self>) {
         self.finish(cx);
         if !self.dirty {
@@ -443,13 +443,13 @@ impl Sheet {
         }
     }
 
-    // ----- Géométrie -----
+    // ----- Geometry -----
 
     fn cols(&self) -> usize {
         self.table.cols().max(1)
     }
 
-    /// Première ligne du fichier qui défile : la précédente est l'en-tête, fixe en haut.
+    /// First file row that scrolls: the one before is the header, fixed at the top.
     fn first(&self) -> usize {
         self.format.header as usize
     }
@@ -459,7 +459,7 @@ impl Sheet {
     }
 
     fn measure(&mut self) {
-        // Une lecture par ligne, jamais cellule par cellule : le temps reste linéaire sur une ligne très large.
+        // One read per row, never cell by cell: time stays linear on a very wide row.
         let mut chars = vec![0; self.cols()];
         for r in 0..self.table.rows().min(SAMPLE) {
             for (c, field) in self.table.row(r).iter().enumerate() {
@@ -481,7 +481,7 @@ impl Sheet {
             .collect();
     }
 
-    /// Une cellule modifiée peut élargir sa colonne, jusqu'à la limite.
+    /// An edited cell can widen its column, up to the limit.
     fn widen(&mut self, col: usize, chars: usize) {
         let wanted = chars.min(MAX_CHARS) as f32 * self.text_px() * 0.6 + 2. * PAD;
         match self.widths.get_mut(col) {
@@ -503,7 +503,7 @@ impl Sheet {
         ((self.xs.last().copied().unwrap_or(0.) - w).max(0.), (lines as f32 * ROW - h).max(0.))
     }
 
-    /// Remet la vue, le curseur et la sélection dans le tableau.
+    /// Puts the view, cursor and selection back inside the table.
     fn clamp(&mut self) {
         let (rows, cols) = (self.table.rows().max(1), self.cols());
         let fit = |(r, c): (usize, usize)| (r.min(rows - 1), c.min(cols - 1));
@@ -513,7 +513,7 @@ impl Sheet {
         self.scroll = (self.scroll.0.clamp(0., mx), self.scroll.1.clamp(0., my));
     }
 
-    /// Ordonnée du haut de la ligne dans la grille, en-tête compris.
+    /// Y of the top of the row in the grid, header included.
     fn y_of(&self, row: usize) -> f32 {
         match row.checked_sub(self.first()) {
             Some(line) => ROW + line as f32 * ROW - self.scroll.1,
@@ -525,7 +525,7 @@ impl Sheet {
         self.xs.partition_point(|&edge| edge <= x).saturating_sub(1).min(self.cols() - 1)
     }
 
-    /// Fait défiler la vue jusqu'à la cellule.
+    /// Scrolls the view to the cell.
     fn show(&mut self, (row, col): (usize, usize)) {
         let (w, h) = self.view();
         let (left, right) = (self.xs[col], self.xs[col + 1]);
@@ -566,9 +566,9 @@ impl Sheet {
         }
     }
 
-    // ----- Sélection -----
+    // ----- Selection -----
 
-    /// Lignes et colonnes de la sélection en cours : celle où l'on tape, colle et étend.
+    /// Rows and columns of the current selection: the one typed, pasted and extended in.
     fn selection(&self) -> (Range<usize>, Range<usize>) {
         Self::span(self.anchor, self.cursor)
     }
@@ -577,8 +577,8 @@ impl Sheet {
         (r0.min(r1)..r0.max(r1) + 1, c0.min(c1)..c0.max(c1) + 1)
     }
 
-    /// Toutes les sélections, de haut en bas : celles gardées par Ctrl+clic et celle en cours.
-    /// Copier, couper, effacer et supprimer des lignes les prennent toutes.
+    /// All selections, top to bottom: those kept by Ctrl+click and the current one.
+    /// Copy, cut, clear and delete rows take them all.
     fn selections(&self) -> Vec<(Range<usize>, Range<usize>)> {
         let mut all: Vec<_> = self.more.iter().map(|&(a, b)| Self::span(a, b)).chain([self.selection()]).collect();
         all.sort_by_key(|(rows, cols)| (rows.start, cols.start));
@@ -586,19 +586,19 @@ impl Sheet {
         all
     }
 
-    /// Nombre de gestes qu'on peut défaire.
+    /// Number of gestures that can be undone.
     #[cfg(test)]
     pub fn undo_len(&self) -> usize {
         self.undo.len()
     }
 
-    /// Où l'on en est dans le tableau : la cellule du curseur et le défilement, pour y revenir.
+    /// Where we are in the table: the cursor cell and the scroll, to come back to it.
     pub fn whereabouts(&self) -> ((usize, usize), (f32, f32)) {
         (self.cursor, self.scroll)
     }
 
-    /// Revient où l'on en était. Le défilement est borné quand la grille connaît sa taille
-    /// (`measured`), pas avant : elle n'a pas encore été dessinée.
+    /// Returns to where we were. The scroll is clamped once the grid knows its size
+    /// (`measured`), not before: it has not been drawn yet.
     pub fn set_view(&mut self, cursor: (usize, usize), scroll: (f32, f32), cx: &mut Context<Self>) {
         (self.cursor, self.anchor) = (cursor, cursor);
         self.more.clear();
@@ -635,7 +635,7 @@ impl Sheet {
         self.table.rows().max(1) - 1
     }
 
-    // ----- Saisie dans une cellule -----
+    // ----- Typing in a cell -----
 
     fn begin_edit(&mut self, text: Option<&str>, cx: &mut Context<Self>) {
         let (r, c) = self.cursor;
@@ -644,7 +644,7 @@ impl Sheet {
         cx.notify();
     }
 
-    /// Valide la saisie en cours.
+    /// Commits the current input.
     fn finish(&mut self, cx: &mut Context<Self>) {
         let Some(edit) = self.edit.take() else {
             return;
@@ -659,14 +659,14 @@ impl Sheet {
     fn typed(&mut self, text: &str, cx: &mut Context<Self>) {
         match &mut self.edit {
             Some(edit) => edit.insert(text),
-            // Taper sur une cellule en remplace le contenu, comme dans un tableur.
+            // Typing on a cell replaces its content, as in a spreadsheet.
             None if !text.chars().all(char::is_control) => self.begin_edit(Some(text), cx),
             None => {}
         }
         cx.notify();
     }
 
-    // ----- Modifications -----
+    // ----- Edits -----
 
     fn apply(&mut self, change: Change) -> Change {
         match change {
@@ -694,7 +694,7 @@ impl Sheet {
                 self.table.remove_rows(range);
                 Change::Insert(at, rows)
             }
-            // Les largeurs se mesurent de nouveau : `settle` voit qu'elles ne tiennent plus au tableau.
+            // Widths are measured again: `settle` sees they no longer fit the table.
             Change::InsertCols(at, n, saved) => {
                 self.table.insert_cols(at, n, &saved);
                 self.widths.clear();
@@ -723,7 +723,7 @@ impl Sheet {
         }
     }
 
-    /// Applique des gestes ensemble : un seul « annuler » les défait.
+    /// Applies gestures together: a single "undo" reverts them.
     fn commit(&mut self, changes: Vec<Change>, cx: &mut Context<Self>) {
         let mut back: Vec<Change> = changes.into_iter().map(|c| self.apply(c)).collect();
         back.reverse();
@@ -756,9 +756,9 @@ impl Sheet {
         cx.notify();
     }
 
-    /// Vide les cellules de la sélection.
+    /// Clears the cells of the selection.
     fn clear(&mut self, cx: &mut Context<Self>) {
-        // Deux sélections peuvent se recouvrir : chaque cellule une seule fois.
+        // Two selections can overlap: each cell only once.
         let all: std::collections::BTreeSet<(usize, usize)> =
             self.selections().into_iter().flat_map(|(rows, cols)| rows.flat_map(move |r| cols.clone().map(move |c| (r, c)))).collect();
         let cells: Vec<_> = all
@@ -775,7 +775,7 @@ impl Sheet {
         self.finish(cx);
         self.more.clear();
         let (rows, cols) = self.selection();
-        // Des colonnes entières : autant de colonnes vides, à leur droite ou à leur gauche, prises à leur tour.
+        // Whole columns: as many empty columns, to their right or left, selected in turn.
         if self.whole_cols() {
             let at = if below { cols.end } else { cols.start };
             self.commit(vec![Change::InsertCols(at, cols.len(), Vec::new())], cx);
@@ -787,15 +787,15 @@ impl Sheet {
         self.select_to((at, self.cursor.1), false, cx);
     }
 
-    /// Toutes les sélections prennent des colonnes de haut en bas, sans prendre tout le tableau :
-    /// insérer et supprimer agissent alors sur les colonnes, et non sur les lignes.
+    /// All selections take columns top to bottom, without taking the whole table:
+    /// insert and delete then act on columns, not rows.
     fn whole_cols(&self) -> bool {
         let (tall, wide) = (self.table.rows(), self.cols());
         let all = self.selections();
         all.iter().all(|(rows, _)| rows.start == 0 && rows.end >= tall) && !all.iter().any(|(_, cols)| cols.start == 0 && cols.end >= wide)
     }
 
-    /// Les lignes ou les colonnes entières de la sélection : Maj+Espace et Ctrl+Espace, comme dans un tableur.
+    /// The whole rows or columns of the selection: Shift+Space and Ctrl+Space, as in a spreadsheet.
     fn select_whole(&mut self, rows: bool, cx: &mut Context<Self>) {
         self.finish(cx);
         self.more.clear();
@@ -807,7 +807,7 @@ impl Sheet {
         cx.notify();
     }
 
-    /// Supprimer ce qui est sélectionné : les colonnes quand elles sont prises entières, sinon les lignes.
+    /// Delete what is selected: the columns when they are taken whole, otherwise the rows.
     fn delete_span(&mut self, cx: &mut Context<Self>) {
         if !self.whole_cols() {
             return self.delete_rows(cx);
@@ -823,15 +823,15 @@ impl Sheet {
         }
         let first = ranges[0].start;
         self.more.clear();
-        // De droite à gauche : chaque retrait laisse en place les colonnes qui restent à retirer.
+        // Right to left: each removal leaves in place the columns still to remove.
         self.commit(ranges.into_iter().rev().map(Change::RemoveCols).collect(), cx);
         let c = first.min(self.cols() - 1);
         (self.anchor, self.cursor) = ((self.last_row(), c), (0, c));
         cx.notify();
     }
 
-    /// Un geste de tableau, comme dans une note : sur les lignes et les colonnes de la sélection. Les
-    /// colonnes et le tri lisent tout le fichier, et un geste se défait d'un trait.
+    /// A table gesture, as in a note: on the rows and columns of the selection. Columns
+    /// and sorting read the whole file, and a gesture is undone in one go.
     pub fn table_op(&mut self, op: TableOp, cx: &mut Context<Self>) {
         self.finish(cx);
         self.more.clear();
@@ -857,7 +857,7 @@ impl Sheet {
                 self.commit(vec![Change::InsertCols(cols.end, cols.len(), saved)], cx);
                 (self.anchor, self.cursor) = ((r, cols.end), (r, cols.end));
             }
-            // Le corps seul bouge : l'en-tête reste en haut, et rien ne sort du tableau.
+            // Only the body moves: the header stays at the top, and nothing leaves the table.
             TableOp::MoveRowUp if rows.start > first => {
                 let perm: Vec<usize> = (1..=rows.len()).chain([0]).collect();
                 self.commit(vec![Change::Reorder(rows.start - 1, perm)], cx);
@@ -880,15 +880,15 @@ impl Sheet {
                 (self.anchor, self.cursor) = ((self.anchor.0, self.anchor.1 + 1), (r, c + 1));
                 self.settle(cx);
             }
-            // Retirer toutes les colonnes ne laisserait pas de tableau.
+            // Removing all columns would leave no table.
             TableOp::DeleteCol if cols.len() < wide => self.commit(vec![Change::RemoveCols(cols)], cx),
             TableOp::SortAsc | TableOp::SortDesc => self.sort(c, op == TableOp::SortAsc, cx),
             _ => {}
         }
     }
 
-    /// Les lignes sous l'en-tête, triées sur la colonne `col` : tri naturel, cellules vides à la fin dans
-    /// les deux sens, lignes égales dans leur ordre d'avant. Les lignes ne sont pas copiées.
+    /// The rows under the header, sorted on column `col`: natural sort, empty cells last in
+    /// both directions, equal rows in their previous order. Rows are not copied.
     fn sort(&mut self, col: usize, ascending: bool, cx: &mut Context<Self>) {
         let (first, tall) = (self.first(), self.table.rows());
         let keys: Vec<String> = (first..tall).map(|r| self.table.cell(r, col).into_owned()).collect();
@@ -911,8 +911,8 @@ impl Sheet {
 
     fn delete_rows(&mut self, cx: &mut Context<Self>) {
         self.finish(cx);
-        // Les lignes de toutes les sélections, regroupées en plages et retirées du bas vers le
-        // haut : chaque retrait laisse en place les lignes qui restent à retirer.
+        // The rows of all selections, grouped into ranges and removed from bottom to
+        // top: each removal leaves in place the rows still to remove.
         let rows: std::collections::BTreeSet<usize> = self.selections().into_iter().flat_map(|(rows, _)| rows).collect();
         let mut ranges: Vec<Range<usize>> = Vec::new();
         for r in rows.iter().copied() {
@@ -929,7 +929,7 @@ impl Sheet {
         self.commit(changes, cx);
     }
 
-    // ----- Presse-papiers et export -----
+    // ----- Clipboard and export -----
 
     fn flash(&mut self, cx: &mut Context<Self>) {
         self.copied = true;
@@ -945,7 +945,7 @@ impl Sheet {
         .detach();
     }
 
-    /// La sélection, ou tout le tableau si elle tient dans une seule cellule.
+    /// The selection, or the whole table if it fits in a single cell.
     fn scope(&self) -> (Range<usize>, Range<usize>, bool) {
         let (rows, cols) = self.selection();
         match rows.len() * cols.len() {
@@ -954,16 +954,16 @@ impl Sheet {
         }
     }
 
-    /// Ctrl+C : la sélection en TSV, que les tableurs et les tableaux des notes collent tels quels.
+    /// Ctrl+C: the selection as TSV, which spreadsheets and note tables paste as is.
     fn copy(&mut self, cx: &mut Context<Self>) {
-        // Plusieurs sélections : leurs blocs l'un sous l'autre, de haut en bas.
+        // Several selections: their blocks one under the other, top to bottom.
         let blocks: Vec<String> =
             self.selections().into_iter().map(|(rows, cols)| self.table.text_range(rows, cols, Style::Tsv)).collect();
         cx.write_to_clipboard(ClipboardItem::new_string(blocks.join("\n")));
         self.flash(cx);
     }
 
-    /// « Copier le tableau en… » : la sélection, ou tout le tableau si elle tient dans une cellule.
+    /// "Copy table as…": the selection, or the whole table if it fits in one cell.
     pub fn copy_as(&mut self, style: Style, cx: &mut Context<Self>) {
         self.finish(cx);
         let (rows, cols, _) = self.scope();
@@ -980,8 +980,8 @@ impl Sheet {
         self.clear(cx);
     }
 
-    /// Texte collé : des cellules (tableur, tableau Markdown, CSV) remplissent la grille à partir
-    /// du coin de la sélection, qui s'agrandit au besoin ; une seule remplit toute la sélection.
+    /// Pasted text: cells (spreadsheet, Markdown table, CSV) fill the grid from
+    /// the corner of the selection, which grows if needed; a single one fills the whole selection.
     fn paste(&mut self, text: &str, cx: &mut Context<Self>) {
         let grid = markdown::paste_grid(text).unwrap_or_else(|| table::parse_grid(text));
         if grid.is_empty() {
@@ -1009,7 +1009,7 @@ impl Sheet {
         self.show(self.cursor);
     }
 
-    /// Écrit le tableau (ou la sélection) à côté du fichier, dans ce format.
+    /// Writes the table (or the selection) next to the file, in this format.
     pub fn export(&mut self, style: Style, cx: &mut Context<Self>) {
         self.finish(cx);
         let (rows, cols, partial) = self.scope();
@@ -1023,15 +1023,15 @@ impl Sheet {
         }
     }
 
-    // ----- Souris -----
+    // ----- Mouse -----
 
     fn press(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus);
         self.finish(cx);
         let extend = e.modifiers.shift;
         let hit = self.hit(e.position);
-        // Ctrl+clic sur une cellule, une ligne ou une colonne : ce qui est sélectionné le reste,
-        // une autre sélection commence. Un clic simple ne garde que la sienne.
+        // Ctrl+click on a cell, a row or a column: what is selected stays so,
+        // another selection starts. A plain click keeps only its own.
         let adding = e.modifiers.secondary();
         let mut kept = std::mem::take(&mut self.more);
         match hit {
@@ -1058,7 +1058,7 @@ impl Sheet {
             Hit::Col(c) => {
                 self.drag = Drag::Cols;
                 self.pick_col(c, extend, cx);
-                // Double-clic sur l'en-tête : on écrit dans sa cellule.
+                // Double-click on the header: write in its cell.
                 if e.click_count >= 2 && self.format.header {
                     self.select_to((0, c), false, cx);
                     self.begin_edit(None, cx);
@@ -1088,7 +1088,7 @@ impl Sheet {
         }
     }
 
-    /// La barre de défilement suit le pointeur.
+    /// The scrollbar follows the pointer.
     fn drag_bar(&mut self, p: Point<Pixels>, vertical: bool, cx: &mut Context<Self>) {
         let (mx, my) = self.max_scroll();
         let (w, h) = (f32::from(self.body.size.width), f32::from(self.body.size.height));
@@ -1102,7 +1102,7 @@ impl Sheet {
         cx.notify();
     }
 
-    /// La molette fait défiler ; avec Maj, de côté.
+    /// The wheel scrolls; with Shift, sideways.
     fn wheel(&mut self, e: &ScrollWheelEvent, cx: &mut Context<Self>) {
         let mut delta = e.delta.pixel_delta(px(ROW));
         if e.modifiers.shift && delta.x == px(0.) {
@@ -1113,8 +1113,8 @@ impl Sheet {
         cx.notify();
     }
 
-    /// Toute la colonne `c` (avec `extend`, jusqu'à celle de l'ancre). La vue ne bouge pas : la cellule active est
-    /// celle du haut, et non la dernière ligne, où un défilement automatique nous emmènerait.
+    /// The whole column `c` (with `extend`, up to the anchor's). The view does not move: the active cell is
+    /// the top one, not the last row, where autoscroll would take us.
     fn pick_col(&mut self, c: usize, extend: bool, cx: &mut Context<Self>) {
         self.finish(cx);
         let from = if extend { self.anchor.1 } else { c };
@@ -1122,7 +1122,7 @@ impl Sheet {
         cx.notify();
     }
 
-    /// Toute la ligne `r`, sans faire défiler vers la dernière colonne.
+    /// The whole row `r`, without scrolling to the last column.
     fn pick_row(&mut self, r: usize, extend: bool, cx: &mut Context<Self>) {
         self.finish(cx);
         let from = if extend { self.anchor.0 } else { r };
@@ -1137,9 +1137,9 @@ impl Sheet {
         cx.notify();
     }
 
-    /// Lignes et colonnes à construire. La taille de la vue n'est connue qu'après un premier dessin :
-    /// d'ici là, et pour ne jamais montrer une grille à moitié vide, on prend la fenêtre entière,
-    /// qui la contient.
+    /// Rows and columns to build. The view size is only known after a first draw:
+    /// until then, and so as never to show a half-empty grid, take the whole window,
+    /// which contains it.
     fn visible(&self, window: gpui::Size<Pixels>) -> (Range<usize>, Range<usize>) {
         let (vw, vh) = self.view();
         let (vw, vh) = (vw.max(f32::from(window.width) - GUTTER), vh.max(f32::from(window.height) - ROW));
@@ -1154,17 +1154,17 @@ impl Sheet {
         if bounds != self.body {
             self.body = bounds;
             self.clamp();
-            // Pendant le dessin, `notify` ne programme aucune nouvelle image : la grille ne se
-            // serait redessinée qu'au prochain événement (souris, clavier). On le reporte à après.
+            // During drawing, `notify` schedules no new frame: the grid would only
+            // have been redrawn on the next event (mouse, keyboard). Defer it until after.
             let this = cx.entity();
             cx.defer(move |cx| this.update(cx, |_, cx| cx.notify()));
         }
     }
 }
 
-// ponytail: saisie au fil de l'eau, sans composition IME (le texte composé est inséré
-// tel quel) ni sélection dans la cellule ; reprendre le gestionnaire de l'éditeur si l'on
-// écrit des tableaux en japonais ou en chinois.
+// ponytail: typing as it comes, without IME composition (composed text is inserted
+// as is) nor selection inside the cell; reuse the editor's handler if tables
+// get written in Japanese or Chinese.
 impl EntityInputHandler for Sheet {
     fn text_for_range(&mut self, _: Range<usize>, _: &mut Option<Range<usize>>, _: &mut Window, _: &mut Context<Self>) -> Option<String> {
         None
@@ -1212,9 +1212,9 @@ impl Sheet {
             .on_click(move |_, window, cx| window.dispatch_action(pick.action(), cx))
     }
 
-    /// Ce qui est sélectionné, quand ce sont des colonnes ou des lignes entières, et ses gestes : son nom
-    /// (« Colonne « age » », « 2 lignes »), puis des icônes par groupe (insérer, déplacer, trier ou
-    /// dupliquer, supprimer), chacune nommée avec ses touches dans son infobulle.
+    /// What is selected, when it is whole columns or rows, and its gestures: its name
+    /// ("Column “age”", "2 rows"), then icons by group (insert, move, sort or
+    /// duplicate, delete), each named with its keys in its tooltip.
     fn span_tools(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         let t = self.theme;
         let (rows, cols) = self.selection();
@@ -1292,10 +1292,10 @@ impl Sheet {
             .flex_none()
             .min_h(px(40.))
             .pl_4()
-            // Sous la pastille de la fenêtre, quand l'app dessine sa barre de titre.
+            // Under the window badge, when the app draws its title bar.
             .pr(px(if self.client { 128. } else { 8. }))
             .flex()
-            // Dans une fenêtre étroite, les réglages passent à la ligne au lieu de glisser sous la pastille.
+            // In a narrow window, settings wrap instead of sliding under the badge.
             .flex_wrap()
             .items_center()
             .gap_1()
@@ -1314,7 +1314,7 @@ impl Sheet {
                     .when(self.client, |d| d.map(crate::ui::widgets::drag_window))
                     .child(info),
             )
-            // À côté du nom du tableau : ce qui est sélectionné, et ce qu'on peut en faire.
+            // Next to the table name: what is selected, and what can be done with it.
             .children(self.span_tools(cx))
             .child(div().flex_1().min_w(px(8.)).h(px(38.)).when(self.client, |d| d.map(crate::ui::widgets::drag_window)))
             .child(self.chip("sheet-delimiter", delimiter, false, Pick::Delimiter))
@@ -1333,7 +1333,7 @@ impl Sheet {
             )
     }
 
-    /// Une ligne de cellules, de la colonne `cols.start` à `cols.end` exclue.
+    /// A row of cells, from column `cols.start` to `cols.end` excluded.
     fn render_row(&self, row: usize, cols: Range<usize>, selected: &[(Range<usize>, Range<usize>)], head: bool) -> gpui::Div {
         let t = self.theme;
         let editing = self.edit.is_some();
@@ -1428,7 +1428,7 @@ impl Render for Sheet {
         .absolute()
         .size_full();
 
-        // Les colonnes et les lignes qui débordent de la vue ne sont pas construites.
+        // Columns and rows that overflow the view are not built.
         let (lines, columns) = self.visible(window.viewport_size());
         let (r0, r1, c0, c1) = (lines.start, lines.end, columns.start, columns.end);
         let selected = self.selections();
@@ -1494,7 +1494,7 @@ impl Render for Sheet {
             .w(px(GUTTER))
             .h_full()
             .overflow_hidden()
-            // Un clic y prend une ligne entière, comme un clic sur un en-tête prend sa colonne.
+            // A click there takes a whole row, as a click on a header takes its column.
             .cursor_pointer()
             .bg(t.bg)
             .text_size(px(self.text_px()))
@@ -1524,8 +1524,8 @@ impl Render for Sheet {
             .flex_col()
             .bg(t.bg)
             .text_color(t.text)
-            // Une cellule en cours de frappe : les touches d'une ligne de saisie passent avant
-            // celles de la grille (flèches, effacement, presse-papiers).
+            // A cell being typed in: the keys of an input line come before
+            // those of the grid (arrows, deletion, clipboard).
             .key_context(if self.edit.is_some() { "Sheet Line" } else { "Sheet" })
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &Left, _, cx| this.go(0, -1, false, cx)))
@@ -1556,7 +1556,7 @@ impl Render for Sheet {
                 this.finish(cx);
                 this.select_to((this.last_row(), this.cursor.1), false, cx)
             }))
-            // Tab passe à la cellule suivante, et à la ligne suivante au bout de celle-ci.
+            // Tab moves to the next cell, and to the next row at the end of this one.
             .on_action(cx.listener(|this, _: &Next, _, cx| {
                 this.finish(cx);
                 let (r, c) = this.cursor;
@@ -1575,7 +1575,7 @@ impl Render for Sheet {
                     _ => this.go(0, -1, false, cx),
                 }
             }))
-            // Entrée valide et descend ; hors saisie, elle ouvre la cellule.
+            // Enter commits and moves down; outside input, it opens the cell.
             .on_action(cx.listener(|this, _: &Enter, _, cx| match this.edit {
                 Some(_) => this.go(1, 0, false, cx),
                 None => this.begin_edit(None, cx),
@@ -1630,7 +1630,7 @@ impl Sheet {
         &self.table
     }
 
-    /// Milieu de la cellule (`r`, `c`) à l'écran.
+    /// Middle of cell (`r`, `c`) on screen.
     #[cfg(test)]
     pub fn spot(&self, r: usize, c: usize) -> Point<Pixels> {
         let x = GUTTER + (self.xs[c] + self.xs[c + 1]) / 2. - self.scroll.0;
@@ -1638,13 +1638,13 @@ impl Sheet {
         self.body.origin + gpui::point(px(x), px(y))
     }
 
-    /// Toutes les sélections (lignes, colonnes), de haut en bas.
+    /// All selections (rows, columns), top to bottom.
     #[cfg(test)]
     pub fn picked(&self) -> Vec<(Range<usize>, Range<usize>)> {
         self.selections()
     }
 
-    /// Défilement de la vue (x, y), et sélection (lignes, colonnes).
+    /// View scroll (x, y), and selection (rows, columns).
     pub fn view_state(&self) -> ((f32, f32), (Range<usize>, Range<usize>)) {
         (self.scroll, self.selection())
     }
@@ -1662,7 +1662,7 @@ impl Sheet {
         }
     }
 
-    /// Comme au tout premier affichage : la vue n'a pas encore été mesurée.
+    /// As on the very first display: the view has not been measured yet.
     pub fn unmeasured(&mut self) -> (Range<usize>, Range<usize>) {
         self.body = Bounds::default();
         self.visible(gpui::size(px(800.), px(600.)))

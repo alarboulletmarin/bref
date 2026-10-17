@@ -3,9 +3,9 @@
 use super::*;
 
 impl Shell {
-    /// Le schéma est enregistré à chaque changement : rien n'attend en mémoire.
-    // ponytail: écriture synchrone à chaque geste ou frappe (quelques Ko) ;
-    // la différer comme celle des notes si de gros schémas font attendre.
+    /// The diagram is saved on every change: nothing waits in memory.
+    // ponytail: synchronous write on every gesture or keystroke (a few KB);
+    // defer it like the notes' if big diagrams make things wait.
     pub(super) fn on_canvas_event(&mut self, canvas: Entity<Canvas>, event: &CanvasEvent, cx: &mut Context<Self>) {
         let shows = |pane: &Pane| pane.drawing() == Some(&canvas);
         if let Some(pane) = self.panes.iter().position(shows) {
@@ -28,8 +28,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Image PNG du schéma, à côté de lui : encre sombre sur fond blanc, pour
-    /// qu'elle se colle partout. Elle est dessinée hors du thread UI.
+    /// PNG image of the diagram, next to it: dark ink on a white background, so
+    /// that it pastes anywhere. It is drawn off the UI thread.
     pub(super) fn export_png(&mut self, file: PathBuf, canvas: &Entity<Canvas>, cx: &mut Context<Self>) {
         let svg = canvas.read(cx).diagram().to_svg(0x1e1e1e);
         let canvas = canvas.downgrade();
@@ -58,7 +58,7 @@ impl Shell {
         .detach();
     }
 
-    /// Dossier d'un nouveau schéma : celui sélectionné dans l'arbre, sinon celui de la note.
+    /// Folder of a new diagram: the one selected in the tree, otherwise the note's.
     pub(super) fn diagram_dir(&self) -> Option<PathBuf> {
         let beside = self.pane().path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
         self.nav.target_dir().or(beside).or(self.vault.clone())
@@ -70,7 +70,7 @@ impl Shell {
         }
     }
 
-    /// Demande un fichier Excalidraw ou draw.io, et en fait un schéma du coffre.
+    /// Asks for an Excalidraw or draw.io file, and makes a vault diagram of it.
     pub(super) fn import_diagram(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() {
             return;
@@ -105,7 +105,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Enregistre `diagram` dans `dir` sous un nom libre, et l'ouvre.
+    /// Saves `diagram` in `dir` under a free name, and opens it.
     pub(super) fn add_diagram(&mut self, dir: &Path, name: &str, diagram: Diagram, window: &mut Window, cx: &mut Context<Self>) {
         let path = vault::free_path(dir, name, "svg");
         if let Err(e) = vault::write(&path, &diagram.to_svg(diagram::COLORS[0])) {

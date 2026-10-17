@@ -1,5 +1,5 @@
-//! Navigation : un rail d'icônes toujours visible, et un panneau (arbre du
-//! coffre, notes récentes, graphe ou tags) qui partage la fenêtre avec la note.
+//! Navigation: an always-visible icon rail, and a panel (vault
+//! tree, recent notes, graph or tags) that shares the window with the note.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -26,9 +26,9 @@ actions!(nav, [ShowCalendar, PrevMonth, NextMonth, ShowTree, ShowRecent, ShowGra
 pub const RAIL: Pixels = px(40.);
 pub const ROW: Pixels = px(26.);
 pub const LIST_W: Pixels = px(260.);
-/// Largeur que le panneau et la colonne des commentaires laissent toujours à la note.
+/// Width the panel and the comments column always leave to the note.
 pub const NOTE_MIN: Pixels = px(200.);
-/// Poignée entre le panneau et la note.
+/// Handle between the panel and the note.
 pub const DIVIDER: Pixels = px(5.);
 
 #[derive(Clone, Copy, PartialEq, Hash, Debug)]
@@ -37,13 +37,13 @@ pub enum Mode {
     Recent,
     Graph,
     Tags,
-    /// Rétroliens : les notes qui mènent à la note ouverte.
+    /// Backlinks: the notes that lead to the open note.
     Links,
-    /// Calendrier : un mois, où se voient les jours qui ont leur note.
+    /// Calendar: a month, showing the days that have their note.
     Calendar,
 }
 
-/// Place du panneau : replié sur son rail, à côté de la note, ou seul.
+/// Place of the panel: collapsed onto its rail, next to the note, or alone.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Panel {
     Rail,
@@ -56,19 +56,19 @@ pub struct Row {
     pub path: PathBuf,
     pub name: String,
     pub depth: usize,
-    /// Dossier, déplié ou non ; `None` pour une note.
+    /// Folder, expanded or not; `None` for a note.
     pub dir: Option<bool>,
 }
 
-/// Menu contextuel : où il s'ouvre et la ligne visée (`None` : le coffre lui-même).
+/// Context menu: where it opens and the targeted row (`None`: the vault itself).
 pub struct Menu {
     pub at: Point<Pixels>,
     pub target: Option<PathBuf>,
-    /// Clic droit dans la note et non dans l'arbre : le lien visé, s'il y en a un.
+    /// Right click in the note and not in the tree: the targeted link, if there is one.
     pub text: Option<Option<Link>>,
-    /// Ce clic droit dans la note vise un commentaire.
+    /// This right click in the note targets a comment.
     pub commented: bool,
-    /// Ouvert par la poignée d'un bloc : les gestes du bloc.
+    /// Opened by a block's handle: the block's gestures.
     pub block: bool,
 }
 
@@ -79,7 +79,7 @@ pub enum Do {
     NewNote,
     NewDiagram,
     NewFolder,
-    /// Une note née d'un modèle, dans le dossier visé.
+    /// A note born from a template, in the targeted folder.
     FromTemplate,
     Rename,
     Duplicate,
@@ -88,11 +88,11 @@ pub enum Do {
     CopyPath,
     CopyRelative,
     Reveal,
-    /// Ouvre la grille des icônes pour la ligne visée.
+    /// Opens the icon grid for the targeted row.
     Icon,
-    /// Montre le dossier visé en page liste.
+    /// Shows the targeted folder as a list page.
     List,
-    // Menu de la note.
+    // Note menu.
     Cut,
     Copy,
     Paste,
@@ -104,22 +104,22 @@ pub enum Do {
     Code,
     Link,
     Comment,
-    /// Les lignes choisies en liste à puces, numérotée, de tâches, ou en texte.
+    /// The chosen lines as a bulleted, numbered or task list, or as text.
     Bullets,
     Numbered,
     Tasks,
     Plain,
-    /// Un geste sur le tableau du curseur.
+    /// A gesture on the cursor's table.
     Table(editor::TableOp),
-    /// Un geste sur le bloc de la poignée.
+    /// A gesture on the handle's block.
     Block(editor::BlockOp),
     OpenLink,
     CopyAddress,
 }
 
 impl Do {
-    /// Le raccourci qui fait la même chose que cette entrée de menu, tel qu'il est en vigueur ;
-    /// rien quand l'action n'en a pas.
+    /// The shortcut that does the same as this menu entry, as currently in force;
+    /// nothing when the action has none.
     pub fn keys(self, cx: &gpui::App) -> String {
         use crate::{views::editor, ui::keys::of};
         match self {
@@ -148,17 +148,17 @@ impl Do {
             Do::Plain => of(cx, &editor::ListText),
             Do::Table(op) => of(cx, op.action().as_ref()),
             Do::Block(op) => of(cx, op.action().as_ref()),
-            // Pas une liaison, mais le geste qui fait la même chose.
+            // Not a binding, but the gesture that does the same.
             Do::OpenLink => format!("{}+{}", crate::ui::keys::MOD, tr("click", "clic")),
             _ => String::new(),
         }
     }
 }
 
-/// Ligne de l'arbre en cours de glisser-déposer ; dessinée sous le pointeur.
+/// Tree row being dragged and dropped; drawn under the pointer.
 #[derive(Clone)]
 pub struct Dragged {
-    /// La ligne saisie, ou toute la sélection multiple si elle en fait partie.
+    /// The grabbed row, or the whole multiple selection if it is part of it.
     pub paths: Vec<PathBuf>,
     pub name: String,
     pub theme: Theme,
@@ -185,39 +185,39 @@ pub struct Nav {
     pub mode: Mode,
     pub panel: Panel,
     pub list_w: Pixels,
-    /// Largeur du graphe ; zéro : la moitié de la fenêtre.
+    /// Width of the graph; zero: half the window.
     pub graph_w: Pixels,
     pub dragging: bool,
-    /// Ligne sélectionnée (note ou dossier).
+    /// Selected row (note or folder).
     pub sel: Option<PathBuf>,
-    /// Sélection multiple (Ctrl+clic, Maj+clic) ; vide tant qu'une seule ligne
-    /// est choisie. `sel` est alors la ligne d'où Maj+clic étend.
+    /// Multiple selection (Ctrl+click, Shift+click); empty as long as a single row
+    /// is chosen. `sel` is then the row Shift+click extends from.
     pub marked: HashSet<PathBuf>,
-    /// Note dont le panneau montre les rétroliens : la dernière ouverte, pas celle qu'on
-    /// parcourt en aperçu, sinon la liste changerait sous la sélection.
+    /// Note whose backlinks the panel shows: the last opened one, not the one being
+    /// browsed in preview, otherwise the list would change under the selection.
     pub anchor: Option<PathBuf>,
-    /// Jour choisi dans le calendrier, qui montre son mois.
+    /// Day chosen in the calendar, which shows its month.
     pub day: Date,
-    /// Dossiers dépliés.
+    /// Expanded folders.
     pub open: HashSet<PathBuf>,
-    /// Lignes de la dernière frame, et l'empreinte de ce dont elles sont tirées.
+    /// Rows of the last frame, and the fingerprint of what they are drawn from.
     pub rows: Vec<Row>,
     pub rows_from: u64,
     pub scroll: UniformListScrollHandle,
-    /// Amener la sélection à l'écran à la prochaine frame.
+    /// Bring the selection on screen at the next frame.
     pub reveal: bool,
-    /// Le système dessine la barre de titre (macOS, Windows) : le rail n'a pas à servir de
-    /// poignée pour déplacer la fenêtre.
+    /// The system draws the title bar (macOS, Windows): the rail does not have to serve as a
+    /// handle to move the window.
     pub native_bar: bool,
-    // Bord gauche et largeur du contenu de la fenêtre, à la dernière frame.
+    // Left edge and width of the window content, at the last frame.
     pub left: Pixels,
     pub total: Pixels,
-    /// Largeur réservée à droite de la note (la colonne des commentaires) : le panneau la lui laisse.
+    /// Width reserved to the right of the note (the comments column): the panel leaves it free.
     pub aside: Pixels,
 }
 
 impl Nav {
-    /// Reprend le panneau tel qu'il était à la fermeture de l'app.
+    /// Restores the panel as it was when the app closed.
     pub fn new(focus: FocusHandle) -> Self {
         let saved = vault::load_layout();
         let mut words = saved.split_whitespace();
@@ -273,14 +273,14 @@ impl Nav {
         vault::save_layout(&format!("{mode} {panel} {list} {graph}\n"));
     }
 
-    /// Sélectionne la note et déplie les dossiers qui y mènent.
+    /// Selects the note and expands the folders leading to it.
     pub fn reveal(&mut self, path: &Path) {
         self.sel = Some(path.to_path_buf());
         self.open.extend(path.ancestors().skip(1).map(Path::to_path_buf));
         self.reveal = true;
     }
 
-    /// Largeur du panneau à côté de la note, dans le mode affiché.
+    /// Width of the panel next to the note, in the shown mode.
     pub fn width(&mut self) -> &mut Pixels {
         match self.mode {
             Mode::Graph => &mut self.graph_w,
@@ -288,7 +288,7 @@ impl Nav {
         }
     }
 
-    /// Dossier où créer une note depuis l'arbre : celui de la sélection.
+    /// Folder where to create a note from the tree: the selection's.
     pub fn target_dir(&self) -> Option<PathBuf> {
         if self.panel == Panel::Rail || self.mode != Mode::Tree {
             return None;
@@ -302,9 +302,9 @@ impl Nav {
     }
 }
 
-/// Lignes visibles de l'arbre : dossiers d'abord, puis notes, par ordre
-/// alphabétique ; le contenu des dossiers repliés est omis. `dirs` apporte les
-/// dossiers sans note.
+/// Visible rows of the tree: folders first, then notes, in alphabetical
+/// order; the content of collapsed folders is left out. `dirs` brings the
+/// folders without notes.
 pub fn tree_rows(
     root: &Path,
     notes: &[Note],
@@ -313,7 +313,7 @@ pub fn tree_rows(
     open: &HashSet<PathBuf>,
 ) -> Vec<Row> {
     let mut all: HashSet<&Path> = dirs.iter().map(PathBuf::as_path).collect();
-    // Par dossier : ses notes puis ses images, chacune avec le nom affiché.
+    // Per folder: its notes then its pictures, each with the shown name.
     let mut files: HashMap<&Path, Vec<(&Path, String)>> = HashMap::new();
     let named = notes.iter().map(|n| (n.path.as_path(), n.name.clone()));
     let pictures = images.iter().map(|p| (p.as_path(), graph::image_name(p)));
@@ -333,7 +333,7 @@ pub fn tree_rows(
         .for_each(|f| f.sort_by_cached_key(|(path, name)| (vault::is_file_shown(path), vault::natural(name))));
 
     let mut rows = Vec::new();
-    // Parcours en profondeur : (dossier, profondeur de son contenu), sous-dossiers d'abord.
+    // Depth-first walk: (folder, depth of its content), subfolders first.
     fn walk(
         dir: &Path,
         depth: usize,
@@ -367,33 +367,33 @@ pub fn tree_rows(
     rows
 }
 
-/// Ligne d'un tag dans le panneau : un faux chemin, qu'aucun fichier ne porte.
+/// Row of a tag in the panel: a fake path, that no file bears.
 fn tag_path(tag: &str) -> PathBuf {
     PathBuf::from(format!("#{tag}"))
 }
 
-/// Le tag que désigne ce chemin (`#tag`), si c'en est un.
+/// The tag this path points to (`#tag`), if it is one.
 pub fn tag_of(path: &Path) -> Option<&str> {
     path.to_str()?.strip_prefix('#')
 }
 
-/// Page liste affichée à la place de la note.
+/// List page shown in place of the note.
 pub struct Listing {
-    /// Le dossier, ou le tag (`#tag`), dont on liste les notes.
+    /// The folder, or the tag (`#tag`), whose notes are listed.
     pub of: PathBuf,
-    /// La colonne qui trie (0 : le nom), et si c'est à rebours.
+    /// The sorting column (0: the name), and whether it is reversed.
     pub by: usize,
     pub back: bool,
-    /// Ce qu'on tape garde les lignes qui le contiennent.
+    /// What is typed keeps the rows that contain it.
     pub filter: Entity<Field>,
-    /// Cellule qu'on réécrit : la note, la clé, son champ.
+    /// Cell being rewritten: the note, the key, its field.
     pub edit: Option<(PathBuf, String, Entity<Field>)>,
 }
 
-/// Les tags du coffre par ordre alphabétique ; sous un tag déplié, ses notes.
-// ponytail: une note qui porte plusieurs tags dépliés apparaît sous chacun, et la
-// sélection, tenue par son chemin, les marque toutes ; donner une identité propre
-// à chaque ligne si cela gêne.
+/// The vault's tags in alphabetical order; under an expanded tag, its notes.
+// ponytail: a note with several expanded tags appears under each, and the
+// selection, held by its path, marks them all; give each row its own identity
+// if that gets in the way.
 pub fn tag_rows(notes: &[Note], open: &HashSet<PathBuf>) -> Vec<Row> {
     let mut tagged: BTreeMap<&str, Vec<&Note>> = BTreeMap::new();
     for note in notes {
@@ -414,7 +414,7 @@ pub fn tag_rows(notes: &[Note], open: &HashSet<PathBuf>) -> Vec<Row> {
     rows
 }
 
-/// L'entrée du menu qui montre un fichier dans le gestionnaire de fichiers, sous son nom de chaque système.
+/// The menu entry that shows a file in the file manager, under its name on each system.
 pub fn reveal_label() -> &'static str {
     if cfg!(target_os = "macos") {
         tr("Reveal in Finder", "Afficher dans le Finder")
@@ -451,16 +451,16 @@ mod tests {
                 .map(|r| format!("{}{}{}", "  ".repeat(r.depth), r.name, if r.dir.is_some() { "/" } else { "" }))
                 .collect()
         };
-        // Dossiers d'abord, sans tenir compte de la casse ; tout est replié.
+        // Folders first, case-insensitive; everything is collapsed.
         assert_eq!(shown(&[]), ["a/", "Z/", "A", "b"]);
-        // Un dossier sans note apparaît aussi.
-        // Les images d'un dossier suivent ses notes.
+        // A folder without notes appears too.
+        // A folder's pictures follow its notes.
         assert_eq!(shown(&["a"]), ["a/", "  c/", "  vide/", "  B", "  Photo.png", "Z/", "A", "b"]);
-        // Un dossier déplié dans un dossier replié reste caché.
+        // A folder expanded inside a collapsed folder stays hidden.
         assert_eq!(shown(&["a/c", "Z"]), ["a/", "Z/", "  x", "A", "b"]);
         assert_eq!(shown(&["a", "a/c"]), ["a/", "  c/", "    d", "  vide/", "  B", "  Photo.png", "Z/", "A", "b"]);
 
-        // Tags : par ordre alphabétique ; un tag déplié montre ses notes.
+        // Tags: in alphabetical order; an expanded tag shows its notes.
         let tagged = |rel: &str, tags: &[&str]| Note { tags: tags.iter().map(|t| t.to_string()).collect(), ..note(rel) };
         let notes = [tagged("b.md", &["zoo", "ami"]), tagged("A.md", &["zoo"]), note("sans.md")];
         let shown = |open: &[&str]| -> Vec<String> {

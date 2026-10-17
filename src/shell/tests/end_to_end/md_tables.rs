@@ -5,8 +5,8 @@ use super::*;
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let shell = &j.shell;
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
-    // Un tableau plus large que la page : ses cellules passent à la ligne, il garde la largeur
-    // de la page, et le curseur reste dans ses cellules.
+    // A table wider than the page: its cells wrap, it keeps the page's
+    // width, and the cursor stays in its cells.
     let long = "mot ".repeat(120);
     let note = format!("avant\n\n| A | B |\n| --- | --- |\n| {long}| fin |\n\napres\n");
     let state = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).table_state().unwrap());
@@ -17,13 +17,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             s.pane().editor.update(cx, |e, cx| e.set_theme(theme, cx));
         });
     };
-    // Dans la colonne du texte : les cellules s'y partagent la largeur.
+    // In the text column: cells share its width.
     set_wide(cx, Wide::Column);
     j.load(cx, &note, note.find("fin").unwrap());
     let (dx, tall, frame, page, _) = state(cx);
     assert!(dx == px(0.) && tall > 3 && frame.size.width <= page, "{dx:?} {tall} {frame:?} {page:?}");
-    // Trop de colonnes pour tenir même à leur largeur minimale : le tableau défile, et suit
-    // le curseur ; la molette horizontale le fait défiler aussi.
+    // Too many columns to fit even at their minimum width: the table scrolls, and follows
+    // the cursor; the horizontal wheel scrolls it too.
     let cols = 30;
     let head = format!("|{}\n|{}\n|{}\n", " colonne |".repeat(cols), " --- |".repeat(cols), " texte |".repeat(cols));
     j.load(cx, &head, head.rfind("texte").unwrap());
@@ -40,15 +40,15 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     });
     cx.run_until_parked();
     assert_eq!(state(cx).0, px(90.));
-    // Centré (le réglage par défaut) : le tableau sort de la colonne des deux côtés, sans dépasser
-    // la fenêtre ; son bord gauche ne bouge pas avec la mise en page des autres lignes.
+    // Centred (the default setting): the table extends beyond the column on both sides, without leaving
+    // the window; its left edge does not move with the layout of the other lines.
     set_wide(cx, Wide::Centered);
     j.load(cx, &note, note.find("fin").unwrap());
     let (dx, _, frame, page, view) = state(cx);
     assert!(dx == px(0.) && frame.size.width > page && frame.size.width <= view.size.width - px(48.), "{dx:?} {frame:?} {page:?} {view:?}");
     assert!((frame.left() - view.left() - (view.size.width - frame.size.width) / 2.).abs() < px(1.), "{frame:?} {view:?}");
-    // Aux limites : fenêtre étroite, colonne pleine ou étroite, texte très petit ou très grand. Le tableau reste dans
-    // la fenêtre avec ses marges, le texte aussi, et le texte n'est jamais plus large que ce que le réglage permet.
+    // At the limits: narrow window, full or narrow column, very small or very large text. The table stays in
+    // the window with its margins, the text too, and the text is never wider than the setting allows.
     let whole = cx.update(|window, _| window.viewport_size());
     for (width, page, zoom) in [(420., Page::Normal, 16.), (420., Page::Full, 16.), (1600., Page::Narrow, 16.), (1600., Page::Full, 32.), (300., Page::Normal, 32.), (1600., Page::Wide, 11.)] {
         cx.simulate_resize(size(px(width), px(600.)));
@@ -70,14 +70,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         let theme = s.theme;
         s.pane().editor.update(cx, |e, cx| e.set_theme(theme, cx));
     });
-    // Un petit tableau garde sa taille, quel que soit le réglage.
+    // A small table keeps its size, whatever the setting.
     j.load(cx, "| a | b |\n| - | - |\n| c | d |\n", 0);
     let (_, _, frame, page, _) = state(cx);
     assert!(frame.size.width < page / 2., "{frame:?} {page:?}");
     set_wide(cx, Wide::Centered);
 
-    // Coller dans un tableau : une cellule garde une seule ligne et ses `|` ; des
-    // cellules de tableur remplissent la grille ; le tableau reste aligné.
+    // Pasting into a table: a cell keeps a single line and its `|`;
+    // spreadsheet cells fill the grid; the table stays aligned.
     let small = "| Nom | Âge |\n| --- | --- |\n| Léa | 31 |\n";
     let paste = |cx: &mut gpui::VisualTestContext, clip: &str| {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(clip.to_string()));
@@ -93,16 +93,16 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     j.load(cx, small, small.find("31").unwrap());
     paste(cx, "1\t2\t3");
     assert_eq!(text(cx), "| Nom | Âge |     |     |\n| --- | --- | --- | --- |\n| Léa | 1   | 2   | 3   |\n");
-    // Un tableau Markdown copié ailleurs se recolle cellule par cellule.
+    // A Markdown table copied elsewhere pastes back cell by cell.
     j.load(cx, small, cell);
     paste(cx, "| a | b |\n| :-- | --: |\n| c | d |");
     assert_eq!(text(cx), "| Nom | Âge |\n| --- | --- |\n| a   | b   |\n| c   | d   |\n");
-    // Couper dans une cellule réaligne aussi.
+    // Cutting in a cell realigns too.
     j.load(cx, small, cell);
     cx.simulate_keystrokes("shift-right shift-right secondary-x");
     assert_eq!(text(cx), "| Nom | Âge |\n| --- | --- |\n| a   | 31  |\n");
 
-    // Coller n'importe quoi n'importe où dans un tableau : il reste une grille régulière.
+    // Pasting anything anywhere in a table: it stays a regular grid.
     let clips = [
         "", "x", "a|b", "a\nb", "a\tb", "a\tb\nc\td\ne\tf", "| x | y |\n| - | - |\n| 1 | 2 |", "日本語\t😀", "  \n",
         "\t\t", "ligne1\r\nligne2", &"très long ".repeat(12), "[[a|b]]", "`x|y`", "\\|", "|", "||", "| ", "a\tb\t\n", "\n\n\n",
@@ -125,22 +125,22 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     }
     assert!(cases > 500);
 
-    // Le curseur va de cellule en cellule sans s'arrêter sur les `|`, saute la ligne de
-    // tirets, et effacer ne fusionne jamais deux cellules.
+    // The cursor goes from cell to cell without stopping on the `|`, skips the dash
+    // line, and deleting never merges two cells.
     let caret = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).caret());
     let t = "| Nom | Âge  |\n| --- | ---- |\n| Léa | a\\|b |\n| Max | 7    |\n";
     let at = |needle: &str| t.find(needle).unwrap();
     j.load(cx, t, at("Léa") + "Léa".len());
     cx.simulate_keystrokes("right");
     assert_eq!(caret(cx), at("a\\|b"));
-    // `\|` s'affiche `|` : une flèche le franchit d'un coup.
+    // `\|` shows as `|`: an arrow crosses it in one go.
     cx.simulate_keystrokes("right right");
     assert_eq!(caret(cx), at("a\\|b") + 3);
     cx.simulate_keystrokes("left left");
     assert_eq!(caret(cx), at("a\\|b"));
     cx.simulate_keystrokes("end");
     assert_eq!(caret(cx), at("a\\|b") + 4);
-    // Au bout d'une ligne, la première cellule de la suivante ; au bout du tableau, la ligne d'après.
+    // At the end of a row, the first cell of the next; at the end of the table, the line after.
     cx.simulate_keystrokes("right");
     assert_eq!(caret(cx), at("Max"));
     cx.simulate_keystrokes("home left");
@@ -153,7 +153,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     j.load(cx, t, t.len() - 1);
     cx.simulate_keystrokes("end right");
     assert_eq!(caret(cx), t.len());
-    // Effacer s'arrête au bord de la cellule ; un `\|` part d'un bloc.
+    // Deleting stops at the cell's edge; a `\|` goes in one piece.
     j.load(cx, t, at("Léa"));
     cx.simulate_keystrokes("backspace");
     assert_eq!(text(cx), t);
@@ -164,8 +164,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("delete");
     assert_eq!(text(cx), t);
 
-    // Une cellule trop longue passe à la ligne : les flèches la parcourent ligne par ligne
-    // (dans la colonne du texte, où elle est plus étroite).
+    // A cell too long wraps: the arrows walk it line by line
+    // (in the text column, where it is narrower).
     set_wide(cx, Wide::Column);
     let long = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega ".repeat(3);
     let wrapped = format!("| A | B |\n| --- | --- |\n| {long}| fin |\n| z | z |\n");
@@ -180,16 +180,16 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("up");
     let back = caret(cx);
     assert!(back < start + 40 && rows_of(cx, back).y == top);
-    // Un clic sur une ligne coupée place le curseur à cet endroit.
+    // A click on a wrapped line puts the cursor at that spot.
     let spot = rows_of(cx, start + 140) + gpui::point(px(2.), px(0.));
     cx.simulate_click(spot, gpui::Modifiers::none());
     assert!(caret(cx).abs_diff(start + 140) <= 1, "{} {}", caret(cx), start + 140);
-    // Sélectionner d'une cellule à l'autre ne prend que le texte des cellules.
+    // Selecting from one cell to another takes only the cells' text.
     j.load(cx, t, at("Léa"));
     cx.simulate_keystrokes("shift-right shift-right shift-right shift-right shift-right");
     assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).selected().to_string()), "Léa | a");
 
-    // La ligne de tirets ne se voit pas, sauf sous le curseur ; un raccourci règle l'alignement.
+    // The dash line is not seen, except under the cursor; a shortcut sets the alignment.
     let hidden = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).hidden_rows());
     let small = "| Nom | Âge |\n| --- | --- |\n| Léa | 31  |\n";
     j.load(cx, small, 0);
@@ -204,29 +204,29 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-shift-l");
     assert_eq!(text(cx), "| Nom | Âge |\n| --- | :-- |\n| Léa | 31  |\n");
 
-    // Largeur d'affichage : un idéogramme compte pour deux colonnes dans le texte aligné.
+    // Display width: an ideogram counts as two columns in the aligned text.
     j.load(cx, "| a |\n| --- |\n| 日本語 |\n", 3);
     cx.simulate_input("x");
     assert_eq!(text(cx), "| ax     |\n| ------ |\n| 日本語 |\n");
 
-    // Coller un tableau Markdown, ou des cellules de page web ou de tableur, hors d'un tableau.
+    // Pasting a Markdown table, or web page or spreadsheet cells, outside a table.
     let clip = "| a | b |\n|:--|--:|\n| longue cellule | 2 |";
     let table = "| a              | b   |\n| :------------- | --: |\n| longue cellule | 2   |";
     j.load(cx, "avant\n\napres\n", 7);
     paste(cx, clip);
     assert_eq!(text(cx), format!("avant\n\n{table}\n\napres\n"), "{}", text(cx));
-    // Des cellules séparées par des tabulations : la première ligne est l'en-tête.
+    // Tab-separated cells: the first line is the header.
     j.load(cx, "avant", 5);
     paste(cx, "Nom\tÂge\nLéa\t31\n");
     assert_eq!(text(cx), "avant\n\n| Nom | Âge |\n| --- | --- |\n| Léa | 31  |", "{}", text(cx));
-    // Du code indenté par des tabulations, ou une seule ligne, reste du texte.
+    // Code indented with tabs, or a single line, stays text.
     j.load(cx, "", 0);
     paste(cx, "\tfn a()\n\t\tx");
     assert_eq!(text(cx), "\tfn a()\n\t\tx");
 
-    // Des centaines de gestes au hasard (graine fixe) dans des tableaux de toute sorte : aucun
-    // plantage, le curseur reste sur un bord de caractère, et un tableau en forme reste régulier.
-    // `BREF_FUZZ_SEED=n cargo test end_to_end` essaie une autre suite de gestes.
+    // Hundreds of random gestures (fixed seed) in tables of every kind: no
+    // crash, the cursor stays on a character boundary, and a well-formed table stays regular.
+    // `BREF_FUZZ_SEED=n cargo test end_to_end` tries another sequence of gestures.
     let mut seed = std::env::var("BREF_FUZZ_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or(0x9E3779B97F4A7C15u64);
     let mut roll = move |n: usize| {
         seed ^= seed << 13;
@@ -254,7 +254,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             j.load(cx, start, if round % 2 == 0 { 0 } else { start.len() / 2 });
             for _ in 0..30 {
                 let before = text(cx);
-                // Une sélection qui sort du tableau remplace aussi ce qu'elle touche hors de lui.
+                // A selection that leaves the table also replaces what it touches outside it.
                 let span = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).span());
                 let leaves = {
                     let (a, b) = (before[..span.start].rfind('\n').map_or(0, |i| i + 1), before[span.end..].find('\n').map_or(before.len(), |i| span.end + i));
@@ -281,8 +281,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
                 let (now, at) = (text(cx), caret(cx));
                 assert!(at <= now.len() && now.is_char_boundary(at), "curseur {at} dans {now:?}");
                 cx.run_until_parked();
-                // Chaque tableau qui était déjà en forme (ligne de tirets en deuxième) garde le même
-                // nombre de cellules partout : taper ou coller n'en défait aucun.
+                // Each table that was already well formed (dash line second) keeps the same
+                // number of cells everywhere: typing or pasting undoes none.
                 let formed = |text: &str| -> Vec<(usize, Vec<usize>)> {
                     let lines: Vec<&str> = text.lines().collect();
                     let is_row = |l: &str| l.trim_start().starts_with('|');
@@ -309,8 +309,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     }
     assert!(gestures > 500);
 
-    // `/meta` (ou `/tags`, `/alias`) pose l'en-tête YAML en tête de note, où qu'on soit, le
-    // curseur entre les crochets des tags ; redemandé, il y ramène sans en poser un second.
+    // `/meta` (or `/tags`, `/alias`) puts the front matter at the top of the note, wherever one is, the
+    // cursor between the tags' brackets; asked again, it brings you back there without adding a second.
     j.load(cx, "# Titre\n\ntexte ", "# Titre\n\ntexte ".len());
     cx.simulate_input("/tags");
     cx.simulate_keystrokes("enter");
@@ -322,7 +322,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("x");
     assert_eq!(text(cx), "---\ntags: [xprojet]\naliases: []\n---\n# Titre\n\ntexte ");
 
-    // En-tête YAML ouvert au clavier : tant qu'il n'est pas fermé, sa première ligne reste une règle.
+    // Front matter opened from the keyboard: until it is closed, its first line stays a rule.
     j.load(cx, "---\na: 1\n", 9);
     assert_eq!(j.kind(cx, 0), Some(markdown::Kind::Rule));
     cx.simulate_input("---");

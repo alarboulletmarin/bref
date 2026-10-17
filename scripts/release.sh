@@ -4,7 +4,7 @@
 # Bumps the version, tags, pushes, creates the GitHub release, then pins the
 # tarball checksum in the PKGBUILD and regenerates .SRCINFO. Run it on main,
 # clean and in sync with origin. Without a notes file, the notes are the
-# commit subjects since the previous tag (chore/build commits left out).
+# commit subjects since the previous tag (chore/build/refactor commits left out).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -27,7 +27,7 @@ if [ -n "${2:-}" ]; then
     cp "$2" "$notes"
 else
     { echo "## Changes"; echo
-      git log "$prev..HEAD" --no-merges --pretty='- %s' | grep -vE '^- (chore|build)(\(.*\))?: ' || true
+      git log "$prev..HEAD" --no-merges --pretty='- %s' | grep -vE '^- (chore|build|refactor)(\(.*\))?: ' || true
       echo; echo "## Install and upgrade"; echo
       echo "See the [README](https://github.com/alarboulletmarin/bref#install). The downloads appear in the assets below within about 15 minutes, once GitHub has built them:"
       echo "- Arch: \`bref-x86_64.pkg.tar.zst\`, then \`sudo pacman -U ./bref-x86_64.pkg.tar.zst\`"

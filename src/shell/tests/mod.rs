@@ -42,8 +42,8 @@ fn layers_only_depend_downwards() {
     }
 }
 
-/// Le dossier de config est global au processus (variables d'environnement) : un test qui le déplace sous
-/// `root` garde le verrou jusqu'à sa fin, pour qu'un autre ne le déplace pas pendant qu'il s'en sert.
+/// The config folder is global to the process (environment variables): a test that moves it under
+/// `root` holds the lock until it ends, so that another does not move it while it uses it.
 fn isolated_config(root: &Path) -> std::sync::MutexGuard<'static, ()> {
     let guard = CONFIG.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA", "USERPROFILE"] {

@@ -2,12 +2,12 @@
 
 use super::*;
 
-/// La fenêtre de capture (`bref --capture`, à lier à un raccourci du bureau) : une ligne de
-/// saisie, rien d'autre. Entrée l'ajoute à la note du jour et referme ; Échap referme. Le coffre
-/// n'est pas lu, la fenêtre est là aussi vite que l'app.
-// ponytail: si Bref est ouvert sur la note du jour, c'est sa surveillance du coffre qui la relit ;
-// une frappe en attente là-bas est enregistrée 400 ms après (bien avant qu'on ait tapé ici).
-// Parler à l'instance ouverte si ce délai devait un jour s'allonger.
+/// The capture window (`bref --capture`, to bind to a desktop shortcut): one input
+/// line, nothing else. Enter appends it to the daily note and closes; Escape closes. The vault
+/// is not read, the window is up as fast as the app.
+// ponytail: if Bref is open on the daily note, its vault watcher reloads it;
+// a keystroke pending there is saved 400 ms later (well before anything is typed here).
+// Talk to the open instance if that delay ever grew longer.
 pub(super) struct Capture {
     pub(super) root: PathBuf,
     pub(super) theme: Theme,
@@ -23,13 +23,13 @@ impl Capture {
         Self { root, theme, field }
     }
 
-    /// Le champ de saisie : celui de la palette, qui annonce `label` et part de `text`.
+    /// The input field: the palette's, announcing `label` and starting from `text`.
     pub(super) fn ask(label: String, text: &str, theme: Theme, window: &mut Window, cx: &mut Context<Self>) -> Entity<Palette> {
         let field = cx.new(|cx| Palette::prompt(label, text, theme, cx).at_top());
         cx.subscribe_in(&field, window, |this, _, event, window, cx| match event {
             PaletteEvent::Submit(text) if !text.is_empty() => match vault::capture(&this.root, &date_name(today()), text) {
                 Ok(_) => window.remove_window(),
-                // Rien n'est perdu : la ligne reste là, avec la raison.
+                // Nothing is lost: the line stays, with the reason.
                 Err(e) => {
                     let label = format!("{} : {e}", tr("Not saved", "Non enregistré"));
                     this.field = Self::ask(label, text, this.theme, window, cx);
@@ -52,8 +52,8 @@ impl Render for Capture {
 }
 
 impl Shell {
-    /// Lie la capture à un raccourci du bureau, et dit lequel. Là où Bref ne peut pas le
-    /// poser lui-même, la commande à lier est copiée : il ne reste qu'à la coller.
+    /// Binds capture to a desktop shortcut, and says which. Where Bref cannot set it
+    /// itself, the command to bind is copied: all that is left is to paste it.
     pub(super) fn capture_shortcut(&mut self, cx: &mut Context<Self>) {
         let Ok(exe) = std::env::current_exe() else {
             return;

@@ -1,20 +1,20 @@
 //! User preferences (`settings` file): parsed from and written to `key=value` lines.
 
-/// Apparence choisie par l'utilisateur ; un champ vide garde la valeur par défaut.
+/// Appearance chosen by the user; an empty field keeps the default value.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Prefs {
     pub theme: String,
     pub font: String,
     pub mono: String,
-    /// Taille du texte courant de la note, en pixels.
+    /// Size of the note's body text, in pixels.
     pub size: f32,
-    /// Chercher une nouvelle version de l'app (une requête par jour).
+    /// Look for a new version of the app (one request per day).
     pub updates: bool,
-    /// Largeur de la colonne de texte et place des grands tableaux (clés de `editor::Page` et
-    /// `editor::Wide`) ; vide : le choix par défaut.
+    /// Width of the text column and placement of wide tables (keys of `editor::Page` and
+    /// `editor::Wide`); empty: the default choice.
     pub page: String,
     pub wide: String,
-    /// Barre de mise en forme du bas de la note : `off` la cache, le reste l'affiche.
+    /// Formatting bar at the bottom of the note: `off` hides it, anything else shows it.
     pub bar: String,
 }
 
@@ -43,7 +43,7 @@ impl Prefs {
 
     pub fn to_text(&self) -> String {
         let mut text = format!("theme={}\nfont={}\nmono={}\nsize={}\n", self.theme, self.font, self.mono, self.size);
-        // Absent tant qu'on ne l'a pas coupé : la valeur par défaut n'encombre pas le fichier.
+        // Absent until turned off: the default value does not clutter the file.
         if !self.updates {
             text.push_str("updates=off\n");
         }
@@ -64,13 +64,13 @@ mod tests {
     fn reads_settings() {
         let prefs = Prefs::parse("theme=Dracula\nfont=Inter\nsize=99\nbogus\nmono=\n");
         assert_eq!((prefs.theme.as_str(), prefs.font.as_str(), prefs.mono.as_str()), ("Dracula", "Inter", ""));
-        // Taille bornée, et valeur illisible ignorée.
+        // Size clamped, and unreadable value ignored.
         assert_eq!((prefs.size, Prefs::parse("size=NaN").size), (32., 16.));
         assert_eq!(Prefs::parse(&prefs.to_text()), prefs);
-        // La recherche de nouvelle version est active tant qu'on ne l'a pas coupée.
+        // The new-version check is on until turned off.
         assert!(prefs.updates && !Prefs::parse("updates=off\n").updates && Prefs::parse("updates=on").updates);
         assert!(!Prefs::parse(&Prefs::parse("updates=off").to_text()).updates);
-        // Largeur de page et grands tableaux : absents tant qu'on ne les a pas choisis.
+        // Page width and wide tables: absent until chosen.
         let wide = Prefs::parse("page=wide\nwide=column\n");
         assert_eq!((wide.page.as_str(), wide.wide.as_str()), ("wide", "column"));
         assert_eq!(Prefs::parse(&wide.to_text()), wide);

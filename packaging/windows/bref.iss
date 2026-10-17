@@ -1,5 +1,5 @@
-; Installeur Windows de Bref. Compilé par .github/workflows/release-binaries.yml :
-;   BREF_VERSION=0.2.0 iscc packaging/windows/bref.iss   (produit dist/bref-windows-x86_64-setup.exe)
+; Windows installer of Bref. Built by .github/workflows/release-binaries.yml:
+;   BREF_VERSION=0.2.0 iscc packaging/windows/bref.iss   (makes dist/bref-windows-x86_64-setup.exe)
 #define Version GetEnv("BREF_VERSION")
 
 [Setup]
@@ -10,7 +10,7 @@ AppPublisher=Andrea Larboullet Marin
 AppPublisherURL=https://github.com/alarboulletmarin/bref
 DefaultDirName={autopf}\Bref
 DefaultGroupName=Bref
-; Installation pour l'utilisateur seul (%LOCALAPPDATA%\Programs\Bref) : aucune demande d'administrateur.
+; Installed for the current user only (%LOCALAPPDATA%\Programs\Bref): no administrator prompt.
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 MinVersion=10.0

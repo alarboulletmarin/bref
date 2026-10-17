@@ -6,8 +6,8 @@ use super::*;
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     let (shell, root) = (&j.shell, &j.root);
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
-    // Tags : Ctrl+T liste les tags du coffre ; Droite déplie le premier, Bas
-    // affiche en aperçu une note qui le porte.
+    // Tags: Ctrl+T lists the vault's tags; Right expands the first, Down
+    // previews a note that carries it.
     fs::write(root.join("Tagué.md"), "# Tagué\n\n#alpha\n").unwrap();
     for _ in 0..2 {
         cx.executor().advance_clock(Duration::from_secs(3));
@@ -23,13 +23,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
         (s.notes.iter().filter(has).count(), s.notes.iter().filter(has).any(|n| Some(&n.path) == s.pane().path.as_ref()))
     });
     assert!(tagged > 0 && previewed);
-    // Un tag n'est pas un fichier : Suppr n'y fait rien.
+    // A tag is not a file: Delete does nothing on it.
     cx.simulate_keystrokes("up delete");
     assert!(shell.read_with(cx, |s, _| s.palette.is_none() && !s.told(Tone::Failed, "")));
 
-    // Rétroliens : Ctrl+L liste les notes qui mènent à la note ouverte (lien avec alias, lien
-    // dans un tableau). Bas en montre une en aperçu sans que la liste change ; elle suit un
-    // lien retiré ; Entrée ouvre la note, et la liste devient la sienne.
+    // Backlinks: Ctrl+L lists the notes that lead to the open note (link with alias, link
+    // in a table). Down previews one without the list changing; it follows a
+    // removed link; Enter opens the note, and the list becomes its own.
     let was = shell.read_with(cx, |s, _| s.pane().path.clone()).unwrap();
     fs::write(root.join("Cible.md"), "# Cible\n").unwrap();
     fs::write(root.join("Source A.md"), "# Source A\n\nvoir [[Cible|la cible]] ici\n").unwrap();
@@ -57,9 +57,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
         fs::remove_file(root.join(name)).unwrap();
     }
 
-    // En-tête YAML (front matter) : ses lignes ne sont ni un titre ni une règle, le nom du
-    // fichier suit le titre placé après lui, et ni la frappe, ni l'enregistrement, ni le
-    // renommage, ni la réécriture des liens n'en changent un octet.
+    // Front matter: its lines are neither a heading nor a rule, the file
+    // name follows the title placed after it, and neither typing, saving,
+    // renaming nor link rewriting changes a byte of it.
     let meta = "---\ntags: [projet]\n# pas un titre\nvoir: \"[[Fiche]]\"\n---\n";
     fs::write(root.join("Fiche.md"), format!("{meta}# Fiche\n\ntexte\n")).unwrap();
     fs::write(root.join("Renvoi.md"), format!("{meta}# Renvoi\n\n[[Fiche]]\n")).unwrap();
@@ -73,12 +73,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     j.settle(cx);
     assert_eq!(fs::read_to_string(root.join("Fiche 2.md")).unwrap(), format!("{meta}# Fiche 2\n\ntexte\n"));
     assert!(!root.join("Fiche.md").exists());
-    // Les liens suivent quand on quitte la note renommée.
+    // Links follow when leaving the renamed note.
     shell.update(cx, |s, cx| s.open_note(&root.join("Renvoi.md"), cx));
     j.settle(cx);
     assert_eq!(fs::read_to_string(root.join("Renvoi.md")).unwrap(), format!("{meta}# Renvoi\n\n[[Fiche 2]]\n"));
-    // Ses tags valent ceux du texte ; ses alias se proposent après `[[`, et un lien écrit
-    // avec l'un d'eux ouvre la note au lieu d'en créer une.
+    // Its tags count as those of the text; its aliases are offered after `[[`, and a link written
+    // with one of them opens the note instead of creating one.
     fs::write(root.join("Appli.md"), "---\ntags:\n  - enyaml\naliases: [Bref app]\n---\n# Appli\n").unwrap();
     j.settle(cx);
     assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Appli" && n.tags[..] == ["enyaml"] && n.aliases[..] == ["Bref app"])));
@@ -99,11 +99,11 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     }
     j.settle(cx);
 
-    // Corbeille : la palette liste ce qu'elle contient ; Entrée remet la note dans le coffre,
-    // où elle reparaît parmi les notes.
+    // Trash: the palette lists what it holds; Enter puts the note back in the vault,
+    // where it reappears among the notes.
     fs::write(root.join("Jetée.md"), "# Jetée\n").unwrap();
     j.settle(cx);
-    vault::trash(&root, &root.join("Jetée.md")).unwrap();
+    vault::trash(root, &root.join("Jetée.md")).unwrap();
     j.settle(cx);
     assert!(shell.read_with(cx, |s, _| s.notes.iter().all(|n| n.name != "Jetée")));
     cx.simulate_keystrokes("secondary-p");
@@ -118,8 +118,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     fs::remove_file(root.join("Jetée.md")).unwrap();
     j.settle(cx);
 
-    // Remplacer dans tout le coffre, depuis la barre de recherche : le compte d'abord, puis
-    // les notes sont réécrites ; la palette défait le tout, sauf ce qui a changé depuis.
+    // Replace in the whole vault, from the search bar: the count first, then
+    // the notes are rewritten; the palette undoes it all, except what changed since.
     let here = shell.read_with(cx, |s, _| s.pane().path.clone().unwrap());
     fs::write(root.join("Zoo A.md"), "# Zoo A\n\nle zèbre court").unwrap();
     fs::write(root.join("Zoo B.md"), "# Zoo B\n\nun zèbre, deux Zèbres").unwrap();
@@ -152,9 +152,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     fs::remove_file(root.join("Zoo B.md")).unwrap();
     j.settle(cx);
 
-    // Page liste : un dossier ou un tag montré en table de ses notes, une colonne par clé de
-    // leurs en-têtes ; un clic sur une colonne trie, la frappe filtre, un clic sur une
-    // cellule la réécrit dans l'en-tête de la note, la note choisie s'ouvre.
+    // List page: a folder or a tag shown as a table of its notes, one column per key of
+    // their front matter; a click on a column sorts, typing filters, a click on a
+    // cell rewrites it in the note's front matter, the chosen note opens.
     fs::create_dir_all(root.join("Livres")).unwrap();
     fs::write(root.join("Livres/Dune.md"), "---\nauteur: Herbert\nnote: 9\n---\n# Dune\n").unwrap();
     fs::write(root.join("Livres/Emma.md"), "---\nauteur: Austen\nnote: 10\n---\n# Emma\n\n#classique\n").unwrap();
@@ -167,7 +167,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     shell.update(cx, |s, cx| s.sort_listing(2, cx));
     shell.update(cx, |s, cx| s.sort_listing(2, cx));
     assert_eq!(listed(cx).unwrap().1, ["Emma", "Dune"]);
-    // Ce qu'on tape filtre, dans toutes les colonnes ou dans celle qu'on nomme ; Échap le vide.
+    // What is typed filters, in all columns or in the one named; Escape clears it.
     cx.run_until_parked();
     cx.simulate_input("auteur:her");
     assert_eq!(listed(cx).unwrap().1, ["Dune"]);
@@ -177,7 +177,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
     assert_eq!(listed(cx).unwrap().1, ["Emma", "Dune"]);
-    // Un clic sur une cellule l'ouvre ; validée, seule cette clé change dans le fichier.
+    // A click on a cell opens it; confirmed, only this key changes in the file.
     let cell = cx.debug_bounds("list-cell-1-2").unwrap().center();
     cx.simulate_click(cell, gpui::Modifiers::none());
     cx.simulate_keystrokes("backspace");
@@ -185,13 +185,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(root.join("Livres/Dune.md")).unwrap(), "---\nauteur: Herbert\nnote: 7.5\n---\n# Dune\n");
-    // Triée par note à rebours : 10 avant 7.5 ; Échap dans une cellule ne change rien.
+    // Sorted by note in reverse: 10 before 7.5; Escape in a cell changes nothing.
     assert_eq!(listed(cx).unwrap().1, ["Emma", "Dune"]);
     shell.update_in(cx, |s, window, cx| s.list_write(root.join("Livres/Emma.md"), "auteur".into(), window, cx));
     cx.simulate_input(" Jane");
     cx.simulate_keystrokes("escape");
     assert!(fs::read_to_string(root.join("Livres/Emma.md")).unwrap().contains("auteur: Austen\n"));
-    // Un tag se liste comme un dossier.
+    // A tag is listed like a folder.
     shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::List, Some(PathBuf::from("#classique")), window, cx));
     assert_eq!(listed(cx).unwrap().1, ["Emma"]);
     shell.update(cx, |s, cx| s.open_note(&root.join("Livres/Dune.md"), cx));
@@ -200,8 +200,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     fs::remove_dir_all(root.join("Livres")).unwrap();
     j.settle(cx);
 
-    // Calendrier : Ctrl+Maj+J montre le mois ; les flèches changent de jour, Page bas de
-    // mois, Entrée ouvre la note de ce jour, ou la crée.
+    // Calendar: Ctrl+Shift+J shows the month; arrows change the day, Page Down the
+    // month, Enter opens that day's note, or creates it.
     let before = shell.read_with(cx, |s, _| (s.pane().path.clone(), s.nav.mode, s.nav.panel));
     cx.simulate_keystrokes("secondary-shift-j");
     assert!(shell.read_with(cx, |s, _| s.nav.mode == Mode::Calendar && s.nav.panel != Panel::Rail));
@@ -215,20 +215,20 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
         (s.nav.mode, s.nav.panel) = (before.1, before.2);
         s.open_note(before.0.as_ref().unwrap(), cx);
     });
-    // Quittée, la note du jour est enregistrée comme toute note qui a un titre.
+    // Once left, the daily note is saved like any note that has a title.
     j.settle(cx);
     fs::remove_file(root.join("2026-09-30.md")).unwrap();
     j.settle(cx);
 
-    // Terminal : la palette le propose ; les tests n'ouvrent aucune fenêtre, d'où le refus.
+    // Terminal: the palette offers it; tests open no window, hence the refusal.
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("terminal");
     cx.simulate_keystrokes("down enter");
     assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.told(Tone::Failed, "$TERMINAL")));
     shell.update(cx, |s, _| s.toasts.clear());
 
-    // Raccourci de capture : la palette le propose. Hors de GNOME (et dans les tests) la
-    // commande à lier est copiée, et le message dit quoi en faire.
+    // Capture shortcut: the palette offers it. Outside GNOME (and in tests) the
+    // command to bind is copied, and the message says what to do with it.
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("capture rapide");
     cx.simulate_keystrokes("down enter");
@@ -237,9 +237,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     assert!(cx.read_from_clipboard().and_then(|item| item.text()).is_some_and(|text| text.ends_with(" --capture")));
     shell.update(cx, |s, _| s.toasts.clear());
 
-    // Sauvegarde : une archive datée de tout le coffre dans le dossier choisi (la fenêtre de
-    // choix n'existe pas dans les tests) ; dans le coffre lui-même, elle est refusée.
-    let out = root.with_file_name(format!("{}-sauvegardes", vault::stem(&root)));
+    // Backup: a dated archive of the whole vault in the chosen folder (the picker
+    // does not exist in tests); inside the vault itself, it is refused.
+    let out = root.with_file_name(format!("{}-sauvegardes", vault::stem(root)));
     fs::create_dir_all(&out).unwrap();
     shell.update(cx, |s, cx| s.backup_to(out.clone(), cx));
     cx.run_until_parked();
@@ -252,8 +252,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     shell.update(cx, |s, _| s.toasts.clear());
     fs::remove_dir_all(&out).unwrap();
 
-    // Recherche dans le coffre : Ctrl+Maj+F liste chaque ligne où figure le texte tapé, sans
-    // la casse ; Entrée ouvre la note, le passage sélectionné.
+    // Search in the vault: Ctrl+Shift+F lists each line containing the typed text, ignoring
+    // case; Enter opens the note, the passage selected.
     fs::write(root.join("Recette.md"), "# Recette\n\nfarine\n\ndu Quinoa rouge, quinoa\n").unwrap();
     fs::write(root.join("Liste.md"), "# Liste\n- quinoa\n").unwrap();
     j.settle(cx);
@@ -275,8 +275,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     }
     j.settle(cx);
 
-    // Note du jour : Ctrl+J la crée, nommée et titrée de la date locale ; la seconde fois
-    // (ici depuis la palette) c'est la même note qui s'ouvre. `/date` écrit la date.
+    // Daily note: Ctrl+J creates it, named and titled with the local date; the second time
+    // (here from the palette) the same note opens. `/date` writes the date.
     let day = date_name(today());
     cx.simulate_keystrokes("secondary-j");
     j.settle(cx);

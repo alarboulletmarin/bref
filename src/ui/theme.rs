@@ -5,14 +5,14 @@ use gpui::{Hsla, Pixels, WindowAppearance, px, rgb};
 
 use crate::{lang::tr, logic::prefs::Prefs};
 
-/// Largeur de la colonne de texte (réglage « Largeur de page »).
+/// Width of the text column ("Page width" setting).
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum Page {
     Narrow,
     #[default]
     Normal,
     Wide,
-    /// Toute la place de la fenêtre.
+    /// The whole room of the window.
     Full,
 }
 
@@ -28,7 +28,7 @@ impl Page {
         }
     }
 
-    /// Un réglage inconnu ou absent vaut la largeur normale.
+    /// An unknown or missing setting means the normal width.
     pub fn of(key: &str) -> Self {
         Self::ALL.into_iter().find(|p| p.key() == key).unwrap_or_default()
     }
@@ -42,8 +42,8 @@ impl Page {
         }
     }
 
-    /// La colonne la plus large, pour un texte de `size` px : elle suit le corps du texte, pour que
-    /// le nombre de caractères par ligne reste le même quand on agrandit.
+    /// The widest column, for text of `size` px: it follows the body size, so that
+    /// the number of characters per line stays the same when zooming in.
     pub fn measure(self, size: f32) -> Pixels {
         let base = match self {
             Page::Narrow => 560.,
@@ -55,12 +55,12 @@ impl Page {
     }
 }
 
-/// Où se place un tableau plus large que la colonne de texte (réglage « Grands tableaux »).
+/// Where a table wider than the text column goes ("Wide tables" setting).
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum Wide {
-    /// Il reste dans la colonne et défile de côté.
+    /// It stays in the column and scrolls sideways.
     Column,
-    /// Il déborde des deux côtés, centré sur la fenêtre.
+    /// It overflows on both sides, centered on the window.
     #[default]
     Centered,
 }
@@ -91,24 +91,24 @@ pub struct Theme {
     pub bg: Hsla,
     pub text: Hsla,
     pub dim: Hsla,
-    /// Texte secondaire qui reste lisible (4,5:1 sur le fond et le panneau) : libellés, aides,
-    /// compteurs. `dim` reste aux marqueurs Markdown, qu'on n'a pas besoin de lire.
+    /// Secondary text that stays readable (4.5:1 on the background and the panel): labels, hints,
+    /// counters. `dim` stays for Markdown markers, which do not need to be read.
     pub soft: Hsla,
     pub accent: Hsla,
     pub selection: Hsla,
     pub code_bg: Hsla,
     pub panel: Hsla,
     pub border: Hsla,
-    /// Taille du texte courant de la note, en pixels.
+    /// Size of the note's body text, in pixels.
     pub size: f32,
     pub page: Page,
     pub wide: Wide,
-    /// Barre de mise en forme au bas de la note.
+    /// Formatting bar at the bottom of the note.
     pub bar: bool,
 }
 
-/// Thèmes proposés : (nom, [fond, texte, discret, accent, fond du code, panneau, bordure]).
-/// Les deux premiers sont ceux de Bref, sombre et clair, qui suivent le système.
+/// Offered themes: (name, [background, text, faint, accent, code background, panel, border]).
+/// The first two are Bref's, dark and light, which follow the system.
 pub const THEMES: &[(&str, [u32; 7])] = &[
     ("Bref Dark", [0x1b1a19, 0xe4e0da, 0x77716a, 0xe0926b, 0x262423, 0x242221, 0x3a3735]),
     ("Bref Light", [0xfbfaf8, 0x26231f, 0xa8a29a, 0xb4532a, 0xf1eeea, 0xffffff, 0xe2ddd6]),
@@ -126,13 +126,13 @@ pub const THEMES: &[(&str, [u32; 7])] = &[
 ];
 
 impl Theme {
-    /// Le thème choisi ; à défaut, celui de Bref accordé à l'apparence du système.
+    /// The chosen theme; failing that, Bref's one matching the system appearance.
     pub fn of(prefs: &Prefs, appearance: WindowAppearance) -> Self {
         let dark = matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark);
         let system = &THEMES[if dark { 0 } else { 1 }];
         let (_, colors) = THEMES.iter().find(|t| t.0 == prefs.theme).unwrap_or(system);
         let [bg, text, dim, accent, code_bg, panel, border] = colors.map(|c| Hsla::from(rgb(c)));
-        // Le plus discret des gris entre texte et fond qui se lit encore sur l'un et l'autre fond.
+        // The faintest grey between text and background that still reads on both backgrounds.
         let soft = (0..=20)
             .map(|i| blend(text, bg, 0.5 + i as f32 * 0.025))
             .find(|c| contrast(*c, bg) >= 4.5 && contrast(*c, panel) >= 4.5)
@@ -142,7 +142,7 @@ impl Theme {
             text,
             dim,
             soft,
-            // Les liens et les tags s'écrivent dans l'accent : il doit se lire comme du texte.
+            // Links and tags are written in the accent: it must read like text.
             accent: legible(legible(accent, bg), panel),
             selection: accent.opacity(if bg.l < 0.5 { 0.25 } else { 0.2 }),
             code_bg,
@@ -156,21 +156,21 @@ impl Theme {
     }
 }
 
-/// Luminance relative d'une couleur, au sens des WCAG.
+/// Relative luminance of a color, in the WCAG sense.
 fn luminance(color: Hsla) -> f32 {
     let c = color.to_rgb();
     let linear = |x: f32| if x <= 0.03928 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) };
     0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
 }
 
-/// Rapport de contraste de deux couleurs (WCAG) : 4,5 au moins pour un texte courant.
+/// Contrast ratio of two colors (WCAG): at least 4.5 for body text.
 pub fn contrast(a: Hsla, b: Hsla) -> f32 {
     let (a, b) = (luminance(a), luminance(b));
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
-/// `color`, assombrie sur un fond clair ou éclaircie sur un fond sombre, juste assez pour se
-/// lire sur `bg` ; elle garde sa teinte.
+/// `color`, darkened on a light background or lightened on a dark one, just enough to
+/// read on `bg`; it keeps its hue.
 pub fn legible(color: Hsla, bg: Hsla) -> Hsla {
     let step = if luminance(bg) > 0.18 { -0.02 } else { 0.02 };
     let mut color = color;
@@ -180,7 +180,7 @@ pub fn legible(color: Hsla, bg: Hsla) -> Hsla {
     color
 }
 
-/// `top` posée sur `under` avec l'opacité `share`.
+/// `top` laid over `under` with opacity `share`.
 pub fn blend(top: Hsla, under: Hsla, share: f32) -> Hsla {
     let (a, b) = (top.to_rgb(), under.to_rgb());
     let mix = |x: f32, y: f32| x * share + y * (1. - share);
@@ -192,8 +192,8 @@ mod tests {
     use super::*;
     use gpui::WindowAppearance;
 
-    /// Dans chaque thème, le texte secondaire, l'accent (liens, tags) et le titre d'un panneau
-    /// `[!TIP]` se lisent : 4,5:1 au moins (WCAG AA).
+    /// In each theme, secondary text, the accent (links, tags) and the title of a `[!TIP]`
+    /// callout read: at least 4.5:1 (WCAG AA).
     #[test]
     fn every_theme_reads() {
         for (name, _) in THEMES {
@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(Page::Normal.measure(32.), px(1440.));
         assert!(Page::Narrow.measure(16.) < Page::Normal.measure(16.) && Page::Normal.measure(16.) < Page::Wide.measure(16.));
         assert!(Page::Wide.measure(16.) < Page::Full.measure(16.));
-        // Les clés se relisent ; une clé inconnue ou absente vaut le choix par défaut.
+        // Keys are read back; an unknown or missing key means the default choice.
         assert!(Page::ALL.into_iter().all(|p| Page::of(p.key()) == p) && Wide::ALL.into_iter().all(|w| Wide::of(w.key()) == w));
         assert_eq!((Page::of(""), Page::of("?"), Wide::of(""), Wide::of("?")), (Page::Normal, Page::Normal, Wide::Centered, Wide::Centered));
     }

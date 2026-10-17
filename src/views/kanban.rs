@@ -1,6 +1,6 @@
-//! Tableau kanban : une note montrée en colonnes. Chaque titre `##` est une colonne, chaque
-//! tâche `- [ ]` sous lui une carte ; le fichier reste du Markdown (la disposition du greffon
-//! Kanban d'Obsidian). Les fonctions pures d'abord, puis le tableau lui-même (`impl Shell`).
+//! Kanban board: a note shown as columns. Each `##` heading is a column, each
+//! `- [ ]` task under it a card; the file stays Markdown (the layout of Obsidian's Kanban
+//! plugin). Pure functions first, then the board itself (`impl Shell`).
 
 use std::ops::Range;
 
@@ -21,35 +21,35 @@ use crate::{
 pub struct Card<'a> {
     pub text: &'a str,
     pub done: bool,
-    /// Sa ligne dans la note, fin de ligne comprise.
+        /// Its line in the note, line ending included.
     pub line: Range<usize>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Column<'a> {
     pub title: &'a str,
-    /// La ligne de son titre, fin de ligne comprise.
+        /// The line of its heading, line ending included.
     pub line: Range<usize>,
-    /// Où poser une carte de plus : après la dernière, ou après le titre.
+        /// Where to put one more card: after the last one, or after the heading.
     pub end: usize,
     pub cards: Vec<Card<'a>>,
 }
 
 /// What a pane keeps of the board it shows.
 pub struct Board {
-    /// La note ouverte est un tableau kanban dont on regarde le texte : on l'a demandé, ou on
-    /// vient d'en écrire la clé (taper `kanban: true` ne fait pas quitter le texte).
+        /// The open note is a kanban board whose text we are looking at: we asked for it, or we
+        /// just wrote its key (typing `kanban: true` does not leave the text).
     pub text: bool,
-    /// La note était un tableau à sa dernière frappe.
+        /// The note was a board at its last keystroke.
     pub was: bool,
-    /// Carte qu'on déplace dans le tableau, et où elle se poserait (colonne, rang).
+        /// Card being moved in the board, and where it would land (column, rank).
     pub drag: Option<((usize, usize), (usize, usize))>,
-    /// Largeur d'une carte du tableau, relevée à son dessin.
+        /// Width of a board card, measured when drawn.
     pub card: std::rc::Rc<std::cell::Cell<Pixels>>,
     pub scroll: gpui::ScrollHandle,
-    /// Ce qu'on écrit dans le tableau, et son champ de saisie.
+        /// What is being typed in the board, and its input field.
     pub field: Option<(Slot, Entity<Field>)>,
-    /// Le tableau reçoit la saisie à la place de la note qu'il cache.
+        /// The board receives input in place of the note it hides.
     pub focus: FocusHandle,
 }
 
@@ -59,14 +59,14 @@ impl Board {
     }
 }
 
-/// La note s'ouvre en tableau : son en-tête YAML porte la clé `kanban` (ou `kanban-plugin`,
-/// celle d'Obsidian).
+/// The note opens as a board: its front matter carries the `kanban` key (or `kanban-plugin`,
+/// Obsidian's).
 pub fn is_board(text: &str) -> bool {
     markdown::front_keys(text).iter().any(|key| matches!(*key, "kanban" | "kanban-plugin"))
 }
 
-/// Les colonnes de la note et leurs cartes. Une tâche en retrait est le détail d'une carte, pas
-/// une carte ; ce qui précède le premier `##` n'est dans aucune colonne.
+/// The note's columns and their cards. An indented task is a card's detail, not
+/// a card; what comes before the first `##` is in no column.
 pub fn columns(text: &str) -> Vec<Column<'_>> {
     let mut found: Vec<Column> = Vec::new();
     let mut at = markdown::front_matter(text);
@@ -86,14 +86,14 @@ pub fn columns(text: &str) -> Vec<Column<'_>> {
     found
 }
 
-/// La note une fois la carte `from` (colonne, rang) posée dans la colonne `to.0`, avant la carte
-/// de rang `to.1` (ou à la fin si ce rang n'existe pas).
+/// The note once card `from` (column, rank) is put in column `to.0`, before the card
+/// of rank `to.1` (or at the end if that rank does not exist).
 pub fn move_card(text: &str, from: (usize, usize), to: (usize, usize)) -> Option<String> {
     let all = columns(text);
     let card = all.get(from.0)?.cards.get(from.1)?;
     let column = all.get(to.0)?;
     let into = column.cards.get(to.1).map_or(column.end, |next| next.line.start);
-    // Posée sur elle-même ou juste après elle : rien ne bouge.
+        // Dropped on itself or just after itself: nothing moves.
     if (card.line.start..=card.line.end).contains(&into) {
         return None;
     }
@@ -110,7 +110,7 @@ pub fn move_card(text: &str, from: (usize, usize), to: (usize, usize)) -> Option
         moved.push_str(&text[card.line.end..]);
     } else {
         moved.push_str(&text[card.line.end..second]);
-        // La colonne d'arrivée finit le fichier sans fin de ligne : la carte en ouvre une.
+                // The target column ends the file without a line ending: the card starts one.
         if !moved.ends_with('\n') {
             moved.push('\n');
         }
@@ -120,7 +120,7 @@ pub fn move_card(text: &str, from: (usize, usize), to: (usize, usize)) -> Option
     Some(moved)
 }
 
-/// La note une fois la carte cochée, ou décochée.
+/// The note once the card is checked, or unchecked.
 pub fn tick(text: &str, at: (usize, usize)) -> Option<String> {
     let all = columns(text);
     let card = all.get(at.0)?.cards.get(at.1)?;
@@ -129,26 +129,26 @@ pub fn tick(text: &str, at: (usize, usize)) -> Option<String> {
     Some(format!("{}{mark}{}", &text[..open + 1], &text[open + 2..]))
 }
 
-/// La note avec la carte `card` de plus au bas de la colonne.
+/// The note with card `card` added at the bottom of the column.
 pub fn add_card(text: &str, column: usize, card: &str) -> Option<String> {
     let end = columns(text).get(column)?.end;
     let lead = if text[..end].ends_with('\n') { "" } else { "\n" };
     Some(format!("{}{lead}- [ ] {}\n{}", &text[..end], card.trim(), &text[end..]))
 }
 
-/// La note une fois la carte réécrite ; réécrite à vide, elle est retirée.
+/// The note once the card is rewritten; rewritten empty, it is removed.
 pub fn retitle(text: &str, at: (usize, usize), card: &str) -> Option<String> {
     let all = columns(text);
     let old = all.get(at.0)?.cards.get(at.1)?;
     if card.trim().is_empty() {
         return Some(format!("{}{}", &text[..old.line.start], &text[old.line.end..]));
     }
-    // Le texte de la carte est une tranche de la note : sa place s'en déduit.
+        // The card's text is a slice of the note: its place follows from it.
     let start = old.text.as_ptr() as usize - text.as_ptr() as usize;
     Some(format!("{}{}{}", &text[..start], card.trim(), &text[start + old.text.len()..]))
 }
 
-/// La note une fois la colonne renommée ; un titre vide ne change rien.
+/// The note once the column is renamed; an empty heading changes nothing.
 pub fn rename_column(text: &str, column: usize, title: &str) -> Option<String> {
     let all = columns(text);
     let old = all.get(column)?;
@@ -156,36 +156,36 @@ pub fn rename_column(text: &str, column: usize, title: &str) -> Option<String> {
     (!title.trim().is_empty()).then(|| format!("{}{}{}", &text[..start], title.trim(), &text[start + old.title.len()..]))
 }
 
-/// La note avec une colonne de plus, à la fin.
+/// The note with one more column, at the end.
 pub fn add_column(text: &str, title: &str) -> Option<String> {
     let lead = if text.is_empty() || text.ends_with("\n\n") { "" } else if text.ends_with('\n') { "\n" } else { "\n\n" };
     (!title.trim().is_empty()).then(|| format!("{text}{lead}## {}\n", title.trim()))
 }
 
-/// Le texte d'un tableau neuf : ses trois colonnes, et la clé qui le fait s'ouvrir en tableau.
+/// The text of a new board: its three columns, and the key that makes it open as a board.
 pub fn new_board() -> String {
     let columns = [tr("To do", "À faire"), tr("Doing", "En cours"), tr("Done", "Fait")].map(|title| format!("## {title}\n\n")).concat();
     format!("---\nkanban: true\n---\n# {}\n\n{}", tr("Board", "Tableau"), columns.trim_end_matches('\n').to_string() + "\n")
 }
 
-/// Ce qu'on est en train d'écrire dans le tableau.
+/// What is being typed in the board.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Slot {
-    /// Une carte de plus au bas de cette colonne.
+        /// One more card at the bottom of this column.
     New(usize),
     Card(usize, usize),
     Column(usize),
-    /// Une colonne de plus.
+        /// One more column.
     NewColumn,
 }
 
 pub enum FieldEvent {
-    /// Entrée : le texte est validé.
+        /// Enter: the text is confirmed.
     Done,
     Cancel,
 }
 
-/// Champ de saisie posé dans le tableau, à la place de ce qu'il réécrit.
+/// Input field placed in the board, in place of what it rewrites.
 pub struct Field {
     focus: FocusHandle,
     pub line: Line,
@@ -246,12 +246,12 @@ impl Render for Field {
         let input = canvas(|_, _, _| (), move |bounds, _, window, cx| window.handle_input(&focus, ElementInputHandler::new(bounds, entity), cx)).size_0();
         let (shown, layout) = self.line.shown(t);
         let field = div()
-            // Les touches de la palette (Entrée valide, Échap renonce) et celles d'une ligne.
+                        // The palette's keys (Enter confirms, Escape gives up) and those of a line.
             .key_context("Palette Line")
             .track_focus(&self.focus)
             .on_action(cx.listener(|_, _: &Confirm, _, cx| cx.emit(FieldEvent::Done)))
             .on_action(cx.listener(|_, _: &Dismiss, _, cx| cx.emit(FieldEvent::Cancel)))
-            // Un clic dans le texte y pose le curseur.
+                        // A click in the text puts the cursor there.
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
@@ -270,13 +270,13 @@ impl Render for Field {
     }
 }
 
-/// Largeur d'une colonne quand la fenêtre a la place ; elles se serrent jusqu'à `NARROW` pour
-/// tenir côte à côte, puis le tableau défile.
+/// Width of a column when the window has room; they shrink down to `NARROW` to
+/// fit side by side, then the board scrolls.
 pub const COLUMN: f32 = 250.;
 pub const NARROW: f32 = 140.;
 
-/// Le cadre d'une carte, sa case et son texte : les mêmes pour la carte posée, celle qu'on tient
-/// et la place qu'elle prendrait.
+/// A card's frame, its checkbox and its text: the same for the placed card, the one being held
+/// and the place it would take.
 pub fn card_box(t: Theme) -> Div {
     div().p_2().rounded(px(6.)).bg(t.bg).border_1().border_color(t.border).flex().items_start().gap_2()
 }
@@ -299,15 +299,15 @@ pub fn card_text(text: &str, done: bool, t: Theme) -> Div {
     div().flex_1().min_w_0().when(done, |d| d.text_color(t.dim).line_through()).child(text.to_string())
 }
 
-/// Carte qu'on tient : la carte elle-même, soulevée, qui suit le pointeur par où on l'a prise.
+/// Card being held: the card itself, lifted, following the pointer from where it was grabbed.
 #[derive(Clone)]
 pub struct Dragged {
-    /// Le pane du tableau d'où vient la carte : un autre tableau l'ignore.
+        /// The board pane the card comes from: another board ignores it.
     pub pane: usize,
     pub from: (usize, usize),
     pub text: String,
     pub done: bool,
-    /// La largeur de la carte dans sa colonne.
+        /// The card's width in its column.
     pub width: Pixels,
     pub theme: Theme,
 }
@@ -339,21 +339,21 @@ mod tests {
         let shape: Vec<(&str, Vec<(&str, bool)>)> = all.iter().map(|c| (c.title, c.cards.iter().map(|k| (k.text, k.done)).collect())).collect();
         assert_eq!(shape, [("À faire", vec![("Écrire", false), ("Relire", false)]), ("En cours", vec![]), ("Fait", vec![("Planifier", true)])]);
         let titles = |text: &str| columns(text).iter().map(|c| c.cards.iter().map(|k| k.text.to_string()).collect::<Vec<_>>()).collect::<Vec<_>>();
-        // Dans une colonne vide, puis à la fin de la dernière (le fichier n'a pas de fin de ligne).
+                // Into an empty column, then at the end of the last one (the file has no line ending).
         let moved = move_card(BOARD, (0, 0), (1, usize::MAX)).unwrap();
         assert_eq!(titles(&moved), [vec!["Relire"], vec!["Écrire"], vec!["Planifier"]]);
         assert!(moved.contains("## En cours\n- [ ] Écrire\n\n## Fait") && moved.contains("    - [ ] un détail\n- [ ] Relire"));
         let moved = move_card(&moved, (1, 0), (2, usize::MAX)).unwrap();
         assert!(moved.ends_with("- [x] Planifier\n- [ ] Écrire\n"));
-        // Devant une autre carte, vers le haut comme vers le bas ; sur elle-même, rien.
+                // Before another card, upward as well as downward; onto itself, nothing.
         assert_eq!(titles(&move_card(BOARD, (2, 0), (0, 1)).unwrap()), [vec!["Écrire", "Planifier", "Relire"], vec![], vec![]]);
         assert_eq!(titles(&move_card(BOARD, (0, 0), (0, 2)).unwrap())[0], ["Relire", "Écrire"]);
         assert_eq!((move_card(BOARD, (0, 1), (0, 1)), move_card(BOARD, (0, 1), (0, 2)), move_card(BOARD, (5, 0), (0, 0))), (None, None, None));
-        // Cocher, décocher, ajouter.
+                // Check, uncheck, add.
         assert!(tick(BOARD, (0, 1)).unwrap().contains("- [x] Relire") && tick(BOARD, (2, 0)).unwrap().ends_with("- [ ] Planifier"));
         assert!(add_card(BOARD, 1, " Coder ").unwrap().contains("## En cours\n- [ ] Coder\n\n## Fait"));
         assert!(add_card(BOARD, 2, "Fêter").unwrap().ends_with("- [x] Planifier\n- [ ] Fêter\n"));
-        // Réécrire une carte (vidée : elle part), renommer une colonne, en ajouter une.
+                // Rewrite a card (emptied: it goes), rename a column, add one.
         assert!(retitle(BOARD, (0, 1), "Relire deux fois").unwrap().contains("- [ ] Relire deux fois\n\n## En cours"));
         assert!(retitle(BOARD, (2, 0), "Prévoir").unwrap().ends_with("- [x] Prévoir"));
         assert_eq!(titles(&retitle(BOARD, (0, 0), " ").unwrap())[0], ["Relire"]);

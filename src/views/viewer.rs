@@ -1,6 +1,6 @@
-//! Visionneuse : un SVG venu d'ailleurs (draw.io, Mermaid.js, Inkscape…) ou un diagramme
-//! Mermaid de la note, en grand, qu'on déplace et qu'on zoome. Il est dessiné par tuiles à la résolution du zoom, hors du fil de
-//! l'interface : un schéma de 6 000 px de haut reste net sans tout occuper d'un coup.
+//! Viewer: an SVG from elsewhere (draw.io, Mermaid.js, Inkscape…) or a Mermaid
+//! diagram from the note, large, panned and zoomed. It is drawn in tiles at the zoom's resolution, off the
+//! UI thread: a diagram 6,000 px high stays sharp without taking everything at once.
 
 use std::collections::VecDeque;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -22,16 +22,16 @@ use crate::{
     ui::figure, ui::svg, lang::tr,
 };
 
-/// Côté d'une tuile, en pixels de l'écran.
+/// Side of a tile, in screen pixels.
 const TILE: u32 = 512;
-/// Tuiles gardées en mémoire au plus (4 Mo chacune) ; les plus anciennes s'en vont.
+/// Most tiles kept in memory (4 MB each); the oldest go.
 const KEPT: usize = 64;
-/// Tuiles dessinées à la fois au plus : zoomer vite n'en empile pas des centaines.
+/// Most tiles drawn at once: zooming fast does not pile up hundreds of them.
 const FLYING: usize = 8;
-/// Zoom permis : de 5 % à 800 %.
+/// Allowed zoom: from 5% to 800%.
 const ZOOM: (f32, f32) = (0.05, 8.);
 
-/// Le SVG lu, rendu lisible et analysé, aux couleurs d'un thème.
+/// The SVG read, made readable and parsed, in a theme's colors.
 pub struct Doc {
     tree: usvg::Tree,
     id: u64,
@@ -43,16 +43,16 @@ impl Doc {
     }
 }
 
-/// Ce que montre la visionneuse.
+/// What the viewer shows.
 #[derive(Clone, Hash, PartialEq)]
 pub enum Source {
-    /// Un fichier SVG, tel qu'il est sur le disque (date de modification).
+    /// An SVG file, as it is on disk (modification date).
     File(PathBuf, Option<SystemTime>),
-    /// Le source d'un diagramme Mermaid.
+    /// The source of a Mermaid diagram.
     Mermaid(String),
 }
 
-/// Ce qu'il faut lire, aux couleurs du thème.
+/// What to read, in the theme's colors.
 #[derive(Clone, Hash, PartialEq)]
 struct Load {
     source: Source,
@@ -77,8 +77,8 @@ impl Asset for Load {
     }
 }
 
-/// Une tuile : la case `x, y` de la grille de `TILE` pixels du document dessiné à l'échelle
-/// `2^(level/4)`. `level` à `None` : tout le document, en petit, sous les tuiles qui chargent.
+/// A tile: the cell `x, y` of the `TILE`-pixel grid of the document drawn at scale
+/// `2^(level/4)`. `level` at `None`: the whole document, small, under the tiles that are loading.
 #[derive(Clone)]
 struct Tile {
     doc: Arc<Doc>,
@@ -100,12 +100,12 @@ impl PartialEq for Tile {
     }
 }
 
-/// L'échelle d'un niveau de tuiles : quatre niveaux par doublement.
+/// The scale of a tile level: four levels per doubling.
 fn scale_of(level: i32) -> f32 {
     2f32.powf(level as f32 / 4.)
 }
 
-/// L'échelle de l'aperçu : 1 024 px sur le plus grand côté, ou moins.
+/// The scale of the preview: 1,024 px on the longest side, or less.
 fn overview(doc: &Doc) -> f32 {
     let (w, h) = doc.size();
     svg::scale_for(w, h, (1024. / w.max(h).max(1.)).min(1.))
@@ -141,22 +141,22 @@ pub struct Viewer {
     focus: FocusHandle,
     source: Source,
     theme: Theme,
-    /// Le document affiché, et ce qu'on a lu pour l'avoir ; il reste à l'écran pendant que
-    /// le suivant se prépare (autre thème, fichier modifié).
+    /// The document shown, and what was read to get it; it stays on screen while
+    /// the next one is prepared (other theme, modified file).
     doc: Option<(Load, Arc<Doc>)>,
-    /// Le fichier n'a pas pu être lu.
+    /// The file could not be read.
     failed: bool,
-    /// Lecture en cours.
+    /// Reading in progress.
     waiting: Option<Load>,
-    /// Décalage (px) de l'origine du document dans la vue, et pixels par unité.
+    /// Offset (px) of the document's origin in the view, and pixels per unit.
     pan: (f32, f32),
     zoom: f32,
-    /// Cadrer le document à la prochaine frame.
+    /// Fit the document on the next frame.
     fit: bool,
-    /// Glisser en cours : dernière position du pointeur.
+    /// Drag in progress: last pointer position.
     drag: Option<Point<Pixels>>,
     bounds: Bounds<Pixels>,
-    /// Tuiles demandées, les plus anciennes d'abord, et celles en cours de dessin.
+    /// Requested tiles, oldest first, and those being drawn.
     tiles: VecDeque<Tile>,
     flying: Vec<Tile>,
 }
@@ -186,7 +186,7 @@ impl Viewer {
         }
     }
 
-    /// Le thème, tel que la fenêtre le connaît.
+    /// The theme, as the window knows it.
     pub fn sync(&mut self, theme: Theme) {
         self.theme = theme;
     }
@@ -201,7 +201,7 @@ impl Viewer {
         [c.r, c.g, c.b].map(|v| (v * 255.).round() as u8)
     }
 
-    /// Zoome autour de ce point de la vue (pixels depuis son coin).
+    /// Zooms around this point of the view (pixels from its corner).
     fn zoom_at(&mut self, zoom: f32, (mx, my): (f32, f32), cx: &mut Context<Self>) {
         let zoom = zoom.clamp(ZOOM.0, ZOOM.1);
         let k = zoom / self.zoom;
@@ -220,7 +220,7 @@ impl Viewer {
         cx.notify();
     }
 
-    /// La molette déplace la vue ; avec Ctrl (Cmd), elle zoome autour du pointeur.
+    /// The wheel moves the view; with Ctrl (Cmd), it zooms around the pointer.
     fn scroll(&mut self, e: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
         let delta = e.delta.pixel_delta(px(26.));
         if e.modifiers.secondary() {
@@ -232,8 +232,8 @@ impl Viewer {
         }
     }
 
-    /// Cadre le document : sur sa largeur (un long schéma se lit en descendant), à 100 % au plus,
-    /// centré s'il tient en entier.
+    /// Fits the document: to its width (a long diagram is read going down), at 100% at most,
+    /// centered if it fits entirely.
     fn frame(&mut self, (w, h): (f32, f32)) {
         let (bw, bh) = (f32::from(self.bounds.size.width), f32::from(self.bounds.size.height));
         let margin = 24.;
@@ -242,14 +242,14 @@ impl Viewer {
         self.pan = ((bw - w * self.zoom) / 2., top);
     }
 
-    /// Le document à l'écran, lu en tâche de fond.
+    /// The document on screen, read in the background.
     fn document(&mut self, window: &mut Window, cx: &mut App) -> Option<Arc<Doc>> {
-        // Un fichier changé sur le disque est relu.
+        // A file changed on disk is reread.
         if let Source::File(path, stamp) = &mut self.source {
             *stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         }
         let load = Load { source: self.source.clone(), look: figure::Look::of(&self.theme) };
-        // Une lecture à la fois : celle d'un thème déjà quitté finit avant que la suivante commence.
+        // One read at a time: the one for a theme already left finishes before the next starts.
         if let Some(running) = self.waiting.clone().filter(|running| *running != load) {
             if window.use_asset::<Load>(&running, cx).is_none() {
                 return self.doc.as_ref().map(|(_, doc)| doc.clone());
@@ -276,8 +276,8 @@ impl Viewer {
         self.doc.as_ref().map(|(_, doc)| doc.clone())
     }
 
-    /// L'image d'une tuile, si elle est prête ; la retient parmi les dernières demandées. Une tuile
-    /// jamais demandée attend son tour s'il y en a déjà `FLYING` en cours.
+    /// A tile's image, if it is ready; keeps it among the last requested. A tile
+    /// never requested waits its turn if `FLYING` are already in progress.
     fn tile(&mut self, tile: Tile, window: &mut Window, cx: &mut App) -> Option<Arc<gpui::RenderImage>> {
         match self.tiles.iter().position(|t| *t == tile) {
             Some(i) => {
@@ -294,13 +294,13 @@ impl Viewer {
         image.use_render_image(window, cx)
     }
 
-    /// Les tuiles en cours qui ont fini laissent la place aux suivantes.
+    /// Tiles in progress that have finished make room for the next ones.
     fn landed(&mut self, window: &mut Window, cx: &mut App) {
         let flying = std::mem::take(&mut self.flying);
         self.flying = flying.into_iter().filter(|t| window.use_asset::<Tile>(t, cx).is_none()).collect();
     }
 
-    /// Libère les tuiles au-delà des `KEPT` dernières : leur image et leur place sur la carte graphique.
+    /// Frees the tiles beyond the last `KEPT`: their image and their room on the graphics card.
     fn forget(&mut self, window: &mut Window, cx: &mut App) {
         while self.tiles.len() > KEPT {
             let tile = self.tiles.pop_front().unwrap();
@@ -334,11 +334,11 @@ impl Viewer {
         if let Some(image) = self.tile(base, window, cx) {
             window.paint_image(whole, Corners::default(), image, 0, false).ok();
         }
-        // Le niveau de tuiles juste assez fin pour l'écran : une tuile ne pèse que sa taille, le
-        // document entier n'est jamais pixellisé à ce niveau.
+        // The tile level just fine enough for the screen: a tile weighs only its size, the
+        // whole document is never rasterized at that level.
         let level = ((zoom * window.scale_factor()).log2() * 4.).ceil() as i32;
         let scale = scale_of(level);
-        // La partie du document que montre la vue, en unités du document, puis en cases.
+        // The part of the document the view shows, in document units, then in cells.
         let (bw, bh) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
         let unit = |v: f32, pan: f32| (v - pan) / zoom;
         let cell = |u: f32| (u * scale / TILE as f32).floor().max(0.) as u32;
@@ -429,7 +429,7 @@ impl Render for Viewer {
             .on_action(cx.listener(|this, _: &Right, _, cx| this.nudge(-1., 0., cx)))
             .on_action(cx.listener(|this, _: &Up, _, cx| this.nudge(0., 1., cx)))
             .on_action(cx.listener(|this, _: &Down, _, cx| this.nudge(0., -1., cx)))
-            // Échap : la fenêtre décide (retour à la note).
+            // Escape: the window decides (back to the note).
             .on_action(cx.listener(|_, _: &Cancel, _, cx| cx.propagate()))
             .on_mouse_down(
                 MouseButton::Left,
@@ -458,7 +458,7 @@ impl Render for Viewer {
                 }),
             )
             .on_scroll_wheel(cx.listener(Self::scroll))
-            // Comme dans le canevas : + - 0 sans modificateur.
+            // As in the canvas: + - 0 without modifier.
             .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, _, cx| {
                 let k = &e.keystroke;
                 if k.modifiers.secondary() || k.modifiers.alt {

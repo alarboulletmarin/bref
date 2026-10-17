@@ -1,10 +1,9 @@
-//! Tables CSV/TSV : lecture, édition et écriture, sans aucune dépendance à GPUI.
+//! CSV/TSV tables: reading, editing and writing, with no dependency on GPUI.
 //!
-//! Le texte décodé est gardé une seule fois (`Arc<String>`) ; on n'indexe que les
-//! limites des enregistrements (12 octets chacun). Les champs sont analysés à la
-//! demande. Une ligne modifiée devient « possédée » (`Vec<String>`) ; les autres
-//! sont réécrites octet pour octet depuis le texte source.
-#![allow(dead_code)]
+//! The decoded text is kept once (`Arc<String>`); only the record bounds are
+//! indexed (12 bytes each). Fields are parsed on
+//! demand. An edited row becomes "owned" (`Vec<String>`); the others
+//! are rewritten byte for byte from the source text.
 
 use crate::lang::tr;
 use std::borrow::Cow;
@@ -13,13 +12,13 @@ use std::io::{self, Write};
 use std::ops::Range;
 use std::sync::Arc;
 
-/// Taille maximale acceptée (les positions de l'index sont des `u32`).
+/// Largest accepted size (index positions are `u32`).
 pub const MAX_BYTES: usize = 1 << 30;
-/// Taille de l'échantillon examiné pour la détection.
+/// Size of the sample examined for detection.
 const SAMPLE: usize = 64 * 1024;
-/// Nombre d'enregistrements examinés pour deviner le délimiteur.
+/// Number of records examined to guess the delimiter.
 const SAMPLE_RECORDS: usize = 50;
-/// Seuil de vidage du tampon d'écriture.
+/// Write buffer flush threshold.
 const FLUSH: usize = 64 * 1024;
 
 pub const DELIMITERS: [u8; 6] = *b",;\t|: ";
@@ -36,7 +35,7 @@ pub fn delimiter_label(d: u8) -> &'static str {
     }
 }
 
-// ───────────────────────── Encodages ─────────────────────────
+// ───────────────────────── Encodings ─────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Encoding {
@@ -88,8 +87,8 @@ impl Encoding {
     }
 }
 
-/// Windows-1252, octets 0x80..=0x9F. Les cinq octets non définis donnent le point
-/// de code identique (U+0081…), ce qui garde l'aller-retour sans perte.
+/// Windows-1252, bytes 0x80..=0x9F. The five undefined bytes give the identical
+/// code point (U+0081…), which keeps the round trip lossless.
 const CP1252: [u16; 32] = [
     0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039,
     0x0152, 0x008D, 0x017D, 0x008F, 0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
@@ -126,7 +125,7 @@ pub fn detect_encoding(bytes: &[u8]) -> Encoding {
     }
 }
 
-/// Décode sans perte : un UTF-8 valide réutilise le tampon (zéro copie).
+/// Decodes losslessly: valid UTF-8 reuses the buffer (zero copy).
 pub fn decode(mut bytes: Vec<u8>, enc: Encoding) -> String {
     match enc {
         Encoding::Utf8 | Encoding::Utf8Bom => {
@@ -159,7 +158,7 @@ pub fn decode(mut bytes: Vec<u8>, enc: Encoding) -> String {
     }
 }
 
-/// Encode `s` à la suite de `buf`, sans BOM. Erreur : premier caractère non représentable.
+/// Encodes `s` after `buf`, without BOM. Error: first character that cannot be represented.
 fn push_encoded(buf: &mut Vec<u8>, s: &str, enc: Encoding) -> Result<(), char> {
     match enc {
         Encoding::Utf8 | Encoding::Utf8Bom => buf.extend_from_slice(s.as_bytes()),
@@ -187,13 +186,14 @@ fn push_encoded(buf: &mut Vec<u8>, s: &str, enc: Encoding) -> Result<(), char> {
     Ok(())
 }
 
+#[cfg(test)]
 pub fn encode(text: &str, enc: Encoding) -> Result<Vec<u8>, char> {
     let mut out = enc.bom().to_vec();
     push_encoded(&mut out, text, enc)?;
     Ok(out)
 }
 
-// ───────────────────────── Détection ─────────────────────────
+// ───────────────────────── Detection ─────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Format {
@@ -202,10 +202,10 @@ pub struct Format {
     pub header: bool,
 }
 
-/// Délimiteur le plus plausible parmi `cands`, ou `None`. Pour chaque candidat on
-/// compte les champs des premiers enregistrements (guillemets respectés) ; gagne
-/// celui dont un même nombre (>1) de champs revient le plus souvent (au moins
-/// `min_score` fois), puis le plus grand nombre de champs, puis le plus à gauche.
+/// Most plausible delimiter among `cands`, or `None`. For each candidate we
+/// count the fields of the first records (quotes respected); the winner is
+/// the one whose same field count (>1) comes back most often (at least
+/// `min_score` times), then the largest field count, then the leftmost.
 fn best_delimiter(text: &str, cands: &[u8], min_score: usize) -> Option<u8> {
     let mut end = text.len().min(SAMPLE);
     while !text.is_char_boundary(end) {
@@ -215,7 +215,7 @@ fn best_delimiter(text: &str, cands: &[u8], min_score: usize) -> Option<u8> {
     let mut best: Option<(usize, usize, u8)> = None;
     for &d in cands {
         let table = Table::parse(sample.to_string(), d);
-        let mut hist: Vec<(usize, usize)> = Vec::new(); // (champs, enregistrements)
+        let mut hist: Vec<(usize, usize)> = Vec::new(); // (fields, records)
         for r in 0..table.rows().min(SAMPLE_RECORDS) {
             let n = table.row(r).len();
             if n < 2 {
@@ -255,17 +255,17 @@ pub fn detect(bytes: &[u8]) -> Format {
     if encoding.is_utf16() {
         end &= !1;
     }
-    // Un caractère coupé en fin d'échantillon devient U+FFFD : sans effet sur la détection.
+    // A character cut at the end of the sample becomes U+FFFD: no effect on detection.
     let sample = decode(bytes[..end].to_vec(), encoding);
     let delimiter = detect_delimiter(&sample);
     let header = detect_header(&Table::parse(sample, delimiter));
     Format { encoding, delimiter, header }
 }
 
-// ───────────────────────── Champs ─────────────────────────
+// ───────────────────────── Fields ─────────────────────────
 
-/// Index du guillemet fermant d'un champ dont le contenu commence en `i`
-/// (`b.len()` s'il n'est jamais fermé). `""` est un guillemet échappé.
+/// Index of the closing quote of a field whose content starts at `i`
+/// (`b.len()` if it is never closed). `""` is an escaped quote.
 fn quote_close(b: &[u8], mut i: usize) -> usize {
     while i < b.len() {
         if b[i] == b'"' {
@@ -280,9 +280,9 @@ fn quote_close(b: &[u8], mut i: usize) -> usize {
     b.len()
 }
 
-/// Fin du champ qui commence en `i` : index de son délimiteur, ou `b.len()`.
-/// Un guillemet n'ouvre un champ qu'en première position ; le reste après le
-/// guillemet fermant est pris tel quel (lecture tolérante).
+/// End of the field starting at `i`: index of its delimiter, or `b.len()`.
+/// A quote opens a field only in first position; the rest after the
+/// closing quote is taken as is (lenient reading).
 fn field_end(b: &[u8], i: usize, d: u8) -> usize {
     let mut j = i;
     if b.get(i) == Some(&b'"') {
@@ -297,7 +297,7 @@ fn field_end(b: &[u8], i: usize, d: u8) -> usize {
     j
 }
 
-/// Contenu d'un champ brut : guillemets retirés, `""` devient `"`.
+/// Content of a raw field: quotes removed, `""` becomes `"`.
 fn unquote(f: &str) -> Cow<'_, str> {
     let b = f.as_bytes();
     if b.first() != Some(&b'"') {
@@ -327,9 +327,9 @@ fn split_fields(s: &str, d: u8) -> Vec<Cow<'_, str>> {
     }
 }
 
-/// Les champs `range` d'un enregistrement brut, en un seul balayage ; ceux qui manquent sont vides.
-/// Lire cellule par cellule relirait tout ce qui précède chaque fois : sur une ligne de milliers de
-/// colonnes, le temps serait quadratique.
+/// The `range` fields of a raw record, in a single pass; missing ones are empty.
+/// Reading cell by cell would reread everything before each one: on a row of thousands of
+/// columns, the time would be quadratic.
 fn fields_in(s: &str, d: u8, range: std::ops::Range<usize>) -> Vec<Cow<'_, str>> {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(range.len());
@@ -368,7 +368,7 @@ fn nth_field(s: &str, d: u8, col: usize) -> Cow<'_, str> {
     unquote(&s[i..field_end(b, i, d)])
 }
 
-/// Ajoute un champ, entre guillemets s'il contient le délimiteur, `"` ou un retour ligne.
+/// Appends a field, quoted if it contains the delimiter, `"` or a line break.
 fn push_field(out: &mut String, f: &str, d: u8) {
     if f.bytes().any(|c| c == d || matches!(c, b'"' | b'\n' | b'\r')) {
         out.push('"');
@@ -399,7 +399,7 @@ fn index(n: usize) -> u32 {
 
 // ───────────────────────── Table ─────────────────────────
 
-/// Un enregistrement : limites dans le texte source (sans fin de ligne), ou ligne possédée.
+/// A record: bounds in the source text (without line ending), or owned row.
 #[derive(Clone, Copy)]
 enum Rec {
     Raw(u32, u32),
@@ -410,17 +410,17 @@ enum Rec {
 pub struct Table {
     text: Arc<String>,
     recs: Vec<Rec>,
-    /// Lignes éditées ; une ligne supprimée laisse un `Vec` vide (pas de réemploi).
+    /// Edited rows; a deleted row leaves an empty `Vec` (no reuse).
     owned: Vec<Vec<String>>,
     delimiter: u8,
     eol: &'static str,
     final_newline: bool,
-    // ponytail: ne diminue jamais après remove_rows/clear, une colonne vide peut subsister.
+    // ponytail: never shrinks after remove_rows/clear, an empty column may remain.
     cols: usize,
 }
 
 impl Table {
-    /// Une seule passe sur les octets. `text.len()` doit être <= `MAX_BYTES`.
+    /// A single pass over the bytes. `text.len()` must be <= `MAX_BYTES`.
     pub fn parse(text: String, delimiter: u8) -> Table {
         assert!(text.len() <= MAX_BYTES, "fichier trop gros");
         let b = text.as_bytes();
@@ -483,10 +483,6 @@ impl Table {
         self.cols
     }
 
-    pub fn delimiter(&self) -> u8 {
-        self.delimiter
-    }
-
     fn raw(&self, s: u32, e: u32) -> &str {
         &self.text[s as usize..e as usize]
     }
@@ -501,9 +497,9 @@ impl Table {
         }
     }
 
-    /// Champs de la ligne ; peut être plus court que `cols()`.
-    /// Les cellules `cols` de la ligne, vides là où la ligne est plus courte : en un seul balayage,
-    /// alors que `cell` colonne par colonne serait quadratique sur une ligne très large.
+    /// Fields of the row; may be shorter than `cols()`.
+    /// The `cols` cells of the row, empty where the row is shorter: in a single pass,
+    /// whereas `cell` column by column would be quadratic on a very wide row.
     pub fn cells(&self, row: usize, cols: std::ops::Range<usize>) -> Vec<Cow<'_, str>> {
         match self.recs.get(row) {
             Some(&Rec::Raw(s, e)) => fields_in(self.raw(s, e), self.delimiter, cols),
@@ -525,7 +521,7 @@ impl Table {
         }
     }
 
-    /// Ligne possédée (créée, et les lignes vides manquantes ajoutées, au besoin).
+    /// Owned row (created, and the missing empty rows added, if needed).
     fn owned_row(&mut self, row: usize) -> &mut Vec<String> {
         while self.recs.len() <= row {
             self.recs.push(Rec::Owned(index(self.owned.len())));
@@ -555,7 +551,7 @@ impl Table {
         self.cols = self.cols.max(width);
     }
 
-    /// Insère une ligne vide avant `at` (`at <= rows()`).
+    /// Inserts an empty row before `at` (`at <= rows()`).
     pub fn insert_row(&mut self, at: usize) {
         let at = at.min(self.recs.len());
         self.recs.insert(at, Rec::Owned(index(self.owned.len())));
@@ -574,7 +570,7 @@ impl Table {
         }
     }
 
-    /// Nombre de champs de la ligne `row`.
+    /// Number of fields of row `row`.
     fn width_of(&self, row: usize) -> usize {
         match self.recs.get(row) {
             Some(&Rec::Raw(s, e)) => split_fields(self.raw(s, e), self.delimiter).len(),
@@ -583,11 +579,11 @@ impl Table {
         }
     }
 
-    /// Insère `n` colonnes avant `at`. `saved[r]` donne les cellules de la ligne `r` (une liste vide : la
-    /// ligne n'en avait pas) ; une ligne plus courte que `at` et sans cellule à poser n'a rien à décaler :
-    /// elle reste telle quelle sur disque.
-    // ponytail: toute ligne qui a des cellules à décaler devient possédée en mémoire ; sur un fichier de
-    // centaines de milliers de lignes, la place d'une copie de ses champs.
+    /// Inserts `n` columns before `at`. `saved[r]` gives the cells of row `r` (an empty list: the
+    /// row had none); a row shorter than `at` with no cell to place has nothing to shift:
+    /// it stays as is on disk.
+    // ponytail: every row with cells to shift becomes owned in memory; on a file of
+    // hundreds of thousands of rows, the room of a copy of its fields.
     pub fn insert_cols(&mut self, at: usize, n: usize, saved: &[Vec<String>]) {
         let at = at.min(self.cols);
         for r in 0..self.recs.len() {
@@ -606,8 +602,8 @@ impl Table {
         self.cols += n;
     }
 
-    /// Retire les colonnes `range` et rend leurs cellules, ligne par ligne (une ligne qui n'en avait
-    /// pas rend une liste vide) : de quoi les remettre telles quelles.
+    /// Removes the columns `range` and returns their cells, row by row (a row that had
+    /// none returns an empty list): enough to put them back as they were.
     pub fn remove_cols(&mut self, range: Range<usize>) -> Vec<Vec<String>> {
         let range = range.start..range.end.min(self.cols);
         let n = range.len();
@@ -625,10 +621,10 @@ impl Table {
         saved
     }
 
-    /// Les colonnes `range` vont commencer en `to` (compté une fois elles retirées). Une ligne qui n'a
-    /// rien d'aussi loin à droite que le plus proche des deux bords reste telle quelle sur disque.
-    // ponytail: une ligne plus courte que les colonnes déplacées garde, une fois déplacées en retour, des
-    // cellules vides en fin de ligne (`5` devient `5,,`) : mêmes cellules, un peu plus d'octets.
+    /// The columns `range` will start at `to` (counted once they are removed). A row that has
+    /// nothing as far right as the nearer of the two edges stays as is on disk.
+    // ponytail: a row shorter than the moved columns keeps, once moved back, empty
+    // cells at the end of the row (`5` becomes `5,,`): same cells, a few more bytes.
     pub fn move_cols(&mut self, range: Range<usize>, to: usize) {
         let near = range.start.min(to);
         for r in 0..self.recs.len() {
@@ -648,8 +644,8 @@ impl Table {
         self.cols = self.cols.max(to + range.len());
     }
 
-    /// Les lignes `start..start + perm.len()` prennent l'ordre de `perm` : la ligne `i` de la fenêtre
-    /// devient l'ancienne `perm[i]`. Les lignes ne sont ni lues ni copiées.
+    /// Rows `start..start + perm.len()` take the order of `perm`: row `i` of the window
+    /// becomes the old `perm[i]`. Rows are neither read nor copied.
     pub fn reorder(&mut self, start: usize, perm: &[usize]) {
         let old: Vec<Rec> = self.recs[start..start + perm.len()].to_vec();
         for (i, &from) in perm.iter().enumerate() {
@@ -657,37 +653,7 @@ impl Table {
         }
     }
 
-    /// Écrase à partir de `(row, col)`, en ajoutant lignes et colonnes au besoin.
-    pub fn paste(&mut self, row: usize, col: usize, grid: &[Vec<String>]) {
-        for (i, line) in grid.iter().enumerate() {
-            if line.is_empty() {
-                continue;
-            }
-            let cells = self.owned_row(row + i);
-            if cells.len() < col + line.len() {
-                cells.resize(col + line.len(), String::new());
-            }
-            cells[col..col + line.len()].clone_from_slice(line);
-            let width = cells.len();
-            self.cols = self.cols.max(width);
-        }
-    }
-
-    /// Vide les cellules (sans ajouter de colonnes ni de lignes).
-    pub fn clear(&mut self, rows: Range<usize>, cols: Range<usize>) {
-        let cols = cols.start..cols.end.min(self.cols);
-        for r in rows.start..rows.end.min(self.rows()) {
-            if cols.clone().all(|c| self.cell(r, c).is_empty()) {
-                continue; // rien à vider : la ligne reste telle quelle sur disque
-            }
-            let cells = self.owned_row(r);
-            for c in cols.start..cols.end.min(cells.len()) {
-                cells[c].clear();
-            }
-        }
-    }
-
-    /// Écrit en flux : lignes intactes octet pour octet, lignes éditées sérialisées.
+    /// Writes as a stream: untouched rows byte for byte, edited rows serialized.
     pub fn write_to(&self, out: &mut impl Write, enc: Encoding) -> Result<(), WriteError> {
         let mut buf = Vec::with_capacity(FLUSH + 4096);
         buf.extend_from_slice(enc.bom());
@@ -703,7 +669,7 @@ impl Table {
                 }
             };
             push_encoded(&mut buf, text, enc).map_err(WriteError::Unrepresentable)?;
-            // Une dernière ligne vide sans fin de ligne disparaîtrait à la relecture.
+            // A last empty row without line ending would vanish on rereading.
             if i < last || self.final_newline || text.is_empty() {
                 push_encoded(&mut buf, self.eol, enc).map_err(WriteError::Unrepresentable)?;
             }
@@ -716,13 +682,13 @@ impl Table {
         Ok(())
     }
 
-    /// Copie bon marché pour écrire en tâche de fond : le texte source est partagé.
+    /// Cheap copy for writing in the background: the source text is shared.
     pub fn snapshot(&self) -> Table {
         self.clone()
     }
 
-    /// Texte d'une sélection (bornes ramenées à la table). Lignes séparées par `\n`,
-    /// sans `\n` final.
+    /// Text of a selection (bounds clamped to the table). Rows separated by `\n`,
+    /// without a final `\n`.
     pub fn text_range(&self, rows: Range<usize>, cols: Range<usize>, style: Style) -> String {
         let rows = rows.start..rows.end.min(self.rows());
         let cols = cols.start..cols.end.min(self.cols);
@@ -741,7 +707,7 @@ impl Table {
     }
 }
 
-// ───────────────────────── Écriture ─────────────────────────
+// ───────────────────────── Writing ─────────────────────────
 
 pub enum WriteError {
     Io(io::Error),
@@ -777,13 +743,13 @@ impl std::error::Error for WriteError {}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Style {
-    /// Tabulations ; presse-papiers.
+    /// Tabs; clipboard.
     Tsv,
-    /// RFC 4180 avec le délimiteur donné.
+    /// RFC 4180 with the given delimiter.
     Csv(u8),
-    /// `| a | b |` avec une ligne de tirets après la première ligne.
+    /// `| a | b |` with a dash line after the first row.
     Markdown,
-    /// Tableau d'objets, la première ligne donne les clés.
+    /// Array of objects, the first row gives the keys.
     Json,
 }
 
@@ -797,15 +763,6 @@ impl Style {
         }
     }
 
-    pub fn from_extension(e: &str) -> Option<Style> {
-        match e.to_ascii_lowercase().as_str() {
-            "tsv" => Some(Style::Tsv),
-            "csv" => Some(Style::Csv(b',')),
-            "md" | "markdown" => Some(Style::Markdown),
-            "json" => Some(Style::Json),
-            _ => None,
-        }
-    }
 }
 
 fn render(grid: &[Vec<Cow<str>>], style: Style) -> String {
@@ -889,14 +846,14 @@ fn json_string(out: &mut String, s: &str) {
     out.push('"');
 }
 
-/// Grille d'un texte collé : tabulations si présentes, sinon délimiteur détecté
-/// (`,` `;` `|` sur au moins deux lignes concordantes), sinon une seule colonne.
-/// Jamais de ligne finale vide issue du `\n` final.
+/// Grid of pasted text: tabs if present, otherwise a detected delimiter
+/// (`,` `;` `|` on at least two matching lines), otherwise a single column.
+/// Never a final empty row from the final `\n`.
 pub fn parse_grid(text: &str) -> Vec<Vec<String>> {
     let delimiter = if text.contains('\t') {
         b'\t'
     } else {
-        // Ni espace ni deux-points : coller une phrase ne doit pas la découper.
+        // Neither space nor colon: pasting a sentence must not split it.
         best_delimiter(text, &DELIMITERS[..4], 2).unwrap_or(b'\t')
     };
     let table = Table::parse(text.to_string(), delimiter);
@@ -952,7 +909,7 @@ mod tests {
             assert!(bytes.starts_with(e.bom()));
             assert_eq!(decode(bytes, e), text, "{}", e.label());
         }
-        // Hors Latin1 : seulement UTF-8, UTF-16 et Windows-1252 (pour €).
+        // Outside Latin1: only UTF-8, UTF-16 and Windows-1252 (for €).
         let euro = "5€ 😀";
         for e in [Encoding::Utf8, Encoding::Utf8Bom, Encoding::Utf16Le, Encoding::Utf16Be] {
             assert_eq!(decode(encode(euro, e).unwrap(), e), euro);
@@ -994,7 +951,7 @@ mod tests {
         assert_eq!(detect_delimiter("a\tb\tc\n1\t2\t3\n"), b'\t');
         assert_eq!(detect_delimiter("a|b|c\n1|2|3\n"), b'|');
         assert_eq!(detect_delimiter("a b c\n1 2 3\n"), b' ');
-        // Le délimiteur dans un champ entre guillemets ne compte pas.
+        // The delimiter inside a quoted field does not count.
         assert_eq!(detect_delimiter("n;note\nx;\"a,b,c,d\"\ny;\"e,f\"\n"), b';');
         assert_eq!(detect_delimiter("rien
 special
@@ -1048,10 +1005,10 @@ special
         assert_eq!(t.row(2).len(), 1);
         assert_eq!(t.cols(), 2);
         assert_eq!(table("a,\n", b',').row(0), vec!["a", ""]);
-        // Guillemet au milieu d'un champ : littéral.
+        // Quote in the middle of a field: literal.
         let t = table("5\" pipe,x\nb,c\n", b',');
         assert_eq!((t.rows(), t.cell(0, 0).into_owned()), (2, "5\" pipe".to_string()));
-        // Guillemet jamais fermé : jusqu'à la fin.
+        // Quote never closed: up to the end.
         assert_eq!(table("a,\"b\nc", b',').rows(), 1);
     }
 
@@ -1061,7 +1018,7 @@ special
             let mut t = table(src, b',');
             assert_eq!(text_of(&t), src);
             let v = t.cell(0, 0).into_owned();
-            t.set_cell(0, 0, v); // réécrit la 1re ligne, le reste intact
+            t.set_cell(0, 0, v); // rewrites the 1st row, the rest untouched
             assert_eq!(text_of(&t), src);
         }
         assert_eq!(table("a\r\nb\n", b',').eol, "\r\n");
@@ -1089,7 +1046,7 @@ special
         assert_eq!(t.cols(), 4);
         assert_eq!(t.cell(0, 1), "x,y");
         assert_eq!(text_of(&t), "a,\"x,y\"\n\"say \"\"hi\"\"\nnow\",d,,far\n");
-        // Relecture identique.
+        // Identical rereading.
         let back = table(&text_of(&t), b',');
         assert_eq!(back.cell(1, 0), "say \"hi\"\nnow");
         assert_eq!(back.cell(0, 1), "x,y");
@@ -1105,16 +1062,8 @@ special
         t.set_cell(3, 0, "end".into());
         t.remove_rows(1..2);
         assert_eq!(text_of(&t), "a,b\nc,d\nend\n");
-        t.remove_rows(5..9); // hors limites : sans effet
+        t.remove_rows(5..9); // out of bounds: no effect
         assert_eq!(t.rows(), 3);
-
-        let grid = vec![vec!["1".to_string(), "2".into(), "3".into()], vec!["4".into()]];
-        t.paste(2, 1, &grid);
-        assert_eq!((t.rows(), t.cols()), (4, 4));
-        assert_eq!(text_of(&t), "a,b\nc,d\nend,1,2,3\n,4\n");
-        t.paste(0, 0, &[vec!["Z".to_string()]]);
-        assert_eq!(t.cell(0, 0), "Z");
-        assert_eq!(t.cell(0, 1), "b");
     }
 
     #[test]
@@ -1122,15 +1071,15 @@ special
         let text = "a,b,c\n1,2,3\n4\n,,\n";
         let mut t = table(text, b',');
         let flat = |t: &Table| (0..t.rows()).map(|r| t.row(r).join("|")).collect::<Vec<_>>().join("/");
-        // Insérer une colonne vide : la ligne trop courte n'est pas touchée, une ligne vide gagne sa cellule.
+        // Inserting an empty column: the too-short row is not touched, an empty row gains its cell.
         t.insert_cols(1, 1, &[]);
         assert_eq!((flat(&t), t.cols()), ("a||b|c/1||2|3/4/|||".to_string(), 4));
         assert_eq!(written_text(&t), "a,,b,c\n1,,2,3\n4\n,,,\n");
-        // La retirer rend l'octet près le fichier d'origine.
+        // Removing it gives back the original file byte for byte.
         let saved = t.remove_cols(1..2);
         assert_eq!((flat(&t), t.cols()), ("a|b|c/1|2|3/4/||".to_string(), 3));
         assert_eq!(written_text(&t), text);
-        // Retirer une colonne pleine, la remettre : rien ne change, même pour une ligne plus courte.
+        // Remove a full column, put it back: nothing changes, even for a shorter row.
         let mut t = table(text, b',');
         let took = t.remove_cols(1..3);
         assert_eq!((flat(&t), t.cols()), ("a/1/4/".to_string(), 1));
@@ -1138,7 +1087,7 @@ special
         assert_eq!((flat(&t), t.cols()), ("a|b|c/1|2|3/4/||".to_string(), 3));
         assert_eq!(written_text(&t), text);
         drop(saved);
-        // Une colonne retirée en entier : la dernière reste (un tableau garde une colonne).
+        // A column removed entirely: the last one stays (a table keeps one column).
         let mut one = table("x\ny\n", b',');
         one.remove_cols(0..1);
         assert_eq!(one.cols(), 1);
@@ -1148,16 +1097,16 @@ special
     fn columns_move_as_a_block() {
         let mut t = table("a,b,c,d\n1,2,3,4\n5\n", b',');
         t.move_cols(1..3, 0);
-        // La ligne courte garde sa valeur dans la même colonne, qui a changé de place.
+        // The short row keeps its value in the same column, which has moved.
         assert_eq!(written_text(&t), "b,c,a,d\n2,3,1,4\n,,5\n");
-        // Le geste inverse rend les mêmes cellules ; la ligne courte garde deux cellules vides en fin.
+        // The reverse gesture gives back the same cells; the short row keeps two empty cells at the end.
         t.move_cols(0..2, 1);
         assert_eq!(written_text(&t), "a,b,c,d\n1,2,3,4\n5,,\n");
         t.move_cols(0..1, 3);
         assert_eq!(written_text(&t), "b,c,d,a\n2,3,4,1\n,,,5\n");
     }
 
-    /// À la main : `cargo test --release --locked big_table_columns -- --ignored --nocapture`.
+    /// By hand: `cargo test --release --locked big_table_columns -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn big_table_columns() {
@@ -1193,7 +1142,7 @@ special
         let mut t = table("c\na\nb\nd\n", b',');
         t.reorder(1, &[1, 2, 0]);
         assert_eq!(written_text(&t), "c\nb\nd\na\n");
-        // La permutation inverse défait.
+        // The inverse permutation undoes.
         t.reorder(1, &[2, 0, 1]);
         assert_eq!(written_text(&t), "c\na\nb\nd\n");
         t.reorder(0, &[]);
@@ -1202,15 +1151,6 @@ special
 
     fn written_text(t: &Table) -> String {
         String::from_utf8(written(t, Encoding::Utf8)).unwrap()
-    }
-
-    #[test]
-    fn clear_cells() {
-        let mut t = table("a,b,c\nd,e,f\n,,\n", b',');
-        t.clear(0..2, 1..3);
-        assert_eq!(text_of(&t), "a,,\nd,,\n,,\n");
-        t.clear(2..3, 0..3);
-        assert!(matches!(t.recs[2], Rec::Raw(..)), "ligne déjà vide : pas modifiée");
     }
 
     #[test]
@@ -1272,15 +1212,6 @@ special
     }
 
     #[test]
-    fn styles_and_extensions() {
-        for s in [Style::Tsv, Style::Csv(b','), Style::Markdown, Style::Json] {
-            assert_eq!(Style::from_extension(s.extension()), Some(s));
-        }
-        assert_eq!(Style::from_extension("CSV"), Some(Style::Csv(b',')));
-        assert_eq!(Style::from_extension("txt"), None);
-    }
-
-    #[test]
     fn parse_grid_variants() {
         assert_eq!(parse_grid("a\tb\r\nc\td\r\n"), vec![vec!["a", "b"], vec!["c", "d"]]);
         assert_eq!(parse_grid("a,b\nc,\"d,e\"\n"), vec![vec!["a", "b"], vec!["c", "d,e"]]);
@@ -1298,7 +1229,7 @@ special
         }
     }
 
-    /// Mémoire résidente du processus, en Mo (Linux).
+    /// Resident memory of the process, in MB (Linux).
     fn rss_mb() -> f64 {
         std::fs::read_to_string("/proc/self/statm")
             .ok()

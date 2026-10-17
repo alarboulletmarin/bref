@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Usage: scripts/bundle-macos.sh <binaire> <version> <sortie.dmg>
+# Usage: scripts/bundle-macos.sh <binary> <version> <output.dmg>
 #
-# Enveloppe le binaire dans Bref.app, le signe « ad hoc » (sans compte Apple Developer,
-# donc sans notarisation : voir le README pour l'ouverture au premier lancement), puis
-# le range dans un .dmg avec un raccourci vers Applications. À lancer sous macOS.
+# Wraps the binary in Bref.app, signs it "ad hoc" (no Apple Developer account, so no
+# notarization: see the README for opening it the first time), then puts it in a .dmg
+# with a shortcut to Applications. Run it on macOS.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,7 +23,7 @@ codesign --force --sign - "$stage/Bref.app"
 ln -s /Applications "$stage/Applications"
 
 mkdir -p "$(dirname "$out")"
-# hdiutil échoue parfois au hasard (« Resource busy ») sur les runners : trois essais.
+# hdiutil sometimes fails at random ("Resource busy") on the runners: three tries.
 for try in 1 2 3; do
     hdiutil create -volname Bref -srcfolder "$stage" -ov -format UDZO "$out" >/dev/null && break
     [ "$try" = 3 ] && exit 1

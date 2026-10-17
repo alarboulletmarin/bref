@@ -5,62 +5,62 @@ use super::*;
 /// The formatting bar of a note.
 #[derive(Default)]
 pub(super) struct BarState {
-    /// Ce que la barre de mise en forme propose, avec la version et la sélection pour lesquelles on l'a compté.
+    /// What the formatting bar offers, with the version and selection it was computed for.
     pub(super) tools: Option<((u64, Range<usize>), Tools)>,
-    /// Bord gauche de la barre, quand elle se montre (voir `bar_place`).
+    /// Left edge of the bar, when it shows (see `bar_place`).
     pub(super) at: Option<Bar>,
-    /// Barre repliée en un bouton (note étroite) : ses boutons sont ouverts au-dessus de lui.
+    /// Bar collapsed into a button (narrow note): its buttons are open above it.
     pub(super) open: bool,
-    /// Les pastilles de couleur du surlignage sont ouvertes.
+    /// The highlight color badges are open.
     pub(super) swatches: bool,
 }
 
-/// Largeur de la barre de mise en forme : onze boutons de 26 px, le chevron des couleurs (14 px), deux
-/// séparateurs, 1 px entre chacun des quatorze éléments, 3 px de marge et le trait de bordure.
+/// Width of the formatting bar: eleven 26 px buttons, the colors chevron (14 px), two
+/// separators, 1 px between each of the fourteen items, 3 px of margin and the border line.
 pub(super) const BAR_WIDTH: f32 = 6. + 2. + 11. * 26. + 14. + 13. + 2. * 7.;
 
-/// Fond du bouton qui replie la barre : toujours opaque, il passe sur du texte (la teinte de la sélection,
-/// translucide, laisserait voir ce qu'il couvre).
+/// Background of the button that collapses the bar: always opaque, it goes over text (the selection tint,
+/// translucent, would show what it covers).
 pub fn bar_fill(t: &Theme, open: bool) -> Hsla {
     if open { crate::ui::theme::blend(t.accent, t.panel, 0.2) } else { t.panel }
 }
 
-/// Où et comment se montre la barre de mise en forme.
+/// Where and how the formatting bar shows.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(super) enum Bar {
-    /// Dans la rangée du bas, son bord gauche à cette abscisse.
+    /// In the bottom row, its left edge at this x.
     Inline(f32),
-    /// Repliée en un bouton, en bas à gauche, qui ouvre la barre au-dessus de lui.
+    /// Collapsed into a button, bottom left, which opens the bar above it.
     Compact,
 }
 
-/// Ce que la barre de mise en forme propose pour la sélection.
+/// What the formatting bar offers for the selection.
 #[derive(Clone, Copy)]
 pub(super) struct Tools {
-    /// Les styles en ligne posés (`md::STYLES`).
+    /// The inline styles applied (`md::STYLES`).
     pub(super) styles: u16,
-    /// Le genre de liste de la ligne du curseur.
+    /// The list kind of the cursor's line.
     pub(super) list: Option<ListStyle>,
-    /// Le curseur est dans un tableau.
+    /// The cursor is in a table.
     pub(super) table: bool,
 }
 
-/// Fond du texte surligné, de la couleur `color` (voir `md::MARKS`) : translucide, lisible sur le clair
-/// comme sur le sombre, et distinct de la teinte d'accent des commentaires.
+/// Background of highlighted text, in color `color` (see `md::MARKS`): translucent, readable on light
+/// as on dark, and distinct from the accent tint of comments.
 pub fn highlight(color: usize) -> Hsla {
     let hue = [0.14, 0.36, 0.58, 0.93, 0.76][color.min(md::MARKS.len() - 1)];
     Hsla { h: hue, s: 0.9, l: 0.55, a: 0.4 }
 }
 
 impl Editor {
-    /// Les pastilles de couleur sont ouvertes.
+    /// The color badges are open.
     #[cfg(test)]
     pub fn swatches_open(&self) -> bool {
         self.bar.swatches
     }
 
-    /// Surligne la sélection de la couleur `color` (voir `md::MARKS`) : de la même couleur qu'elle a déjà,
-    /// le surlignage part ; d'une autre, il change de couleur ; sinon il se pose.
+    /// Highlights the selection in color `color` (see `md::MARKS`): in the same color it already has,
+    /// the highlight goes; in another, it changes color; otherwise it is applied.
     pub(super) fn paint_with(&mut self, color: usize, cx: &mut Context<Self>) {
         let (open, close) = md::mark_signs(color);
         let parts = self.mark_parts();
@@ -80,7 +80,7 @@ impl Editor {
     }
 
     #[cfg(test)]
-    /// Les boutons de la barre de mise en forme sont à l'écran : dans la rangée du bas, ou ouverts au-dessus du bouton qui la replie.
+    /// The formatting bar's buttons are on screen: in the bottom row, or open above the button that collapses it.
     pub fn bar_shown(&self) -> bool {
         match self.bar.at {
             Some(Bar::Inline(_)) => true,
@@ -89,16 +89,16 @@ impl Editor {
         }
     }
 
-    /// La note est trop étroite pour la barre : elle se replie en un bouton.
+    /// The note is too narrow for the bar: it collapses into a button.
     #[cfg(test)]
     pub fn bar_folded(&self) -> bool {
         self.bar.at == Some(Bar::Compact)
     }
 
-    /// Où poser la barre : au milieu de la page, plus à gauche quand le compteur et les boutons du coin
-    /// la pousseraient, repliée en un bouton quand elle n'a plus la place ; `None` si elle est coupée ou
-    /// que ce n'est pas le pane actif, ou tant que la largeur de la note n'est pas connue.
-    // ponytail: la place du compteur est estimée (7,4 px par caractère à 12 px, les espaces et les points médians comptent plus que les lettres) plutôt que mesurée.
+    /// Where to put the bar: in the middle of the page, further left when the counter and the corner buttons
+    /// would push it, collapsed into a button when it no longer has room; `None` if it is off or
+    /// this is not the active pane, or as long as the note's width is not known.
+    // ponytail: the counter's room is estimated (7.4 px per character at 12 px, spaces and middle dots count more than letters) rather than measured.
     pub(super) fn bar_place(&mut self) -> Option<Bar> {
         let width = f32::from(self.viewport.size.width);
         if !self.theme.bar || !self.bar_here || width == 0. {
@@ -109,9 +109,9 @@ impl Editor {
         Some(if x >= 8. { Bar::Inline(x) } else { Bar::Compact })
     }
 
-    /// Ce que la barre propose pour la sélection, recalculé seulement quand le texte ou la sélection changent.
-    // ponytail: rien n'est allumé pour une sélection sur plusieurs lignes (le geste, lui, les traite) :
-    // la compter à chaque mouvement de souris pèserait sur une grande sélection.
+    /// What the bar offers for the selection, recomputed only when the text or the selection change.
+    // ponytail: nothing lights up for a selection over several lines (the gesture does handle them):
+    // computing it at each mouse move would weigh on a large selection.
     pub(super) fn tools(&mut self) -> Tools {
         let key = (self.version, self.sel.clone());
         if let Some((known, tools)) = &self.bar.tools
@@ -137,13 +137,13 @@ impl Editor {
         tools
     }
 
-    /// Les styles posés sur la sélection (`md::STYLES`), pour allumer les boutons de la barre de mise en forme.
+    /// The styles applied on the selection (`md::STYLES`), to light up the formatting bar's buttons.
     #[cfg(test)]
     pub fn styles(&mut self) -> u16 {
         self.tools().styles
     }
 
-    /// Les pastilles de couleur du surlignage, au-dessus de la barre ; `aligned` : sous le bouton H.
+    /// The highlight color badges, above the bar; `aligned`: under the H button.
     pub(super) fn swatches(&mut self, aligned: bool, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let names = [tr("Yellow", "Jaune"), tr("Green", "Vert"), tr("Blue", "Bleu"), tr("Pink", "Rose"), tr("Purple", "Violet")];
@@ -183,9 +183,9 @@ impl Editor {
             }))
     }
 
-    /// La barre de mise en forme : gras, italique, souligné, barré, surligné, code, lien, puis les listes
-    /// et l'insertion d'un tableau, ou, dans un tableau, ses lignes et ses colonnes. Un bouton s'allume
-    /// quand la sélection a déjà le style, et le retire alors.
+    /// The formatting bar: bold, italic, underline, strikethrough, highlight, code, link, then lists
+    /// and table insertion, or, in a table, its rows and columns. A button lights up
+    /// when the selection already has the style, and then removes it.
     pub(super) fn format_bar(&mut self, mode: Bar, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let tools = self.tools();
@@ -217,7 +217,7 @@ impl Editor {
                 (tr("Table", "Tableau"), String::new()),
             ]);
         }
-        // Un bouton : son visage, son état, son infobulle ; le geste se pose ensuite.
+        // A button: its face, its state, its tooltip; the gesture is attached next.
         let button = |i: usize, face: gpui::AnyElement, lit: bool| {
             let (label, keys) = tips[i].clone();
             div()
@@ -236,7 +236,7 @@ impl Editor {
                 .hover(|s| s.bg(t.border).text_color(t.text))
                 .active(|s| s.bg(t.selection))
                 .tooltip(crate::ui::widgets::tip(label, keys, t))
-                // Ni la note ni son curseur ne bougent sous le clic : le geste porte sur la sélection.
+                // Neither the note nor its cursor move under the click: the gesture applies to the selection.
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(face)
         };
@@ -248,7 +248,7 @@ impl Editor {
                 this.each(cx, |this, cx| this.mark(flag, cx));
             }))
         };
-        // Un genre de liste : un second clic, sur ses lignes, les remet en texte.
+        // A list kind: a second click, on its lines, turns them back into text.
         let listed = |i: usize, style: ListStyle, path: &'static str| {
             let lit = tools.list == Some(style);
             button(i, icon(path, lit), lit).on_click(cx.listener(move |this, _, window, cx| {
@@ -273,7 +273,7 @@ impl Editor {
                 listed(7, ListStyle::Bullet, "list-bullet.svg").into_any_element(),
                 listed(8, ListStyle::Ordered, "list-number.svg").into_any_element(),
                 listed(9, ListStyle::Task, "list-task.svg").into_any_element(),
-                // Le choix de la taille se fait sur la grille, comme avec `/table`.
+                // The size is picked on the grid, as with `/table`.
                 button(10, icon("table.svg", false), false)
                     .on_click(cx.listener(|this, _, window, cx| {
                         window.focus(&this.focus);
@@ -305,7 +305,7 @@ impl Editor {
             .child(styled(2, md::UNDER, div().underline().child("U").into_any_element()))
             .child(styled(3, md::STRIKE, div().line_through().child("S").into_any_element()))
             .child(styled(4, md::HIGHLIGHT, div().px(px(4.)).rounded(px(3.)).bg(highlight(0)).text_color(t.text).child("H").into_any_element()))
-            // Le choix de la couleur : des pastilles au-dessus de la barre.
+            // Picking the color: badges above the bar.
             .child(
                 div()
                     .id("format-colors")
@@ -337,12 +337,12 @@ impl Editor {
             })))
             .child(separator())
             .children(last);
-        // Les pastilles de couleur au-dessus de la barre, le tout ancré au bas de la note.
-        // Repliée, la barre s'ouvre au-dessus du bouton (30 px, 16 px du bas, 6 px d'écart).
+        // The color badges above the bar, all anchored to the bottom of the note.
+        // Collapsed, the bar opens above the button (30 px, 16 px from the bottom, 6 px apart).
         div().absolute().bottom(px(if inline { 16. } else { 52. })).left(px(left)).w(px(wide)).flex().flex_col().items_start().gap(px(6.)).children(swatches).child(bar)
     }
 
-    /// Le bouton qui replie la barre : en bas à gauche, il l'ouvre au-dessus de lui et la referme.
+    /// The button that collapses the bar: bottom left, it opens the bar above it and closes it.
     pub(super) fn bar_toggle(&mut self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let open = self.bar.open;

@@ -1,9 +1,9 @@
 //! Local date and time. The standard library only knows UTC.
 
-/// Date du jour à l'heure locale : année, mois, jour. La bibliothèque standard ne donne que l'UTC.
+/// Today's date in local time: year, month, day. The standard library only gives UTC.
 #[cfg(unix)]
 pub fn today() -> (i32, u32, u32) {
-    // SAFETY: `time` accepte un pointeur nul ; `localtime_r` n'écrit que dans `tm`, qui est à nous.
+        // SAFETY: `time` accepts a null pointer; `localtime_r` only writes into `tm`, which is ours.
     let tm = unsafe {
         let now = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = std::mem::zeroed();
@@ -13,10 +13,10 @@ pub fn today() -> (i32, u32, u32) {
     (tm.tm_year + 1900, tm.tm_mon as u32 + 1, tm.tm_mday as u32)
 }
 
-/// L'heure locale, `09:05` : heures et minutes.
+/// Local time, `09:05`: hours and minutes.
 #[cfg(unix)]
 pub fn clock() -> (u32, u32) {
-    // SAFETY: comme `today`, `localtime_r` n'écrit que dans `tm`, qui est à nous.
+        // SAFETY: like `today`, `localtime_r` only writes into `tm`, which is ours.
     let tm = unsafe {
         let now = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = std::mem::zeroed();
@@ -46,14 +46,14 @@ pub fn clock() -> (u32, u32) {
         fn GetLocalTime(time: *mut Local);
     }
     let mut now = Local::default();
-    // SAFETY: `GetLocalTime` remplit la structure qu'on lui donne, et n'échoue pas.
+        // SAFETY: `GetLocalTime` fills the structure it is given, and does not fail.
     unsafe { GetLocalTime(&mut now) };
     (now.hour as u32, now.minute as u32)
 }
 
 #[cfg(windows)]
 pub fn today() -> (i32, u32, u32) {
-    /// `SYSTEMTIME` de l'API Windows : huit mots de 16 bits.
+        /// `SYSTEMTIME` of the Windows API: eight 16-bit words.
     #[repr(C)]
     #[derive(Default)]
     #[allow(dead_code)]
@@ -72,7 +72,7 @@ pub fn today() -> (i32, u32, u32) {
         fn GetLocalTime(time: *mut Local);
     }
     let mut now = Local::default();
-    // SAFETY: `GetLocalTime` remplit la structure qu'on lui donne, et n'échoue pas.
+        // SAFETY: `GetLocalTime` fills the structure it is given, and does not fail.
     unsafe { GetLocalTime(&mut now) };
     (now.year as i32, now.month as u32, now.day as u32)
 }
@@ -87,7 +87,7 @@ mod tests {
         assert_eq!(date_name((2026, 1, 2)), "2026-01-02");
         let (year, month, day) = today();
         assert!(year >= 2026 && (1..=12).contains(&month) && (1..=31).contains(&day));
-        // La date locale est celle que donne le système (à minuit près, entre les deux lectures).
+                // The local date is the one the system gives (give or take midnight, between the two reads).
         #[cfg(unix)]
         if let Ok(out) = std::process::Command::new("date").arg("+%F").output() {
             let system = String::from_utf8_lossy(&out.stdout).trim().to_string();

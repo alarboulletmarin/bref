@@ -8,42 +8,42 @@ use crate::logic::markdown;
 pub struct Note {
     pub name: String,
     pub path: PathBuf,
-    // Tags, liens et alias sont partagés : copier une note (relecture du coffre, comparaison)
-    // ne recopie pas ses listes.
+        // Tags, links and aliases are shared: copying a note (vault reread, comparison)
+        // does not copy its lists.
     pub tags: Arc<[String]>,
-    /// Notes visées par ses `[[wikiliens]]`, en minuscules.
+        /// Notes targeted by its `[[wikilinks]]`, lowercase.
     pub links: Arc<[String]>,
-    /// Ses autres noms (clé `aliases` de l'en-tête YAML), tels qu'écrits.
+        /// Its other names (`aliases` key of the front matter), as written.
     pub aliases: Arc<[String]>,
     pub mtime: SystemTime,
-    /// Texte entier de la note, pour la recherche plein texte.
-    // ponytail: tout le texte du coffre reste en mémoire, tel quel et en minuscules (5 000 notes de 6 Ko : 60 Mo) ;
-    // passer à un index sur disque si des coffres bien plus gros se présentent.
+        /// Whole text of the note, for full-text search.
+        // ponytail: all the vault's text stays in memory, as is and lowercase (5,000 notes of 6 KB: 60 MB);
+        // move to an on-disk index if much bigger vaults show up.
     pub body: Arc<str>,
-    /// Le même en minuscules : la recherche ne le refait pas à chaque ouverture de la palette.
+        /// The same in lowercase: search does not redo it each time the palette opens.
     pub lower: Arc<str>,
 }
 
-/// Le texte en minuscules ; le texte lui-même s'il l'est déjà, sans copie.
+/// The text in lowercase; the text itself if it already is, without a copy.
 pub fn lowered(text: &Arc<str>) -> Arc<str> {
     let lower = text.to_lowercase();
     if lower == **text { text.clone() } else { lower.into() }
 }
 
 impl Note {
-    /// Range le nouveau texte de la note, et rend l'ancien.
+        /// Stores the note's new text, and returns the old one.
     pub fn set_body(&mut self, text: Arc<str>) -> Arc<str> {
         self.lower = lowered(&text);
         std::mem::replace(&mut self.body, text)
     }
 
-    /// Tags et liens du texte d'une note, prêts à y être rangés.
+        /// Tags and links of a note's text, ready to be stored in it.
     pub fn index(text: &str) -> (Arc<[String]>, Arc<[String]>) {
         let (tags, links) = markdown::index(text);
         (tags.into(), links.into())
     }
 
-    /// Un lien écrit `key` (en minuscules) vise cette note : par son nom, ou par un alias.
+        /// A link written `key` (lowercase) targets this note: by its name, or by an alias.
     pub fn answers(&self, key: &str) -> bool {
         self.name.to_lowercase() == key || self.aliases.iter().any(|alias| alias.to_lowercase() == key)
     }

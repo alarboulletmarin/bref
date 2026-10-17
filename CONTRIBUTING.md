@@ -22,9 +22,10 @@ The system packages needed on each platform are listed in the README (*Install*)
 
 ## Rules of the code base
 
+- **Read [ARCHITECTURE.md](ARCHITECTURE.md) first**: the layers (`logic`, `platform`, `ui`, `views`, `shell`), which way they depend, and where each feature lives. A file that passes 1,500 lines gets split by subject.
 - **GPUI is pinned to 0.2.2** and its API moves. Check a signature in the source of that version, not in the documentation of `main`.
 - **`Cargo.lock` is fragile**: it started as the one GPUI 0.2.2 was published with. No global `cargo update`; one dependency at a time. No new dependency without an agreement in the issue.
-- **Comments are in French**; commit messages, the README and issues are in English.
+- **Code, comments**, commit messages, the README and issues are in English.
 - **Interface texts** always go through `tr("English", "Français")`. The tests run in French.
 - **Nothing is destroyed or overwritten on disk**: atomic writes (`vault::write`), the `.trash` folder, and a refusal when a name is taken.
 - **A deliberate shortcut** carries a `// ponytail:` comment that names its limit and what would come next.
@@ -32,16 +33,16 @@ The system packages needed on each platform are listed in the README (*Install*)
 ## Tests
 
 - Pure functions are tested in their own module.
-- Every user path goes through `end_to_end` in `src/main.rs`, with simulated keystrokes. A new feature adds its path there.
+- Every user path is tested end to end in `src/shell/tests/`, with simulated keystrokes: a chapter of `end_to_end/`, or a journey of its own. A new feature adds its path there.
 
 ## Documentation
 
-A visible feature updates the README, the help panel (`help_sections` in `src/main.rs`) and the feature list of `docs/index.html`. Do not add screenshots.
+A visible feature updates the README, the help panel (`help_sections` in `src/shell/keymap.rs`) and the feature list of `docs/index.html`. Do not add screenshots.
 
 ## Commits and pull requests
 
 - One branch per change, from `main`: `feat/…` or `fix/…`.
-- Subjects start with `feat:`, `fix:`, `docs:`, `test:`, `build:` or `chore:`, in the imperative; the body explains why.
+- Subjects start with `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `build:` or `chore:`, in the imperative; the body explains why.
 - One commit per coherent step, tests passing at each commit.
 - The history stays linear: rebase on `main`, no merge commits.
 - CI builds and tests on Linux, macOS and Windows; it has to pass.

@@ -2,8 +2,8 @@
 
 use super::*;
 
-/// Lignes et colonnes (rangs visibles) prises par une poignée. Valable tant que le texte et la
-/// sélection sont ceux d'alors : rien d'autre à défaire.
+/// Rows and columns (visible indices) taken by a handle. Valid as long as the text and the
+/// selection are those of then: nothing else to undo.
 #[derive(Clone)]
 pub(super) struct Pick {
     pub(super) table: usize,
@@ -13,16 +13,16 @@ pub(super) struct Pick {
     pub(super) version: u64,
 }
 
-/// Une ligne ou une colonne qu'on déplace en tirant sa poignée.
+/// A row or column being moved by dragging its handle.
 pub(super) struct Moving {
     pub(super) table: usize,
     pub(super) part: Part,
     pub(super) from: Point<Pixels>,
-    /// Le trait où elle se poserait.
+    /// The line where it would land.
     pub(super) to: Option<usize>,
 }
 
-/// Ce que le pointeur désigne autour d'un tableau : sa colonne, sa ligne, et si c'est le coin.
+/// What the pointer points at around a table: its column, its row, and whether it is the corner.
 #[derive(Clone, Copy, Default, PartialEq, Debug)]
 pub(super) struct Near {
     pub(super) col: Option<usize>,
@@ -31,7 +31,7 @@ pub(super) struct Near {
 }
 
 impl Editor {
-    /// Point de l'écran où se trouve l'octet `i`, au milieu de sa ligne.
+    /// Screen point where byte `i` is, in the middle of its line.
     #[cfg(test)]
     pub fn point_of(&self, i: usize) -> Option<Point<Pixels>> {
         let row = &self.rows[self.row_at(i)?];
@@ -43,9 +43,9 @@ impl Editor {
         self.hand
     }
 
-    /// Où poser ce qu'on dépose au pointeur `at` : le début d'une ligne, celle du dessous quand le pointeur est
-    /// dans la moitié basse de la sienne. Jamais dans un tableau, un bloc de code ni l'en-tête YAML : au
-    /// bord du bloc, vers le bas.
+    /// Where to put what is dropped at pointer `at`: the start of a line, the one below when the pointer is
+    /// in the lower half of its own. Never in a table, a code block or the front matter: at the
+    /// edge of the block, downwards.
     pub fn drop_point(&self, at: Point<Pixels>) -> usize {
         let y = at.y - self.origin.y;
         let Some(row) = self.rows.iter().find(|r| y < r.y + r.height).or(self.rows.last()) else {
@@ -57,7 +57,7 @@ impl Editor {
         if point > 0 && point < front {
             point = front;
         }
-        // Dans un tableau (sa ligne et la précédente en sont) ou dans un bloc de code : plus bas.
+        // In a table (its line and the previous one belong to it) or in a code block: further down.
         while point > 0 && point < self.content.len() {
             let (here, above) = (self.line_range(point), self.line_range(point - 1));
             if (self.is_table_line(&here) && self.is_table_line(&above)) || self.in_code(point) {
@@ -76,12 +76,12 @@ impl Editor {
         }
     }
 
-    /// Le début de la ligne du curseur.
+    /// The start of the cursor's line.
     pub fn caret_line_start(&self) -> usize {
         self.line_range(self.cursor()).start
     }
 
-    /// La poignée sous le pointeur : (début du tableau, poignée). Seules celles qu'on voit se saisissent.
+    /// The handle under the pointer: (table start, handle). Only visible ones can be grabbed.
     pub(super) fn part_at(&self, at: Point<Pixels>) -> Option<(usize, Part)> {
         self.geos.iter().find_map(|geo| {
             let (near, pick) = (geo.near(at), self.live_pick(geo.start));
@@ -90,13 +90,13 @@ impl Editor {
         })
     }
 
-    /// Ce qu'une poignée a pris dans le tableau qui commence en `table`, tant que rien n'a bougé.
+    /// What a handle took in the table starting at `table`, as long as nothing has moved.
     pub(super) fn live_pick(&self, table: usize) -> Option<&Pick> {
         self.pick.as_ref().filter(|p| p.table == table && p.version == self.version && p.sel == self.sel)
     }
 
-    /// Les cases `rows` × `cols` (rangs visibles) du tableau qui commence en `table` sont prises : le
-    /// curseur va dans la première, et les gestes, la copie et l'effacement valent pour toutes.
+    /// Cells `rows` × `cols` (visible indices) of the table starting at `table` are taken: the
+    /// cursor goes into the first, and gestures, copy and clearing apply to all of them.
     pub(super) fn pick(&mut self, table: usize, rows: Range<usize>, cols: Range<usize>, cx: &mut Context<Self>) {
         let Some((range, _, _)) = self.table_at(table) else {
             return;
@@ -111,7 +111,7 @@ impl Editor {
         cx.notify();
     }
 
-    /// Prend ce que désigne une poignée.
+    /// Takes what a handle points at.
     pub(super) fn pick_part(&mut self, table: usize, part: Part, cx: &mut Context<Self>) {
         let Some(geo) = self.geos.iter().find(|g| g.start == table) else {
             return;
@@ -125,7 +125,7 @@ impl Editor {
         }
     }
 
-    /// Les cases prises, en TSV.
+    /// The taken cells, as TSV.
     pub(super) fn pick_text(&self) -> Option<String> {
         let (range, rows, _) = self.table_at(self.sel.start)?;
         let pick = self.live_pick(range.start)?;
@@ -134,7 +134,7 @@ impl Editor {
         Some(pick.rows.clone().map(cells).collect::<Vec<_>>().join("\n"))
     }
 
-    /// Vide les cases prises, sans toucher à la forme du tableau. Faux s'il n'y en a pas.
+    /// Empties the taken cells, without touching the table's shape. False if there are none.
     pub(super) fn clear_pick(&mut self, cx: &mut Context<Self>) -> bool {
         let Some((range, mut rows, _)) = self.table_at(self.sel.start) else {
             return false;
@@ -152,8 +152,8 @@ impl Editor {
         true
     }
 
-    /// Un clic sur une poignée : « + » insère, une poignée prend sa ligne ou sa colonne (et la tire,
-    /// si on la déplace), l'angle prend tout le tableau.
+    /// A click on a handle: "+" inserts, a handle takes its row or column (and drags it,
+    /// if moved), the corner takes the whole table.
     pub(super) fn grip_down(&mut self, table: usize, part: Part, at: Point<Pixels>, cx: &mut Context<Self>) {
         match part {
             Part::JoinCol(b) | Part::JoinRow(b) => {
@@ -166,7 +166,7 @@ impl Editor {
             }
             _ => {
                 self.pick_part(table, part, cx);
-                // L'en-tête reste en tête : sa ligne se prend, elle ne se tire pas.
+                // The header stays on top: its row can be taken, not dragged.
                 if matches!(part, Part::Col(_) | Part::Row(1..)) {
                     self.moving = Some(Moving { table, part, from: at, to: None });
                 }
@@ -174,7 +174,7 @@ impl Editor {
         }
     }
 
-    /// La poignée tirée est lâchée sur le trait `to` : la ligne ou la colonne s'y pose, et reste prise.
+    /// The dragged handle is released on line `to`: the row or column lands there, and stays taken.
     pub(super) fn drop_part(&mut self, moving: Moving, cx: &mut Context<Self>) {
         let (Some(b), Some((range, rows, _))) = (moving.to, self.table_at(moving.table)) else {
             return;
@@ -201,14 +201,14 @@ impl Editor {
         Bounds::new(self.origin + at, size(COPY_SIZE, COPY_SIZE))
     }
 
-    /// Début de la ligne dont le bouton de copie est sous le pointeur.
+    /// Start of the line whose copy button is under the pointer.
     pub(super) fn copy_at(&self, at: Point<Pixels>) -> Option<usize> {
         let row = self.rows.iter().find(|r| r.opens && self.copy_bounds(r).contains(&at))?;
         Some(row.start)
     }
 
-    /// La ligne ouvre un bloc Mermaid : elle porte aussi le bouton qui montre le diagramme en grand,
-    /// à gauche de celui de copie.
+    /// The line opens a Mermaid block: it also carries the button that shows the diagram enlarged,
+    /// left of the copy one.
     pub(super) fn views(&self, row: &Row) -> bool {
         let line = &self.content[row.start..row.start + row.len];
         row.opens && line.trim_start().get(3..).is_some_and(|lang| lang.trim().eq_ignore_ascii_case("mermaid"))
@@ -219,7 +219,7 @@ impl Editor {
         Bounds::new(copy.origin - point(COPY_SIZE + px(4.), px(0.)), copy.size)
     }
 
-    /// Début de la ligne dont le bouton « en grand » est sous le pointeur.
+    /// Start of the line whose "enlarge" button is under the pointer.
     pub(super) fn view_at(&self, at: Point<Pixels>) -> Option<usize> {
         let row = self.rows.iter().find(|r| self.views(r) && self.view_bounds(r).contains(&at))?;
         Some(row.start)
@@ -238,13 +238,13 @@ impl Editor {
         if let Some(find) = &mut self.find {
             find.active = false;
         }
-        // Diagramme Mermaid en grand, dans la visionneuse.
+        // Mermaid diagram enlarged, in the viewer.
         if let Some(start) = self.view_at(e.position)
             && let Some(block) = md::code_block(&self.content, self.line_range(start).end + 1)
         {
             return cx.emit(EditorEvent::View(self.content[block].to_string()));
         }
-        // Bouton de copie, à droite de l'ouverture d'un bloc de code.
+        // Copy button, right of a code block's opening.
         if let Some(start) = self.copy_at(e.position)
             && let Some(block) = md::code_block(&self.content, self.line_range(start).end + 1)
         {
@@ -265,7 +265,7 @@ impl Editor {
             return self.insert_table(cols, rows, cx);
         }
         self.grid = None;
-        // Poignée d'un bloc : la tirer le déplace, un clic ouvre son menu ; le « + » ajoute un bloc dessous.
+        // A block's handle: dragging it moves it, a click opens its menu; the "+" adds a block below.
         if let Some((grip, plus)) = self.handle_bounds()
             && let Some(block) = self.handled()
         {
@@ -277,11 +277,11 @@ impl Editor {
                 return cx.notify();
             }
         }
-        // Poignées d'un tableau : prendre une ligne, une colonne ou tout, insérer à un trait.
+        // A table's handles: take a row, a column or everything, insert at a line.
         if let Some((table, part)) = self.part_at(e.position) {
             return self.grip_down(table, part, e.position, cx);
         }
-        // Boutons « + » d'un tableau : une ligne à la fin, ou une colonne.
+        // A table's "+" buttons: a row at the end, or a column.
         if let Some((at, bar)) = self.plus_at(e.position)
             && let Some((range, mut rows, _)) = self.table_at(at)
         {
@@ -299,7 +299,7 @@ impl Editor {
         if e.modifiers.alt {
             return self.add_cursor(i, cx);
         }
-        // Un clic ordinaire revient à un seul curseur.
+        // An ordinary click returns to a single cursor.
         self.more.clear();
         let lr = self.line_range(i);
         let line = &self.content[lr.clone()];
@@ -339,10 +339,10 @@ impl Editor {
         }
     }
 
-    /// Clic droit : le menu de la note. Hors de la sélection, le curseur vient d'abord sous
-    /// le pointeur, pour que « Coller » et « Lien » agissent là où l'on a cliqué.
+    /// Right click: the note's menu. Outside the selection, the cursor first moves under
+    /// the pointer, so that "Paste" and "Link" act where the click was.
     pub(super) fn menu_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        // Sur une poignée de tableau : elle prend sa ligne ou sa colonne, et le menu en parle.
+        // On a table handle: it takes its row or column, and the menu speaks of it.
         if let Some((table, part)) = self.part_at(e.position)
             && matches!(part, Part::Col(_) | Part::Row(_) | Part::Corner)
         {
@@ -360,7 +360,7 @@ impl Editor {
         cx.emit(EditorEvent::Menu(e.position, link.map(|(_, link)| link), commented));
     }
 
-    /// Mot (ou ligne entière) autour de l'octet `i`.
+    /// Word (or whole line) around byte `i`.
     pub(super) fn unit_at(&self, i: usize, by_line: bool) -> Range<usize> {
         let lr = self.line_range(i);
         if by_line {
@@ -374,8 +374,8 @@ impl Editor {
         lr.start + word.start..lr.start + word.end
     }
 
-    /// Le glisser étend la sélection jusqu'à `i` ; après un double ou triple clic,
-    /// par mots ou par lignes entières, le mot ou la ligne saisis restant sélectionnés.
+    /// Dragging extends the selection to `i`; after a double or triple click,
+    /// by words or whole lines, the grabbed word or line staying selected.
     pub(super) fn drag_to(&mut self, i: usize, cx: &mut Context<Self>) {
         let Some((first, by_line)) = self.anchor.clone() else {
             return self.select_to(i, cx);
@@ -389,8 +389,8 @@ impl Editor {
     }
 
     pub(super) fn mouse_move(&mut self, e: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        // Un bouton relâché hors de la fenêtre n'envoie pas de `mouse_up` : on ne
-        // continue pas à sélectionner pointeur libre.
+        // A button released outside the window sends no `mouse_up`: we do not
+        // keep selecting with the pointer free.
         if self.selecting && e.pressed_button != Some(MouseButton::Left) {
             self.selecting = false;
         }
@@ -406,7 +406,7 @@ impl Editor {
             return self.drag_block(e.position, cx);
         }
         self.aim_block(e.position, cx);
-        // Une poignée tirée : le trait où elle se poserait suit le pointeur, après quelques pixels.
+        // A dragged handle: the line where it would land follows the pointer, after a few pixels.
         if let Some(moving) = &mut self.moving {
             if e.pressed_button != Some(MouseButton::Left) {
                 self.moving = None;
@@ -436,7 +436,7 @@ impl Editor {
             self.grid_typed.clear();
             cx.notify();
         }
-        // Un tableau montre ses boutons « + » dès qu'on s'en approche.
+        // A table shows its "+" buttons as soon as one gets close.
         let bar = self.plus_at(e.position);
         let near = |(range, frame): &(Range<usize>, Bounds<Pixels>)| {
             frame.dilate(px(20.)).contains(&e.position).then_some((range.start, None))
@@ -460,7 +460,7 @@ impl Editor {
 
     pub(super) fn scroll(&mut self, e: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
         let delta = e.delta.pixel_delta(px(26.));
-        // Maj + molette, ou geste horizontal du pavé tactile : un tableau trop large défile.
+        // Shift + wheel, or horizontal touchpad gesture: a table too wide scrolls.
         let (dx, dy) = if e.modifiers.shift { (delta.y, delta.x) } else { (delta.x, delta.y) };
         if let Some((range, _)) = self.tables.iter().find(|(_, frame)| frame.contains(&e.position)) {
             *self.table_x.entry(range.start).or_default() -= dx;

@@ -2,9 +2,9 @@
 
 use super::*;
 
-/// Ouvre chaque fichier du dossier `BREF_CSV_DIR` dans le tableau (copié, rien n'est modifié chez
-/// l'utilisateur), chronomètre l'ouverture, puis enchaîne des gestes au hasard : un plantage se voit ici.
-/// `BREF_CSV_DIR=<dossier> cargo test --release --locked sheet_fuzz -- --ignored --nocapture`.
+/// Opens each file of the `BREF_CSV_DIR` folder in the table (copied, nothing of the user's
+/// is changed), times the opening, then chains random gestures: a crash shows here.
+/// `BREF_CSV_DIR=<folder> cargo test --release --locked sheet_fuzz -- --ignored --nocapture`.
 #[gpui::test]
 #[ignore]
 fn sheet_fuzz(cx: &mut TestAppContext) {
@@ -84,8 +84,8 @@ fn sheet_fuzz(cx: &mut TestAppContext) {
     fs::remove_dir_all(&root).unwrap();
 }
 
-/// Un gros CSV transformé : copie et export dans chaque format, ouverture de la note Markdown obtenue,
-/// collage du texte dans une note. `BREF_CSV=<fichier> cargo test --release --locked sheet_convert -- --ignored --nocapture`.
+/// A big CSV transformed: copy and export in each format, opening of the resulting Markdown note,
+/// pasting the text into a note. `BREF_CSV=<file> cargo test --release --locked sheet_convert -- --ignored --nocapture`.
 #[gpui::test]
 #[ignore]
 fn sheet_convert(cx: &mut TestAppContext) {
@@ -142,7 +142,7 @@ fn sheet_convert(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("down");
     cx.run_until_parked();
     println!("flèche bas dedans : {:?}", start.elapsed());
-    // Coller le TSV d'un gros tableau dans une note neuve.
+    // Paste the TSV of a big table into a fresh note.
     let tsv: String = (0..300_000).map(|i| format!("{i}\tProduit {}\t{}\n", i % 977, i % 99)).collect();
     cx.write_to_clipboard(ClipboardItem::new_string(tsv));
     shell.update_in(cx, |s, window, cx| {
@@ -162,11 +162,11 @@ fn sheet_convert(cx: &mut TestAppContext) {
     fs::remove_dir_all(&root).unwrap();
 }
 
-/// Coût d'une note qui contient un tableau Markdown de n lignes.
+/// Cost of a note containing a Markdown table of n rows.
 #[gpui::test]
 #[ignore]
 fn md_table_scale(cx: &mut TestAppContext) {
-    // Les tests refont toute la mise en page après chaque reprise, pour la vérifier : pas ici, on mesure.
+    // Tests redo the whole layout after each reuse, to check it: not here, we measure.
     unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
     let root = std::env::temp_dir().join(format!("bref-mdscale-{}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
@@ -189,7 +189,7 @@ fn md_table_scale(cx: &mut TestAppContext) {
         });
         cx.run_until_parked();
         let opened = start.elapsed();
-        // Au milieu du tableau, loin des lignes qui fixent ses colonnes.
+        // In the middle of the table, far from the rows that set its columns.
         shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| {
             let at = e.text().len() / 2;
             e.place_cursor(at, cx)
@@ -234,11 +234,11 @@ fn md_table_scale(cx: &mut TestAppContext) {
     fs::remove_dir_all(&root).unwrap();
 }
 
-/// Frappes dans une grosse note, pour un profileur : `cargo test --release --locked -- --ignored profile_typing`.
+/// Keystrokes in a big note, for a profiler: `cargo test --release --locked -- --ignored profile_typing`.
 #[gpui::test]
 #[ignore]
 fn profile_typing(cx: &mut TestAppContext) {
-    // Les tests refont toute la mise en page après chaque reprise, pour la vérifier : pas ici, on mesure.
+    // Tests redo the whole layout after each reuse, to check it: not here, we measure.
     unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
     let root = std::env::temp_dir().join(format!("bref-profile-{}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
@@ -250,10 +250,10 @@ fn profile_typing(cx: &mut TestAppContext) {
         |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
     });
     cx.run_until_parked();
-    // `BREF_PROFILE_LINES=n` : longueur de la note (5000 par défaut).
+    // `BREF_PROFILE_LINES=n`: length of the note (5000 by default).
     let lines = std::env::var("BREF_PROFILE_LINES").ok().and_then(|n| n.parse().ok()).unwrap_or(5000);
     let big: String = if std::env::var("BREF_PROFILE_TABLE").is_ok() {
-        // Un tableau de `lines` lignes.
+        // A table of `lines` rows.
         let rows: String = (0..lines)
             .map(|j| format!("| Ligne {j} | texte moyen avec **gras** et `code` {j} | {}| [[Note {}]] | x | y |\n", "mot ".repeat(j % 30), j))
             .collect();
@@ -271,8 +271,8 @@ fn profile_typing(cx: &mut TestAppContext) {
     fs::remove_dir_all(&root).unwrap();
 }
 
-/// Coffre synthétique, toujours le même : `notes` notes de 30 lignes réparties dans 40
-/// dossiers, liées entre elles et étiquetées, plus `Grosse.md`, une note de 5 000 lignes.
+/// Synthetic vault, always the same: `notes` notes of 30 lines spread over 40
+/// folders, linked to each other and tagged, plus `Grosse.md`, a note of 5,000 lines.
 fn synthetic_vault(root: &Path, notes: usize) {
     for i in 0..notes {
         let dir = root.join(format!("d{}", i % 40));
@@ -285,21 +285,21 @@ fn synthetic_vault(root: &Path, notes: usize) {
     fs::write(root.join("Grosse.md"), format!("# Grosse\n\n{big}")).unwrap();
 }
 
-/// Mémoire résidente du processus en Mo (Linux seulement).
+/// Resident memory of the process in MB (Linux only).
 fn resident_mb() -> Option<u64> {
     let status = fs::read_to_string("/proc/self/status").ok()?;
     let kb: u64 = status.lines().find_map(|l| l.strip_prefix("VmRSS:"))?.trim().trim_end_matches("kB").trim().parse().ok()?;
     Some(kb / 1024)
 }
 
-/// Temps pour un coffre de 1 000, 5 000 puis 20 000 notes : scan, nouveau scan sans
-/// changement, empreinte, démarrage de l'app, ouverture et frappe dans une note de
-/// 5 000 lignes. `BREF_BENCH_NOTES=500,3000` change les tailles. Hors de la suite
-/// courante : `cargo test --release --locked -- --ignored --nocapture bench_scale`.
+/// Time for a vault of 1,000, 5,000 then 20,000 notes: scan, new scan without
+/// change, fingerprint, app startup, opening and typing in a note of
+/// 5,000 lines. `BREF_BENCH_NOTES=500,3000` changes the sizes. Outside the regular
+/// suite: `cargo test --release --locked -- --ignored --nocapture bench_scale`.
 #[gpui::test]
 #[ignore]
 fn bench_scale(cx: &mut TestAppContext) {
-    // Les tests refont toute la mise en page après chaque reprise, pour la vérifier : pas ici, on mesure.
+    // Tests redo the whole layout after each reuse, to check it: not here, we measure.
     unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
     let sizes: Vec<usize> = std::env::var("BREF_BENCH_NOTES")
         .map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect())
@@ -344,11 +344,11 @@ fn bench_scale(cx: &mut TestAppContext) {
         }
         let typing = start.elapsed() / 20;
         let memory = resident_mb().map_or("?".into(), |m| m.to_string());
-        // Enregistrer la grosse note où l'on vient de taper : ce que coûte un enregistrement.
+        // Save the big note just typed in: what a save costs.
         let start = Instant::now();
         shell.update(cx, |s, cx| s.flush(cx));
         let saved = start.elapsed();
-        // La palette sur tout le coffre : l'ouvrir, puis y taper une lettre.
+        // The palette over the whole vault: open it, then type a letter in it.
         let start = Instant::now();
         cx.simulate_keystrokes("secondary-p");
         cx.run_until_parked();
@@ -359,8 +359,8 @@ fn bench_scale(cx: &mut TestAppContext) {
         let letter = start.elapsed();
         cx.simulate_keystrokes("escape");
         cx.run_until_parked();
-        // Une note écrite par un autre programme : ce que le fil principal y passe (copie
-        // des notes pour la relecture, puis `sync` et le dessin), relecture non comprise.
+        // A note written by another program: what the main thread spends on it (copy
+        // of the notes for reloading, then `sync` and drawing), reloading not included.
         fs::write(root.join("d0").join("Surprise.md"), "# Surprise\n\n[[Note 1]]\n").unwrap();
         let start = Instant::now();
         let known = shell.read_with(cx, |s, _| s.notes.clone());
@@ -369,13 +369,13 @@ fn bench_scale(cx: &mut TestAppContext) {
         let start = Instant::now();
         shell.update(cx, |s, cx| s.sync(found, dirs, images, cx));
         let synced = start.elapsed();
-        // Une touche sans effet sur le texte : l'image suivante, panneau compris.
+        // A key with no effect on the text: the next frame, panel included.
         cx.simulate_keystrokes("right");
         cx.run_until_parked();
         let outside = copy + start.elapsed();
         let _ = synced;
         rows.push(format!("| {notes} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {memory} |", ms(scan), ms(rescan), ms(fingerprint), ms(startup), ms(open), ms(typing), ms(saved), ms(palette), ms(letter), ms(outside)));
-        // La fenêtre et son watcher partent avant le coffre suivant.
+        // The window and its watcher go before the next vault.
         cx.update(|_, cx| cx.windows().iter().for_each(|w| { w.update(cx, |_, window, _| window.remove_window()).ok(); }));
         cx.run_until_parked();
         fs::remove_dir_all(&root).unwrap();
@@ -385,12 +385,12 @@ fn bench_scale(cx: &mut TestAppContext) {
     rows.iter().for_each(|row| println!("{row}"));
 }
 
-/// Temps par geste sur un gros coffre et une grosse note. Hors de la suite
-/// courante : `cargo test --release --locked -- --ignored --nocapture bench`.
+/// Time per gesture on a big vault and a big note. Outside the regular
+/// suite: `cargo test --release --locked -- --ignored --nocapture bench`.
 #[gpui::test]
 #[ignore]
 fn bench(cx: &mut TestAppContext) {
-    // Les tests refont toute la mise en page après chaque reprise, pour la vérifier : pas ici, on mesure.
+    // Tests redo the whole layout after each reuse, to check it: not here, we measure.
     unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
     let root = std::env::temp_dir().join(format!("bref-bench-{}", std::process::id()));
     synthetic_vault(&root, 2000);
@@ -436,18 +436,18 @@ fn bench(cx: &mut TestAppContext) {
         cx.simulate_input("mot ");
         cx.simulate_keystrokes("secondary-z");
     });
-    // Selon la longueur de la note : le prix d'une frappe est un prix fixe, plus un peu par ligne.
+    // By note length: the price of a keystroke is a fixed price, plus a little per line.
     for lines in [300, 1000] {
         let body: String = (0..lines).map(|j| format!("Ligne {j} avec **gras**, `code`, [[Note {}]] et #tag{} -> fin.\n", j % 2000, j % 12)).collect();
         shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(format!("# Note\n\n{body}"), 100, cx)));
         cx.run_until_parked();
         time(&format!("frappe dans une note de {lines} lignes"), cx, &|cx| cx.simulate_input("a"));
     }
-    // Le même geste sur une note courte : ce qui reste est le prix fixe d'une frappe.
+    // The same gesture on a short note: what remains is the fixed price of a keystroke.
     shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load("# Courte\n\nun peu de texte\n".into(), 20, cx)));
     cx.run_until_parked();
     time("frappe dans une note courte", cx, &|cx| cx.simulate_input("a"));
-    // Un grand tableau, dont les cellules passent à la ligne.
+    // A big table, whose cells wrap.
     let rows: String = (0..400)
         .map(|j| format!("| Ligne {j} | texte moyen avec **gras** et `code` {j} | {}| [[Note {}]] | x | y |\n", "mot ".repeat(j % 30), j))
         .collect();

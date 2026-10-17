@@ -1,9 +1,9 @@
-//! SVG venus d'ailleurs (draw.io, Mermaid, navigateurs…) rendus lisibles par resvg, puis
-//! pixellisés à une taille bornée. Fonctions pures, sans dépendance à l'UI.
+//! SVGs from elsewhere (draw.io, Mermaid, browsers…) made readable by resvg, then
+//! rasterized at a bounded size. Pure functions, no UI dependency.
 //!
-//! resvg ignore le HTML d'un `<foreignObject>` (le texte de draw.io et de Mermaid.js) et la
-//! fonction CSS `light-dark()` : `readable` remplace l'un par du texte SVG, mis à la ligne
-//! comme le ferait un navigateur, et l'autre par la couleur du thème.
+//! resvg ignores the HTML of a `<foreignObject>` (the text of draw.io and Mermaid.js) and the
+//! CSS function `light-dark()`: `readable` replaces the first with SVG text, wrapped
+//! as a browser would, and the second with the theme color.
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -11,18 +11,18 @@ use std::sync::{Arc, LazyLock, Mutex};
 use resvg::{tiny_skia, usvg};
 use usvg::roxmltree::{self, Node};
 
-/// Côté maximal d'une image envoyée à la carte graphique : 8 192 px passent partout.
+/// Maximum side of an image sent to the GPU: 8,192 px work everywhere.
 pub const MAX_SIDE: f32 = 8192.;
-/// Nombre maximal de pixels d'une image : 16 millions, soit 64 Mo en mémoire.
+/// Maximum number of pixels of an image: 16 million, i.e. 64 MB in memory.
 pub const MAX_PIXELS: f32 = 16e6;
 
-/// Les polices du système et celles de l'app ; une police absente (Helvetica, Arial sous
-/// Linux…) est remplacée par celle du texte de l'app, jamais par la première venue.
+/// System fonts and the app's; a missing font (Helvetica, Arial on
+/// Linux…) is replaced by the app's text font, never by whichever comes first.
 pub fn fonts() -> Arc<usvg::fontdb::Database> {
     static DB: LazyLock<Arc<usvg::fontdb::Database>> = LazyLock::new(|| {
         let mut db = usvg::fontdb::Database::new();
-        // Les polices de l'app d'abord : à nom égal, elles passent avant celles du système, qui sont
-        // relues sur le disque à chaque bout de texte (dix fois plus lent).
+        // The app's fonts first: for an equal name, they come before the system's, which are
+        // reread from disk for each piece of text (ten times slower).
         crate::ui::assets::FONT_FILES.iter().for_each(|data| db.load_font_data(data.to_vec()));
         db.load_system_fonts();
         db.set_sans_serif_family(crate::ui::assets::sans());
@@ -37,26 +37,26 @@ fn options() -> usvg::Options<'static> {
     usvg::Options { fontdb: fonts(), ..Default::default() }
 }
 
-/// L'arbre du SVG, prêt à dessiner ; `None` s'il est illisible.
+/// The SVG tree, ready to draw; `None` if it is unreadable.
 pub fn parse(svg: &str) -> Option<usvg::Tree> {
     usvg::Tree::from_str(svg, &options()).ok()
 }
 
-/// L'échelle à laquelle pixelliser une image de `w`×`h` pour l'afficher `want` fois plus
-/// grande que nature, ramenée sous `MAX_SIDE` et `MAX_PIXELS`.
+/// The scale at which to rasterize a `w`×`h` image to show it `want` times larger
+/// than life, brought under `MAX_SIDE` and `MAX_PIXELS`.
 pub fn scale_for(w: f32, h: f32, want: f32) -> f32 {
     let (w, h) = (w.max(1.), h.max(1.));
     want.min(MAX_SIDE / w.max(h)).min((MAX_PIXELS / (w * h)).sqrt())
 }
 
-/// La zone `x, y, w, h` (en pixels de l'image finale) de `tree` dessiné à l'échelle `scale`,
-/// sur le fond `bg`, en BMP 24 bits : gpui le lit sans le décompresser.
+/// The area `x, y, w, h` (in pixels of the final image) of `tree` drawn at scale `scale`,
+/// on background `bg`, as a 24-bit BMP: gpui reads it without decompressing.
 pub fn bmp(tree: &usvg::Tree, scale: f32, (x, y, w, h): (u32, u32, u32, u32), bg: [u8; 3]) -> Option<Vec<u8>> {
     let mut pixmap = tiny_skia::Pixmap::new(w, h)?;
     pixmap.fill(tiny_skia::Color::from_rgba8(bg[0], bg[1], bg[2], 255));
     let at = tiny_skia::Transform::from_translate(-(x as f32), -(y as f32)).pre_scale(scale, scale);
     resvg::render(tree, at, &mut pixmap.as_mut());
-    // Lignes de haut en bas (hauteur négative), chacune complétée à un multiple de 4 octets.
+    // Rows top to bottom (negative height), each padded to a multiple of 4 bytes.
     let row = (w as usize * 3).div_ceil(4) * 4;
     let size = 54 + row * h as usize;
     let mut out = Vec::with_capacity(size);
@@ -71,15 +71,15 @@ pub fn bmp(tree: &usvg::Tree, scale: f32, (x, y, w, h): (u32, u32, u32, u32), bg
     out.extend_from_slice(&24u16.to_le_bytes());
     out.extend_from_slice(&[0; 24]);
     for line in pixmap.data().chunks_exact(w as usize * 4) {
-        // Fond opaque : les couleurs ne sont pas prémultipliées.
-        line.chunks_exact(4).for_each(|p| out.extend_from_slice(&[p[2], p[1], p[0]]));
+        // Opaque background: colors are not premultiplied.
+        line.as_chunks::<4>().0.iter().for_each(|p| out.extend_from_slice(&[p[2], p[1], p[0]]));
         out.resize(out.len() + row - w as usize * 3, 0);
     }
     Some(out)
 }
 
-/// Le SVG où `light-dark()` prend la couleur du thème (`dark`), `var(--x, défaut)` son défaut,
-/// et où chaque `<foreignObject>` devient du texte SVG.
+/// The SVG where `light-dark()` takes the theme color (`dark`), `var(--x, default)` its default,
+/// and where each `<foreignObject>` becomes SVG text.
 pub fn readable(svg: &str, dark: bool) -> String {
     let svg = resolve(&resolve(svg, "light-dark(", |args| args.get(dark as usize).copied()), "var(", |args| args.get(1).copied());
     if !svg.contains("<foreignObject") {
@@ -90,7 +90,7 @@ pub fn readable(svg: &str, dark: bool) -> String {
     let mut edits: Vec<(std::ops::Range<usize>, String)> = doc
         .descendants()
         .filter(|n| n.has_tag_name("foreignObject"))
-        // Un `foreignObject` dans un autre est remplacé avec lui.
+        // A `foreignObject` inside another is replaced along with it.
         .filter(|n| !n.ancestors().skip(1).any(|a| a.has_tag_name("foreignObject")))
         .map(|n| (n.range(), foreign(n)))
         .collect();
@@ -102,15 +102,15 @@ pub fn readable(svg: &str, dark: bool) -> String {
     out
 }
 
-/// `text` où chaque appel `name…(a, b)` est remplacé par l'argument que `pick` choisit (ou
-/// laissé tel quel s'il n'en choisit aucun).
+/// `text` where each call `name…(a, b)` is replaced by the argument `pick` chooses (or
+/// left as is if it chooses none).
 fn resolve<'a>(text: &'a str, name: &str, pick: impl Fn(&[&'a str]) -> Option<&'a str> + Copy) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(at) = rest.find(name) {
         out.push_str(&rest[..at]);
         let inner = &rest[at + name.len()..];
-        // Fin de l'appel et virgules de premier niveau ; `rgb(…)` peut s'y trouver.
+        // End of the call and top-level commas; `rgb(…)` can be inside.
         let (mut depth, mut commas, mut end) = (0, Vec::new(), None);
         for (i, c) in inner.char_indices() {
             match c {
@@ -133,7 +133,7 @@ fn resolve<'a>(text: &'a str, name: &str, pick: impl Fn(&[&'a str]) -> Option<&'
         bounds.push(end);
         let args: Vec<&str> = bounds.chunks(2).map(|b| inner[b[0]..b[1]].trim()).collect();
         match pick(&args) {
-            // L'argument choisi peut lui-même en contenir un autre.
+            // The chosen argument can itself contain another.
             Some(arg) => out.push_str(&resolve(arg, name, pick)),
             None => out.push_str(&rest[at..at + name.len() + end + 1]),
         }
@@ -143,7 +143,7 @@ fn resolve<'a>(text: &'a str, name: &str, pick: impl Fn(&[&'a str]) -> Option<&'
     out
 }
 
-/// Style d'un morceau de texte.
+/// Style of a piece of text.
 #[derive(Clone, PartialEq, Debug)]
 struct Style {
     size: f32,
@@ -155,23 +155,23 @@ struct Style {
     family: String,
 }
 
-/// Mise en page du bloc de texte, lue sur ses `div`.
+/// Layout of the text block, read from its `div`s.
 struct Block {
-    /// Origine de la boîte et sa largeur (`None` : rien ne passe à la ligne).
+    /// Origin of the box and its width (`None`: nothing wraps).
     x: f32,
     y: f32,
     width: Option<f32>,
     height: f32,
-    /// Placement du bloc dans la boîte : 0 au début, 0.5 au milieu, 1 à la fin.
+    /// Placement of the block in the box: 0 at the start, 0.5 in the middle, 1 at the end.
     across: f32,
     down: f32,
-    /// Alignement des lignes entre elles, de même.
+    /// Alignment of the lines with each other, likewise.
     align: f32,
     wrap: bool,
     line_height: f32,
 }
 
-/// Un morceau de texte et son style ; `None` : retour à la ligne.
+/// A piece of text and its style; `None`: line break.
 type Piece = Option<(String, Style)>;
 
 fn declarations(style: &str) -> impl Iterator<Item = (String, &str)> {
@@ -185,7 +185,7 @@ fn css(node: Node, key: &str) -> Option<String> {
     declarations(node.attribute("style")?).filter(|(k, _)| k == key).last().map(|(_, v)| v.to_string())
 }
 
-/// Une longueur CSS en pixels (`12px`, `12pt`, `12`) ; `base` pour `em` et `%`.
+/// A CSS length in pixels (`12px`, `12pt`, `12`); `base` for `em` and `%`.
 fn length(value: &str, base: f32) -> Option<f32> {
     let value = value.trim();
     let (number, unit) = value.find(|c: char| c.is_ascii_alphabetic() || c == '%').map_or((value, ""), |i| value.split_at(i));
@@ -198,7 +198,7 @@ fn length(value: &str, base: f32) -> Option<f32> {
     })
 }
 
-/// Place dans un axe d'une valeur `flex-start`, `center`, `right`… (0, 0.5 ou 1).
+/// Place on an axis of a `flex-start`, `center`, `right`… value (0, 0.5 or 1).
 fn place(value: &str) -> f32 {
     let value = value.trim_start_matches("unsafe").trim();
     match value {
@@ -208,7 +208,7 @@ fn place(value: &str) -> f32 {
     }
 }
 
-/// Le texte SVG qui remplace le `foreignObject` `node`.
+/// The SVG text that replaces the `foreignObject` `node`.
 fn foreign(node: Node) -> String {
     let attr = |name: &str| node.attribute(name).and_then(|v| (!v.contains('%')).then(|| length(v, 0.)).flatten());
     let mut block = Block {
@@ -222,8 +222,8 @@ fn foreign(node: Node) -> String {
         wrap: true,
         line_height: 1.2,
     };
-    // draw.io place son texte par les marges d'une `div` flexible, à l'intérieur d'un
-    // `foreignObject` de la taille du dessin ; Mermaid.js, par la taille du `foreignObject`.
+    // draw.io places its text through the margins of a flexible `div`, inside a
+    // `foreignObject` the size of the drawing; Mermaid.js, through the size of the `foreignObject`.
     for div in node.descendants().filter(|n| n.is_element()) {
         for (key, value) in div.attribute("style").map(declarations).into_iter().flatten() {
             match key.as_str() {
@@ -241,7 +241,7 @@ fn foreign(node: Node) -> String {
             }
         }
     }
-    // draw.io : le bloc est centré (ou posé, ou calé) sur `padding-top`, hors de toute boîte.
+    // draw.io: the block is centered (or set, or pinned) on `padding-top`, outside any box.
     let drawio = node.descendants().any(|n| css(n, "padding-top").is_some());
     let style = Style {
         size: 16.,
@@ -269,18 +269,18 @@ fn foreign(node: Node) -> String {
         let height = lh(line);
         let width: f32 = line.iter().map(|(_, _, w)| w).sum();
         let size = line.iter().map(|(_, s, _)| s.size).fold(0f32, f32::max).max(1.);
-        // Ligne de base : la demi-interligne, puis la hauteur des capitales et un peu plus.
+        // Baseline: half the leading, then the cap height and a bit more.
         let base = top + (height - size) / 2. + size * 0.8;
         let x = left + (widest - width) * block.align;
         out.push_str(&format!(r#"<text x="{x:.2}" y="{base:.2}" xml:space="preserve">"#));
-        // Un `tspan` par suite de mots de même style : resvg met en forme chacun à part.
+        // One `tspan` per run of words of the same style: resvg shapes each separately.
         for run in line.chunk_by(|a, b| a.1 == b.1) {
             out.push_str(&tspan(&run.iter().map(|(t, ..)| t.as_str()).collect::<String>(), &run[0].1));
         }
         out.push_str("</text>");
         top += height;
     }
-    // Un `switch` ne dessine que son premier enfant : toutes les lignes en forment un.
+    // A `switch` only draws its first child: all the lines form one.
     format!("<g>{out}</g>")
 }
 
@@ -304,12 +304,12 @@ fn escape(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-/// Les morceaux de texte sous `node`, dans l'ordre, avec leur style.
+/// The pieces of text under `node`, in order, with their style.
 fn walk(node: Node, style: &Style, out: &mut Vec<Piece>) {
     for child in node.children() {
         if child.is_text() {
             let text = child.text().unwrap_or("");
-            // Les blancs se resserrent, comme dans une page web.
+            // Whitespace collapses, as in a web page.
             let mut collapsed = String::with_capacity(text.len());
             for c in text.chars() {
                 let blank = c.is_whitespace();
@@ -369,7 +369,7 @@ fn walk(node: Node, style: &Style, out: &mut Vec<Piece>) {
                 _ => {}
             }
         }
-        // Le texte de draw.io est dans une `div` de `font-size: 0` : seul compte celui qu'elle contient.
+        // draw.io's text is in a `div` with `font-size: 0`: only the one it contains counts.
         let block = matches!(tag.as_str(), "div" | "p" | "li" | "tr" | "ul" | "ol" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "pre" | "table");
         let inline_block = css(child, "display").is_some_and(|d| d.starts_with("inline"));
         let breaks = block && !inline_block;
@@ -389,12 +389,12 @@ fn walk(node: Node, style: &Style, out: &mut Vec<Piece>) {
     }
 }
 
-/// Une ligne : ses morceaux, leur style et leur largeur.
+/// A line: its pieces, their style and their width.
 type Line = Vec<(String, Style, f32)>;
 
-/// Les morceaux répartis en lignes de `width` pixels au plus (`None` : sans limite).
+/// The pieces split into lines of at most `width` pixels (`None`: no limit).
 fn wrap(pieces: &[Piece], width: Option<f32>) -> Vec<Line> {
-    // Mots et blancs séparés : on ne coupe qu'aux blancs.
+    // Words and whitespace apart: only break at whitespace.
     let mut words: Vec<Option<(String, Style)>> = Vec::new();
     for piece in pieces {
         match piece {
@@ -425,13 +425,13 @@ fn wrap(pieces: &[Piece], width: Option<f32>) -> Vec<Line> {
         i += 1;
         let line = lines.last_mut().unwrap();
         let blank = text.starts_with(' ');
-        // Un blanc en début de ligne disparaît, comme dans une page web.
+        // Whitespace at the start of a line disappears, as in a web page.
         if blank && line.is_empty() {
             continue;
         }
         let used: f32 = line.iter().map(|(_, _, w)| w).sum();
         if !blank && width.is_some_and(|room| used + w > room + 0.5) && line.iter().any(|(t, ..)| !t.starts_with(' ')) {
-            // Le blanc qui précède le mot reste en fin de ligne : il ne compte pas.
+            // The whitespace before the word stays at the end of the line: it does not count.
             while line.last().is_some_and(|(t, ..)| t.starts_with(' ')) {
                 line.pop();
             }
@@ -444,18 +444,18 @@ fn wrap(pieces: &[Piece], width: Option<f32>) -> Vec<Line> {
             line.pop();
         }
     }
-    // Lignes vides à la fin : rien à afficher.
+    // Empty lines at the end: nothing to show.
     while lines.len() > 1 && lines.last().is_some_and(|l| l.is_empty()) {
         lines.pop();
     }
     lines
 }
 
-/// La largeur de chaque morceau de texte dans son style : la somme des largeurs de ses
-/// caractères, mesurées par resvg lui-même, une fois pour toutes (à 100 px, puis à l'échelle).
-// ponytail: sans le crénage, quelques dixièmes de pixel d'écart par mot ; mesurer les mots
-// entiers si une mise à la ligne tombe mal. Mise en forme d'un mot par resvg : 0,2 ms, trop
-// pour les milliers de mots d'un gros schéma.
+/// The width of each piece of text in its style: the sum of the widths of its
+/// characters, measured by resvg itself, once and for all (at 100 px, then scaled).
+// ponytail: without kerning, a few tenths of a pixel off per word; measure whole
+// words if a line breaks badly. Shaping a word with resvg: 0.2 ms, too much
+// for the thousands of words of a big diagram.
 fn measure<'a>(words: impl Iterator<Item = &'a (String, Style)>) -> Vec<f32> {
     type Key = (char, String, bool, bool);
     static WIDTHS: LazyLock<Mutex<HashMap<Key, f32>>> = LazyLock::new(Default::default);
@@ -466,7 +466,7 @@ fn measure<'a>(words: impl Iterator<Item = &'a (String, Style)>) -> Vec<f32> {
     missing.sort();
     missing.dedup();
     if !missing.is_empty() {
-        // Chaque caractère suivi d'un repère : la position du repère donne sa largeur.
+        // Each character followed by a marker: the marker's position gives its width.
         let mut svg = String::from(r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">"#);
         for (n, (c, family, bold, italic)) in missing.iter().enumerate() {
             let style = Style { size: 100., bold: *bold, italic: *italic, underline: false, strike: false, color: "#000".into(), family: family.clone() };
@@ -484,7 +484,7 @@ fn measure<'a>(words: impl Iterator<Item = &'a (String, Style)>) -> Vec<f32> {
                 }
             }
         }
-        // Sans police, une estimation : un demi-cadratin.
+        // Without a font, an estimate: half an em.
         for (k, w) in missing.into_iter().zip(found) {
             widths.insert(k, w.unwrap_or(0.55));
         }
@@ -501,7 +501,7 @@ mod tests {
         let s = r#"<rect style="fill: light-dark(rgb(1, 2, 3), #121212); stroke: light-dark(#000, var(--x, #fff))"/>"#;
         assert_eq!(readable(s, false), r#"<rect style="fill: rgb(1, 2, 3); stroke: #000"/>"#);
         assert_eq!(readable(s, true), r#"<rect style="fill: #121212; stroke: #fff"/>"#);
-        // Appel non fermé, sans argument, imbriqué : rien ne casse.
+        // Unclosed call, no argument, nested: nothing breaks.
         assert_eq!(resolve("a light-dark(#1", "light-dark(", |a| a.first().copied()), "a light-dark(#1");
         assert_eq!(resolve("var(--x)", "var(", |a| a.get(1).copied()), "var(--x)");
         assert_eq!(resolve("light-dark(light-dark(a, b), c)", "light-dark(", |a| a.first().copied()), "a");
@@ -513,7 +513,7 @@ mod tests {
         )
     }
 
-    /// Les lignes de texte du SVG : (x, y, texte).
+    /// The text lines of the SVG: (x, y, text).
     fn lines(svg: &str) -> Vec<(f32, f32, String)> {
         let doc = roxmltree::Document::parse(svg).unwrap();
         doc.descendants()
@@ -532,10 +532,10 @@ mod tests {
         let found = lines(&svg);
         assert_eq!(found[0].2, "Titre");
         assert!(found.len() >= 3, "{found:?}");
-        // Centré sur `padding-top` (100) : autant de lignes au-dessus qu'en dessous.
+        // Centered on `padding-top` (100): as many lines above as below.
         let (first, last) = (found[0].1, found[found.len() - 1].1);
         assert!(first < 100. && last > 100. && ((first + last) / 2. - 100.).abs() < 8., "{first} {last}");
-        // Chaque ligne tient dans les 118 px de la boîte, centrée sur son milieu (100).
+        // Each line fits in the box's 118 px, centered on its middle (100).
         let tree = parse(&svg).unwrap();
         for node in tree.root().children() {
             if let usvg::Node::Text(t) = node {
@@ -543,32 +543,32 @@ mod tests {
                 assert!(b.width() <= 120. && ((b.left() + b.right()) / 2. - 100.).abs() < 3., "{:?}", b);
             }
         }
-        // Gras et couleur du thème sombre, sans repli « Text is not SVG ».
+        // Bold and dark theme color, without the "Text is not SVG" fallback.
         assert!(svg.contains(r#"font-weight="bold" font-style="normal" fill="\#ffffff">Titre"#.replace('\\', "").as_str()));
         assert_eq!(found.iter().filter(|l| l.2.contains("not SVG")).count(), 1, "le repli reste, mais `switch` prend le premier");
     }
 
     #[test]
     fn keeps_odd_text() {
-        // Rien à écrire : le `foreignObject` disparaît sans rien laisser.
+        // Nothing to write: the `foreignObject` disappears without leaving anything.
         assert!(lines(&readable(&drawio("", "normal"), false)).iter().all(|l| l.2.contains("not SVG")));
         assert!(lines(&readable(&drawio("  <br/> ", "normal"), false)).iter().all(|l| l.2.contains("not SVG")));
-        // Un mot plus long que la boîte déborde sur sa propre ligne ; rien ne passe à la ligne en `nowrap`.
+        // A word longer than the box overflows on its own line; nothing wraps with `nowrap`.
         let long = "x".repeat(80);
         assert_eq!(lines(&readable(&drawio(&format!("a {long} b"), "normal"), false)).len() - 1, 3);
         assert_eq!(lines(&readable(&drawio("un deux trois quatre cinq six sept huit", "nowrap"), false)).len() - 1, 1);
-        // Caractères à échapper, CJK, émojis, accents : repris tels quels.
+        // Characters to escape, CJK, emojis, accents: kept as is.
         let odd = "a &lt; b &amp; \"c\" 漢字 🎉 é | \\";
         let found = lines(&readable(&drawio(odd, "nowrap"), false));
         assert_eq!(found[0].2, "a < b & \"c\" 漢字 🎉 é | \\");
-        // Listes, paragraphes, tableaux : une ligne chacun.
+        // Lists, paragraphs, tables: one line each.
         let found = lines(&readable(&drawio("<p>un</p><p>deux</p><ul><li>trois</li></ul>", "nowrap"), false));
         assert_eq!(found.iter().map(|l| l.2.as_str()).collect::<Vec<_>>()[..3], ["un", "deux", "• trois"]);
     }
 
     #[test]
     fn places_mermaid_labels() {
-        // Mermaid.js : la taille du `foreignObject`, dans un groupe déplacé.
+        // Mermaid.js: the size of the `foreignObject`, in a translated group.
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100"><g transform="translate(50, 20)"><foreignObject x="-40" y="-12" width="80" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; text-align: center;"><span class="nodeLabel"><p>Début</p></span></div></foreignObject></g></svg>"#;
         let out = readable(svg, false);
         let found = lines(&out);
@@ -580,13 +580,13 @@ mod tests {
     #[test]
     fn rasterizes_within_bounds() {
         assert_eq!(scale_for(100., 100., 2.), 2.);
-        // 6 000 px de haut à l'échelle 2 dépasseraient 8 192 px.
+        // 6,000 px high at scale 2 would exceed 8,192 px.
         assert!(scale_for(1262., 6253., 2.) * 6253. <= MAX_SIDE);
         assert!(scale_for(20000., 20000., 2.).powi(2) * 4e8 <= MAX_PIXELS * 1.001);
         assert!(scale_for(0., 0., 2.) > 0.);
         let tree = parse(r##"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="2"><rect x="2" width="2" height="2" fill="#ff0000"/></svg>"##).unwrap();
         let bmp = bmp(&tree, 1., (0, 0, 4, 2), [0, 0, 255]).unwrap();
-        // En-tête de 54 octets, lignes de 12 octets : fond bleu à gauche, rouge à droite (en BGR).
+        // 54-byte header, 12-byte rows: blue background on the left, red on the right (in BGR).
         assert_eq!(bmp.len(), 54 + 2 * 12);
         assert_eq!(&bmp[54..60], &[255, 0, 0, 255, 0, 0]);
         assert_eq!(&bmp[60..66], &[0, 0, 255, 0, 0, 255]);

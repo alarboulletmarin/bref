@@ -3,9 +3,9 @@
 use super::*;
 
 impl Editor {
-    /// Les lignes de la sélection (ou celle du curseur) écrites dans le style `to` : une seule étape
-    /// d'annulation, la sélection garde son texte. Une ligne que la sélection effleure seulement
-    /// par son début n'en fait pas partie.
+    /// The selection's lines (or the cursor's) written in style `to`: a single undo
+    /// step, the selection keeps its text. A line the selection only touches
+    /// at its start is not part of it.
     pub fn restyle(&mut self, to: ListStyle, cx: &mut Context<Self>) {
         let sel = self.sel.clone();
         let first = self.line_range(sel.start);
@@ -19,8 +19,8 @@ impl Editor {
         if new == old {
             return;
         }
-        // La position `at` après le changement : dans le contenu d'une ligne, elle le suit ; dans son
-        // marqueur, elle va au début du nouveau contenu.
+        // Position `at` after the change: in a line's content, it follows it; in its
+        // marker, it goes to the start of the new content.
         let moved = |at: usize| {
             let at = at.clamp(block.start, block.end) - block.start;
             let (mut before, mut after) = (0, 0);
@@ -43,8 +43,8 @@ impl Editor {
         self.renumber(cx);
     }
 
-    /// Texte, puces, numérotée, tâches, puis texte : la ligne du curseur (la première de la
-    /// sélection) dit où l'on en est, et la sélection entière passe au suivant.
+    /// Text, bullets, numbered, tasks, then text: the cursor's line (the first of the
+    /// selection) says where we are, and the whole selection moves to the next.
     pub(super) fn cycle_list(&mut self, cx: &mut Context<Self>) {
         let line = self.line_range(self.sel.start);
         let kind = md::classify(&self.content[line.clone()], self.in_code(line.start)).0;
@@ -57,15 +57,15 @@ impl Editor {
         self.restyle(next, cx);
     }
 
-    /// Coche ou décoche la case `[ ]` qui commence à l'octet `at`.
+    /// Checks or unchecks the `[ ]` box that starts at byte `at`.
     pub(super) fn flip_box(&mut self, at: usize, cx: &mut Context<Self>) {
         let done = self.content.as_bytes()[at + 1] != b' ';
         self.push_undo(true);
         self.splice(at + 1..at + 2, if done { " " } else { "x" }, cx);
     }
 
-    /// Case à cocher sous le pointeur : son début. Elle est sur la ligne visuelle du pointeur,
-    /// entre ses deux bords, et n'est pas dans un bloc de code.
+    /// Checkbox under the pointer: its start. It is on the pointer's visual line,
+    /// between its two edges, and not in a code block.
     pub(super) fn checkbox_at(&self, pos: Point<Pixels>) -> Option<usize> {
         let row = &self.rows[self.row_at(self.index_at(pos))?];
         if matches!(row.kind, Kind::Code | Kind::Fence) {
@@ -85,7 +85,7 @@ impl Editor {
         let line = &self.content[lr.clone()];
         let (kind, marker) = md::classify(line, self.in_code(lr.start));
         let at = lr.start + marker;
-        // Une case écrite dans le texte ou dans une cellule, sous le curseur ou dans sa cellule.
+        // A box written in the text or in a cell, under the cursor or in its cell.
         let c = self.cursor();
         let cell = self.table_cells(c).map(|(cells, k)| cells[k].clone());
         let near = |b: &Range<usize>| match &cell {
@@ -96,7 +96,7 @@ impl Editor {
             if let Some(b) = md::checkboxes(line, 0).into_iter().find(near) {
                 return self.flip_box(lr.start + b.start, cx);
             }
-            // Une cellule sans case en reçoit une.
+            // A cell without a box gets one.
             if let Some(cell) = cell {
                 self.push_undo(true);
                 let text = if cell.is_empty() { "[ ]" } else { "[ ] " };
@@ -116,8 +116,8 @@ impl Editor {
         }
     }
 
-    /// Les passages que `mark` entoure : le texte de chaque ligne de la sélection, hors blancs de
-    /// bord et puce, sans les blocs de code ; le curseur seul, hors d'un bloc de code, en est un, vide.
+    /// The spans `mark` wraps: the text of each line of the selection, without edge whitespace
+    /// and bullet, without code blocks; the lone cursor, outside a code block, is one, empty.
     pub(super) fn mark_parts(&self) -> Vec<Range<usize>> {
         let sel = self.sel.clone();
         let first = self.line_range(sel.start);
@@ -151,7 +151,7 @@ impl Editor {
         parts
     }
 
-    /// Les signes du style `flag` autour de `part` (octets du texte), s'il est tout entier dans un passage de ce style.
+    /// The signs of style `flag` around `part` (text bytes), if it is wholly inside a span of that style.
     pub(super) fn cut(&self, part: &Range<usize>, flag: u16) -> Option<(Range<usize>, Range<usize>)> {
         let lr = self.line_range(part.start);
         let line = &self.content[lr.clone()];
@@ -160,9 +160,9 @@ impl Editor {
         Some((lr.start + open.start..lr.start + open.end, lr.start + close.start..lr.start + close.end))
     }
 
-    /// Pose le style `flag` sur la sélection, ou le retire quand tout ce qu'elle tient l'a déjà
-    /// (voir `md::unmark`). Un curseur seul pose les deux signes et se place entre eux. Sur
-    /// plusieurs lignes, chacune reçoit ses propres signes : un style ne passe pas d'une ligne à l'autre.
+    /// Puts style `flag` on the selection, or removes it when everything it holds already has it
+    /// (see `md::unmark`). A lone cursor puts both signs and sits between them. Over
+    /// several lines, each gets its own signs: a style does not run from one line to the next.
     pub(super) fn mark(&mut self, flag: u16, cx: &mut Context<Self>) {
         let Some(&(open, close)) = md::delimiters(flag).first() else { return };
         let parts = self.mark_parts();
@@ -171,7 +171,7 @@ impl Editor {
         }
         let cuts: Option<Vec<_>> = parts.iter().map(|part| self.cut(part, flag)).collect();
         self.push_undo(true);
-        // Tout y est déjà : les signes partent, ceux de fermeture d'abord pour que les octets restent justes.
+        // Everything already has it: the signs go, closing ones first so the bytes stay right.
         if let Some(cuts) = cuts {
             for (open, close) in cuts.into_iter().rev() {
                 self.splice(close, "", cx);
@@ -182,7 +182,7 @@ impl Editor {
         self.wrap(&parts, open, close, cx);
     }
 
-    /// Entoure chaque passage de `open` et `close` ; la sélection va du premier au dernier, signes dehors.
+    /// Wraps each span in `open` and `close`; the selection goes from the first to the last, signs outside.
     pub(super) fn wrap(&mut self, parts: &[Range<usize>], open: &str, close: &str, cx: &mut Context<Self>) {
         let (Some(head), Some(tail)) = (parts.first().map(|p| p.start), parts.last().map(|p| p.end)) else { return };
         for part in parts.iter().rev() {

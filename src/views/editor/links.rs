@@ -3,23 +3,23 @@
 use super::*;
 
 impl Editor {
-    /// Adresse que tient le presse-papiers, s'il n'y a que cela.
+    /// Address held by the clipboard, if that is all it holds.
     pub(super) fn copied_url(cx: &mut Context<Self>) -> Option<String> {
         let text = cx.read_from_clipboard()?.text()?;
         md::is_url(text.trim()).then(|| text.trim().to_string())
     }
 
-    /// La sélection, si elle peut devenir le texte d'un lien : sur une seule ligne, hors du
-    /// code, et pas déjà une adresse.
+    /// The selection, if it can become a link's text: on a single line, outside
+    /// code, and not already an address.
     pub(super) fn linkable(&self) -> bool {
         let text = &self.content[self.sel.clone()];
         !text.contains('\n') && !md::is_url(text.trim()) && !self.in_code(self.line_range(self.sel.start).start)
     }
 
-    /// Fait un lien `[texte](adresse)`. Sur un lien existant, son adresse est sélectionnée,
-    /// prête à être remplacée. Sinon la sélection devient le texte du lien, vers l'adresse du
-    /// presse-papiers s'il en tient une ; le curseur attend ce qui manque, l'adresse entre les
-    /// parenthèses ou le texte entre les crochets.
+    /// Makes a link `[text](address)`. On an existing link, its address is selected,
+    /// ready to be replaced. Otherwise the selection becomes the link text, to the clipboard's
+    /// address if it holds one; the cursor waits for what is missing, the address between the
+    /// parentheses or the text between the brackets.
     pub(super) fn link(&mut self, cx: &mut Context<Self>) {
         let lr = self.line_range(self.sel.start);
         let (line, col) = (&self.content[lr.clone()], self.sel.start - lr.start);
@@ -31,12 +31,12 @@ impl Editor {
             self.move_to(at + url.start, cx);
             return self.select_to(at + url.end, cx);
         }
-        // Sur une adresse nue : c'est elle qui devient le lien.
+        // On a bare address: it becomes the link.
         if let Some((r, md::Link::Url(_))) = on.filter(|_| self.sel.is_empty()) {
             self.sel = lr.start + r.start..lr.start + r.end;
         }
         let sel = self.sel.clone();
-        // Une adresse sélectionnée garde sa place : il lui manque son texte.
+        // A selected address keeps its place: it lacks its text.
         let picked = self.content[sel.clone()].to_string();
         if !md::is_url(picked.trim()) && !self.linkable() {
             return;
@@ -55,24 +55,24 @@ impl Editor {
         self.move_to(sel.start + at, cx);
     }
 
-    /// Remplace tout le texte, comme une frappe : une étape d'annulation, la note est à enregistrer.
+    /// Replaces all the text, like a keystroke: one undo step, the note needs saving.
     pub fn rewrite(&mut self, text: &str, cx: &mut Context<Self>) {
         self.more.clear();
-        // Une seule étape : `splice` en poserait une seconde pour un texte de plusieurs lignes.
+        // A single step: `splice` would add a second one for a multi-line text.
         self.push_undo(true);
         self.held = true;
         self.splice(0..self.content.len(), text, cx);
         self.held = false;
     }
 
-    /// Résout le commentaire qui commence à l'octet `at`.
+    /// Resolves the comment starting at byte `at`.
     pub fn resolve_comment(&mut self, at: usize, cx: &mut Context<Self>) {
         self.move_to(self.clamp(at), cx);
         self.comment(cx);
     }
 
-    /// Commente la sélection, ou la ligne sans elle : `{==texte==}{>>…<<}`, le curseur dans le
-    /// commentaire à écrire. Sur un commentaire, le résout : le balisage part, le texte reste.
+    /// Comments the selection, or the line without one: `{==text==}{>>…<<}`, the cursor in the
+    /// comment to write. On a comment, resolves it: the markup goes, the text stays.
     pub(super) fn comment(&mut self, cx: &mut Context<Self>) {
         let lr = self.line_range(self.sel.start);
         let (line, col) = (&self.content[lr.clone()], self.sel.start - lr.start);

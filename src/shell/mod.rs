@@ -75,77 +75,77 @@ use table::{Encoding, Format, Style};
 use logic::note::Note;
 
 struct Shell {
-    /// Un pane, ou deux côte à côte ; `active` est celui qui a reçu le focus en dernier.
+    /// One pane, or two side by side; `active` is the one that last got focus.
     panes: Vec<Pane>,
     active: usize,
-    /// Part de la largeur que prend le pane de gauche quand il y en a deux.
+    /// Share of the width the left pane takes when there are two.
     pane_ratio: f32,
-    /// La bordure entre les deux panes suit le pointeur.
+    /// The border between the two panes follows the pointer.
     pane_drag: bool,
-    /// Place qu'occupent les panes, relevée à leur dessin.
+    /// Space the panes take, recorded when they are drawn.
     pane_box: std::rc::Rc<std::cell::Cell<Bounds<Pixels>>>,
-    /// Pendant qu'on glisse un fichier de l'arbre : le pane survolé, et s'il s'agit de sa moitié
-    /// droite (un seul pane : y lâcher le fichier ouvre le second).
+    /// While a file from the tree is dragged: the hovered pane, and whether it is its right
+    /// half (single pane: dropping the file there opens the second).
     pane_aim: Option<(usize, bool)>,
-    /// Des fichiers du système survolent la fenêtre : où ils se rangeraient.
+    /// System files hover over the window: where they would go.
     drop_aim: Option<DropAim>,
-    /// Test : les pièces jointes qu'on a demandé au système d'ouvrir.
+    /// Test: the attachments the system was asked to open.
     #[cfg(test)]
     opened: Vec<PathBuf>,
-    /// Test : garder l'étiquette de dépôt sans vrai glisser en cours.
+    /// Test: keep the drop label without a real drag in progress.
     #[cfg(test)]
     keep_aim: bool,
-    /// Le pane actif a changé sans que la saisie suive : le prochain rendu la lui donne.
+    /// The active pane changed without input following: the next render gives it focus.
     grab: bool,
-    /// Une synchronisation git est en cours : une seule à la fois.
+    /// A git sync is in progress: only one at a time.
     syncing: bool,
-    /// La disposition des panes telle qu'elle est enregistrée (fichier `panes`).
+    /// The pane arrangement as saved (file `panes`).
     panes_saved: String,
     focus: FocusHandle,
     nav: Nav,
     graph: Entity<Graph>,
-    /// Les notes ou leurs liens ont changé depuis le dernier calcul du graphe.
+    /// Notes or their links changed since the graph was last computed.
     graph_stale: bool,
     palette: Option<Entity<Palette>>,
     vault: Option<PathBuf>,
     notes: Vec<Note>,
-    /// Dossiers du coffre, y compris ceux qui ne contiennent aucune note.
+    /// Vault folders, including those that contain no note.
     dirs: Vec<PathBuf>,
-    /// Fichiers du coffre qui ne sont pas des notes : images et tableaux (CSV, TSV).
+    /// Vault files that are not notes: images and tables (CSV, TSV).
     images: Vec<PathBuf>,
-    /// Menu contextuel de l'arbre, s'il est ouvert.
+    /// Tree context menu, if open.
     menu: Option<nav::Menu>,
-    /// Notes ouvertes, de la plus récente à la plus ancienne.
+    /// Open notes, most recent first.
     recent: Vec<PathBuf>,
     save_gen: usize,
-    /// Dernier remplacement dans le coffre, pour le défaire : chaque note réécrite, son texte
-    /// d'avant et celui d'après.
+    /// Last replace across the vault, to undo it: each rewritten note, its text
+    /// before and after.
     swapped: Vec<(PathBuf, Arc<str>, String)>,
-    /// Icônes des notes, fichiers et dossiers du coffre (voir `vault::load_icons`).
+    /// Icons of the vault's notes, files and folders (see `vault::load_icons`).
     icons: std::collections::HashMap<PathBuf, String>,
-    /// Grille de choix d'une icône : où elle s'ouvre, et pour quel élément.
+    /// Icon picker grid: where it opens, and for which item.
     icon_pick: Option<(Point<Pixels>, PathBuf)>,
-    /// Le panneau des commentaires a été refermé : il attend qu'on le redemande.
+    /// The comments panel was closed: it waits to be asked for again.
     comments_shut: bool,
-    /// Messages d'état affichés, du plus ancien au plus récent.
+    /// Status messages shown, oldest to newest.
     toasts: Vec<Toast>,
-    /// Numéro du dernier message, pour retirer le bon à l'échéance.
+    /// Number of the last message, to remove the right one when it expires.
     toasted: usize,
-    /// Version plus récente que celle qui tourne, trouvée sur GitHub.
+    /// Newer version than the running one, found on GitHub.
     update: Option<update::Release>,
-    /// Son installation est en cours.
+    /// Its install is in progress.
     updating: bool,
     title: String,
     prefs: Prefs,
     theme: Theme,
-    /// Bord de fenêtre survolé (redimensionnement sans décorations système).
+    /// Hovered window edge (resizing without system decorations).
     edge: Option<ResizeEdge>,
     copied: bool,
     /// The help panel, open or not.
     help: Help,
-    /// Ce qui a été affiché, pour « précédent » et « suivant ».
+    /// What was shown, for "back" and "forward".
     history: History,
-    /// Les liaisons en vigueur, et ce que l'utilisateur a changé aux raccourcis par défaut.
+    /// The bindings in effect, and what the user changed in the default shortcuts.
     bound: Vec<keys::Bind>,
     changes: keys::Changes,
 }
@@ -182,7 +182,7 @@ impl Shell {
         .detach();
 
         let nav = Nav::new(cx.focus_handle());
-        // Le graphe partage le focus du panneau : les mêmes touches y naviguent.
+        // The graph shares the panel's focus: the same keys navigate it.
         let graph = cx.new(|_| Graph::new(nav.focus.clone(), theme));
         cx.subscribe_in(&graph, window, |this, _, event, window, cx| match event {
             GraphEvent::Select(path) => this.select_from_graph(path, cx),
@@ -239,7 +239,7 @@ impl Shell {
             Some(root) => {
                 this.set_vault(root.clone(), window, cx);
                 this.recent = recent.into_iter().filter(|p| p.is_file()).collect();
-                // Le second pane d'avant, s'il y en avait un et que son fichier existe encore.
+                // The previous second pane, if there was one and its file still exists.
                 let saved = vault::load_file("panes");
                 let mut lines = saved.lines();
                 let ratio = lines.next().and_then(|ratio| ratio.parse::<f32>().ok()).filter(|ratio| PANE_RATIO.contains(ratio));
@@ -267,7 +267,7 @@ impl Shell {
                 cx.stop_propagation();
             }
         }));
-        // Les raccourcis changés ; une ligne fautive du fichier est écartée et signalée.
+        // Changed shortcuts; a faulty line of the file is dropped and reported.
         let open = editable();
         let (changes, faults) = keys::read(&vault::load_file("keys"), &this.bound, &|action| open.contains(action));
         if !changes.is_empty() {
@@ -295,8 +295,8 @@ pub fn run() {
 
         let (vault, recent) = vault::load_config();
         let vault = vault.filter(|v| v.is_dir());
-        // `bref --capture` : la seule ligne de saisie, dans une petite fenêtre sans décor.
-        // Sans coffre choisi, l'app s'ouvre comme d'habitude pour en demander un.
+        // `bref --capture`: the input line alone, in a small undecorated window.
+        // Without a chosen vault, the app opens as usual to ask for one.
         if let Some(root) = vault.clone().filter(|_| std::env::args().any(|arg| arg == "--capture")) {
             cx.open_window(
                 WindowOptions {
@@ -321,12 +321,12 @@ pub fn run() {
                     title: Some("Bref".into()),
                     ..Default::default()
                 }),
-                // Doit correspondre au nom du fichier .desktop pour que le bureau associe l'icône.
+                // Must match the .desktop file name for the desktop to associate the icon.
                 app_id: Some("dev.andrea.Bref".into()),
-                // Comme Zed : sous Linux l'app dessine sa barre de titre. Demander
-                // `Server` ne marche pas sous GNOME/Wayland, qui n'en fournit pas
-                // alors que gpui 0.2 se croit quand même décoré. macOS et Windows
-                // ignorent la demande et gardent leur barre native.
+                // Like Zed: on Linux the app draws its title bar. Asking for
+                // `Server` does not work on GNOME/Wayland, which provides none
+                // while gpui 0.2 still believes it is decorated. macOS and Windows
+                // ignore the request and keep their native bar.
                 window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Transparent,
                 window_min_size: Some(size(px(360.), px(240.))),

@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let (shell, root) = (&j.shell, &j.root);
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
-    // Fichiers. Ctrl+Maj+N affiche l'arbre et crée un dossier à côté de la sélection.
+    // Files. Ctrl+Shift+N shows the tree and creates a folder next to the selection.
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("cou");
     cx.simulate_keystrokes("enter secondary-shift-n");
@@ -15,9 +15,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(archives.is_dir());
     assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.sel.clone())), (Mode::Tree, Some(archives.clone())));
 
-    // F2 renomme : le titre d'une note accordée à son nom suit, la liste des récents aussi.
-    // Une icône, choisie dans la grille du menu, suit la note qu'on renomme ; elle est
-    // retenue dans un fichier du coffre.
+    // F2 renames: the title of a note matching its name follows, the recents list too.
+    // An icon, chosen in the menu grid, follows the note being renamed; it is
+    // remembered in a file of the vault.
     shell.update_in(cx, |s, window, cx| {
         s.menu = Some(nav::Menu { at: point(px(300.), px(200.)), target: Some(root.join("Test.md")), text: None, commented: false, block: false });
         s.menu_do(nav::Do::Icon, Some(root.join("Test.md")), window, cx)
@@ -36,15 +36,15 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(fs::read_to_string(root.join(".bref-icons")).unwrap(), "star\tTests.md\n");
     shell.update(cx, |s, cx| s.set_icon(root.join("Tests.md"), None, cx));
     assert_eq!(fs::read_to_string(root.join(".bref-icons")).unwrap(), "");
-    // Les liens suivent, dans le fichier comme dans la note affichée.
+    // Links follow, in the file as in the shown note.
     assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[Tests]]");
     assert!(fs::read_to_string(root.join("Courses.md")).unwrap().ends_with("[[Tests]]"));
 
-    // Changer le titre renomme aussi la note : les liens ne suivent qu'une fois la
-    // note quittée, pas à chaque titre intermédiaire.
+    // Changing the title renames the note too: links only follow once the
+    // note is left, not at each intermediate title.
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("tests");
-    // La note s'ouvre sur son corps : on remonte au titre pour le changer.
+    // The note opens on its body: go up to the title to change it.
     cx.simulate_keystrokes("enter secondary-home end");
     for letter in ["X", "Y"] {
         cx.simulate_input(letter);
@@ -58,11 +58,11 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("enter secondary-e");
     assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[TestsXY]]");
 
-    // Glisser-déposer : une note, puis un dossier entier, rangés dans un autre dossier.
+    // Drag and drop: a note, then a whole folder, moved into another folder.
     shell.update(cx, |s, cx| {
         s.move_into(&root.join("TestsXY.md"), &archives, cx);
         s.move_into(&root.join("Projets"), &archives, cx);
-        // Un dossier ne se range pas dans lui-même.
+        // A folder does not go into itself.
         s.move_into(&archives, &archives.join("Projets"), cx);
     });
     assert!(archives.join("TestsXY.md").is_file() && archives.join("Projets/Plan.md").is_file());
@@ -72,8 +72,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             && s.notes.iter().all(|n| n.path.is_file())
     }));
 
-    // Sélection multiple : Ctrl+clic ajoute une ligne, Maj+clic étend depuis la
-    // ligne choisie ; dupliquer, copier les chemins et jeter portent sur le lot.
+    // Multiple selection: Ctrl+click adds a row, Shift+click extends from the
+    // chosen row; duplicate, copy paths and trash apply to the batch.
     cx.run_until_parked();
     let mark = |cx: &mut gpui::VisualTestContext, from: &str, to: &str, extend: bool| {
         shell.update(cx, |s, cx| {
@@ -97,8 +97,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(root.join(".trash/Courses 2.md").is_file() && root.join(".trash/Idées 2.md").is_file());
     assert!(root.join("Courses.md").is_file() && shell.read_with(cx, |s, _| s.nav.marked.is_empty()));
 
-    // Suppr met à la corbeille du coffre, sans rien détruire ; la note ouverte laisse
-    // place à une note vide.
+    // Delete moves to the vault's trash, destroying nothing; the open note gives
+    // way to an empty note.
     shell.update(cx, |s, _| s.nav.sel = Some(archives.clone()));
     cx.simulate_keystrokes("delete");
     assert!(root.join(".trash/Archives 2026/Projets/Plan.md").is_file() && !archives.exists());
@@ -113,8 +113,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     });
     assert_eq!(left, ["Idées"]);
 
-    // Ce qu'un autre programme change dans le coffre apparaît sans rien faire : une
-    // note ajoutée, puis la note affichée réécrite ailleurs.
+    // What another program changes in the vault shows up without doing anything: a
+    // note added, then the shown note rewritten elsewhere.
     fs::write(root.join("Ailleurs.md"), "# Ailleurs\n").unwrap();
     fs::write(root.join("Idées.md"), "# Idées\n\nréécrite\n").unwrap();
     shell.update(cx, |s, cx| s.open_note(&root.join("Idées.md"), cx));
@@ -124,8 +124,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Ailleurs")));
     assert_eq!(text(cx), "# Idées\n\nréécrite ailleurs\n");
 
-    // Un titre `#` ajouté en tête d'une note qui n'en avait pas : le fichier prend
-    // son nom. Sans titre touché, une note au nom libre garde le sien.
+    // A `#` title added at the top of a note that had none: the file takes
+    // its name. With the title untouched, a freely named note keeps its own.
     fs::write(root.join("brouillon.md"), "texte\n").unwrap();
     shell.update(cx, |s, cx| s.open_note(&root.join("brouillon.md"), cx));
     cx.update(|window, cx| window.focus(&shell.read(cx).pane().editor.focus_handle(cx)));

@@ -4,14 +4,14 @@ use super::*;
 
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let (shell, root) = (&j.shell, &j.root);
-    // Colonnes et tri d'un CSV : insérer, déplacer, supprimer, dupliquer, trier, et tout défaire, le fichier
-    // retrouvant ses octets. Les cellules vides vont à la fin dans les deux sens ; la colonne refusée
-    // est la dernière ; l'en-tête reste en haut.
+    // Columns and sorting of a CSV: insert, move, delete, duplicate, sort, and undo everything, the file
+    // getting its bytes back. Empty cells go to the end in both directions; the refused column
+    // is the last one; the header stays on top.
     let cols = root.join("cols.csv");
     let original = "id,name,score\n3,Zoé,10\n1,Max,\n2,Léa,9\n";
     fs::write(&cols, original).unwrap();
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(&root);
+        let (notes, dirs, images) = vault::scan(root);
         s.sync(notes, dirs, images, cx);
         s.open_note(&cols, cx);
     });
@@ -27,7 +27,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     };
     let table_op = |cx: &mut gpui::VisualTestContext, op| sheet.update(cx, |sheet, cx| sheet.table_op(op, cx));
     assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
-    // Trier par la palette, sur la colonne du curseur : « score » de haut en bas, vide en dernier.
+    // Sort from the palette, on the cursor's column: "score" high to low, empty last.
     cx.simulate_keystrokes("down right right");
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("de A à Z");
@@ -35,7 +35,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(all(cx), "id|name|score/2|Léa|9/3|Zoé|10/1|Max|");
     table_op(cx, editor::TableOp::SortDesc);
     assert_eq!(all(cx), "id|name|score/3|Zoé|10/2|Léa|9/1|Max|");
-    // Deux lignes égales gardent leur ordre ; trier un tableau trié ne change rien (pas d'étape d'annulation).
+    // Two equal rows keep their order; sorting a sorted table changes nothing (no undo step).
     let undo_len = sheet.read_with(cx, |sheet, _| sheet.undo_len());
     table_op(cx, editor::TableOp::SortDesc);
     assert_eq!(sheet.read_with(cx, |sheet, _| sheet.undo_len()), undo_len);
@@ -43,14 +43,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-z secondary-z");
     assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
     assert_eq!(on_disk(cx), original, "annulé, le fichier retrouve ses octets");
-    // Une colonne vide à droite, une copie, un déplacement, puis tout défait.
-    // Tout à droite : la colonne existe, sans rien écrire dans le fichier tant qu'elle est vide.
+    // An empty column on the right, a copy, a move, then everything undone.
+    // Far right: the column exists, without writing anything to the file while it is empty.
     let width = |cx: &mut gpui::VisualTestContext| sheet.read_with(cx, |sheet, _| sheet.table().cols());
     table_op(cx, editor::TableOp::ColRight);
     assert_eq!((width(cx), all(cx)), (4, "id|name|score/3|Zoé|10/1|Max|/2|Léa|9".to_string()));
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(width(cx), 3);
-    // Au milieu : chaque ligne qui a des cellules à droite reçoit la sienne, vide.
+    // In the middle: each row that has cells to the right gets its own, empty.
     cx.simulate_keystrokes("secondary-home right");
     table_op(cx, editor::TableOp::ColLeft);
     assert_eq!(all(cx), "id||name|score/3||Zoé|10/1||Max|/2||Léa|9");
@@ -66,12 +66,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(sheet.read_with(cx, |sheet, _| sheet.whereabouts().0), (0, 1));
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
-    // Le déplacement s'arrête aux bords : à gauche de la première colonne, au-dessus du corps.
+    // Moving stops at the edges: left of the first column, above the body.
     cx.simulate_keystrokes("secondary-home");
     table_op(cx, editor::TableOp::MoveColLeft);
     table_op(cx, editor::TableOp::MoveRowUp);
     assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
-    // Descendre une ligne ; supprimer une colonne ; refuser de les supprimer toutes.
+    // Move a row down; delete a column; refuse to delete them all.
     cx.simulate_keystrokes("down");
     table_op(cx, editor::TableOp::MoveRowDown);
     assert_eq!(all(cx), "id|name|score/1|Max|/3|Zoé|10/2|Léa|9");
@@ -83,7 +83,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-z secondary-z");
     assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
     assert_eq!(on_disk(cx), original);
-    // Sans ligne d'en-tête, la première ligne se trie comme les autres (les nombres avant le texte).
+    // Without a header row, the first row sorts like the others (numbers before text).
     sheet.update(cx, |sheet, cx| sheet.toggle_header(cx));
     cx.simulate_keystrokes("secondary-home");
     table_op(cx, editor::TableOp::SortAsc);
@@ -91,12 +91,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-z");
     sheet.update(cx, |sheet, cx| sheet.toggle_header(cx));
     assert_eq!(all(cx), "id|name|score/3|Zoé|10/1|Max|/2|Léa|9");
-    // Une seule ligne : trier, ou monter et descendre une ligne, ne change rien et ne laisse aucune étape d'annulation ;
-    // une colonne peut encore aller à droite, mais pas à gauche de la première.
+    // A single row: sorting, or moving a row up and down, changes nothing and leaves no undo step;
+    // a column can still go right, but not left of the first.
     let one = root.join("une.csv");
     fs::write(&one, "a,b\n").unwrap();
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(&root);
+        let (notes, dirs, images) = vault::scan(root);
         s.sync(notes, dirs, images, cx);
         s.open_note(&one, cx);
     });
@@ -109,12 +109,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     sheet.update(cx, |sheet, cx| sheet.table_op(editor::TableOp::MoveColRight, cx));
     assert_eq!(sheet.read_with(cx, |sheet, _| sheet.undo_len()), undone + 1);
 
-    // Tableau : un CSV en Windows-1252 séparé par « ; » s'ouvre dans une grille, s'édite et se réécrit
-    // dans le même encodage, les lignes intactes octet pour octet.
+    // Table: a Windows-1252 CSV separated by ";" opens in a grid, is edited and rewritten
+    // in the same encoding, untouched rows byte for byte.
     let csv = root.join("data.csv");
     fs::write(&csv, b"nom;age\nAna\xefs;31\nBob;27\n").unwrap();
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(&root);
+        let (notes, dirs, images) = vault::scan(root);
         s.sync(notes, dirs, images, cx);
         s.open_note(&csv, cx);
     });
@@ -122,8 +122,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let format = sheet.read_with(cx, |sheet, _| sheet.format());
     assert_eq!((format.delimiter, format.encoding, format.header), (b';', table::Encoding::Windows1252, true));
     assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cell(1, 0).to_string()), "Anaïs");
-    // Au premier affichage la vue n'est pas encore mesurée, et GPUI ne redessine pas pour un `notify`
-    // fait pendant le dessin : la grille doit déjà montrer toute la fenêtre, pas quelques cellules.
+    // On first display the view is not measured yet, and GPUI does not redraw for a `notify`
+    // made during drawing: the grid must already fill the window, not a few cells.
     let (lines, columns) = sheet.update(cx, |sheet, _| sheet.unmeasured());
     assert_eq!((lines, columns), (1..3, 0..2));
     shell.update_in(cx, |s, window, cx| {
@@ -131,8 +131,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         window.focus(&sheet.focus_handle(cx));
     });
     let cell = |cx: &mut gpui::VisualTestContext, r, c| sheet.read_with(cx, |sheet, _| sheet.table().cell(r, c).to_string());
-    // Taper remplace la cellule, Entrée valide et descend.
-    // La cellule qu'on écrit est une ligne de saisie : mot sélectionné et remplacé, espace effacé.
+    // Typing replaces the cell, Enter submits and moves down.
+    // The cell being written is an input line: word selected and replaced, space erased.
     let word = if cfg!(target_os = "macos") { "alt" } else { "ctrl" };
     cx.simulate_keystrokes("down right");
     cx.simulate_input("zéro 2");
@@ -140,24 +140,24 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("3");
     cx.simulate_keystrokes("delete enter");
     assert_eq!(cell(cx, 1, 1), "32");
-    // Maj + flèches sélectionne une plage ; Ctrl+C la copie en TSV, Ctrl+V la colle ailleurs.
+    // Shift + arrows selects a range; Ctrl+C copies it as TSV, Ctrl+V pastes it elsewhere.
     cx.simulate_keystrokes("up shift-left shift-down");
     cx.simulate_keystrokes("secondary-c");
     assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("Anaïs\t32\nBob\t27"));
     cx.simulate_keystrokes("down");
     cx.simulate_keystrokes("secondary-v");
-    // Collée au coin de la sélection (ligne 2), la grille ajoute la ligne qui manque.
+    // Pasted at the selection's corner (row 2), the grid adds the missing row.
     assert_eq!((cell(cx, 2, 0), cell(cx, 3, 1)), ("Anaïs".into(), "27".into()));
     assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().rows()), 4);
-    // Annuler défait le collage d'un coup, lignes ajoutées comprises.
+    // Undo reverts the paste in one go, added rows included.
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().rows()), 3);
-    // L'écriture suit après un court délai ; seule la ligne touchée a changé.
+    // Writing follows after a short delay; only the touched row changed.
     cx.executor().advance_clock(Duration::from_secs(1));
     cx.run_until_parked();
     assert_eq!(fs::read(&csv).unwrap(), b"nom;age\nAna\xefs;32\nBob;27\n");
-    // Une copie en Markdown se colle dans une note ; l'export crée un fichier à côté du tableau.
-    // Sur une seule cellule, ils prennent tout le tableau.
+    // A Markdown copy pastes into a note; export creates a file next to the table.
+    // On a single cell, they take the whole table.
     cx.simulate_keystrokes("secondary-home");
     sheet.update(cx, |sheet, cx| sheet.copy_as(table::Style::Markdown, cx));
     assert_eq!(
@@ -166,8 +166,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     );
     sheet.update(cx, |sheet, cx| sheet.export(table::Style::Json, cx));
     assert!(root.join("data.json").is_file());
-    // Ctrl+clic : une seconde sélection s'ajoute à la première. Copier prend les deux, l'une
-    // sous l'autre ; effacer aussi, en une seule annulation ; un clic simple ne garde que la sienne.
+    // Ctrl+click: a second selection adds to the first. Copy takes both, one
+    // under the other; clearing too, in a single undo; a plain click keeps only its own.
     cx.run_until_parked();
     let spot = |cx: &mut gpui::VisualTestContext, r, c| sheet.read_with(cx, |sheet, _| sheet.spot(r, c));
     let picked = |cx: &mut gpui::VisualTestContext| sheet.read_with(cx, |sheet, _| sheet.picked());
@@ -183,8 +183,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!((cell(cx, 1, 0), cell(cx, 2, 1)), ("Anaïs".to_string(), "27".to_string()));
     cx.simulate_click(first, gpui::Modifiers::none());
     assert_eq!(picked(cx), [(1..2, 0..1)]);
-    // Ctrl+Espace prend la colonne entière : Ctrl+Entrée en insère une à sa droite, Ctrl+Suppr la retire,
-    // elle et non toutes les lignes. Maj+Espace prend la ligne, que Ctrl+Maj+Retour arrière retire.
+    // Ctrl+Space takes the whole column: Ctrl+Enter inserts one to its right, Ctrl+Delete removes it,
+    // it and not all the rows. Shift+Space takes the row, which Ctrl+Shift+Backspace removes.
     let size = |cx: &mut gpui::VisualTestContext| sheet.read_with(cx, |sheet, _| (sheet.table().rows(), sheet.table().cols()));
     cx.simulate_keystrokes("ctrl-space");
     assert_eq!(picked(cx), [(0..3, 0..1)]);
@@ -204,11 +204,11 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!((size(cx), cell(cx, 1, 0)), ((2, 2), "Bob".to_string()));
     cx.simulate_keystrokes("secondary-z");
     assert_eq!((size(cx), cell(cx, 1, 0)), ((3, 2), "Anaïs".to_string()));
-    // Sélectionner une colonne, une ligne ou tout ne fait pas défiler la vue (elle ne saute pas à la dernière ligne).
+    // Selecting a column, a row or everything does not scroll the view (it does not jump to the last row).
     let long = root.join("long.csv");
     fs::write(&long, (0..400).map(|i| format!("{i};a{i};b{i};c{i}\n")).collect::<String>()).unwrap();
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(&root);
+        let (notes, dirs, images) = vault::scan(root);
         s.sync(notes, dirs, images, cx);
         s.open_note(&long, cx);
     });
@@ -226,7 +226,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
 
-    // Changer de délimiteur relit le fichier ainsi, et le choix est retenu.
+    // Changing the delimiter rereads the file that way, and the choice is remembered.
     sheet.update(cx, |sheet, cx| sheet.reformat(Some(table::Format { delimiter: b',', ..sheet.format() }), cx));
     assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cols()), 1);
     assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cell(0, 0).to_string()), "nom;age");
@@ -237,7 +237,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let delimiter = shell.read_with(cx, |s, cx| s.shown_sheet().unwrap().read(cx).format().delimiter);
     assert_eq!(delimiter, b',');
 
-    // Dans une note, des cellules de tableau sélectionnées se copient en TSV, que les tableurs collent.
+    // In a note, selected table cells copy as TSV, which spreadsheets paste.
     shell.update_in(cx, |s, window, cx| {
         s.new_note("| a | b |\n| --- | --- |\n| 1 | 2 |\n".into(), cx);
         window.focus(&s.pane().editor.focus_handle(cx));

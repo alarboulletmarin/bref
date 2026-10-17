@@ -1,12 +1,12 @@
-//! Figures : diagrammes Mermaid et formules LaTeX, rendus en SVG. Fonctions
-//! pures, sans dépendance à l'UI.
+//! Figures: Mermaid diagrams and LaTeX formulas, rendered as SVG. Pure
+//! functions, with no dependency on the UI.
 
 use std::panic::catch_unwind;
 
 use latex_rust::{Color, Dim, MathFont, SvgOptions, latex_to_svg};
 use mermaid_rs_renderer::{RenderOptions, Theme, render_with_options};
 
-/// Couleurs du thème, en `#rrggbb`, et police du texte.
+/// Theme colours, as `#rrggbb`, and text font.
 #[derive(Clone, Hash, PartialEq)]
 pub struct Look {
     pub dark: bool,
@@ -35,10 +35,10 @@ impl Look {
     }
 }
 
-/// Un SVG et sa taille à l'écran, en pixels.
+/// An SVG and its size on screen, in pixels.
 pub type Figure = (String, f32, f32);
 
-/// Le SVG du diagramme Mermaid de `source` ; `None` s'il est invalide.
+/// The SVG of the Mermaid diagram in `source`; `None` if it is invalid.
 pub fn mermaid(source: &str, look: &Look) -> Option<String> {
     let base = if look.dark { Theme::dark() } else { Theme::modern() };
     let theme = Theme {
@@ -58,17 +58,17 @@ pub fn mermaid(source: &str, look: &Look) -> Option<String> {
         ..base
     };
     let options = RenderOptions { theme, ..Default::default() };
-    // Le moteur vient d'ailleurs : un diagramme qui le ferait paniquer ne doit pas
-    // emporter l'app, donc la note en cours de frappe.
+    // The engine comes from elsewhere: a diagram that made it panic must not
+    // take down the app, and so the note being typed.
     catch_unwind(|| render_with_options(source, options).ok()).ok()?
 }
 
-/// La formule LaTeX `source`, en couleur `rgb` et corps `size` (pixels) ;
-/// `display` pour une formule hors texte. `None` si elle est invalide.
+/// The LaTeX formula `source`, in colour `rgb` and size `size` (pixels);
+/// `display` for a display formula. `None` if it is invalid.
 pub fn latex(source: &str, display: bool, rgb: [u8; 3], size: f32) -> Option<Figure> {
     let svg = catch_unwind(|| {
         let options = SvgOptions {
-            // Le corps est en points : 3/4 de pixel.
+            // The size is in points: 3/4 of a pixel.
             font_size_pt: Dim::parse(&format!("{:.2}", size * 0.75)),
             color: Color::rgb(rgb[0], rgb[1], rgb[2]),
             display,
@@ -79,7 +79,7 @@ pub fn latex(source: &str, display: bool, rgb: [u8; 3], size: f32) -> Option<Fig
     sharpen(&svg)
 }
 
-/// L'image PNG d'un SVG, `scale` fois plus grande que nature, sur fond blanc.
+/// The PNG image of an SVG, `scale` times larger than life, on a white background.
 pub fn png(svg: &str, scale: f32) -> Option<Vec<u8>> {
     use resvg::tiny_skia;
     let tree = crate::ui::svg::parse(svg)?;
@@ -90,10 +90,10 @@ pub fn png(svg: &str, scale: f32) -> Option<Vec<u8>> {
     pixmap.encode_png().ok()
 }
 
-/// Le SVG prêt pour gpui 0.2, et sa taille d'origine en pixels. Un SVG donné en
-/// mémoire y est rendu à l'échelle 1, donc flou, et avec le rouge et le bleu
-/// échangés (seul le chargement d'un fichier les remet en ordre) : on l'agrandit
-/// deux fois et on échange les deux couleurs d'avance.
+/// The SVG ready for gpui 0.2, and its original size in pixels. An SVG given in
+/// memory is rendered there at scale 1, hence blurry, and with red and blue
+/// swapped (only loading a file puts them back in order): we enlarge it
+/// twice and swap the two colours in advance.
 pub fn sharpen(svg: &str) -> Option<Figure> {
     let body = &svg[svg.find("<svg")?..];
     let head = &body[..body.find('>')?];

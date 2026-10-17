@@ -1,5 +1,5 @@
-//! Éditeur Markdown stylé en direct : le texte reste du Markdown brut, seul le
-//! rendu change (tailles, graisses, couleurs).
+//! Live-styled Markdown editor: the text stays raw Markdown, only the
+//! rendering changes (sizes, weights, colors).
 
 
 mod blocks;
@@ -168,19 +168,19 @@ actions!(
 
 const TOP: Pixels = px(20.);
 pub const MAX_WIDTH: Pixels = px(720.);
-/// Marge gardée de chaque côté de la page, qu'elle soit étroite ou pleine.
+/// Margin kept on each side of the page, narrow or full.
 const SIDE: Pixels = px(24.);
 
-/// Côté du bouton de copie, à droite de l'ouverture d'un bloc de code.
+/// Side of the copy button, right of the opening line of a code block.
 const COPY_SIZE: Pixels = px(22.);
-/// Corps des formules, par rapport au texte : la police mathématique paraît petite à taille égale.
+/// Size of formulas relative to the text: the math font looks small at equal size.
 const MATH_SCALE: f32 = 1.2;
-/// Espace entre une ligne et l'image qu'elle désigne.
+/// Space between a line and the image it points to.
 const IMAGE_GAP: Pixels = px(8.);
-/// `file` est dans `root`, une fois les `..` et les liens symboliques résolus : une note
-/// reçue ne doit pas faire afficher un fichier du disque hors du coffre.
-// ponytail: un dossier d'images relié par un lien symbolique vers l'extérieur du coffre n'est
-// pas suivi ; autoriser la cible de ce lien si quelqu'un en a besoin.
+/// `file` is inside `root`, once `..` and symbolic links are resolved: a received
+/// note must not display a file from the disk outside the vault.
+// ponytail: an image folder linked by a symbolic link outside the vault is
+// not followed; allow the link's target if someone needs it.
 fn inside(root: &Path, file: &Path) -> bool {
     let (Ok(root), Ok(file)) = (fs::canonicalize(root), fs::canonicalize(file)) else {
         return false;
@@ -191,15 +191,15 @@ fn inside(root: &Path, file: &Path) -> bool {
 pub enum EditorEvent {
     Changed,
     Open(Link),
-    /// Le même, avec Maj : à ouvrir dans l'autre pane.
+    /// The same, with Shift: to open in the other pane.
     OpenAside(Link),
-    /// Remplacer dans tout le coffre ce que la barre de recherche cherche.
+    /// Replace across the whole vault what the search bar looks for.
     Swap(md::Swap),
-    /// Clic droit dans la note : où, le lien qui s'y trouve, et s'il vise un commentaire.
+    /// Right click in the note: where, the link found there, and whether it targets a comment.
     Menu(Point<Pixels>, Option<Link>, bool),
-    /// Clic sur la poignée d'un bloc : son menu, à cet endroit.
+    /// Click on a block handle: its menu, at that spot.
     BlockMenu(Point<Pixels>),
-    /// Un diagramme Mermaid à voir en grand : son source.
+    /// A Mermaid diagram to view large: its source.
     View(String),
 }
 
@@ -208,134 +208,134 @@ pub struct Editor {
     content: String,
     sel: Range<usize>,
     reversed: bool,
-    /// Les autres curseurs (Alt+clic, occurrence suivante) : leur sélection, et si elle est à
-    /// rebours. Ce que fait le curseur principal, ils le font aussi (voir `each`).
+    /// The other cursors (Alt+click, next occurrence): their selection, and whether it is
+    /// backwards. What the main cursor does, they do too (see `each`).
     more: Vec<(Range<usize>, bool)>,
-    /// Les curseurs suivants rejouent le geste du premier : une seule étape d'annulation.
+    /// The following cursors replay the first one's gesture: a single undo step.
     held: bool,
     marked: Option<Range<usize>>,
     selecting: bool,
-    /// Mot ou ligne saisi par un double ou triple clic (et s'il s'agit d'une ligne) :
-    /// glisser l'étend de mot en mot ou de ligne en ligne.
+    /// Word or line grabbed by a double or triple click (and whether it is a line):
+    /// dragging extends it word by word or line by line.
     anchor: Option<(Range<usize>, bool)>,
     goal_x: Option<Pixels>,
     undo: History,
     redo: History,
     last_edit: Option<Instant>,
     notes: Vec<String>,
-    /// Dossiers où chercher les images : celui de la note, puis le coffre.
+    /// Folders to look for images in: the note's, then the vault.
     dirs: Vec<PathBuf>,
-    /// Images du coffre par nom de fichier (en minuscules) : où qu'elles soient
-    /// rangées, une note les trouve.
+    /// Vault images by file name (lowercase): wherever they are
+    /// stored, a note finds them.
     images: HashMap<String, PathBuf>,
-    /// Début de la ligne dont le bloc de code vient d'être copié.
+    /// Start of the line whose code block was just copied.
     copied: Option<usize>,
-    /// Début de la ligne dont le bouton de copie est survolé.
+    /// Start of the line whose copy button is hovered.
     hover: Option<usize>,
-    /// Ligne dont le bouton « en grand » est survolé.
+    /// Line whose "full size" button is hovered.
     view_hover: Option<usize>,
-    /// Zones des boutons de copie, par début de ligne : elles portent le curseur en main.
+    /// Areas of the copy buttons, by line start: they turn the pointer into a hand.
     copy_hitboxes: Vec<(usize, Hitbox)>,
     view_hitboxes: Vec<(usize, Hitbox)>,
-    /// Diagrammes et formules de la dernière frame, par empreinte de leur source.
+    /// Diagrams and formulas of the last frame, by hash of their source.
     figures: Figures,
-    /// Figures en cours de dessin.
+    /// Figures being drawn.
     waiting: Vec<Job>,
-    /// Lignes mises en forme à la dernière frame, par empreinte de leur texte et
-    /// de leur contexte.
+    /// Lines styled in the last frame, by hash of their text and
+    /// of their context.
     shaped: FastMap<u64, (Rc<Shaped>, u32)>,
-    /// Numéro de la dernière mise en page : une ligne y est marquée quand elle sert.
+    /// Number of the last layout: a line is marked with it when it is used.
     frame: u32,
-    /// Cellules des tableaux mises en forme à la dernière frame.
+    /// Table cells styled in the last frame.
     cells: grid::Cache,
     ac_index: usize,
     ac_dismissed: Option<usize>,
-    /// Sélecteur de tableau ouvert sous le curseur : colonnes et lignes choisies.
+    /// Table picker open under the cursor: chosen columns and rows.
     grid: Option<(usize, usize)>,
-    /// Taille tapée pendant qu'il est ouvert (`12x5`) : elle dépasse la grille.
+    /// Size typed while it is open (`12x5`): it goes beyond the grid.
     grid_typed: String,
-    /// Sa zone : le pointeur y prend la forme d'une main.
+    /// Its area: the pointer turns into a hand there.
     grid_hitbox: Option<Hitbox>,
-    /// Étendue et cadre de chaque tableau à la dernière frame, puis les zones de
-    /// leurs boutons « + », deux par tableau.
+    /// Extent and frame of each table in the last frame, then the areas of
+    /// their "+" buttons, two per table.
     tables: Vec<(Range<usize>, Bounds<Pixels>)>,
     table_hitboxes: Vec<Hitbox>,
-    /// Tableau survolé (son début), et celui de ses boutons qui l'est.
+    /// Hovered table (its start), and which of its buttons is.
     table_hover: Option<(usize, Option<usize>)>,
-    /// Où sont les traits de chaque tableau affiché, à la dernière frame.
+    /// Where the lines of each displayed table are, in the last frame.
     geos: Vec<Geo>,
-    /// La poignée sous le pointeur : (début du tableau, poignée).
+    /// The handle under the pointer: (table start, handle).
     part_hover: Option<(usize, Part)>,
-    /// Où était le pointeur à son dernier mouvement.
+    /// Where the pointer was at its last move.
     pointer: Point<Pixels>,
-    /// La forme du pointeur sur ce qui se clique dans le texte (poignée, case, lien sous `Ctrl`), et la
-    /// zone de la note où elle vaut.
+    /// The pointer shape over what can be clicked in the text (handle, checkbox, link under `Ctrl`), and the
+    /// area of the note where it applies.
     hand: Option<CursorStyle>,
     view_hitbox: Option<Hitbox>,
-    /// Poignées de bloc : les blocs de la note pour une version du texte, le bloc sous le pointeur
-    /// (à sa version), celui qu'on tire, celui que vise le menu de la poignée, et les zones de la
-    /// poignée et du « + ».
+    /// Block handles: the note's blocks for one version of the text, the block under the pointer
+    /// (at its version), the one being dragged, the one the handle menu targets, and the areas of the
+    /// handle and of the "+".
     blocks: Option<(u64, Rc<Vec<Range<usize>>>)>,
     handles: BlockHandles,
-    /// Où des fichiers glissés se poseraient : un trait entre deux lignes.
+    /// Where dragged files would land: a line between two lines.
     drop_mark: Option<usize>,
     pick: Option<Pick>,
     moving: Option<Moving>,
-    /// Défilement horizontal des tableaux plus larges que la page, par début de tableau.
+    /// Horizontal scroll of tables wider than the page, by table start.
     table_x: HashMap<usize, Pixels>,
-    /// Curseur de défilement de chaque tableau trop large, à la dernière frame.
+    /// Scrollbar of each too-wide table, in the last frame.
     thumbs: Vec<Bounds<Pixels>>,
     theme: Theme,
-    // Mise en page de la dernière frame.
+    // Layout of the last frame.
     rows: Vec<Row>,
-    /// Change à chaque modification du texte ou de ce qui sert à le mettre en page
-    /// (thème, images) : tant qu'il et le reste de `LayoutKey` ne bougent pas, la mise
-    /// en page est reprise telle quelle, pour un simple défilement.
+    /// Changes on every edit of the text or of what is used to lay it out
+    /// (theme, images): as long as it and the rest of `LayoutKey` do not move, the
+    /// layout is reused as is, for a plain scroll.
     version: u64,
-    /// Compte les changements du texte, et eux seuls : une image qui charge ou un thème qui change ne le font pas bouger.
+    /// Counts text changes, and only them: an image that loads or a theme that changes does not move it.
     revision: u64,
-    /// Compteur du bas de page, gardé tant que le texte et la sélection ne bougent pas.
+    /// Footer counter, kept as long as the text and the selection do not move.
     counted: Option<((u64, Option<Range<usize>>), String)>,
-    /// Le texte compté en dernier, sa version et ses comptes : à la frappe, seules les lignes
-    /// changées sont recomptées (`md::recount`).
+    /// The text counted last, its version and its counts: on a keystroke, only the changed
+    /// lines are recounted (`md::recount`).
     tally: Option<(u64, String, (usize, usize))>,
-    /// Nombre de boutons que la fenêtre pose dans le coin, à droite du compteur.
+    /// Number of buttons the window puts in the corner, right of the counter.
     pub corner: usize,
     /// The formatting bar: what it offers, where it sits, folded or open.
     bar: BarState,
-    /// La note est celle du pane actif : une seule barre de mise en forme pour toute la fenêtre.
+    /// The note is the active pane's: a single formatting bar for the whole window.
     pub bar_here: bool,
-    /// Change quand tout est à refaire (autre note, thème, images) : rien n'est repris.
+    /// Changes when everything must be redone (other note, theme, images): nothing is reused.
     epoch: u64,
     dmg: Option<Damage>,
     laid: Option<Laid>,
-    /// Les tests refont toute la mise en page à chaque fois, pour la comparer à celle qu'on a reprise.
+    /// Tests redo the whole layout every time, to compare it with the reused one.
     force_full: bool,
-    /// Test : comparer chaque mise en page reprise à une mise en page complète.
+    /// Test: compare each reused layout with a full layout.
     #[cfg(test)]
     compare: bool,
-    /// Test : mises en page complètes et mises en page reprises.
+    /// Test: full layouts and reused layouts.
     #[cfg(test)]
     counts: (usize, usize, usize),
     laid_out: Option<LayoutKey>,
-    /// Une image ou un diagramme se charge encore : la mise en page sera refaite.
+    /// An image or a diagram is still loading: the layout will be redone.
     loading: bool,
-    /// Hauteur totale des lignes, et indices des lignes qui portent un bouton de copie.
+    /// Total height of the lines, and indices of the lines that carry a copy button.
     total_y: Pixels,
     opening: Vec<usize>,
-    /// Chaque tableau de la note : son étendue, ses lignes et sa largeur.
+    /// Each table of the note: its extent, its rows and its width.
     table_meta: Vec<TableMeta>,
     big: Vec<BigBlock>,
-    /// Empreinte du thème et des polices de la dernière mise en page.
+    /// Hash of the theme and fonts of the last layout.
     big_style: u64,
     origin: Point<Pixels>,
     width: Pixels,
-    /// Largeur offerte à un tableau : celle du texte, ou plus si les réglages le laissent déborder.
+    /// Width offered to a table: the text's, or more if the settings let it overflow.
     room: Pixels,
     viewport: Bounds<Pixels>,
     scroll_y: Pixels,
     reveal: bool,
-    /// Avec `reveal` : la ligne du curseur se place en haut de la vue (saut vers un titre).
+    /// With `reveal`: the cursor's line goes to the top of the view (jump to a heading).
     reveal_top: bool,
     find: Option<Finder>,
 }
@@ -436,7 +436,7 @@ impl Editor {
         &self.content
     }
 
-    /// Remplace tout le contenu (changement de note) ; curseur à l'octet `cursor`.
+    /// Replaces the whole content (note change); cursor at byte `cursor`.
     pub fn load(&mut self, text: String, cursor: usize, cx: &mut Context<Self>) {
         let cursor = cursor.min(text.len());
         self.version += 1;
@@ -454,7 +454,7 @@ impl Editor {
         self.table_x.clear();
         self.selecting = false;
         self.reveal = true;
-        // Une autre note : la barre reste, la saisie revient au texte.
+        // Another note: the bar stays, input goes back to the text.
         if let Some(find) = &mut self.find {
             find.active = false;
         }
@@ -468,7 +468,7 @@ impl Editor {
         cx.notify();
     }
 
-    /// Noms des notes du coffre, pour compléter les `[[wikiliens]]`.
+    /// Names of the vault's notes, to complete `[[wikilinks]]`.
     pub fn set_notes(&mut self, notes: Vec<String>) {
         self.notes = notes;
     }
@@ -486,18 +486,18 @@ impl Editor {
         self.dirs = dirs;
     }
 
-    /// Contenu du bloc de code où se trouve le curseur.
+    /// Content of the code block the cursor is in.
     pub fn code_at_cursor(&self) -> Option<&str> {
         md::code_block(&self.content, self.cursor()).map(|r| &self.content[r])
     }
 
-    /// Centre du premier bouton « Copier » affiché.
+    /// Center of the first "Copy" button shown.
     #[cfg(test)]
     pub fn copy_button(&self) -> Option<Point<Pixels>> {
         Some(self.copy_bounds(self.rows.iter().find(|r| r.opens)?).center())
     }
 
-    /// Nombre de signes et taille de l'image affichés sur la ligne qui commence par `prefix`.
+    /// Number of characters and size of the image shown on the line starting with `prefix`.
     #[cfg(test)]
     pub fn decorations(&self, prefix: &str) -> (usize, Option<(f32, f32)>) {
         let row = self.rows.iter().find(|r| self.content[r.start..].starts_with(prefix)).unwrap();
@@ -505,28 +505,28 @@ impl Editor {
         (row.shaped.subs.len(), image)
     }
 
-    /// Centre du bouton « en grand » du bloc Mermaid qui commence par `prefix`.
+    /// Center of the "full size" button of the Mermaid block starting with `prefix`.
     #[cfg(test)]
     pub fn view_button(&self, prefix: &str) -> Option<Point<Pixels>> {
         let row = self.rows.iter().find(|r| self.views(r) && self.content[r.start..].starts_with(prefix))?;
         Some(self.view_bounds(row).center())
     }
 
-    /// Figures gardées, et figures en cours de dessin.
+    /// Kept figures, and figures being drawn.
     #[cfg(test)]
     pub fn figure_count(&self) -> (usize, usize) {
         (self.figures.len(), self.waiting.len())
     }
 
-    /// Centre des boutons « + » (ligne, colonne) du premier tableau affiché.
+    /// Center of the "+" buttons (row, column) of the first table shown.
     #[cfg(test)]
     pub fn plus_buttons(&self) -> Option<[Point<Pixels>; 2]> {
         Some(plus_bars(self.tables.first()?.1).map(|bar| bar.center()))
     }
 
-    /// Compteur du bas de page : mots et caractères de la note, ou ceux de la sélection. Recompté seulement quand le texte ou la sélection changent.
+    /// Footer counter: words and characters of the note, or of the selection. Recounted only when the text or the selection change.
     pub fn counts(&mut self) -> String {
-        // Sans sélection, déplacer le curseur ne change rien au compte.
+        // Without a selection, moving the cursor changes nothing in the count.
         let key = (self.version, (!self.sel.is_empty()).then(|| self.sel.clone()));
         if let Some((_, label)) = self.counted.as_ref().filter(|(known, _)| *known == key) {
             return label.clone();
@@ -546,7 +546,7 @@ impl Editor {
                 None => md::counts(&self.content),
             };
             if self.tally.as_ref().is_none_or(|(version, ..)| *version != self.version) {
-                // ponytail: une copie du texte pour le prochain recompte ; tenir les comptes dans `splice` si elle pèse.
+                // ponytail: a copy of the text for the next recount; keep the counts in `splice` if it weighs.
                 self.tally = Some((self.version, self.content.clone(), whole));
             }
             both(whole)
@@ -557,24 +557,24 @@ impl Editor {
         label
     }
 
-    /// Type de la ligne qui porte l'octet `i`, à la dernière mise en page.
+    /// Type of the line holding byte `i`, in the last layout.
     #[cfg(test)]
     pub fn kind_at(&self, i: usize) -> Option<Kind> {
         Some(self.rows[self.row_at(i)?].kind)
     }
 
-    /// Position du curseur dans le texte.
+    /// Cursor position in the text.
     pub fn position(&self) -> usize {
         self.cursor()
     }
 
-    /// Où l'on en est dans la note : le curseur et le défilement, pour y revenir.
+    /// Where we are in the note: the cursor and the scroll, to come back to it.
     pub fn view(&self) -> (usize, f32) {
         (self.cursor(), self.scroll_y.into())
     }
 
-    /// Revient où l'on en était : le défilement est repris tel quel, pas recalculé d'après le
-    /// curseur.
+    /// Goes back to where we were: the scroll is restored as is, not recomputed from the
+    /// cursor.
     pub fn set_view(&mut self, at: usize, scroll: f32, cx: &mut Context<Self>) {
         self.more.clear();
         self.move_to(self.clamp(at), cx);
@@ -582,7 +582,7 @@ impl Editor {
         self.reveal = false;
     }
 
-    /// Lignes de tirets de tableau qu'on ne voit pas.
+    /// Table dash lines that are not shown.
     #[cfg(test)]
     pub fn hidden_rows(&self) -> usize {
         self.rows.iter().filter(|r| r.hidden()).count()
@@ -602,33 +602,33 @@ impl Editor {
         self.content[..at].lines().filter(|l| md::is_fence(l)).count()
     }
 
-    /// Un ``` sans clôture n'ouvre pas de bloc, comme dans `layout`.
+    /// A ``` without a closing fence does not open a block, as in `layout`.
     fn in_code(&self, line_start: usize) -> bool {
         self.fences_before(line_start) % 2 == 1
             && self.content[line_start..].lines().any(md::is_fence)
     }
 
-    // ----- Recherche dans la note -----
+    // ----- Search in the note -----
 
-    // ----- Plusieurs curseurs -----
+    // ----- Multiple cursors -----
 
-    // ----- Déplacements -----
+    // ----- Moves -----
 
-    // ----- Édition Markdown -----
+    // ----- Markdown editing -----
 
-    // ----- Tableaux -----
+    // ----- Tables -----
 
-    // ----- Poignées de bloc -----
+    // ----- Block handles -----
 
-    // ----- Complétion : wikiliens et commandes `/` -----
+    // ----- Completion: wikilinks and `/` commands -----
 
-    // ----- Souris -----
+    // ----- Mouse -----
 
-    // ----- Presse-papiers -----
+    // ----- Clipboard -----
 
-    // ----- UTF-16 (méthodes de saisie) -----
+    // ----- UTF-16 (input methods) -----
 
-    // ----- Mise en page et rendu -----
+    // ----- Layout and rendering -----
 
 }
 
@@ -636,7 +636,7 @@ impl Editor {
 mod tests {
     use super::*;
 
-    /// Une image du coffre se désigne par `..` (dossier frère) ; rien ne sort du coffre.
+    /// A vault image is reached through `..` (sibling folder); nothing leaves the vault.
     #[test]
     fn images_stay_inside_the_vault() {
         let base = std::env::temp_dir().join(format!("bref-inside-{}", std::process::id()));
@@ -651,7 +651,7 @@ mod tests {
         assert!(!inside(&vault, &notes.join("../../outside.png")));
         assert!(!inside(&vault, &outside));
         assert!(!inside(&vault, &vault.join("absent.png")));
-        // Un lien symbolique du coffre vers l'extérieur n'est pas suivi.
+        // A symbolic link from the vault to the outside is not followed.
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(&outside, vault.join("lien.png")).unwrap();
@@ -667,7 +667,7 @@ mod tests {
         for (i, state) in states.iter().enumerate() {
             history.push(state.to_string(), i..i);
         }
-        // Seul le dernier état est gardé en entier.
+        // Only the last state is kept in full.
         assert!(history.earlier.iter().all(|(_, _, own, _)| own.len() <= 2));
         for (i, state) in states.iter().enumerate().rev() {
             assert_eq!(history.pop(), Some((state.to_string(), i..i)));
@@ -678,13 +678,13 @@ mod tests {
     #[test]
     fn tables_get_room_by_setting() {
         let (pane, text) = (px(1000.), px(720.));
-        // Dans la colonne : rien ne change. Centré : toute la fenêtre moins les marges.
+        // In the column: nothing changes. Centered: the whole window minus the margins.
         assert_eq!(table_room(Wide::Column, pane, text), text);
         assert_eq!(table_room(Wide::Centered, pane, text), px(952.));
-        // Fenêtre étroite : la colonne remplit déjà la place, rien ne déborde.
+        // Narrow window: the column already fills the space, nothing overflows.
         let narrow = px(500.);
         assert_eq!(table_room(Wide::Centered, narrow, narrow - SIDE * 2.), narrow - SIDE * 2.);
-        // Un tableau centré dépasse de la moitié de son excédent de chaque côté ; jamais à rebours.
+        // A centered table overflows by half its excess on each side; never backwards.
         assert_eq!(table_lead(Wide::Centered, px(952.), text), px(116.));
         assert_eq!(table_lead(Wide::Centered, px(300.), text), px(0.));
         assert_eq!(table_lead(Wide::Column, px(952.), text), px(0.));

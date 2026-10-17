@@ -1,5 +1,5 @@
-//! Palette (Ctrl+P) : recherche de notes, filtre par `#tag`, création, coffre.
-//! Sert aussi de simple champ de saisie (nom d'un dossier, nouveau nom).
+//! Palette (Ctrl+P): note search, `#tag` filter, creation, vault.
+//! Also serves as a plain input field (folder name, new name).
 
 use std::{ops::Range, path::PathBuf, sync::Arc};
 
@@ -117,17 +117,17 @@ fn help_label() -> &'static str {
     tr("Keyboard shortcuts, about", "Raccourcis clavier, à propos")
 }
 
-/// Réglage d'apparence proposé par la palette.
+/// Appearance setting offered by the palette.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Setting {
     Theme,
     Font,
     Mono,
-    /// Largeur de la colonne de texte.
+    /// Width of the text column.
     Page,
-    /// Place des tableaux plus larges que le texte.
+    /// Placement of tables wider than the text.
     Wide,
-    /// Barre de mise en forme au bas de la note.
+    /// Formatting bar at the bottom of the note.
     Bar,
 }
 
@@ -146,7 +146,7 @@ impl Setting {
 
 actions!(palette, [Prev, Next, Confirm, ConfirmAside, Dismiss]);
 
-/// Ce que les modèles permettent : une note qui en naît, un modèle inséré, la note ouverte rangée en modèle.
+/// What templates allow: a note born from one, a template inserted, the open note saved as a template.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TemplateAct {
     New,
@@ -169,14 +169,14 @@ pub struct Entry {
     pub name: String,
     pub path: PathBuf,
     pub tags: Arc<[String]>,
-    /// Texte de la note, et le même en minuscules, pour la recherche plein texte.
+    /// Text of the note, and the same in lowercase, for full-text search.
     pub body: Arc<str>,
     pub lower: Arc<str>,
 }
 
 pub enum PaletteEvent {
     Open(PathBuf),
-    /// Une commande de l'app : le nom de son action.
+    /// An app command: the name of its action.
     Run(&'static str),
     Create(String),
     ChangeVault,
@@ -185,47 +185,47 @@ pub enum PaletteEvent {
     NewFolder,
     ImportDiagram,
     Setting(Setting),
-    /// Réglage ou geste du tableau affiché.
+    /// Setting or gesture of the shown table.
     Table(Pick),
-    /// Les lignes choisies de la note, en liste ou en texte.
+    /// The chosen lines of the note, as a list or as text.
     Restyle(ListStyle),
-    /// Un geste sur le tableau du curseur.
+    /// A gesture on the table under the cursor.
     Grid(TableOp),
-    /// Une note née d'un modèle, un modèle inséré, ou la note rangée en modèle.
+    /// A note born from a template, a template inserted, or the note saved as a template.
     Template(TemplateAct),
-    /// Active ou coupe la recherche de nouvelle version.
+    /// Turns the new-version check on or off.
     ToggleUpdates,
-    /// Cherche tout de suite une nouvelle version.
+    /// Checks for a new version right now.
     CheckUpdate,
-    /// Liste des titres de la note.
+    /// List of the note's headings.
     Outline,
-    /// Liste des commentaires de la note.
+    /// List of the note's comments.
     Comments,
-    /// Défait le dernier remplacement dans tout le coffre.
+    /// Undoes the last vault-wide replacement.
     UndoSwap,
-    /// Crée une note qui s'ouvre en tableau kanban.
+    /// Creates a note that opens as a kanban board.
     NewBoard,
-    /// Ligne choisie dans la recherche du coffre : la note, le rang de la ligne, le texte cherché.
+    /// Line chosen in the vault search: the note, the line's index, the searched text.
     OpenAt(PathBuf, usize, String),
-    /// Ouvre ou crée la note du jour.
+    /// Opens or creates the daily note.
     Today,
-    /// Précédent (`false`) ou suivant (`true`) dans ce qui a été affiché.
+    /// Back (`false`) or forward (`true`) in what has been shown.
     Travel(bool),
-    /// Liste la corbeille du coffre, pour en restaurer un élément.
+    /// Lists the vault's trash, to restore an item from it.
     Trash,
-    /// Archive le coffre dans un dossier à choisir.
+    /// Archives the vault into a folder to choose.
     Backup,
     Sync,
     CloneVault,
-    /// Ouvre le terminal du système dans le dossier du coffre.
+    /// Opens the system terminal in the vault folder.
     Terminal,
-    /// Lie la capture (`bref --capture`) à un raccourci du bureau.
+    /// Binds capture (`bref --capture`) to a desktop shortcut.
     CaptureKey,
-    /// Installe la nouvelle version.
+    /// Installs the new version.
     InstallUpdate,
-    /// Texte validé dans un champ de saisie, ou choix validé dans une liste.
+    /// Text submitted in an input field, or choice submitted in a list.
     Submit(String),
-    /// Choix survolé dans une liste : à appliquer en aperçu.
+    /// Choice hovered in a list: to apply as a preview.
     Preview(String),
     Dismiss,
 }
@@ -233,9 +233,9 @@ pub enum PaletteEvent {
 #[derive(Clone, Copy)]
 enum Item {
     Note(usize),
-    /// Note dont le texte, et non le nom, répond à la recherche.
+    /// Note whose text, not name, matches the search.
     Text(usize),
-    /// Recherche du coffre : une ligne d'une note (son rang) où figure le texte cherché.
+    /// Vault search: a line of a note (its index) where the searched text appears.
     Line(usize, usize),
     Create,
     Vault,
@@ -264,49 +264,49 @@ enum Item {
     Restyle(ListStyle),
     Grid(TableOp),
     Template(TemplateAct),
-    /// Une commande de l'app (`commands`), par son rang.
+    /// An app command (`commands`), by its index.
     Command(usize),
 }
 
 pub struct Palette {
-    /// Validé par Ctrl+Entrée : ce qui est choisi s'ouvre dans l'autre pane.
+    /// Submitted with Ctrl+Enter: the choice opens in the other pane.
     pub aside: bool,
     focus: FocusHandle,
     query: Line,
     entries: Vec<Entry>,
-    /// Le nom de chaque entrée en minuscules, fait une fois : la liste se refait à chaque frappe.
+    /// The name of each entry in lowercase, done once: the list is rebuilt on every keystroke.
     names: Vec<String>,
     items: Vec<Item>,
     selected: usize,
-    /// Champ de saisie : son libellé. Aucune note n'est alors proposée.
+    /// Input field: its label. No note is offered then.
     prompt: Option<String>,
-    /// Liste de choix : `entries` sont les options, sans création ni commande.
+    /// Choice list: `entries` are the options, without creation or commands.
     choices: bool,
-    /// Recherche dans le texte du coffre : une ligne trouvée par choix, ni note par son nom ni commande.
+    /// Search in the vault's text: one found line per choice, no note by name nor command.
     lines: bool,
-    /// La recherche de nouvelle version est active : `None` hors de la palette principale.
+    /// The new-version check is on: `None` outside the main palette.
     updates: Option<bool>,
-    /// Numéro de la nouvelle version que l'app sait installer seule.
+    /// Number of the new version the app can install by itself.
     installable: Option<String>,
-    /// Un tableau est affiché : ses réglages se cherchent ici.
+    /// A table is shown: its settings are searched here.
     table: bool,
-    /// Une note est affichée : ses lignes peuvent devenir une liste.
+    /// A note is shown: its lines can become a list.
     lists: bool,
-    /// Le curseur est dans un tableau Markdown : ses lignes et ses colonnes se gèrent d'ici.
+    /// The cursor is in a Markdown table: its rows and columns are managed from here.
     cells: bool,
-    /// Un remplacement dans le coffre peut être défait.
+    /// A vault replacement can be undone.
     undo_swap: bool,
-    /// Les commandes que la vue sait faire, celles de la vue d'abord (les `here` premières) : la
-    /// palette les trouve par ce qu'elles font, et propose les `here` sans rien taper.
+    /// The commands the view can do, the view's own first (the first `here`): the
+    /// palette finds them by what they do, and offers the `here` ones without typing anything.
     commands: Vec<crate::logic::commands::Command>,
     here: usize,
-    /// Rien que les commandes (F10, ou « > » tapé en tête), et le nom de ce qu'on regarde.
+    /// Only the commands (F10, or ">" typed first), and the name of what is being looked at.
     commands_only: bool,
     context: &'static str,
-    /// Marge au-dessus du cadre.
+    /// Margin above the frame.
     top: Pixels,
-    /// Défilement de la ligne de saisie, et l'abscisse de son curseur à la dernière image :
-    /// un texte plus long que le cadre glisse dessous pour que le curseur reste en vue.
+    /// Scroll of the input line, and the x of its cursor at the last frame:
+    /// a text longer than the frame slides under it so the cursor stays in view.
     scroll: gpui::ScrollHandle,
     caret: std::rc::Rc<std::cell::Cell<Option<Pixels>>>,
     theme: Theme,
@@ -320,13 +320,13 @@ impl Focusable for Palette {
     }
 }
 
-/// Tous les mots figurent dans le texte (déjà en minuscules).
+/// All the words appear in the text (already lowercase).
 fn contains_all(lower: &str, words: &[&str]) -> bool {
     words.iter().all(|w| lower.contains(w))
 }
 
-/// La ligne de la note où figure `word` (en minuscules), avec sa casse d'origine,
-/// recentrée sur le mot et raccourcie.
+/// The note's line where `word` (lowercase) appears, with its original case,
+/// recentred on the word and shortened.
 fn snippet(body: &str, lower: &str, word: &str) -> String {
     let Some(at) = lower.find(word) else {
         return String::new();
@@ -334,7 +334,7 @@ fn snippet(body: &str, lower: &str, word: &str) -> String {
     snippet_at(body, lower, lower[..at].matches('\n').count(), word)
 }
 
-/// La même, pour la ligne de rang `row`.
+/// The same, for the line at index `row`.
 fn snippet_at(body: &str, lower: &str, row: usize, word: &str) -> String {
     let (Some(shown), Some(low)) = (body.lines().nth(row), lower.lines().nth(row)) else {
         return String::new();
@@ -351,7 +351,7 @@ fn snippet_at(body: &str, lower: &str, row: usize, word: &str) -> String {
     )
 }
 
-/// Rang de chaque ligne du texte (en minuscules) où figure `query`, une fois par ligne.
+/// Index of each line of the text (lowercase) where `query` appears, once per line.
 fn rows_with(lower: &str, query: &str) -> Vec<usize> {
     let (mut rows, mut row, mut seen) = (Vec::new(), 0, 0);
     for (at, _) in lower.match_indices(query) {
@@ -364,7 +364,7 @@ fn rows_with(lower: &str, query: &str) -> Vec<usize> {
     rows
 }
 
-/// Le texte en minuscules, sans ses accents : « thème » se trouve en tapant « theme ».
+/// The text in lowercase, without its accents: « thème » is found by typing « theme ».
 fn fold(text: &str) -> String {
     text.to_lowercase()
         .chars()
@@ -380,9 +380,9 @@ fn fold(text: &str) -> String {
         .collect()
 }
 
-/// Une commande répond à la recherche quand son libellé la contient, ou quand chaque mot tapé
-/// commence un de ses mots (`new fol` : « New folder »). Pas de sous-séquence, comme pour les
-/// notes : `plan` ramènerait « Annuler le remplacement ».
+/// A command matches the search when its label contains it, or when each typed word
+/// starts one of its words (`new fol`: "New folder"). No subsequence, unlike
+/// notes: `plan` would bring up « Annuler le remplacement ».
 pub fn command(query: &str, label: &str) -> bool {
     let (query, label) = (fold(query), fold(label));
     if label.contains(query.trim()) {
@@ -392,7 +392,7 @@ pub fn command(query: &str, label: &str) -> bool {
     query.split_whitespace().all(|typed| words.iter().any(|word| word.starts_with(typed)))
 }
 
-/// Score de correspondance : sous-chaîne d'abord, sinon sous-séquence.
+/// Match score: substring first, otherwise subsequence.
 pub fn fuzzy(query: &str, name: &str) -> Option<i32> {
     if let Some(i) = name.find(query) {
         return Some(1000 - i as i32);
@@ -405,7 +405,7 @@ pub fn fuzzy(query: &str, name: &str) -> Option<i32> {
 }
 
 impl Palette {
-    /// `entries` : les notes, les plus récentes d'abord.
+    /// `entries`: the notes, most recent first.
     pub fn new(entries: Vec<Entry>, query: &str, theme: Theme, cx: &mut Context<Self>) -> Self {
         let mut this = Self {
             focus: cx.focus_handle(),
@@ -437,7 +437,7 @@ impl Palette {
         this
     }
 
-    /// Propose d'activer ou de couper la recherche de nouvelle version, selon son état.
+    /// Offers to turn the new-version check on or off, depending on its state.
     pub fn with_updates(mut self, on: bool, installable: Option<String>) -> Self {
         self.updates = Some(on);
         self.installable = installable;
@@ -445,7 +445,7 @@ impl Palette {
         self
     }
 
-    /// Propose de défaire le dernier remplacement dans le coffre, s'il y en a un.
+    /// Offers to undo the last vault replacement, if there is one.
     pub fn with_commands(mut self, commands: Vec<crate::logic::commands::Command>, here: usize, context: &'static str) -> Self {
         (self.commands, self.here, self.context) = (commands, here, context);
         self.refresh();
@@ -476,25 +476,25 @@ impl Palette {
         self
     }
 
-    /// Champ de saisie prérempli avec `text` ; Entrée émet `Submit`.
+    /// Input field prefilled with `text`; Enter emits `Submit`.
     pub fn prompt(label: impl Into<String>, text: &str, theme: Theme, cx: &mut Context<Self>) -> Self {
         let mut this = Self {
             prompt: Some(label.into()),
             ..Self::new(Vec::new(), text, theme, cx)
         };
-        // `new` a listé les commandes de la palette : un champ de saisie n'en propose aucune.
+        // `new` listed the palette's commands: an input field offers none.
         this.refresh();
         this
     }
 
-    /// Collé en haut de ce qui le contient : pour une fenêtre qui n'est que ce champ.
+    /// Stuck to the top of its container: for a window that is only this field.
     pub fn at_top(mut self) -> Self {
         self.top = px(8.);
         self
     }
 
-    /// Liste de choix filtrable (thème, police), `current` présélectionné :
-    /// chaque déplacement émet `Preview`, Entrée émet `Submit`.
+    /// Filterable choice list (theme, font), `current` preselected:
+    /// each move emits `Preview`, Enter emits `Submit`.
     pub fn choose(
         label: &str,
         options: Vec<String>,
@@ -510,34 +510,34 @@ impl Palette {
         this
     }
 
-    /// Recherche dans le texte du coffre (comme `Ctrl+Maj+F` de Zed) : chaque ligne où figure
-    /// le texte tapé, sans tenir compte de la casse ; Entrée ouvre la note à cette ligne.
+    /// Search in the vault's text (like Zed's `Ctrl+Shift+F`): each line where
+    /// the typed text appears, ignoring case; Enter opens the note at that line.
     pub fn search(entries: Vec<Entry>, theme: Theme, cx: &mut Context<Self>) -> Self {
         Self { lines: true, ..Self::new(entries, "", theme, cx) }
     }
 
-    /// Présélectionne le choix de rang `index` (deux choix peuvent porter le même nom).
+    /// Preselects the choice at index `index` (two choices can bear the same name).
     pub fn select(mut self, index: usize) -> Self {
         self.selected = index.min(self.items.len().saturating_sub(1));
         self
     }
 
-    /// Rang, dans la liste donnée à `choose`, du choix sélectionné.
-    /// Le curseur de la saisie est dans son cadre, à la dernière image dessinée.
+    /// Index, in the list given to `choose`, of the selected choice.
+    /// The input's cursor is inside its frame, at the last frame drawn.
     #[cfg(test)]
     pub fn caret_inside(&self) -> Option<bool> {
         let (frame, caret) = (self.scroll.bounds(), self.caret.get()?);
         Some(caret >= frame.left() && caret <= frame.right())
     }
 
-    /// Nombre de lignes proposées sous la saisie.
-    /// Rien que les commandes, et le nom de ce qu'on regarde.
+    /// Number of lines offered under the input.
+    /// Only the commands, and the name of what is being looked at.
     #[cfg(test)]
     pub fn mode(&self) -> (bool, &'static str) {
         (self.commands_only, self.context)
     }
 
-    /// Les commandes proposées, par le nom de leur action.
+    /// The commands offered, by the name of their action.
     #[cfg(test)]
     pub fn runs(&self) -> Vec<&'static str> {
         self.items.iter().filter_map(|item| if let &Item::Command(n) = item { Some(self.commands[n].action) } else { None }).collect()
@@ -567,7 +567,7 @@ impl Palette {
         }
     }
 
-    /// Dans une liste de choix, le choix sélectionné s'applique en aperçu.
+    /// In a choice list, the selected choice is applied as a preview.
     fn preview(&self, cx: &mut Context<Self>) {
         if let Some(name) = self.items.get(self.selected).and_then(|i| self.choice(i)) {
             cx.emit(PaletteEvent::Preview(name.to_string()));
@@ -580,17 +580,17 @@ impl Palette {
         }
         let q = self.query.text.trim().to_lowercase();
         if self.lines {
-            // ponytail: les 200 premières lignes trouvées, notes récentes d'abord, cherchées à
-            // chaque frappe dans tout le texte du coffre ; une recherche en tâche de fond et une
-            // liste complète si les coffres grossissent. Une lettre seule ramènerait tout.
+            // ponytail: the first 200 lines found, recent notes first, searched on
+            // every keystroke in the whole vault text; a background search and a
+            // full list if vaults grow. A single letter would bring up everything.
             let found = (0..self.entries.len()).filter(|_| q.chars().count() >= 2);
             let found = found.flat_map(|i| rows_with(&self.entries[i].lower, &q).into_iter().map(move |row| Item::Line(i, row)));
             self.items = found.take(200).collect();
             self.selected = 0;
             return;
         }
-        // « > » en tête, comme dans VS Code : la palette ne montre plus que les commandes, et le « > »
-        // s'efface du champ.
+        // ">" first, as in VS Code: the palette shows only the commands, and the ">"
+        // is cleared from the field.
         if !self.commands_only && !self.choices && self.prompt.is_none() && self.query.text.starts_with('>') {
             self.query = Line::new(self.query.text[1..].trim_start());
             self.commands_only = true;
@@ -614,15 +614,15 @@ impl Palette {
                 .enumerate()
                 .filter_map(|(i, name)| Some((fuzzy(&q, name)?, i)))
                 .collect();
-            // Tri stable : à score égal, l'ordre « plus récent d'abord » est conservé.
+            // Stable sort: at equal score, the "most recent first" order is kept.
             scored.sort_by_key(|(score, _)| -score);
             let mut named = vec![false; self.entries.len()];
             for &(_, i) in &scored {
                 named[i] = true;
             }
             let mut items: Vec<Item> = scored.into_iter().map(|(_, i)| Item::Note(i)).collect();
-            // Après les noms : les notes dont le texte contient tous les mots, les plus récentes d'abord.
-            // Une lettre seule les ramènerait presque toutes.
+            // After the names: the notes whose text contains all the words, most recent first.
+            // A single letter would bring up nearly all of them.
             if !self.choices && q.chars().count() >= 2 {
                 let words: Vec<&str> = q.split_whitespace().collect();
                 items.extend(
@@ -640,7 +640,7 @@ impl Palette {
             return;
         }
         items.truncate(8);
-        // Sans rien taper, sur un tableau ou un schéma : ce qu'on peut y faire, sous les notes récentes.
+        // Without typing anything, on a table or a diagram: what can be done there, under the recent notes.
         if q.is_empty() && self.context != "Note" {
             items.extend((0..self.here.min(self.commands.len()).min(6)).map(Item::Command));
         }
@@ -653,7 +653,7 @@ impl Palette {
                 items.push(item);
             }
         }
-        // Comme les réglages : proposés seulement quand on les cherche.
+        // Like the settings: offered only when searched for.
         for (label, item) in [(diagram_label(), Item::Diagram), (folder_label(), Item::Folder), (import_label(), Item::Import)] {
             if !q.is_empty() && command(&q, label) {
                 items.push(item);
@@ -703,8 +703,8 @@ impl Palette {
                     .map(Item::Restyle),
             );
         }
-        // Les commandes de l'app, par ce qu'elles font ; celles que la palette offre déjà sous un autre
-        // nom (gestes de tableau, plan, note du jour…) n'y sont pas deux fois.
+        // The app's commands, by what they do; those the palette already offers under another
+        // name (table gestures, outline, daily note…) are not there twice.
         if !q.is_empty() {
             let doubled = |name: &str| {
                 name.starts_with("editor::Table")
@@ -719,7 +719,7 @@ impl Palette {
             let found = (0..self.commands.len()).filter(|&i| !doubled(self.commands[i].action) && command(&q, self.commands[i].label));
             items.extend(found.take(8).map(Item::Command));
         }
-        // Les réglages n'encombrent pas la liste tant qu'on ne les cherche pas.
+        // The settings do not clutter the list until searched for.
         for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar] {
             if !q.is_empty() && command(&q, setting.label()) {
                 items.push(Item::Setting(setting));
@@ -790,8 +790,8 @@ impl Palette {
     }
 }
 
-// ponytail: saisie réduite à « ajouter à la fin » (pas de curseur mobile ni de
-// composition IME dans la palette) ; suffisant pour une requête de recherche.
+// ponytail: input reduced to "append at the end" (no movable cursor nor
+// IME composition in the palette); enough for a search query.
 impl EntityInputHandler for Palette {
     fn text_for_range(
         &mut self,
@@ -860,8 +860,8 @@ impl EntityInputHandler for Palette {
 }
 
 impl Palette {
-    /// Une commande : son icône, son libellé, ses touches une à une ; au-dessus, le titre de son groupe
-    /// quand elle l'ouvre.
+    /// A command: its icon, its label, its keys one by one; above, the title of its group
+    /// when it opens it.
     fn command_row(&self, i: usize, n: usize, header: bool, cx: &Context<Self>) -> gpui::Div {
         let t = self.theme;
         let c = &self.commands[n];
@@ -918,7 +918,7 @@ impl Render for Palette {
         )
         .size_0();
 
-        // La ligne de saisie défile sous son curseur : il reste en vue quoi qu'on tape ou colle.
+        // The input line scrolls under its cursor: it stays in view whatever is typed or pasted.
         let (line, layout) = self.query.shown(t);
         let (scroll, seen, at, palette) = (self.scroll.clone(), self.caret.clone(), self.query.cursor(), cx.entity_id());
         let follow = canvas(
@@ -926,7 +926,7 @@ impl Render for Palette {
             move |_, _, _, cx| {
                 let Some(caret) = layout.position_for_index(at) else { return };
                 let frame = scroll.bounds();
-                // De quoi ramener le curseur dans le cadre ; l'image suivante le montre.
+                // Enough to bring the cursor back into the frame; the next frame shows it.
                 let slide = if caret.x > frame.right() - px(2.) {
                     frame.right() - px(2.) - caret.x
                 } else if caret.x < frame.left() {
@@ -935,13 +935,13 @@ impl Render for Palette {
                     px(0.)
                 };
                 seen.set(Some(caret.x));
-                // Borné à ce qui peut défiler : arrivé au bout, on ne redemande plus rien.
+                // Bounded to what can scroll: at the end, nothing more is requested.
                 let mut offset = scroll.offset();
                 let to = (offset.x + slide).max(-scroll.max_offset().width).min(px(0.));
                 if (to - offset.x).abs() > px(0.5) {
                     offset.x = to;
                     scroll.set_offset(offset);
-                    // Pendant le dessin, `Window::refresh` est sans effet : on redemande le rendu après.
+                    // During drawing, `Window::refresh` has no effect: request the render afterwards.
                     cx.defer(move |cx| cx.notify(palette));
                 }
             },
@@ -949,11 +949,11 @@ impl Render for Palette {
         .absolute()
         .size_0();
 
-        // Une liste de choix montre 14 lignes à la fois, autour du choix sélectionné.
+        // A choice list shows 14 lines at a time, around the selected choice.
         let first = self.selected.saturating_sub(6).min(self.items.len().saturating_sub(14));
         let rows = self.items.iter().enumerate().skip(first).take(14).map(|(i, item)| {
             if let &Item::Command(n) = item {
-                // Sans rien taper, les commandes vont par groupe, chacun sous son titre.
+                // Without typing anything, commands go by group, each under its title.
                 let grouped = self.query.text.trim().is_empty();
                 let group = self.commands[n].group;
                 let same = |prev: Option<&Item>| matches!(prev, Some(&Item::Command(m)) if self.commands[m].group == group);
@@ -1019,7 +1019,7 @@ impl Render for Palette {
                 .cursor_pointer()
                 .when(i == self.selected, |d| d.bg(t.selection))
                 .when(i != self.selected, |d| d.hover(|s| s.bg(t.code_bg)))
-                // Avec un extrait de texte, le nom garde sa place et l'extrait se raccourcit.
+                // With a text excerpt, the name keeps its place and the excerpt is shortened.
                 .child(
                     div()
                         .truncate()
@@ -1044,7 +1044,7 @@ impl Render for Palette {
             .absolute()
             .inset_0()
             .occlude()
-            // Les touches d'une ligne de saisie servent à la question qu'on tape.
+            // The keys of an input line serve the question being typed.
             .key_context("Palette Line")
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &Next, _, cx| this.step(1, cx)))
@@ -1087,11 +1087,11 @@ impl Render for Palette {
                             .flex()
                             .items_center()
                             .text_size(px(15.))
-                            // Ni l'invite ni une longue adresse collée ne sortent du cadre.
+                            // Neither the prompt nor a long pasted address overflows the frame.
                             .overflow_hidden()
                             .child(input)
                             .when(self.commands_only, |d| d.child(svg().path("search.svg").size(px(16.)).flex_none().mr(px(10.)).text_color(t.soft)))
-                            // Le curseur d'abord, l'invite après lui : on écrit à sa place.
+                            // The cursor first, the prompt after it: one writes in its place.
                             .child(div().id("palette-line").min_w_0().overflow_x_scroll().track_scroll(&self.scroll).flex().child(line.flex_none().pr(px(2.)).whitespace_nowrap()).child(follow))
                             .when(self.query.text.is_empty(), |d| {
                                 d.child(div().min_w_0().truncate().text_color(t.soft).child(self.prompt.clone().unwrap_or_else(|| match (self.lines, self.commands_only) {
@@ -1105,7 +1105,7 @@ impl Render for Palette {
                                     div().ml_auto().pl_3().flex_none().max_w(gpui::relative(0.45)).truncate().text_size(px(12.)).text_color(t.soft).child(label)
                                 }))
                             })
-                            // Ce que les commandes visent d'abord : la note, un tableau, un schéma.
+                            // What the commands target first: the note, a table, a diagram.
                             .when(self.commands_only && !self.context.is_empty(), |d| {
                                 d.child(div().flex_1()).child(
                                     div()
@@ -1122,7 +1122,7 @@ impl Render for Palette {
                             }),
                     )
                     .children(rows)
-                    // Le panneau glisse en place à l'ouverture.
+                    // The panel slides into place when opening.
                     .with_animation(
                         "palette-in",
                         Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
@@ -1176,7 +1176,7 @@ mod tests {
         assert!(command("new fol", "New folder"));
         assert!(command("theme", "Thème…"));
         assert!(command("", "Change vault…"));
-        // Plus de sous-séquence : des lettres éparses ne ramènent pas une commande sans rapport.
+        // No more subsequence: scattered letters do not bring up an unrelated command.
         assert!(!command("plan", "Annuler le remplacement dans le coffre"));
         assert!(!command("nvf", "New folder"));
     }

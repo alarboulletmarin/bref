@@ -2,9 +2,9 @@
 
 use super::*;
 
-/// Contenu du panneau d'aide, et du même coup la liste des raccourcis qui se changent : une ligne
-/// `k` par action, dont les touches sont celles en vigueur (`bound`) ; une ligne `t` pour ce qui
-/// n'est pas une liaison (souris, texte tapé, commande de la palette, touches fixes).
+/// Content of the help panel, and with it the list of shortcuts that can be changed: one `k`
+/// line per action, whose keys are the ones in force (`bound`); one `t` line for what
+/// is not a binding (mouse, typed text, palette command, fixed keys).
 pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> keys::Sections {
     use gpui::Action;
     use keys::Row;
@@ -15,7 +15,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
         changed: changes.contains_key(action.name()),
     };
     let t = |keys: &str, effect: &'static str| Row::text(keys, effect);
-    // Une commande de la palette : ses touches, puis le mot à y taper.
+    // A palette command: its keys, then the word to type in it.
     let p = |word: &str, effect: &'static str| {
         let palette = keys::shown(bound, OpenPalette.name());
         Row::text(format!("{} › {word}", if palette.is_empty() { "Palette" } else { &palette }), effect)
@@ -145,7 +145,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
             ],
         ),
         (
-            // Les gestes de tableau du menu : le cadre dit où ils agissent, chacun peut avoir sa touche.
+            // The table gestures of the menu: the frame says where they act, each can have its key.
             tr("Tables in a note", "Tableaux d'une note"),
             std::iter::once(t(
                 tr("Grips", "Poignées"),
@@ -239,13 +239,13 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
     ]
 }
 
-/// Les actions dont le raccourci se change : celles qui ont leur ligne dans l'aide.
+/// The actions whose shortcut can be changed: those that have their line in the help.
 pub(super) fn editable() -> std::collections::HashSet<&'static str> {
     help_sections(&[], &keys::Changes::new()).into_iter().flat_map(|(_, rows)| rows).filter_map(|row| row.action).collect()
 }
 
-/// La table des raccourcis par défaut. Son ordre compte : à contexte égal, la dernière liaison
-/// l'emporte.
+/// The default shortcut table. Its order matters: for the same context, the last binding
+/// wins.
 pub(super) fn defaults() -> Vec<keys::Bind> {
     use editor::*;
     use keys::bind as b;
@@ -256,7 +256,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
     let n = Some("Nav");
     let c = Some("Canvas");
     let sh = Some("Sheet");
-    // `secondary` = Cmd sur macOS, Ctrl ailleurs ; les mots se parcourent avec Alt sur macOS.
+    // `secondary` = Cmd on macOS, Ctrl elsewhere; words are traversed with Alt on macOS.
     let word = if cfg!(target_os = "macos") { "alt" } else { "ctrl" };
     let mut all = vec![
         b("secondary-p", &OpenPalette, None),
@@ -273,7 +273,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary-1", &FocusLeft, None),
         b("secondary-2", &FocusRight, None),
         b("secondary-w", &ClosePane, None),
-        // Sous macOS, Alt+flèche parcourt les mots : les crochets, comme dans un navigateur.
+        // On macOS, Alt+arrow traverses words: brackets, as in a browser.
         b(if cfg!(target_os = "macos") { "cmd-[" } else { "alt-left" }, &GoBack, None),
         b(if cfg!(target_os = "macos") { "cmd-]" } else { "alt-right" }, &GoForward, None),
         b("secondary-shift-f", &SearchVault, None),
@@ -282,7 +282,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary--", &ZoomOut, None),
         b("secondary-0", &ZoomReset, None),
         b("secondary-q", &Quit, None),
-        // La palette des commandes : F10, comme la barre de menus d'une app de bureau.
+        // The command palette: F10, like the menu bar of a desktop app.
         b("f10", &ToggleCommands, None),
         b("secondary-shift-d", &NewDiagram, Some("Shell")),
         b("secondary-=", &canvas::ZoomIn, c),
@@ -302,7 +302,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary-v", &canvas::Paste, c),
         b("enter", &canvas::Confirm, c),
         b("escape", &canvas::Cancel, c),
-        // Tableau (CSV, TSV) : flèches, sélection avec Maj, saisie, presse-papiers, annuler.
+        // Table (CSV, TSV): arrows, selection with Shift, input, clipboard, undo.
         b("left", &sheet::Left, sh),
         b("right", &sheet::Right, sh),
         b("up", &sheet::Up, sh),
@@ -336,7 +336,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary-enter", &sheet::InsertBelow, sh),
         b("secondary-shift-enter", &sheet::InsertAbove, sh),
         b("secondary-delete", &sheet::DeleteRows, sh),
-        // Comme dans un tableur : la ligne, la colonne de la sélection entières.
+        // As in a spreadsheet: the whole row, the whole column of the selection.
         b("shift-space", &sheet::SelectRow, sh),
         b("ctrl-space", &sheet::SelectCol, sh),
         b("secondary-shift-backspace", &TableDeleteSpan, sh),
@@ -392,7 +392,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary-shift-home", &SelectDocStart, e),
         b("secondary-shift-end", &SelectDocEnd, e),
         b("secondary-a", &SelectAll, e),
-        // Recherche dans la note : la barre a son propre contexte tant qu'elle reçoit la saisie.
+        // Search in the note: the bar has its own context as long as it receives input.
         b("secondary-f", &Find, e),
         b("secondary-f", &Find, f),
         b("secondary-h", &FindReplace, e),
@@ -408,7 +408,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("escape", &FindClose, f),
         b("backspace", &FindErase, f),
         b("tab", &FindSwitch, f),
-        // Aussi quand la barre est ouverte mais que la saisie est revenue à la note.
+        // Also when the bar is open but input has gone back to the note.
         b("alt-c", &FindCase, f),
         b("alt-w", &FindWord, f),
         b("alt-r", &FindRegex, f),
@@ -420,10 +420,10 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("tab", &Indent, e),
         b("shift-tab", &Outdent, e),
         b("secondary-enter", &ToggleTask, e),
-        // Les quatre choix directs n'ont pas de touche : le menu et la palette les offrent, et l'aide les accorde.
+        // The four direct choices have no key: the menu and the palette offer them, and the help grants them.
         b("secondary-shift-b", &ListCycle, e),
-        // Un tableau : monter ou descendre la ligne, la supprimer ; le reste par le menu, la palette ou l'aide.
-        // Hors d'un tableau, Alt+flèche monte ou descend le bloc du curseur ; dans un tableau, sa ligne.
+        // A table: move the row up or down, delete it; the rest via the menu, the palette or the help.
+        // Outside a table, Alt+arrow moves the cursor's block up or down; in a table, its row.
         b("alt-up", &BlockUp, e),
         b("alt-up", &TableMoveRowUp, sh),
         b("alt-down", &TableMoveRowDown, sh),
@@ -447,15 +447,15 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary-z", &Undo, e),
         b("secondary-shift-z", &Redo, e),
         b("secondary-y", &Redo, e),
-        // Un geste fait sur le tableau kanban s'annule depuis le tableau.
+        // A gesture made on the kanban board is undone from the board.
         b("secondary-z", &Undo, Some("Board")),
         b("secondary-shift-z", &Redo, Some("Board")),
         b("secondary-y", &Redo, Some("Board")),
         b("escape", &Cancel, e),
     ];
-    // Après les champs qui s'en servent (palette, grille) : ses touches passent avant les leurs.
+    // After the fields that use them (palette, grid): its keys take precedence over theirs.
     all.extend(line::bindings(word));
-    // Conventions macOS : Cmd+flèches pour les extrémités de ligne et de document.
+    // macOS conventions: Cmd+arrows for line and document ends.
     #[cfg(target_os = "macos")]
     all.extend([
         b("cmd-left", &Home, e),
@@ -470,7 +470,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
     all
 }
 
-/// Remplace toutes les liaisons de l'app par celles-ci.
+/// Replaces all of the app's bindings with these.
 pub(super) fn install(cx: &mut App, binds: &[keys::Bind]) {
     let binds: Vec<KeyBinding> = binds
         .iter()

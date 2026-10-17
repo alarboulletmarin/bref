@@ -12,12 +12,12 @@ use super::*;
 use crate::views::kanban::*;
 
 impl Shell {
-    /// La note ouverte se montre en tableau : elle en est un, et on ne lui a pas demandé son texte.
+    /// The open note is shown as a board: it is one, and its text was not asked for.
     pub(super) fn board_shown(&self, cx: &gpui::App) -> bool {
         self.pane().file.is_none() && self.pane().listing.is_none() && !self.pane().board.text && is_board(self.pane().editor.read(cx).text())
     }
 
-    /// Passe du tableau au texte de la note, et retour ; le choix tient tant qu'elle reste ouverte.
+    /// Switches from the board to the note's text, and back; the choice holds while it stays open.
     pub(super) fn toggle_board(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.pane_mut().board.field = None;
         self.pane_mut().board.text = !self.pane_mut().board.text;
@@ -27,15 +27,15 @@ impl Shell {
         cx.notify();
     }
 
-    /// Applique au texte de la note un geste fait sur le tableau : il s'annule comme une frappe.
+    /// Applies a gesture made on the board to the note's text: it is undone like a keystroke.
     pub(super) fn board_edit(&mut self, change: impl Fn(&str) -> Option<String>, cx: &mut Context<Self>) {
         if let Some(text) = change(self.pane().editor.read(cx).text()) {
             self.pane().editor.update(cx, |e, cx| e.rewrite(&text, cx));
         }
     }
 
-    /// Ouvre un champ de saisie dans le tableau : une carte ou un titre à réécrire, une carte ou
-    /// une colonne de plus. Celui qui était ouvert est d'abord validé.
+    /// Opens an input field in the board: a card or a title to rewrite, one more card or
+    /// column. The one that was open is confirmed first.
     pub(super) fn board_write(&mut self, slot: Slot, window: &mut Window, cx: &mut Context<Self>) {
         self.board_commit(false, window, cx);
         let text = {
@@ -61,7 +61,7 @@ impl Shell {
         })
         .detach();
         window.focus(&field.focus_handle(cx));
-        // La colonne qu'on ajoute est au bout du tableau : il défile jusqu'à elle.
+        // The column being added is at the end of the board: it scrolls to it.
         if slot == Slot::NewColumn {
             self.pane().board.scroll.scroll_to_item(columns(self.pane().editor.read(cx).text()).len());
         }
@@ -69,8 +69,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Valide ce qui est écrit dans le champ ouvert. Après une carte ajoutée par Entrée
-    /// (`again`), le champ se rouvre pour la suivante : on enchaîne sans reprendre la souris.
+    /// Confirms what is written in the open field. After a card added with Enter
+    /// (`again`), the field reopens for the next one: chain them without reaching for the mouse.
     pub(super) fn board_commit(&mut self, again: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some((slot, field)) = self.pane_mut().board.field.take() else {
             return;
@@ -94,15 +94,15 @@ impl Shell {
         cx.notify();
     }
 
-    /// Le tableau, à la place de la note. Une carte qu'on prend quitte sa place et suit le
-    /// pointeur ; une place en pointillés s'ouvre là où elle se poserait, entre deux cartes ou
-    /// au bas d'une colonne. Un clic sur sa case la coche, un double-clic la réécrit sur place
-    /// (vidée, elle est retirée). « + » ajoute une carte, ou une colonne.
-    // ponytail: à la souris ; une sélection de carte au clavier (flèches, Ctrl+flèches pour
-    // la déplacer) si le tableau sert au quotidien. Le tableau ne défile pas tout seul quand on
-    // tient une carte près d'un bord : à ajouter si les colonnes dépassent souvent la fenêtre.
+    /// The board, in place of the note. A grabbed card leaves its place and follows the
+    /// pointer; a dotted slot opens where it would land, between two cards or
+    /// at the bottom of a column. A click on its checkbox ticks it, a double-click rewrites it in place
+    /// (emptied, it is removed). "+" adds a card, or a column.
+    // ponytail: mouse only; keyboard card selection (arrows, Ctrl+arrows to
+    // move it) if the board is used daily. The board does not scroll by itself when
+    // a card is held near an edge: add it if columns often overflow the window.
     pub(super) fn render_board(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        // Le pane que ce tableau occupe : les gestes qui en partent, plus tard, le visent.
+        // The pane this board occupies: gestures starting from it, later, target it.
         let pane = self.active;
         let t = self.theme;
         let text = self.pane().editor.read(cx).text().to_string();
@@ -110,14 +110,14 @@ impl Shell {
         let field_at = |slot: Slot| writing.as_ref().filter(|(open, _)| *open == slot).map(|(_, field)| field.clone());
         let all = columns(&text);
         let drag = self.pane().board.drag.filter(|_| cx.has_active_drag());
-        // La place que prendrait la carte tenue : sa taille exacte, vide.
+        // The slot the held card would take: its exact size, empty.
         let held = drag.and_then(|(from, _)| all.get(from.0)?.cards.get(from.1)).map(|card| (card.text.to_string(), card.done));
         let place = || {
             let (text, done) = held.as_ref()?;
             let empty = card_box(t).bg(t.accent.opacity(0.08)).border_dashed().border_color(t.accent.opacity(0.6));
             Some(empty.child(check_box(*done, t).invisible()).child(card_text(text, *done, t).invisible()).into_any_element())
         };
-        /// Un double-clic ouvre le champ de saisie à cet endroit.
+        /// A double-click opens the input field at this spot.
         fn twice(slot: Slot, cx: &mut Context<Shell>) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
             cx.listener(move |this, e: &ClickEvent, window, cx| {
                 if e.click_count() >= 2 {
@@ -134,7 +134,7 @@ impl Shell {
                 if drag.is_some_and(|(_, to)| to == from) {
                     cards.extend(place());
                 }
-                // La carte tenue a quitté sa colonne : elle est sous le pointeur.
+                // The held card has left its column: it is under the pointer.
                 if drag.is_some_and(|(held, _)| held == from) {
                     continue;
                 }
@@ -174,7 +174,7 @@ impl Shell {
                     .on_click(twice(Slot::Column(c), cx))
                     .into_any_element(),
             };
-            // Au bas de la colonne : la carte qu'on écrit, sinon de quoi en ajouter une.
+            // At the bottom of the column: the card being written, otherwise a way to add one.
             let add = match field_at(Slot::New(c)) {
                 Some(field) => card_box(t).border_color(t.accent).child(field).into_any_element(),
                 None => div()
@@ -190,7 +190,7 @@ impl Shell {
                     .into_any_element(),
             };
             let head = div().flex().items_center().gap_2().child(title).child(div().text_color(t.soft).child(count.to_string()));
-            // La largeur d'une carte, relevée au dessin : celle qu'on tient garde la sienne.
+            // The width of a card, measured when drawing: the held one keeps its own.
             let width = self.pane().board.card.clone();
             let measure = canvas(move |bounds, _, _| width.set(bounds.size.width), |_, _, _, _| ()).absolute().top_0().left_2().right_2().h_0();
             let column = div()
@@ -202,12 +202,12 @@ impl Shell {
                 .flex()
                 .flex_col()
                 .gap_2()
-                // Sur le titre, la carte tenue vise le haut de la colonne ; sous les cartes, le bas.
+                // On the title, the held card aims at the top of the column; below the cards, the bottom.
                 .child(head.on_drag_move(aim(pane, c, 0, false, cx)))
                 .children(cards)
                 .child(div().child(add).on_drag_move(aim(pane, c, count, false, cx)));
-            // Le couloir de la colonne descend jusqu'en bas : une carte lâchée sous une colonne
-            // courte s'y pose quand même.
+            // The column's lane goes all the way down: a card dropped under a short
+            // column still lands there.
             let rest = div().debug_selector(|| format!("column-rest-{c}")).flex_1().min_h(px(48.)).on_drag_move(aim(pane, c, count, false, cx));
             shown.push(div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).flex().flex_col().child(column).child(rest));
         }
@@ -224,8 +224,8 @@ impl Shell {
             .track_focus(&self.pane().board.focus)
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.pane().editor.update(cx, |e, cx| e.restore(false, cx))))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.pane().editor.update(cx, |e, cx| e.restore(true, cx))))
-            // La carte tenue sortie du tableau : sa place revient d'où elle vient, et la lâcher
-            // là ne déplace rien.
+            // The held card is out of the board: its slot goes back where it came from, and dropping it
+            // there moves nothing.
             .on_drag_move(cx.listener(move |this, e: &DragMoveEvent<Dragged>, _, cx| {
                 let from = e.drag(cx).from;
                 if e.drag(cx).pane != pane || pane >= this.panes.len() {
@@ -245,9 +245,9 @@ impl Shell {
             .gap_3()
             .overflow_scroll()
             .track_scroll(&self.pane().board.scroll)
-            // Un clic à côté valide ce qu'on écrivait.
+            // A click elsewhere confirms what was being written.
             .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| this.board_commit(false, window, cx)))
-            // La carte lâchée, où que ce soit sur le tableau, va à la place ouverte pour elle.
+            // The dropped card, wherever on the board, goes to the slot opened for it.
             .on_drop(cx.listener(move |this, dragged: &Dragged, _, cx| {
                 if dragged.pane == pane && pane < this.panes.len() {
                     this.in_pane(pane, |this| {
@@ -262,8 +262,8 @@ impl Shell {
             .child(more)
     }
 }
-/// Pendant qu'on tient une carte, le pointeur sur cette zone dit où elle se poserait : avant la
-/// carte de rang `i` de la colonne `c`, ou après elle s'il est dans sa moitié basse (`halves`).
+/// While a card is held, the pointer over this zone says where it would land: before the
+/// card of rank `i` in column `c`, or after it if it is in its lower half (`halves`).
 pub(super) fn aim(pane: usize, c: usize, i: usize, halves: bool, cx: &mut Context<Shell>) -> impl Fn(&DragMoveEvent<Dragged>, &mut Window, &mut App) + 'static {
     cx.listener(move |this, e: &DragMoveEvent<Dragged>, window, cx| {
         let at = e.event.position;

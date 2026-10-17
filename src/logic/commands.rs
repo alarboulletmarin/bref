@@ -1,10 +1,10 @@
-//! Le catalogue des commandes que la palette propose : pour chacune, un libellé court dans les mots de
-//! la personne, une icône et un groupe. Le groupe de ce qu'on regarde (un bloc, un tableau, un schéma)
-//! passe en tête ; les touches viennent des liaisons en vigueur. Fonctions pures.
+//! The catalogue of commands the palette offers: for each, a short label in the person's
+//! words, an icon and a group. The group of what is being viewed (a block, a table, a diagram)
+//! comes first; keys come from the bindings in effect. Pure functions.
 
 use crate::lang::tr;
 
-/// Les groupes, dans l'ordre où la palette les montre, après celui de la vue.
+/// The groups, in the order the palette shows them, after the view's.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum Group {
     Block,
@@ -20,7 +20,7 @@ pub enum Group {
 }
 
 impl Group {
-    /// Son titre ; `here` : c'est le groupe de ce qu'on regarde.
+    /// Its title; `here`: it is the group of what is being viewed.
     pub fn title(self, here: bool) -> &'static str {
         match (self, here) {
             (Group::Block, true) => tr("This block", "Ce bloc"),
@@ -40,8 +40,8 @@ impl Group {
     }
 }
 
-/// Une commande proposée : son action (par son nom), son libellé, son icône, son groupe, ses touches
-/// en vigueur (vides : aucune).
+/// An offered command: its action (by name), its label, its icon, its group, its keys
+/// in effect (empty: none).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Command {
     pub action: &'static str,
@@ -51,8 +51,8 @@ pub struct Command {
     pub keys: String,
 }
 
-/// Toutes les commandes, groupe par groupe. Une action que l'app ne connaît pas, ou que la vue ne sait
-/// pas faire, est écartée par qui s'en sert.
+/// All commands, group by group. An action the app does not know, or that the view cannot
+/// do, is set aside by the caller.
 pub fn catalog() -> Vec<(&'static str, &'static str, &'static str, Group)> {
     use Group::*;
     vec![
@@ -147,22 +147,22 @@ pub fn catalog() -> Vec<(&'static str, &'static str, &'static str, Group)> {
     ]
 }
 
-/// Les commandes rangées par groupe, celui de la vue (`here`) en tête ; dans un groupe, l'ordre du
-/// catalogue. Rend aussi combien sont du groupe de la vue.
+/// Commands sorted by group, the view's (`here`) first; within a group, the
+/// catalogue's order. Also returns how many belong to the view's group.
 pub fn arrange(mut list: Vec<Command>, here: Option<Group>) -> (Vec<Command>, usize) {
     list.sort_by_key(|c| (Some(c.group) != here, c.group));
     let count = list.iter().take_while(|c| Some(c.group) == here).count();
     (list, count)
 }
 
-/// Les touches lues sur un clavier (« Ctrl+Maj+C ») en touches séparées, pour les montrer chacune
-/// dans sa pastille ; « Ctrl++ » garde son « + ».
+/// Keys as read on a keyboard ("Ctrl+Shift+C") into separate keys, to show each
+/// in its badge; "Ctrl++" keeps its "+".
 pub fn keycaps(keys: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut rest = keys;
     while !rest.is_empty() {
         match rest.find('+') {
-            // Un « + » en tête est la touche elle-même.
+            // A leading "+" is the key itself.
             Some(0) => {
                 out.push("+".into());
                 rest = rest[1..].strip_prefix('+').unwrap_or(&rest[1..]);
@@ -177,7 +177,7 @@ pub fn keycaps(keys: &str) -> Vec<String> {
             }
         }
     }
-    // Les flèches et l'effacement se lisent mieux en signes qu'en mots.
+    // Arrows and erasing read better as signs than as words.
     for key in &mut out {
         let sign = match key.as_str() {
             "Up" | "Haut" => "↑",

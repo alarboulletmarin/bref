@@ -1,33 +1,33 @@
-//! Synchronisation du coffre par git : on appelle le binaire `git`, comme `update` appelle
-//! `curl`. Lecture de ses sorties (fonctions pures), puis les étapes d'une synchronisation :
-//! tout commiter, recevoir, fusionner sans jamais laisser de marqueurs dans une note, envoyer.
+//! Vault sync through git: we call the `git` binary, as `update` calls
+//! `curl`. Reading its outputs (pure functions), then the steps of a sync:
+//! commit everything, fetch, merge without ever leaving markers in a note, push.
 
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 
 use crate::lang::tr;
 
-/// Un dépôt dans un état que la synchronisation ne touche pas : on le dit, sans deviner.
+/// A repository in a state the sync does not touch: we say so, without guessing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Odd {
-    /// Une fusion ou un rebase est en cours.
+    /// A merge or a rebase is in progress.
     Merging,
     Detached,
     NoUpstream,
-    /// `index.lock` : un autre git travaille, ou s'est arrêté en route.
+    /// `index.lock`: another git is working, or stopped halfway.
     Locked,
-    /// Le coffre n'est qu'un dossier d'un dépôt plus grand.
+    /// The vault is only a folder of a larger repository.
     Inside,
-    /// Un conflit que deux copies côte à côte ne règlent pas (un renommage contre une modification).
+    /// A conflict that two side-by-side copies do not settle (a rename against an edit).
     Unsettled,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fail {
-    /// Le binaire `git` n'est pas installé.
+    /// The `git` binary is not installed.
     Missing,
     Odd(Odd),
-    /// Ce que git, ou le système, en dit.
+    /// What git, or the system, says about it.
     Told(String),
 }
 
@@ -65,26 +65,26 @@ impl Fail {
     }
 }
 
-/// Ce qu'une fusion a fait.
+/// What a merge did.
 #[derive(Debug, PartialEq)]
 pub struct Merged {
-    /// Fichiers changés ici, à envoyer ; fichiers changés en face, reçus.
+    /// Files changed here, to push; files changed on the other side, received.
     pub sent: usize,
     pub received: usize,
-    /// Les versions d'en face écrites à côté des notes en conflit.
+    /// The other side's versions written next to the conflicting notes.
     pub conflicts: Vec<PathBuf>,
-    /// Il reste quelque chose à envoyer.
+    /// Something is still left to push.
     pub ahead: bool,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Pushed {
     Done,
-    /// Une autre machine a envoyé entre-temps : recevoir de nouveau, puis renvoyer.
+    /// Another machine pushed in the meantime: fetch again, then push again.
     Rejected,
 }
 
-/// `rev-list --left-right --count HEAD...@{u}` : commits d'avance, commits de retard.
+/// `rev-list --left-right --count HEAD...@{u}`: commits ahead, commits behind.
 pub fn counts(out: &str) -> Option<(usize, usize)> {
     let mut numbers = out.split_whitespace().map(str::parse::<usize>);
     match (numbers.next(), numbers.next()) {
@@ -93,8 +93,8 @@ pub fn counts(out: &str) -> Option<(usize, usize)> {
     }
 }
 
-/// `ls-files -u -z` : chaque fichier en conflit, et lesquelles de ses trois versions existent
-/// (l'ancêtre commun, la nôtre, la leur).
+/// `ls-files -u -z`: each conflicting file, and which of its three versions exist
+/// (the common ancestor, ours, theirs).
 pub fn unmerged(out: &str) -> Vec<(String, [bool; 3])> {
     let mut files: Vec<(String, [bool; 3])> = Vec::new();
     for entry in out.split('\0').filter(|entry| !entry.is_empty()) {
@@ -114,8 +114,8 @@ pub fn unmerged(out: &str) -> Vec<(String, [bool; 3])> {
     files
 }
 
-/// Où écrire la version d'en face d'une note en conflit : à côté d'elle, comme le font Dropbox
-/// et Syncthing.
+/// Where to write the other side's version of a conflicting note: next to it, as Dropbox
+/// and Syncthing do.
 pub fn conflict_path(path: &Path, date: &str, host: &str) -> PathBuf {
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     let mark = if host.is_empty() { format!("conflict {date}") } else { format!("conflict {date} {host}") };
@@ -126,8 +126,8 @@ pub fn conflict_path(path: &Path, date: &str, host: &str) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// Ce que git a écrit en échouant, ramené à une phrase : la connexion refusée et le serveur
-/// injoignable ont la leur, le reste garde la dernière ligne de git.
+/// What git wrote when failing, reduced to one sentence: a refused connection and an unreachable
+/// server have their own, the rest keeps git's last line.
 pub fn explain(stderr: &str) -> String {
     let low = stderr.to_lowercase();
     let has = |parts: &[&str]| parts.iter().any(|part| low.contains(part));
@@ -145,22 +145,22 @@ pub fn explain(stderr: &str) -> String {
     last.trim_start_matches("fatal: ").trim_start_matches("error: ").to_string()
 }
 
-/// Nom du dossier d'un coffre cloné : le dernier morceau de l'adresse (une URL, une adresse
-/// SSH, ou un chemin, y compris à la façon de Windows), sans `.git`.
+/// Folder name of a cloned vault: the last piece of the address (a URL, an SSH
+/// address, or a path, Windows style included), without `.git`.
 pub fn folder_of(url: &str) -> String {
     let last = url.trim().trim_end_matches('/').rsplit(['/', ':', '\\']).next().unwrap_or_default();
     let name = last.strip_suffix(".git").unwrap_or(last).trim();
     if name.is_empty() { "vault".to_string() } else { name.to_string() }
 }
 
-/// Nom de cette machine, pour nommer la copie d'un conflit ; vide si on ne le trouve pas.
+/// Name of this machine, to name a conflict's copy; empty if it cannot be found.
 pub fn host() -> String {
     let named = crate::platform::command("hostname").stdin(Stdio::null()).output().ok().filter(|out| out.status.success());
     named.map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string()).unwrap_or_default()
 }
 
-/// Lance git dans `root`, sans jamais attendre une saisie : pas d'invite de mot de passe (ni de
-/// git, ni de ssh), l'échec est rapporté. Les fins de ligne des notes ne sont jamais converties.
+/// Runs git in `root`, never waiting for input: no password prompt (neither from
+/// git nor from ssh), the failure is reported. Line endings of notes are never converted.
 fn call(root: &Path, args: &[&str]) -> Result<Output, Fail> {
     let mut command = crate::platform::command("git");
     command.current_dir(root).args(["-c", "core.quotepath=off", "-c", "core.autocrlf=false"]).args(args);
@@ -168,7 +168,7 @@ fn call(root: &Path, args: &[&str]) -> Result<Output, Fail> {
     if std::env::var_os("GIT_SSH_COMMAND").is_none() {
         command.env("GIT_SSH_COMMAND", "ssh -oBatchMode=yes");
     }
-    // Les tests ne dépendent pas des réglages git de la machine (signature, modèles…).
+    // Tests do not depend on the machine's git settings (signature, templates…).
     #[cfg(test)]
     {
         let empty = std::env::temp_dir().join("bref-test-gitconfig");
@@ -181,7 +181,7 @@ fn call(root: &Path, args: &[&str]) -> Result<Output, Fail> {
     })
 }
 
-/// Ce que git répond, ou pourquoi il a échoué.
+/// What git answers, or why it failed.
 fn run(root: &Path, args: &[&str]) -> Result<String, Fail> {
     let out = call(root, args)?;
     match out.status.success() {
@@ -190,12 +190,12 @@ fn run(root: &Path, args: &[&str]) -> Result<String, Fail> {
     }
 }
 
-/// Une question à laquelle git répond par son code de sortie.
+/// A question git answers through its exit code.
 fn holds(root: &Path, args: &[&str]) -> Result<bool, Fail> {
     Ok(call(root, args)?.status.success())
 }
 
-/// Le coffre est-il un dépôt git relié à un serveur ? Un dossier d'un dépôt plus grand est refusé.
+/// Is the vault a git repository linked to a server? A folder of a larger repository is refused.
 pub fn linked(root: &Path) -> Result<bool, Fail> {
     let out = call(root, &["rev-parse", "--show-toplevel"])?;
     if !out.status.success() {
@@ -208,7 +208,7 @@ pub fn linked(root: &Path) -> Result<bool, Fail> {
     Ok(!run(root, &["remote"])?.is_empty())
 }
 
-/// Refuse un dépôt dans un état inhabituel, avant d'y toucher.
+/// Refuses a repository in an unusual state, before touching it.
 fn usual(root: &Path) -> Result<(), Fail> {
     let dir = PathBuf::from(run(root, &["rev-parse", "--absolute-git-dir"])?);
     if dir.join("index.lock").exists() {
@@ -226,8 +226,8 @@ fn usual(root: &Path) -> Result<(), Fail> {
     Ok(())
 }
 
-/// Sans `user.name` ni `user.email` (une machine où git n'a jamais servi), git refuse de créer un
-/// commit, de fusion comme ordinaire : une identité de secours le signe.
+/// Without `user.name` or `user.email` (a machine where git was never used), git refuses to create a
+/// commit, merge or plain: a fallback identity signs it.
 fn signature(root: &Path) -> Vec<&'static str> {
     match run(root, &["config", "user.email"]).unwrap_or_default().is_empty() {
         true => vec!["-c", "user.name=Bref", "-c", "user.email=bref@localhost"],
@@ -235,7 +235,7 @@ fn signature(root: &Path) -> Vec<&'static str> {
     }
 }
 
-/// Commite ce qui a changé, s'il y a quelque chose.
+/// Commits what changed, if anything.
 fn commit(root: &Path, extra: &[&str]) -> Result<(), Fail> {
     run(root, &["add", "-A"])?;
     let unborn = !holds(root, &["rev-parse", "-q", "--verify", "HEAD"])?;
@@ -251,21 +251,21 @@ fn commit(root: &Path, extra: &[&str]) -> Result<(), Fail> {
     run(root, &args).map(drop)
 }
 
-/// Première étape, locale : tout ce qui a changé est commité. Jamais de `stash` : un commit met
-/// tout dans l'histoire, et `merge --abort` revient toujours à un état propre.
+/// First step, local: everything that changed is committed. Never a `stash`: a commit puts
+/// everything into history, and `merge --abort` always goes back to a clean state.
 pub fn save(root: &Path) -> Result<(), Fail> {
     usual(root)?;
     commit(root, &[])
 }
 
-/// Deuxième étape, réseau : ce que le serveur a de nouveau.
+/// Second step, network: what the server has that is new.
 pub fn fetch(root: &Path) -> Result<(), Fail> {
     run(root, &["fetch", "-q"]).map(drop)
 }
 
-/// Troisième étape, locale : ce qui a été tapé depuis `save` est commité, puis ce qui a été reçu
-/// est fusionné. Quand git ne sait pas fusionner un fichier, les deux versions sont gardées :
-/// la note reste celle d'ici, celle d'en face est écrite à côté.
+/// Third step, local: what was typed since `save` is committed, then what was received
+/// is merged. When git cannot merge a file, both versions are kept:
+/// the note stays the local one, the other side's is written next to it.
 pub fn merge(root: &Path, date: &str, host: &str) -> Result<Merged, Fail> {
     save(root)?;
     let count = |range: &str| run(root, &["diff", "--name-only", range]).map(|out| out.lines().count());
@@ -279,7 +279,7 @@ pub fn merge(root: &Path, date: &str, host: &str) -> Result<Merged, Fail> {
         args.extend(["merge", "-q", "--no-edit", "@{u}"]);
         let out = call(root, &args)?;
         let files = if out.status.success() { Vec::new() } else { unmerged(&run(root, &["ls-files", "-u", "-z"])?) };
-        // Un échec sans fichier en conflit : git n'a rien commencé, il dit pourquoi.
+        // A failure without a conflicting file: git started nothing, it says why.
         if !out.status.success() && files.is_empty() {
             return Err(Fail::Told(explain(&String::from_utf8_lossy(&out.stderr))));
         }
@@ -289,7 +289,7 @@ pub fn merge(root: &Path, date: &str, host: &str) -> Result<Merged, Fail> {
         }
         for (path, stages) in &files {
             match stages {
-                // Changée des deux côtés : la leur à côté, la nôtre à sa place.
+                // Changed on both sides: theirs next to it, ours in its place.
                 [_, true, true] => {
                     let theirs = call(root, &["show", &format!(":3:{path}")])?.stdout;
                     let mut other = conflict_path(&root.join(path), date, host);
@@ -307,9 +307,9 @@ pub fn merge(root: &Path, date: &str, host: &str) -> Result<Merged, Fail> {
                     run(root, &["checkout", "-q", "--ours", "--", path])?;
                     conflicts.push(other);
                 }
-                // Modifiée ici, supprimée en face : elle reste.
+                // Edited here, deleted on the other side: it stays.
                 [true, true, false] => {}
-                // Supprimée ici, modifiée en face : elle revient.
+                // Deleted here, edited on the other side: it comes back.
                 _ => drop(run(root, &["checkout", "-q", "--theirs", "--", path])?),
             }
         }
@@ -321,7 +321,7 @@ pub fn merge(root: &Path, date: &str, host: &str) -> Result<Merged, Fail> {
     Ok(Merged { sent, received, conflicts, ahead })
 }
 
-/// Dernière étape, réseau : envoyer. Refusé quand une autre machine a envoyé entre-temps.
+/// Last step, network: push. Refused when another machine pushed in the meantime.
 pub fn push(root: &Path) -> Result<Pushed, Fail> {
     let out = call(root, &["push", "-q"])?;
     let stderr = String::from_utf8_lossy(&out.stderr).to_lowercase();
@@ -332,8 +332,8 @@ pub fn push(root: &Path) -> Result<Pushed, Fail> {
     }
 }
 
-/// Relie le coffre à un dépôt distant vide : `git init` au besoin, la corbeille ignorée, un
-/// premier commit, un premier envoi. Un serveur qui a déjà une histoire n'est pas écrasé.
+/// Links the vault to an empty remote repository: `git init` if needed, the trash ignored, a
+/// first commit, a first push. A server that already has a history is not overwritten.
 pub fn connect(root: &Path, url: &str) -> Result<(), Fail> {
     if !call(root, &["rev-parse", "--show-toplevel"])?.status.success() && !holds(root, &["init", "-q", "-b", "main"])? {
         run(root, &["init", "-q"])?;
@@ -341,7 +341,7 @@ pub fn connect(root: &Path, url: &str) -> Result<(), Fail> {
     if linked(root).is_err() {
         return Err(Fail::Odd(Odd::Inside));
     }
-    // La corbeille reste sur cette machine.
+    // The trash stays on this machine.
     let ignore = root.join(".gitignore");
     let known = std::fs::read_to_string(&ignore).unwrap_or_default();
     if !known.lines().any(|line| line.trim() == ".trash/") {
@@ -366,7 +366,7 @@ pub fn connect(root: &Path, url: &str) -> Result<(), Fail> {
     }
 }
 
-/// Clone un coffre dans le dossier `into`, qui ne doit pas exister.
+/// Clones a vault into the folder `into`, which must not exist.
 pub fn clone(url: &str, into: &Path) -> Result<(), Fail> {
     let parent = into.parent().unwrap_or(Path::new("."));
     run(parent, &["clone", "-q", "--", url, &into.to_string_lossy()]).map(drop)
@@ -382,8 +382,8 @@ mod tests {
         assert_eq!(counts("2\t1\n"), Some((2, 1)));
         assert_eq!(counts("0\t0"), Some((0, 0)));
         assert_eq!(counts("fatal: no upstream"), None);
-        // `ls-files -u -z` : une entrée par version (1 : l'ancêtre, 2 : la nôtre, 3 : la leur).
-        let listed = "100644 f0f2 1\tNé.md\0100644 3b18 2\tNé.md\0100644 c995 3\tNé.md\0100644 587b 1\tdir/gone.md\0100644 cf76 3\tdir/gone.md\0";
+        // `ls-files -u -z`: one entry per version (1: the ancestor, 2: ours, 3: theirs).
+        let listed = "100644 f0f2 1\tNé.md\x00100644 3b18 2\tNé.md\x00100644 c995 3\tNé.md\x00100644 587b 1\tdir/gone.md\x00100644 cf76 3\tdir/gone.md\0";
         assert_eq!(unmerged(listed), [("Né.md".to_string(), [true, true, true]), ("dir/gone.md".to_string(), [true, false, true])]);
         assert!(unmerged("").is_empty());
     }
@@ -402,7 +402,7 @@ mod tests {
         let network = explain("fatal: unable to access 'https://example.org/notes.git/': Could not resolve host: example.org\n");
         assert_eq!(network, explain("ssh: connect to host example.org port 22: Connection timed out\nfatal: Could not read from remote repository.\n"));
         assert_ne!(auth, network);
-        // Le reste : la dernière ligne de git, sans son préfixe.
+        // The rest: git's last line, without its prefix.
         assert_eq!(explain("hint: a\nfatal: refusing to merge unrelated histories\n\n"), "refusing to merge unrelated histories");
     }
 
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(folder_of(""), "vault");
     }
 
-    /// Un serveur (dépôt nu) et deux machines, dans un dossier jetable.
+    /// A server (bare repository) and two machines, in a throwaway folder.
     struct Lab {
         base: PathBuf,
         a: PathBuf,
@@ -430,19 +430,19 @@ mod tests {
             fs::create_dir_all(&remote).unwrap();
             fs::create_dir_all(&a).unwrap();
             run(&remote, &["init", "--bare", "-b", "main"]).unwrap();
-            // La première machine a déjà des notes, et une corbeille : elle se connecte.
+            // The first machine already has notes, and a trash: it connects.
             fs::write(a.join("Note.md"), "# Note\n\nun\ndeux\ntrois\n").unwrap();
             fs::create_dir_all(a.join(".trash")).unwrap();
             fs::write(a.join(".trash/Vieille.md"), "jetée").unwrap();
             assert_eq!(linked(&a), Ok(false));
             connect(&a, remote.to_str().unwrap()).unwrap();
             assert_eq!(linked(&a), Ok(true));
-            // La seconde clone le coffre.
+            // The second one clones the vault.
             clone(remote.to_str().unwrap(), &b).unwrap();
             Self { base, a, b }
         }
 
-        /// Une synchronisation complète, comme la commande : commiter, recevoir, fusionner, envoyer.
+        /// A full sync, like the command: commit, fetch, merge, push.
         fn sync(&self, root: &Path) -> Merged {
             for _ in 0..3 {
                 save(root).unwrap();
@@ -476,13 +476,13 @@ mod tests {
     #[test]
     fn two_machines_end_up_identical() {
         let lab = Lab::new("merge");
-        // La corbeille ne voyage pas : elle est ignorée dès la connexion.
+        // The trash does not travel: it is ignored from the connection on.
         assert_eq!(fs::read_to_string(lab.a.join(".gitignore")).unwrap(), ".trash/\n");
         assert!(lab.b.join("Note.md").is_file() && !lab.b.join(".trash").exists());
-        // Rien à faire : rien d'envoyé, rien de reçu.
+        // Nothing to do: nothing pushed, nothing received.
         let idle = lab.sync(&lab.a);
         assert_eq!((idle.sent, idle.received, idle.conflicts.len()), (0, 0, 0));
-        // Des notes différentes, et deux endroits de la même note : aucune question.
+        // Different notes, and two places in the same note: no question.
         fs::write(lab.a.join("Note.md"), "# Note\n\nUN\ndeux\ntrois\n").unwrap();
         fs::write(lab.a.join("Chez A.md"), "a").unwrap();
         fs::write(lab.b.join("Note.md"), "# Note\n\nun\ndeux\nTROIS\n").unwrap();
@@ -501,7 +501,7 @@ mod tests {
     #[test]
     fn a_conflict_keeps_both_versions() {
         let lab = Lab::new("conflict");
-        // La même ligne, changée des deux côtés ; une note supprimée ici, modifiée là.
+        // The same line, changed on both sides; a note deleted here, edited there.
         fs::write(lab.b.join("Autre.md"), "x\n").unwrap();
         lab.sync(&lab.b);
         lab.sync(&lab.a);
@@ -511,19 +511,19 @@ mod tests {
         fs::write(lab.b.join("Autre.md"), "x\nécrit chez B\n").unwrap();
         lab.sync(&lab.a);
         let merged = lab.sync(&lab.b);
-        // La note garde la version d'ici, celle d'en face est écrite à côté ; rien n'est perdu
-        // et aucun marqueur n'entre dans une note.
+        // The note keeps the local version, the other side's is written next to it; nothing is lost
+        // and no marker gets into a note.
         let other = lab.b.join("Note (conflict 2026-10-09 pc).md");
         assert_eq!(merged.conflicts, [other.clone()]);
         assert_eq!(fs::read_to_string(lab.b.join("Note.md")).unwrap(), "# Note\n\nun\nB\ntrois\n");
         assert_eq!(fs::read_to_string(&other).unwrap(), "# Note\n\nun\nA\ntrois\n");
-        // Modifiée contre supprimée : la version modifiée reste.
+        // Edited against deleted: the edited version stays.
         assert_eq!(fs::read_to_string(lab.b.join("Autre.md")).unwrap(), "x\nécrit chez B\n");
-        // La fusion est commitée et envoyée : l'autre machine reçoit les deux versions.
+        // The merge is committed and pushed: the other machine receives both versions.
         lab.sync(&lab.a);
         assert_eq!(lab.files(&lab.a), lab.files(&lab.b));
         assert!(lab.files(&lab.a).iter().all(|(_, text)| !text.contains("<<<<<<<")));
-        // Un second conflit le même jour : la copie existante n'est pas écrasée.
+        // A second conflict on the same day: the existing copy is not overwritten.
         fs::write(lab.a.join("Note.md"), "A2\n").unwrap();
         fs::write(lab.b.join("Note.md"), "B2\n").unwrap();
         lab.sync(&lab.a);
@@ -539,7 +539,7 @@ mod tests {
         lab.sync(&lab.b);
         save(&lab.a).unwrap();
         fetch(&lab.a).unwrap();
-        // Écrit pendant que le réseau répondait : commité avant la fusion, jamais écrasé.
+        // Written while the network was answering: committed before the merge, never overwritten.
         fs::write(lab.a.join("Note.md"), "# Note\n\ntapé pendant la réception\n").unwrap();
         let merged = merge(&lab.a, "2026-10-09", "pc").unwrap();
         assert_eq!((merged.received, merged.ahead), (1, true));
@@ -550,27 +550,27 @@ mod tests {
     #[test]
     fn refuses_what_it_does_not_understand() {
         let lab = Lab::new("odd");
-        // Une tête détachée : on n'y touche pas, et rien n'a bougé.
+        // A detached head: we do not touch it, and nothing moved.
         let head = run(&lab.a, &["rev-parse", "HEAD"]).unwrap();
         run(&lab.a, &["checkout", "--detach", "-q"]).unwrap();
         fs::write(lab.a.join("Note.md"), "en cours").unwrap();
         assert_eq!(save(&lab.a), Err(Fail::Odd(Odd::Detached)));
         assert_eq!(run(&lab.a, &["rev-parse", "HEAD"]).unwrap(), head);
         assert_eq!(fs::read_to_string(lab.a.join("Note.md")).unwrap(), "en cours");
-        // Un index verrouillé par un autre git.
+        // An index locked by another git.
         let lock = lab.b.join(".git/index.lock");
         fs::write(&lock, "").unwrap();
         assert_eq!(save(&lab.b), Err(Fail::Odd(Odd::Locked)));
         fs::remove_file(lock).unwrap();
-        // Un coffre qui n'est qu'un dossier d'un dépôt plus grand : tout le dépôt partirait.
+        // A vault that is only a folder of a larger repository: the whole repository would go.
         let inner = lab.b.join("sous-dossier");
         fs::create_dir_all(&inner).unwrap();
         assert_eq!(linked(&inner), Err(Fail::Odd(Odd::Inside)));
-        // Un dossier sans git : rien à synchroniser, à connecter d'abord.
+        // A folder without git: nothing to sync, connect first.
         let plain = lab.base.join("plain");
         fs::create_dir_all(&plain).unwrap();
         assert_eq!(linked(&plain), Ok(false));
-        // Un serveur qui a déjà une histoire : on ne l'écrase pas, on le dit.
+        // A server that already has a history: we do not overwrite it, we say so.
         fs::write(plain.join("x.md"), "x").unwrap();
         assert!(connect(&plain, lab.base.join("remote.git").to_str().unwrap()).is_err());
         assert_eq!(fs::read_to_string(plain.join("x.md")).unwrap(), "x");

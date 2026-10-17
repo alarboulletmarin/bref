@@ -1,19 +1,19 @@
-//! Schémas : des formes, des flèches entre elles, et leur fichier. Le fichier
-//! est un SVG ordinaire, lisible partout, qui porte aussi sa source : c'est elle
-//! que l'app relit pour continuer le dessin. Fonctions pures, sans dépendance à l'UI.
+//! Diagrams: shapes, arrows between them, and their file. The file
+//! is a plain SVG, readable anywhere, that also carries its source: that is what
+//! the app rereads to continue the drawing. Pure functions, no UI dependency.
 
 use std::fmt::Write;
 
-/// Couleurs du trait, en `0xrrggbb` : des teintes moyennes, lisibles sur fond
-/// clair comme sur fond sombre. La première est le neutre ; dans l'app, le
-/// thème la remplace par sa couleur de texte.
+/// Stroke colors, as `0xrrggbb`: mid tones, readable on a light background
+/// as on a dark one. The first is the neutral; in the app, the
+/// theme replaces it with its text color.
 pub const COLORS: [u32; 6] = [0x7d8590, 0xe5534b, 0xd98e2b, 0x3fa45b, 0x4a8fe0, 0xa371f7];
-/// Pas de la grille sur laquelle les formes s'alignent.
+/// Step of the grid shapes snap to.
 pub const GRID: f32 = 10.;
-/// Corps du texte et hauteur d'une ligne.
+/// Text size and line height.
 pub const FONT: f32 = 14.;
 pub const LINE: f32 = 18.;
-/// Ligne de texte qui sépare deux compartiments d'une boîte (classe UML, table).
+/// Text line that separates two compartments of a box (UML class, table).
 pub const RULE: &str = "---";
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -41,8 +41,8 @@ impl Form {
     ];
 }
 
-/// Pointe d'une flèche. Avec le trait plein ou pointillé, elles couvrent l'UML :
-/// association, héritage (triangle), agrégation et composition (losanges).
+/// Arrowhead. With solid or dashed stroke, they cover UML:
+/// association, inheritance (triangle), aggregation and composition (diamonds).
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Head {
     None,
@@ -61,7 +61,7 @@ impl Head {
         (Head::DiamondFull, "fulldiamond"),
     ];
 
-    /// La pointe suivante, pour en changer d'un clic.
+    /// The next head, to switch with one click.
     pub fn next(self) -> Head {
         let at = Head::ALL.iter().position(|(h, _)| *h == self).unwrap_or(0);
         Head::ALL[(at + 1) % Head::ALL.len()].0
@@ -77,26 +77,26 @@ pub struct Shape {
     pub w: f32,
     pub h: f32,
     pub text: String,
-    /// Rang dans `COLORS`.
+    /// Index in `COLORS`.
     pub color: u8,
-    /// Fond teinté de la couleur du trait.
+    /// Background tinted with the stroke color.
     pub fill: bool,
     pub dashed: bool,
 }
 
-/// Bout d'une flèche : accroché à une forme, qu'il suit, ou posé à un endroit.
+/// End of an arrow: attached to a shape, which it follows, or set at a place.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum End {
-    /// Accroché à la forme, du côté qui fait face à l'autre bout.
+    /// Attached to the shape, on the side facing the other end.
     Shape(u32),
-    /// Accroché à un point précis de la forme : sa place dans le rectangle qui
-    /// la contient, de 0 à 1 en largeur et en hauteur.
+    /// Attached to a precise point of the shape: its place in the rectangle that
+    /// contains it, from 0 to 1 in width and height.
     Pin(u32, f32, f32),
     Point(f32, f32),
 }
 
 impl End {
-    /// La forme à laquelle ce bout est accroché.
+    /// The shape this end is attached to.
     pub fn shape(self) -> Option<u32> {
         match self {
             End::Shape(id) | End::Pin(id, ..) => Some(id),
@@ -105,11 +105,11 @@ impl End {
     }
 }
 
-/// Tracé d'une flèche entre ses deux bouts.
+/// Route of an arrow between its two ends.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Route {
     Straight,
-    /// À angles droits : il sort de la forme par un côté, puis tourne.
+    /// Right-angled: it leaves the shape by a side, then turns.
     Elbow,
     Curve,
 }
@@ -123,17 +123,17 @@ impl Route {
     }
 }
 
-/// Une flèche prête à dessiner.
+/// An arrow ready to draw.
 pub struct Trace {
-    /// Le trait, raccourci là où une pointe fermée le termine.
+    /// The stroke, shortened where a closed head ends it.
     pub line: Vec<Cmd>,
-    /// Les pointes : leur tracé, et s'il est plein.
+    /// The heads: their path, and whether it is filled.
     pub heads: Vec<(Vec<Cmd>, bool)>,
-    /// Milieu du trait, où s'écrit son texte.
+    /// Middle of the stroke, where its text is written.
     pub middle: (f32, f32),
-    /// Le trait est vertical en son milieu : son texte s'écrit à côté, pas dessus.
+    /// The stroke is vertical at its middle: its text goes beside it, not on it.
     pub upright: bool,
-    /// Points par lesquels passe le trait, d'un bout à l'autre.
+    /// Points the stroke passes through, from one end to the other.
     pub points: Vec<(f32, f32)>,
 }
 
@@ -152,23 +152,23 @@ pub struct Link {
 
 #[derive(Clone, Default, PartialEq, Debug)]
 pub struct Diagram {
-    /// Dans l'ordre du dessin : la dernière forme est au-dessus.
+    /// In drawing order: the last shape is on top.
     pub shapes: Vec<Shape>,
     pub links: Vec<Link>,
     next: u32,
 }
 
-/// Morceau de tracé, comme dans l'attribut `d` d'un `<path>`.
+/// Path segment, as in the `d` attribute of a `<path>`.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Cmd {
     Move(f32, f32),
     Line(f32, f32),
-    /// Courbe de Bézier cubique : deux points de contrôle, puis l'arrivée.
+    /// Cubic Bézier curve: two control points, then the end point.
     Curve(f32, f32, f32, f32, f32, f32),
     Close,
 }
 
-/// Une ligne de texte placée : coin haut-gauche ou milieu haut, selon `centered`.
+/// A placed line of text: top-left corner or top middle, depending on `centered`.
 #[derive(Clone, PartialEq, Debug)]
 pub struct TextLine<'a> {
     pub x: f32,
@@ -183,7 +183,7 @@ pub fn snap(v: f32) -> f32 {
 }
 
 fn ellipse(cx: f32, cy: f32, rx: f32, ry: f32) -> Vec<Cmd> {
-    // Quatre arcs de Bézier : l'approximation habituelle du cercle.
+    // Four Bézier arcs: the usual circle approximation.
     let (kx, ky) = (rx * 0.5523, ry * 0.5523);
     vec![
         Cmd::Move(cx + rx, cy),
@@ -221,13 +221,13 @@ impl Shape {
         (self.x..=self.x + self.w).contains(&x) && (self.y..=self.y + self.h).contains(&y)
     }
 
-    /// Le texte découpe la boîte en compartiments.
+    /// The text splits the box into compartments.
     fn boxed(&self) -> bool {
         matches!(self.form, Form::Rect | Form::Round) && self.text.lines().any(|l| l.trim() == RULE)
     }
 
-    /// Tracés de la forme. Le premier en est le corps, qui peut recevoir un
-    /// fond ; les suivants ne sont que des traits.
+    /// Paths of the shape. The first is its body, which can take a
+    /// fill; the next ones are only strokes.
     pub fn outline(&self) -> Vec<Vec<Cmd>> {
         let (x, y, w, h) = (self.x, self.y, self.w, self.h);
         let (cx, cy) = self.center();
@@ -257,7 +257,7 @@ impl Shape {
                         Cmd::Curve(cx - kx, y + h, x, bottom + ky, x, bottom),
                         Cmd::Close,
                     ],
-                    // Le bord avant du couvercle.
+                    // The front edge of the lid.
                     vec![
                         Cmd::Move(x, top),
                         Cmd::Curve(x, top + ky, cx - kx, top + ry, cx, top + ry),
@@ -292,9 +292,9 @@ impl Shape {
         }
     }
 
-    /// Où s'écrit chaque ligne du texte, et la hauteur des traits de séparation.
-    /// Une boîte à compartiments s'écrit depuis le haut, son premier compartiment
-    /// centré et en gras (le nom de la classe), les suivants alignés à gauche.
+    /// Where each line of text is written, and the height of the separator strokes.
+    /// A compartment box is written from the top, its first compartment
+    /// centered and bold (the class name), the next ones left-aligned.
     pub fn text_lines(&self) -> (Vec<TextLine<'_>>, Vec<f32>) {
         let (cx, cy) = self.center();
         let lines: Vec<&str> = self.text.split('\n').collect();
@@ -318,7 +318,7 @@ impl Shape {
         let height = lines.len() as f32 * LINE;
         let (x, top, centered) = match self.form {
             Form::Text => (self.x, self.y, false),
-            // Sous le personnage.
+            // Under the stick figure.
             Form::Actor => (cx, self.y + self.h + 4., true),
             _ => (cx, cy - height / 2., true),
         };
@@ -326,8 +326,8 @@ impl Shape {
         (placed.map(|(i, text)| TextLine { x, y: top + i as f32 * LINE, text, centered, bold: false }).collect(), rules)
     }
 
-    /// Bout de flèche pour un point de la forme : au milieu, l'accroche suit
-    /// l'autre bout ; près d'un bord, elle se fixe sur ce bord, au quart le plus proche.
+    /// Arrow end for a point of the shape: in the middle, the attachment follows
+    /// the other end; near an edge, it sticks to that edge, at the nearest quarter.
     pub fn hook(&self, x: f32, y: f32) -> End {
         let (fx, fy) = (((x - self.x) / self.w.max(1.)).clamp(0., 1.), ((y - self.y) / self.h.max(1.)).clamp(0., 1.));
         if (fx - 0.5).abs() < 0.25 && (fy - 0.5).abs() < 0.25 {
@@ -339,14 +339,14 @@ impl Shape {
         End::Pin(self.id, px, py)
     }
 
-    /// Points d'accroche proposés sur le pourtour de la forme.
+    /// Attachment points offered around the shape.
     pub fn hooks(&self) -> Vec<(f32, f32)> {
         let quarters = [0., 0.25, 0.5, 0.75, 1.];
         let around = quarters.iter().flat_map(|&q| [(q, 0.), (q, 1.), (0., q), (1., q)]);
         around.map(|(fx, fy)| self.border((self.x + fx * self.w, self.y + fy * self.h))).collect()
     }
 
-    /// Point du contour sur la demi-droite qui part du centre vers `toward`.
+    /// Point of the outline on the ray from the center toward `toward`.
     pub fn border(&self, toward: (f32, f32)) -> (f32, f32) {
         let (cx, cy) = self.center();
         let (dx, dy) = (toward.0 - cx, toward.1 - cy);
@@ -360,9 +360,9 @@ impl Shape {
     }
 }
 
-/// Polygone d'une pointe posée en `tip`, pour un trait qui arrive dans la
-/// direction unitaire `u` : ses points, s'il est fermé, s'il est plein, et de
-/// combien raccourcir le trait pour qu'il s'arrête à sa base.
+/// Polygon of a head set at `tip`, for a stroke arriving in the
+/// unit direction `u`: its points, whether it is closed, whether it is filled, and by
+/// how much to shorten the stroke so it stops at its base.
 pub fn head(head: Head, tip: (f32, f32), u: (f32, f32)) -> (Vec<(f32, f32)>, bool, bool, f32) {
     let n = (-u.1, u.0);
     let at = |back: f32, side: f32| (tip.0 - u.0 * back + n.0 * side, tip.1 - u.1 * back + n.1 * side);
@@ -409,8 +409,8 @@ impl Diagram {
         id
     }
 
-    /// Copie des éléments `ids`, décalée ; renvoie les identifiants des copies.
-    /// Une flèche n'est copiée qu'avec les formes qu'elle relie.
+    /// Copy of elements `ids`, offset; returns the ids of the copies.
+    /// An arrow is only copied along with the shapes it links.
     pub fn duplicate(&mut self, ids: &[u32], by: f32) -> Vec<u32> {
         let mut twin = Vec::new();
         for shape in self.shapes.clone().into_iter().filter(|s| ids.contains(&s.id)) {
@@ -435,19 +435,19 @@ impl Diagram {
         made
     }
 
-    /// Retire les éléments `ids`, et les flèches accrochées aux formes retirées.
+    /// Removes elements `ids`, and the arrows attached to removed shapes.
     pub fn remove(&mut self, ids: &[u32]) {
         self.shapes.retain(|s| !ids.contains(&s.id));
         let gone = |end: End| end.shape().is_some_and(|id| ids.contains(&id));
         self.links.retain(|l| !ids.contains(&l.id) && !gone(l.from) && !gone(l.to));
     }
 
-    /// La forme du dessus sous ce point.
+    /// The topmost shape under this point.
     pub fn shape_at(&self, x: f32, y: f32) -> Option<u32> {
         self.shapes.iter().rev().find(|s| s.contains(x, y)).map(|s| s.id)
     }
 
-    /// La flèche qui passe à moins de `reach` de ce point.
+    /// The arrow passing within `reach` of this point.
     pub fn link_at(&self, x: f32, y: f32, reach: f32) -> Option<u32> {
         let near = |(ax, ay): (f32, f32), (bx, by): (f32, f32)| {
             let (dx, dy) = (bx - ax, by - ay);
@@ -458,15 +458,15 @@ impl Diagram {
         self.links.iter().rev().find(hit).map(|l| l.id)
     }
 
-    /// Les deux bouts du trait, là où il touche ce qu'il relie. `None` si une
-    /// forme accrochée a disparu.
+    /// The two ends of the stroke, where it touches what it links. `None` if an
+    /// attached shape is gone.
     pub fn ends(&self, link: &Link) -> Option<((f32, f32), (f32, f32))> {
         let points = self.trace(link)?.points;
         Some((*points.first()?, *points.last()?))
     }
 
-    /// Où un bout quitte ce qu'il tient, et dans quelle direction : vers
-    /// `toward` pour un trait droit, sinon par le côté qui lui fait face.
+    /// Where an end leaves what it holds, and in which direction: toward
+    /// `toward` for a straight stroke, otherwise through the side facing it.
     fn leave(&self, end: End, toward: (f32, f32), straight: bool) -> Option<((f32, f32), (f32, f32))> {
         let side = |dx: f32, dy: f32, w: f32, h: f32| if dx.abs() * h >= dy.abs() * w { (dx.signum(), 0.) } else { (0., dy.signum()) };
         Some(match end {
@@ -486,11 +486,11 @@ impl Diagram {
         })
     }
 
-    /// Le dessin d'une flèche : son trait selon son tracé, ses pointes, son milieu.
-    // ponytail: le tracé coudé sort par le côté choisi et tourne à angle droit,
-    // sans contourner les formes posées sur son chemin ; c'est le point d'accroche
-    // qui permet de le faire passer ailleurs. Chercher un chemin libre (A* sur une
-    // grille) si les schémas denses le demandent.
+    /// Drawing of an arrow: its stroke along its route, its heads, its middle.
+    // ponytail: the elbow route leaves by the chosen side and turns at a right angle,
+    // without going around shapes in its way; the attachment point is what
+    // lets it pass elsewhere. Search for a free path (A* on a
+    // grid) if dense diagrams call for it.
     pub fn trace(&self, link: &Link) -> Option<Trace> {
         let aim = |end: End| match end {
             End::Shape(id) => self.shape(id).map(Shape::center),
@@ -520,7 +520,7 @@ impl Diagram {
         let last = points.len() - 1;
         let (ua, ub) = (toward(points[1], points[0]), toward(points[last - 1], points[last]));
         let (start, end) = (head(link.start, a, ua), head(link.end, b, ub));
-        // Le trait s'arrête à la base d'une pointe fermée.
+        // The stroke stops at the base of a closed head.
         let (a2, b2) = ((a.0 - ua.0 * start.3, a.1 - ua.1 * start.3), (b.0 - ub.0 * end.3, b.1 - ub.1 * end.3));
         let line = match link.route {
             Route::Curve => vec![Cmd::Move(a2.0, a2.1), Cmd::Curve(c1.0, c1.1, c2.0, c2.1, b2.0, b2.1)],
@@ -537,7 +537,7 @@ impl Diagram {
             }
             (path, full)
         });
-        // Le milieu se cherche le long du trait, pas entre ses deux bouts.
+        // The middle is found along the stroke, not between its two ends.
         let lengths: Vec<f32> = points.windows(2).map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1)).collect();
         let mut left = lengths.iter().sum::<f32>() / 2.;
         let (mut middle, mut upright) = (a, false);
@@ -554,9 +554,9 @@ impl Diagram {
         Some(Trace { line, heads: heads.collect(), middle, upright, points })
     }
 
-    /// Où s'écrit la ligne `i` des `count` lignes du texte d'une flèche : au-dessus
-    /// d'un trait couché, centrée ; à droite d'un trait debout. Renvoie aussi si
-    /// elle est centrée.
+    /// Where line `i` of the `count` lines of an arrow's text is written: above
+    /// a lying stroke, centered; right of a standing stroke. Also returns whether
+    /// it is centered.
     pub fn label_at(trace: &Trace, i: usize, count: usize) -> (f32, f32, bool) {
         let (x, y) = trace.middle;
         match trace.upright {
@@ -565,9 +565,9 @@ impl Diagram {
         }
     }
 
-    /// Rectangle qui contient tout le schéma : (gauche, haut, droite, bas).
+    /// Rectangle containing the whole diagram: (left, top, right, bottom).
     pub fn bounds(&self) -> Option<(f32, f32, f32, f32)> {
-        // Le texte d'un personnage s'écrit dessous.
+        // A stick figure's text is written under it.
         let boxes = self.shapes.iter().map(|s| {
             let below = if s.form == Form::Actor { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
             (s.x, s.y, s.x + s.w, s.y + s.h + below)
@@ -576,8 +576,8 @@ impl Diagram {
         boxes.chain(ends.map(|(x, y)| (x, y, x, y))).reduce(|a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)))
     }
 
-    /// Le fichier du schéma : son dessin en SVG, et sa source dans `<metadata>`.
-    /// `neutral` est la couleur du trait neutre, en `0xrrggbb`.
+    /// The diagram file: its drawing as SVG, and its source in `<metadata>`.
+    /// `neutral` is the neutral stroke color, as `0xrrggbb`.
     pub fn to_svg(&self, neutral: u32) -> String {
         let color = |i: u8| format!("#{:06x}", if i == 0 { neutral } else { COLORS[i as usize % COLORS.len()] });
         let (x0, y0, x1, y1) = self.bounds().unwrap_or((0., 0., 100., 60.));
@@ -626,7 +626,7 @@ impl Diagram {
         out
     }
 
-    /// La source : une ligne par élément, le texte en dernier.
+    /// The source: one line per element, text last.
     fn source(&self) -> String {
         let name = |form: Form| Form::ALL.iter().find(|(f, _)| *f == form).map_or("rect", |(_, n)| n);
         let tip = |head: Head| Head::ALL.iter().find(|(h, _)| *h == head).map_or("none", |(_, n)| n);
@@ -647,7 +647,7 @@ impl Diagram {
         out
     }
 
-    /// Le schéma que porte ce fichier SVG ; `None` si ce n'en est pas un.
+    /// The diagram this SVG file carries; `None` if it is not one.
     pub fn from_svg(svg: &str) -> Option<Diagram> {
         let body = svg.split_once("<metadata id=\"bref-diagram\">")?.1.split_once("</metadata>")?.0;
         let body = body.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&");
@@ -671,7 +671,7 @@ impl Diagram {
             _ => None,
         };
         let mut diagram = Diagram::default();
-        // Une ligne illisible est laissée de côté : le reste du schéma s'ouvre.
+        // An unreadable line is skipped: the rest of the diagram opens.
         for line in body.lines() {
             let mut read = || -> Option<()> {
                 if let Some(rest) = line.strip_prefix("shape ") {
@@ -714,18 +714,18 @@ impl Diagram {
     }
 }
 
-/// Trait à angles droits de `a` à `b`, qui part dans la direction `da` et
-/// arrive par `db` (les côtés par où il quitte ce qu'il relie).
+/// Right-angled stroke from `a` to `b`, leaving in direction `da` and
+/// arriving by `db` (the sides by which it leaves what it links).
 fn elbow(a: (f32, f32), da: (f32, f32), b: (f32, f32), db: (f32, f32)) -> Vec<(f32, f32)> {
     const STUB: f32 = 20.;
     let flat = |d: (f32, f32)| d.0 != 0.;
     let (a1, b1) = ((a.0 + da.0 * STUB, a.1 + da.1 * STUB), (b.0 + db.0 * STUB, b.1 + db.1 * STUB));
     let facing = da == (-db.0, -db.1) && (b.0 - a.0) * da.0 + (b.1 - a.1) * da.1 > 2. * STUB;
     let mut points = match (flat(da), flat(db)) {
-        // Face à face : un seul décrochement, à mi-chemin.
+        // Facing each other: a single jog, halfway.
         (true, true) if facing => vec![a, ((a.0 + b.0) / 2., a.1), ((a.0 + b.0) / 2., b.1), b],
         (false, false) if facing => vec![a, (a.0, (a.1 + b.1) / 2.), (b.0, (a.1 + b.1) / 2.), b],
-        // Du même côté : le trait passe au large des deux.
+        // On the same side: the stroke goes wide of both.
         (true, true) if da == db => {
             let x = if da.0 > 0. { a1.0.max(b1.0) } else { a1.0.min(b1.0) };
             vec![a, (x, a.1), (x, b.1), b]
@@ -734,13 +734,13 @@ fn elbow(a: (f32, f32), da: (f32, f32), b: (f32, f32), db: (f32, f32)) -> Vec<(f
             let y = if da.1 > 0. { a1.1.max(b1.1) } else { a1.1.min(b1.1) };
             vec![a, (a.0, y), (b.0, y), b]
         }
-        // Dos à dos : il sort, passe entre les deux, puis revient.
+        // Back to back: it leaves, passes between the two, then comes back.
         (true, true) => vec![a, a1, (a1.0, (a.1 + b.1) / 2.), (b1.0, (a.1 + b.1) / 2.), b1, b],
         (false, false) => vec![a, a1, ((a.0 + b.0) / 2., a1.1), ((a.0 + b.0) / 2., b1.1), b1, b],
         (true, false) => vec![a, (b.0, a.1), b],
         (false, true) => vec![a, (a.0, b.1), b],
     };
-    // Un point aligné avec ses voisins ne sert à rien.
+    // A point aligned with its neighbors is useless.
     points.dedup();
     let mut i = 1;
     while i + 1 < points.len() {
@@ -754,7 +754,7 @@ fn elbow(a: (f32, f32), da: (f32, f32), b: (f32, f32), db: (f32, f32)) -> Vec<(f
     points
 }
 
-/// Nombre écrit au dixième, sans décimale inutile.
+/// Number written to the tenth, without a useless decimal.
 fn num(v: f32) -> String {
     let v = (v * 10.).round() / 10.;
     if v.fract() == 0. { format!("{v:.0}") } else { format!("{v:.1}") }
@@ -795,17 +795,17 @@ mod tests {
         assert!(svg.starts_with("<svg") && svg.contains("font-weight=\"bold\"") && svg.contains("&lt;€&gt;"));
         assert_eq!(Diagram::from_svg(&svg), Some(d.clone()));
         assert_eq!(Diagram::from_svg("<svg></svg>"), None);
-        // Les identifiants repartent après les plus grands relus.
+        // Ids resume after the largest ones read back.
         let mut back = Diagram::from_svg(&svg).unwrap();
         assert_eq!(back.add_shape(Form::Note, 0., 0., 10., 10.), 5);
 
-        // Un trait accroché s'arrête au contour des formes, face à face.
+        // An attached stroke stops at the shapes' outline, facing each other.
         let (from, to) = d.ends(&d.links[0]).unwrap();
         assert!((119.9..=120.1).contains(&from.0) && (299.0..=301.).contains(&to.0));
         assert_eq!((d.shape_at(10., 10.), d.shape_at(200., 10.)), (Some(a), None));
         assert_eq!(d.link_at(200., 36., 6.), Some(link));
 
-        // Retirer une forme emporte ses flèches ; la copie d'une flèche suit ses formes.
+        // Removing a shape takes its arrows along; copying an arrow follows its shapes.
         let copies = d.duplicate(&[a, b, link], 20.);
         assert_eq!((copies.len(), d.links.len()), (3, 3));
         d.remove(&[a]);
@@ -826,10 +826,10 @@ mod tests {
         assert_eq!(head(Head::Triangle, (10., 0.), (1., 0.)).0, [(10., 0.), (-2., 6.), (-2., -6.)]);
         assert_eq!(snap(14.), 10.);
 
-        // Près d'un bord, un bout se fixe au quart le plus proche ; au milieu, il reste libre.
+        // Near an edge, an end sticks to the nearest quarter; in the middle, it stays free.
         shape.form = Form::Rect;
         assert_eq!((shape.hook(50., 40.), shape.hook(97., 22.), shape.hook(30., 2.)), (End::Shape(1), End::Pin(1, 1., 0.25), End::Pin(1, 0.25, 0.)));
-        // Coudé : face à face, un décrochement à mi-chemin ; sinon un seul angle.
+        // Elbow: facing each other, a jog halfway; otherwise a single corner.
         assert_eq!(elbow((0., 0.), (1., 0.), (100., 50.), (-1., 0.)), [(0., 0.), (50., 0.), (50., 50.), (100., 50.)]);
         assert_eq!(elbow((0., 0.), (1., 0.), (100., 0.), (-1., 0.)), [(0., 0.), (100., 0.)]);
         assert_eq!(elbow((0., 0.), (1., 0.), (100., 50.), (0., -1.)), [(0., 0.), (100., 0.), (100., 50.)]);
@@ -837,7 +837,7 @@ mod tests {
         let (a, b) = (d.add_shape(Form::Rect, 0., 0., 100., 60.), d.add_shape(Form::Rect, 300., 200., 100., 60.));
         let link = d.add_link(End::Pin(a, 0.5, 1.), End::Shape(b), Head::Triangle, Route::Elbow);
         let trace = d.trace(d.link(link).unwrap()).unwrap();
-        // Il sort par le bas de la première forme et arrive par la gauche de la seconde.
+        // It leaves through the bottom of the first shape and arrives from the left of the second.
         assert_eq!(trace.points, [(50., 60.), (50., 230.), (300., 230.)]);
         assert_eq!((trace.heads.len(), trace.middle), (1, (90., 230.)));
         d.link_mut(link).unwrap().route = Route::Curve;

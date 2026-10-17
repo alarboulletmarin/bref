@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let (shell, root) = (&j.shell, &j.root);
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
-    // Précédent / suivant : l'historique de ce qui a été affiché, comme dans un navigateur.
+        // Back / forward: the history of what was shown, as in a browser.
     let (hist_a, hist_b, hist_csv) = (root.join("Hist A.md"), root.join("Hist B.md"), root.join("hist.csv"));
     let long: String = (0..200).map(|i| format!("ligne {i}\n")).collect();
     fs::write(&hist_a, format!("# Hist A\n\n{long}\n[[Hist B]]\n")).unwrap();
@@ -16,11 +16,11 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let seen = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| (s.pane().file_path().cloned(), s.pane().path.clone()));
     let on_note = |path: &Path| (None, Some(path.to_path_buf()));
     shell.update_in(cx, |s, window, cx| s.open_from_nav(&hist_a, window, cx));
-    // Loin dans la note : le curseur et le défilement seront retrouvés au retour.
+        // Far into the note: the cursor and scroll will be found again on return.
     cx.simulate_keystrokes("secondary-end up up up");
     let place = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view());
     assert!(place.0 > 1000 && place.1 > 0., "{place:?}");
-    // Suivre un lien, revenir, repartir.
+        // Follow a link, come back, go again.
     shell.update_in(cx, |s, window, cx| s.follow(&Link::Wiki("Hist B".into()), window, cx));
     assert_eq!(seen(cx), on_note(&hist_b));
     assert!(shell.read_with(cx, |s, _| s.history.can_back() && !s.history.can_forward()));
@@ -33,11 +33,11 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(shell.read_with(cx, |s, _| s.history.can_forward()));
     cx.simulate_keystrokes(forward);
     assert_eq!(seen(cx), on_note(&hist_b));
-    // Le bouton du rail.
+        // The rail button.
     let at = cx.debug_bounds("nav-back").unwrap().center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert_eq!(seen(cx), on_note(&hist_a));
-    // Ouvrir autre chose après un retour : « suivant » n'a plus où aller. Un tableau compte.
+        // Opening something else after going back: "forward" has nowhere to go. A table counts.
     shell.update_in(cx, |s, window, cx| s.open_from_nav(&hist_csv, window, cx));
     assert_eq!(seen(cx).0, Some(hist_csv.clone()));
     assert!(!shell.read_with(cx, |s, _| s.history.can_forward()));
@@ -49,7 +49,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes(forward);
     assert_eq!(seen(cx).0, Some(hist_csv.clone()));
     assert_eq!(shell.read_with(cx, |s, cx| s.shown_sheet().unwrap().read(cx).whereabouts().0), (1, 1), "la cellule est retrouvée");
-    // Les boutons précédent et suivant de la souris.
+        // The mouse's back and forward buttons.
     let middle = gpui::point(px(500.), px(400.));
     let navigate = |cx: &mut gpui::VisualTestContext, to| {
         cx.simulate_mouse_down(middle, MouseButton::Navigate(to), gpui::Modifiers::none());
@@ -57,8 +57,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     };
     navigate(cx, gpui::NavigationDirection::Back);
     assert_eq!(seen(cx), on_note(&hist_a));
-    // Un aperçu n'entre pas dans l'historique : « précédent » ramène d'où l'on vient, et
-    // « suivant » mène toujours au tableau.
+        // A preview does not enter the history: "back" returns to where we came from, and
+        // "forward" still leads to the table.
     shell.update_in(cx, |s, window, cx| {
         window.focus(&s.nav.focus);
         s.preview_note(&hist_b, cx);
@@ -68,7 +68,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(seen(cx), on_note(&hist_a));
     navigate(cx, gpui::NavigationDirection::Forward);
     assert_eq!(seen(cx).0, Some(hist_csv.clone()));
-    // Une note déplacée est suivie.
+        // A moved note is followed.
     shell.update_in(cx, |s, window, cx| s.open_from_nav(&hist_b, window, cx));
     let shelf = root.join("Étagère");
     fs::create_dir_all(&shelf).unwrap();
@@ -78,8 +78,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(seen(cx).0, Some(hist_csv.clone()));
     cx.simulate_keystrokes(forward);
     assert_eq!(seen(cx), on_note(&moved));
-    // Un fichier mis à la corbeille quitte l'historique ; un fichier supprimé par un autre
-    // programme est sauté.
+        // A file put in the trash leaves the history; a file deleted by another
+        // program is skipped.
     shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Trash, Some(hist_csv.clone()), window, cx));
     cx.simulate_keystrokes(back);
     assert_eq!(seen(cx), on_note(&hist_a));
@@ -87,14 +87,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes(forward);
     assert_eq!(seen(cx), on_note(&hist_a));
     assert!(!shell.read_with(cx, |s, _| s.history.can_forward()));
-    // Depuis une note neuve, pas encore enregistrée : « précédent » ramène à la dernière.
+        // From a new note, not yet saved: "back" returns to the last one.
     shell.update_in(cx, |s, window, cx| s.new_note_in(None, window, cx));
     assert_eq!(seen(cx), (None, None));
     cx.simulate_keystrokes(back);
     assert_eq!(seen(cx), on_note(&hist_a));
 
-    // Les menus montrent, à côté de chaque action, le raccourci qui fait la même chose :
-    // celui en vigueur, et rien pour une action qui n'en a pas.
+        // Menus show, next to each action, the shortcut that does the same thing:
+        // the one in force, and nothing for an action that has none.
     let keys = |cx: &mut gpui::VisualTestContext, what: nav::Do| cx.update(|_, cx| what.keys(cx));
     assert_eq!(keys(cx, nav::Do::Rename), "F2");
     assert_eq!(keys(cx, nav::Do::Duplicate), format!("{MOD}+D"));
@@ -108,7 +108,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     shell.update(cx, |s, cx| s.key_reset(None, cx));
     assert_eq!(keys(cx, nav::Do::Rename), "F2");
 
-    // Deux panes côte à côte.
+        // Two panes side by side.
     let pane = |name: &str| root.join(format!("Pane {name}.md"));
     for name in ["A", "B", "D"] {
         fs::write(pane(name), format!("# Pane {name}\n\n")).unwrap();
@@ -120,14 +120,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let pane_text = |cx: &mut gpui::VisualTestContext, pane: usize| shell.read_with(cx, |s, cx| s.panes[pane].editor.read(cx).text().to_string());
     shell.update_in(cx, |s, window, cx| s.open_from_nav(&pane("A"), window, cx));
     assert_eq!(open(cx), (0, vec![Some(pane("A"))]));
-    // Au clavier : le second pane s'ouvre sur la palette, pour choisir ce qui y va.
+        // From the keyboard: the second pane opens on the palette, to choose what goes there.
     cx.simulate_keystrokes("secondary-\\");
     assert_eq!(open(cx), (1, vec![Some(pane("A")), None]));
     assert!(shell.read_with(cx, |s, _| s.palette.is_some()));
     cx.simulate_input("pane b");
     cx.simulate_keystrokes("enter");
     assert_eq!(open(cx), both(1, "A", "B"));
-    // Chaque pane s'écrit et s'enregistre ; Ctrl+1 et Ctrl+2 passent de l'un à l'autre.
+        // Each pane is written and saved; Ctrl+1 and Ctrl+2 switch from one to the other.
     cx.simulate_keystrokes("secondary-end");
     cx.simulate_input("droite");
     cx.simulate_keystrokes("secondary-1 secondary-end");
@@ -137,27 +137,27 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     j.settle(cx);
     assert_eq!(fs::read_to_string(pane("A")).unwrap(), "# Pane A\n\ngauche");
     assert_eq!(fs::read_to_string(pane("B")).unwrap(), "# Pane B\n\ndroite");
-    // Une note déjà affichée ne s'ouvre pas deux fois : la saisie passe dans son pane.
+        // A note already shown does not open twice: input goes to its pane.
     shell.update_in(cx, |s, window, cx| s.open_from_nav(&pane("B"), window, cx));
     assert_eq!(open(cx), both(1, "A", "B"));
     cx.simulate_input("!");
     assert_eq!(pane_text(cx, 1), "# Pane B\n\ndroite!");
-    // Ctrl+Entrée dans la palette : la note choisie s'ouvre dans l'autre pane.
+        // Ctrl+Enter in the palette: the chosen note opens in the other pane.
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("pane c");
     cx.simulate_keystrokes("secondary-enter");
     assert_eq!(open(cx), both(0, "C", "B"));
-    // Ctrl+Maj+clic sur un lien : la note liée s'ouvre à côté.
+        // Ctrl+Shift+click on a link: the linked note opens beside.
     let link = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of("# Pane C\n\n[[Pa".len()).unwrap());
     cx.simulate_click(link, gpui::Modifiers { shift: true, ..gpui::Modifiers::secondary_key() });
     assert_eq!(open(cx), both(1, "C", "A"));
-    // « Ouvrir à côté » dans le menu de l'arbre.
+        // « Ouvrir à côté » in the tree menu.
     shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::OpenAside, Some(pane("D")), window, cx));
     assert_eq!(open(cx), both(0, "D", "A"));
-    // Renommer ou déplacer la note de l'autre pane : il suit.
+        // Renaming or moving the other pane's note: it follows.
     shell.update(cx, |s, cx| s.move_into(&pane("A"), &shelf, cx));
     assert_eq!(open(cx), (0, vec![Some(pane("D")), Some(shelf.join("Pane A.md"))]));
-    // Glisser une note de l'arbre sur un pane l'y ouvre ; la moitié visée est teintée.
+        // Dragging a note from the tree onto a pane opens it there; the targeted half is tinted.
     shell.update(cx, |s, cx| {
         (s.nav.mode, s.nav.panel) = (nav::Mode::Tree, nav::Panel::Split);
         cx.notify();
@@ -172,7 +172,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_mouse_up(right, MouseButton::Left, gpui::Modifiers::none());
     assert_eq!(open(cx), both(1, "D", "B"));
     assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), None);
-    // Ctrl+W ferme le pane qui a la saisie ; ce qu'on y avait écrit est enregistré.
+        // Ctrl+W closes the pane that has input; what was written there is saved.
     cx.simulate_keystrokes("secondary-end");
     cx.simulate_input("?");
     cx.simulate_keystrokes("secondary-w");
@@ -183,7 +183,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(text(cx), "# Pane D\n\nseul");
     cx.simulate_keystrokes("secondary-w");
     assert_eq!(open(cx).1.len(), 1, "le dernier pane ne se ferme pas");
-    // Avec un seul pane, lâcher une note sur la moitié droite ouvre le second.
+        // With a single pane, dropping a note on the right half opens the second.
     let whole = cx.debug_bounds("pane-0").unwrap();
     let half = gpui::point(whole.right() - px(40.), whole.center().y);
     cx.simulate_mouse_down(row, MouseButton::Left, gpui::Modifiers::none());
@@ -192,7 +192,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), Some((0, true)));
     cx.simulate_mouse_up(half, MouseButton::Left, gpui::Modifiers::none());
     assert_eq!(open(cx), both(1, "D", "B"));
-    // La disposition est retenue : la largeur, et ce que montre le second pane.
+        // The layout is remembered: the width, and what the second pane shows.
     assert_eq!(vault::load_file("panes"), format!("0.5\n{}\n", pane("B").display()));
     cx.simulate_keystrokes("secondary-w");
     assert_eq!(vault::load_file("panes"), "0.5\n\n");

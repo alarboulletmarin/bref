@@ -1,6 +1,6 @@
-//! Import de schémas faits ailleurs : fichiers Excalidraw (JSON) et draw.io
-//! (XML). Fonctions pures. On reprend ce que Bref sait dessiner : formes,
-//! textes, flèches et ce à quoi elles sont accrochées ; le reste est laissé.
+//! Import of diagrams made elsewhere: Excalidraw (JSON) and draw.io
+//! (XML) files. Pure functions. We keep what Bref can draw: shapes,
+//! texts, arrows and what they are attached to; the rest is left out.
 
 use std::collections::HashMap;
 
@@ -11,8 +11,8 @@ use crate::{
     lang::tr,
 };
 
-/// Rang de la couleur de Bref la plus proche de `#rrggbb` ; le noir, le blanc
-/// et les gris donnent le neutre.
+/// Index of Bref's colour closest to `#rrggbb`; black, white
+/// and greys give neutral.
 fn color(hex: &str) -> u8 {
     let Some(rgb) = hex.strip_prefix('#').filter(|h| h.len() == 6).and_then(|h| u32::from_str_radix(h, 16).ok()) else {
         return 0;
@@ -26,14 +26,14 @@ fn color(hex: &str) -> u8 {
     (1..COLORS.len()).min_by_key(|i| far(&COLORS[*i])).unwrap_or(0) as u8
 }
 
-/// Un fichier `.excalidraw`.
+/// A `.excalidraw` file.
 pub fn excalidraw(json: &str) -> Result<Diagram, String> {
     let unreadable = || tr("not an Excalidraw file", "ce n'est pas un fichier Excalidraw").to_string();
     let file: Value = serde_json::from_str(json).map_err(|_| unreadable())?;
     let elements: Vec<&Value> = file["elements"].as_array().ok_or_else(unreadable)?.iter().filter(|e| e["isDeleted"] != true).collect();
     let n = |e: &Value, key: &str| e[key].as_f64().unwrap_or(0.) as f32;
     let mut diagram = Diagram::default();
-    // Identifiant d'Excalidraw → celui de la forme ou de la flèche créée.
+    // Excalidraw identifier → that of the created shape or arrow.
     let mut made: HashMap<&str, u32> = HashMap::new();
     for e in &elements {
         let form = match e["type"].as_str() {
@@ -83,7 +83,7 @@ pub fn excalidraw(json: &str) -> Result<Diagram, String> {
         link.dashed = e["strokeStyle"].as_str().is_some_and(|s| s != "solid");
         made.insert(e["id"].as_str().unwrap_or(""), id);
     }
-    // Un texte tenu par une forme ou une flèche devient son texte.
+    // A text held by a shape or an arrow becomes its text.
     for e in elements.iter().filter(|e| e["type"] == "text") {
         let Some(id) = e["containerId"].as_str().and_then(|id| made.get(id)).copied() else { continue };
         let text = e["text"].as_str().unwrap_or("").to_string();
@@ -96,7 +96,7 @@ pub fn excalidraw(json: &str) -> Result<Diagram, String> {
     Ok(diagram)
 }
 
-/// Le texte d'un libellé draw.io, qui peut être du HTML.
+/// The text of a draw.io label, which may be HTML.
 fn plain(label: &str) -> String {
     let mut out = String::new();
     let mut rest = label;
@@ -123,10 +123,10 @@ fn geometry<'a, 'i>(cell: &roxmltree::Node<'a, 'i>) -> Option<roxmltree::Node<'a
     cell.children().find(|n| n.has_tag_name("mxGeometry"))
 }
 
-/// Un fichier `.drawio`, enregistré sans compression.
-// ponytail: draw.io sait aussi enregistrer le schéma compressé (deflate puis
-// base64) ; on demande alors de le réenregistrer sans compression. Ajouter la
-// décompression (`flate2`, `base64`) si ces fichiers sont courants.
+/// A `.drawio` file, saved without compression.
+// ponytail: draw.io can also save the diagram compressed (deflate then
+// base64); we then ask to save it again without compression. Add
+// decompression (`flate2`, `base64`) if such files are common.
 pub fn drawio(xml: &str) -> Result<Diagram, String> {
     let file = roxmltree::Document::parse(xml).map_err(|_| tr("not a draw.io file", "ce n'est pas un fichier draw.io").to_string())?;
     let cells: Vec<roxmltree::Node> = file.descendants().filter(|n| n.has_tag_name("mxCell")).collect();
@@ -144,7 +144,7 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
             _ => None,
         })
     };
-    // Le libellé et l'identifiant sont parfois portés par un `<object>` autour de la cellule.
+    // The label and identifier are sometimes carried by an `<object>` around the cell.
     let around = |cell: &roxmltree::Node, name: &str| {
         cell.attribute(name).or_else(|| cell.parent().filter(|p| !p.has_tag_name("root")).and_then(|p| p.attribute(name))).map(str::to_string)
     };
@@ -152,7 +152,7 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
     let label = |cell: &roxmltree::Node| plain(&around(cell, "value").or_else(|| around(cell, "label")).unwrap_or_default());
     let n = |node: &roxmltree::Node, key: &str| node.attribute(key).and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.);
     let by_id: HashMap<String, &roxmltree::Node> = cells.iter().map(|c| (id_of(c), c)).collect();
-    // Les cellules d'un conteneur sont placées par rapport à lui.
+    // A container's cells are placed relative to it.
     let origin = |cell: &roxmltree::Node| {
         let (mut x, mut y, mut parent) = (0., 0., cell.attribute("parent"));
         while let Some(up) = parent.and_then(|id| by_id.get(id)) {
@@ -167,7 +167,7 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
     let mut diagram = Diagram::default();
     let mut made: HashMap<String, u32> = HashMap::new();
     for cell in cells.iter().filter(|c| c.attribute("vertex") == Some("1")) {
-        // Une ligne d'une classe UML : elle s'ajoute au texte de sa boîte.
+        // A line of a UML class: it is appended to its box's text.
         let holder = cell.attribute("parent").and_then(|id| by_id.get(id)).filter(|p| boxed(p));
         if let Some(id) = holder.and_then(|p| made.get(&id_of(p))) {
             let line = if style(cell, "line").is_some() { RULE.to_string() } else { label(cell) };
@@ -211,7 +211,7 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
             Some(id) => Some(End::Shape(*id)),
             None => geometry(cell)?.children().find(|p| p.attribute("as") == Some(loose)).map(|p| End::Point(ox + n(&p, "x"), oy + n(&p, "y"))),
         };
-        // Sans indication, une flèche de draw.io porte une pointe à son arrivée.
+        // Without an indication, a draw.io arrow has a head at its end.
         let head = |key: &str, fill: &str, default: &str| {
             let hollow = style(cell, fill).as_deref() == Some("0");
             match style(cell, key).as_deref().unwrap_or(default) {
@@ -236,7 +236,7 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
         link.dashed = style(cell, "dashed").as_deref() == Some("1");
         made.insert(id_of(cell), id);
     }
-    // Le libellé d'une flèche est parfois une cellule à part, tenue par elle.
+    // An arrow's label is sometimes a separate cell, held by it.
     for cell in cells.iter().filter(|c| style(c, "edgeLabel").is_some()) {
         if let Some(link) = cell.attribute("parent").and_then(|id| made.get(id)).and_then(|id| diagram.link_mut(*id)) {
             link.text = label(cell);
@@ -288,7 +288,7 @@ mod tests {
         assert_eq!((d.shapes[0].form, d.shapes[0].text.as_str()), (Form::Rect, "Compte\n---\n+ solde: f32\n---\n+ cr&eacute;diter()"));
         let db = &d.shapes[1];
         assert_eq!((db.form, db.text.as_str(), db.color, db.fill, db.x), (Form::Cylinder, "Base\nclients", 3, true, 300.));
-        // Une flèche tirée d'une ligne de la classe part de la classe.
+        // An arrow dragged from a line of the class starts from the class.
         let e = &d.links[0];
         assert_eq!((e.from, e.to, e.end, e.dashed, e.text.as_str()), (End::Shape(d.shapes[0].id), End::Shape(db.id), Head::Triangle, true, "lit"));
         assert_eq!((d.links[1].from, d.links[1].end), (End::Point(10., 200.), Head::None));

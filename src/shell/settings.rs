@@ -3,7 +3,7 @@
 use super::*;
 
 impl Shell {
-    /// Applique les réglages d'apparence à toute la fenêtre.
+    /// Applies the appearance settings to the whole window.
     pub(super) fn restyle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         apply_fonts(&self.prefs);
         let theme = Theme::of(&self.prefs, window.appearance());
@@ -17,15 +17,15 @@ impl Shell {
         cx.notify();
     }
 
-    /// Liste de choix d'un réglage, comme le sélecteur de thème de Zed : le choix
-    /// parcouru s'applique en aperçu, Entrée le garde, Échap revient au précédent.
+    /// Choice list for a setting, like Zed's theme picker: the choice
+    /// browsed applies as a preview, Enter keeps it, Escape returns to the previous one.
     pub(super) fn choose_setting(&mut self, setting: Setting, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() {
             return;
         }
         let default = tr("Default", "Par défaut");
-        // Largeur de page et grands tableaux : une courte liste fixe, sans « Par défaut » ; le
-        // choix se range sous sa clé, ses libellés suivent la langue.
+        // Page width and big tables: a short fixed list, without "Default"; the
+        // choice is stored under its key, its labels follow the language.
         let fixed: Option<Vec<(&'static str, &'static str)>> = match setting {
             Setting::Page => Some(Page::ALL.map(|p| (p.key(), p.label())).into()),
             Setting::Wide => Some(Wide::ALL.map(|w| (w.key(), w.label())).into()),
@@ -45,7 +45,7 @@ impl Shell {
         let current = if fixed.is_some() {
             current
         } else {
-            // Le choix en cours remonte en tête, juste sous « Par défaut ».
+            // The current choice moves to the top, just under "Default".
             if let Some(i) = options.iter().position(|o| o == current) {
                 let chosen = options.remove(i);
                 options.insert(0, chosen);
@@ -59,7 +59,7 @@ impl Shell {
             match event {
                 PaletteEvent::Preview(name) | PaletteEvent::Submit(name) => {
                     let value = if name == default { String::new() } else { name.clone() };
-                    // Le libellé choisi redevient la clé qu'on enregistre.
+                    // The chosen label becomes the key that is saved again.
                     let key = fixed.iter().flatten().find(|o| o.1 == name).map_or_else(String::new, |o| o.0.to_string());
                     match setting {
                         Setting::Theme => this.prefs.theme = value,
@@ -85,7 +85,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Grossit ou réduit le texte de la note ; `None` revient à la taille d'origine.
+    /// Enlarges or shrinks the note text; `None` returns to the original size.
     pub(super) fn resize_text(&mut self, by: Option<f32>, window: &mut Window, cx: &mut Context<Self>) {
         let size = by.map_or(Prefs::SIZE, |by| self.prefs.size + by);
         self.prefs = Prefs::parse(&Prefs { size, ..self.prefs.clone() }.to_text());

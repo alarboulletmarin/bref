@@ -1,4 +1,4 @@
-//! La page vide : ce que le coffre remet sous les yeux tant qu'on n'a rien écrit (fonctions pures).
+//! The empty page: what the vault brings back to view while nothing is written (pure functions).
 
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
@@ -8,10 +8,10 @@ use crate::logic::markdown::{self, Date};
 use crate::logic::note::Note;
 use crate::{lang::date_name, lang::tr};
 
-/// Une note qu'on n'a pas touchée depuis ce temps-là pour être proposée à la relecture.
+/// A note untouched for this long to be offered for rereading.
 const OLD: i64 = 30;
 
-/// Une note à relire, et son âge en jours.
+/// A note to reread, and its age in days.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Recalled {
     pub path: PathBuf,
@@ -19,9 +19,9 @@ pub struct Recalled {
     pub days: i64,
 }
 
-/// Les notes à relire `today` : les notes du jour d'il y a une semaine, un mois et un an, quand
-/// elles existent, puis une note qu'on n'a pas touchée depuis longtemps. Celle-ci est tirée au
-/// sort par la date : la même toute la journée, une autre le lendemain.
+/// The notes to reread `today`: the daily notes from a week, a month and a year ago, when
+/// they exist, then a note untouched for a long time. That one is drawn at
+/// random from the date: the same all day, another the next day.
 pub fn recall(notes: &[Note], today: Date, now: SystemTime) -> Vec<Recalled> {
     let day = markdown::day_number(today);
     let past = [markdown::day_of(day - 7), markdown::add_months(today, -1), markdown::add_months(today, -12)];
@@ -47,7 +47,7 @@ pub fn recall(notes: &[Note], today: Date, now: SystemTime) -> Vec<Recalled> {
     found
 }
 
-/// « il y a 3 mois » : un âge en jours, dit à la plus grande unité qui tient.
+/// « il y a 3 mois » ("3 months ago"): an age in days, told in the largest unit that fits.
 pub fn ago(days: i64) -> String {
     let said = |n: i64, one: (&'static str, &'static str), many: (&'static str, &'static str)| match n {
         1 => tr(one.0, one.1).to_string(),
@@ -62,10 +62,10 @@ pub fn ago(days: i64) -> String {
     }
 }
 
-/// « vendredi 10 octobre » : la date en toutes lettres, sans l'année.
+/// « vendredi 10 octobre » ("Friday 10 October"): the date in words, without the year.
 pub fn long_date(date: Date) -> String {
     let (_, month, day) = date;
-    // Le 1er janvier 1970 était un jeudi : lundi vaut 0.
+    // 1 January 1970 was a Thursday: Monday is 0.
     let weekday = markdown::DAYS[3 + (markdown::day_number(date) + 3).rem_euclid(7) as usize];
     let months = markdown::MONTHS[month as usize - 1];
     if tr("en", "fr") == "fr" {
@@ -108,16 +108,16 @@ mod tests {
     fn recall_draws_one_old_note_and_keeps_it_for_the_day() {
         let now = SystemTime::now();
         let mut notes: Vec<Note> = (0..40).map(|i| note(&format!("Ancienne {i}"), 90 + i, now)).collect();
-        // Ni une note récente, ni une note vide ne sont proposées.
+        // Neither a recent note nor an empty note is offered.
         notes.push(note("Récente", 3, now));
         notes.push(Note { body: "  \n".into(), ..note("Vide", 400, now) });
         let today = recall(&notes, (2026, 10, 10), now);
         assert_eq!(today.len(), 1);
         assert!(today[0].name.starts_with("Ancienne") && today[0].days >= 90, "{today:?}");
-        // La même à chaque appel du jour, quel que soit l'ordre des notes.
+        // The same on every call of the day, whatever the order of the notes.
         notes.reverse();
         assert_eq!(recall(&notes, (2026, 10, 10), now), today);
-        // D'un jour à l'autre le tirage change : sur un mois, plusieurs notes sortent.
+        // From one day to the next the draw changes: over a month, several notes come out.
         let drawn: std::collections::HashSet<String> = (1..=30).map(|d| recall(&notes, (2026, 11, d), now)[0].name.clone()).collect();
         assert!(drawn.len() > 5, "{drawn:?}");
     }

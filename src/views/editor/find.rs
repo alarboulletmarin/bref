@@ -2,40 +2,40 @@
 
 use super::*;
 
-/// Recherche dans la note : la barre, ses réglages et les passages trouvés.
+/// Find in the note: the bar, its settings and the matches found.
 #[derive(Default)]
 pub(super) struct Finder {
     pub(super) query: String,
-    /// Texte de remplacement ; `None` tant que la ligne « Remplacer » est fermée.
+        /// Replacement text; `None` while the "Replace" line is closed.
     pub(super) with: Option<String>,
-    /// La recherche vient de la sélection : elle est comme sélectionnée, la première frappe
-    /// la remplace.
+        /// The search comes from the selection: it is as if selected, the first keystroke
+        /// replaces it.
     pub(super) fresh: bool,
-    /// La saisie va au champ de remplacement.
+        /// Input goes to the replace field.
     pub(super) on_with: bool,
-    /// La barre reçoit la saisie ; un clic dans la note la lui reprend sans la fermer.
+        /// The bar receives input; a click in the note takes it back without closing it.
     pub(super) active: bool,
     pub(super) case: bool,
     pub(super) word: bool,
-    /// La recherche est une expression régulière.
+        /// The search is a regular expression.
     pub(super) regex: bool,
     pub(super) hits: Vec<Range<usize>>,
-    /// Passage courant dans `hits`.
+        /// Current match in `hits`.
     pub(super) at: usize,
-    /// Texte et réglages pour lesquels `hits` a été calculé.
+        /// Text and settings for which `hits` was computed.
     pub(super) key: Option<(u64, String, bool, bool, bool)>,
 }
 
 impl Editor {
-    /// Recherche, numéro du passage courant (à partir de 1) et nombre de passages.
+        /// Search, number of the current match (from 1) and number of matches.
     #[cfg(test)]
     pub fn finding(&self) -> Option<(&str, usize, usize)> {
         let find = self.find.as_ref()?;
         Some((&find.query, if find.hits.is_empty() { 0 } else { find.at + 1 }, find.hits.len()))
     }
 
-    /// Ouvre la barre de recherche, ou lui rend la saisie ; `replace` montre aussi la ligne
-    /// « Remplacer ». Une sélection tenue sur une ligne devient la recherche.
+        /// Opens the find bar, or gives it input back; `replace` also shows the
+        /// "Replace" line. A selection held on one line becomes the search.
     pub(super) fn open_find(&mut self, replace: bool, cx: &mut Context<Self>) {
         let picked = Some(&self.content[self.sel.clone()]).filter(|s| !s.is_empty() && !s.contains('\n'));
         let picked = picked.map(String::from);
@@ -52,8 +52,8 @@ impl Editor {
         cx.notify();
     }
 
-    /// Refait la liste des passages si le texte, la recherche ou ses réglages ont changé (et
-    /// le dit) ; le passage courant est alors le premier à partir du curseur.
+        /// Rebuilds the list of matches if the text, the search or its settings changed (and
+        /// says so); the current match is then the first one from the cursor.
     pub(super) fn refresh_find(&mut self) -> bool {
         let (version, from) = (self.version, self.sel.start);
         let Some(find) = &mut self.find else {
@@ -69,7 +69,7 @@ impl Editor {
         true
     }
 
-    /// Sélectionne le passage courant et le fait défiler à l'écran.
+        /// Selects the current match and scrolls it on screen.
     pub(super) fn show_hit(&mut self, cx: &mut Context<Self>) {
         if let Some(hit) = self.find.as_ref().and_then(|find| find.hits.get(find.at).cloned()) {
             self.sel = hit;
@@ -82,9 +82,9 @@ impl Editor {
         cx.notify();
     }
 
-    /// Passage suivant ou précédent, en repartant de l'autre bout une fois au bord.
+        /// Next or previous match, wrapping around from the other end once at the edge.
     pub(super) fn find_step(&mut self, forward: bool, cx: &mut Context<Self>) {
-        // F3 sans barre : elle s'ouvre, comme avec Ctrl+F.
+                // F3 without a bar: it opens, as with Ctrl+F.
         if self.find.is_none() {
             return self.open_find(false, cx);
         }
@@ -97,12 +97,12 @@ impl Editor {
         self.show_hit(cx);
     }
 
-    /// Entrée dans la barre : passage suivant, ou remplacement du passage courant quand la
-    /// saisie est dans le champ « Remplacer ».
+        /// Enter in the bar: next match, or replacement of the current match when the
+        /// input is in the "Replace" field.
     pub(super) fn find_enter(&mut self, cx: &mut Context<Self>) {
         self.refresh_find();
         let current = self.find.as_ref().filter(|find| find.on_with).and_then(|find| Some((find.hits.get(find.at)?.clone(), self.replacements()?)));
-        // Le texte qui remplace ce passage : les groupes d'une expression régulière en font partie.
+                // The text that replaces this match: a regular expression's groups are part of it.
         let Some((hit, with)) = current.and_then(|(hit, all)| Some((hit.clone(), all.into_iter().find(|(range, _)| *range == hit)?.1))) else {
             return self.find_step(true, cx);
         };
@@ -112,14 +112,14 @@ impl Editor {
         self.show_hit(cx);
     }
 
-    /// Les passages trouvés et ce qui remplace chacun ; `None` sans champ « Remplacer ».
+        /// The matches found and what replaces each; `None` without a "Replace" field.
     pub(super) fn replacements(&self) -> Option<Vec<(Range<usize>, String)>> {
         let find = self.find.as_ref()?;
         Some(md::replacements(&self.content, &find.query, find.with.as_ref()?, find.case, find.word, find.regex))
     }
 
-    /// Demande à la fenêtre de remplacer dans tout le coffre : la recherche, le remplacement et
-    /// les réglages de la barre.
+        /// Asks the window to replace in the whole vault: the search, the replacement and
+        /// the bar's settings.
     pub(super) fn replace_in_vault(&mut self, cx: &mut Context<Self>) {
         if let Some(find) = self.find.as_ref().filter(|find| !find.query.is_empty())
             && let Some(with) = find.with.clone()
@@ -128,7 +128,7 @@ impl Editor {
         }
     }
 
-    /// Remplace tous les passages d'un coup : une seule étape d'annulation.
+        /// Replaces all matches at once: a single undo step.
     pub(super) fn replace_all(&mut self, cx: &mut Context<Self>) {
         self.refresh_find();
         let Some(hits) = self.replacements() else {
@@ -152,7 +152,7 @@ impl Editor {
         self.refresh_find();
     }
 
-    /// Champ de la barre qui reçoit la saisie.
+        /// Bar field that receives input.
     pub(super) fn find_field(&mut self) -> Option<&mut String> {
         let find = self.find.as_mut()?;
         if find.on_with {
@@ -164,9 +164,9 @@ impl Editor {
         Some(&mut find.query)
     }
 
-    // ponytail: comme la palette, la saisie de la barre se réduit à « ajouter à la fin » (pas
-    // de curseur mobile ni de composition IME) ; à remplacer par un vrai champ de texte si
-    // les recherches s'allongent.
+        // ponytail: like the palette, the bar's input comes down to "append at the end" (no
+        // movable cursor nor IME composition); replace with a real text field if
+        // searches get longer.
     pub(super) fn find_type(&mut self, text: &str, cx: &mut Context<Self>) {
         if let Some(field) = self.find_field() {
             field.extend(text.chars().filter(|c| !c.is_control()));
@@ -182,12 +182,12 @@ impl Editor {
         self.find_changed(cx);
     }
 
-    /// Après un changement de la recherche ou de ses réglages : le premier passage se montre.
+        /// After a change of the search or its settings: the first match shows.
     pub(super) fn find_changed(&mut self, cx: &mut Context<Self>) {
         if self.refresh_find() { self.show_hit(cx) } else { cx.notify() }
     }
 
-    /// La barre de recherche, en haut à droite de la note (sous les boutons de la fenêtre).
+        /// The find bar, at the top right of the note (below the window buttons).
     pub(super) fn find_bar(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
         let (t, find) = (self.theme, self.find.as_ref()?);
         let field = |text: &str, hint: &'static str, on: bool, fresh: bool| {
@@ -244,7 +244,7 @@ impl Editor {
             .flex_col()
             .gap_1p5()
             .occlude();
-        // Dans une note étroite, le compte et les réglages passent sous le champ.
+                // In a narrow note, the count and settings go below the field.
         let first = div()
             .flex()
             .flex_wrap()
@@ -267,7 +267,7 @@ impl Editor {
                 )
                 .child(toggle(tr("Vault…", "Coffre…"), false).on_mouse_down(MouseButton::Left, everywhere))
         });
-        // Calée à droite, dans les marges de la note : une note étroite la rétrécit au lieu de la laisser sortir.
+                // Pinned to the right, within the note's margins: a narrow note shrinks it instead of letting it overflow.
         Some(div().absolute().top(px(52.)).left_4().right_4().flex().justify_end().child(bar.child(first).children(second)))
     }
 }

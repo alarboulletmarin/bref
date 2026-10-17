@@ -2,19 +2,19 @@
 
 use super::*;
 
-/// Le nombre de la pastille des commentaires : « 9+ » au-delà de neuf, pour qu'elle reste ronde.
+/// The number in the comments badge: "9+" beyond nine, so that it stays round.
 pub(super) fn badge_label(count: usize) -> String {
     if count > 9 { "9+".into() } else { count.to_string() }
 }
 
-/// Marge transparente autour de la fenêtre quand l'app dessine ses décorations.
+/// Transparent margin around the window when the app draws its decorations.
 pub(super) const SHADOW: Pixels = px(10.);
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        // Le pane qui contient le focus est l'actif ; quand le code en a changé sans déplacer la
-        // saisie (une note déjà ouverte dans l'autre pane), elle suit.
+        // The pane holding the focus is the active one; when the code changed it without moving
+        // input (a note already open in the other pane), it follows.
         if std::mem::take(&mut self.grab) {
             self.focus_pane(self.active, window, cx);
         } else if let Some(pane) = (0..self.panes.len()).find(|&pane| self.panes[pane].zone.contains_focused(window, cx)) {
@@ -26,7 +26,7 @@ impl Render for Shell {
         let dragging = cx.has_active_drag();
         if !dragging {
             self.pane_aim = None;
-            // Le glisser est fini (lâché, ou sorti de la fenêtre) : plus d'étiquette ni de trait.
+            // The drag is over (dropped, or out of the window): no more label or line.
             if self.drop_aim.is_some() {
                 self.aim_drop(None, cx);
             }
@@ -45,8 +45,8 @@ impl Render for Shell {
             self.title = title;
         }
 
-        // Sous Linux l'app fournit barre de titre, coins arrondis et ombre ; sous
-        // macOS et Windows, gpui annonce `Server` et le système s'en charge.
+        // On Linux the app provides title bar, rounded corners and shadow; on
+        // macOS and Windows, gpui announces `Server` and the system takes care of it.
         let tiling = match window.window_decorations() {
             Decorations::Client { tiling } => Some(tiling),
             Decorations::Server => None,
@@ -67,8 +67,8 @@ impl Render for Shell {
         let body = if self.vault.is_none() {
             self.render_welcome(body, cx)
         } else {
-            // Un pane, ou deux côte à côte : chacun se dessine comme s'il était l'actif. Le panneau
-            // des commentaires, à droite de tout, est celui du pane actif.
+            // One pane, or two side by side: each draws itself as if it were the active one. The comments
+            // panel, right of everything, is the active pane's.
             let (two, active) = (self.panes.len() == 2, self.active);
             let (mut areas, mut comments) = (Vec::new(), None);
             for pane in 0..self.panes.len() {
@@ -79,7 +79,7 @@ impl Render for Shell {
                 }
             }
             let mut areas = areas.into_iter();
-            // La bordure entre les deux se tire ; un double clic la remet au milieu.
+            // The border between the two can be dragged; a double click puts it back in the middle.
             let divider = two.then(|| {
                 div()
                     .id("pane-divider")
@@ -120,7 +120,7 @@ impl Render for Shell {
                 .children(areas.next())
                 .children(divider)
                 .children(areas.next());
-            // La disposition des panes est retenue dès qu'elle change.
+            // The pane layout is saved as soon as it changes.
             let state = self.panes_state();
             if state != self.panes_saved {
                 vault::save_file("panes", &state);
@@ -128,8 +128,8 @@ impl Render for Shell {
             }
             let toasts = self.render_toasts(cx);
             let banner = self.render_update_banner(cx);
-            // La bannière tient à gauche du compteur de mots ; dans une fenêtre étroite, où elle le
-            // couvrirait, elle rejoint la pile des messages, au-dessus de lui.
+            // The banner sits left of the word counter; in a narrow window, where it would
+            // cover it, it joins the message stack, above it.
             let narrow = self.nav.total < px(640.);
             let (low, stacked) = if narrow { (None, banner) } else { (banner, None) };
             let toasts = div().absolute().bottom(px(54.)).left_4().right_4().flex().flex_col().items_end().gap_2().children(stacked).children(toasts);
@@ -165,7 +165,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &NewNote, window, cx| this.new_note_here(window, cx)))
             .on_action(cx.listener(|this, _: &NewFromTemplate, window, cx| this.open_templates(TemplateAct::New, window, cx)))
             .on_action(cx.listener(|this, _: &NewDiagram, window, cx| this.new_diagram(window, cx)))
-            // Échap dans un schéma où plus rien n'est en cours : retour à la note.
+            // Escape in a diagram where nothing is in progress anymore: back to the note.
             .on_action(cx.listener(|this, _: &canvas::Cancel, window, cx| {
                 window.focus(&this.pane().editor.focus_handle(cx));
                 cx.notify();
@@ -190,9 +190,9 @@ impl Render for Shell {
                 this.show_nav(Mode::Links, false, window, cx)
             }))
             .on_action(cx.listener(|this, _: &nav::ToggleFull, window, cx| this.toggle_full(window, cx)))
-            // Séparateur du panneau : il suit le pointeur tant que le bouton est tenu.
+            // Panel separator: it follows the pointer as long as the button is held.
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
-                // La bordure entre les deux panes, de même.
+                // The border between the two panes, likewise.
                 if this.pane_drag {
                     let area = this.pane_box.get();
                     if e.pressed_button == Some(MouseButton::Left) && area.size.width > px(0.) {
@@ -237,7 +237,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &ClosePane, window, cx| this.close_pane(window, cx)))
             .on_action(cx.listener(|this, _: &GoBack, window, cx| this.travel(false, window, cx)))
             .on_action(cx.listener(|this, _: &GoForward, window, cx| this.travel(true, window, cx)))
-            // Les boutons précédent et suivant de la souris.
+            // The mouse back and forward buttons.
             .on_mouse_down(
                 MouseButton::Navigate(gpui::NavigationDirection::Back),
                 cx.listener(|this, _, window, cx| this.travel(false, window, cx)),
@@ -257,7 +257,7 @@ impl Render for Shell {
                 this.set_help(!this.help.open, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ToggleCommands, window, cx| this.open_commands(window, cx)))
-            // Échap dans la note, quand elle n'a rien à fermer : le menu du clic droit.
+            // Escape in the note, when it has nothing to close: the right-click menu.
             .on_action(cx.listener(|this, _: &editor::Cancel, _, cx| {
                 this.icon_pick = None;
                 this.menu = None;
@@ -267,7 +267,7 @@ impl Render for Shell {
                 if this.help.open {
                     this.set_help(false, window, cx)
                 } else if this.pane().zone.is_focused(window) {
-                    // Un pane qui ne montre qu'une image : Échap revient à sa note.
+                    // A pane that only shows an image: Escape goes back to its note.
                     window.focus(&this.pane().editor.focus_handle(cx));
                 }
             }))
@@ -279,11 +279,11 @@ impl Render for Shell {
             .children(self.render_drop_chip(window.viewport_size()))
             .when(self.help.open, |d| d.child(self.render_help(window.viewport_size().height < px(420.), cx)));
 
-        // La marge transparente porte l'ombre et sert de poignée de redimensionnement.
+        // The transparent margin carries the shadow and serves as resize handle.
         div()
             .size_full()
-            // Alt + glisser, n'importe où : déplace la fenêtre (la phase de capture passe
-            // avant l'éditeur, qui n'utilise pas Alt avec la souris).
+            // Alt + drag, anywhere: moves the window (the capture phase comes
+            // before the editor, which does not use Alt with the mouse).
             .when(client, |d| {
                 d.capture_any_mouse_down(|e, window, cx| {
                     if e.button == MouseButton::Left && e.modifiers.alt {
@@ -326,7 +326,7 @@ impl Render for Shell {
     }
 }
 
-/// Bord ou coin de fenêtre sous le pointeur, dans une marge de quelques pixels.
+/// Window edge or corner under the pointer, within a margin of a few pixels.
 pub(super) fn resize_edge(pos: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeEdge> {
     let m = SHADOW;
     let (left, right) = (pos.x < m, pos.x > size.width - m);
@@ -345,11 +345,11 @@ pub(super) fn resize_edge(pos: Point<Pixels>, size: Size<Pixels>) -> Option<Resi
 }
 
 impl Shell {
-    // Pastille flottante en haut à droite de la note : un fond et un bord fins la
-    // distinguent du texte, ni flou ni transparence. Elle sert aussi de poignée de
-    // déplacement, comme l'en-tête du panneau, le vide du rail et la barre du tableau ;
-    // Alt + glisser déplace depuis n'importe où. ponytail: pas de bande transparente
-    // sur le haut de la note, elle gênerait les premières lignes.
+    // Floating badge at the top right of the note: a thin background and border set it
+    // apart from the text, neither blur nor transparency. It also serves as a move
+    // handle, like the panel header, the empty part of the rail and the board bar;
+    // Alt + drag moves from anywhere. ponytail: no transparent strip
+    // over the top of the note, it would get in the way of the first lines.
     pub(super) fn render_window_controls(&self, window: &Window) -> Div {
         let t = self.theme;
         let controls = window.window_controls();
@@ -384,10 +384,10 @@ impl Shell {
             .child(icon_button("close", "close.svg", t).on_click(|_, window, _| window.remove_window()))
     }
 
-    /// Sans coffre : l'accueil, qui en propose un tout prêt, en ouvre un ou en clone un.
+    /// Without a vault: the welcome page, which offers a ready-made one, opens one or clones one.
     pub(super) fn render_welcome(&self, body: Div, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-            // Sans coffre, un dossier lâché sur l'accueil devient le coffre.
+            // Without a vault, a folder dropped on the welcome page becomes the vault.
             body.drag_over::<gpui::ExternalPaths>(move |style, _, _, _| style.bg(t.selection))
                 .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
                     if let Some(dir) = paths.paths().iter().find(|p| p.is_dir()) {
@@ -415,8 +415,8 @@ impl Shell {
                             "Tes notes vivent dans un dossier de fichiers Markdown : le coffre.",
                         )),
                 )
-                // Le plus court chemin d'abord : un coffre tout prêt, d'un clic, sans fenêtre de
-                // sélection ni dossier à créer soi-même.
+                // Shortest path first: a ready-made vault, in one click, without a picker
+                // window or a folder to create yourself.
                 .children(vault::default_vault().map(|place| {
                     div()
                         .id("welcome-create")
@@ -464,7 +464,7 @@ impl Shell {
                         "un coffre Obsidian existant fonctionne tel quel",
                     )
                 )))
-                // L'adresse à cloner se demande ici aussi, sans coffre.
+                // The address to clone is asked here too, without a vault.
                 .children(self.palette.clone())
     }
 
@@ -473,12 +473,12 @@ impl Shell {
         recall::recall(&notes, today(), std::time::SystemTime::now())
     }
 
-    /// La page vide, sous la ligne où l'on écrit : le jour (qui ouvre sa note), les touches
-    /// utiles, les notes à relire. Tout se clique, passe à la ligne dans un pane étroit et
-    /// disparaît à la première frappe.
+    /// The empty page, under the line where you write: the day (which opens its note), the useful
+    /// keys, the notes to reread. Everything is clickable, wraps in a narrow pane and
+    /// disappears at the first keystroke.
     pub(super) fn render_empty(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
-        // `fill` : la ligne se teinte au survol, comme une ligne de liste.
+        // `fill`: the line is tinted on hover, like a list row.
         let row = |id: (&'static str, usize), fill: bool| {
             div()
                 .id(id)
@@ -492,7 +492,7 @@ impl Shell {
                 .hover(|s| if fill { s.text_color(t.text).bg(t.border) } else { s.text_color(t.text) })
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         };
-        // Les touches en vigueur ; une action laissée sans raccourci n'est pas annoncée.
+        // The keys in effect; an action left without a shortcut is not announced.
         let actions: [(Box<dyn gpui::Action>, &str); 3] = [
             (Box::new(OpenPalette), "notes"),
             (Box::new(NewNote), tr("new note", "nouvelle note")),
@@ -533,7 +533,7 @@ impl Shell {
                 .child(div().mb_1().text_size(px(11.)).text_color(t.soft).child(tr("READ AGAIN", "À RELIRE")))
                 .children(rows)
         });
-        // Dans la colonne du texte, sous sa première ligne.
+        // In the text column, under its first line.
         div().absolute().top(px(76.)).left_0().right_0().flex().justify_center().child(
             div()
                 .w_full()
@@ -552,17 +552,17 @@ impl Shell {
     pub(super) fn render_pane(&mut self, pane: usize, active: bool, client: bool, window: &mut Window, cx: &mut Context<Self>) -> (gpui::AnyElement, Option<gpui::AnyElement>) {
         let t = self.theme;
         let two = self.panes.len() == 2;
-        // Copie de toute la note : simple icône flottante, hors de la barre de titre.
-        // Commentaires de la note, à sa droite : le texte commenté, puis ce qu'on en dit. Un
-        // clic mène au commentaire, prêt à être retouché ; la coche le résout.
-        // ponytail: la note est relue à chaque rendu (une recherche de `{==`) ; garder la
-        // liste d'une version du texte à l'autre si de très longues notes en pâtissent.
+        // Copy of the whole note: a plain floating icon, outside the title bar.
+        // Comments of the note, on its right: the commented text, then what is said about it. A
+        // click leads to the comment, ready to be edited; the check mark resolves it.
+        // ponytail: the note is reread on every render (a search for `{==`); keep the
+        // list from one version of the text to the next if very long notes suffer from it.
         let said: Vec<(String, String, usize)> = match self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx) {
             true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|(noted, said, at)| (noted.into(), said.into(), at)).collect(),
             false => Vec::new(),
         };
-        // Leur bouton, à gauche de celui de la copie, ouvre et referme le panneau ; le
-        // compteur de mots de la note lui laisse la place.
+        // Their button, left of the copy one, opens and closes the panel; the
+        // note's word counter leaves room for it.
         let talk = (!said.is_empty()).then(|| {
             ui::widgets::button("comments-toggle", "i-chat.svg", !self.comments_shut, t)
                 .debug_selector(|| "comments-toggle".into())
@@ -573,7 +573,7 @@ impl Shell {
                 .size(px(30.))
                 .rounded(px(8.))
                 .occlude()
-                // Une pastille et leur nombre, que le panneau soit ouvert ou refermé.
+                // A badge and their number, whether the panel is open or closed.
                 .child(
                     div()
                         .debug_selector(|| "comments-badge".into())
@@ -598,8 +598,8 @@ impl Shell {
                     cx.notify();
                 }))
         });
-        // Une note qui est un tableau kanban : son bouton passe du tableau au texte. Le
-        // tableau cache la note, qui ne doit plus recevoir la frappe.
+        // A note that is a kanban board: its button switches from the board to the text. The
+        // board hides the note, which must no longer receive keystrokes.
         let board = self.board_shown(cx);
         if board && self.pane().editor.focus_handle(cx).is_focused(window) {
             window.focus(&self.pane().board.focus);
@@ -607,14 +607,14 @@ impl Shell {
         if !cx.has_active_drag() {
             self.pane_mut().board.drag = None;
         }
-        // La page liste refermée avec la saisie dans son filtre ou une de ses cellules : plus
-        // rien ne la reçoit, elle revient à la note.
+        // The list page closed with input in its filter or one of its cells: nothing
+        // receives it anymore, it goes back to the note.
         if active && self.pane().listing.is_none() && window.focused(cx).is_none() {
             window.focus(&self.pane().editor.focus_handle(cx));
         }
         if !board {
             self.pane_mut().board.field = None;
-            // Le tableau quitté (une autre note s'ouvre), la saisie revient à la note.
+            // The board left (another note opens), input goes back to the note.
             if self.pane().board.focus.is_focused(window) {
                 window.focus(&self.pane().editor.focus_handle(cx));
             }
@@ -625,7 +625,7 @@ impl Shell {
                 .tooltip(ui::widgets::tip(if board { tr("Show the text", "Voir le texte") } else { tr("Show the board", "Voir le tableau") }, String::new(), t))
                 .absolute()
                 .bottom_4()
-                // Toujours à la même place, tableau ou texte : à gauche de la copie.
+                // Always in the same place, board or text: left of the copy button.
                 .right(px(50.))
                 .size(px(30.))
                 .rounded(px(8.))
@@ -636,8 +636,8 @@ impl Shell {
             e.corner = 1 + talk.is_some() as usize + boards as usize;
             e.bar_here = active;
         });
-        // La colonne des commentaires prend ce que le panneau et la note lui laissent, 270 px au
-        // plus ; faute de 140 px, elle ne se montre pas (son bouton reste, la fenêtre élargie la rend).
+        // The comments column takes what the panel and the note leave it, 270 px at
+        // most; short of 140 px, it does not show (its button stays, a wider window brings it back).
         let column = (active && !said.is_empty() && !self.comments_shut)
             .then(|| {
                 self.nav.aside = px(270.);
@@ -719,7 +719,7 @@ impl Shell {
             .rounded(px(8.))
             .occlude()
             .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
-        // L'image choisie dans le panneau ; elle s'efface dès que la note reprend la main.
+        // The image picked in the panel; it goes away as soon as the note takes over again.
         if self.pane().editor.focus_handle(cx).is_focused(window) {
             self.set_file(None, cx);
             self.pane_mut().listing = None;
@@ -755,7 +755,7 @@ impl Shell {
                 note.child(self.pane().editor.clone()).children(empty).child(copy).children(talk).children(flip)
             }
         };
-        // Pendant qu'on glisse un fichier de l'arbre, la zone qui le recevrait est teintée.
+        // While a file is dragged from the tree, the area that would receive it is tinted.
         let tint = self.pane_aim.filter(|(over, _)| *over == pane).map(|(_, half)| {
             div()
                 .absolute()
@@ -775,18 +775,18 @@ impl Shell {
             .relative()
             .h_full()
             .min_w_0()
-            // Rien d'un pane ne se dessine chez son voisin, si étroit soit-il.
+            // Nothing of a pane is drawn in its neighbour, however narrow.
             .overflow_hidden()
             .flex()
             .map(|d| if two && pane == 0 { d.flex_none().w(gpui::relative(ratio)) } else { d.flex_1() })
-            // Un geste de souris dans un pane vaut pour lui, avant que ses vues ne le reçoivent.
+            // A mouse gesture in a pane counts for it, before its views receive it.
             .capture_any_mouse_down(cx.listener(move |this, _, _, cx| {
                 if this.active != pane && pane < this.panes.len() {
                     this.active = pane;
                     cx.notify();
                 }
             }))
-            // Des fichiers du système sur la note : un trait entre deux lignes dit où ils se rangeraient.
+            // System files over the note: a line between two lines says where they would go.
             .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
                 let mine = matches!(&this.drop_aim, Some(DropAim { aim: Aim::Note { pane: p, .. }, .. }) if *p == pane);
                 let at = e.event.position;
@@ -819,7 +819,7 @@ impl Shell {
                 }
             }))
             .child(note)
-            // Avec deux panes, un filet marque celui qui a la saisie.
+            // With two panes, a thin rule marks the one that has input.
             .when(two && active, |d| d.child(div().absolute().top_0().left_0().right_0().h(px(2.)).bg(t.accent.opacity(0.7))))
             .children(tint);
         (area.into_any_element(), comments.map(IntoElement::into_any_element))

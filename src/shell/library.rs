@@ -3,8 +3,8 @@
 use super::*;
 
 impl Shell {
-    /// Relit le coffre tout de suite, sans attendre la surveillance : ce que la fusion a écrit
-    /// s'affiche, chaque note gardant son curseur et son défilement.
+    /// Rereads the vault right away, without waiting for the watcher: what the merge wrote
+    /// shows, each note keeping its cursor and scroll.
     pub(super) fn rescan(&mut self, root: &Path, cx: &mut Context<Self>) {
         let views: Vec<(usize, f32)> = self.panes.iter().map(|pane| pane.editor.read(cx).view()).collect();
         let (notes, dirs, images) = vault::rescan(root, &self.notes);
@@ -16,30 +16,30 @@ impl Shell {
         }
     }
 
-    /// Suit ce que d'autres programmes changent dans le coffre : notes ajoutées,
-    /// renommées, supprimées, ou modifiées pendant qu'elles sont affichées.
+    /// Follows what other programs change in the vault: notes added,
+    /// renamed, deleted, or modified while they are shown.
     ///
-    /// Le système signale les changements (inotify, FSEvents…) : la relecture suit
-    /// dans la fraction de seconde. Une relecture de contrôle a lieu quand même toutes
-    /// les 30 s, au cas où un événement se perdrait. Sans surveillance possible (limite
-    /// d'inotify atteinte, dossier réseau), l'empreinte du coffre est recalculée toutes
-    /// les 2 s.
-    // ponytail: l'empreinte (noms et dates, sans lire les fichiers) est calculée hors
-    // du thread UI et ne prend jamais plus de 0,5 % d'un cœur : un gros coffre est
-    // donc regardé moins souvent (5 000 notes : toutes les 5 s, ou 100 s en contrôle).
-    // Les tests n'installent pas de surveillance : leur horloge est simulée.
+    /// The system reports changes (inotify, FSEvents…): the reread follows
+    /// within a fraction of a second. A check reread still happens every
+    /// 30 s, in case an event gets lost. Without a possible watcher (inotify
+    /// limit reached, network folder), the vault's fingerprint is recomputed every
+    /// 2 s.
+    // ponytail: the fingerprint (names and dates, without reading the files) is computed off
+    // the UI thread and never takes more than 0.5 % of a core: a big vault is
+    // thus looked at less often (5,000 notes: every 5 s, or 100 s for the check).
+    // Tests install no watcher: their clock is simulated.
     pub(super) fn watch(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let changed = Arc::new(vault::Signal::default());
             let mut watched: Option<(PathBuf, Option<notify::RecommendedWatcher>)> = None;
             let mut last = None;
             let mut pause = Duration::from_secs(2);
-            // Prochain contrôle de la surveillance.
+            // Next watcher check.
             let mut next_check = Instant::now();
             loop {
                 let live = watched.as_ref().is_some_and(|(_, w)| w.is_some());
-                // Avec la surveillance, la tâche dort jusqu'au signal du système ; elle se réveille
-                // quand même toutes les 2 s pour voir si on a changé de coffre.
+                // With a watcher, the task sleeps until the system's signal; it still wakes up
+                // every 2 s to see whether the vault changed.
                 let notified = if live {
                     changed.wait(cx.background_executor().timer(Duration::from_secs(2))).await
                 } else {
@@ -64,8 +64,8 @@ impl Shell {
                         continue;
                     }
                     if notified {
-                        // Un enregistrement ou une synchronisation touche souvent plusieurs
-                        // fichiers d'affilée : on laisse la rafale se terminer.
+                        // A save or a sync often touches several
+                        // files in a row: let the burst finish.
                         cx.background_executor().timer(Duration::from_millis(250)).await;
                         changed.take();
                     }
@@ -84,7 +84,7 @@ impl Shell {
                 if last == Some((root.clone(), print)) {
                     continue;
                 }
-                // Seules les notes dont la date a changé sont relues.
+                // Only notes whose date changed are reread.
                 let Ok(known) = this.update(cx, |this, _| this.notes.clone()) else {
                     return;
                 };
@@ -95,7 +95,7 @@ impl Shell {
                     .await;
                 let mut applied = false;
                 this.update(cx, |this, cx| {
-                    // Une frappe ou un enregistrement pendant la lecture : on réessaie au prochain tour.
+                    // A keystroke or a save during the read: try again on the next round.
                     if this.vault.as_ref() == Some(&root) && this.save_gen == generation && !this.panes.iter().any(|pane| pane.dirty) {
                         this.sync(notes, dirs, images, cx);
                         last = Some((root, print));
@@ -104,7 +104,7 @@ impl Shell {
                 })
                 .ok();
                 if !applied {
-                    // Avec une surveillance, le prochain tour est celui du contrôle : le rapprocher.
+                    // With a watcher, the next round is the check: bring it closer.
                     next_check = Instant::now() + Duration::from_secs(1);
                 }
             }
@@ -112,7 +112,7 @@ impl Shell {
         .detach();
     }
 
-    /// Aligne l'app sur le coffre tel qu'il vient d'être relu.
+    /// Aligns the app with the vault as just reread.
     pub(super) fn sync(
         &mut self,
         notes: Vec<Note>,
@@ -120,8 +120,8 @@ impl Shell {
         mut images: Vec<PathBuf>,
         cx: &mut Context<Self>,
     ) {
-        // Mêmes notes, mêmes tags, mêmes liens ? Chaque note relue se compare à celle qu'on avait
-        // sous son chemin, sans rien copier ni trier.
+        // Same notes, same tags, same links? Each reread note is compared with the one we had
+        // under its path, without copying or sorting anything.
         let had: std::collections::HashMap<&Path, &Note> = self.notes.iter().map(|n| (n.path.as_path(), n)).collect();
         let same = notes.len() == had.len() && notes.iter().all(|n| had.get(n.path.as_path()).is_some_and(|o| o.tags == n.tags && o.links == n.links));
         dirs.sort();
@@ -137,16 +137,16 @@ impl Shell {
             self.refresh_graph(cx);
             cx.notify();
         } else {
-            // Ni nom, ni tag, ni lien n'ont changé, mais le texte peut avoir : la recherche le suit.
+            // No name, tag or link changed, but the text may have: search follows it.
             self.notes = notes;
         }
         self.each_pane(|this| {
-            // Le tableau affiché a été réécrit ailleurs : il est relu s'il n'attend rien ici.
+            // The shown table was rewritten elsewhere: it is reread if nothing is pending here.
             if let Some(sheet) = this.pane().sheet() {
                 sheet.update(cx, |sheet, cx| sheet.reload_if_changed(cx));
             }
-            // La note affichée a été réécrite ailleurs : on la relit. Sans modification
-            // en attente ici (l'appelant s'en assure), rien n'est perdu.
+            // The shown note was rewritten elsewhere: reread it. With no modification
+            // pending here (the caller makes sure of it), nothing is lost.
             if let Some(path) = &this.pane().path
                 && let Ok(text) = fs::read_to_string(path)
                 && text != this.pane().editor.read(cx).text()
@@ -158,7 +158,7 @@ impl Shell {
 
     pub(super) fn set_vault(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.each_pane(|this| this.leave(cx));
-        // Un autre coffre : un seul pane, sur une note neuve.
+        // Another vault: a single pane, on a new note.
         self.panes.truncate(1);
         self.active = 0;
         self.vault = Some(root.clone());
@@ -170,7 +170,7 @@ impl Shell {
         self.new_note(String::new(), cx);
         vault::save_config(&root, &[]);
         window.focus(&self.pane().editor.focus_handle(cx));
-        // L'index (noms, tags) se construit hors du thread UI.
+        // The index (names, tags) is built off the UI thread.
         cx.spawn(async move |this, cx| {
             let scan_root = root.clone();
             let (notes, dirs, images) = cx
@@ -193,8 +193,8 @@ impl Shell {
         .detach();
     }
 
-    /// Crée le dossier du coffre s'il n'existe pas, puis l'ouvre : un dossier déjà là est
-    /// ouvert tel quel, rien n'y est écrit.
+    /// Creates the vault folder if it does not exist, then opens it: a folder already there is
+    /// opened as is, nothing is written to it.
     pub(super) fn create_vault(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         match fs::create_dir_all(&root) {
             Ok(()) => self.set_vault(root, window, cx),
@@ -224,7 +224,7 @@ impl Shell {
     }
 
     pub(super) fn push_names(&mut self, cx: &mut Context<Self>) {
-        // Les alias se proposent après `[[` comme des noms.
+        // Aliases are offered after `[[` like names.
         let notes: Vec<&Note> = self.notes.iter().filter(|n| !self.is_template(n)).collect();
         let names: Vec<String> = notes.iter().map(|n| n.name.clone()).chain(notes.iter().flat_map(|n| n.aliases.iter().cloned())).collect();
         let pictures = vault::pictures(&self.images);
@@ -236,14 +236,14 @@ impl Shell {
         }
     }
 
-    /// Indique à l'éditeur où chercher les images : à côté de la note, puis dans le coffre.
+    /// Tells the editor where to look for images: next to the note, then in the vault.
     pub(super) fn push_dirs(&mut self, cx: &mut Context<Self>) {
         let note_dir = self.pane().path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
         let dirs = note_dir.into_iter().chain(self.vault.clone()).collect();
         self.pane().editor.update(cx, |e, _| e.set_dirs(dirs));
     }
 
-    /// Place la note en tête des récentes et mémorise la liste.
+    /// Puts the note at the head of the recent ones and saves the list.
     pub(super) fn touch(&mut self, path: &Path) {
         self.recent.retain(|p| p != path);
         self.recent.insert(0, path.to_path_buf());
@@ -253,17 +253,17 @@ impl Shell {
         }
     }
 
-    /// Les notes, de la plus récemment ouverte à la plus ancienne ; celles jamais
-    /// ouvertes suivent, par date de modification.
+    /// The notes, from the most recently opened to the oldest; those never
+    /// opened follow, by modification date.
     pub(super) fn by_recency(&self) -> Vec<&Note> {
-        // Le rang de chaque récente, trouvé d'un coup : pas de liste relue pour chaque note.
+        // The rank of each recent note, found in one go: no list reread for each note.
         let rank: std::collections::HashMap<&Path, usize> = self.recent.iter().enumerate().rev().map(|(i, p)| (p.as_path(), i)).collect();
         let mut notes: Vec<&Note> = self.notes.iter().collect();
         notes.sort_by_cached_key(|n| rank.get(n.path.as_path()).copied().unwrap_or(usize::MAX));
         notes
     }
 
-    /// Donne l'icône `icon` à la note, au fichier ou au dossier `path` ; `None` la lui retire.
+    /// Gives icon `icon` to the note, file or folder `path`; `None` removes it.
     pub(super) fn set_icon(&mut self, path: PathBuf, icon: Option<&str>, cx: &mut Context<Self>) {
         match icon {
             Some(icon) => self.icons.insert(path, icon.to_string()),
@@ -281,7 +281,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ouvre le terminal du système dans le coffre, ou dit qu'il n'en a pas trouvé.
+    /// Opens the system terminal in the vault, or says it found none.
     pub(super) fn open_terminal(&mut self, cx: &mut Context<Self>) {
         let Some(root) = self.vault.clone() else {
             return;
@@ -292,7 +292,7 @@ impl Shell {
         }
     }
 
-    /// Sauvegarde du coffre : demande où la ranger.
+    /// Vault backup: asks where to put it.
     pub(super) fn choose_backup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: false,
@@ -310,7 +310,7 @@ impl Shell {
         .detach();
     }
 
-    /// Écrit dans `dir`, en tâche de fond, l'archive datée de tout le coffre, puis dit où elle est.
+    /// Writes into `dir`, in the background, the dated archive of the whole vault, then says where it is.
     pub(super) fn backup_to(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
         let Some(root) = self.vault.clone() else {
             return;
@@ -329,8 +329,8 @@ impl Shell {
         .detach();
     }
 
-    /// Corbeille du coffre : la liste de ce qu'elle contient ; Entrée remet l'élément choisi à
-    /// la racine du coffre, où le suivi des fichiers le retrouve.
+    /// Vault trash: the list of what it holds; Enter puts the chosen item back at
+    /// the vault root, where the file watcher finds it.
     pub(super) fn open_trash(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.vault.clone() else {
             return;

@@ -3,9 +3,9 @@
 use super::*;
 
 impl Shell {
-    /// Synchronise le coffre en une action : tout commiter, recevoir, fusionner, envoyer. Le
-    /// réseau travaille en tâche de fond, la saisie reste libre ; un coffre sans dépôt relié
-    /// demande d'abord l'adresse du dépôt.
+    /// Syncs the vault in one action: commit everything, fetch, merge, push. The
+    /// network works in a background task, input stays free; a vault with no linked repository
+    /// first asks for the repository address.
     pub(super) fn git_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.vault.clone() else { return };
         if self.syncing {
@@ -28,8 +28,8 @@ impl Shell {
         let (date, host) = (date_name(today()), git::host());
         cx.spawn(async move |this, cx| {
             let (mut received, mut conflicts, mut sent) = (0, 0, 0);
-            // Refusé parce qu'une autre machine a envoyé entre-temps : recevoir de nouveau,
-            // trois fois au plus.
+            // Rejected because another machine pushed in the meantime: fetch again,
+            // three times at most.
             let busy = tr("the server keeps receiving from another machine: try again.", "le serveur reçoit sans cesse d'une autre machine : réessaie.");
             let mut outcome = Err(git::Fail::Told(busy.to_string()));
             for _ in 0..3 {
@@ -38,12 +38,12 @@ impl Shell {
                     outcome = Err(e);
                     break;
                 }
-                // La partie locale se fait d'une traite sur ce fil : rien ne peut s'intercaler
-                // entre l'enregistrement de ce qui vient d'être tapé et la fusion, donc rien de
-                // tapé n'est perdu et rien de reçu n'est écrasé.
-                // ponytail: l'interface est figée le temps de la fusion (quelques dixièmes de
-                // seconde) ; la passer en tâche de fond avec la saisie retenue si un très gros
-                // coffre la rend sensible.
+                // The local part runs in one go on this thread: nothing can slip in
+                // between saving what was just typed and the merge, so nothing
+                // typed is lost and nothing received is overwritten.
+                // ponytail: the interface is frozen during the merge (a few tenths of a
+                // second); move it to a background task with input held back if a very large
+                // vault makes it noticeable.
                 let merged = this.update(cx, |this, cx| {
                     this.flush(cx);
                     let merged = git::merge(&root, &date, &host);
@@ -110,7 +110,7 @@ impl Shell {
         self.say(Tone::Failed, format!("{} : {}", tr("Sync failed", "Synchronisation impossible"), why.text()), cx);
     }
 
-    /// Relie le coffre à un dépôt distant vide, et y envoie ce qu'il contient.
+    /// Links the vault to an empty remote repository, and pushes what it contains.
     pub(super) fn git_connect(&mut self, url: String, cx: &mut Context<Self>) {
         let Some(root) = self.vault.clone() else { return };
         if self.syncing {
@@ -133,7 +133,7 @@ impl Shell {
         .detach();
     }
 
-    /// « Cloner un coffre » : l'adresse du dépôt, puis le dossier où le poser.
+    /// "Clone a vault": the repository address, then the folder to put it in.
     pub(super) fn ask_clone(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let label = tr("Address of the git repository to clone", "Adresse du dépôt git à cloner");
         self.ask_text(label, window, cx, |_, url, window, cx| {
@@ -154,7 +154,7 @@ impl Shell {
         });
     }
 
-    /// Clone le dépôt dans un nouveau dossier de `parent`, qui devient le coffre ouvert.
+    /// Clones the repository into a new folder of `parent`, which becomes the open vault.
     pub(super) fn clone_to(&mut self, url: String, parent: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         let into = parent.join(git::folder_of(&url));
         if into.exists() {

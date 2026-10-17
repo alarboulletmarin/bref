@@ -4,7 +4,7 @@ use gpui::{AnyView, App, Context, Div, InteractiveElement, MouseButton, Stateful
 
 use crate::ui::theme::Theme;
 
-/// Bouton icône du rail et des en-têtes de panneau.
+/// Icon button of the rail and of panel headers.
 pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, t: Theme) -> Stateful<Div> {
     div()
         .id(id)
@@ -27,8 +27,8 @@ pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, 
         )
 }
 
-/// Bulle d'un bouton à icône : ce qu'il fait et, s'il en a un, son raccourci. Sans elle,
-/// une icône seule oblige à connaître la documentation pour savoir où cliquer.
+/// Tooltip of an icon button: what it does and, if it has one, its shortcut. Without it,
+/// a bare icon forces you to know the documentation to know where to click.
 pub struct Tip {
     label: &'static str,
     keys: String,
@@ -56,11 +56,11 @@ impl Render for Tip {
     }
 }
 
-/// À poser sur un bouton : `.tooltip(tip(libellé, touches, thème))`.
+/// To put on a button: `.tooltip(tip(label, keys, theme))`.
 pub fn tip(label: &'static str, keys: String, theme: Theme) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
     move |_, cx| cx.new(|_| Tip { label, keys: keys.clone(), theme }).into()
 }
-/// Bouton rond à icône : contrôles de la fenêtre, copie de la note.
+/// Round icon button: window controls, note copy.
 pub fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
@@ -76,8 +76,8 @@ pub fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stat
         .child(svg().path(icon).size(px(16.)).flex_none().text_color(t.text))
 }
 
-/// Fait d'un élément une poignée de la fenêtre, là où l'app dessine sa barre de titre
-/// (Linux) : glisser la déplace, double-clic l'agrandit, clic droit ouvre le menu du système.
+/// Turns an element into a window handle, where the app draws its title bar
+/// (Linux): dragging moves it, double-click maximizes it, right-click opens the system menu.
 pub fn drag_window<E: InteractiveElement>(element: E) -> E {
     element
         .on_mouse_down(MouseButton::Left, |e, window, _| {

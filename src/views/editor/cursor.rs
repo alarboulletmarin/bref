@@ -24,23 +24,23 @@ impl Editor {
         self.cursor()
     }
 
-    /// Met le curseur à l'octet `at` (le plus proche qui soit valide).
+    /// Puts the cursor at byte `at` (the nearest valid one).
     #[cfg(test)]
     pub fn place_cursor(&mut self, at: usize, cx: &mut Context<Self>) {
         let at = self.clamp(at);
         self.move_to(at, cx);
     }
 
-    /// Place le curseur à `at` ; avec `top`, sa ligne monte en haut de la vue (un titre garde
-    /// sa section sous lui), sinon elle défile juste assez pour se voir.
+    /// Places the cursor at `at`; with `top`, its line goes up to the top of the view (a heading keeps
+    /// its section under it), otherwise it scrolls just enough to be seen.
     pub fn jump(&mut self, at: usize, top: bool, cx: &mut Context<Self>) {
         self.more.clear();
         self.move_to(self.clamp(at), cx);
         self.reveal_top = top;
     }
 
-    /// Résultat de la recherche du coffre : à la ligne de rang `row`, sélectionne le premier
-    /// passage qui vaut `query` (sans la casse) ; à défaut, le curseur va au début de la ligne.
+    /// Vault search result: on the line of rank `row`, selects the first
+    /// passage equal to `query` (ignoring case); failing that, the cursor goes to the line start.
     pub fn select_in_row(&mut self, row: usize, query: &str, cx: &mut Context<Self>) {
         let start: usize = self.content.split_inclusive('\n').take(row).map(str::len).sum();
         let line = self.line_range(start);
@@ -94,13 +94,13 @@ impl Editor {
         cx.notify();
     }
 
-    /// Nombre de curseurs, le principal compris.
+    /// Number of cursors, the main one included.
     #[cfg(test)]
     pub fn cursors(&self) -> usize {
         self.more.len() + 1
     }
 
-    /// Range les autres curseurs dans l'ordre du texte, et retire ceux qui en touchent un autre.
+    /// Sorts the other cursors in text order, and removes those touching another one.
     pub(super) fn tidy(&mut self) {
         self.more.sort_by_key(|(sel, _)| sel.start);
         let (mut kept, main): (Vec<(Range<usize>, bool)>, _) = (Vec::new(), self.sel.clone());
@@ -113,8 +113,8 @@ impl Editor {
         self.more = kept;
     }
 
-    /// Alt+clic : un curseur de plus à l'octet `at`, qui devient le principal. Pas dans un
-    /// tableau, qui a ses propres gestes.
+    /// Alt+click: one more cursor at byte `at`, which becomes the main one. Not in a
+    /// table, which has its own gestures.
     pub(super) fn add_cursor(&mut self, at: usize, cx: &mut Context<Self>) {
         if self.table_at(at).is_some() || self.table_at(self.sel.start).is_some() {
             return self.move_to(at, cx);
@@ -124,8 +124,8 @@ impl Editor {
         self.tidy();
     }
 
-    /// Sélectionne le mot sous le curseur ; puis, à chaque appel, l'occurrence suivante de la
-    /// sélection reçoit un curseur de plus (elle se cherche en boucle, la casse compte).
+    /// Selects the word under the cursor; then, on each call, the next occurrence of the
+    /// selection gets one more cursor (it is searched in a loop, case matters).
     pub(super) fn select_next(&mut self, cx: &mut Context<Self>) {
         if self.sel.is_empty() {
             let word = self.unit_at(self.sel.start, false);
@@ -151,7 +151,7 @@ impl Editor {
             .checked_sub(1)
     }
 
-    /// Ligne voisine qu'on voit : la ligne de tirets d'un tableau se saute.
+    /// Neighbouring visible line: a table's dash line is skipped.
     pub(super) fn neighbour(&self, r: usize, down: bool) -> Option<usize> {
         let step = |r: usize| if down { Some(r + 1) } else { r.checked_sub(1) };
         let mut r = step(r)?;
@@ -167,7 +167,7 @@ impl Editor {
         };
         let row = &self.rows[r];
         let v = (f32::from(row.pos(from - row.start).y) / f32::from(row.lh)).round() as i32;
-        // Dans une cellule, on descend ligne visuelle après ligne visuelle, puis on passe à la ligne suivante.
+        // In a cell, move down visual line after visual line, then go to the next line.
         let (r, v) = if down {
             if v + 1 < row.lines_at(from - row.start) {
                 (r, v + 1)
@@ -188,7 +188,7 @@ impl Editor {
     }
 
     pub(super) fn go(&mut self, m: Motion, select: bool, cx: &mut Context<Self>) {
-        // Sélecteur de tableau : les flèches règlent sa taille.
+        // Table picker: the arrows set its size.
         if let Some((cols, rows)) = &mut self.grid {
             match m {
                 Motion::Left => *cols = (*cols - 1).max(1),

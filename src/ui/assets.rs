@@ -9,15 +9,15 @@ use gpui::{App, AssetSource, SharedString, prelude::*, px, svg};
 
 use crate::{logic::prefs::Prefs, ui::theme::Theme};
 
-/// Polices installées, relevées au démarrage.
+/// Installed fonts, collected at startup.
 pub static FAMILIES: OnceLock<Vec<&'static str>> = OnceLock::new();
 
-/// Polices (texte, code) en usage : celles choisies, sinon celles par défaut.
+/// Fonts (text, code) in use: the chosen ones, otherwise the defaults.
 static FONTS: RwLock<(&str, &str)> = RwLock::new(("IBM Plex Sans", "IBM Plex Mono"));
 
-/// IBM Plex Sans et Plex Mono (licence SIL OFL, `assets/fonts/`), dans le binaire : l'app
-/// a ses polices sans rien installer. Des polices statiques, car gpui 0.2 ne met pas en
-/// gras une police variable.
+/// IBM Plex Sans and Plex Mono (SIL OFL license, `assets/fonts/`), in the binary: the app
+/// has its fonts without installing anything. Static fonts, because gpui 0.2 does not
+/// bold a variable font.
 pub const FONT_FILES: [&[u8]; 8] = [
     include_bytes!("../../assets/fonts/IBMPlexSans-Regular.ttf"),
     include_bytes!("../../assets/fonts/IBMPlexSans-Italic.ttf"),
@@ -45,8 +45,8 @@ pub fn init_fonts(cx: &mut App) {
     });
 }
 
-/// Met en usage les polices des réglages (n'importe quelle police installée) ; à
-/// défaut, celles de l'app.
+/// Puts the settings' fonts in use (any installed font); failing that,
+/// the app's.
 pub fn apply_fonts(prefs: &Prefs) {
     let installed = FAMILIES.get().map_or(&[][..], Vec::as_slice);
     let pick = |chosen: &str, wanted: &[&'static str]| {
@@ -58,7 +58,7 @@ pub fn apply_fonts(prefs: &Prefs) {
     *FONTS.write().unwrap() = (pick(&prefs.font, &["IBM Plex Sans"]), pick(&prefs.mono, &["IBM Plex Mono"]));
 }
 
-/// Icônes embarquées dans le binaire (traits de 1,2 px sur une grille de 16 px).
+/// Icons embedded in the binary (1.2 px strokes on a 16 px grid).
 pub struct Assets;
 
 impl AssetSource for Assets {
@@ -73,7 +73,7 @@ impl AssetSource for Assets {
             }
             "check.svg" => r#"<path d="M4 8.5L7 11L12 5"/>"#,
             "board.svg" => r#"<rect x="2.5" y="3" width="3" height="10" rx="0.8"/><rect x="6.5" y="3" width="3" height="7" rx="0.8"/><rect x="10.5" y="3" width="3" height="4.5" rx="0.8"/>"#,
-            // Les icônes des commandes de la palette et de la barre d'un tableau.
+            // Icons of the palette commands and of a table's bar.
             "c-bold.svg" => r#"<path d="M5 3.5H9A2.2 2.2 0 0 1 9 8H5ZM5 8H9.6A2.25 2.25 0 0 1 9.6 12.5H5Z"/>"#,
             "c-italic.svg" => r#"<path d="M7 3.5H12M4 12.5H9M9.5 3.5L6.5 12.5"/>"#,
             "c-underline.svg" => r#"<path d="M4.5 3V7.5A3.5 3.5 0 0 0 11.5 7.5V3M3.5 13.5H12.5"/>"#,
@@ -107,7 +107,7 @@ impl AssetSource for Assets {
             "c-zoom-out.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.3 7H8.7"/>"#,
             "c-zoom-reset.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.5 7H8.5M5.5 7.01"/>"#,
             "c-quit.svg" => r#"<path d="M9.5 3H12.5V13H9.5M6.5 5L3.5 8L6.5 11M3.5 8H10"/>"#,
-            // Trois traits : le menu de toutes les commandes.
+            // Three strokes: the menu of all commands.
             "menu.svg" => r#"<path d="M3 4.5H13M3 8H13M3 11.5H13"/>"#,
             "info.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 7.5V11M8 5V5.2"/>"#,
             "alert.svg" => r#"<path d="M8 2.5L14 13H2ZM8 6.5V9.5M8 11.3V11.5"/>"#,
@@ -116,7 +116,7 @@ impl AssetSource for Assets {
             "clock.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 5V8L10 9.5"/>"#,
             "search.svg" => r#"<circle cx="7" cy="7" r="3.5"/><path d="M9.7 9.7L12.5 12.5"/>"#,
             "plus.svg" => r#"<path d="M8 3.5V12.5M3.5 8H12.5"/>"#,
-            // Six points : la poignée d'un bloc.
+            // Six dots: a block's handle.
             "grip.svg" => r#"<path d="M6 3.5V3.6M10 3.5V3.6M6 8V8.1M10 8V8.1M6 12.5V12.6M10 12.5V12.6" stroke-width="2.2"/>"#,
             "help.svg" => {
                 r#"<circle cx="8" cy="8" r="5.5"/><path d="M6.4 6.6A1.6 1.6 0 1 1 8 8.4V9.2M8 11.2V11.3"/>"#
@@ -129,7 +129,7 @@ impl AssetSource for Assets {
             }
             "tag.svg" => r#"<path d="M6.5 3L5 13M11 3L9.5 13M3.5 6H13M3 10H12.5"/>"#,
             "trash.svg" => r#"<path d="M3 4.5H13M6.5 4.5V3H9.5V4.5M4.5 4.5L5 13H11L11.5 4.5M6.8 7V10.5M9.2 7V10.5"/>"#,
-            // Une flèche vers un disque : une copie mise à l'abri, pas une boîte d'archives.
+            // An arrow toward a disk: a copy put somewhere safe, not an archive box.
             "backup.svg" => {
                 r#"<path d="M8 2V8M5.5 5.5L8 8L10.5 5.5"/><rect x="2.5" y="9.5" width="11" height="4" rx="1"/><path d="M11 11.5H11.2"/>"#
             }
@@ -181,11 +181,11 @@ impl AssetSource for Assets {
             "theme.svg" => {
                 r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="black"/>"#
             }
-            // Les deux fiches de l'icône de l'app, pleines ; celle du dessous est estompée.
+            // The two cards of the app icon, filled; the one underneath is faded.
             "logo.svg" => {
                 r#"<rect x="1.8" y="1.8" width="6.2" height="7.6" rx="1.4" transform="rotate(-7 5 5.5)" fill="black" stroke="none"/><rect x="8.3" y="6.6" width="6.2" height="7.6" rx="1.4" transform="rotate(7 11.4 10.4)" fill="black" stroke="none" opacity=".55"/>"#
             }
-            // Les icônes qu'on donne aux notes et aux dossiers.
+            // Icons given to notes and folders.
             _ => match ICON_SET.iter().find(|(file, _)| *file == path) {
                 Some((_, shapes)) => shapes,
                 None => return Ok(None),
@@ -202,8 +202,8 @@ impl AssetSource for Assets {
     }
 }
 
-/// Icônes à donner à une note, un fichier ou un dossier : le fichier dessiné, et ses formes
-/// dans le carré de 16 des autres icônes. Le nom retenu est celui du fichier sans `i-` ni `.svg`.
+/// Icons to give a note, a file or a folder: the drawn file, and its shapes
+/// in the 16-unit square of the other icons. The kept name is the file name without `i-` or `.svg`.
 pub const ICON_SET: &[(&str, &str)] = &[
     ("i-star.svg", r#"<path d="M8 2.5L9.7 6.1L13.6 6.6L10.7 9.3L11.5 13.2L8 11.3L4.5 13.2L5.3 9.3L2.4 6.6L6.3 6.1Z"/>"#),
     ("i-heart.svg", r#"<path d="M8 13C8 13 2.5 9.8 2.5 6.2A2.8 2.8 0 0 1 8 5A2.8 2.8 0 0 1 13.5 6.2C13.5 9.8 8 13 8 13Z"/>"#),
@@ -247,7 +247,7 @@ pub const ICON_SET: &[(&str, &str)] = &[
     ("i-moon.svg", r#"<path d="M13 9.5A5.5 5.5 0 1 1 6.5 3A4.5 4.5 0 0 0 13 9.5Z"/>"#),
 ];
 
-/// Le logo de l'app, discret : les deux fiches, à la couleur d'accent.
+/// The app logo, discreet: the two cards, in the accent color.
 pub fn logo(t: Theme) -> gpui::Svg {
     svg().path("logo.svg").size(px(15.)).flex_none().text_color(t.accent.opacity(0.85))
 }

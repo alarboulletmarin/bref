@@ -1,4 +1,4 @@
-// Icône de l'exécutable Windows : GPUI charge la ressource n° 1 pour la fenêtre et la barre des tâches.
+// Icon of the Windows executable: GPUI loads resource no. 1 for the window and the taskbar.
 fn main() {
     #[cfg(windows)]
     embed_resource::compile("packaging/windows/bref.rc", embed_resource::NONE)

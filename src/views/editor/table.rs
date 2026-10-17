@@ -2,24 +2,24 @@
 
 use super::*;
 
-/// Place gardée sous un tableau pour le bouton qui lui ajoute une ligne, et
-/// épaisseur de ce bouton.
+/// Room kept under a table for the button that adds a row to it, and
+/// thickness of that button.
 pub(super) const TABLE_GAP: Pixels = px(18.);
 
 pub(super) const PLUS: Pixels = px(12.);
 
-/// Sélecteur de tableau : colonnes et lignes proposées, pas de la grille.
+/// Table picker: offered columns and rows, grid step.
 pub(super) const GRID: usize = 8;
 
 pub(super) const GRID_STEP: Pixels = px(20.);
 
-/// Plus grand tableau qu'on puisse demander, au clavier : (colonnes, lignes).
+/// Largest table that can be requested, from the keyboard: (columns, rows).
 pub(super) const GRID_MAX: (usize, usize) = (20, 99);
 
-/// Commande `/nom` : (nom, libellé anglais, libellé français, texte posé avant
-/// le curseur, texte posé après).
-/// Un geste sur le tableau où est le curseur : il vaut pour les lignes et les colonnes que la
-/// sélection touche.
+/// `/name` command: (name, English label, French label, text put before
+/// the cursor, text put after).
+/// A gesture on the table the cursor is in: it applies to the rows and columns the
+/// selection touches.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TableOp {
     RowAbove,
@@ -81,12 +81,12 @@ impl TableOp {
         }
     }
 
-    /// La feuille d'un CSV sait le faire : tout sauf supprimer le tableau et échanger lignes et colonnes.
+    /// A CSV's sheet can do it: everything but deleting the table and swapping rows and columns.
     pub fn in_sheet(self) -> bool {
         !matches!(self, TableOp::DeleteTable | TableOp::Transpose)
     }
 
-    /// L'action qui fait la même chose au clavier.
+    /// The action that does the same from the keyboard.
     pub fn action(self) -> Box<dyn gpui::Action> {
         match self {
             TableOp::RowAbove => Box::new(TableRowAbove),
@@ -109,7 +109,7 @@ impl TableOp {
     }
 }
 
-/// Largeur offerte aux tableaux dans un volet large de `pane`, pour un texte large de `text`.
+/// Width offered to tables in a pane `pane` wide, for a text `text` wide.
 pub(super) fn table_room(wide: Wide, pane: Pixels, text: Pixels) -> Pixels {
     match wide {
         Wide::Column => text,
@@ -117,7 +117,7 @@ pub(super) fn table_room(wide: Wide, pane: Pixels, text: Pixels) -> Pixels {
     }
 }
 
-/// De combien un tableau large de `frame` dépasse le bord gauche du texte.
+/// How far a table `frame` wide goes past the left edge of the text.
 pub(super) fn table_lead(wide: Wide, frame: Pixels, text: Pixels) -> Pixels {
     match wide {
         Wide::Centered => ((frame - text) / 2.).max(px(0.)),
@@ -125,7 +125,7 @@ pub(super) fn table_lead(wide: Wide, frame: Pixels, text: Pixels) -> Pixels {
     }
 }
 
-/// Boutons « + » d'un tableau : sous lui pour une ligne, à sa droite pour une colonne.
+/// "+" buttons of a table: under it for a row, to its right for a column.
 pub(super) fn plus_bars(frame: Bounds<Pixels>) -> [Bounds<Pixels>; 2] {
     [
         Bounds::new(point(frame.left(), frame.bottom() + px(3.)), size(frame.size.width, PLUS)),
@@ -134,17 +134,17 @@ pub(super) fn plus_bars(frame: Bounds<Pixels>) -> [Bounds<Pixels>; 2] {
 }
 
 pub(super) struct TableMeta {
-    /// Octets, de son début au bout de sa dernière ligne.
+    /// Bytes, from its start to the end of its last line.
     pub(super) range: Range<usize>,
-    /// Indices de ses lignes.
+    /// Indices of its lines.
     pub(super) rows: Range<usize>,
-    /// Largeur de sa plus large ligne.
+    /// Width of its widest line.
     pub(super) wide: Pixels,
 }
 
 impl Editor {
-    /// Premier tableau : de combien il a défilé, plus grand nombre de lignes visuelles d'une
-    /// des siennes, son cadre, la largeur du texte et la vue.
+    /// First table: how far it scrolled, largest number of visual lines of one
+    /// of its rows, its frame, the text width and the view.
     #[cfg(test)]
     pub fn table_state(&self) -> Option<(Pixels, i32, Bounds<Pixels>, Pixels, Bounds<Pixels>)> {
         let rows = self.rows.iter().filter(|r| r.kind == Kind::Table);
@@ -154,13 +154,13 @@ impl Editor {
         Some((scrolled, tall, frame, self.width, self.viewport))
     }
 
-    /// Centre de la poignée `part` du premier tableau.
+    /// Center of handle `part` of the first table.
     #[cfg(test)]
     pub fn part_center(&self, part: Part) -> Option<Point<Pixels>> {
         self.geos.first()?.parts().into_iter().find(|(p, _)| *p == part).map(|(_, zone)| zone.center())
     }
 
-    /// Centre d'une case du sélecteur de tableau, s'il est ouvert.
+    /// Center of a table picker cell, if it is open.
     #[cfg(test)]
     pub fn grid_cell(&self, col: usize, row: usize) -> Option<Point<Pixels>> {
         self.grid?;
@@ -172,7 +172,7 @@ impl Editor {
         self.content[line.clone()].trim_start().starts_with('|') && !self.in_code(line.start)
     }
 
-    /// Ligne de tableau qui précède celle qui commence en `start`, ou la suit.
+    /// Table line before the one starting at `start`, or after it.
     pub(super) fn next_line(&self, line: &Range<usize>, down: bool) -> Option<Range<usize>> {
         if down {
             (line.end < self.content.len()).then(|| self.line_range(line.end + 1))
@@ -181,7 +181,7 @@ impl Editor {
         }
     }
 
-    /// La ligne est la ligne de tirets d'un tableau : la deuxième, quand elle n'a que des tirets.
+    /// The line is a table's dash line: the second one, when it has only dashes.
     pub(super) fn is_dash_row(&self, line: &Range<usize>) -> bool {
         let first = self.next_line(line, false).filter(|l| self.is_table_line(l));
         let none_before = first.as_ref().is_some_and(|f| self.next_line(f, false).is_none_or(|l| !self.is_table_line(&l)));
@@ -189,8 +189,8 @@ impl Editor {
         none_before && md::is_dashes(&md::cells(text).into_iter().map(|r| text[r].to_string()).collect::<Vec<_>>())
     }
 
-    /// Cellules (octets du texte) de la ligne de tableau qui contient `c`, et celle où
-    /// l'on est : `None` hors d'un tableau, et sur la ligne de tirets, qui s'affiche comme du texte.
+    /// Cells (text bytes) of the table line containing `c`, and the one
+    /// we are in: `None` outside a table, and on the dash line, which shows as text.
     pub(super) fn table_cells(&self, c: usize) -> Option<(Vec<Range<usize>>, usize)> {
         let c = self.clamp(c);
         let line = self.line_range(c);
@@ -204,7 +204,7 @@ impl Editor {
         Some((cells, k))
     }
 
-    /// Cellules de la ligne de tableau voisine, la ligne de tirets sautée.
+    /// Cells of the neighboring table line, the dash line skipped.
     pub(super) fn table_neighbour(&self, c: usize, down: bool) -> Option<Vec<Range<usize>>> {
         let mut line = self.next_line(&self.line_range(self.clamp(c)), down)?;
         if self.is_table_line(&line) && self.is_dash_row(&line) {
@@ -213,13 +213,13 @@ impl Editor {
         self.table_cells(line.start).map(|(cells, _)| cells)
     }
 
-    /// La sélection couvre plusieurs cellules d'un tableau (ou des `|`) : le texte de chacune
-    /// des cellules qu'elle touche. `None` si elle tient dans une cellule, ou sort du tableau.
+    /// The selection covers several cells of a table (or `|`s): the text of each
+    /// cell it touches. `None` if it fits in one cell, or goes out of the table.
     pub(super) fn selected_cells(&self) -> Option<Vec<Range<usize>>> {
         self.cells_in(self.sel.clone())
     }
 
-    /// Comme `selected_cells`, pour la sélection `sel`.
+    /// Like `selected_cells`, for selection `sel`.
     pub(super) fn cells_in(&self, sel: Range<usize>) -> Option<Vec<Range<usize>>> {
         if sel.is_empty() {
             return None;
@@ -250,8 +250,8 @@ impl Editor {
         (first != last || bars || found.len() > 1).then_some(found)
     }
 
-    /// Vide les cellules de la sélection, `|` compris dans la sélection : elles gardent leur
-    /// place, ce qu'effacer d'un bloc fusionnerait. Faux si la sélection n'en couvre pas plusieurs.
+    /// Empties the selection's cells, `|` included in the selection: they keep their
+    /// place, which deleting a block would merge. False if the selection does not cover several.
     pub(super) fn clear_cells(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(ranges) = self.selected_cells() else {
             return false;
@@ -271,7 +271,7 @@ impl Editor {
         true
     }
 
-    /// Un octet qui ne coupe pas un `\|` : la grille l'affiche d'un seul signe.
+    /// A byte that does not split a `\|`: the grid shows it as a single sign.
     pub(super) fn off_escape(&self, t: usize, forward: bool) -> usize {
         let b = self.content.as_bytes();
         let backslashes = b[..t].iter().rev().take_while(|&&x| x == b'\\').count();
@@ -282,8 +282,8 @@ impl Editor {
         }
     }
 
-    /// Déplacement horizontal dans une ligne de tableau : on saute les `|` et les espaces
-    /// entre les cellules, et on passe d'une ligne à l'autre sans s'arrêter sur les tirets.
+    /// Horizontal move in a table line: skips the `|` and spaces
+    /// between cells, and goes from one line to the next without stopping on the dashes.
     pub(super) fn table_move(&self, c: usize, m: Motion) -> Option<usize> {
         let (cells, k) = self.table_cells(c)?;
         let cell = cells[k].clone();
@@ -333,7 +333,7 @@ impl Editor {
         self.table_move(self.cursor(), m).unwrap_or_else(|| self.plain_target(m, gx))
     }
 
-    /// Où mène le déplacement `m`, en ne comptant que le texte.
+    /// Where move `m` leads, counting only the text.
     pub(super) fn plain_target(&self, m: Motion, gx: Pixels) -> usize {
         let c = self.cursor();
         let lr = self.line_range(c);
@@ -367,8 +367,8 @@ impl Editor {
         }
     }
 
-    /// Sélecteur de tableau ouvert : `12x5` tapé au clavier donne sa taille, au-delà
-    /// de la grille. Renvoie faux si `text` n'est pas une taille.
+    /// Table picker open: `12x5` typed on the keyboard gives its size, beyond
+    /// the grid. Returns false if `text` is not a size.
     pub(super) fn type_grid(&mut self, text: &str, cx: &mut Context<Self>) -> bool {
         let Some((cols, rows)) = self.grid else {
             return false;
@@ -385,16 +385,16 @@ impl Editor {
         true
     }
 
-    /// Tableau autour de l'octet `at` : son étendue, ses lignes, et la cellule
-    /// (ligne, colonne) où se trouve `at`.
-    /// L'octet `at` est dans un très gros tableau (voir `grid::BIG`).
+    /// Table around byte `at`: its range, its lines, and the cell
+    /// (row, column) where `at` is.
+    /// Byte `at` is in a very big table (see `grid::BIG`).
     pub(super) fn in_big(&self, at: usize) -> bool {
         self.row_at(at).is_some_and(|r| self.big.iter().any(|b| b.rows.contains(&r)))
     }
 
     pub(super) fn table_at(&self, at: usize) -> Option<(Range<usize>, Vec<Vec<String>>, (usize, usize))> {
-        // ponytail: un très gros tableau (des milliers de lignes) n'est pas relu ni réaligné d'un bloc à chaque
-        // frappe : ni alignement des colonnes, ni ajout de ligne avec Tab ou Entrée. Tab passe à la cellule voisine.
+        // ponytail: a very big table (thousands of rows) is not reread nor realigned as a whole on each
+        // keystroke: no column alignment, no row added with Tab or Enter. Tab goes to the next cell.
         if self.in_big(at) {
             return None;
         }
@@ -420,7 +420,7 @@ impl Editor {
         }
         let (rows, added) = md::table(&self.content[start..end]);
         let mut r = self.content[start..at].matches('\n').count();
-        // La ligne de tirets qui manquait décale celles qui suivent l'en-tête.
+        // The missing dash line shifts the ones after the header.
         r += (added && r > 0) as usize;
         let col = at - line.start;
         let bars = md::bars(&self.content[line]).into_iter().filter(|&bar| bar < col).count();
@@ -433,8 +433,8 @@ impl Editor {
         md::format_table(rows, &first[..first.len() - first.trim_start().len()])
     }
 
-    /// Réécrit le tableau `range`, colonnes alignées, et sélectionne le contenu
-    /// de la cellule : taper le remplace.
+    /// Rewrites table `range`, columns aligned, and selects the content
+    /// of the cell: typing replaces it.
     pub(super) fn set_table(&mut self, range: Range<usize>, rows: &[Vec<String>], (r, c): (usize, usize), cx: &mut Context<Self>) {
         let text = self.format_table(&range, rows);
         if self.content[range.clone()] != text {
@@ -448,9 +448,9 @@ impl Editor {
         self.select_to(at + cell.end, cx);
     }
 
-    /// Après une frappe dans un tableau déjà formé (il a sa ligne de tirets) : ses
-    /// colonnes se réalignent et le curseur garde sa place dans sa cellule. Comme
-    /// `renumber`, sans étape d'annulation propre.
+    /// After a keystroke in an already formed table (it has its dash line): its
+    /// columns realign and the cursor keeps its place in its cell. Like
+    /// `renumber`, without its own undo step.
     pub(super) fn realign(&mut self, cx: &mut Context<Self>) {
         let c = self.cursor();
         let line = self.line_range(c);
@@ -468,7 +468,7 @@ impl Editor {
         let old = md::cells(&self.content[line.clone()]).get(col).map_or(c, |cell| line.start + cell.start);
         let at = range.start + text.split('\n').take(r).map(|l| l.len() + 1).sum::<usize>();
         let new = text.split('\n').nth(r).unwrap_or_default();
-        // Au plus loin, juste avant le `|` qui ferme la cellule.
+        // At the furthest, just before the `|` that closes the cell.
         let (start, end) = (md::cells(new)[col].start, md::bars(new)[col + 1]);
         let cursor = at + (start + c.saturating_sub(old)).min(end);
         self.damaged(&range);
@@ -477,10 +477,10 @@ impl Editor {
         self.changed(cx);
     }
 
-    /// Tab et Maj+Tab dans un tableau : cellule suivante ou précédente ; au bout
-    /// du tableau, une ligne s'ajoute.
-    /// Tab et Maj+Tab dans un très gros tableau : la cellule voisine, sur la ligne ou sur la voisine,
-    /// sans relire le tableau.
+    /// Tab and Shift+Tab in a table: next or previous cell; at the end
+    /// of the table, a row is added.
+    /// Tab and Shift+Tab in a very big table: the neighboring cell, on the line or the next one,
+    /// without rereading the table.
     pub(super) fn table_step_big(&mut self, forward: bool, cx: &mut Context<Self>) -> bool {
         let cursor = self.cursor();
         let line = self.line_range(cursor);
@@ -520,7 +520,7 @@ impl Editor {
         };
         let cols = rows[0].len();
         let mut cell = r * cols + c;
-        // La ligne de tirets (la deuxième) se saute.
+        // The dash line (the second one) is skipped.
         loop {
             cell = if forward { cell + 1 } else { cell.saturating_sub(1) };
             if cell / cols != 1 {
@@ -534,15 +534,15 @@ impl Editor {
         true
     }
 
-    /// Le curseur est dans un tableau Markdown qu'on sait réécrire (pas un très gros).
+    /// The cursor is in a Markdown table that can be rewritten (not a very big one).
     pub fn in_table(&self) -> bool {
         self.table_at(self.sel.start).is_some()
     }
 
-    /// Un geste sur le tableau du curseur, pour les lignes et les colonnes que la sélection touche
-    /// (de la cellule où elle commence à celle où elle finit). Un seul pas d'annulation ; le curseur
-    /// se pose sur la cellule qui suit le geste.
-    /// Les colonnes prises par leur poignée, entières, partent ; sinon les lignes de la sélection.
+    /// A gesture on the cursor's table, for the rows and columns the selection touches
+    /// (from the cell where it starts to the one where it ends). A single undo step; the cursor
+    /// lands on the cell that follows the gesture.
+    /// Columns grabbed by their handle, whole, go; otherwise the selection's rows.
     pub(super) fn table_delete_span(&mut self, cx: &mut Context<Self>) {
         let Some((range, rows, _)) = self.table_at(self.sel.start) else {
             return;
@@ -555,11 +555,11 @@ impl Editor {
         let Some((range, rows, (r, c))) = self.table_at(self.sel.start) else {
             return;
         };
-        // Rang visible : la ligne de tirets compte pour l'en-tête.
+        // Visible rank: the dash line counts for the header.
         let seen = |r: usize| r.saturating_sub(1);
         let slot = |v: usize| if v == 0 { 0 } else { v + 1 };
         let end = self.table_at(self.sel.end).filter(|(other, ..)| *other == range).map_or((r, c), |(.., cell)| cell);
-        // Ce qu'une poignée a pris compte plus que le texte sélectionné.
+        // What a handle grabbed counts more than the selected text.
         let (r0, r1, c0, c1) = match self.live_pick(range.start) {
             Some(pick) => (pick.rows.start, pick.rows.end - 1, pick.cols.start, pick.cols.end - 1),
             None => (seen(r).min(seen(end.0)), seen(r).max(seen(end.0)), c.min(end.1), c.max(end.1)),
@@ -582,12 +582,12 @@ impl Editor {
             TableOp::SortDesc => (Some(md::sort_rows(&rows, c0, false)), (0, c0)),
             TableOp::Transpose => (Some(md::transpose(&rows)), (0, 0)),
             TableOp::DeleteTable => (None, (0, 0)),
-            // Un geste qui n'a nulle part où aller : l'en-tête reste en tête, le dernier rang ne descend pas.
+            // A gesture with nowhere to go: the header stays on top, the last row does not go down.
             _ => return,
         };
         match grid {
             Some(grid) => self.set_table(range, &grid, at, cx),
-            // Plus rien dans le tableau : il part avec le retour à la ligne qui le suit.
+            // Nothing left in the table: it goes with the line break that follows it.
             None => {
                 let stop = if self.content[range.end..].starts_with('\n') { range.end + 1 } else { range.end };
                 self.push_undo(true);
@@ -597,8 +597,8 @@ impl Editor {
         }
     }
 
-    /// Aligne la colonne du curseur : `:--`, `:-:` ou `--:` sous son en-tête. La ligne de
-    /// tirets ne se voit pas, c'est donc ce raccourci qui la règle.
+    /// Aligns the cursor's column: `:--`, `:-:` or `--:` under its header. The dash
+    /// line is not visible, so this shortcut is what sets it.
     pub(super) fn align(&mut self, dashes: &str, cx: &mut Context<Self>) {
         let Some((range, mut rows, (r, c))) = self.table_at(self.cursor()) else {
             return;
@@ -607,11 +607,11 @@ impl Editor {
         self.set_table(range, &rows, (r, c), cx);
     }
 
-    /// Pose un tableau vide au curseur, sur ses propres lignes.
+    /// Puts an empty table at the cursor, on its own lines.
     pub(super) fn insert_table(&mut self, cols: usize, rows: usize, cx: &mut Context<Self>) {
         let c = self.cursor();
         let line = self.line_range(c);
-        // Une ligne vide le sépare de ce qui précède : collé à une citation, il en ferait partie.
+        // An empty line separates it from what comes before: stuck to a quote, it would be part of it.
         let above = self.content[..line.start].trim_end_matches(' ');
         let apart = self.content[line.start..c].trim().is_empty() && (above.is_empty() || above.ends_with("\n\n"));
         let lead = if apart { "" } else { "\n" };
@@ -624,8 +624,8 @@ impl Editor {
         }
     }
 
-    /// Bouton « + » sous le pointeur : (début du tableau, 0 pour une ligne ou 1
-    /// pour une colonne).
+    /// "+" button under the pointer: (start of the table, 0 for a row or 1
+    /// for a column).
     pub(super) fn plus_at(&self, at: Point<Pixels>) -> Option<(usize, usize)> {
         self.tables.iter().find_map(|(range, frame)| {
             Some((range.start, plus_bars(*frame).iter().position(|bar| bar.contains(&at))?))
@@ -637,7 +637,7 @@ impl Editor {
         size(side, side + px(22.))
     }
 
-    /// Case du sélecteur de tableau sous le pointeur : (colonnes, lignes).
+    /// Table picker cell under the pointer: (columns, rows).
     pub(super) fn grid_at(&self, at: Point<Pixels>) -> Option<(usize, usize)> {
         self.grid?;
         let local = at - self.popup_at(Self::grid_size())? - point(px(8.), px(8.));
@@ -646,12 +646,12 @@ impl Editor {
         (inside(col) && inside(row)).then_some((col as usize + 1, row as usize + 1))
     }
 
-    /// Cellules sélectionnées d'un tableau, en TSV : les tableurs les collent telles quelles,
-    /// et dans une note, le collage reforme le tableau Markdown.
+    /// Selected cells of a table, as TSV: spreadsheets paste them as they are,
+    /// and in a note, pasting rebuilds the Markdown table.
     pub(super) fn cells_text(&self) -> Option<String> {
         let mut rows: Vec<Vec<String>> = Vec::new();
         let mut line = None;
-        // Un « tout sélectionner » finit après le dernier retour à la ligne : hors du tableau.
+        // A "select all" ends after the last line break: outside the table.
         let end = self.content[..self.sel.end].trim_end_matches('\n').len().max(self.sel.start);
         for cell in self.cells_in(self.sel.start..end)? {
             let start = self.line_range(cell.start).start;
@@ -664,9 +664,9 @@ impl Editor {
         Some(rows.iter().map(|row| row.join("\t")).collect::<Vec<_>>().join("\n"))
     }
 
-    /// Collage dans un tableau : une cellule garde une seule ligne et ses `|`
-    /// protégés ; des cellules de tableur ou de Markdown remplissent la grille à
-    /// partir de la cellule du curseur, qui s'agrandit au besoin.
+    /// Pasting in a table: a cell keeps a single line and its `|`s
+    /// escaped; spreadsheet or Markdown cells fill the grid
+    /// from the cursor's cell, which grows as needed.
     pub(super) fn paste_in_table(&mut self, text: &str, cx: &mut Context<Self>) -> bool {
         self.clear_cells(cx);
         let sel = self.sel.clone();
@@ -677,7 +677,7 @@ impl Editor {
             return false;
         };
         let Some(grid) = md::paste_grid(text) else {
-            // Avant le premier `|` ou après le dernier : dans la cellule voisine, pas sur la ligne.
+            // Before the first `|` or after the last: in the neighboring cell, not on the line.
             let line = self.line_range(sel.start);
             let bars = md::bars(&self.content[line.clone()]);
             let col = sel.start - line.start;
@@ -697,7 +697,7 @@ impl Editor {
         for (i, row) in rows.iter_mut().enumerate() {
             row.resize(width, if i == 1 { "---" } else { "" }.to_string());
         }
-        // La ligne de tirets (la deuxième) se saute.
+        // The dash line (the second one) is skipped.
         let mut at = if r == 1 { 2 } else { r };
         let mut last = (at, c);
         for cells in &grid {

@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// Ce dont la mise en page dépend, en dehors du texte : si rien n'a changé, on la garde.
+/// What the layout depends on, apart from the text: if nothing changed, it is kept.
 #[derive(PartialEq)]
 pub(super) struct LayoutKey {
     pub(super) version: u64,
@@ -12,8 +12,8 @@ pub(super) struct LayoutKey {
     pub(super) marked: Option<Range<usize>>,
 }
 
-/// Ce qui a changé dans le texte depuis la dernière mise en page : ses `prefix` premiers octets
-/// et ses `suffix` derniers sont restés tels quels.
+/// What changed in the text since the last layout: its first `prefix` bytes
+/// and its last `suffix` stayed as they were.
 #[derive(Clone, Copy)]
 pub(super) struct Damage {
     pub(super) old_len: usize,
@@ -21,7 +21,7 @@ pub(super) struct Damage {
     pub(super) suffix: usize,
 }
 
-/// La dernière mise en page, pour en reprendre ce qui n'a pas changé.
+/// The last layout, to reuse what has not changed.
 pub(super) struct Laid {
     pub(super) epoch: u64,
     pub(super) width: u32,
@@ -31,35 +31,35 @@ pub(super) struct Laid {
     pub(super) cursor: usize,
     pub(super) fences: usize,
     pub(super) dollars: usize,
-    /// Longueur de l'en-tête YAML.
+    /// Length of the front matter.
     pub(super) meta: usize,
 }
 
-/// Une zone du texte à remettre en page : les lignes de l'ancienne mise en page `old` (indices),
-/// le texte qui les remplace, de `start` à `stop` (octets, `stop` inclus : fin de la dernière ligne).
+/// A zone of the text to lay out again: the lines of the old layout `old` (indices),
+/// the text replacing them, from `start` to `stop` (bytes, `stop` included: end of the last line).
 pub(super) struct Region {
     pub(super) old: Range<usize>,
     pub(super) start: usize,
     pub(super) stop: usize,
-    /// Dans un très gros tableau : ses colonnes, le rang de la première ligne dans le tableau et l'octet où
-    /// le tableau commence.
+    /// In a very big table: its columns, the rank of the first line in the table and the byte where
+    /// the table starts.
     pub(super) big: Option<(Rc<grid::Geometry>, usize, usize)>,
-    /// La zone touche aux premières lignes, qui fixent les colonnes : elles ne doivent pas avoir changé.
+    /// The zone touches the first lines, which set the columns: they must not have changed.
     pub(super) check: bool,
 }
 
-/// Ce qu'on garde de la mise en page précédente, et ce qu'on refait.
+/// What is kept from the previous layout, and what is redone.
 pub(super) struct Plan {
     pub(super) regions: Vec<Region>,
-    /// Comptes de lignes de clôture et de `$$`, inchangés.
+    /// Counts of fence lines and `$$`, unchanged.
     pub(super) fences: usize,
     pub(super) dollars: usize,
-    /// Les lignes reprises qui suivent `after` (octets de l'ancien texte) se décalent de `delta`.
+    /// Reused lines following `after` (bytes of the old text) shift by `delta`.
     pub(super) after: usize,
     pub(super) delta: isize,
 }
 
-/// Reprend `count` lignes de l'ancienne mise en page, posées à partir de `y`, leur texte décalé de `delta`.
+/// Reuses `count` lines of the old layout, placed from `y`, their text shifted by `delta`.
 pub(super) fn reuse(old: &mut std::vec::IntoIter<Row>, count: usize, delta: isize, y: &mut Pixels, rows: &mut Vec<Row>) {
     let mut by = None;
     for mut row in old.by_ref().take(count) {
@@ -71,36 +71,36 @@ pub(super) fn reuse(old: &mut std::vec::IntoIter<Row>, count: usize, delta: isiz
     }
 }
 
-/// Un très gros tableau : ses lignes ne reçoivent leurs cellules que près de l'écran.
+/// A very big table: its lines only get their cells near the screen.
 pub(super) struct BigBlock {
-    /// Indices de ses lignes.
+    /// Indices of its lines.
     pub(super) rows: Range<usize>,
     pub(super) geom: Rc<grid::Geometry>,
-    /// Parties de ses lignes (indices dans le tableau) qui ont leurs cellules.
+    /// Parts of its lines (indices in the table) that have their cells.
     pub(super) mat: Vec<Range<usize>>,
-    /// Ses lignes viennent d'une autre mise en page : on ne sait plus lesquelles ont leurs cellules.
+    /// Its lines come from another layout: which ones have their cells is no longer known.
     pub(super) rescan: bool,
 }
 
-/// Un tableau de la note.
-/// Où sont à l'écran les traits d'un tableau, pour ses poignées et ce qu'on y a pris.
+/// A table of the note.
+/// Where a table's lines are on screen, for its handles and what was grabbed in it.
 pub(super) struct Geo {
-    /// Début du tableau dans le texte.
+    /// Start of the table in the text.
     pub(super) start: usize,
     pub(super) frame: Bounds<Pixels>,
-    /// Abscisses des traits verticaux (une de plus que de colonnes), ordonnées des horizontaux
-    /// (une de plus que de lignes vues : l'en-tête, puis le corps).
+    /// X of the vertical lines (one more than columns), y of the horizontal ones
+    /// (one more than shown rows: the header, then the body).
     pub(super) xs: Vec<Pixels>,
     pub(super) ys: Vec<Pixels>,
 }
 
-/// Une poignée d'un tableau : une colonne, une ligne, l'angle (tout le tableau), ou le « + » d'un trait.
+/// A table handle: a column, a row, the corner (the whole table), or the "+" of a line.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Part {
     Col(usize),
     Row(usize),
     Corner,
-    /// Le trait avant la colonne ou la ligne `n` : un clic y insère.
+    /// The line before column or row `n`: a click there inserts.
     JoinCol(usize),
     JoinRow(usize),
 }
@@ -114,10 +114,10 @@ impl Geo {
         self.ys.len() - 1
     }
 
-    /// La colonne et la ligne au-dessus ou à côté desquelles est `at`, jusqu'à `GRIP_REACH` du tableau.
+    /// The column and the row above or beside which `at` is, up to `GRIP_REACH` from the table.
     pub(super) fn near(&self, at: Point<Pixels>) -> Near {
         let f = self.frame;
-        // Le dernier trait compte pour la dernière colonne (ou ligne) : son « + » s'y montre.
+        // The last line counts for the last column (or row): its "+" shows there.
         let along = |lines: &[Pixels], v: Pixels| {
             (0..lines.len() - 1).find(|&i| v >= lines[i] && (v < lines[i + 1] || (i + 2 == lines.len() && v <= lines[i + 1])))
         };
@@ -129,11 +129,11 @@ impl Geo {
         }
     }
 
-    /// Les poignées et leur zone, dans l'ordre où l'on cherche celle qui reçoit un clic.
+    /// The handles and their zone, in the order used to find the one that gets a click.
     pub(super) fn parts(&self) -> Vec<(Part, Bounds<Pixels>)> {
         let f = self.frame;
         let shown = |x: Pixels| x >= f.left() - px(1.) && x <= f.right() + px(1.);
-        // L'angle d'abord : il l'emporte sur le « + » du premier trait, qui le frôle.
+        // The corner first: it wins over the "+" of the first line, which brushes it.
         let mut parts = vec![(Part::Corner, Bounds::new(f.origin - point(GRIP + GRIP_GAP, GRIP + GRIP_GAP), size(GRIP, GRIP)))];
         for (b, &x) in self.xs.iter().enumerate().filter(|(_, x)| shown(**x)) {
             parts.push((Part::JoinCol(b), Bounds::new(point(x - px(6.), f.top() - px(18.)), size(px(12.), px(16.)))));
@@ -141,7 +141,7 @@ impl Geo {
         for (b, &y) in self.ys.iter().enumerate().skip(1) {
             parts.push((Part::JoinRow(b), Bounds::new(point(f.left() - px(18.), y - px(6.)), size(px(16.), px(12.)))));
         }
-        // Une pastille au milieu de sa colonne (ou de sa ligne), plus petite si la place manque.
+        // A badge in the middle of its column (or row), smaller if room is short.
         for c in 0..self.cols() {
             let (from, to) = (self.xs[c].max(f.left()), self.xs[c + 1].min(f.right()));
             let long = GRIP_LONG.min(to - from - px(12.));
@@ -161,7 +161,7 @@ impl Geo {
         parts
     }
 
-    /// La poignée `part` se montre : le pointeur est sur sa colonne ou sa ligne, ou elle tient ce qu'on a pris.
+    /// Handle `part` shows: the pointer is on its column or row, or it holds what was grabbed.
     pub(super) fn visible(&self, part: Part, near: Near, pick: Option<&Pick>) -> bool {
         let (all_rows, all_cols) = pick.map_or((false, false), |p| (p.rows.len() == self.tall(), p.cols.len() == self.cols()));
         let held = |hold: bool, n: usize, range: Option<&Range<usize>>| hold && range.is_some_and(|r| r.contains(&n));
@@ -169,12 +169,12 @@ impl Geo {
             Part::Col(c) => near.col == Some(c) || held(all_rows, c, pick.map(|p| &p.cols)),
             Part::Row(r) => near.row == Some(r) || held(all_cols, r, pick.map(|p| &p.rows)),
             Part::Corner => near.corner || (all_rows && all_cols),
-            // Un « + » ne se montre que sous le pointeur : sa zone, près des poignées, suffit.
+            // A "+" only shows under the pointer: its zone, near the handles, is enough.
             Part::JoinCol(_) | Part::JoinRow(_) => near.col.is_some() || near.row.is_some() || near.corner,
         }
     }
 
-    /// Le trait le plus proche de `at`, parmi ceux où une colonne (ou une ligne) peut se poser.
+    /// The line closest to `at`, among those where a column (or a row) can land.
     pub(super) fn boundary(&self, part: Part, at: Point<Pixels>) -> usize {
         let (lines, at, first) = match part {
             Part::Col(_) => (&self.xs, at.x, 0),
@@ -183,7 +183,7 @@ impl Geo {
         (first..lines.len()).min_by_key(|&b| (f32::from((lines[b] - at).abs()) * 100.) as i64).unwrap_or(first)
     }
 
-    /// Les cases `rows` × `cols`, en pixels.
+    /// The `rows` × `cols` cells, in pixels.
     pub(super) fn cells(&self, rows: &Range<usize>, cols: &Range<usize>) -> Bounds<Pixels> {
         let (x0, x1) = (self.xs[cols.start.min(self.cols())], self.xs[cols.end.min(self.cols())]);
         let (y0, y1) = (self.ys[rows.start.min(self.tall())], self.ys[rows.end.min(self.tall())]);
@@ -191,7 +191,7 @@ impl Geo {
     }
 }
 
-/// Une ligne logique mise en page (elle peut occuper plusieurs lignes visuelles).
+/// A laid out logical line (it may take several visual lines).
 pub(super) struct Row {
     pub(super) start: usize,
     pub(super) len: usize,
@@ -200,25 +200,25 @@ pub(super) struct Row {
     pub(super) lh: Pixels,
     pub(super) height: Pixels,
     pub(super) kind: Kind,
-    /// Son texte mis en forme, partagé avec le cache des lignes.
+    /// Its styled text, shared with the line cache.
     pub(super) shaped: Rc<Shaped>,
-    /// Image désignée par la ligne, ou figure (diagramme, formule) qu'elle
-    /// termine, dessinée dessous, et sa taille à l'écran.
+    /// Picture the line points to, or figure (diagram, formula) it
+    /// ends, drawn below, and its size on screen.
     pub(super) image: Option<(Arc<RenderImage>, Size<Pixels>)>,
-    /// La ligne ouvre un bloc de code : elle porte le bouton de copie.
+    /// The line opens a code block: it carries the copy button.
     pub(super) opens: bool,
-    /// Place laissée sous la dernière ligne d'un tableau.
+    /// Room left under the last line of a table.
     pub(super) gap: Pixels,
-    /// Couleur du panneau `> [!TYPE]` dont la ligne fait partie.
+    /// Color of the `> [!TYPE]` callout the line is part of.
     pub(super) tint: Option<Hsla>,
-    /// Ligne de tableau plus large que la page : de combien son texte est décalé vers la gauche.
+    /// Table line wider than the page: how far its text is shifted to the left.
     pub(super) dx: Pixels,
-    /// Ligne de tableau affichée en grille : ses cellules, qui passent à la ligne.
+    /// Table line shown as a grid: its cells, which wrap.
     pub(super) grid: Option<Rc<TableRow>>,
 }
 
 impl Row {
-    /// Position à l'écran, par rapport au bord gauche de la page.
+    /// Position on screen, relative to the left edge of the page.
     pub(super) fn pos(&self, i: usize) -> Point<Pixels> {
         let p = match &self.grid {
             Some(grid) => grid.pos(i.min(self.len), self.lh),
@@ -232,12 +232,12 @@ impl Row {
         point(p.x - self.dx, p.y)
     }
 
-    /// Octet du texte → octet du texte affiché.
+    /// Text byte → displayed text byte.
     pub(super) fn shown(&self, i: usize) -> usize {
         grid::shown(&self.shaped.subs, i)
     }
 
-    /// Octet du texte affiché → octet du texte.
+    /// Displayed text byte → text byte.
     pub(super) fn source(&self, i: usize) -> usize {
         grid::source(&self.shaped.subs, i)
     }
@@ -266,17 +266,17 @@ impl Row {
         }
     }
 
-    /// Lignes visuelles de ce qui contient l'octet `i` : la ligne, ou la cellule d'un tableau.
+    /// Visual lines of what contains byte `i`: the line, or a table cell.
     pub(super) fn lines_at(&self, i: usize) -> i32 {
         self.grid.as_ref().map_or_else(|| self.visual_rows(), |grid| grid.lines_at(i))
     }
 
-    /// Ligne de tirets d'un tableau, qu'on ne voit pas.
+    /// A table's dash line, which is not seen.
     pub(super) fn hidden(&self) -> bool {
         self.grid.as_ref().is_some_and(|g| g.hidden())
     }
 
-    /// Largeur de ce qui est dessiné.
+    /// Width of what is drawn.
     pub(super) fn content_width(&self) -> Pixels {
         match &self.grid {
             Some(grid) => grid.total(),
@@ -285,9 +285,9 @@ impl Row {
     }
 }
 
-/// Empreinte rapide (FxHash, brassée à la fin) : chaque ligne de la note est hachée à chaque
-/// image, et SipHash, celui de la bibliothèque standard, y passait un tiers du temps. Les
-/// clés ne viennent que de la note : pas besoin de résister à qui les choisirait.
+/// Fast hash (FxHash, mixed at the end): every line of the note is hashed on every
+/// frame, and SipHash, the standard library's, spent a third of the time there. The
+/// keys only come from the note: no need to resist whoever would choose them.
 #[derive(Default)]
 pub struct Fast(u64);
 
@@ -299,11 +299,10 @@ impl Fast {
 
 impl Hasher for Fast {
     fn write(&mut self, bytes: &[u8]) {
-        let mut words = bytes.chunks_exact(8);
-        for word in &mut words {
-            self.add(u64::from_le_bytes(word.try_into().unwrap()));
+        let (words, rest) = bytes.as_chunks::<8>();
+        for word in words {
+            self.add(u64::from_le_bytes(*word));
         }
-        let rest = words.remainder();
         let mut last = [0u8; 8];
         last[..rest.len()].copy_from_slice(rest);
         self.add(u64::from_le_bytes(last) ^ (rest.len() as u64) << 56);
@@ -325,7 +324,7 @@ impl Hasher for Fast {
     }
 }
 
-/// La mise en forme de la ligne d'empreinte `id`, reprise de celles gardées, ou faite par `make`.
+/// The styling of the line with hash `id`, reused from the kept ones, or made by `make`.
 pub(super) fn cached_shape(
     map: &mut FastMap<u64, (Rc<Shaped>, u32)>,
     id: u64,
@@ -343,28 +342,28 @@ pub(super) fn cached_shape(
 
 pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<Fast>>;
 
-/// Ce qu'une ligne affiche, tant que ni elle ni son contexte ne changent.
+/// What a line displays, as long as neither it nor its context change.
 pub(super) struct Shaped {
     pub(super) line: Option<WrappedLine>,
-    /// Signes affichés à la place de leur écriture ASCII : (octet de début,
-    /// longueur dans le texte, longueur affichée).
+    /// Signs displayed in place of their ASCII spelling: (start byte,
+    /// length in the text, displayed length).
     pub(super) subs: Vec<(usize, usize, usize)>,
-    /// Formule sur la ligne : son source, et si elle est hors texte.
+    /// Formula on the line: its source, and whether it is display (block) math.
     pub(super) formula: Option<(String, bool)>,
-    /// Chemin de l'image que la ligne désigne.
+    /// Path of the picture the line points to.
     pub(super) picture: Option<String>,
 }
 
-/// Figure prête à dessiner (`None` : source invalide) et sa taille.
+/// Figure ready to draw (`None`: invalid source) and its size.
 pub(super) type Drawing = Option<(Arc<Image>, Size<Pixels>)>;
 
-/// Les figures dessinées, par clé ; chacune avec la clé de sa source seule (sans le thème),
-/// pour montrer l'ancienne version pendant que la nouvelle se dessine.
+/// Drawn figures, by key; each with the key of its source alone (without the theme),
+/// to show the old version while the new one is drawn.
 pub(super) type Figures = FastMap<u64, (u64, Drawing)>;
 
-/// La figure de clé `key`, reprise de la frame précédente ou dessinée par `make` ; si `lazy`,
-/// seulement reprise. Tant que `make` n'a rien (dessin en tâche de fond), la version d'avant
-/// de la même source (`family`), s'il y en a une.
+/// The figure with key `key`, reused from the previous frame or drawn by `make`; if `lazy`,
+/// only reused. As long as `make` has nothing (drawing in a background task), the previous version
+/// of the same source (`family`), if there is one.
 pub(super) fn cached(old: &mut Figures, kept: &mut Figures, (key, family): (u64, u64), lazy: bool, make: impl FnOnce() -> Option<Drawing>) -> Drawing {
     if let Some(entry) = old.remove(&key).or_else(|| kept.get(&key).cloned()) {
         kept.insert(key, entry.clone());
@@ -383,21 +382,21 @@ pub(super) fn cached(old: &mut Figures, kept: &mut Figures, (key, family): (u64,
     entry.1
 }
 
-/// Ce qui, dans le style d'une ligne, vient de sa nature plutôt que de son texte.
+/// What, in a line's style, comes from its nature rather than its text.
 pub struct RunStyle {
     pub heading: bool,
     pub italic: bool,
     pub mono: bool,
-    /// Couleur du panneau dont la ligne fait partie.
+    /// Color of the callout the line is part of.
     pub tint: Option<Hsla>,
 }
 
-/// Les styles de la ligne `flags` (un mot de drapeaux par octet), d'un seul tenant
-/// tant que rien ne change ; `marked` : l'octet est dans le texte en cours de composition.
+/// The styles of line `flags` (one flag word per byte), in one piece
+/// as long as nothing changes; `marked`: the byte is in the text being composed.
 pub fn text_runs(t: &Theme, flags: &[u16], marked: impl Fn(usize) -> bool, style: &RunStyle) -> Vec<TextRun> {
-    // ponytail: chaînes et nombres prennent la couleur d'accent décalée en teinte,
-    // pour s'accorder à chaque thème sans palette dédiée ; donner ses couleurs de
-    // code à chaque thème si l'une d'elles jure.
+    // ponytail: strings and numbers take the accent color shifted in hue,
+    // to match each theme without a dedicated palette; give each theme its own code
+    // colors if one of them clashes.
     let hue = |by: f32| Hsla { h: (t.accent.h + by).fract(), ..t.accent };
     let mut runs: Vec<TextRun> = Vec::new();
     let mut i = 0;
@@ -414,7 +413,7 @@ pub fn text_runs(t: &Theme, flags: &[u16], marked: impl Fn(usize) -> bool, style
         } else if f & md::NUMBER != 0 {
             hue(0.6)
         } else if f & md::MARK != 0 && let Some(tint) = style.tint {
-            // Sur le fond du panneau, sa teinte à 10 % : le titre se lit dans tous les thèmes.
+            // On the callout background, its tint at 10%: the title reads in every theme.
             crate::ui::theme::legible(tint, crate::ui::theme::blend(tint, t.bg, 0.1))
         } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
             t.accent
@@ -430,9 +429,9 @@ pub fn text_runs(t: &Theme, flags: &[u16], marked: impl Fn(usize) -> bool, style
             },
             color,
             background_color: (f & md::CODE != 0).then_some(t.code_bg),
-            // Un seul trait pour tout le lien, crochets compris : gpui 0.2 laisse
-            // un bout de trait dans la marge si le soulignement change de style
-            // juste à un retour à la ligne.
+            // A single underline for the whole link, brackets included: gpui 0.2 leaves
+            // a bit of underline in the margin if the underline changes style
+            // right at a wrap.
             underline: (m || f & (md::LINK | md::UNDER) != 0).then_some(UnderlineStyle {
                 thickness: px(1.),
                 color: Some(if f & md::LINK != 0 { t.accent } else { color }.opacity(if f & md::UNDER != 0 { 1. } else { 0.5 })),
@@ -446,15 +445,15 @@ pub fn text_runs(t: &Theme, flags: &[u16], marked: impl Fn(usize) -> bool, style
 }
 
 impl Editor {
-    /// Mises en page complètes et mises en page reprises, depuis le début.
+    /// Full layouts and reused layouts, since the start.
     #[cfg(test)]
     pub fn layouts(&self) -> (usize, usize, usize) {
         self.counts
     }
 
-    /// Les zones à remettre en page, quand le reste de la dernière mise en page peut être repris :
-    /// le texte touché, la ligne où était le curseur et celle où il est, élargies aux blocs qui
-    /// doivent rester entiers (tableau, citation). `None` : tout refaire.
+    /// The zones to lay out again, when the rest of the last layout can be reused:
+    /// the touched text, the line where the cursor was and the one where it is, widened to blocks that
+    /// must stay whole (table, quote). `None`: redo everything.
     pub(super) fn plan(&self, width: Pixels, room: Pixels, cursor: usize) -> Option<Plan> {
         let laid = self.laid.as_ref()?;
         let (rows, len) = (&self.rows, self.content.len());
@@ -470,14 +469,14 @@ impl Editor {
         {
             return None;
         }
-        // ponytail: l'en-tête YAML change le sens de toutes ses lignes dès qu'il s'ouvre ou se
-        // ferme ; une frappe dedans, ou qui déplace sa fin, refait donc toute la mise en page.
-        // Le traiter comme une zone à part si de longues notes à en-tête font attendre.
+        // ponytail: the front matter changes the meaning of all its lines as soon as it opens or
+        // closes; a keystroke inside it, or one that moves its end, therefore redoes the whole layout.
+        // Treat it as a separate zone if long notes with front matter make you wait.
         let meta = md::front_matter(&self.content);
         if meta != laid.meta || self.dmg.is_some_and(|d| d.prefix < meta) {
             return None;
         }
-        // Texte touché, en octets de l'ancienne mise en page (`p..=q`), et son décalage.
+        // Touched text, in bytes of the old layout (`p..=q`), and its shift.
         let (p, q, delta) = match self.dmg {
             Some(d) => {
                 let (prefix, suffix) = (d.prefix.min(laid.len), d.suffix.min(laid.len));
@@ -497,7 +496,7 @@ impl Editor {
             let hi = rows.partition_point(|r| r.start <= q + 1);
             dirty.push(lo.min(n - 1)..hi.max(lo + 1).min(n));
         }
-        // Le curseur d'avant et celui d'après : leur ligne ne s'affiche pas pareil.
+        // The cursor before and the one after: their line does not display the same.
         let now = if cursor <= p {
             cursor
         } else if (cursor as isize - delta) as usize >= q && cursor as isize - delta >= 0 {
@@ -508,8 +507,8 @@ impl Editor {
         for c in [laid.cursor.min(laid.len), now.min(laid.len)] {
             dirty.push(at(c)..at(c) + 1);
         }
-        // Blocs à ne pas couper : un tableau tient en un morceau (sauf l'intérieur d'un très gros),
-        // une citation ne perd pas la teinte de son panneau.
+        // Blocks not to cut: a table holds in one piece (except the inside of a very big one),
+        // a quote does not lose its callout's tint.
         let block_of = |i: usize| -> Range<usize> {
             if let Some(b) = self.big.iter().find(|b| b.rows.contains(&i)) {
                 return b.rows.clone();
@@ -524,8 +523,8 @@ impl Editor {
             a..z
         };
         let big_of = |i: usize| self.big.iter().find(|b| b.rows.contains(&i));
-        // Octets du nouveau texte d'une zone : le début ne bouge que s'il est après le texte touché ; la
-        // fin, si elle est au bout du texte touché ou après.
+        // Bytes of a zone's new text: the start only moves if it is after the touched text; the
+        // end, if it is at the end of the touched text or after.
         let touched = self.dmg.is_some();
         let bounds = |r: &Range<usize>| {
             let (first, last) = (&rows[r.start], &rows[r.end - 1]);
@@ -554,19 +553,19 @@ impl Editor {
                     match rows[i].kind {
                         Kind::Code | Kind::Fence => return None,
                         Kind::Table => match big_of(i) {
-                            // Dans l'intérieur d'un très gros tableau, une ligne ne dépend pas des autres.
+                            // Inside a very big table, a line does not depend on the others.
                             Some(b) if i + 1 < b.rows.end => {}
                             _ => whole(r, block_of(i)),
                         },
                         _ => {}
                     }
                 }
-                // Un très gros tableau est découpé en lignes indépendantes, hors de ses premières.
+                // A very big table is cut into independent lines, except its first ones.
                 let inside = |i: usize, j: usize| big_of(i).is_some_and(|b| b.rows.contains(&j) && i + 1 < b.rows.end);
                 if r.start > 0 && rows[r.start - 1].kind == Kind::Table && !inside(r.start, r.start - 1) {
                     whole(r, block_of(r.start - 1));
                 }
-                // Le nouveau texte peut, lui aussi, se coller à un tableau ou à une citation voisins.
+                // The new text, too, can stick to a neighboring table or quote.
                 let (start, stop) = bounds(r);
                 if start > stop || stop > len {
                     return None;
@@ -589,8 +588,8 @@ impl Editor {
                 while r.end < n && rows[r.end - 1].kind == Kind::Quote && rows[r.end].kind == Kind::Quote {
                     r.end += 1;
                 }
-                // La ligne qui suit un tableau lui donne sa marge : elle se refait avec lui, qu'il le soit
-                // depuis toujours ou qu'il le devienne.
+                // The line after a table gives it its margin: it is redone with it, whether it always was
+                // one or becomes one.
                 if r.end < n && (rows[r.end - 1].kind == Kind::Table || md::is_table_line(last)) && rows[r.end].kind != Kind::Table {
                     r.end += 1;
                 }
@@ -604,12 +603,12 @@ impl Editor {
         let mut regions = Vec::new();
         for r in dirty {
             let (start, stop) = bounds(&r);
-            // Dans l'intérieur d'un très gros tableau.
+            // Inside a very big table.
             let block = big_of(r.start).filter(|b| r.end < b.rows.end);
             let big = block.map(|b| (b.geom.clone(), r.start - b.rows.start, rows[b.rows.start].start));
             let check = block.is_some_and(|b| r.start < b.rows.start + grid::SAMPLE);
-            // Le nouveau texte ne doit rien changer au contexte des lignes reprises : ni clôture, ni `$$`,
-            // et, dans un très gros tableau, que des lignes de tableau.
+            // The new text must change nothing in the context of the reused lines: no fence, no `$$`,
+            // and, in a very big table, only table lines.
             if start > stop || stop > len || (stop < len && self.content.as_bytes()[stop] != b'\n') {
                 return None;
             }
@@ -620,7 +619,7 @@ impl Editor {
                     return None;
                 }
             }
-            // Un tableau qui repasse sous le seuil se met en page comme un petit : on refait tout.
+            // A table going back under the threshold is laid out like a small one: redo everything.
             if let Some(b) = block.filter(|_| big.is_some()) && b.rows.len() + lines <= r.len() + grid::BIG {
                 return None;
             }
@@ -629,7 +628,7 @@ impl Editor {
         Some(Plan { regions, fences: laid.fences, dollars: laid.dollars, after: if touched { q } else { usize::MAX }, delta })
     }
 
-    /// Ce qui décrit chaque ligne mise en page, pour comparer deux mises en page.
+    /// What describes each laid out line, to compare two layouts.
     #[cfg(test)]
     #[allow(clippy::type_complexity)]
     pub(super) fn signature(&self) -> Vec<(usize, usize, i64, i64, i64, bool, Kind, i64)> {
@@ -637,8 +636,8 @@ impl Editor {
         self.rows.iter().map(|r| (r.start, r.len, px(r.y), px(r.height), px(r.pad), r.opens, r.kind, px(r.gap))).collect()
     }
 
-    /// Chaque image : la mise en page lourde n'est refaite que si le texte, la largeur, le thème
-    /// ou le curseur ont changé ; sinon, seul ce qui dépend du défilement est recalculé.
+    /// Each frame: the heavy layout is only redone if the text, the width, the theme
+    /// or the cursor changed; otherwise, only what depends on scrolling is recomputed.
     pub(super) fn layout(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         let key = LayoutKey {
             version: self.version,
@@ -650,11 +649,11 @@ impl Editor {
         if self.laid_out.as_ref() != Some(&key) {
             self.laid_out = None;
             self.relayout(bounds, window, cx);
-            // Les tests refont toute la mise en page à côté, pour y retrouver celle qu'on a reprise.
+            // Tests redo the whole layout on the side, to find the reused one in it.
             #[cfg(test)]
             if self.compare && !self.force_full {
                 let reused = self.signature();
-                // Tout tableau de plus de `grid::BIG` lignes est enregistré comme très gros, et lui seul.
+                // Every table of more than `grid::BIG` lines is recorded as very big, and only those.
                 let mut i = 0;
                 while i < self.rows.len() {
                     let n = self.rows[i..].iter().take_while(|r| r.kind == Kind::Table).count();
@@ -670,7 +669,7 @@ impl Editor {
                 self.force_full = false;
                 self.counts = counts;
                 assert_eq!(reused.len(), self.rows.len(), "nombre de lignes");
-                // Les positions s'additionnent en flottants : l'ordre des additions change le dernier chiffre.
+                // Positions add up in floats: the order of additions changes the last digit.
                 let near = |a: i64, b: i64| (a - b).abs() <= 20;
                 for (i, (a, b)) in reused.iter().zip(self.signature()).enumerate() {
                     assert!(
@@ -680,24 +679,24 @@ impl Editor {
                 }
                 let _ = (laid, big);
             }
-            // Une image qui charge encore change la hauteur de sa ligne : on y reviendra.
+            // A picture still loading changes its line's height: we will come back to it.
             self.laid_out = (!self.loading).then_some(key);
         }
         self.place(bounds, window, cx);
     }
 
-    // ponytail: la mise en page reprend les lignes qui n'ont pas bougé (`plan`) et ne refait que les zones
-    // touchées. Tout est refait quand le contexte change (thème, autre note, bloc de code ou `$$` touché, texte en
-    // composition) : la frappe dans une note qui contient un bloc de code ou des formules reste proportionnelle à
-    // sa taille. Reprendre le contexte des blocs de code, comme pour les citations, si cela se remarque.
+    // ponytail: the layout reuses the lines that did not move (`plan`) and only redoes the touched
+    // zones. Everything is redone when the context changes (theme, another note, code block or `$$` touched, text being
+    // composed): typing in a note containing a code block or formulas stays proportional to
+    // its size. Reuse the code blocks' context, as for quotes, if it gets noticed.
     pub(super) fn relayout(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         let t = self.theme;
         let cursor = self.cursor();
         let width = (bounds.size.width - SIDE * 2.).min(t.page.measure(t.size)).max(px(40.));
         let room = table_room(t.wide, bounds.size.width, width);
         let text_system = window.text_system().clone();
-        // Ce qui peut être repris de la mise en page précédente, quand seules quelques lignes ont changé.
-        // Les premières lignes d'un très gros tableau fixent ses colonnes : si elles bougent, on refait tout.
+        // What can be reused from the previous layout, when only a few lines changed.
+        // The first lines of a very big table set its columns: if they move, redo everything.
         let plan = self.plan(width, room, cursor).filter(|plan| {
             plan.regions.iter().filter(|r| r.check).all(|r| {
                 let Some((geom, _, start)) = &r.big else { return true };
@@ -715,9 +714,9 @@ impl Editor {
                     && grid::geometry(&mut grid::Cache::default(), &text_system, &look, room, &lines).same(geom)
             })
         });
-        // Un ``` sans clôture n'ouvre pas de bloc : sinon chaque ``` tapé ferait
-        // basculer en code, donc remettre en forme, toute la suite de la note. S'il
-        // y en a un de trop, c'est celui qu'on est en train de taper, sinon le dernier.
+        // A ``` without a closing fence opens no block: otherwise each ``` typed would
+        // switch the whole rest of the note to code, hence restyle it. If
+        // there is one too many, it is the one being typed, otherwise the last.
         let (mut fences, mut dollars) = match &plan {
             Some(plan) => (plan.fences, plan.dollars),
             None => md::count_fences_and_dollars(&self.content),
@@ -727,13 +726,13 @@ impl Editor {
         let orphan = (plan.is_none() && fences % 2 == 1 && md::is_fence(&self.content[typed.clone()]))
             .then_some(typed.start);
         fences -= orphan.is_some() as usize;
-        // Une police sans `≠` le compose d'un `=` et d'une barre mal placée : autant
-        // laisser `!=`.
+        // A font without `≠` composes it from a `=` and a misplaced bar: might as well
+        // leave `!=`.
         let has_unequal = text_system
             .advance(text_system.resolve_font(&font(sans())), px(16.), '≠')
             .is_ok();
         let mut lang = String::new();
-        // Diagrammes Mermaid et formules LaTeX : dessinés une fois, repris ensuite.
+        // Mermaid diagrams and LaTeX formulas: drawn once, reused afterwards.
         let rgb = |c: Hsla| {
             let c = Rgba::from(c);
             [c.r, c.g, c.b].map(|v| (v * 255.) as u8)
@@ -743,7 +742,7 @@ impl Editor {
             format!("#{r:02x}{g:02x}{b:02x}")
         };
         let look = figure::Look::of(&t);
-        // La clé d'une figure, et celle de sa source seule.
+        // A figure's key, and the key of its source alone.
         let key = |kind: u8, source: &str| {
             let (mut hasher, mut family) = (Fast::default(), Fast::default());
             (kind, source, &look.bg, &look.fill, &look.text, &look.line, &look.font, t.size.to_bits())
@@ -756,7 +755,7 @@ impl Editor {
             (key(0, "").0, hex(t.accent), mono(), has_unequal).hash(&mut hasher);
             hasher.finish()
         };
-        // Les figures se dessinent à la plus grande largeur de la page, pour cet écran.
+        // Figures are drawn at the page's largest width, for this screen.
         let job = {
             let (room, density, bg) = (f32::from(t.page.measure(t.size)), window.scale_factor(), rgb(t.bg));
             move |(key, family): (u64, u64), make: Arc<dyn Fn() -> Option<String> + Send + Sync>| Job { key, family, make, room, density, bg }
@@ -766,7 +765,7 @@ impl Editor {
         };
         let mut cells = std::mem::take(&mut self.cells);
         cells.next_frame();
-        // Lignes d'un tableau déjà mises en page, en attente de leur tour dans la boucle.
+        // Lines of a table already laid out, waiting for their turn in the loop.
         let mut pending: VecDeque<Option<Rc<TableRow>>> = VecDeque::new();
         let empty = Rc::new(Shaped { line: None, subs: Vec::new(), formula: None, picture: None });
         let mut shaped = std::mem::take(&mut self.shaped);
@@ -775,16 +774,16 @@ impl Editor {
         let mut old = std::mem::take(&mut self.figures);
         let (mut waiting, before) = (Vec::new(), std::mem::take(&mut self.waiting));
         let mut kept = FastMap::default();
-        // Bloc Mermaid ou `$$` en cours : son début et son source.
+        // Mermaid or `$$` block in progress: its start and its source.
         let mut block: Option<(usize, String)> = None;
         let marked = self.marked.clone();
         let mut rows = Vec::with_capacity(self.rows.len() + 16);
         let mut y = px(0.);
         let mut offset;
         let mut in_code = false;
-        // En-tête YAML : ses lignes s'écrivent estompées, à chasse fixe, sans être interprétées.
+        // Front matter: its lines are written faded, monospaced, without being interpreted.
         let meta = md::front_matter(&self.content);
-        // Couleur d'un panneau `[!TYPE]` : sa teinte dit son type.
+        // Color of a `[!TYPE]` callout: its tint tells its type.
         let tint_of = |label: &str| {
             let h = match label.to_ascii_lowercase().as_str() {
                 "[!tip]" | "[!success]" => 0.38,
@@ -813,11 +812,11 @@ impl Editor {
         let mut old_rows = std::mem::take(&mut self.rows).into_iter();
         let (after, delta) = plan.as_ref().map_or((usize::MAX, 0), |p| (p.after, p.delta));
         let regions = plan.map_or_else(|| vec![Region { old: 0..0, start: 0, stop: text_len, big: None, check: false }], |p| p.regions);
-        // Très gros tableaux repris tels quels : leurs colonnes, et la place de leur première ligne.
+        // Very big tables reused as they are: their columns, and the place of their first line.
         let mut carried: Vec<(Rc<grid::Geometry>, usize)> = Vec::new();
         let mut next_old = 0;
         let mut regions = regions.into_iter();
-        // Les lignes reprises : d'abord celles qui précèdent la zone, puis, à la fin, celles qui la suivent.
+        // Reused lines: first those before the zone, then, at the end, those after it.
         let keep = |upto: usize, next_old: &mut usize, old_rows: &mut std::vec::IntoIter<Row>, y: &mut Pixels, rows: &mut Vec<Row>, carried: &mut Vec<(Rc<grid::Geometry>, usize)>| {
             let count = upto - *next_old;
             let shift = if old_rows.as_slice().first().is_some_and(|r| r.start > after) { delta } else { 0 };
@@ -834,19 +833,19 @@ impl Editor {
             }
             next
         } {
-            // La zone remplace ses anciennes lignes.
+            // The zone replaces its old lines.
             old_rows.by_ref().take(region.old.len()).for_each(drop);
             next_old = region.old.end;
             offset = region.start;
             tint = None;
             let first_new = rows.len();
-            // Zone qui commence à la première ligne d'un très gros tableau : le tableau reste enregistré.
+            // Zone starting at the first line of a very big table: the table stays recorded.
             if let Some((geom, 0, _)) = &region.big {
                 carried.push((geom.clone(), first_new));
             }
             while offset <= region.stop {
             let line = &self.content[offset..self.content[offset..].find('\n').map_or(text_len, |i| offset + i)];
-            // Dans l'intérieur d'un très gros tableau, chaque ligne se suffit : même hauteur, sans cellules.
+            // Inside a very big table, each line stands alone: same height, no cells.
             if let Some((geom, rank, _)) = &region.big {
                 let (pad, height) = geom.metrics(rank + rows.len() - first_new, false, grid::line_height(&t));
                 rows.push(Row {
@@ -880,7 +879,7 @@ impl Editor {
                     lang = line.trim_start()[3..].trim().to_lowercase();
                     block = (lang == "mermaid").then(|| (offset, String::new()));
                 } else if let Some((start, source)) = block.take() {
-                    // Un diagramme se dessine une fois le curseur sorti du bloc, en tâche de fond.
+                    // A diagram is drawn once the cursor has left the block, in a background task.
                     let editing = (start..=offset + line.len()).contains(&cursor);
                     let (k, look) = (key(0, &source), look.clone());
                     drawing = cached(&mut old, &mut kept, k, editing, || {
@@ -889,7 +888,7 @@ impl Editor {
                 }
             }
             let code = matches!(kind, Kind::Code | Kind::Fence | Kind::Meta);
-            // Formule sur plusieurs lignes, entre deux lignes `$$`.
+            // Formula over several lines, between two `$$` lines.
             let mut math = false;
             if kind == Kind::Code {
                 if let Some((_, source)) = &mut block {
@@ -905,7 +904,7 @@ impl Editor {
                             vector(figure::latex(&source, true, rgb(t.text), t.size * MATH_SCALE))
                         });
                     }
-                    // Comme pour ``` : un `$$` sans clôture n'ouvre rien.
+                    // As for ```: a `$$` without a closing one opens nothing.
                     None if dollars > 0 => block = Some((offset, String::new())),
                     None => {}
                 }
@@ -917,15 +916,15 @@ impl Editor {
             if math {
                 (kind, marker) = (Kind::Para, 0);
             }
-            // Panneau : la citation `> [!TYPE]` et celles qui la suivent.
+            // Callout: the `> [!TYPE]` quote and the ones that follow it.
             let own_tint = (kind == Kind::Quote).then(|| md::callout(line)).flatten().map(|r| tint_of(&line[r]));
             tint = own_tint.or(tint).filter(|_| kind == Kind::Quote);
             let tinted = tint.is_some();
             let last: Option<&mut Row> = rows.last_mut();
             let after_table = last.as_ref().is_some_and(|r| r.kind == Kind::Table);
             let header = kind == Kind::Table && !after_table;
-            // Un tableau se met en page d'un bloc, à sa première ligne : ses colonnes
-            // dépendent de toutes ses cellules.
+            // A table is laid out in one block, at its first line: its columns
+            // depend on all its cells.
             if header {
                 let mut at = offset;
                 let block: Vec<(usize, &str)> = self.content[offset..]
@@ -936,7 +935,7 @@ impl Editor {
                         (at - l.len() - 1, l)
                     })
                     .collect();
-                // Un très gros tableau : lignes toutes de la même hauteur, sans mise en forme encore.
+                // A very big table: lines all of the same height, no styling yet.
                 if block.len() > grid::BIG {
                     let look = grid::Look { theme: &t, style };
                     let geom = Rc::new(grid::geometry(&mut cells, &text_system, &look, room, &block[..grid::SAMPLE]));
@@ -981,12 +980,12 @@ impl Editor {
                 Kind::Code | Kind::Fence | Kind::Table | Kind::Meta => (px(14.), px(0.)),
                 _ => (px(16.), px(0.)),
             };
-            // Les tailles ci-dessus valent pour un texte courant de 16 px.
+            // The sizes above hold for a 16 px body text.
             let font_size = font_size * (t.size / 16.);
             let pad = if offset == 0 { px(0.) } else { pad };
 
-            // Une ligne inchangée, dans le même contexte, reprend sa mise en forme de
-            // la frame précédente : la frappe ne retraite que la ligne touchée.
+            // An unchanged line, in the same context, reuses its styling from
+            // the previous frame: typing only reprocesses the touched line.
             let has_cursor = (offset..=offset + line.len()).contains(&cursor);
             let composed = marked.clone().filter(|m| m.start <= offset + line.len() && m.end >= offset);
             let id = {
@@ -1008,13 +1007,13 @@ impl Editor {
                 } else if math {
                     flags.fill(if line.trim() == "$$" { md::DIM } else { md::CODE });
                 } else if kind == Kind::Code {
-                    // Sans langage annoncé, en texte brut ou en Mermaid, le bloc reste tel quel.
+                    // With no language given, in plain text or in Mermaid, the block stays as it is.
                     if !matches!(lang.as_str(), "" | "text" | "txt" | "plain" | "mermaid") {
                         md::code(line, &lang, &mut flags);
                     }
                 } else if !code && kind != Kind::Rule {
                     md::inline(line, marker, &mut flags);
-                    // Formule sur la ligne : son source reste lisible, comme du code.
+                    // Formula on the line: its source stays readable, like code.
                     if let Some((range, source, display)) = md::math(line)
                         && range.start >= marker
                         && flags[range.start] & md::CODE == 0
@@ -1025,7 +1024,7 @@ impl Editor {
                 }
                 if kind == Kind::Task(true) {
                     flags[marker..].iter_mut().for_each(|f| *f |= md::STRIKE | md::DIM);
-                    // Cochée, sa case est en gras, comme une case dans le texte ou un tableau.
+                    // Checked, its checkbox is bold, like a checkbox in the text or a table.
                     if let Some(at) = line[..marker].find('[') {
                         flags[at..(at + 3).min(marker)].iter_mut().for_each(|f| *f |= md::BOLD);
                     }
@@ -1033,9 +1032,9 @@ impl Editor {
                 if let Some(label) = md::callout(line).filter(|_| own_tint.is_some()) {
                     flags[label].fill(md::BOLD | md::MARK);
                 }
-                // Tableau : en-tête en gras, `|` et tirets en retrait.
-                // Une ligne ne passe jamais à la ligne, ce qui casserait la grille : un
-                // tableau plus large que la page défile horizontalement.
+                // Table: header in bold, `|` and dashes dimmed.
+                // A line never wraps, which would break the grid: a
+                // table wider than the page scrolls horizontally.
                 if kind == Kind::Table {
                     if header {
                         flags.iter_mut().for_each(|f| *f |= md::BOLD);
@@ -1049,8 +1048,8 @@ impl Editor {
                     flags[range].iter_mut().for_each(|f| *f |= md::DIM);
                     path
                 });
-                // Hors de la ligne du curseur, `->`, `!=`… s'affichent comme des signes ;
-                // le texte, lui, ne change pas.
+                // Outside the cursor's line, `->`, `!=`… display as signs;
+                // the text itself does not change.
                 let mut signs = if code || has_cursor || matches!(kind, Kind::Rule | Kind::Table) {
                     Vec::new()
                 } else {
@@ -1096,9 +1095,9 @@ impl Editor {
                     vector(figure::latex(source, *display, rgb(t.text), t.size * MATH_SCALE))
                 });
             }
-            // ponytail: une image par ligne, cherchée dans le dossier de la note, à la
-            // racine du coffre, puis par son nom dans tout le coffre ; les images en
-            // ligne (http) ne sont pas chargées.
+            // ponytail: one picture per line, looked up in the note's folder, at the
+            // vault root, then by its name in the whole vault; inline
+            // pictures (http) are not loaded.
             let file = made.picture.as_ref().and_then(|path| {
                 let root = self.dirs.last();
                 let found = self.dirs.iter().map(|d| d.join(path)).find(|p| p.is_file() && root.is_some_and(|r| inside(r, p)));
@@ -1108,9 +1107,9 @@ impl Editor {
                 })
             });
             let svg = file.as_ref().is_some_and(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")));
-            // Un SVG est redessiné aux couleurs du thème, et à chaque fois que son fichier
-            // change : sa date fait partie de sa clé. Un schéma de Bref prend l'encre du
-            // texte ; un SVG d'ailleurs est rendu lisible (texte HTML, `light-dark()`).
+            // An SVG is redrawn in the theme's colors, and every time its file
+            // changes: its date is part of its key. A Bref diagram takes the ink of the
+            // text; an SVG from elsewhere is made readable (HTML text, `light-dark()`).
             if svg
                 && let Some(file) = &file
                 && let Ok(stamp) = fs::metadata(file).and_then(|m| m.modified())
@@ -1180,7 +1179,7 @@ impl Editor {
             y += TABLE_GAP;
         }
         self.rows = rows;
-        // Les très gros tableaux repris : leurs lignes ne sont plus celles qu'on a mises en forme.
+        // Reused very big tables: their lines are no longer the ones that were styled.
         for (geom, first) in carried {
             let end = first + self.rows[first..].iter().take_while(|r| r.kind == Kind::Table).count();
             big.push(BigBlock { rows: first..end, geom, mat: Vec::new(), rescan: true });
@@ -1192,7 +1191,7 @@ impl Editor {
         if incremental {
             kept.extend(old.drain());
         }
-        // Une figure qui n'est plus demandée (autre thème, source changée) n'est plus attendue.
+        // A figure no longer requested (other theme, changed source) is no longer awaited.
         for job in before {
             if !waiting.iter().any(|w| w.id() == job.id()) {
                 cx.remove_asset::<Job>(&job);
@@ -1200,8 +1199,8 @@ impl Editor {
         }
         self.loading = loading || !waiting.is_empty();
         self.waiting = waiting;
-        // Les figures qui ne servent plus libèrent leur image et sa place sur la carte graphique,
-        // sauf si une figure gardée a la même (même source, revenue au même thème).
+        // Figures no longer in use free their image and its room on the graphics card,
+        // unless a kept figure has the same one (same source, back to the same theme).
         let used: Vec<u64> = kept.values().filter_map(|(_, d)| Some(d.as_ref()?.0.id())).collect();
         for (_, (_, drawing)) in old {
             if let Some((image, _)) = drawing.filter(|(image, _)| !used.contains(&image.id())) {
@@ -1224,7 +1223,7 @@ impl Editor {
             dollars: dollars0,
             meta,
         });
-        // Les lignes qui ne servent plus (supprimées, modifiées) partent quand elles dépassent la note.
+        // Lines no longer in use (deleted, changed) go when they outnumber the note.
         if shaped.len() > self.rows.len() * 2 + 256 {
             shaped.retain(|_, (_, used)| *used == frame);
         }
@@ -1249,8 +1248,8 @@ impl Editor {
         }
     }
 
-    /// Donne leurs cellules aux lignes des très gros tableaux qui sont près de l'écran ou du curseur,
-    /// et les retire à celles qui s'en sont éloignées.
+    /// Gives their cells to the lines of very big tables that are near the screen or the cursor,
+    /// and removes them from those that moved away.
     pub(super) fn materialize(&mut self, bounds: Bounds<Pixels>, window: &mut Window) {
         if self.big.is_empty() {
             return;
@@ -1276,7 +1275,7 @@ impl Editor {
             }
             let wanted = |k: usize| want.iter().any(|w| w.contains(&k));
             if std::mem::take(&mut self.big[b].rescan) {
-                // Lignes venues d'une autre mise en page : on ne sait plus lesquelles ont leurs cellules.
+                // Lines from another layout: which ones have their cells is no longer known.
                 for k in (0..n).filter(|&k| !wanted(k)) {
                     self.rows[range.start + k].grid = None;
                 }
@@ -1301,8 +1300,8 @@ impl Editor {
         self.cells = cells;
     }
 
-    /// Ce qui dépend du défilement et de la taille de la fenêtre, et se refait à chaque image :
-    /// vue, cadres des tableaux, zones cliquables.
+    /// What depends on scrolling and the window size, and is redone every frame:
+    /// view, table frames, clickable zones.
     pub(super) fn place(&mut self, bounds: Bounds<Pixels>, window: &mut Window, _: &mut App) {
         let (cursor, width, room) = (self.cursor(), self.width, self.room);
         let reveal = std::mem::take(&mut self.reveal);
@@ -1344,8 +1343,8 @@ impl Editor {
             .collect();
         let grid = self.grid.and_then(|_| self.popup_at(Self::grid_size()));
         self.grid_hitbox = grid.map(|at| window.insert_hitbox(Bounds::new(at, Self::grid_size()), HitboxBehavior::Normal));
-        // Cadre de chaque tableau : ses lignes, à la largeur de la plus longue sans
-        // dépasser la page ; au-delà, il défile et suit le curseur.
+        // Frame of each table: its lines, at the width of the longest without
+        // going past the page; beyond that, it scrolls and follows the cursor.
         let scrolled = std::mem::take(&mut self.table_x);
         self.tables.clear();
         self.geos.clear();
@@ -1360,7 +1359,7 @@ impl Editor {
             if reveal && (start..=end).contains(&cursor) {
                 let at = self.row_at(cursor).unwrap_or(meta.rows.start).clamp(meta.rows.start, meta.rows.end - 1);
                 let row = &self.rows[at];
-                // Là où serait le curseur sans défilement.
+                // Where the cursor would be without scrolling.
                 let x = row.pos(cursor - row.start).x + row.dx;
                 let margin = px(24.);
                 if x - dx < margin {
@@ -1389,7 +1388,7 @@ impl Editor {
                 self.thumbs.push(bar);
             }
             self.tables.push((start..end, frame));
-            // Un très gros tableau n'a pas de poignées : ses gestes ne le réécrivent pas d'un bloc.
+            // A very big table has no handles: its gestures do not rewrite it as a whole.
             let big = self.big.iter().any(|b| b.rows.start == meta.rows.start);
             if let Some(grid) = first.grid.as_ref().filter(|_| !big) {
                 let xs = grid.xs().iter().map(|x| frame.left() - dx + *x).collect();

@@ -5,8 +5,8 @@ use super::*;
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let shell = &j.shell;
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
-    // Un tableau : ses lignes et ses colonnes se gèrent depuis le menu, la palette ou le clavier,
-    // et le curseur suit le geste.
+    // A table: its rows and columns are handled from the menu, the palette or the keyboard,
+    // and the cursor follows the gesture.
     let flat = |cx: &mut gpui::VisualTestContext| {
         markdown::table(&text(cx).lines().filter(|l| l.starts_with('|')).collect::<Vec<_>>().join("\n")).0.iter().map(|r| r.iter().map(|c| if c.starts_with("--") { "---" } else { c }).collect::<Vec<_>>().join("|")).collect::<Vec<_>>().join("/")
     };
@@ -33,19 +33,19 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(flat(cx), "Nom|Âge/---|---/Zoé|/Léa|31/Max|7");
     op(cx, SortDesc);
     assert_eq!(flat(cx), "Nom|Âge/---|---/Zoé|/Max|7/Léa|31");
-    // Deux lignes choisies partent ensemble ; ni l'en-tête ni le corps ne laissent un tableau sans lignes.
+    // Two chosen rows go together; neither the header nor the body leaves a table without rows.
     j.load(cx, grid, grid.find("Léa").unwrap());
     cx.simulate_keystrokes("shift-down");
     cx.simulate_keystrokes("secondary-shift-backspace");
     assert_eq!(flat(cx), "Nom|Âge/---|---");
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(flat(cx), "Nom|Âge/---|---/Léa|31/Max|7");
-    // Le tableau entier part avec son retour à la ligne ; annuler le rend.
+    // The whole table goes with its line break; undo brings it back.
     op(cx, DeleteTable);
     assert_eq!(text(cx), "\nsuite");
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(flat(cx), "Nom|Âge/---|---/Léa|31/Max|7");
-    // Un tableau indenté garde son retrait ; un tableau seul dans la note, sans retour à la ligne final, disparaît tout entier.
+    // An indented table keeps its indent; a table alone in the note, without a final line break, disappears entirely.
     let indented = "  | a | b |\n  | - | - |\n  | 1 | 2 |";
     j.load(cx, indented, indented.find('1').unwrap());
     op(cx, RowBelow);
@@ -56,8 +56,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(text(cx), "");
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(text(cx), "| a |\n| - |\n| b |");
-    // Les poignées : une colonne prise se copie, s'efface, se supprime ; une ligne se tire plus haut ;
-    // le « + » d'un trait insère ; l'angle prend tout le tableau.
+    // The handles: a grabbed column is copied, cleared, deleted; a row is dragged higher;
+    // the "+" of a line inserts; the corner grabs the whole table.
     j.load(cx, grid, grid.find("Léa").unwrap());
     cx.run_until_parked();
     let center = |cx: &mut gpui::VisualTestContext, part: editor::Part| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).part_center(part).unwrap());
@@ -80,7 +80,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_mouse_move(to, MouseButton::Left, none);
     cx.simulate_mouse_up(to, MouseButton::Left, none);
     assert_eq!(flat(cx), "Nom|Âge/---|---/Max|7/Léa|31");
-    // Le tableau déplacé reste pris : « monter » le prend encore.
+    // The moved table stays grabbed: « monter » grabs it again.
     cx.simulate_keystrokes("secondary-z");
     cx.run_until_parked();
     let at = center(cx, editor::Part::JoinCol(1));
@@ -92,7 +92,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_click(at, none);
     cx.simulate_keystrokes("secondary-c");
     assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("Nom\tÂge\nLéa\t31\nMax\t7"));
-    // Les limites des poignées. Un tableau d'une colonne et d'une ligne : supprimer sa colonne le supprime.
+    // The limits of the handles. A table of one column and one row: deleting its column deletes it.
     use editor::Part;
     let one = "avant\n\n| a |\n| - |\n| b |\n\nsuite";
     j.load(cx, one, one.find('b').unwrap());
@@ -101,8 +101,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_click(at, none);
     op(cx, DeleteCol);
     assert!(!text(cx).contains('|') && text(cx).contains("suite") && text(cx).starts_with("avant"), "{:?}", text(cx));
-    // L'en-tête se prend mais ne se tire pas ; une ligne lâchée où elle est ne bouge rien, ni sous la
-    // dernière, ni sur son propre trait ; une colonne tirée au-delà de la dernière passe en dernier.
+    // The header can be grabbed but not dragged; a row dropped where it is moves nothing, neither under the
+    // last one, nor on its own line; a column dragged beyond the last one goes last.
     j.load(cx, grid, grid.find("Léa").unwrap());
     cx.run_until_parked();
     let before = flat(cx);
@@ -123,7 +123,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_mouse_move(to, MouseButton::Left, none);
     cx.simulate_mouse_up(to, MouseButton::Left, none);
     assert_eq!(flat(cx), "Âge|Nom/---|---/31|Léa/7|Max");
-    // Échap en plein glisser : rien ne bouge.
+    // Escape mid-drag: nothing moves.
     cx.simulate_keystrokes("secondary-z");
     cx.run_until_parked();
     let (from, to) = (center(cx, Part::Row(1)), center(cx, Part::JoinRow(3)));
@@ -132,7 +132,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("escape");
     cx.simulate_mouse_up(to, MouseButton::Left, none);
     assert_eq!(flat(cx), before);
-    // Le « + » du dernier trait ajoute une ligne à la fin ; celui du premier, une colonne en tête.
+    // The "+" of the last line adds a row at the end; the one of the first, a column at the start.
     let at = center(cx, Part::JoinRow(3));
     cx.simulate_click(at, none);
     assert_eq!(flat(cx), "Nom|Âge/---|---/Léa|31/Max|7/|");
@@ -143,7 +143,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(flat(cx), "|Nom|Âge/---|---|---/|Léa|31/|Max|7");
     cx.simulate_keystrokes("secondary-z");
     cx.run_until_parked();
-    // L'angle puis Effacer vide toutes les cases sans changer la forme ; Échap relâche la prise.
+    // The corner then Clear empties all cells without changing the shape; Escape releases the grab.
     let at = center(cx, Part::Corner);
     cx.simulate_click(at, none);
     cx.simulate_keystrokes("delete");
@@ -153,18 +153,18 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_click(at, none);
     cx.simulate_keystrokes("escape");
     cx.simulate_keystrokes("secondary-shift-backspace");
-    // Sans prise, le geste vaut pour la ligne du curseur : l'en-tête, et la suivante lui succède.
+    // Without a grab, the gesture applies to the cursor's row: the header, and the next one takes its place.
     assert_eq!(flat(cx), "Léa|31/---|---/Max|7");
     cx.simulate_keystrokes("secondary-z");
-    // Une colonne prise par sa poignée : le même geste la supprime, elle et non la ligne.
+    // A column grabbed by its handle: the same gesture deletes it, it and not the row.
     let at = center(cx, Part::Col(0));
     cx.simulate_click(at, none);
     cx.simulate_keystrokes("secondary-shift-backspace");
     assert_eq!(flat(cx), "Âge/---/31/7");
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(flat(cx), "Nom|Âge/---|---/Léa|31/Max|7");
-    // Trente colonnes : celles qui sortent du cadre n'ont pas de poignée à l'écran ; un tableau
-    // de plus de 1 500 lignes n'en a aucune (il garde Tab).
+    // Thirty columns: those that go out of the frame have no handle on screen; a table
+    // of more than 1,500 rows has none (it keeps Tab).
     let wide = format!("|{}\n|{}\n|{}\n", " colonne |".repeat(30), " --- |".repeat(30), " texte |".repeat(30));
     j.load(cx, &wide, 0);
     cx.run_until_parked();
@@ -173,14 +173,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     j.load(cx, &big, 0);
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).part_center(Part::Col(0)).is_none() && !s.pane().editor.read(cx).in_table()));
-    // Dans le menu de la note : les gestes du tableau, et sa palette.
+    // In the note's menu: the table gestures, and its palette.
     j.load(cx, grid, grid.find("Léa").unwrap());
     assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).in_table()));
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("colonne à droite");
     cx.simulate_keystrokes("down enter");
     assert_eq!(flat(cx), "Nom||Âge/---|---|---/Léa||31/Max||7");
-    // Tout le tableau pris (l'angle) : la colonne vient à droite de la dernière.
+    // The whole table grabbed (the corner): the column comes right of the last one.
     cx.simulate_keystrokes("secondary-z");
     cx.run_until_parked();
     let at = center(cx, Part::Corner);
@@ -189,7 +189,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("colonne à droite");
     cx.simulate_keystrokes("down enter");
     assert_eq!(flat(cx), "Nom|Âge|/---|---|---/Léa|31|/Max|7|");
-    // La note ouverte ici n'existe pas sur le disque : l'enregistrement échoue, et son avis s'efface.
+    // The note open here does not exist on disk: saving fails, and its notice clears.
     cx.executor().advance_clock(Duration::from_secs(5));
     cx.run_until_parked();
 }

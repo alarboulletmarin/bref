@@ -3,8 +3,8 @@
 use super::*;
 
 impl Shell {
-    /// Cherche en tâche de fond une version plus récente (au plus une requête par jour).
-    /// Les tests ne sortent pas sur le réseau.
+    /// Looks in the background for a newer version (at most one request per day).
+    /// Tests do not go out on the network.
     pub(super) fn check_updates(&mut self, cx: &mut Context<Self>) {
         if !self.prefs.updates || cfg!(test) {
             return;
@@ -22,8 +22,8 @@ impl Shell {
         .detach();
     }
 
-    /// Contrôle demandé depuis la palette : interroge GitHub tout de suite, même si la recherche
-    /// quotidienne est coupée, et dit ce qu'il en est. Les tests ne sortent pas sur le réseau.
+    /// Check requested from the palette: queries GitHub right away, even if the daily
+    /// check is off, and says how things stand. Tests do not go out on the network.
     pub(super) fn check_now(&mut self, cx: &mut Context<Self>) {
         self.say(Tone::Busy, tr("Checking for updates…", "Recherche d'une mise à jour…"), cx);
         if cfg!(test) {
@@ -36,7 +36,7 @@ impl Shell {
         .detach();
     }
 
-    /// Suite du contrôle : la bannière si `latest` est plus récente, sinon un mot.
+    /// Rest of the check: the banner if `latest` is newer, otherwise a word.
     pub(super) fn checked(&mut self, latest: Option<update::Release>, cx: &mut Context<Self>) {
         match latest {
             None => self.say(Tone::Failed, tr("No answer from GitHub: check the connection", "GitHub ne répond pas : vérifier la connexion"), cx),
@@ -49,8 +49,8 @@ impl Shell {
         }
     }
 
-    /// Télécharge et installe la version trouvée, puis quitte : le nouveau programme se
-    /// relance de lui-même. Un échec laisse l'app telle qu'elle est, avec son message.
+    /// Downloads and installs the version found, then quits: the new program
+    /// restarts by itself. A failure leaves the app as it is, with its message.
     pub(super) fn install_update(&mut self, cx: &mut Context<Self>) {
         let Some((url, sha256)) = self.update.as_ref().and_then(|r| Some((r.asset.clone()?, r.sha256.clone()))) else {
             return;
@@ -64,7 +64,7 @@ impl Shell {
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move { update::install(&url, sha256.as_deref()) }).await;
             this.update(cx, |this, cx| match result {
-                // La sortie enregistre la note en cours (`on_app_quit`).
+                // Quitting saves the current note (`on_app_quit`).
                 Ok(()) => cx.quit(),
                 Err(e) => {
                     this.updating = false;
@@ -76,7 +76,7 @@ impl Shell {
         .detach();
     }
 
-    /// Active ou coupe la recherche de nouvelle version, et retient le choix.
+    /// Turns the new-version check on or off, and remembers the choice.
     pub(super) fn toggle_updates(&mut self, cx: &mut Context<Self>) {
         self.prefs.updates = !self.prefs.updates;
         vault::save_settings(&self.prefs.to_text());
@@ -87,7 +87,7 @@ impl Shell {
 }
 
 impl Shell {
-    /// La bannière d'une nouvelle version : l'installer, ou la page où la télécharger.
+    /// The new-version banner: install it, or the page to download it from.
     pub(super) fn render_update_banner(&self, cx: &mut Context<Self>) -> Option<Div> {
         let t = self.theme;
         self.update.clone().map(|release| {
@@ -95,7 +95,7 @@ impl Shell {
             if self.updating {
                 return banner.pr_3().child(tr("Updating, Bref restarts…", "Mise à jour, Bref redémarre…"));
             }
-            // « Mettre à jour » quand l'app sait le faire seule, sinon la page de téléchargement.
+            // "Update" when the app can do it alone, otherwise the download page.
             let (action, install) = match release.asset {
                 Some(_) => (tr("Update", "Mettre à jour"), true),
                 None => (tr("Download", "Télécharger"), false),

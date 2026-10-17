@@ -2,47 +2,47 @@
 
 use super::*;
 
-/// Largeur en dessous de laquelle deux panes ne tiennent pas à côté du panneau : il se replie.
+/// Width below which two panes do not fit next to the panel: it folds.
 pub(super) const MIN_PANE: Pixels = px(300.);
 
-/// Part de la largeur que peut prendre le pane de gauche.
+/// Share of the width the left pane can take.
 pub(super) const PANE_RATIO: std::ops::RangeInclusive<f32> = 0.2..=0.8;
 
-/// Ce qui est ouvert dans une moitié de la fenêtre : une note et son éditeur, ce qui s'affiche
-/// à sa place (image, schéma, tableau, page liste), et la vue kanban de la note.
+/// What is open in one half of the window: a note and its editor, what is shown
+/// in its place (image, diagram, table, list page), and the note's kanban view.
 pub(super) struct Pane {
-    /// Contient le focus dès qu'une des vues du pane l'a : c'est ce qui le rend actif. Il le
-    /// porte lui-même quand le pane ne montre qu'une image.
+    /// Holds the focus as soon as one of the pane's views has it: that is what makes it active. It
+    /// holds it itself when the pane only shows an image.
     pub(super) zone: FocusHandle,
     pub(super) editor: Entity<Editor>,
     /// File shown in place of the note, picked in the tree or the graph (`Shell::set_file`).
     pub(super) file: Option<FileView>,
-    /// Diagramme Mermaid de la note, vu en grand à sa place.
+    /// Mermaid diagram of the note, viewed large in its place.
     pub(super) figure: Option<Entity<viewer::Viewer>>,
-    /// Fichier de la note ouverte ; `None` tant qu'une nouvelle note n'est pas enregistrée.
+    /// File of the open note; `None` as long as a new note is not saved.
     pub(super) path: Option<PathBuf>,
-    /// Le nom du fichier suit le titre (première ligne) de la note.
+    /// The file name follows the note's title (first line).
     pub(super) synced: bool,
-    /// Titre `# …` de la note quand elle a été chargée : s'il change, ou s'il
-    /// apparaît, le fichier prend son nom.
+    /// `# …` title of the note when it was loaded: if it changes, or if it
+    /// appears, the file takes its name.
     pub(super) h1: Option<String>,
-    /// Nom de la note quand elle a été chargée ; `None` pour une nouvelle note.
-    /// Si son titre change, les liens vers ce nom suivent quand on la quitte.
+    /// Name of the note when it was loaded; `None` for a new note.
+    /// If its title changes, links to that name follow when it is left.
     pub(super) origin: Option<String>,
-    /// La note affichée n'est qu'un aperçu : elle ne compte comme ouverte que
-    /// lorsqu'on y entre (focus ou frappe).
+    /// The note shown is only a preview: it counts as open only
+    /// once you enter it (focus or keystroke).
     pub(super) preview: bool,
-    /// Dossier où enregistrer la nouvelle note ; le coffre par défaut.
+    /// Folder to save the new note in; the vault by default.
     pub(super) new_dir: Option<PathBuf>,
-    /// La note a été créée dans ce pane : laissée vide, son fichier ne reste pas dans le coffre.
+    /// The note was created in this pane: left empty, its file does not stay in the vault.
     pub(super) fresh: bool,
     pub(super) dirty: bool,
     /// The note shown as a kanban board, when it is one.
     pub(super) board: kanban::Board,
-    /// Page liste affichée à la place de la note.
+    /// List page shown in place of the note.
     pub(super) listing: Option<nav::Listing>,
-    /// Ce qui est affiché n'est qu'un aperçu (flèches dans l'arbre, graphe) : l'historique
-    /// l'ignore tant qu'il n'est pas ouvert pour de bon.
+    /// What is shown is only a preview (arrows in the tree, graph): the history
+    /// ignores it until it is opened for good.
     pub(super) peek: bool,
 }
 
@@ -94,7 +94,7 @@ impl Pane {
 }
 
 impl Shell {
-    /// Un pane vide : une note neuve dans son éditeur.
+    /// An empty pane: a new note in its editor.
     pub(super) fn new_pane(theme: Theme, window: &mut Window, cx: &mut Context<Self>) -> Pane {
         let editor = cx.new(|cx| Editor::new(theme, cx));
         cx.subscribe_in(&editor, window, Self::on_editor_event).detach();
@@ -117,12 +117,12 @@ impl Shell {
         }
     }
 
-    /// Le pane qui montre déjà ce fichier, comme note (même cachée par une image) ou à sa place.
+    /// The pane already showing this file, as a note (even hidden by an image) or in its place.
     pub(super) fn pane_showing(&self, path: &Path) -> Option<usize> {
         self.panes.iter().position(|pane| pane.path.as_deref() == Some(path) || pane.file_path().map(PathBuf::as_path) == Some(path))
     }
 
-    /// Donne la saisie au pane : à sa grille, à sa liste, à sa note, sinon au pane lui-même.
+    /// Gives input to the pane: to its grid, to its list, to its note, otherwise to the pane itself.
     pub(super) fn focus_pane(&mut self, pane: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.active = pane.min(self.panes.len() - 1);
         if let Some(figure) = &self.pane().figure {
@@ -140,9 +140,9 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ouvre le second pane, sur une note neuve, et lui donne la saisie.
+    /// Opens the second pane, on a new note, and gives it input.
     pub(super) fn add_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Trop étroit pour deux panes : le panneau se replie sur son rail.
+        // Too narrow for two panes: the panel folds onto its rail.
         let width = self.pane_box.get().size.width;
         if self.nav.panel == Panel::Split && width > px(0.) && width < MIN_PANE * 2. {
             self.nav.panel = Panel::Rail;
@@ -160,8 +160,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ctrl+\ : un second pane, ouvert sur la palette pour choisir ce qui y va. Une note ne
-    /// s'affiche pas deux fois, il ne peut donc pas reprendre celle qu'on quitte.
+    /// Ctrl+\: a second pane, opened on the palette to choose what goes there. A note is not
+    /// shown twice, so it cannot take the one being left.
     pub(super) fn split(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() {
             return;
@@ -173,7 +173,7 @@ impl Shell {
         self.open_palette("", window, cx);
     }
 
-    /// Ouvre le fichier dans l'autre pane, créé au besoin ; déjà affiché, il reçoit la saisie.
+    /// Opens the file in the other pane, created if needed; already shown, it receives input.
     pub(super) fn open_aside(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(pane) = self.pane_showing(path) {
             return self.focus_pane(pane, window, cx);
@@ -185,8 +185,8 @@ impl Shell {
         self.open_from_nav(path, window, cx);
     }
 
-    /// Un fichier de l'arbre lâché sur un pane : il s'y ouvre (un dossier : sa page liste), ou
-    /// dans un second pane s'il est lâché sur la moitié droite du seul pane.
+    /// A file from the tree dropped on a pane: it opens there (a folder: its list page), or
+    /// in a second pane if it is dropped on the right half of the only pane.
     pub(super) fn drop_on_pane(&mut self, pane: usize, aside: bool, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         if path.is_dir() {
             match aside {
@@ -202,7 +202,7 @@ impl Shell {
         }
     }
 
-    /// Ferme le pane qui a la saisie ; l'autre reprend toute la largeur. Le dernier reste.
+    /// Closes the pane that has input; the other takes the whole width. The last one stays.
     pub(super) fn close_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.panes.len() < 2 {
             return;
@@ -212,30 +212,30 @@ impl Shell {
         self.focus_pane(0, window, cx);
     }
 
-    /// La disposition des panes, telle qu'elle s'enregistre : la part du pane de gauche, puis le
-    /// fichier du second pane (rien s'il n'y en a qu'un).
+    /// The pane layout, as it is saved: the left pane's share, then the
+    /// second pane's file (nothing if there is only one).
     pub(super) fn panes_state(&self) -> String {
         let aside = self.panes.get(1).and_then(|pane| pane.file_path().or(pane.path.as_ref()));
         format!("{}\n{}\n", self.pane_ratio, aside.map(|path| path.display().to_string()).unwrap_or_default())
     }
 
-    /// Fait `act` dans le pane `pane`, comme s'il était l'actif, puis revient à l'actif.
+    /// Does `act` in pane `pane`, as if it were the active one, then goes back to the active one.
     pub(super) fn in_pane<R>(&mut self, pane: usize, act: impl FnOnce(&mut Self) -> R) -> R {
         let active = std::mem::replace(&mut self.active, pane);
         let done = act(self);
-        // Le pane a pu être fermé entre-temps.
+        // The pane may have been closed in the meantime.
         self.active = active.min(self.panes.len() - 1);
         done
     }
 
-    /// Fait `act` dans chaque pane, tour à tour.
+    /// Does `act` in each pane, in turn.
     pub(super) fn each_pane(&mut self, mut act: impl FnMut(&mut Self)) {
         for pane in 0..self.panes.len() {
             self.in_pane(pane, &mut act);
         }
     }
 
-    /// Le tableau affiché, s'il y en a un.
+    /// The table shown, if there is one.
     pub(super) fn shown_sheet(&self) -> Option<Entity<Sheet>> {
         self.pane().sheet().cloned()
     }
@@ -251,7 +251,7 @@ impl Shell {
     pub(super) fn set_file(&mut self, file: Option<FileView>, cx: &mut Context<Self>) {
         let leaving = self.pane().file.as_ref().is_some_and(|old| file.as_ref().is_none_or(|new| new.path != old.path));
         if leaving && self.pane().sheet().is_some() {
-            // Ce que `track` aurait retenu au rendu suivant, tant que le tableau existait encore.
+            // What `track` would have kept on the next render, while the table still existed.
             if !self.pane().peek {
                 self.mark_place(cx);
             }

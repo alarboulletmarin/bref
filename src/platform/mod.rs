@@ -7,8 +7,8 @@ pub mod vault;
 
 use std::{ffi::OsStr, fs, process::Command};
 
-/// Le pilote Vulkan NVIDIA (paquet `nvidia-utils`) met environ 2 s à renoncer
-/// quand aucune carte NVIDIA n'est branchée : on demande au chargeur de l'ignorer.
+/// The NVIDIA Vulkan driver (package `nvidia-utils`) takes about 2 s to give up
+/// when no NVIDIA card is plugged in: the loader is asked to ignore it.
 #[cfg(target_os = "linux")]
 pub fn skip_absent_nvidia_driver() {
     let has_nvidia = fs::read_dir("/sys/bus/pci/devices").is_ok_and(|devices| {
@@ -17,11 +17,11 @@ pub fn skip_absent_nvidia_driver() {
         })
     });
     if !has_nvidia && std::env::var_os("VK_LOADER_DRIVERS_DISABLE").is_none() {
-        // Sûr : appelé au tout début de `main`, avant la création du moindre thread.
+        // Safe: called at the very start of `main`, before any thread is created.
         unsafe { std::env::set_var("VK_LOADER_DRIVERS_DISABLE", "*nvidia*") };
     }
 }
-/// Un processus sans fenêtre de console (l'app n'en a pas sous Windows : sinon elle clignote).
+/// A process without a console window (the app has none on Windows: otherwise it flashes).
 pub fn command(program: impl AsRef<OsStr>) -> Command {
     #[allow(unused_mut)]
     let mut command = Command::new(program);

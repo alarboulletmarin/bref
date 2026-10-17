@@ -3,7 +3,7 @@
 use super::*;
 
 impl Shell {
-    /// Un tableau prend la place de la note, comme une image ; la note reste chargée dessous.
+    /// A table takes the note's place, like a picture; the note stays loaded underneath.
     pub(super) fn open_table(&mut self, path: &Path, cx: &mut Context<Self>) -> bool {
         if self.pane().sheet().is_some() && self.pane().file_path().map(PathBuf::as_path) == Some(path) {
             cx.notify();
@@ -30,7 +30,7 @@ impl Shell {
     pub(super) fn on_sheet_event(&mut self, _: Entity<Sheet>, event: &SheetEvent, cx: &mut Context<Self>) {
         match event {
             SheetEvent::Error(message) => self.say(Tone::Failed, message.clone(), cx),
-            // Un fichier est apparu à côté du tableau : l'arbre le montre.
+            // A file appeared next to the table: the tree shows it.
             SheetEvent::Exported => {
                 if let Some(root) = self.vault.clone() {
                     let (notes, dirs, images) = vault::rescan(&root, &self.notes);
@@ -41,7 +41,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Liste de choix d'un réglage du tableau affiché (délimiteur, encodage, copie, export).
+    /// Choice list for a setting of the shown table (delimiter, encoding, copy, export).
     pub(super) fn choose_table(&mut self, pick: Pick, window: &mut Window, cx: &mut Context<Self>) {
         let Some(sheet) = self.shown_sheet() else {
             return;
@@ -72,7 +72,7 @@ impl Shell {
         let palette = cx.new(|cx| Palette::choose(pick.label(), options, &current, theme, cx));
         cx.subscribe_in(&palette, window, move |this, _, event, window, cx| {
             let PaletteEvent::Submit(name) = event else {
-                // Pas d'aperçu pour un tableau : seul le choix validé compte.
+                // No preview for a table: only the confirmed choice counts.
                 if !matches!(event, PaletteEvent::Preview(_)) {
                     this.palette = None;
                     window.focus(&sheet.focus_handle(cx));

@@ -4,10 +4,10 @@ use super::*;
 
 impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // À gauche des boutons que la fenêtre pose dans le coin (copie, commentaires).
-        // Le compte se tronque dans une note étroite, au lieu de sortir par la gauche.
+        // Left of the buttons the window puts in the corner (copy, comments).
+        // The count is truncated in a narrow note, instead of going out on the left.
         let after = 12. + 34. * self.corner as f32;
-        // La barre de mise en forme, à part du compteur et au milieu de la page.
+        // The formatting bar, apart from the counter and in the middle of the page.
         self.bar.at = self.bar_place();
         let folded = self.bar.at == Some(Bar::Compact);
         let bar = match self.bar.at {
@@ -16,7 +16,7 @@ impl Render for Editor {
             _ => None,
         };
         let toggle = folded.then(|| self.bar_toggle(cx));
-        // Repliée, la barre laisse la place de son bouton : le compteur se tronque avant de passer dessous.
+        // Collapsed, the bar leaves room for its button: the counter is truncated before going under it.
         let counts = div().absolute().bottom_4().left(px(if folded { 46. } else { 8. })).right(px(after)).flex().justify_end().child(
             div()
                 .debug_selector(|| "counts".into())
@@ -31,7 +31,7 @@ impl Render for Editor {
                 .text_color(self.theme.soft)
                 .child(div().min_w_0().truncate().child(self.counts())),
         );
-        // Avant le dessin : les passages suivent une note modifiée pendant que la barre est ouverte.
+        // Before drawing: matches follow a note changed while the bar is open.
         self.refresh_find();
         let finding = self.find.as_ref().is_some_and(|find| find.active);
         let find_bar = self.find_bar(cx);
@@ -45,7 +45,7 @@ impl Render for Editor {
         let el = div()
             .size_full()
             .relative()
-            // Barre de recherche en saisie : ses touches, et non celles du texte.
+            // Search bar being typed in: its keys, not the text's.
             .key_context(if finding { "Find" } else { "Editor" })
             .track_focus(&self.focus)
             .cursor(CursorStyle::IBeam);
@@ -168,20 +168,20 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &ReplaceAll, _, cx| this.replace_all(cx)))
         .on_action(cx.listener(|this, _: &ReplaceInVault, _, cx| this.replace_in_vault(cx)))
         .on_action(cx.listener(|this, _: &Cancel, _, cx| {
-            // Les pastilles de couleur se referment d'abord.
+            // The color badges close first.
             if std::mem::take(&mut this.bar.swatches) || std::mem::take(&mut this.bar.open) {
                 return cx.notify();
             }
-            // Barre ouverte mais saisie dans la note : Échap la ferme d'abord.
+            // Bar open but typing in the note: Escape closes it first.
             if this.find.take().is_some() {
                 return cx.notify();
             }
-            // Plusieurs curseurs : Échap revient à un seul.
+            // Several cursors: Escape goes back to one.
             if !this.more.is_empty() {
                 this.more.clear();
                 return cx.notify();
             }
-            // Une poignée tirée est lâchée sans rien déplacer ; ce qu'elle avait pris est relâché.
+            // A dragged handle is let go without moving anything; what it had grabbed is released.
             if this.moving.take().is_some() {
                 return cx.notify();
             }
@@ -195,7 +195,7 @@ impl Render for Editor {
                 this.ac_dismissed = Some(start);
                 cx.notify();
             } else {
-                // Rien à fermer ici : à la fenêtre de voir (son menu).
+                // Nothing to close here: up to the window (its menu).
                 cx.propagate();
             }
         }))

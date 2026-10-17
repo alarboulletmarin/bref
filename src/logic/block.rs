@@ -1,15 +1,15 @@
-//! Les blocs d'une note, comme ceux de Notion : ce qu'une poignée prend, déplace, duplique, supprime
-//! ou transforme. Un bloc est fait de lignes entières : un titre, une ligne de texte, un item de liste
-//! avec ce qui est plus en retrait sous lui, une citation ou un panneau (ses lignes `>` qui se
-//! suivent), un bloc de code ou de formule, un tableau, une règle, une image. Les lignes vides
-//! séparent les blocs sans en être, et l'en-tête YAML n'en est pas un. Un bloc qui bouge emporte un
-//! des espaces qui le bordent, et le rend où il arrive : des paragraphes séparés par une ligne vide le
-//! restent, des items de liste restent collés. Fonctions pures.
+//! A note's blocks, like Notion's: what a handle takes, moves, duplicates, deletes
+//! or transforms. A block is made of whole lines: a heading, a line of text, a list item
+//! with what is indented further under it, a quote or a callout (its consecutive `>` lines),
+//! a code or formula block, a table, a rule, an image. Blank lines
+//! separate blocks without being one, and the front matter is not one. A moving block takes one
+//! of the spaces around it, and gives it back where it lands: paragraphs separated by a blank line
+//! stay so, list items stay tight. Pure functions.
 
 use crate::logic::markdown::{self as md, Kind};
 use std::ops::Range;
 
-/// Ce qu'un bloc peut devenir.
+/// What a block can become.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Turn {
     Text,
@@ -21,7 +21,7 @@ pub enum Turn {
     Code,
 }
 
-/// Début et fin (sans le retour à la ligne) de chaque ligne.
+/// Start and end (without the newline) of each line.
 fn lines(text: &str) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     let mut at = 0;
@@ -40,12 +40,12 @@ fn is_item(line: &str) -> bool {
     matches!(md::classify(line, false).0, Kind::Bullet | Kind::Ordered | Kind::Task(_))
 }
 
-/// Le rang de la dernière ligne du bloc qui commence à la ligne `i`.
+/// The index of the last line of the block starting at line `i`.
 fn extent(text: &str, lines: &[(usize, usize)], i: usize) -> usize {
     let at = |k: usize| &text[lines[k].0..lines[k].1];
     let last = lines.len() - 1;
     let line = at(i);
-    // Un bloc ouvert et jamais refermé va jusqu'au bout de la note.
+    // A block opened and never closed runs to the end of the note.
     if md::is_fence(line) {
         return (i + 1..=last).find(|&k| md::is_fence(at(k))).unwrap_or(last);
     }
@@ -64,8 +64,8 @@ fn extent(text: &str, lines: &[(usize, usize)], i: usize) -> usize {
     }
 }
 
-/// Les blocs de premier niveau, dans l'ordre : du début de leur première ligne à la fin de leur
-/// dernière, sans le retour à la ligne qui la suit.
+/// Top-level blocks, in order: from the start of their first line to the end of their
+/// last, without the newline after it.
 pub fn blocks(text: &str) -> Vec<Range<usize>> {
     let lines = lines(text);
     let front = md::front_matter(text);
@@ -84,9 +84,9 @@ pub fn blocks(text: &str) -> Vec<Range<usize>> {
     out
 }
 
-/// Le bloc de la ligne qui commence en `line` : un item de liste est le sien (avec ses sous-items),
-/// une ligne d'un bloc de code, d'un tableau ou d'une citation donne le bloc entier ; une ligne vide,
-/// rien. `top` : les blocs de premier niveau (`blocks`).
+/// The block of the line starting at `line`: a list item is its own (with its sub-items),
+/// a line of a code block, a table or a quote gives the whole block; a blank line,
+/// nothing. `top`: the top-level blocks (`blocks`).
 pub fn at(text: &str, top: &[Range<usize>], line: usize) -> Option<Range<usize>> {
     let i = top.partition_point(|b| b.start <= line).checked_sub(1)?;
     let block = top[i].clone();
@@ -98,7 +98,7 @@ pub fn at(text: &str, top: &[Range<usize>], line: usize) -> Option<Range<usize>>
     if line == block.start || !is_item(first) || !is_item(&text[line..end]) {
         return Some(block);
     }
-    // Un sous-item : lui et ce qui est plus en retrait sous lui, sans sortir du bloc.
+    // A sub-item: it and what is indented further under it, without leaving the block.
     let own = indent(&text[line..end]);
     let mut stop = end;
     for (start, end) in lines(&text[..block.end]).into_iter().filter(|(s, _)| *s > line) {
@@ -111,8 +111,8 @@ pub fn at(text: &str, top: &[Range<usize>], line: usize) -> Option<Range<usize>>
     Some(line..stop)
 }
 
-/// Où un bloc peut se poser : avant chaque bloc de premier niveau, avant chaque item d'une liste,
-/// et à la fin (`text.len()`).
+/// Where a block can be dropped: before each top-level block, before each item of a list,
+/// and at the end (`text.len()`).
 pub fn targets(text: &str, top: &[Range<usize>]) -> Vec<usize> {
     let mut out = Vec::new();
     for block in top {
@@ -132,35 +132,35 @@ pub fn targets(text: &str, top: &[Range<usize>]) -> Vec<usize> {
     out
 }
 
-/// L'espace qui suit le bloc jusqu'au bloc suivant (lignes vides et retours à la ligne), et où
-/// commence ce suivant ; `None` pour le dernier bloc.
+/// The space after the block up to the next block (blank lines and newlines), and where
+/// that next one starts; `None` for the last block.
 fn after(text: &str, block: &Range<usize>) -> (Range<usize>, bool) {
     let rest = &text[block.end..];
-    let blank = rest.len() - rest.trim_start_matches(|c: char| c == '\n' || c == ' ' || c == '\t').len();
-    // L'espace s'arrête au début de la ligne suivante qui a du texte.
+    let blank = rest.len() - rest.trim_start_matches(['\n', ' ', '\t']).len();
+    // The space stops at the start of the next line that has text.
     let gap = &rest[..blank];
     let to = block.end + gap.rfind('\n').map_or(0, |n| n + 1);
     (block.end..to, to < text.len() && blank < rest.len())
 }
 
-/// L'espace qui précède le bloc depuis la fin du bloc d'avant.
+/// The space before the block from the end of the previous block.
 fn before(text: &str, block: &Range<usize>) -> Range<usize> {
     let head = &text[..block.start];
-    let kept = head.trim_end_matches(|c: char| c == '\n' || c == ' ' || c == '\t').len();
-    // Il commence au retour à la ligne qui clôt la dernière ligne écrite.
+    let kept = head.trim_end_matches(['\n', ' ', '\t']).len();
+    // It starts at the newline that ends the last written line.
     let from = head[kept..].find('\n').map_or(block.start, |n| kept + n);
     from.max(md::front_matter(text).saturating_sub(1)).min(block.start)..block.start
 }
 
-/// La première ligne d'un bloc.
+/// The first line of a block.
 fn head(piece: &str) -> &str {
     piece.split('\n').next().unwrap_or_default()
 }
 
-/// Le texte sans le bloc ni le plus petit des deux espaces qui le bordent (celui d'après, à
-/// égalité) : le dernier item d'une liste part avec le retour à la ligne qui le lie à l'item d'avant,
-/// et la ligne vide qui sépare la liste de ce qui suit reste en place. Rend aussi l'espace parti et
-/// où était le bloc dans le nouveau texte.
+/// The text without the block nor the smaller of the two spaces around it (the one after, on
+/// a tie): the last item of a list leaves with the newline that ties it to the previous item,
+/// and the blank line separating the list from what follows stays in place. Also returns the space removed and
+/// where the block was in the new text.
 fn take(text: &str, block: &Range<usize>) -> Option<(String, String, usize)> {
     let (gap, more) = after(text, block);
     let before = before(text, block);
@@ -177,9 +177,9 @@ fn take(text: &str, block: &Range<usize>) -> Option<(String, String, usize)> {
     Some((out, text[before.clone()].to_string(), before.start))
 }
 
-/// L'espace à mettre entre deux blocs voisins `a` et `b` : deux items de liste restent collés ; un
-/// item à côté d'autre chose prend l'espace `there` du lieu où il arrive ; sinon `kept`, l'espace
-/// que le bloc avait, garde la façon d'écrire de la note.
+/// The space to put between two neighbouring blocks `a` and `b`: two list items stay tight; an
+/// item next to something else takes the space `there` of the place it lands; otherwise `kept`, the space
+/// the block had, keeps the note's way of writing.
 fn spacing(a: &str, b: &str, there: &str, kept: &str) -> String {
     let gap = match (is_item(head(a)), is_item(head(b))) {
         (true, true) => "\n",
@@ -189,8 +189,8 @@ fn spacing(a: &str, b: &str, there: &str, kept: &str) -> String {
     if gap.contains('\n') { gap.to_string() } else { "\n\n".to_string() }
 }
 
-/// Le bloc posé avant le bloc qui commence en `to` (dans le texte d'origine), ou à la fin
-/// (`text.len()`) : le nouveau texte et où est le bloc. `None` quand rien ne bougerait.
+/// The block placed before the block starting at `to` (in the original text), or at the end
+/// (`text.len()`): the new text and where the block is. `None` when nothing would move.
 pub fn moved(text: &str, block: Range<usize>, to: usize) -> Option<(String, Range<usize>)> {
     let (gap, _) = after(text, &block);
     if (block.start..=gap.end).contains(&to) || (to == text.len() && gap.end >= text.len()) {
@@ -201,7 +201,7 @@ pub fn moved(text: &str, block: Range<usize>, to: usize) -> Option<(String, Rang
     let removed = text.len() - rest.len();
     if to >= text.len() {
         let end = rest.trim_end_matches(['\n', ' ', '\t']).len();
-        // L'espace de cet endroit : celui qui précède le dernier bloc.
+        // The space of this place: the one before the last block.
         let last = blocks(&rest[..end]).last().cloned().unwrap_or(0..0);
         let there = rest[before(&rest, &last)].to_string();
         let sep = spacing(&rest[last], piece, &there, &kept);
@@ -209,7 +209,7 @@ pub fn moved(text: &str, block: Range<usize>, to: usize) -> Option<(String, Rang
         let at = end + sep.len();
         return Some((rest, at..at + piece.len()));
     }
-    // L'espace qui précède, à l'origine, le bloc devant lequel on se pose : celui de cet endroit.
+    // The space that originally precedes the block we drop before: the one of this place.
     let there_start = text[..to].trim_end_matches(['\n', ' ', '\t']).len();
     let there = &text[there_start..to];
     let target = text[to..].split('\n').next().unwrap_or_default();
@@ -219,8 +219,8 @@ pub fn moved(text: &str, block: Range<usize>, to: usize) -> Option<(String, Rang
     Some((rest, at..at + piece.len()))
 }
 
-/// Le bloc doublé juste après lui : un item colle à son double, un autre bloc garde l'espace qui le
-/// borde. Le nouveau texte et où est la copie.
+/// The block doubled right after itself: an item sticks to its double, another block keeps the space
+/// around it. The new text and where the copy is.
 pub fn duplicated(text: &str, block: Range<usize>) -> (String, Range<usize>) {
     let piece = &text[block.clone()];
     let (gap, more) = after(text, &block);
@@ -232,14 +232,14 @@ pub fn duplicated(text: &str, block: Range<usize>) -> (String, Range<usize>) {
     (out, at..at + piece.len())
 }
 
-/// Le texte sans le bloc ni un des espaces qui le bordent, et où mettre le curseur.
+/// The text without the block nor one of the spaces around it, and where to put the cursor.
 pub fn removed(text: &str, block: Range<usize>) -> (String, usize) {
     match take(text, &block) {
         Some((out, _, at)) => {
             let at = at.min(out.len());
             (out, at)
         }
-        // Le seul bloc de la note : il part, ce qui l'entoure reste.
+        // The only block of the note: it goes, what surrounds it stays.
         None => {
             let mut out = text.to_string();
             out.replace_range(block.clone(), "");
@@ -248,7 +248,7 @@ pub fn removed(text: &str, block: Range<usize>) -> (String, usize) {
     }
 }
 
-/// Le contenu d'une ligne, sans son marqueur de titre, de liste ou de citation.
+/// The content of a line, without its heading, list or quote marker.
 fn bare(line: &str) -> &str {
     let (kind, marker) = md::classify(line, false);
     match kind {
@@ -257,8 +257,8 @@ fn bare(line: &str) -> &str {
     }
 }
 
-/// Les lignes du bloc `piece` dans la forme `turn`. Un bloc de code perd ses clôtures avant de
-/// devenir autre chose ; une liste naît de chaque ligne, numérotée à partir de 1.
+/// The lines of block `piece` in the form `turn`. A code block loses its fences before
+/// becoming something else; a list is born from each line, numbered from 1.
 pub fn turned(piece: &str, turn: Turn) -> String {
     let lines: Vec<&str> = piece.split('\n').collect();
     let fenced = lines.len() >= 2 && md::is_fence(lines[0]) && md::is_fence(lines[lines.len() - 1]);
@@ -278,7 +278,7 @@ pub fn turned(piece: &str, turn: Turn) -> String {
                 Turn::Ordered => md::ListStyle::Ordered,
                 _ => md::ListStyle::Task,
             };
-            // Une liste qui est déjà de ce genre le reste : `restyle` la remettrait en texte.
+            // A list already of this kind stays so: `restyle` would turn it back into text.
             let source = if fenced { inner.join("\n") } else { piece.to_string() };
             let lines: Vec<&str> = source.split('\n').collect();
             let plain: String = match lines.iter().any(|l| matches!(md::classify(l, false).0, Kind::Heading(_) | Kind::Quote)) {
@@ -295,7 +295,7 @@ pub fn turned(piece: &str, turn: Turn) -> String {
     }
 }
 
-/// Le plus petit remplacement qui fait passer de `old` à `new` : la plage de `old` et son texte.
+/// The smallest replacement that turns `old` into `new`: the range in `old` and its text.
 pub fn diff(old: &str, new: &str) -> (Range<usize>, String) {
     let mut start = old.bytes().zip(new.bytes()).take_while(|(a, b)| a == b).count();
     while !old.is_char_boundary(start) || !new.is_char_boundary(start) {
@@ -326,7 +326,7 @@ mod tests {
             named(NOTE, &top),
             ["# Titre", "Un paragraphe.", "- un\n    - sous", "- deux", "```\ncode\n\nencore\n```", "| a | b |\n| - | - |", "> cité\n> encore", "---"]
         );
-        // L'en-tête YAML n'est pas un bloc ; un bloc de code jamais refermé va jusqu'au bout.
+        // The front matter is not a block; a code block never closed runs to the end.
         let front = "---\ntags: a\n---\ntexte\n```\nouvert\n\nfin";
         assert_eq!(named(front, &blocks(front)), ["texte", "```\nouvert\n\nfin"]);
     }
@@ -342,7 +342,7 @@ mod tests {
         assert_eq!(of("encore\n```"), Some("```\ncode\n\nencore\n```"));
         assert_eq!(of("| - |"), Some("| a | b |\n| - | - |"));
         assert_eq!(at(NOTE, &top, line("\n\nUn") + 1), None, "une ligne vide est hors des blocs");
-        // Les items d'une liste sont autant de places où poser un bloc, en plus des blocs et de la fin.
+        // A list's items are as many places to drop a block, besides the blocks and the end.
         let targets = targets(NOTE, &top);
         assert!(targets.contains(&line("- deux")) && targets.contains(&line("    - sous")) && targets.contains(&NOTE.len()));
     }
@@ -354,22 +354,22 @@ mod tests {
         assert_eq!(moved(text, a.clone(), 6).unwrap(), ("B\n\nA\n\nC\n".to_string(), 3..4));
         assert_eq!(moved(text, a, text.len()).unwrap().0, "B\n\nC\n\nA\n");
         assert_eq!(moved(text, c.clone(), 0).unwrap(), ("C\n\nA\n\nB\n".to_string(), 0..1));
-        // Juste avant soi, ou juste après : rien ne bouge.
+        // Right before itself, or right after: nothing moves.
         assert_eq!(moved(text, 3..4, 3), None);
         assert_eq!(moved(text, 3..4, 6), None);
         assert_eq!(moved(text, c, text.len()), None);
-        // Sans retour à la ligne final, et des items de liste qui restent collés.
+        // No final newline, and list items that stay tight.
         let list = "- a\n- b\n- c";
         assert_eq!(moved(list, 0..3, list.len()).unwrap().0, "- b\n- c\n- a");
         assert_eq!(moved(list, 8..11, 0).unwrap().0, "- c\n- a\n- b");
-        // Le seul bloc n'a nulle part où aller.
+        // The only block has nowhere to go.
         assert_eq!(moved("seul\n", 0..4, 5), None);
-        // Le dernier item d'une liste, monté en tête : la liste reste collée, et la ligne vide qui la
-        // sépare du panneau reste en place.
+        // The last item of a list, moved to the top: the list stays tight, and the blank line that
+        // separates it from the callout stays in place.
         let list = "Titre\n\n- a\n- b\n- c\n\n> note\n";
         let c = list.find("- c").unwrap();
         assert_eq!(moved(list, c..c + 3, list.find("- a").unwrap()).unwrap().0, "Titre\n\n- c\n- a\n- b\n\n> note\n");
-        // Un item sorti de sa liste prend l'espace de l'endroit où il arrive.
+        // An item taken out of its list takes the space of the place it lands.
         let a = list.find("- a").unwrap();
         assert_eq!(moved(list, a..a + 3, list.find("> note").unwrap()).unwrap().0, "Titre\n\n- b\n- c\n\n- a\n\n> note\n");
         assert_eq!(moved(list, a..a + 3, list.len()).unwrap().0, "Titre\n\n- b\n- c\n\n> note\n\n- a\n");

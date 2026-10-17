@@ -31,7 +31,7 @@ impl Editor {
             _ => None,
         });
         let text = match (image, self.dirs.first()) {
-            // Une image collée est enregistrée à côté de la note, qui la désigne.
+            // A pasted picture is saved next to the note, which points to it.
             (Some(image), Some(dir)) => {
                 let extension = match image.format {
                     ImageFormat::Png => "png",
@@ -55,8 +55,8 @@ impl Editor {
         if self.paste_in_table(&text, cx) {
             return;
         }
-        // Un tableau Markdown, ou des cellules de tableur ou de page web, se posent en tableau,
-        // sur leurs propres lignes et remis en forme.
+        // A Markdown table, or spreadsheet or web page cells, land as a table,
+        // on their own lines and reformatted.
         let line = self.line_range(self.sel.start);
         let (sel, table) = (self.sel.clone(), md::paste_table(&text).filter(|_| !self.in_code(line.start)));
         if let Some(table) = table {
@@ -81,13 +81,13 @@ impl Editor {
             return self.edit(from..sel.end, &format!("{lead}{table}{tail}"), cx);
         }
         self.push_undo(true);
-        // Une adresse collée sur du texte en fait un lien.
+        // An address pasted over text makes it a link.
         if !sel.is_empty() && md::is_url(text.trim()) && self.linkable() {
             let linked = format!("[{}]({})", &self.content[sel.clone()], text.trim());
             return self.edit(sel, &linked, cx);
         }
         self.edit(sel, &text, cx);
-        // Une ligne collée sous un tableau en fait partie : ses colonnes s'alignent.
+        // A line pasted under a table becomes part of it: its columns line up.
         self.realign(cx);
     }
 }

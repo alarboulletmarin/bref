@@ -1,15 +1,15 @@
-//! Raccourcis : la table des liaisons, ce que l'utilisateur en a changé, les conflits, le
-//! fichier `keys`, et ce que le panneau d'aide montre et cherche (fonctions pures).
+//! Shortcuts: the binding table, what the user changed in it, conflicts, the
+//! `keys` file, and what the help panel shows and searches (pure functions).
 
 use crate::lang::tr;
 use crate::lang::fold;
 use gpui::{Action, App, Keystroke};
 use std::collections::BTreeMap;
 
-/// Touche des raccourcis, telle qu'affichée : Cmd sur macOS, Ctrl ailleurs.
+/// Shortcut key, as displayed: Cmd on macOS, Ctrl elsewhere.
 pub const MOD: &str = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" };
 
-/// Une liaison : des touches (écrites par `canon`), le nom d'une action, le contexte où elle vaut.
+/// A binding: keys (written by `canon`), an action name, the context where it applies.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bind {
     pub keys: String,
@@ -17,16 +17,16 @@ pub struct Bind {
     pub context: Option<&'static str>,
 }
 
-/// Ce que l'utilisateur a changé : action → touches, vides pour « aucun raccourci ».
+/// What the user changed: action → keys, empty for "no shortcut".
 pub type Changes = BTreeMap<String, String>;
 
-/// Une liaison de la table par défaut ; des touches illisibles y sont une faute du code.
+/// A binding from the default table; unreadable keys there are a bug in the code.
 pub fn bind(keys: &str, action: &dyn Action, context: Option<&'static str>) -> Bind {
     Bind { keys: canon(keys).expect("touches par défaut illisibles"), action: action.name(), context }
 }
 
-/// Les touches en vigueur d'une action, lues dans les liaisons de l'app : pour les indications
-/// affichées hors du panneau d'aide (palette, note vide).
+/// The keys in force for an action, read from the app's bindings: for the hints
+/// shown outside the help panel (palette, empty note).
 pub fn of(cx: &App, action: &dyn Action) -> String {
     let keymap = cx.key_bindings();
     let keymap = keymap.borrow();
@@ -34,17 +34,17 @@ pub fn of(cx: &App, action: &dyn Action) -> String {
     first.map(|keys| show(&keys)).unwrap_or_default()
 }
 
-/// Pourquoi des touches sont refusées.
+/// Why keys are refused.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Why {
     Unreadable,
-    /// Une touche seule, qui écrit du texte.
+        /// A single key, which types text.
     Types,
-    /// Échap : le panneau lui-même en a besoin.
+        /// Escape: the panel itself needs it.
     Panel,
 }
 
-/// Une ligne du panneau d'aide ; `action` quand ses touches se changent.
+/// A help panel line; `action` when its keys can be changed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
     pub keys: String,
@@ -59,7 +59,7 @@ impl Row {
     }
 }
 
-/// Sections du panneau d'aide : (titre, lignes).
+/// Help panel sections: (title, lines).
 pub type Sections = Vec<(&'static str, Vec<Row>)>;
 
 const NAMED: [&str; 15] =
@@ -72,8 +72,8 @@ fn parse(keys: &str) -> Option<Keystroke> {
     (key.chars().count() == 1 || NAMED.contains(&key) || function).then_some(stroke)
 }
 
-/// Les touches d'une frappe, écrites d'une seule façon. `secondary` (Cmd sous macOS, Ctrl
-/// ailleurs) reste ce qu'on écrit : un fichier porté sur un autre système garde son sens.
+/// The keys of a keystroke, written one way only. `secondary` (Cmd on macOS, Ctrl
+/// elsewhere) stays as written: a file carried to another system keeps its meaning.
 pub fn spell(stroke: &Keystroke) -> String {
     let m = stroke.modifiers;
     let mac = cfg!(target_os = "macos");
@@ -88,12 +88,12 @@ pub fn spell(stroke: &Keystroke) -> String {
     parts.join("-")
 }
 
-/// Des touches lues puis réécrites ; `None` quand elles sont illisibles.
+/// Keys read then rewritten; `None` when they are unreadable.
 pub fn canon(keys: &str) -> Option<String> {
     parse(keys).map(|stroke| spell(&stroke))
 }
 
-/// Des touches telles qu'on les lit sur un clavier : « Ctrl+Maj+P ».
+/// Keys as read on a keyboard: "Ctrl+Shift+P".
 pub fn show(keys: &str) -> String {
     let Some(stroke) = parse(keys) else { return keys.to_string() };
     let m = stroke.modifiers;
@@ -126,9 +126,9 @@ pub fn show(keys: &str) -> String {
     parts.join("+")
 }
 
-/// Deux contextes où la même frappe peut arriver. Une liaison sans contexte, ou du « Shell »
-/// qui englobe tout, croise toutes les autres ; les vues, elles, ne se rencontrent pas (les
-/// flèches d'un tableau et celles d'un schéma), sauf un champ de saisie avec la vue qui le porte.
+/// Two contexts where the same keystroke can arrive. A binding with no context, or of "Shell"
+/// which encloses everything, meets all others; views do not meet each other (a table's
+/// arrows and a diagram's), except an input field with the view that carries it.
 pub fn meets(a: Option<&str>, b: Option<&str>) -> bool {
     let everywhere = |c: Option<&str>| matches!(c, None | Some("Shell"));
     let field = |a: Option<&str>, b: Option<&str>| a == Some("Line") && matches!(b, Some("Sheet" | "Palette"));
@@ -145,10 +145,10 @@ fn contexts(defaults: &[Bind], action: &str) -> Vec<Option<&'static str>> {
     found
 }
 
-/// Les liaisons en vigueur : celles par défaut, où chaque action changée ne garde que les
-/// touches choisies (dans chacun de ses contextes, à la place qu'elle occupait : à contexte
-/// égal, la dernière liaison l'emporte). Un choix l'emporte sur une action modifiable (`open`)
-/// qui a les mêmes touches par défaut : elle reste sans raccourci.
+/// The bindings in force: the default ones, where each changed action keeps only the
+/// chosen keys (in each of its contexts, at the place it held: for an equal
+/// context, the last binding wins). A choice wins over a changeable action (`open`)
+/// that has the same keys by default: it is left without a shortcut.
 pub fn effective(defaults: &[Bind], changes: &Changes, open: &dyn Fn(&str) -> bool) -> Vec<Bind> {
     let taken: Vec<(&str, Option<&'static str>)> = changes
         .iter()
@@ -175,7 +175,7 @@ pub fn effective(defaults: &[Bind], changes: &Changes, open: &dyn Fn(&str) -> bo
     out
 }
 
-/// Pourquoi ces touches ne peuvent servir de raccourci, s'il y a une raison.
+/// Why these keys cannot be a shortcut, if there is a reason.
 pub fn refusal(keys: &str) -> Option<Why> {
     let Some(stroke) = parse(keys) else { return Some(Why::Unreadable) };
     let m = stroke.modifiers;
@@ -186,7 +186,7 @@ pub fn refusal(keys: &str) -> Option<Why> {
     (types && !(m.control || m.alt || m.platform)).then_some(Why::Types)
 }
 
-/// Des touches que le système garde souvent pour lui : à signaler, pas à refuser.
+/// Keys the system often keeps for itself: to flag, not to refuse.
 pub fn system(keys: &str) -> bool {
     let Some(stroke) = parse(keys) else { return false };
     let m = stroke.modifiers;
@@ -198,7 +198,7 @@ pub fn system(keys: &str) -> bool {
     }
 }
 
-/// Les actions qui ont déjà ces touches là où `action` s'applique.
+/// The actions that already have these keys where `action` applies.
 pub fn clashes(bound: &[Bind], defaults: &[Bind], action: &str, keys: &str) -> Vec<&'static str> {
     let at = contexts(defaults, action);
     let mut found = Vec::new();
@@ -215,14 +215,14 @@ fn clash(bound: &[Bind], defaults: &[Bind], action: &str, keys: &str) -> Option<
     clashes(bound, defaults, action, keys).first().copied()
 }
 
-/// Le fichier `keys` : une ligne `action=touches` par action changée.
+/// The `keys` file: one `action=keys` line per changed action.
 pub fn write(changes: &Changes) -> String {
     changes.iter().map(|(action, keys)| format!("{action}={keys}\n")).collect()
 }
 
-/// Lit le fichier `keys`. Une ligne fautive (action inconnue ou non modifiable, touches
-/// illisibles ou refusées, touches déjà prises) est écartée et rendue à part : la valeur par
-/// défaut reste.
+/// Reads the `keys` file. A faulty line (unknown or unchangeable action, keys
+/// unreadable or refused, keys already taken) is set aside and returned separately: the default
+/// value stays.
 pub fn read(text: &str, defaults: &[Bind], open: &dyn Fn(&str) -> bool) -> (Changes, Vec<String>) {
     let (mut changes, mut faults) = (Changes::new(), Vec::new());
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty() && !line.starts_with('#')) {
@@ -236,7 +236,7 @@ pub fn read(text: &str, defaults: &[Bind], open: &dyn Fn(&str) -> bool) -> (Chan
                 return Some((action, String::new()));
             }
             let keys = canon(keys).filter(|keys| refusal(keys).is_none())?;
-            // Prises par un autre choix du fichier, ou par une liaison qui ne se change pas.
+                        // Taken by another choice in the file, or by a binding that cannot change.
             let at = contexts(defaults, action);
             let crosses = |other: &str| contexts(defaults, other).iter().any(|a| at.iter().any(|b| meets(*a, *b)));
             let chosen = changes.iter().any(|(other, theirs)| other != action && *theirs == keys && crosses(other));
@@ -253,7 +253,7 @@ pub fn read(text: &str, defaults: &[Bind], open: &dyn Fn(&str) -> bool) -> (Chan
     (changes, faults)
 }
 
-/// Les touches en vigueur d'une action, telles qu'on les lit : « F1 / Ctrl+/ », ou rien.
+/// The keys in force for an action, as read: "F1 / Ctrl+/", or nothing.
 pub fn shown(bound: &[Bind], action: &str) -> String {
     let mut keys: Vec<&str> = Vec::new();
     for bind in bound.iter().filter(|bind| bind.action == action) {
@@ -264,8 +264,8 @@ pub fn shown(bound: &[Bind], action: &str) -> String {
     keys.into_iter().map(show).collect::<Vec<_>>().join(" / ")
 }
 
-/// Les lignes dont les touches ou l'effet contiennent chaque mot cherché ; une section vide
-/// disparaît.
+/// The lines whose keys or effect contain each searched word; an empty section
+/// disappears.
 pub fn filter(sections: Sections, query: &str) -> Sections {
     let query = fold(query);
     let words: Vec<&str> = query.split_whitespace().collect();
@@ -303,11 +303,11 @@ mod tests {
     fn filter_matches_keys_and_text() {
         let all = sample();
         assert_eq!(filter(all.clone(), "  "), all);
-        // Les touches, sans égard à la casse.
+                // The keys, ignoring case.
         assert_eq!(filter(all.clone(), "ctrl+p"), vec![("Notes", vec![Row::text("Ctrl+P", "Chercher, créer")])]);
-        // Le texte, sans les accents ; la section sans ligne disparaît.
+                // The text, without accents; a section with no line disappears.
         assert_eq!(filter(all.clone(), "selection"), vec![("Navigation", vec![Row::text("Ctrl+clic", "Sélection à étendre")])]);
-        // Chaque mot doit s'y trouver, touches et texte confondus.
+                // Each word must be there, keys and text together.
         assert_eq!(filter(all.clone(), "ctrl graphe"), vec![("Navigation", vec![Row::text("Ctrl+G", "Graphe des notes")])]);
         assert!(filter(all, "zzz").is_empty());
     }
@@ -316,7 +316,7 @@ mod tests {
         Bind { keys: canon(keys).unwrap(), action, context }
     }
 
-    /// Un petit jeu de liaisons : `Type` et `Close` ne sont pas modifiables.
+        /// A small set of bindings: `Type` and `Close` cannot be changed.
     fn base() -> Vec<Bind> {
         vec![
             b("secondary-p", "app::Palette", None),
@@ -348,7 +348,7 @@ mod tests {
         assert_eq!(canon("alt-F3").as_deref(), Some("alt-f3"));
         let other = if cfg!(target_os = "macos") { "ctrl-k" } else { "cmd-k" };
         assert_eq!(canon(other).as_deref(), Some(other), "la touche qui n'est pas « secondary » garde son nom");
-        // Illisibles : rien, deux touches, un nom de touche inconnu.
+                // Unreadable: nothing, two keys, an unknown key name.
         assert_eq!(canon(""), None);
         assert_eq!(canon("a-b"), None);
         assert_eq!(canon("ctrl-foo"), None);
@@ -367,9 +367,9 @@ mod tests {
     fn contexts_that_meet() {
         assert!(meets(None, Some("Editor")) && meets(Some("Sheet"), Some("Shell")));
         assert!(meets(Some("Nav"), Some("Nav")));
-        // Les flèches d'un tableau et d'un schéma ne se croisent jamais.
+                // A table's arrows and a diagram's never meet.
         assert!(!meets(Some("Sheet"), Some("Canvas")) && !meets(Some("Editor"), Some("Find")));
-        // Une cellule en cours de saisie reçoit les touches d'une ligne de texte.
+                // A cell being edited receives the keys of a text line.
         assert!(meets(Some("Line"), Some("Sheet")) && meets(Some("Palette"), Some("Line")));
     }
 
@@ -382,26 +382,26 @@ mod tests {
         changes.insert("app::Help".into(), "f9".into());
         changes.insert("nav::Graph".into(), String::new());
         let now = effective(&base, &changes, &open);
-        // Les deux contextes suivent, à la place qu'occupait la liaison (l'ordre décide qui gagne).
+                // Both contexts follow, at the place the binding held (the order decides who wins).
         assert_eq!(of(&now, "editor::Find"), [("secondary-shift-g", Some("Editor")), ("secondary-shift-g", Some("Find"))]);
         assert_eq!(now.iter().position(|b| b.action == "editor::Find"), base.iter().position(|b| b.action == "editor::Find").map(|i| i - 2));
-        // Deux touches par défaut : une seule après le choix.
+                // Two default keys: only one after the choice.
         assert_eq!(of(&now, "app::Help"), [("f9", None)]);
-        // Sans raccourci.
+                // No shortcut.
         assert!(of(&now, "nav::Graph").is_empty());
         assert_eq!(of(&now, "app::Palette"), [("secondary-p", None)]);
     }
 
     #[test]
     fn a_choice_wins_over_a_default() {
-        // Une version suivante donne à une action les touches que l'utilisateur a déjà prises :
-        // son choix reste, l'action arrive sans raccourci.
+                // A later version gives an action keys the user has already taken:
+                // their choice stays, the action arrives without a shortcut.
         let mut changes = Changes::new();
         changes.insert("nav::Graph".into(), "secondary-p".into());
         let now = effective(&base(), &changes, &open);
         assert_eq!(of(&now, "nav::Graph"), [("secondary-p", Some("Shell"))]);
         assert!(of(&now, "app::Palette").is_empty());
-        // Dans des contextes qui ne se croisent pas, les deux restent.
+                // In contexts that do not meet, both stay.
         let mut changes = Changes::new();
         changes.insert("sheet::Undo".into(), "secondary-d".into());
         let now = effective(&base(), &changes, &open);
@@ -433,15 +433,15 @@ mod tests {
     #[test]
     fn clash_names_who_has_the_keys() {
         let base = base();
-        // Libre, ou déjà à soi.
+                // Free, or already one's own.
         assert_eq!(clash(&base, &base, "app::Palette", "secondary-k"), None);
         assert_eq!(clash(&base, &base, "app::Palette", "secondary-p"), None);
-        // Une action de partout croise celle de l'éditeur, et l'inverse.
+                // An everywhere action meets the editor's, and the reverse.
         assert_eq!(clash(&base, &base, "app::Palette", "secondary-f"), Some("editor::Find"));
         assert_eq!(clash(&base, &base, "editor::Find", "secondary-g"), Some("nav::Graph"));
-        // Deux vues qui ne se rencontrent pas.
+                // Two views that do not meet.
         assert_eq!(clash(&base, &base, "sheet::Undo", "secondary-d"), None);
-        // Dans son propre contexte.
+                // In its own context.
         assert_eq!(clash(&base, &base, "editor::Find", "secondary-d"), Some("editor::Next"));
         assert_eq!(clash(&base, &base, "editor::Find", "enter"), Some("editor::Type"));
     }
@@ -455,10 +455,10 @@ mod tests {
         let text = write(&changes);
         assert_eq!(text, "app::Help=f9\nnav::Graph=\n");
         assert_eq!(read(&text, &base, &open), (changes.clone(), Vec::new()));
-        // Un échange est permis : chacune prend les touches de l'autre.
+                // A swap is allowed: each takes the other's keys.
         let (swap, faults) = read("app::Palette=secondary-g\nnav::Graph=secondary-p\n", &base, &open);
         assert_eq!((swap.len(), faults.len()), (2, 0));
-        // Chaque ligne fautive est écartée et nommée, les autres restent.
+                // Each faulty line is set aside and named, the others stay.
         let text = "# à la main\n\napp::Help=f9\nno::Such=f8\neditor::Type=f7\napp::Palette=ctrl-foo\nnav::Graph=a\nsans égal\neditor::Find=enter\nsheet::Undo=f9\n";
         let (kept, faults) = read(text, &base, &open);
         assert_eq!(kept, Changes::from([("app::Help".to_string(), "f9".to_string())]));
@@ -473,7 +473,7 @@ mod tests {
         let now = effective(&base(), &changes, &open);
         assert_eq!(shown(&now, "app::Help"), "F9");
         assert_eq!(shown(&now, "nav::Graph"), "");
-        // Deux touches par défaut, une fois chacune même liée dans deux contextes.
+                // Two default keys, once each even when bound in two contexts.
         assert_eq!(shown(&base(), "app::Help"), format!("F1 / {}+/", MOD));
         assert_eq!(shown(&base(), "editor::Find"), format!("{}+F", MOD));
     }

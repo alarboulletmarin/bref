@@ -2,18 +2,18 @@
 
 use super::*;
 
-/// Où des fichiers venus du système se rangeraient, pendant qu'on les glisse sur la fenêtre.
+/// Where files from the system would go, while they are dragged over the window.
 #[derive(Clone, PartialEq, Debug)]
 pub(super) enum Aim {
-    /// Dans la note du pane, entre deux lignes (l'octet où elle commence) ; `version` : le texte vu alors.
+    /// In the pane's note, between two lines (the byte where it starts); `version`: the text seen then.
     Note { pane: usize, at: usize, version: u64 },
-    /// Dans un dossier du coffre.
+    /// In a vault folder.
     Folder(PathBuf),
-    /// À la racine du coffre.
+    /// At the vault root.
     Root,
 }
 
-/// Ce qu'on glisse, et ce que le dépôt ferait : de quoi montrer le choix sous le pointeur.
+/// What is being dragged, and what the drop would do: enough to show the choice under the pointer.
 #[derive(Clone, PartialEq, Debug)]
 pub(super) struct DropAim {
     pub aim: Aim,
@@ -22,7 +22,7 @@ pub(super) struct DropAim {
 }
 
 impl Shell {
-    /// Ce qu'un dépôt ferait, tant qu'il dure : l'étiquette près du pointeur, le trait dans la note.
+    /// What a drop would do, while it lasts: the label near the pointer, the line in the note.
     pub(super) fn aim_drop(&mut self, aim: Option<DropAim>, cx: &mut Context<Self>) {
         if aim == self.drop_aim {
             return;
@@ -42,8 +42,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Des fichiers et des dossiers lâchés sur la fenêtre : copiés dans le coffre (l'original ne bouge pas, un
-    /// nom pris prend un numéro), puis, sur une note, nommés par une ligne chacun là où le trait était.
+    /// Files and folders dropped on the window: copied into the vault (the original does not move, a
+    /// taken name gets a number), then, on a note, named by one line each where the line marker was.
     pub(super) fn drop_paths(&mut self, paths: Vec<PathBuf>, aim: Aim, cx: &mut Context<Self>) {
         let Some(root) = self.vault.clone() else {
             return;
@@ -71,8 +71,8 @@ impl Shell {
         .detach();
     }
 
-    /// Ce que la copie a rangé : les nouveaux fichiers dans l'arbre, leurs liens dans la note, un mot sur ce
-    /// qui a été laissé de côté.
+    /// What the copy filed: the new files in the tree, their links in the note, a word about what
+    /// was left out.
     pub(super) fn dropped(&mut self, done: Vec<vault::Imported>, problems: Vec<String>, root: &Path, dir: &Path, aim: Aim, cx: &mut Context<Self>) {
         self.toasts.retain(|t| t.tone != Tone::Busy);
         if done.is_empty() {
@@ -85,10 +85,10 @@ impl Shell {
             self.nav.reveal(&first.to);
         }
         if let Aim::Note { pane, at, version } = aim {
-            // Une ligne par élément : l'image s'affiche, un autre fichier se lie par son nom.
+            // One line per item: a picture is shown, another file is linked by its name.
             let lines: Vec<String> = done
                 .iter()
-                // Un type que le coffre ne liste pas (`.exe`…) est copié, mais n'a pas de lien qui s'ouvre.
+                // A type the vault does not list (`.exe`…) is copied, but has no link that opens.
                 .filter(|item| item.dir || vault::is_file_shown(&item.to) || item.to.extension().is_some_and(|e| e.eq_ignore_ascii_case("md")))
                 .map(|item| {
                     let name = item.to.file_name().unwrap_or_default().to_string_lossy();
@@ -100,7 +100,7 @@ impl Shell {
                 })
                 .collect();
             if let Some(editor) = self.panes.get(pane).map(|p| p.editor.clone()).filter(|_| !lines.is_empty()) {
-                // Le texte a changé pendant la copie : les lignes vont où est le curseur.
+                // The text changed during the copy: the lines go where the cursor is.
                 editor.update(cx, |editor, cx| {
                     let at = if editor.revision() == version { at } else { editor.caret_line_start() };
                     editor.insert_lines(at, &lines, cx);
@@ -119,7 +119,7 @@ impl Shell {
         self.say(if problems.is_empty() { Tone::Done } else { Tone::Info }, said, cx);
     }
 
-    /// Où des fichiers glissés en `at` se rangeraient dans la note du pane `pane` : seulement si une note s'y écrit.
+    /// Where files dragged at `at` would go in the note of pane `pane`: only if a note is written there.
     pub(super) fn note_aim(&self, pane: usize, at: Point<Pixels>, items: usize, cx: &App) -> Option<DropAim> {
         let shown = self.panes.get(pane)?;
         let editor = shown.editor.read(cx);
@@ -128,7 +128,7 @@ impl Shell {
         writes.then(|| DropAim { aim: Aim::Note { pane, at: editor.drop_point(at), version: editor.revision() }, items, pointer: at })
     }
 
-    /// L'étiquette qui suit le pointeur pendant qu'on glisse des fichiers sur la fenêtre.
+    /// The label that follows the pointer while files are dragged over the window.
     pub(super) fn render_drop_chip(&self, view: Size<Pixels>) -> Option<impl IntoElement + use<>> {
         let (aim, t) = (self.drop_aim.as_ref()?, self.theme);
         let name = |path: &Path| path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -141,7 +141,7 @@ impl Shell {
             Aim::Root => (tr("Copy into", "Copier dans"), tr("the vault", "le coffre").to_string()),
         };
         let count = format!("{} {}", aim.items, tr(if aim.items == 1 { "item" } else { "items" }, if aim.items == 1 { "élément" } else { "éléments" }));
-        // Près d'un bord, l'étiquette passe de l'autre côté du pointeur : elle reste dans la fenêtre.
+        // Near an edge, the label moves to the other side of the pointer: it stays in the window.
         let (left, above) = (aim.pointer.x > view.width * 0.6, aim.pointer.y > view.height - px(70.));
         Some(
             div()

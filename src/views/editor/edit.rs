@@ -2,13 +2,13 @@
 
 use super::*;
 
-/// États du texte qu'on peut retrouver, du plus ancien au plus récent. Seul le
-/// dernier est gardé en entier : chacun des autres ne retient que ce qui le
-/// distingue du suivant, soit quelques octets par frappe plutôt qu'une copie de la note.
+/// States of the text that can be restored, oldest to newest. Only the
+/// last is kept whole: each of the others only keeps what sets it
+/// apart from the next, i.e. a few bytes per keystroke rather than a copy of the note.
 #[derive(Default)]
 pub(super) struct History {
     pub(super) last: Option<(String, Range<usize>)>,
-    /// (début de la différence, sa longueur dans l'état suivant, son texte ici, sélection).
+    /// (start of the difference, its length in the next state, its text here, selection).
     pub(super) earlier: Vec<(usize, usize, String, Range<usize>)>,
 }
 
@@ -45,9 +45,9 @@ impl History {
 }
 
 impl Editor {
-    // ponytail: chaque étape d'annulation (200 max) recopie une fois la note pour
-    // en tirer la différence ; passer à un journal d'opérations si les notes
-    // dépassent le Mo.
+    // ponytail: each undo step (200 max) copies the note once to
+    // get the difference; move to an operation log if notes
+    // exceed a MB.
     pub(super) fn push_undo(&mut self, boundary: bool) {
         let stale = self
             .last_edit
@@ -59,7 +59,7 @@ impl Editor {
         self.last_edit = Some(Instant::now());
     }
 
-    /// À appeler avant de remplacer `range` dans le texte : la mise en page saura ce qui a bougé.
+    /// To call before replacing `range` in the text: the layout will know what moved.
     pub(super) fn damaged(&mut self, range: &Range<usize>) {
         let len = self.content.len();
         let (prefix, suffix) = (range.start, len - range.end);
@@ -83,7 +83,7 @@ impl Editor {
         cx.notify();
     }
 
-    /// Remplace `range` par `text` en conservant la sélection au mieux.
+    /// Replaces `range` with `text`, keeping the selection as well as possible.
     pub(super) fn splice(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
         self.push_undo(text.contains('\n') || text == " ");
         self.damaged(&range);
@@ -98,17 +98,17 @@ impl Editor {
             }
         };
         self.sel = map(self.sel.start)..map(self.sel.end);
-        // Les autres curseurs suivent le texte : c'est ici, et ici seulement, qu'il change.
+        // The other cursors follow the text: this is where, and the only place where, it changes.
         self.more.iter_mut().for_each(|(sel, _)| *sel = map(sel.start)..map(sel.end));
         self.changed(cx);
     }
 
-    /// Fait faire `act` à chaque curseur : chacun devient à son tour le curseur principal,
-    /// pendant que `splice` tient les autres à leur place. Le tout ne fait qu'une étape
-    /// d'annulation, celle du premier.
-    // ponytail: la colonne visée par Haut et Bas (`goal_x`) n'est pas gardée par curseur : elle
-    // est recalculée à chaque pas. La retenir par curseur si la dérive gêne sur des lignes
-    // de longueurs inégales.
+    /// Makes each cursor do `act`: each in turn becomes the main cursor,
+    /// while `splice` keeps the others in place. The whole is a single undo
+    /// step, the first one's.
+    // ponytail: the column aimed at by Up and Down (`goal_x`) is not kept per cursor: it
+    // is recomputed at each step. Keep it per cursor if the drift bothers on lines
+    // of uneven lengths.
     pub(super) fn each(&mut self, cx: &mut Context<Self>, act: impl Fn(&mut Self, &mut Context<Self>)) {
         if self.more.is_empty() {
             return act(self, cx);
@@ -117,7 +117,7 @@ impl Editor {
         act(self, cx);
         self.held = true;
         for i in 0..self.more.len() {
-            // Un geste qui ramène à un seul curseur (une note rechargée) arrête la ronde.
+            // A gesture that brings back a single cursor (a reloaded note) stops the round.
             if i >= self.more.len() {
                 break;
             }
@@ -138,13 +138,13 @@ impl Editor {
         cx.notify();
     }
 
-    /// Le texte sélectionné.
+    /// The selected text.
     #[cfg(test)]
     pub fn selected_text(&self) -> String {
         self.content[self.sel.clone()].to_string()
     }
 
-    /// Remplace `range` par `text` et place le curseur juste après.
+    /// Replaces `range` with `text` and puts the cursor right after.
     pub(super) fn edit(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
         let end = range.start + text.len();
         self.splice(range, text, cx);
@@ -196,8 +196,8 @@ impl Editor {
         let range = if self.sel.is_empty() {
             let (c, t) = (self.cursor(), self.plain_target(m, px(0.)));
             let mut range = c.min(t)..c.max(t);
-            // Dans un tableau, effacer ne passe pas d'une cellule à l'autre : cela fusionnerait
-            // les colonnes. Un `\|` s'efface d'un bloc, comme il s'affiche.
+            // In a table, deleting does not cross from one cell to another: that would merge
+            // the columns. A `\|` is deleted as one block, as it is shown.
             if let Some((_, k)) = self.table_cells(c) {
                 let line = self.line_range(c);
                 let bars = md::bars(&self.content[line.clone()]);
@@ -224,10 +224,10 @@ impl Editor {
         if let Some((cols, rows)) = self.grid {
             return self.insert_table(cols, rows, cx);
         }
-        // Dans un tableau : une ligne de plus sous celle du curseur ; sur une
-        // dernière ligne restée vide, on la retire et on sort du tableau.
-        // Un très gros tableau n'est pas relu : Entrée y ajoute une ligne vide sous la courante (sous les tirets
-        // quand on est sur l'en-tête), sans toucher au reste.
+        // In a table: one more row under the cursor's; on a
+        // last row left empty, remove it and leave the table.
+        // A very big table is not reparsed: Enter adds an empty row under the current one (under the dashes
+        // when on the header), without touching the rest.
         if self.sel.is_empty() && self.in_big(self.cursor()) {
             let line = self.line_range(self.cursor());
             let cells = md::cells(&self.content[line.clone()]).len().max(1);
@@ -257,7 +257,7 @@ impl Editor {
         let lr = self.line_range(c);
         let line = self.content[lr.clone()].to_string();
         let in_code = self.in_code(lr.start);
-        // Ouverture d'un bloc de code : on pose aussi la clôture.
+        // Opening a code block: also put the closing fence.
         if md::is_fence(&line)
             && !in_code
             && c == lr.end
@@ -317,7 +317,7 @@ impl Editor {
         self.renumber(cx);
     }
 
-    /// Un modèle rempli, à la place de la sélection : le curseur va à sa marque, un seul pas d'annulation.
+    /// A filled template, in place of the selection: the cursor goes to its mark, a single undo step.
     pub fn insert_filled(&mut self, text: &str, cursor: usize, cx: &mut Context<Self>) {
         let at = self.sel.start;
         self.push_undo(true);
@@ -325,13 +325,13 @@ impl Editor {
         self.move_to(at + cursor.min(text.len()), cx);
     }
 
-    /// Le nombre de changements du texte : un dépôt qui a mis du temps à copier sait avant d'écrire si la note a bougé.
+    /// The number of text changes: a drop that took time to copy knows before writing whether the note moved.
     pub fn revision(&self) -> u64 {
         self.revision
     }
 
-    /// Des lignes posées au début de la ligne `at` (ou après la dernière), qu'on tape ou qu'on dépose :
-    /// un seul pas d'annulation, le curseur à leur fin.
+    /// Lines put at the start of line `at` (or after the last), typed or dropped:
+    /// a single undo step, the cursor at their end.
     pub fn insert_lines(&mut self, at: usize, lines: &[String], cx: &mut Context<Self>) {
         let at = self.clamp(at);
         let before = if at > 0 && !self.content[..at].ends_with('\n') { "\n" } else { "" };

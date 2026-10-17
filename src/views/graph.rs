@@ -1,6 +1,6 @@
-//! Graphe du coffre : un nœud par note, une arête par `[[lien]]` vers une note
-//! existante. On s'y déplace à la souris (glisser, molette) ou au clavier, et
-//! un nœud se déplace en le tirant : ses voisins suivent.
+//! Vault graph: one node per note, one edge per `[[link]]` to an existing
+//! note. You move around with the mouse (drag, wheel) or the keyboard, and
+//! a node moves by dragging it: its neighbors follow.
 
 use std::{
     collections::HashMap,
@@ -24,24 +24,24 @@ use crate::{
 
 actions!(graph, [Cycle]);
 
-/// Pixels par unité de disposition en deçà desquels les noms sont masqués.
+/// Pixels per layout unit below which names are hidden.
 const LABEL_ZOOM: f32 = 30.;
-/// Frames pendant lesquelles les nœuds entraînés finissent de se poser après un glisser.
+/// Frames during which dragged-along nodes finish settling after a drag.
 const SETTLE: u32 = 60;
 
 pub enum GraphEvent {
-    /// Un nœud est sélectionné : la note peut s'afficher en aperçu.
+    /// A node is selected: the note can show as a preview.
     Select(PathBuf),
     Open(PathBuf),
 }
 
-/// Nom d'une image dans le graphe et dans les liens : son nom de fichier.
+/// Name of an image in the graph and in links: its file name.
 pub fn image_name(path: &Path) -> String {
     path.file_name().unwrap_or_default().to_string_lossy().into_owned()
 }
 
-/// Rétroliens : les notes dont un `[[wikilien]]` vise la note `target`, par ordre de nom. Comme
-/// pour les arêtes, quand deux notes portent le même nom, le lien vise la première.
+/// Backlinks: the notes whose `[[wikilink]]` targets note `target`, by name order. As
+/// for edges, when two notes have the same name, the link targets the first.
 pub fn backlinks<'a>(notes: &'a [Note], target: &Path) -> Vec<&'a Note> {
     let Some(aimed) = notes.iter().find(|note| note.path == target) else {
         return Vec::new();
@@ -56,7 +56,7 @@ pub fn backlinks<'a>(notes: &'a [Note], target: &Path) -> Vec<&'a Note> {
     found
 }
 
-/// Première ligne de `body` qui porte un wikilien vers la note `aimed` (son nom ou un alias).
+/// First line of `body` with a wikilink to note `aimed` (its name or an alias).
 pub fn link_line<'a>(body: &'a str, aimed: &Note) -> Option<&'a str> {
     body.lines().find(|line| {
         let links = crate::logic::markdown::links(line);
@@ -64,14 +64,14 @@ pub fn link_line<'a>(body: &'a str, aimed: &Note) -> Option<&'a str> {
     })
 }
 
-/// Arêtes `(i, j)`, `i < j`, sans doublon : les wikiliens qui visent une note du
-/// coffre, et les images affichées. Les images sont numérotées après les notes.
+/// Edges `(i, j)`, `i < j`, without duplicates: wikilinks targeting a note of the
+/// vault, and shown images. Images are numbered after notes.
 pub fn edges(notes: &[Note], images: &[PathBuf]) -> Vec<(usize, usize)> {
     let mut by_name: HashMap<String, usize> = HashMap::new();
     for (i, note) in notes.iter().enumerate() {
         by_name.entry(note.name.to_lowercase()).or_insert(i);
     }
-    // Un alias ne prend pas la place d'un nom.
+    // An alias does not take a name's place.
     for (i, note) in notes.iter().enumerate() {
         for alias in note.aliases.iter() {
             by_name.entry(alias.to_lowercase()).or_insert(i);
@@ -83,7 +83,7 @@ pub fn edges(notes: &[Note], images: &[PathBuf]) -> Vec<(usize, usize)> {
     let mut edges: Vec<(usize, usize)> = notes
         .iter()
         .enumerate()
-        .flat_map(|(i, note)| note.links.iter().filter_map(move |link| Some((i, link))))
+        .flat_map(|(i, note)| note.links.iter().map(move |link| (i, link)))
         .filter_map(|(i, link)| {
             let j = *by_name.get(link)?;
             (i != j).then_some((i.min(j), i.max(j)))
@@ -94,18 +94,18 @@ pub fn edges(notes: &[Note], images: &[PathBuf]) -> Vec<(usize, usize)> {
     edges
 }
 
-/// Position de départ du nœud `i` : une spirale, identique d'un lancement à l'autre.
+/// Starting position of node `i`: a spiral, identical from one launch to the next.
 fn spiral(i: usize) -> (f32, f32) {
     let (r, a) = ((i as f32 + 0.5).sqrt(), i as f32 * 2.399_963);
     (r * a.cos(), r * a.sin())
 }
 
-/// Disposition par forces (Fruchterman-Reingold) : les nœuds proches se
-/// repoussent, les arêtes les rapprochent, une légère gravité ramène vers le
-/// centre les notes sans lien. L'unité est la longueur idéale d'une arête.
-/// `seed` reprend des positions connues.
-// ponytail: répulsion en O(n²) par itération, correcte jusqu'à ~1500 notes ;
-// passer à Barnes-Hut si les coffres grossissent.
+/// Force-directed layout (Fruchterman-Reingold): close nodes
+/// repel, edges pull together, a slight gravity brings unlinked notes back
+/// to the center. The unit is the ideal length of an edge.
+/// `seed` reuses known positions.
+// ponytail: O(n²) repulsion per iteration, fine up to ~1500 notes;
+// move to Barnes-Hut if vaults grow.
 pub fn layout(seed: &[Option<(f32, f32)>], edges: &[(usize, usize)]) -> Vec<(f32, f32)> {
     let n = seed.len();
     let mut pos: Vec<(f32, f32)> =
@@ -119,7 +119,7 @@ pub fn layout(seed: &[Option<(f32, f32)>], edges: &[(usize, usize)]) -> Vec<(f32
             for j in i + 1..n {
                 let (dx, dy) = (pos[i].0 - pos[j].0, pos[i].1 - pos[j].1);
                 let d2 = (dx * dx + dy * dy).max(0.01);
-                // Portée limitée : sans elle, les notes isolées partent très loin.
+                // Limited range: without it, isolated notes drift very far.
                 if d2 > 9. {
                     continue;
                 }
@@ -135,7 +135,7 @@ pub fn layout(seed: &[Option<(f32, f32)>], edges: &[(usize, usize)]) -> Vec<(f32
             push[i] = (push[i].0 - fx, push[i].1 - fy);
             push[j] = (push[j].0 + fx, push[j].1 + fy);
         }
-        // Le pas maximal décroît : les nœuds se figent peu à peu.
+        // The maximum step decreases: nodes freeze little by little.
         let heat = start * (1. - step as f32 / iterations as f32) + 0.01;
         for (p, f) in pos.iter_mut().zip(&push) {
             let (fx, fy) = (f.0 - p.0 * 0.05, f.1 - p.1 * 0.05);
@@ -147,11 +147,11 @@ pub fn layout(seed: &[Option<(f32, f32)>], edges: &[(usize, usize)]) -> Vec<(f32
     pos
 }
 
-/// Un pas du glisser : le déplacement du nœud tenu se propage le long des liens.
-/// Chaque nœud lié suit la moyenne des déplacements de ses voisins et revient
-/// un peu vers sa place `rest` ; plus on s'éloigne du nœud tenu, moins ça bouge.
-// ponytail: pas de répulsion pendant le glisser, un nœud entraîné peut en
-// recouvrir un autre ; relancer `layout` au lâcher si cela gêne.
+/// One drag step: the held node's move propagates along links.
+/// Each linked node follows the mean move of its neighbors and returns
+/// a little toward its `rest` place; the farther from the held node, the less it moves.
+// ponytail: no repulsion during the drag, a dragged-along node can
+// cover another; rerun `layout` on release if that gets in the way.
 fn follow(pos: &mut [(f32, f32)], rest: &[(f32, f32)], near: &[Vec<usize>], held: usize) {
     let shift: Vec<(f32, f32)> = pos.iter().zip(rest).map(|(p, r)| (p.0 - r.0, p.1 - r.1)).collect();
     for (i, links) in near.iter().enumerate() {
@@ -173,26 +173,26 @@ pub struct Graph {
     near: Vec<Vec<usize>>,
     pos: Vec<(f32, f32)>,
     generation: usize,
-    /// Décalage (px) du centre du graphe par rapport au centre de la vue.
+    /// Offset (px) of the graph center from the view center.
     pan: (f32, f32),
-    /// Pixels par unité de disposition.
+    /// Pixels per layout unit.
     zoom: f32,
-    /// Recadrer sur tout le graphe à la prochaine frame.
+    /// Refit to the whole graph on the next frame.
     fit: bool,
     hover: Option<usize>,
     selected: Option<usize>,
     current: Option<usize>,
-    /// Dernière position du pointeur pendant un glisser du fond.
+    /// Last pointer position during a background drag.
     grab: Option<Point<Pixels>>,
-    /// Nœud tenu à la souris.
+    /// Node held with the mouse.
     drag: Option<usize>,
-    /// Glisser en cours ou qui se pose : (nœud tiré, frames restantes), et la
-    /// place des nœuds avant qu'il commence.
+    /// Drag in progress or settling: (dragged node, frames left), and the
+    /// place of the nodes before it started.
     pull: Option<(usize, u32)>,
     rest: Vec<(f32, f32)>,
-    /// Cadrage (décalage, zoom) vers lequel la vue glisse.
+    /// Framing (offset, zoom) the view glides toward.
     aim: Option<((f32, f32), f32)>,
-    /// Parcours des voisins avec Tab : (nœud de départ, rang du voisin).
+    /// Walking neighbors with Tab: (starting node, neighbor index).
     cycle: Option<(usize, usize)>,
     bounds: Bounds<Pixels>,
 }
@@ -231,9 +231,9 @@ impl Graph {
         }
     }
 
-    /// Reconstruit le graphe ; les notes déjà placées gardent leur position de
-    /// départ, et la disposition se calcule hors du thread UI.
-    /// Les nœuds du graphe : les notes, puis les images que des notes affichent.
+    /// Rebuilds the graph; notes already placed keep their starting
+    /// position, and the layout is computed off the UI thread.
+    /// The graph nodes: notes, then images that notes show.
     pub fn set_notes(&mut self, notes: &[Note], images: &[PathBuf], cx: &mut Context<Self>) {
         let nodes: Vec<(PathBuf, SharedString)> = notes
             .iter()
@@ -272,26 +272,26 @@ impl Graph {
         cx.notify();
     }
 
-    /// Thème, note ouverte et note sélectionnée, tels que la fenêtre les connaît.
+    /// Theme, open note and selected note, as the window knows them.
     pub fn sync(&mut self, theme: Theme, current: Option<&Path>, selected: Option<&Path>) {
         let find = |path: Option<&Path>| self.nodes.iter().position(|(p, _)| Some(p.as_path()) == path);
         (self.current, self.selected) = (find(current), find(selected));
         self.theme = theme;
     }
 
-    /// Nombre de nœuds et d'arêtes.
+    /// Number of nodes and edges.
     #[cfg(test)]
     pub fn size(&self) -> (usize, usize) {
         (self.nodes.len(), self.edges.len())
     }
 
-    /// La vue glisse jusqu'à cadrer tout le graphe.
+    /// The view glides until it frames the whole graph.
     pub fn recenter(&mut self, cx: &mut Context<Self>) {
         self.aim = self.framing();
         cx.notify();
     }
 
-    /// Position à l'écran du nœud de cette note.
+    /// On-screen position of this note's node.
     #[cfg(test)]
     pub fn spot(&self, path: &Path) -> Point<Pixels> {
         self.screen(self.nodes.iter().position(|(p, _)| p == path).unwrap())
@@ -310,7 +310,7 @@ impl Graph {
         (3. + 1.5 * (self.near[i].len() as f32).sqrt()) * (self.zoom / 40.).clamp(0.6, 1.5) + grown
     }
 
-    /// Décalage et zoom qui montrent tout le graphe.
+    /// Offset and zoom that show the whole graph.
     fn framing(&self) -> Option<((f32, f32), f32)> {
         let (w, h) = (f32::from(self.bounds.size.width), f32::from(self.bounds.size.height));
         if self.pos.is_empty() || w <= 0. || h <= 0. {
@@ -321,12 +321,12 @@ impl Graph {
             min = (min.0.min(p.0), min.1.min(p.1));
             max = (max.0.max(p.0), max.1.max(p.1));
         }
-        // Une unité de marge de chaque côté, pour les noms.
+        // One unit of margin on each side, for names.
         let zoom = (w / (max.0 - min.0 + 2.)).min(h / (max.1 - min.1 + 2.)).clamp(6., 80.);
         Some(((-(min.0 + max.0) / 2. * zoom, -(min.1 + max.1) / 2. * zoom), zoom))
     }
 
-    /// Avance les animations d'une frame : glissement de la vue, nœuds entraînés.
+    /// Advances the animations by one frame: view glide, dragged-along nodes.
     fn animate(&mut self, window: &mut Window) {
         if let Some((pan, zoom)) = self.aim {
             let toward = |from: f32, to: f32| from + (to - from) * 0.2;
@@ -360,7 +360,7 @@ impl Graph {
 
     fn select(&mut self, i: usize, cx: &mut Context<Self>) {
         self.selected = Some(i);
-        // Le nœud choisi au clavier peut être hors champ : on le ramène au centre.
+        // The node chosen with the keyboard can be off view: bring it back to the center.
         if !self.bounds.inset(px(24.)).contains(&self.screen(i)) {
             self.pan = (-self.pos[i].0 * self.zoom, -self.pos[i].1 * self.zoom);
         }
@@ -368,11 +368,11 @@ impl Graph {
         cx.notify();
     }
 
-    /// Flèches : le nœud le plus proche dans cette direction.
+    /// Arrows: the nearest node in that direction.
     fn step(&mut self, dx: f32, dy: f32, cx: &mut Context<Self>) {
         self.cycle = None;
         let Some(from) = self.selected.or(self.current) else {
-            // Rien de sélectionné : on part du nœud le plus proche du centre de la vue.
+            // Nothing selected: start from the node nearest the view center.
             let c = self.bounds.center();
             let far = |i: usize| {
                 let p = self.screen(i);
@@ -395,7 +395,7 @@ impl Graph {
         }
     }
 
-    /// Tab : parcourt les notes liées à celle d'où l'on est parti.
+    /// Tab: walks the notes linked to the one we started from.
     fn cycle(&mut self, cx: &mut Context<Self>) {
         let Some(selected) = self.selected.or(self.current) else {
             return;
@@ -431,7 +431,7 @@ impl Graph {
             self.grab = Some(e.position);
             return cx.notify();
         }
-        // Le nœud tenu suit le pointeur ; ses voisins sont entraînés à chaque frame.
+        // The held node follows the pointer; its neighbors are dragged along each frame.
         if let Some(i) = self.drag
             && e.pressed_button == Some(MouseButton::Left)
         {
@@ -455,7 +455,7 @@ impl Graph {
         }
     }
 
-    /// La molette zoome autour du pointeur.
+    /// The wheel zooms around the pointer.
     fn scroll(&mut self, e: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
         let zoom = (self.zoom * (f32::from(e.delta.pixel_delta(px(26.)).y) * 0.004).exp()).clamp(4., 240.);
         let c = self.bounds.center();
@@ -517,7 +517,7 @@ impl Graph {
                 let ring = disc(c, r + 4.);
                 window.paint_quad(quad(ring, px(r + 4.), t.selection, px(1.5), t.accent, BorderStyle::default()));
             }
-            // Une image : un carré, pour la distinguer d'une note.
+            // An image: a square, to tell it from a note.
             let corner = if vault::is_image(&self.nodes[i].0) { r * 0.3 } else { r };
             window.paint_quad(quad(disc(c, r), px(corner), fade(color, on), px(0.), t.bg, BorderStyle::default()));
 
@@ -608,13 +608,13 @@ mod tests {
         let names = |target: &str| backlinks(&notes, Path::new(target)).iter().map(|n| n.name.clone()).collect::<Vec<_>>();
         assert_eq!(names("/v/Cible.md"), ["A", "b", "Cible"]);
         assert_eq!(names("/v/b.md"), ["A"]);
-        // Une seconde note du même nom : les liens visent la première.
+        // A second note with the same name: links target the first.
         assert!(names("/v/sous/Cible.md").is_empty() && names("/v/absente.md").is_empty());
         let body = "# A\n[[autre]] et [[Cible]]x\n| t | [[cible|alias]] |\n";
         assert_eq!(link_line(body, &notes[0]), Some("[[autre]] et [[Cible]]x"));
         assert_eq!(link_line("un [[Cible|alias]] là", &notes[0]), Some("un [[Cible|alias]] là"));
         assert_eq!(link_line(body, &notes[1]), None);
-        // Un alias de l'en-tête YAML vaut le nom : rétrolien, ligne du lien et arête du graphe.
+        // A front matter alias counts as the name: backlink, link line and graph edge.
         let mut notes = vec![note("Appli", &[]), note("Journal", &["bref app"])];
         notes[0].aliases = vec!["Bref App".into()].into();
         assert_eq!(backlinks(&notes, Path::new("/v/Appli.md")).len(), 1);
@@ -625,9 +625,9 @@ mod tests {
     #[test]
     fn resolves_edges() {
         let notes = [note("A", &["b", "a", "absente"]), note("B", &["a", "c"]), note("c", &[])];
-        // Sans doublon, sans boucle, sans lien vers une note inexistante.
+        // No duplicate, no loop, no link to a missing note.
         assert_eq!(edges(&notes, &[]), [(0, 1), (1, 2)]);
-        // Une image affichée par une note lui est reliée ; elle vient après les notes.
+        // An image shown by a note is linked to it; it comes after the notes.
         let notes = [note("a", &["plan.png"]), note("b", &[])];
         assert_eq!(edges(&notes, &[PathBuf::from("/v/img/Plan.PNG")]), [(0, 2)]);
     }
@@ -639,14 +639,14 @@ mod tests {
         assert!(pos.iter().all(|p| p.0.is_finite() && p.1.is_finite()));
         assert!(dist(&pos, 0, 1) < dist(&pos, 0, 4));
         assert!(dist(&pos, 1, 2) < dist(&pos, 2, 5));
-        // Aucun nœud ne se superpose à un autre, et le résultat est reproductible.
+        // No node overlaps another, and the result is reproducible.
         assert!((0..6).all(|i| (i + 1..6).all(|j| dist(&pos, i, j) > 0.3)));
         assert_eq!(pos, layout(&[None; 6], &[(0, 1), (1, 2)]));
     }
 
     #[test]
     fn dragged_node_pulls_its_neighbours() {
-        // Chaîne 0-1-2, et 3 sans lien. Le nœud 0 est tiré de 5 unités vers la droite.
+        // Chain 0-1-2, and 3 unlinked. Node 0 is dragged 5 units to the right.
         let rest = [(0., 0.), (1., 0.), (2., 0.), (0., 2.)];
         let near = [vec![1], vec![0, 2], vec![1], vec![]];
         let mut pos = rest;
@@ -655,7 +655,7 @@ mod tests {
             follow(&mut pos, &rest, &near, 0);
         }
         let moved = |i: usize| pos[i].0 - rest[i].0;
-        // Il reste sous le pointeur ; ses voisins suivent, de moins en moins loin.
+        // It stays under the pointer; its neighbors follow, less and less far.
         assert_eq!((pos[0], pos[3]), ((5., 0.), rest[3]));
         assert!(moved(1) > 3. && moved(1) < 5. && moved(2) > 2. && moved(2) < moved(1));
     }

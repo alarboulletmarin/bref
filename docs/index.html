@@ -10,7 +10,7 @@
 <meta property="og:image" content="https://alarboulletmarin.github.io/bref/screenshots/bref.png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <style>
-/* Palette de l'app : thèmes « Bref Light » et « Bref Dark » (src/main.rs). */
+/* The app's colours: the "Bref Light" and "Bref Dark" themes (src/ui/theme.rs). */
 :root {
   --bg: #fbfaf8; --text: #26231f; --dim: #a8a29a; --accent: #b4532a;
   --code: #f1eeea; --panel: #ffffff; --border: #e2ddd6;
@@ -30,13 +30,13 @@ body {
 code, pre { font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: .86em; }
 main { max-width: 720px; margin: 0 auto; padding: 0 24px 40px; }
 
-/* Les liens se lisent comme des [[liens]] de l'app : crochets estompés, texte en accent. */
+/* Links read like the app's [[links]]: faded brackets, text in the accent colour. */
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 3px; }
 a.wiki::before { content: "[["; color: var(--dim); }
 a.wiki::after { content: "]]"; color: var(--dim); }
 
-/* Les marqueurs Markdown restent visibles, estompés, comme dans l'éditeur. */
+/* Markdown markers stay visible, faded, as in the editor. */
 h1, h2, h3 { line-height: 1.25; letter-spacing: -.01em; margin: 0; }
 h1::before, h2::before, h3::before { color: var(--dim); }
 h1 { font-size: 2.1rem; }  h1::before { content: "# "; }
@@ -92,7 +92,7 @@ button.copy svg { width: 16px; height: 16px; fill: none; stroke: currentColor; s
 .panel::before { content: "> "; color: var(--dim); font-style: normal; }
 .panel b { color: var(--tint); font-style: normal; font-weight: 700; margin-right: .4em; }
 
-/* Un tableau Bref reste du texte, en police de code. */
+/* A Bref table stays text, in the code font. */
 pre.table { background: none; padding: 0; margin: 14px 0 20px; }
 pre.table kbd { font: inherit; }
 pre.table i { font-style: normal; color: var(--dim); }
@@ -108,7 +108,7 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
   h2 { margin-top: 56px; }
   nav { gap: 6px 14px; }
   nav .brand { flex-basis: 100%; }
-  /* Une seule des deux fenêtres de la capture, celle du thème de la page : lisible à cette largeur. */
+  /* Only one of the two windows of the screenshot, the one of the page's theme: readable at this width. */
   .hero img { aspect-ratio: 860 / 720; object-fit: cover; object-position: left; }
 }
 @media (max-width: 640px) and (prefers-color-scheme: dark) {
@@ -244,7 +244,7 @@ cargo install --path . --locked</code></pre>
 </main>
 
 <script>
-// Bouton de copie sur chaque bloc de code, comme dans l'app.
+// Copy button on each code block, as in the app.
 const COPY = '<svg viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.5"/></svg>';
 for (const pre of document.querySelectorAll("pre:not(.table)")) {
   const wrap = document.createElement("div");
@@ -255,7 +255,7 @@ for (const pre of document.querySelectorAll("pre:not(.table)")) {
   wrap.append(b);
 }
 
-// Dernières releases lues sur l'API GitHub ; sans réseau, le lien statique reste.
+// Latest releases read from the GitHub API; without network, the static link stays.
 fetch("https://api.github.com/repos/alarboulletmarin/bref/releases?per_page=5")
   .then(r => r.ok ? r.json() : Promise.reject())
   .then(list => {
