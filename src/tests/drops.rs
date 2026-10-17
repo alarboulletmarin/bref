@@ -30,7 +30,7 @@ fn drops_journey(cx: &mut TestAppContext) {
         |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
     });
     cx.run_until_parked();
-    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
     let told = |cx: &mut gpui::VisualTestContext, tone, part: &str| shell.read_with(cx, |s, _| s.told(tone, part));
     let drop = |cx: &mut gpui::VisualTestContext, names: &[&str], aim: Aim| {
         let paths = names.iter().map(|n| ext.join(n)).collect();
@@ -64,7 +64,7 @@ fn drops_journey(cx: &mut TestAppContext) {
     // jamais dans un tableau ni dans un bloc de code ; après la dernière ligne sous le texte.
     shell.update(cx, |s, cx| s.open_note(&root.join("Carnet.md"), cx));
     cx.run_until_parked();
-    let (editor, line) = (shell.read_with(cx, |s, _| s.editor.clone()), |text: &str, what: &str| text.find(what).unwrap());
+    let (editor, line) = (shell.read_with(cx, |s, _| s.pane().editor.clone()), |text: &str, what: &str| text.find(what).unwrap());
     let at = |cx: &mut gpui::VisualTestContext, what: &str, dy: f32| {
         let start = line(carnet, what);
         let mut spot = editor.read_with(cx, |e, _| e.point_of(start).unwrap());
@@ -85,7 +85,7 @@ fn drops_journey(cx: &mut TestAppContext) {
     assert_eq!(text(cx), format!("# Carnet\n\n{lines}premier{}", &carnet["# Carnet\n\npremier".len()..]));
     assert!(root.join("photo.png").is_file() && root.join("Photos 2/a.png").is_file() && root.join("inconnu.exe").is_file());
     assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Idées")), "la note déposée est une note du coffre");
-    shell.update_in(cx, |s, window, cx| window.focus(&s.editor.focus_handle(cx)));
+    shell.update_in(cx, |s, window, cx| window.focus(&s.pane().editor.focus_handle(cx)));
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(text(cx), carnet);
     // Au bout d'une note sans retour à la ligne final, puis dans une note rangée dans un sous-dossier.
@@ -94,7 +94,7 @@ fn drops_journey(cx: &mut TestAppContext) {
     assert_eq!(text(cx), format!("{carnet}\n[[clip final.mp4]]"));
     cx.simulate_keystrokes("secondary-z");
     shell.update(cx, |s, cx| s.open_note(&root.join("Dossier/Autre.md"), cx));
-    let (version, top) = (shell.read_with(cx, |s, cx| s.editor.read(cx).revision()), 0);
+    let (version, top) = (shell.read_with(cx, |s, cx| s.pane().editor.read(cx).revision()), 0);
     drop(cx, &["photo.png"], Aim::Note { pane: 0, at: top, version });
     assert!(root.join("Dossier/photo.png").is_file(), "dans le dossier de la note, comme une image collée");
     assert!(text(cx).starts_with("![[photo.png]]\n# Autre"));
@@ -113,9 +113,9 @@ fn drops_journey(cx: &mut TestAppContext) {
     let opened = shell.read_with(cx, |s, _| s.opened.clone());
     assert!(opened.len() == 2 && opened.iter().all(|p| p.file_name().unwrap() == "rapport.pdf"), "le système ouvre la pièce jointe, sans tenir compte de la casse : {opened:?}");
     shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("Photos".into()), window, cx));
-    assert_eq!(shell.read_with(cx, |s, _| s.listing.as_ref().map(|l| l.of.clone())), Some(root.join("Photos")));
+    assert_eq!(shell.read_with(cx, |s, _| s.pane().listing.as_ref().map(|l| l.of.clone())), Some(root.join("Photos")));
     shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("nuage".into()), window, cx));
-    assert!(shell.read_with(cx, |s, cx| s.listing.is_none() && s.editor.read(cx).text().starts_with("# nuage")));
+    assert!(shell.read_with(cx, |s, cx| s.pane().listing.is_none() && s.pane().editor.read(cx).text().starts_with("# nuage")));
     // L'étiquette : près de chaque bord de la fenêtre, elle reste dedans, et elle disparaît avec le glisser.
     let view = cx.update(|window, _| window.viewport_size());
     shell.update(cx, |s, _| s.keep_aim = true);

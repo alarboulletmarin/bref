@@ -9,9 +9,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Maj+Entrée tournent en boucle, Alt+C tient compte de la casse, Alt+W des mots entiers.
     j.load(cx, "Été, été.\n\n| a | étés |\n| - | ---- |\n| b | ÉTÉ  |\n", 0);
     let finding = |cx: &mut gpui::VisualTestContext| {
-        shell.read_with(cx, |s, cx| s.editor.read(cx).finding().map(|(query, at, n)| (query.to_string(), at, n)))
+        shell.read_with(cx, |s, cx| s.pane().editor.read(cx).finding().map(|(query, at, n)| (query.to_string(), at, n)))
     };
-    let span = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).span());
+    let span = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).span());
     cx.simulate_keystrokes("secondary-f");
     cx.simulate_input("étéx");
     assert_eq!(finding(cx), Some(("étéx".into(), 0, 0)));
@@ -48,7 +48,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(finding(cx).is_some_and(|(query, ..)| query.to_lowercase().starts_with("été")));
     cx.simulate_input("hiver");
     assert_eq!(finding(cx), Some(("hiver".into(), 1, 1)));
-    shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load("hiver hiver".into(), 0, cx)));
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load("hiver hiver".into(), 0, cx)));
     cx.run_until_parked();
     assert_eq!(finding(cx), Some(("hiver".into(), 1, 2)));
     cx.simulate_input("x");
@@ -86,7 +86,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     j.load(cx, boxed, boxed.len());
     let tick = |cx: &mut gpui::VisualTestContext, needle: &str| {
         let at = boxed.find(needle).unwrap() + 1;
-        let spot = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(at).unwrap()) + gpui::point(px(3.), px(0.));
+        let spot = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(at).unwrap()) + gpui::point(px(3.), px(0.));
         cx.simulate_click(spot, gpui::Modifiers::none());
     };
     tick(cx, "[ ] fait");
@@ -100,24 +100,24 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Le pointeur prend la main sur une case, et sur un lien quand Ctrl est tenu ; ailleurs, la barre du texte.
     let hand = |cx: &mut gpui::VisualTestContext, needle: &str, held: gpui::Modifiers| {
         let at = boxed.find(needle).unwrap() + 1;
-        let spot = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(at).unwrap()) + gpui::point(px(3.), px(0.));
+        let spot = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(at).unwrap()) + gpui::point(px(3.), px(0.));
         cx.simulate_mouse_move(spot, None, held);
-        shell.read_with(cx, |s, cx| s.editor.read(cx).hand())
+        shell.read_with(cx, |s, cx| s.pane().editor.read(cx).hand())
     };
     assert_eq!(hand(cx, "[x] fin", gpui::Modifiers::none()), Some(CursorStyle::PointingHand));
     assert_eq!(hand(cx, "avant", gpui::Modifiers::none()), None);
     let linked = "voir [[Courses]] ici\n";
     j.load(cx, linked, 0);
     let over = |cx: &mut gpui::VisualTestContext, held: gpui::Modifiers| {
-        let spot = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(linked.find("Courses").unwrap()).unwrap()) + gpui::point(px(3.), px(0.));
+        let spot = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(linked.find("Courses").unwrap()).unwrap()) + gpui::point(px(3.), px(0.));
         cx.simulate_mouse_move(spot, None, held);
-        shell.read_with(cx, |s, cx| s.editor.read(cx).hand())
+        shell.read_with(cx, |s, cx| s.pane().editor.read(cx).hand())
     };
     assert_eq!(over(cx, gpui::Modifiers::none()), None);
     assert_eq!(over(cx, gpui::Modifiers::secondary_key()), Some(CursorStyle::PointingHand));
     // Une case dans le code reste du texte.
     j.load(cx, "`[ ]` et\n\n```\n[ ]\n```\n", 0);
-    let code = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(2).unwrap()) + gpui::point(px(3.), px(0.));
+    let code = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(2).unwrap()) + gpui::point(px(3.), px(0.));
     cx.simulate_click(code, gpui::Modifiers::none());
     assert!(text(cx).starts_with("`[ ]` et"));
     // Ctrl+Entrée dans une cellule : elle reçoit une case, puis la coche.
@@ -131,9 +131,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let words = "alpha beta gamma delta\nsecond\ntroisième\n";
     j.load(cx, words, 0);
     let spot = |cx: &mut gpui::VisualTestContext, i: usize| {
-        shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(i).unwrap()) + gpui::point(px(3.), px(0.))
+        shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(i).unwrap()) + gpui::point(px(3.), px(0.))
     };
-    let selected = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).selected().to_string());
+    let selected = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).selected().to_string());
     let (beta, gamma) = (spot(cx, 7), spot(cx, 13));
     let click = |count| gpui::MouseDownEvent {
         position: beta,
@@ -164,7 +164,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     fs::write(&outside, r#"{"elements":[{"id":"a","type":"ellipse","x":0,"y":0,"width":80,"height":60}]}"#).unwrap();
     shell.update_in(cx, |s, window, cx| s.import_file(&outside, window, cx));
     cx.run_until_parked();
-    let (file, canvas) = shell.read_with(cx, |s, _| s.drawing.clone().unwrap());
+    let (file, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
     assert_eq!((file.file_name().unwrap().to_str(), canvas.read_with(cx, |c, _| c.diagram().shapes.len())), (Some("croquis.svg"), 1));
     shell.update(cx, |s, cx| s.export_png(file.clone(), &canvas, cx));
     cx.run_until_parked();

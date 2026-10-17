@@ -9,12 +9,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // de la page, et le curseur reste dans ses cellules.
     let long = "mot ".repeat(120);
     let note = format!("avant\n\n| A | B |\n| --- | --- |\n| {long}| fin |\n\napres\n");
-    let state = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).table_state().unwrap());
+    let state = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).table_state().unwrap());
     let set_wide = |cx: &mut gpui::VisualTestContext, wide: Wide| {
         shell.update(cx, |s, cx| {
             s.theme = Theme { wide, ..s.theme };
             let theme = s.theme;
-            s.editor.update(cx, |e, cx| e.set_theme(theme, cx));
+            s.pane().editor.update(cx, |e, cx| e.set_theme(theme, cx));
         });
     };
     // Dans la colonne du texte : les cellules s'y partagent la largeur.
@@ -31,7 +31,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(dx > px(0.) && frame.size.width <= page, "{dx:?} {tall} {frame:?} {page:?}");
     j.load(cx, &head, 0);
     assert_eq!(state(cx).0, px(0.));
-    let on_table = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(head.find("colonne").unwrap()).unwrap());
+    let on_table = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(head.find("colonne").unwrap()).unwrap());
     cx.simulate_event(gpui::ScrollWheelEvent {
         position: on_table,
         delta: gpui::ScrollDelta::Pixels(gpui::point(px(-90.), px(0.))),
@@ -55,7 +55,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         shell.update(cx, |s, cx| {
             s.theme = Theme { page, size: zoom, wide: Wide::Centered, ..s.theme };
             let theme = s.theme;
-            s.editor.update(cx, |e, cx| e.set_theme(theme, cx));
+            s.pane().editor.update(cx, |e, cx| e.set_theme(theme, cx));
         });
         j.load(cx, &note, note.find("fin").unwrap());
         let (_, _, frame, text, view) = state(cx);
@@ -68,7 +68,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     shell.update(cx, |s, cx| {
         s.theme = Theme { page: Page::Normal, size: 16., ..s.theme };
         let theme = s.theme;
-        s.editor.update(cx, |e, cx| e.set_theme(theme, cx));
+        s.pane().editor.update(cx, |e, cx| e.set_theme(theme, cx));
     });
     // Un petit tableau garde sa taille, quel que soit le réglage.
     j.load(cx, "| a | b |\n| - | - |\n| c | d |\n", 0);
@@ -127,7 +127,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
 
     // Le curseur va de cellule en cellule sans s'arrêter sur les `|`, saute la ligne de
     // tirets, et effacer ne fusionne jamais deux cellules.
-    let caret = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).caret());
+    let caret = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).caret());
     let t = "| Nom | Âge  |\n| --- | ---- |\n| Léa | a\\|b |\n| Max | 7    |\n";
     let at = |needle: &str| t.find(needle).unwrap();
     j.load(cx, t, at("Léa") + "Léa".len());
@@ -171,7 +171,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let wrapped = format!("| A | B |\n| --- | --- |\n| {long}| fin |\n| z | z |\n");
     let start = wrapped.find("alpha").unwrap();
     j.load(cx, &wrapped, start);
-    let rows_of = |cx: &mut gpui::VisualTestContext, i: usize| shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(i).unwrap());
+    let rows_of = |cx: &mut gpui::VisualTestContext, i: usize| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(i).unwrap());
     let (top, below) = (rows_of(cx, start).y, rows_of(cx, start + 140).y);
     assert!(below > top + px(30.), "la cellule passe à la ligne : {top:?} {below:?}");
     cx.simulate_keystrokes("down");
@@ -187,10 +187,10 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Sélectionner d'une cellule à l'autre ne prend que le texte des cellules.
     j.load(cx, t, at("Léa"));
     cx.simulate_keystrokes("shift-right shift-right shift-right shift-right shift-right");
-    assert_eq!(shell.read_with(cx, |s, cx| s.editor.read(cx).selected().to_string()), "Léa | a");
+    assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).selected().to_string()), "Léa | a");
 
     // La ligne de tirets ne se voit pas, sauf sous le curseur ; un raccourci règle l'alignement.
-    let hidden = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).hidden_rows());
+    let hidden = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).hidden_rows());
     let small = "| Nom | Âge |\n| --- | --- |\n| Léa | 31  |\n";
     j.load(cx, small, 0);
     assert_eq!(hidden(cx), 1);
@@ -255,7 +255,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             for _ in 0..30 {
                 let before = text(cx);
                 // Une sélection qui sort du tableau remplace aussi ce qu'elle touche hors de lui.
-                let span = shell.read_with(cx, |s, cx| s.editor.read(cx).span());
+                let span = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).span());
                 let leaves = {
                     let (a, b) = (before[..span.start].rfind('\n').map_or(0, |i| i + 1), before[span.end..].find('\n').map_or(before.len(), |i| span.end + i));
                     !span.is_empty() && before[a..b].split('\n').any(|l| !l.trim_start().starts_with('|'))

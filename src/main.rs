@@ -125,16 +125,10 @@ struct Pane {
     /// porte lui-même quand le pane ne montre qu'une image.
     zone: FocusHandle,
     editor: Entity<Editor>,
-    /// Image affichée à la place de la note, choisie dans l'arbre ou le graphe.
-    picture: Option<PathBuf>,
-    /// Schéma ouvert dans son canevas, quand l'image affichée en est un.
-    drawing: Option<(PathBuf, Entity<Canvas>)>,
-    /// SVG venu d'ailleurs, ouvert dans la visionneuse.
-    viewer: Option<(PathBuf, Entity<viewer::Viewer>)>,
+    /// File shown in place of the note, picked in the tree or the graph (`Shell::set_file`).
+    file: Option<FileView>,
     /// Diagramme Mermaid de la note, vu en grand à sa place.
     figure: Option<Entity<viewer::Viewer>>,
-    /// Tableau ouvert dans sa grille, quand le fichier affiché en est un.
-    sheet: Option<(PathBuf, Entity<Sheet>)>,
     /// Fichier de la note ouverte ; `None` tant qu'une nouvelle note n'est pas enregistrée.
     path: Option<PathBuf>,
     /// Le nom du fichier suit le titre (première ligne) de la note.
@@ -153,25 +147,60 @@ struct Pane {
     /// La note a été créée dans ce pane : laissée vide, son fichier ne reste pas dans le coffre.
     fresh: bool,
     dirty: bool,
-    /// La note ouverte est un tableau kanban dont on regarde le texte : on l'a demandé, ou on
-    /// vient d'en écrire la clé (taper `kanban: true` ne fait pas quitter le texte).
-    board_text: bool,
-    /// La note était un tableau à sa dernière frappe.
-    board_was: bool,
-    /// Carte qu'on déplace dans le tableau, et où elle se poserait (colonne, rang).
-    board_drag: Option<((usize, usize), (usize, usize))>,
-    /// Largeur d'une carte du tableau, relevée à son dessin.
-    board_card: std::rc::Rc<std::cell::Cell<Pixels>>,
-    board_scroll: gpui::ScrollHandle,
-    /// Ce qu'on écrit dans le tableau, et son champ de saisie.
-    board_field: Option<(kanban::Slot, Entity<kanban::Field>)>,
-    /// Le tableau reçoit la saisie à la place de la note qu'il cache.
-    board_focus: FocusHandle,
+    /// The note shown as a kanban board, when it is one.
+    board: kanban::Board,
     /// Page liste affichée à la place de la note.
     listing: Option<nav::Listing>,
     /// Ce qui est affiché n'est qu'un aperçu (flèches dans l'arbre, graphe) : l'historique
     /// l'ignore tant qu'il n'est pas ouvert pour de bon.
     peek: bool,
+}
+
+/// A file of the vault shown in place of the note's text, which stays loaded underneath.
+struct FileView {
+    path: PathBuf,
+    kind: FileKind,
+}
+
+/// What shows the file.
+#[derive(Clone)]
+enum FileKind {
+    /// A picture, drawn as is.
+    Image,
+    /// A Bref diagram, open in its canvas.
+    Drawing(Entity<Canvas>),
+    /// An SVG from elsewhere, in the zoomable viewer.
+    Svg(Entity<viewer::Viewer>),
+    /// A CSV or TSV table, in its grid.
+    Sheet(Entity<Sheet>),
+}
+
+impl Pane {
+    /// Path of the file shown in place of the note.
+    fn file_path(&self) -> Option<&PathBuf> {
+        self.file.as_ref().map(|file| &file.path)
+    }
+
+    fn drawing(&self) -> Option<&Entity<Canvas>> {
+        match &self.file {
+            Some(FileView { kind: FileKind::Drawing(canvas), .. }) => Some(canvas),
+            _ => None,
+        }
+    }
+
+    fn viewer(&self) -> Option<&Entity<viewer::Viewer>> {
+        match &self.file {
+            Some(FileView { kind: FileKind::Svg(viewer), .. }) => Some(viewer),
+            _ => None,
+        }
+    }
+
+    fn sheet(&self) -> Option<&Entity<Sheet>> {
+        match &self.file {
+            Some(FileView { kind: FileKind::Sheet(sheet), .. }) => Some(sheet),
+            _ => None,
+        }
+    }
 }
 
 struct Shell {
@@ -257,19 +286,15 @@ struct Shell {
 }
 
 
-/// `Shell` se lit comme son pane actif : `self.path`, `self.editor`… sont ceux du pane sur lequel
-/// la palette, l'arbre et les raccourcis agissent. Ce qui vaut pour tous les panes passe par
-/// `each_pane`, ce qui vise un pane précis par `in_pane`.
-impl std::ops::Deref for Shell {
-    type Target = Pane;
-
-    fn deref(&self) -> &Pane {
+/// The active pane is the one the palette, the tree and the shortcuts act on (`pane`,
+/// `pane_mut`). What holds for every pane goes through `each_pane`, what targets one through
+/// `in_pane`.
+impl Shell {
+    fn pane(&self) -> &Pane {
         &self.panes[self.active]
     }
-}
 
-impl std::ops::DerefMut for Shell {
-    fn deref_mut(&mut self) -> &mut Pane {
+    fn pane_mut(&mut self) -> &mut Pane {
         &mut self.panes[self.active]
     }
 }
@@ -282,11 +307,8 @@ impl Shell {
         Pane {
             zone: cx.focus_handle(),
             editor,
-            picture: None,
-            drawing: None,
-            viewer: None,
+            file: None,
             figure: None,
-            sheet: None,
             path: None,
             synced: true,
             h1: None,
@@ -295,13 +317,7 @@ impl Shell {
             new_dir: None,
             fresh: false,
             dirty: false,
-            board_text: false,
-            board_was: false,
-            board_drag: None,
-            board_card: Default::default(),
-            board_scroll: Default::default(),
-            board_field: None,
-            board_focus: cx.focus_handle(),
+            board: kanban::Board::new(cx),
             listing: None,
             peek: false,
         }
@@ -314,7 +330,7 @@ impl Shell {
         cx.subscribe_in(&palette, window, move |this, _, event, window, cx| {
             this.palette = None;
             match this.vault {
-                Some(_) => window.focus(&this.editor.focus_handle(cx)),
+                Some(_) => window.focus(&this.pane().editor.focus_handle(cx)),
                 None => window.focus(&this.focus),
             }
             if let PaletteEvent::Submit(text) = event
@@ -519,24 +535,23 @@ impl Shell {
 
     /// Le pane qui montre déjà ce fichier, comme note (même cachée par une image) ou à sa place.
     fn pane_showing(&self, path: &Path) -> Option<usize> {
-        self.panes.iter().position(|pane| pane.path.as_deref() == Some(path) || pane.picture.as_deref() == Some(path))
+        self.panes.iter().position(|pane| pane.path.as_deref() == Some(path) || pane.file_path().map(PathBuf::as_path) == Some(path))
     }
 
     /// Donne la saisie au pane : à sa grille, à sa liste, à sa note, sinon au pane lui-même.
     fn focus_pane(&mut self, pane: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.active = pane.min(self.panes.len() - 1);
-        let shown = self.picture.is_some();
-        if let Some(figure) = &self.figure {
+        if let Some(figure) = &self.pane().figure {
             window.focus(&figure.focus_handle(cx));
             return cx.notify();
         }
-        match (self.shown_sheet(), &self.listing, &self.drawing) {
-            (Some(sheet), ..) => window.focus(&sheet.focus_handle(cx)),
-            (None, Some(listing), _) => window.focus(&listing.filter.focus_handle(cx)),
-            (None, None, Some((_, canvas))) if shown => window.focus(&canvas.focus_handle(cx)),
-            (None, None, None) if shown && let Some((_, viewer)) = &self.viewer => window.focus(&viewer.focus_handle(cx)),
-            (None, None, _) if shown => window.focus(&self.zone),
-            (None, None, _) => window.focus(&self.editor.focus_handle(cx)),
+        match (&self.pane().listing, self.pane().file.as_ref().map(|file| &file.kind)) {
+            (_, Some(FileKind::Sheet(sheet))) => window.focus(&sheet.focus_handle(cx)),
+            (Some(listing), _) => window.focus(&listing.filter.focus_handle(cx)),
+            (None, Some(FileKind::Drawing(canvas))) => window.focus(&canvas.focus_handle(cx)),
+            (None, Some(FileKind::Svg(viewer))) => window.focus(&viewer.focus_handle(cx)),
+            (None, Some(FileKind::Image)) => window.focus(&self.pane().zone),
+            (None, None) => window.focus(&self.pane().editor.focus_handle(cx)),
         }
         cx.notify();
     }
@@ -557,7 +572,7 @@ impl Shell {
         self.active = self.panes.len() - 1;
         self.push_names(cx);
         self.push_dirs(cx);
-        window.focus(&self.editor.focus_handle(cx));
+        window.focus(&self.pane().editor.focus_handle(cx));
         cx.notify();
     }
 
@@ -616,7 +631,7 @@ impl Shell {
     /// La disposition des panes, telle qu'elle s'enregistre : la part du pane de gauche, puis le
     /// fichier du second pane (rien s'il n'y en a qu'un).
     fn panes_state(&self) -> String {
-        let aside = self.panes.get(1).and_then(|pane| pane.picture.as_ref().or(pane.path.as_ref()));
+        let aside = self.panes.get(1).and_then(|pane| pane.file_path().or(pane.path.as_ref()));
         format!("{}\n{}\n", self.pane_ratio, aside.map(|path| path.display().to_string()).unwrap_or_default())
     }
 
@@ -999,14 +1014,14 @@ impl Shell {
         }
         self.each_pane(|this| {
             // Le tableau affiché a été réécrit ailleurs : il est relu s'il n'attend rien ici.
-            if let Some((_, sheet)) = &this.sheet {
+            if let Some(sheet) = this.pane().sheet() {
                 sheet.update(cx, |sheet, cx| sheet.reload_if_changed(cx));
             }
             // La note affichée a été réécrite ailleurs : on la relit. Sans modification
             // en attente ici (l'appelant s'en assure), rien n'est perdu.
-            if let Some(path) = &this.path
+            if let Some(path) = &this.pane().path
                 && let Ok(text) = fs::read_to_string(path)
-                && text != this.editor.read(cx).text()
+                && text != this.pane().editor.read(cx).text()
             {
                 this.reload(cx);
             }
@@ -1026,7 +1041,7 @@ impl Shell {
         self.recent.clear();
         self.new_note(String::new(), cx);
         vault::save_config(&root, &[]);
-        window.focus(&self.editor.focus_handle(cx));
+        window.focus(&self.pane().editor.focus_handle(cx));
         // L'index (noms, tags) se construit hors du thread UI.
         cx.spawn(async move |this, cx| {
             let scan_root = root.clone();
@@ -1151,7 +1166,7 @@ impl Shell {
             }
             if !matches!(event, PaletteEvent::Preview(_)) {
                 this.palette = None;
-                window.focus(&this.editor.focus_handle(cx));
+                window.focus(&this.pane().editor.focus_handle(cx));
                 vault::save_settings(&this.prefs.to_text());
             }
             this.restyle(window, cx);
@@ -1166,7 +1181,7 @@ impl Shell {
     /// cours présélectionné. Le titre parcouru se montre en aperçu, Entrée y laisse le curseur,
     /// Échap le remet où il était.
     pub fn open_outline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let heads = markdown::headings(self.editor.read(cx).text())
+        let heads = markdown::headings(self.pane().editor.read(cx).text())
             .into_iter()
             .map(|(level, title, at)| (format!("{}{title}", "  ".repeat(level as usize - 1)), at))
             .collect();
@@ -1178,7 +1193,7 @@ impl Shell {
     /// ce qu'on en dit.
     pub fn open_comments(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.comments_shut = false;
-        let said = markdown::all_comments(self.editor.read(cx).text())
+        let said = markdown::all_comments(self.pane().editor.read(cx).text())
             .into_iter()
             .map(|(noted, said, at)| (format!("{noted} — {said}"), at))
             .collect();
@@ -1189,14 +1204,14 @@ impl Shell {
     /// Liste d'endroits de la note (libellé, octet), celui où l'on est présélectionné ; sans
     /// aucun, `none` le dit.
     fn open_places(&mut self, title: &str, none: &str, heads: Vec<(String, usize)>, window: &mut Window, cx: &mut Context<Self>) {
-        if self.vault.is_none() || self.picture.is_some() {
+        if self.vault.is_none() || self.pane().file.is_some() {
             return;
         }
-        let before = self.editor.read(cx).position();
+        let before = self.pane().editor.read(cx).position();
         if heads.is_empty() {
             self.palette = None;
             self.say(Tone::Info, none, cx);
-            window.focus(&self.editor.focus_handle(cx));
+            window.focus(&self.pane().editor.focus_handle(cx));
             return cx.notify();
         }
         let current = heads.iter().rposition(|(_, at)| *at <= before).unwrap_or(0);
@@ -1208,10 +1223,10 @@ impl Shell {
                 _ => None,
             };
             let (at, top) = to.map_or((before, false), |(_, at)| (*at, true));
-            this.editor.update(cx, |e, cx| e.jump(at, top, cx));
+            this.pane().editor.update(cx, |e, cx| e.jump(at, top, cx));
             if !matches!(event, PaletteEvent::Preview(_)) {
                 this.palette = None;
-                window.focus(&this.editor.focus_handle(cx));
+                window.focus(&this.pane().editor.focus_handle(cx));
             }
             cx.notify();
         })
@@ -1233,7 +1248,7 @@ impl Shell {
     /// Copie la note ; avec `block`, seulement le bloc de code où est le curseur
     /// s'il y en a un.
     fn copy_all(&mut self, block: bool, cx: &mut Context<Self>) {
-        let editor = self.editor.read(cx);
+        let editor = self.pane().editor.read(cx);
         let code = editor.code_at_cursor().filter(|_| block);
         let text = code.unwrap_or(editor.text()).to_string();
         cx.write_to_clipboard(ClipboardItem::new_string(text));
@@ -1292,7 +1307,7 @@ impl Shell {
 
     /// Ce qui est affiché à la place de la note ; rien pour une note neuve pas encore enregistrée.
     fn shown(&self) -> Option<Shown> {
-        match (&self.listing, &self.picture, &self.path) {
+        match (&self.pane().listing, self.pane().file_path(), &self.pane().path) {
             (Some(listing), ..) => Some(Shown::List(listing.of.clone())),
             (None, Some(file), _) => Some(Shown::File(file.clone())),
             (None, None, Some(note)) => Some(Shown::Note(note.clone())),
@@ -1305,12 +1320,12 @@ impl Shell {
     fn mark_place(&mut self, cx: &App) {
         let Some(shown) = self.history.current().map(|entry| entry.shown.clone()) else { return };
         let place = match &shown {
-            Shown::Note(path) if self.path.as_ref() == Some(path) => {
-                let (at, scroll) = self.editor.read(cx).view();
+            Shown::Note(path) if self.pane().path.as_ref() == Some(path) => {
+                let (at, scroll) = self.pane().editor.read(cx).view();
                 Place { at: (at, 0), scroll: (0., scroll) }
             }
-            Shown::File(path) => match self.sheet.as_ref().filter(|(open, _)| open == path) {
-                Some((_, sheet)) => {
+            Shown::File(path) => match self.pane().sheet().filter(|_| self.pane().file_path() == Some(path)) {
+                Some(sheet) => {
                     let (at, scroll) = sheet.read(cx).whereabouts();
                     Place { at, scroll }
                 }
@@ -1325,7 +1340,7 @@ impl Shell {
     /// son entrée courante. Un aperçu ne compte pas ; revenir en arrière ou repartir non plus,
     /// puisque l'entrée courante est alors déjà ce qu'on affiche.
     fn track(&mut self, cx: &App) {
-        if self.peek {
+        if self.pane().peek {
             return;
         }
         let Some(shown) = self.shown() else { return };
@@ -1368,7 +1383,7 @@ impl Shell {
 
     /// Affiche une entrée de l'historique, là où on l'avait laissée.
     fn show(&mut self, entry: history::Entry, window: &mut Window, cx: &mut Context<Self>) {
-        self.peek = false;
+        self.pane_mut().peek = false;
         if self.nav.panel == nav::Panel::Full {
             self.nav.panel = nav::Panel::Split;
         }
@@ -1376,10 +1391,10 @@ impl Shell {
             Shown::List(of) => self.open_listing(of, window, cx),
             Shown::Note(path) => {
                 if self.load_note(&path, cx) {
-                    self.preview = false;
-                    self.editor.update(cx, |editor, cx| editor.set_view(entry.place.at.0, entry.place.scroll.1, cx));
+                    self.pane_mut().preview = false;
+                    self.pane().editor.update(cx, |editor, cx| editor.set_view(entry.place.at.0, entry.place.scroll.1, cx));
                 }
-                window.focus(&self.editor.focus_handle(cx));
+                window.focus(&self.pane().editor.focus_handle(cx));
             }
             Shown::File(path) => {
                 self.load_note(&path, cx);
@@ -1519,9 +1534,9 @@ impl Shell {
 
     /// Indique à l'éditeur où chercher les images : à côté de la note, puis dans le coffre.
     fn push_dirs(&mut self, cx: &mut Context<Self>) {
-        let note_dir = self.path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
+        let note_dir = self.pane().path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
         let dirs = note_dir.into_iter().chain(self.vault.clone()).collect();
-        self.editor.update(cx, |e, _| e.set_dirs(dirs));
+        self.pane().editor.update(cx, |e, _| e.set_dirs(dirs));
     }
 
     /// Place la note en tête des récentes et mémorise la liste.
@@ -1549,17 +1564,18 @@ impl Shell {
         // Déjà dans l'autre pane : deux éditeurs sur un même fichier s'écraseraient l'un l'autre.
         // La saisie y passe ; un simple aperçu ne la déplace pas.
         if let Some(other) = self.pane_showing(path).filter(|other| *other != self.active) {
-            if !self.peek {
+            if !self.pane().peek {
                 self.active = other;
-                if self.path.as_deref() == Some(path) {
-                    (self.picture, self.listing) = (None, None);
+                if self.pane().path.as_deref() == Some(path) {
+                    self.set_file(None, cx);
+                    self.pane_mut().listing = None;
                 }
                 self.grab = true;
                 cx.notify();
             }
             return false;
         }
-        self.listing = None;
+        self.pane_mut().listing = None;
         // Une pièce jointe (PDF, vidéo, archive…) s'ouvre dans l'application du système ; la note reste là.
         if vault::is_attachment(path) {
             // La plateforme de test n'ouvre rien : elle note ce qu'on lui aurait demandé.
@@ -1574,43 +1590,49 @@ impl Shell {
         }
         // Une image prend la place de la note, qui reste chargée dessous.
         if vault::is_image(path) {
-            self.picture = Some(path.to_path_buf());
-            // Un schéma s'ouvre dans son canevas, prêt à être repris.
             let svg = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
-            if svg && self.drawing.as_ref().is_none_or(|(open, _)| open != path) {
-                let diagram = fs::read_to_string(path).ok().and_then(|svg| Diagram::from_svg(&svg));
-                let theme = self.theme;
-                self.drawing = diagram.map(|diagram| {
-                    let canvas = cx.new(|cx| Canvas::new(diagram, theme, cx));
-                    cx.subscribe(&canvas, Self::on_canvas_event).detach();
-                    (path.to_path_buf(), canvas)
-                });
-            }
-            // Un SVG d'ailleurs s'ouvre dans la visionneuse : on le zoome, on s'y déplace.
-            if svg && self.drawing.is_none() && self.viewer.as_ref().is_none_or(|(open, _)| open != path) {
-                let theme = self.theme;
-                let source = viewer::Source::File(path.to_path_buf(), None);
-                self.viewer = Some((path.to_path_buf(), cx.new(|cx| viewer::Viewer::new(source, theme, cx))));
-            }
+            let open = self.pane().file.as_ref().filter(|file| file.path == path).map(|file| file.kind.clone());
+            let theme = self.theme;
+            let kind = match open {
+                _ if !svg => FileKind::Image,
+                // Un schéma s'ouvre dans son canevas, prêt à être repris.
+                Some(FileKind::Drawing(canvas)) => FileKind::Drawing(canvas),
+                open => match fs::read_to_string(path).ok().and_then(|svg| Diagram::from_svg(&svg)) {
+                    Some(diagram) => {
+                        let canvas = cx.new(|cx| Canvas::new(diagram, theme, cx));
+                        cx.subscribe(&canvas, Self::on_canvas_event).detach();
+                        FileKind::Drawing(canvas)
+                    }
+                    // Un SVG d'ailleurs s'ouvre dans la visionneuse : on le zoome, on s'y déplace.
+                    None => match open {
+                        Some(FileKind::Svg(viewer)) => FileKind::Svg(viewer),
+                        _ => {
+                            let source = viewer::Source::File(path.to_path_buf(), None);
+                            FileKind::Svg(cx.new(|cx| viewer::Viewer::new(source, theme, cx)))
+                        }
+                    },
+                },
+            };
+            self.set_file(Some(FileView { path: path.to_path_buf(), kind }), cx);
             cx.notify();
             return false;
         }
-        self.picture = None;
+        self.set_file(None, cx);
         self.leave(cx);
         cx.notify();
         match fs::read_to_string(path) {
             Ok(text) => {
-                self.synced = vault::stem(path) == vault::title_of(&text);
-                self.fresh = false;
-                self.h1 = vault::h1_of(&text);
-                self.origin = Some(vault::stem(path));
+                self.pane_mut().synced = vault::stem(path) == vault::title_of(&text);
+                self.pane_mut().fresh = false;
+                self.pane_mut().h1 = vault::h1_of(&text);
+                self.pane_mut().origin = Some(vault::stem(path));
                 // Une note relue garde sa vue ; une autre s'ouvre en tableau si elle en est un.
-                self.board_text &= self.path.as_deref() == Some(path);
-                self.board_was = kanban::is_board(&text);
-                self.path = Some(path.to_path_buf());
+                self.pane_mut().board.text &= self.pane_mut().path.as_deref() == Some(path);
+                self.pane_mut().board.was = kanban::is_board(&text);
+                self.pane_mut().path = Some(path.to_path_buf());
                 self.calm();
                 let cursor = markdown::body_start(&text);
-                self.editor.update(cx, |e, cx| e.load(text, cursor, cx));
+                self.pane().editor.update(cx, |e, cx| e.load(text, cursor, cx));
                 self.push_dirs(cx);
                 self.nav.reveal(path);
                 true
@@ -1625,24 +1647,21 @@ impl Shell {
 
     /// Un tableau prend la place de la note, comme une image ; la note reste chargée dessous.
     fn open_table(&mut self, path: &Path, cx: &mut Context<Self>) -> bool {
-        self.picture = Some(path.to_path_buf());
-        if self.sheet.as_ref().is_some_and(|(open, _)| open == path) {
+        if self.pane().sheet().is_some() && self.pane().file_path().map(PathBuf::as_path) == Some(path) {
             cx.notify();
             return false;
         }
         self.mark_place(cx);
-        self.flush_sheet(cx);
-        self.sheet = None;
         match sheet::load(path, None) {
             Ok(loaded) => {
                 let theme = self.theme;
                 let sheet = cx.new(|cx| Sheet::new(path.to_path_buf(), loaded, theme, cx));
                 cx.subscribe(&sheet, Self::on_sheet_event).detach();
-                self.sheet = Some((path.to_path_buf(), sheet));
+                self.set_file(Some(FileView { path: path.to_path_buf(), kind: FileKind::Sheet(sheet) }), cx);
                 self.calm();
             }
             Err(e) => {
-                self.picture = None;
+                self.set_file(None, cx);
                 self.say(Tone::Failed, e, cx);
             }
         }
@@ -1652,13 +1671,27 @@ impl Shell {
 
     /// Le tableau affiché, s'il y en a un.
     fn shown_sheet(&self) -> Option<Entity<Sheet>> {
-        self.sheet.as_ref().filter(|(path, _)| self.picture.as_ref() == Some(path)).map(|(_, s)| s.clone())
+        self.pane().sheet().cloned()
     }
 
     fn flush_sheet(&mut self, cx: &mut Context<Self>) {
-        if let Some((_, sheet)) = &self.sheet {
+        if let Some(sheet) = self.pane().sheet() {
             sheet.update(cx, |sheet, cx| sheet.flush(cx));
         }
+    }
+
+    /// Shows `file` in the active pane in place of its note, or the note again (`None`). A table
+    /// that is left keeps its place in the history and is saved first.
+    fn set_file(&mut self, file: Option<FileView>, cx: &mut Context<Self>) {
+        let leaving = self.pane().file.as_ref().is_some_and(|old| file.as_ref().is_none_or(|new| new.path != old.path));
+        if leaving && self.pane().sheet().is_some() {
+            // Ce que `track` aurait retenu au rendu suivant, tant que le tableau existait encore.
+            if !self.pane().peek {
+                self.mark_place(cx);
+            }
+            self.flush_sheet(cx);
+        }
+        self.pane_mut().file = file;
     }
 
     fn on_sheet_event(&mut self, _: Entity<Sheet>, event: &SheetEvent, cx: &mut Context<Self>) {
@@ -1740,31 +1773,32 @@ impl Shell {
     }
 
     fn open_note(&mut self, path: &Path, cx: &mut Context<Self>) {
-        self.peek = false;
+        self.pane_mut().peek = false;
         if self.load_note(path, cx) {
-            self.preview = false;
+            self.pane_mut().preview = false;
             self.touch(path);
         }
     }
 
     /// Affiche la note sans la compter comme ouverte.
     fn preview_note(&mut self, path: &Path, cx: &mut Context<Self>) {
-        self.peek = true;
+        self.pane_mut().peek = true;
         // La note déjà chargée, cachée par une image : il suffit de retirer l'image.
-        if self.path.as_deref() == Some(path) {
-            if self.picture.take().is_some() {
+        if self.pane().path.as_deref() == Some(path) {
+            if self.pane().file.is_some() {
+                self.set_file(None, cx);
                 cx.notify();
             }
         } else if self.load_note(path, cx) {
-            self.preview = true;
+            self.pane_mut().preview = true;
         }
     }
 
     /// L'aperçu devient une note ouverte.
     fn keep_preview(&mut self) {
-        self.peek = false;
-        if std::mem::take(&mut self.preview)
-            && let Some(path) = self.path.clone()
+        self.pane_mut().peek = false;
+        if std::mem::take(&mut self.pane_mut().preview)
+            && let Some(path) = self.pane().path.clone()
         {
             self.touch(&path);
         }
@@ -1781,29 +1815,29 @@ impl Shell {
             return;
         }
         self.new_note(String::new(), cx);
-        self.new_dir = dir;
+        self.pane_mut().new_dir = dir;
         if self.nav.panel == Panel::Full {
             self.nav.panel = Panel::Split;
         }
-        window.focus(&self.editor.focus_handle(cx));
+        window.focus(&self.pane().editor.focus_handle(cx));
         self.settle_nav(window, cx);
     }
 
     fn new_note(&mut self, text: String, cx: &mut Context<Self>) {
-        self.peek = false;
+        self.pane_mut().peek = false;
         self.leave(cx);
-        self.listing = None;
-        self.picture = None;
-        self.path = None;
-        self.origin = None;
-        self.synced = true;
-        self.preview = false;
-        self.new_dir = None;
-        self.fresh = true;
-        self.dirty = !text.is_empty();
-        (self.board_text, self.board_was) = (false, kanban::is_board(&text));
+        self.pane_mut().listing = None;
+        self.set_file(None, cx);
+        self.pane_mut().path = None;
+        self.pane_mut().origin = None;
+        self.pane_mut().synced = true;
+        self.pane_mut().preview = false;
+        self.pane_mut().new_dir = None;
+        self.pane_mut().fresh = true;
+        self.pane_mut().dirty = !text.is_empty();
+        (self.pane_mut().board.text, self.pane_mut().board.was) = (false, kanban::is_board(&text));
         let cursor = text.len();
-        self.editor.update(cx, |e, cx| e.load(text, cursor, cx));
+        self.pane().editor.update(cx, |e, cx| e.load(text, cursor, cx));
         self.push_dirs(cx);
         self.flush(cx);
         cx.notify();
@@ -1815,7 +1849,7 @@ impl Shell {
     fn leave(&mut self, cx: &mut Context<Self>) {
         self.mark_place(cx);
         self.flush(cx);
-        if let (Some(old), Some(path)) = (self.origin.take(), &self.path) {
+        if let (Some(old), Some(path)) = (self.pane_mut().origin.take(), &self.pane_mut().path) {
             let new = vault::stem(path);
             self.relink(&old, &new, cx);
         }
@@ -1825,10 +1859,10 @@ impl Shell {
     /// Une note créée ici puis vidée ne laisse pas de fichier vide derrière elle, ni dans les
     /// récentes. Seul un fichier vide sur le disque est retiré : rien d'écrit ne se perd.
     fn drop_if_empty(&mut self, cx: &mut Context<Self>) {
-        if !std::mem::take(&mut self.fresh) || !self.editor.read(cx).text().trim().is_empty() {
+        if !std::mem::take(&mut self.pane_mut().fresh) || !self.pane_mut().editor.read(cx).text().trim().is_empty() {
             return;
         }
-        let Some(path) = self.path.clone() else {
+        let Some(path) = self.pane().path.clone() else {
             return;
         };
         if fs::read_to_string(&path).is_ok_and(|text| text.trim().is_empty()) && fs::remove_file(&path).is_ok() {
@@ -1838,7 +1872,7 @@ impl Shell {
                 vault::save_config(root, &self.recent);
             }
             self.history.remove(&path);
-            self.path = None;
+            self.pane_mut().path = None;
             self.graph_stale = true;
             self.push_names(cx);
             self.refresh_graph(cx);
@@ -1901,7 +1935,7 @@ impl Shell {
             }
             let agreed = matches!(event, PaletteEvent::Submit(_)) && palette.read(cx).chosen() == Some(0);
             this.palette = None;
-            window.focus(&this.editor.focus_handle(cx));
+            window.focus(&this.pane().editor.focus_handle(cx));
             if agreed {
                 this.swap_notes(found.clone(), cx);
             }
@@ -1969,11 +2003,11 @@ impl Shell {
 
     /// Relit depuis le disque la note affichée, réécrite en dehors de l'éditeur.
     fn reload(&mut self, cx: &mut Context<Self>) {
-        if let Some(path) = self.path.clone() {
+        if let Some(path) = self.pane().path.clone() {
             // Relire n'est pas ouvrir : l'aperçu reste un aperçu, la page liste reste affichée.
-            let (preview, listing) = (self.preview, self.listing.take());
+            let (preview, listing) = (self.pane_mut().preview, self.pane_mut().listing.take());
             self.load_note(&path, cx);
-            (self.preview, self.listing) = (preview, listing);
+            (self.pane_mut().preview, self.pane_mut().listing) = (preview, listing);
         }
     }
 
@@ -1990,27 +2024,27 @@ impl Shell {
         let Some(root) = self.vault.clone() else {
             return;
         };
-        if !self.dirty {
+        if !self.pane().dirty {
             return;
         }
-        let content = self.editor.read(cx).text().to_string();
-        if self.path.is_none() && content.trim().is_empty() {
-            self.dirty = false;
+        let content = self.pane().editor.read(cx).text().to_string();
+        if self.pane().path.is_none() && content.trim().is_empty() {
+            self.pane_mut().dirty = false;
             return;
         }
         // Un titre `#` ajouté ou modifié en tête : le fichier porte désormais son nom.
-        if vault::h1_of(&content).is_some_and(|h1| self.h1.as_ref() != Some(&h1)) {
-            self.synced = true;
+        if vault::h1_of(&content).is_some_and(|h1| self.pane().h1.as_ref() != Some(&h1)) {
+            self.pane_mut().synced = true;
         }
-        let dir = self.new_dir.as_deref().unwrap_or(&root);
-        match vault::save(dir, self.path.as_deref(), self.synced, &content) {
+        let dir = self.pane().new_dir.as_deref().unwrap_or(&root);
+        match vault::save(dir, self.pane().path.as_deref(), self.pane().synced, &content) {
             Ok(path) => {
-                self.dirty = false;
+                self.pane_mut().dirty = false;
                 self.calm();
                 let (tags, links) = markdown::index(&content);
                 // Un modèle n'a ni tags ni liens.
                 let (tags, links) = if vault::in_templates(&root, &path) { (Vec::new(), Vec::new()) } else { (tags, links) };
-                let old = self.path.clone();
+                let old = self.pane().path.clone();
                 // Le graphe ne change que si la note est nouvelle, renommée ou liée autrement.
                 let known = self.notes.iter().find(|n| Some(&n.path) == old.as_ref());
                 if known.is_none_or(|n| n.path != path || n.links[..] != links[..]) {
@@ -2043,7 +2077,7 @@ impl Shell {
                     self.recent.retain(|p| Some(p) != old.as_ref());
                     self.touch(&path);
                     self.nav.reveal(&path);
-                    self.path = Some(path);
+                    self.pane_mut().path = Some(path);
                     self.push_names(cx);
                     self.push_dirs(cx);
                 }
@@ -2074,11 +2108,11 @@ impl Shell {
                 self.in_pane(pane, |this| {
                     // La clé du tableau vient d'être écrite dans le texte : on y reste, le
                     // bouton du coin montre le tableau quand on le veut.
-                    let board = kanban::is_board(this.editor.read(cx).text());
-                    this.board_text |= board && !this.board_was;
-                    this.board_was = board;
+                    let board = kanban::is_board(this.pane().editor.read(cx).text());
+                    this.pane_mut().board.text |= board && !this.pane_mut().board.was;
+                    this.pane_mut().board.was = board;
                     this.keep_preview();
-                    this.dirty = true;
+                    this.pane_mut().dirty = true;
                 });
                 self.save_gen += 1;
                 let generation = self.save_gen;
@@ -2115,7 +2149,7 @@ impl Shell {
                 let (source, theme) = (viewer::Source::Mermaid(source.clone()), self.theme);
                 let figure = cx.new(|cx| viewer::Viewer::new(source, theme, cx));
                 window.focus(&figure.focus_handle(cx));
-                self.figure = Some(figure);
+                self.pane_mut().figure = Some(figure);
                 cx.notify();
             }
         }
@@ -2151,14 +2185,14 @@ impl Shell {
     // ponytail: écriture synchrone à chaque geste ou frappe (quelques Ko) ;
     // la différer comme celle des notes si de gros schémas font attendre.
     fn on_canvas_event(&mut self, canvas: Entity<Canvas>, event: &CanvasEvent, cx: &mut Context<Self>) {
-        let shows = |pane: &Pane| pane.drawing.as_ref().is_some_and(|(_, open)| *open == canvas);
+        let shows = |pane: &Pane| pane.drawing() == Some(&canvas);
         if let Some(pane) = self.panes.iter().position(shows) {
             self.in_pane(pane, |this| this.canvas_event(canvas, event, cx));
         }
     }
 
     fn canvas_event(&mut self, canvas: Entity<Canvas>, event: &CanvasEvent, cx: &mut Context<Self>) {
-        let Some((path, _)) = self.drawing.as_ref().filter(|(_, open)| *open == canvas) else {
+        let Some(path) = self.pane().file_path().filter(|_| self.pane().drawing() == Some(&canvas)) else {
             return;
         };
         let result = match event {
@@ -2204,7 +2238,7 @@ impl Shell {
 
     /// Dossier d'un nouveau schéma : celui sélectionné dans l'arbre, sinon celui de la note.
     fn diagram_dir(&self) -> Option<PathBuf> {
-        let beside = self.path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
+        let beside = self.pane().path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
         self.nav.target_dir().or(beside).or(self.vault.clone())
     }
 
@@ -2264,9 +2298,9 @@ impl Shell {
         if self.nav.panel == Panel::Full {
             self.nav.panel = Panel::Split;
         }
-        if let Some((_, canvas)) = &self.drawing {
+        if let Some(canvas) = self.pane().drawing() {
             window.focus(&canvas.focus_handle(cx));
-        } else if let Some((_, viewer)) = &self.viewer {
+        } else if let Some(viewer) = self.pane().viewer() {
             window.focus(&viewer.focus_handle(cx));
         }
         self.settle_nav(window, cx);
@@ -2392,7 +2426,7 @@ impl Shell {
                 None => {}
             }
             this.palette = None;
-            window.focus(&this.editor.focus_handle(cx));
+            window.focus(&this.pane().editor.focus_handle(cx));
             cx.notify();
         })
         .detach();
@@ -2519,8 +2553,8 @@ impl Shell {
     fn note_aim(&self, pane: usize, at: Point<Pixels>, items: usize, cx: &App) -> Option<DropAim> {
         let shown = self.panes.get(pane)?;
         let editor = shown.editor.read(cx);
-        let board = kanban::is_board(editor.text()) && !shown.board_text;
-        let writes = shown.picture.is_none() && shown.listing.is_none() && !board && self.vault.is_some();
+        let board = kanban::is_board(editor.text()) && !shown.board.text;
+        let writes = shown.file.is_none() && shown.listing.is_none() && !board && self.vault.is_some();
         writes.then(|| DropAim { aim: Aim::Note { pane, at: editor.drop_point(at), version: editor.revision() }, items, pointer: at })
     }
 
@@ -2604,7 +2638,7 @@ impl Shell {
             }
             let chosen = palette.read(cx).chosen().and_then(|i| found.get(i)).cloned().filter(|_| matches!(event, PaletteEvent::Submit(_)));
             this.palette = None;
-            window.focus(&this.editor.focus_handle(cx));
+            window.focus(&this.pane().editor.focus_handle(cx));
             match (chosen, act) {
                 (Some(template), TemplateAct::New) => {
                     // La note naît dans le dossier choisi dans l'arbre, jamais dans celui des modèles.
@@ -2613,7 +2647,7 @@ impl Shell {
                     this.ask(tr("Name of the note", "Nom de la note"), "", window, cx, move |this, name, window, cx| {
                         // La note née, on écrit : le curseur est à sa marque, le focus à l'éditeur.
                         if this.create_from(&template, &name, &dir, cx).is_some() {
-                            window.focus(&this.editor.focus_handle(cx));
+                            window.focus(&this.pane().editor.focus_handle(cx));
                         }
                     });
                 }
@@ -2652,7 +2686,7 @@ impl Shell {
         self.rescan(&root, cx);
         self.nav.reveal(&path);
         self.open_note(&path, cx);
-        self.editor.update(cx, |editor, cx| editor.jump(cursor, false, cx));
+        self.pane().editor.update(cx, |editor, cx| editor.jump(cursor, false, cx));
         Some(path)
     }
 
@@ -2662,21 +2696,21 @@ impl Shell {
             Ok(text) => text,
             Err(e) => return self.say(Tone::Failed, format!("{} : {e}", tr("Template not read", "Modèle illisible")), cx),
         };
-        let title = self.path.as_deref().map(vault::stem).unwrap_or_default();
+        let title = self.pane().path.as_deref().map(vault::stem).unwrap_or_default();
         let (body, cursor) = markdown::fill(&text, &title, &date_name(today()), &time_name(clock()));
-        self.editor.update(cx, |editor, cx| editor.insert_filled(&body, cursor, cx));
+        self.pane().editor.update(cx, |editor, cx| editor.insert_filled(&body, cursor, cx));
     }
 
     /// La note ouverte, rangée comme modèle : son titre devient `{{title}}`.
     fn save_as_template(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.vault.is_none() || self.picture.is_some() || self.listing.is_some() {
+        if self.vault.is_none() || self.pane().file.is_some() || self.pane().listing.is_some() {
             return;
         }
         self.flush(cx);
-        let text = markdown::templatize(self.editor.read(cx).text());
-        let name = self.path.as_deref().map(vault::stem).unwrap_or_default();
+        let text = markdown::templatize(self.pane().editor.read(cx).text());
+        let name = self.pane().path.as_deref().map(vault::stem).unwrap_or_default();
         self.ask(tr("Name of the template", "Nom du modèle"), &name, window, cx, move |this, name, window, cx| {
-            window.focus(&this.editor.focus_handle(cx));
+            window.focus(&this.pane().editor.focus_handle(cx));
             let Some(root) = this.vault.clone() else { return };
             let dir = vault::template_dir(&root, &this.dirs).unwrap_or_else(|| root.join("Templates"));
             let path = dir.join(format!("{name}.md"));
@@ -2745,8 +2779,8 @@ impl Shell {
         let updates = self.prefs.updates;
         let installable = self.update.as_ref().filter(|r| r.asset.is_some()).map(|r| r.version.clone());
         let table = self.shown_sheet().is_some();
-        let lists = self.picture.is_none() && self.listing.is_none() && !self.board_shown(cx);
-        let cells = lists && self.editor.read(cx).in_table();
+        let lists = self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx);
+        let cells = lists && self.pane().editor.read(cx).in_table();
         let swap = !self.swapped.is_empty();
         let (commands, here) = self.palette_commands(window, cx);
         let context = self.here_group(cx).1;
@@ -2764,7 +2798,7 @@ impl Shell {
         let back = window.focused(cx);
         cx.subscribe_in(&palette, window, move |this, palette, event, window, cx| {
             this.palette = None;
-            window.focus(&this.editor.focus_handle(cx));
+            window.focus(&this.pane().editor.focus_handle(cx));
             let aside = palette.read(cx).aside;
             match event {
                 PaletteEvent::Open(path) if aside => this.open_aside(path, window, cx),
@@ -2775,7 +2809,7 @@ impl Shell {
                 }
                 PaletteEvent::OpenAt(path, row, query) => {
                     this.open_note(path, cx);
-                    this.editor.update(cx, |e, cx| e.select_in_row(*row, query, cx));
+                    this.pane().editor.update(cx, |e, cx| e.select_in_row(*row, query, cx));
                 }
                 PaletteEvent::Create(name) => this.open_wiki(name, cx),
                 PaletteEvent::ChangeVault => this.choose_vault(window, cx),
@@ -2795,7 +2829,7 @@ impl Shell {
                     // Le geste va à ce qui est affiché : la feuille d'un CSV, ou la note.
                     match this.shown_sheet() {
                         Some(sheet) => window.focus(&sheet.focus_handle(cx)),
-                        None => window.focus(&this.editor.focus_handle(cx)),
+                        None => window.focus(&this.pane().editor.focus_handle(cx)),
                     }
                     window.dispatch_action(op.action(), cx);
                 }
@@ -2809,8 +2843,8 @@ impl Shell {
                     }
                 }
                 PaletteEvent::Restyle(style) => {
-                    window.focus(&this.editor.focus_handle(cx));
-                    this.editor.update(cx, |e, cx| e.restyle(*style, cx));
+                    window.focus(&this.pane().editor.focus_handle(cx));
+                    this.pane().editor.update(cx, |e, cx| e.restyle(*style, cx));
                 }
                 PaletteEvent::UndoSwap => this.undo_swap(cx),
                 PaletteEvent::NewBoard => this.new_note(kanban::new_board(), cx),
@@ -3098,9 +3132,9 @@ impl Shell {
     fn here(&self, cx: &App) -> Option<&'static str> {
         if self.shown_sheet().is_some() {
             Some(tr("CSV tables", "Tableaux CSV"))
-        } else if self.picture.is_some() && self.drawing.is_some() {
+        } else if self.pane().drawing().is_some() {
             Some(tr("Diagrams", "Schémas"))
-        } else if self.picture.is_none() && self.listing.is_none() && self.editor.read(cx).in_table() {
+        } else if self.pane().file.is_none() && self.pane().listing.is_none() && self.pane().editor.read(cx).in_table() {
             Some(tr("Tables in a note", "Tableaux d'une note"))
         } else {
             None
@@ -3113,11 +3147,11 @@ impl Shell {
         use commands::Group;
         if self.shown_sheet().is_some() {
             (Some(Group::Table), tr("CSV table", "Tableau CSV"))
-        } else if self.picture.is_some() && self.drawing.is_some() {
+        } else if self.pane().drawing().is_some() {
             (Some(Group::Diagram), tr("Diagram", "Schéma"))
-        } else if self.picture.is_some() || self.listing.is_some() || self.board_shown(cx) {
+        } else if self.pane().file.is_some() || self.pane().listing.is_some() || self.board_shown(cx) {
             (None, "")
-        } else if self.editor.read(cx).in_table() {
+        } else if self.pane().editor.read(cx).in_table() {
             (Some(Group::Table), tr("Table", "Tableau"))
         } else {
             (Some(Group::Block), "Note")
@@ -3481,8 +3515,8 @@ impl Shell {
         // clic mène au commentaire, prêt à être retouché ; la coche le résout.
         // ponytail: la note est relue à chaque rendu (une recherche de `{==`) ; garder la
         // liste d'une version du texte à l'autre si de très longues notes en pâtissent.
-        let said: Vec<(String, String, usize)> = match self.picture.is_none() && self.listing.is_none() && !self.board_shown(cx) {
-            true => markdown::all_comments(self.editor.read(cx).text()).into_iter().map(|(noted, said, at)| (noted.into(), said.into(), at)).collect(),
+        let said: Vec<(String, String, usize)> = match self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx) {
+            true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|(noted, said, at)| (noted.into(), said.into(), at)).collect(),
             false => Vec::new(),
         };
         // Leur bouton, à gauche de celui de la copie, ouvre et referme le panneau ; le
@@ -3493,7 +3527,7 @@ impl Shell {
                 .tooltip(ui::widgets::tip(tr("Comments of the note", "Commentaires de la note"), String::new(), t))
                 .absolute()
                 .bottom_4()
-                .right(px(if kanban::is_board(self.editor.read(cx).text()) { 84. } else { 50. }))
+                .right(px(if kanban::is_board(self.pane().editor.read(cx).text()) { 84. } else { 50. }))
                 .size(px(30.))
                 .rounded(px(8.))
                 .occlude()
@@ -3525,25 +3559,25 @@ impl Shell {
         // Une note qui est un tableau kanban : son bouton passe du tableau au texte. Le
         // tableau cache la note, qui ne doit plus recevoir la frappe.
         let board = self.board_shown(cx);
-        if board && self.editor.focus_handle(cx).is_focused(window) {
-            window.focus(&self.board_focus);
+        if board && self.pane().editor.focus_handle(cx).is_focused(window) {
+            window.focus(&self.pane().board.focus);
         }
         if !cx.has_active_drag() {
-            self.board_drag = None;
+            self.pane_mut().board.drag = None;
         }
         // La page liste refermée avec la saisie dans son filtre ou une de ses cellules : plus
         // rien ne la reçoit, elle revient à la note.
-        if active && self.listing.is_none() && window.focused(cx).is_none() {
-            window.focus(&self.editor.focus_handle(cx));
+        if active && self.pane().listing.is_none() && window.focused(cx).is_none() {
+            window.focus(&self.pane().editor.focus_handle(cx));
         }
         if !board {
-            self.board_field = None;
+            self.pane_mut().board.field = None;
             // Le tableau quitté (une autre note s'ouvre), la saisie revient à la note.
-            if self.board_focus.is_focused(window) {
-                window.focus(&self.editor.focus_handle(cx));
+            if self.pane().board.focus.is_focused(window) {
+                window.focus(&self.pane().editor.focus_handle(cx));
             }
         }
-        let boards = kanban::is_board(self.editor.read(cx).text()) && self.picture.is_none() && self.listing.is_none();
+        let boards = kanban::is_board(self.pane().editor.read(cx).text()) && self.pane().file.is_none() && self.pane().listing.is_none();
         let flip = boards.then(|| {
             ui::widgets::button("board-toggle", "board.svg", board, t)
                 .tooltip(ui::widgets::tip(if board { tr("Show the text", "Voir le texte") } else { tr("Show the board", "Voir le tableau") }, String::new(), t))
@@ -3556,7 +3590,7 @@ impl Shell {
                 .occlude()
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });
-        self.editor.update(cx, |e, _| {
+        self.pane().editor.update(cx, |e, _| {
             e.corner = 1 + talk.is_some() as usize + boards as usize;
             e.bar_here = active;
         });
@@ -3595,8 +3629,8 @@ impl Shell {
                         .child(div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(noted.to_string()))
                         .child(ui::widgets::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
-                            this.editor.update(cx, |e, cx| e.resolve_comment(at, cx));
-                            window.focus(&this.editor.focus_handle(cx));
+                            this.pane().editor.update(cx, |e, cx| e.resolve_comment(at, cx));
+                            window.focus(&this.pane().editor.focus_handle(cx));
                         }))),
                 )
                 .child(div().text_color(if said.is_empty() { t.soft } else { t.text }).child(match said.is_empty() {
@@ -3604,8 +3638,8 @@ impl Shell {
                     false => said.to_string(),
                 }))
                 .on_click(cx.listener(move |this, _, window, cx| {
-                    this.editor.update(cx, |e, cx| e.jump(inside, false, cx));
-                    window.focus(&this.editor.focus_handle(cx));
+                    this.pane().editor.update(cx, |e, cx| e.jump(inside, false, cx));
+                    window.focus(&this.pane().editor.focus_handle(cx));
                 }))
         });
         let comments = column.map(|column| {
@@ -3644,50 +3678,39 @@ impl Shell {
             .occlude()
             .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
         // L'image choisie dans le panneau ; elle s'efface dès que la note reprend la main.
-        if self.editor.focus_handle(cx).is_focused(window) {
-            self.picture = None;
-            self.listing = None;
-            self.figure = None;
-        }
-        if self.drawing.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
-            self.drawing = None;
-        }
-        if self.viewer.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
-            self.viewer = None;
+        if self.pane().editor.focus_handle(cx).is_focused(window) {
+            self.set_file(None, cx);
+            self.pane_mut().listing = None;
+            self.pane_mut().figure = None;
         }
         let note = div().flex_1().min_w_0().h_full().relative();
-        if self.sheet.as_ref().map(|(path, _)| path) != self.picture.as_ref() {
-            self.flush_sheet(cx);
-            self.sheet = None;
-        }
-        let listing = self.listing.is_some().then(|| self.render_listing(cx));
-        let note = match (&self.picture, &self.drawing) {
+        let listing = self.pane().listing.is_some().then(|| self.render_listing(cx));
+        let file = self.pane().file.as_ref().map(|file| (file.path.clone(), file.kind.clone()));
+        let note = match file {
             _ if listing.is_some() => note.children(listing),
-            _ if let Some(figure) = self.figure.clone() => {
+            _ if let Some(figure) = self.pane().figure.clone() => {
                 figure.update(cx, |figure, _| figure.sync(t));
                 note.child(figure)
             }
             _ if board => note.child(self.render_board(cx)).children(flip),
-            (Some(_), _) if self.sheet.is_some() => {
-                let (_, sheet) = self.sheet.clone().unwrap();
+            Some((_, FileKind::Sheet(sheet))) => {
                 sheet.update(cx, |sheet, _| sheet.sync(t, client));
                 note.child(sheet)
             }
-            (Some(_), Some((_, canvas))) => {
+            Some((_, FileKind::Drawing(canvas))) => {
                 canvas.update(cx, |canvas, _| canvas.sync(t, client));
-                note.child(canvas.clone())
+                note.child(canvas)
             }
-            (Some(path), None) if self.viewer.as_ref().is_some_and(|(open, _)| open == path) => {
-                let (_, viewer) = self.viewer.clone().unwrap();
+            Some((_, FileKind::Svg(viewer))) => {
                 viewer.update(cx, |viewer, _| viewer.sync(t));
                 note.child(viewer)
             }
-            (Some(path), None) => note.p_6().flex().items_center().justify_center().child(
-                img(path.clone()).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
+            Some((path, FileKind::Image)) => note.p_6().flex().items_center().justify_center().child(
+                img(path).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
             ),
-            (None, _) => {
-                let empty = self.editor.read(cx).text().is_empty().then(|| self.render_empty(cx));
-                note.child(self.editor.clone()).children(empty).child(copy).children(talk).children(flip)
+            None => {
+                let empty = self.pane().editor.read(cx).text().is_empty().then(|| self.render_empty(cx));
+                note.child(self.pane().editor.clone()).children(empty).child(copy).children(talk).children(flip)
             }
         };
         // Pendant qu'on glisse un fichier de l'arbre, la zone qui le recevrait est teintée.
@@ -3706,7 +3729,7 @@ impl Shell {
         let area = div()
             .id(("pane", pane))
             .debug_selector(move || format!("pane-{pane}"))
-            .track_focus(&self.zone)
+            .track_focus(&self.pane().zone)
             .relative()
             .h_full()
             .min_w_0()
@@ -3831,11 +3854,11 @@ impl Render for Shell {
                 self.aim_drop(None, cx);
             }
         }
-        if self.editor.focus_handle(cx).is_focused(window) {
+        if self.pane().editor.focus_handle(cx).is_focused(window) {
             self.keep_preview();
         }
         self.track(cx);
-        let title = match (self.picture.as_ref().or(self.path.as_ref()), &self.vault) {
+        let title = match (self.pane().file_path().or(self.pane().path.as_ref()), &self.vault) {
             (Some(p), _) => vault::stem(p),
             (None, Some(_)) => tr("New note", "Nouvelle note").to_string(),
             (None, None) => "Bref".to_string(),
@@ -4171,7 +4194,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &NewDiagram, window, cx| this.new_diagram(window, cx)))
             // Échap dans un schéma où plus rien n'est en cours : retour à la note.
             .on_action(cx.listener(|this, _: &canvas::Cancel, window, cx| {
-                window.focus(&this.editor.focus_handle(cx));
+                window.focus(&this.pane().editor.focus_handle(cx));
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &nav::ShowTree, window, cx| {
@@ -4270,9 +4293,9 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &CloseHelp, window, cx| {
                 if this.help {
                     this.set_help(false, window, cx)
-                } else if this.zone.is_focused(window) {
+                } else if this.pane().zone.is_focused(window) {
                     // Un pane qui ne montre qu'une image : Échap revient à sa note.
-                    window.focus(&this.editor.focus_handle(cx));
+                    window.focus(&this.pane().editor.focus_handle(cx));
                 }
             }))
             .key_context("Shell")

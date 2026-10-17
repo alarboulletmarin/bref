@@ -44,22 +44,22 @@ fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
         // Sur le gros tableau, on reste à l'intérieur de ses lignes : de quoi ne pas le couper en deux.
         let pieces: Vec<&str> = if n == 1 { vec!["a", "é", " ", "texte", "x y", "12", ","] } else { pieces.to_vec() };
         let keys: Vec<&str> = if n == 1 { vec!["left", "right", "up", "down", "end", "backspace"] } else { keys.to_vec() };
-        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load(doc, len / 2, cx)));
+        shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(doc, len / 2, cx)));
         cx.run_until_parked();
-        shell.update_in(cx, |s, window, cx| window.focus(&s.editor.focus_handle(cx)));
+        shell.update_in(cx, |s, window, cx| window.focus(&s.pane().editor.focus_handle(cx)));
         for _ in 0..steps {
-            let size = shell.read_with(cx, |s, cx| s.editor.read(cx).text().len());
+            let size = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().len());
             match next(8) {
                 0 => {
                     let at = next(size + 1);
-                    shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.place_cursor(at, cx)));
+                    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.place_cursor(at, cx)));
                 }
                 1 | 2 => cx.simulate_keystrokes(keys[next(keys.len())]),
                 _ => cx.simulate_input(pieces[next(pieces.len())]),
             }
             cx.run_until_parked();
         }
-        (full, reused, inside) = shell.read_with(cx, |s, cx| s.editor.read(cx).layouts());
+        (full, reused, inside) = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).layouts());
     }
     println!("mises en page : {full} complètes, {reused} reprises, dont {inside} dans un très gros tableau");
     assert!(inside > 20 || steps < 200, "peu de reprises dans un très gros tableau : {inside}");

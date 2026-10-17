@@ -108,7 +108,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(root.join(".trash/Courses.md").is_file());
     assert_eq!(text(cx), "");
     let left = shell.read_with(cx, |s, _| {
-        assert!(s.dirs.is_empty() && s.path.is_none() && s.recent.iter().all(|p| p.is_file()));
+        assert!(s.dirs.is_empty() && s.pane().path.is_none() && s.recent.iter().all(|p| p.is_file()));
         s.notes.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
     });
     assert_eq!(left, ["Idées"]);
@@ -128,7 +128,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // son nom. Sans titre touché, une note au nom libre garde le sien.
     fs::write(root.join("brouillon.md"), "texte\n").unwrap();
     shell.update(cx, |s, cx| s.open_note(&root.join("brouillon.md"), cx));
-    cx.update(|window, cx| window.focus(&shell.read(cx).editor.focus_handle(cx)));
+    cx.update(|window, cx| window.focus(&shell.read(cx).pane().editor.focus_handle(cx)));
     cx.simulate_keystrokes("secondary-end");
     cx.simulate_input("suite");
     cx.executor().advance_clock(Duration::from_millis(500));

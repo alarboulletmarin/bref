@@ -60,7 +60,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // le « + » d'un trait insère ; l'angle prend tout le tableau.
     j.load(cx, grid, grid.find("Léa").unwrap());
     cx.run_until_parked();
-    let center = |cx: &mut gpui::VisualTestContext, part: editor::Part| shell.read_with(cx, |s, cx| s.editor.read(cx).part_center(part).unwrap());
+    let center = |cx: &mut gpui::VisualTestContext, part: editor::Part| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).part_center(part).unwrap());
     let none = gpui::Modifiers::none();
     let at = center(cx, editor::Part::Col(1));
     cx.simulate_click(at, none);
@@ -168,14 +168,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let wide = format!("|{}\n|{}\n|{}\n", " colonne |".repeat(30), " --- |".repeat(30), " texte |".repeat(30));
     j.load(cx, &wide, 0);
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).part_center(Part::Col(0)).is_some() && s.editor.read(cx).part_center(Part::Col(29)).is_none()));
+    assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).part_center(Part::Col(0)).is_some() && s.pane().editor.read(cx).part_center(Part::Col(29)).is_none()));
     let big = format!("| a | b |\n| - | - |\n{}", "| 1 | 2 |\n".repeat(grid::BIG + 5));
     j.load(cx, &big, 0);
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).part_center(Part::Col(0)).is_none() && !s.editor.read(cx).in_table()));
+    assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).part_center(Part::Col(0)).is_none() && !s.pane().editor.read(cx).in_table()));
     // Dans le menu de la note : les gestes du tableau, et sa palette.
     j.load(cx, grid, grid.find("Léa").unwrap());
-    assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).in_table()));
+    assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).in_table()));
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("colonne à droite");
     cx.simulate_keystrokes("down enter");

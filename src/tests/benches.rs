@@ -130,7 +130,7 @@ fn sheet_convert(cx: &mut TestAppContext) {
     let start = Instant::now();
     shell.update_in(cx, |s, window, cx| {
         s.open_note(&exported, cx);
-        window.focus(&s.editor.focus_handle(cx));
+        window.focus(&s.pane().editor.focus_handle(cx));
     });
     cx.run_until_parked();
     println!("ouverture de la note Markdown : {:?}", start.elapsed());
@@ -147,7 +147,7 @@ fn sheet_convert(cx: &mut TestAppContext) {
     cx.write_to_clipboard(ClipboardItem::new_string(tsv));
     shell.update_in(cx, |s, window, cx| {
         s.new_note(String::new(), cx);
-        window.focus(&s.editor.focus_handle(cx));
+        window.focus(&s.pane().editor.focus_handle(cx));
     });
     let start = Instant::now();
     cx.simulate_keystrokes("secondary-v");
@@ -185,12 +185,12 @@ fn md_table_scale(cx: &mut TestAppContext) {
         let start = Instant::now();
         shell.update_in(cx, |s, window, cx| {
             s.open_note(&file, cx);
-            window.focus(&s.editor.focus_handle(cx));
+            window.focus(&s.pane().editor.focus_handle(cx));
         });
         cx.run_until_parked();
         let opened = start.elapsed();
         // Au milieu du tableau, loin des lignes qui fixent ses colonnes.
-        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| {
+        shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| {
             let at = e.text().len() / 2;
             e.place_cursor(at, cx)
         }));
@@ -261,13 +261,13 @@ fn profile_typing(cx: &mut TestAppContext) {
     } else {
         (0..lines).map(|j| format!("Ligne {j} avec **gras**, `code`, [[Note {}]] et #tag{} -> fin.\n", j % 2000, j % 12)).collect()
     };
-    shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load(format!("# Grosse\n\n{big}"), 100, cx)));
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(format!("# Grosse\n\n{big}"), 100, cx)));
     cx.run_until_parked();
     for _ in 0..300 {
         cx.simulate_input("a");
         cx.run_until_parked();
     }
-    println!("mises en page (complètes, reprises, dans un gros tableau) : {:?}", shell.read_with(cx, |s, cx| s.editor.read(cx).layouts()));
+    println!("mises en page (complètes, reprises, dans un gros tableau) : {:?}", shell.read_with(cx, |s, cx| s.pane().editor.read(cx).layouts()));
     fs::remove_dir_all(&root).unwrap();
 }
 
@@ -439,12 +439,12 @@ fn bench(cx: &mut TestAppContext) {
     // Selon la longueur de la note : le prix d'une frappe est un prix fixe, plus un peu par ligne.
     for lines in [300, 1000] {
         let body: String = (0..lines).map(|j| format!("Ligne {j} avec **gras**, `code`, [[Note {}]] et #tag{} -> fin.\n", j % 2000, j % 12)).collect();
-        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load(format!("# Note\n\n{body}"), 100, cx)));
+        shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(format!("# Note\n\n{body}"), 100, cx)));
         cx.run_until_parked();
         time(&format!("frappe dans une note de {lines} lignes"), cx, &|cx| cx.simulate_input("a"));
     }
     // Le même geste sur une note courte : ce qui reste est le prix fixe d'une frappe.
-    shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load("# Courte\n\nun peu de texte\n".into(), 20, cx)));
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load("# Courte\n\nun peu de texte\n".into(), 20, cx)));
     cx.run_until_parked();
     time("frappe dans une note courte", cx, &|cx| cx.simulate_input("a"));
     // Un grand tableau, dont les cellules passent à la ligne.
@@ -452,7 +452,7 @@ fn bench(cx: &mut TestAppContext) {
         .map(|j| format!("| Ligne {j} | texte moyen avec **gras** et `code` {j} | {}| [[Note {}]] | x | y |\n", "mot ".repeat(j % 30), j))
         .collect();
     let table = format!("# Tableau\n\n| A | B | C | D | E | F |\n| --- | --- | --- | --- | --- | --- |\n{rows}");
-    shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load(table, 120, cx)));
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(table, 120, cx)));
     cx.run_until_parked();
     time("frappe dans un tableau de 400 lignes", cx, &|cx| cx.simulate_input("a"));
     time("flèche bas dans ce tableau", cx, &|cx| cx.simulate_keystrokes("down"));

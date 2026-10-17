@@ -13,12 +13,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     fs::write(&hist_csv, "a,b\n1,2\n3,4\n5,6\n").unwrap();
     j.settle(cx);
     let (back, forward) = if cfg!(target_os = "macos") { ("cmd-[", "cmd-]") } else { ("alt-left", "alt-right") };
-    let seen = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| (s.picture.clone(), s.path.clone()));
+    let seen = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| (s.pane().file_path().cloned(), s.pane().path.clone()));
     let on_note = |path: &Path| (None, Some(path.to_path_buf()));
     shell.update_in(cx, |s, window, cx| s.open_from_nav(&hist_a, window, cx));
     // Loin dans la note : le curseur et le défilement seront retrouvés au retour.
     cx.simulate_keystrokes("secondary-end up up up");
-    let place = shell.read_with(cx, |s, cx| s.editor.read(cx).view());
+    let place = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view());
     assert!(place.0 > 1000 && place.1 > 0., "{place:?}");
     // Suivre un lien, revenir, repartir.
     shell.update_in(cx, |s, window, cx| s.follow(&Link::Wiki("Hist B".into()), window, cx));
@@ -26,7 +26,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(shell.read_with(cx, |s, _| s.history.can_back() && !s.history.can_forward()));
     cx.simulate_keystrokes(back);
     assert_eq!(seen(cx), on_note(&hist_a));
-    assert_eq!(shell.read_with(cx, |s, cx| s.editor.read(cx).view()), place);
+    assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view()), place);
     cx.simulate_input("x");
     assert!(text(cx).contains("x"), "la saisie est dans la note retrouvée");
     cx.simulate_keystrokes("backspace");
@@ -148,7 +148,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-enter");
     assert_eq!(open(cx), both(0, "C", "B"));
     // Ctrl+Maj+clic sur un lien : la note liée s'ouvre à côté.
-    let link = shell.read_with(cx, |s, cx| s.editor.read(cx).point_of("# Pane C\n\n[[Pa".len()).unwrap());
+    let link = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of("# Pane C\n\n[[Pa".len()).unwrap());
     cx.simulate_click(link, gpui::Modifiers { shift: true, ..gpui::Modifiers::secondary_key() });
     assert_eq!(open(cx), both(1, "C", "A"));
     // « Ouvrir à côté » dans le menu de l'arbre.

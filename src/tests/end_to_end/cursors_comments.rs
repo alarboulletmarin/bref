@@ -8,7 +8,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Plusieurs curseurs : Ctrl+D prend le mot, puis ses occurrences suivantes ; la frappe,
     // l'effacement et les déplacements valent pour tous, un seul Ctrl+Z défait le tout,
     // Échap revient à un curseur. Alt+clic en pose un de plus.
-    let cursors = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).cursors());
+    let cursors = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).cursors());
     j.load(cx, "un chat\nun chien\nun rat", 0);
     cx.simulate_keystrokes("secondary-d secondary-d secondary-d");
     assert_eq!(cursors(cx), 3);
@@ -52,8 +52,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     let view = cx.update(|window, _| window.viewport_size());
     cx.simulate_click(point(view.width - px(150.), px(125.)), gpui::Modifiers::none());
-    assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).position() == 17));
-    shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.resolve_comment(34, cx)));
+    assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).position() == 17));
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.resolve_comment(34, cx)));
     assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\nfin");
     cx.simulate_keystrokes("secondary-z");
     // Le bouton du coin, à gauche de la copie, referme le panneau (et le rouvre).
@@ -70,7 +70,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("down enter");
     cx.simulate_input("revoir");
     cx.simulate_keystrokes("enter");
-    assert!(shell.read_with(cx, |s, cx| s.palette.is_none() && !s.comments_shut && s.editor.read(cx).position() == 5));
+    assert!(shell.read_with(cx, |s, cx| s.palette.is_none() && !s.comments_shut && s.pane().editor.read(cx).position() == 5));
     cx.simulate_keystrokes("secondary-shift-m");
     assert_eq!(text(cx), "- un mot ici\n{==fin==}{>>ok<<}");
     cx.simulate_keystrokes("secondary-z");

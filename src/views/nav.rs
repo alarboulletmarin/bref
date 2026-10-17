@@ -481,7 +481,7 @@ impl Shell {
     /// affiché, et la disposition est mémorisée.
     pub fn settle_nav(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.nav.dragging = false;
-        let editor = self.editor.focus_handle(cx);
+        let editor = self.pane().editor.focus_handle(cx);
         match self.nav.panel {
             Panel::Rail if self.nav.focus.contains_focused(window, cx) => window.focus(&editor),
             Panel::Full if editor.is_focused(window) => window.focus(&self.nav.focus),
@@ -651,7 +651,7 @@ impl Shell {
         let monday = tr("sunday", "monday") == "monday";
         let (lead, days) = markdown::month(year, month, monday);
         let names: HashSet<&str> = self.notes.iter().map(|n| n.name.as_str()).collect();
-        let (today, open) = (crate::platform::clock::today(), self.path.as_deref().map(vault::stem));
+        let (today, open) = (crate::platform::clock::today(), self.pane().path.as_deref().map(vault::stem));
         let (en, fr) = markdown::MONTHS[month as usize - 1];
         let step = |id: &'static str, icon: &'static str, by: i32, cx: &mut Context<Self>| {
             button(id, icon, false, t).on_click(cx.listener(move |this, _, _, cx| this.day_step(0, by, cx)))
@@ -739,7 +739,7 @@ impl Shell {
         // de la note, et le panneau garde la main.
         match self.shown_sheet() {
             Some(sheet) => window.focus(&sheet.focus_handle(cx)),
-            None if self.picture.is_none() => window.focus(&self.editor.focus_handle(cx)),
+            None if self.pane().file.is_none() => window.focus(&self.pane().editor.focus_handle(cx)),
             None => {}
         }
         self.settle_nav(window, cx);
@@ -817,7 +817,7 @@ impl Shell {
             _ => None,
         };
         if let Some(action) = action {
-            window.focus(&self.editor.focus_handle(cx));
+            window.focus(&self.pane().editor.focus_handle(cx));
             return window.dispatch_action(action, cx);
         }
         let Some(root) = self.vault.clone() else {
@@ -1057,18 +1057,16 @@ impl Shell {
         }
         self.nav.open = self.nav.open.iter().map(shift).collect();
         self.each_pane(|this| {
-            this.picture = this.picture.as_ref().map(shift);
-            if let Some((path, _)) = &mut this.drawing {
-                *path = shift(path);
+            if let Some(file) = &mut this.pane_mut().file {
+                file.path = shift(&file.path);
+                if let crate::FileKind::Sheet(sheet) = &file.kind {
+                    let moved = file.path.clone();
+                    sheet.update(cx, |sheet, _| sheet.moved(moved));
+                }
             }
-            if let Some((path, sheet)) = &mut this.sheet {
-                *path = shift(path);
-                let moved = path.clone();
-                sheet.update(cx, |sheet, _| sheet.moved(moved));
-            }
-            this.new_dir = this.new_dir.as_ref().map(shift);
-            this.path = this.path.as_ref().map(shift);
-            if reload && this.path.as_deref() == Some(to) {
+            this.pane_mut().new_dir = this.pane_mut().new_dir.as_ref().map(shift);
+            this.pane_mut().path = this.pane_mut().path.as_ref().map(shift);
+            if reload && this.pane().path.as_deref() == Some(to) {
                 this.reload(cx);
             }
         });
@@ -1090,11 +1088,11 @@ impl Shell {
         self.recent.retain(|p| !gone(p));
         self.nav.sel = None;
         self.each_pane(|this| {
-            if this.picture.as_ref().is_some_and(gone) {
-                this.picture = None;
+            if this.pane().file_path().is_some_and(gone) {
+                this.set_file(None, cx);
             }
-            if this.path.as_ref().is_some_and(gone) {
-                this.path = None;
+            if this.pane().path.as_ref().is_some_and(gone) {
+                this.pane_mut().path = None;
                 this.new_note(String::new(), cx);
             }
         });
@@ -1142,7 +1140,7 @@ impl Shell {
             groups[1].push((tr("Cut", "Couper"), Do::Cut));
             groups[1].push((tr("Copy", "Copier"), Do::Copy));
             groups[1].push((tr("Paste", "Coller"), Do::Paste));
-            if self.editor.read(cx).in_table() {
+            if self.pane().editor.read(cx).in_table() {
                 // Dans un tableau : ses lignes, ses colonnes, puis le tableau.
                 use editor::TableOp::*;
                 for (group, ops) in [
@@ -1295,15 +1293,15 @@ impl Shell {
         })
         .detach();
         window.focus(&filter.focus_handle(cx));
-        self.peek = false;
-        self.listing = Some(Listing { of, by: 0, back: false, filter, edit: None });
+        self.pane_mut().peek = false;
+        self.pane_mut().listing = Some(Listing { of, by: 0, back: false, filter, edit: None });
         cx.notify();
     }
 
     /// Page liste : les colonnes (« Note », puis les clés des en-têtes) et, triées, les notes du
     /// dossier ou du tag que le filtre garde, avec leurs cellules.
     pub fn listed(&self, cx: &App) -> Option<(Vec<String>, Vec<(PathBuf, Vec<String>)>)> {
-        let Listing { of, by, back, filter, .. } = self.listing.as_ref()?;
+        let Listing { of, by, back, filter, .. } = self.pane().listing.as_ref()?;
         let tag = tag_of(of);
         let inside: Vec<&Note> = self.notes.iter().filter(|note| tag.map_or_else(|| note.path.starts_with(of), |tag| note.tags.iter().any(|t| t == tag))).collect();
         let bodies: Vec<&str> = inside.iter().map(|note| &*note.body).collect();
@@ -1325,7 +1323,7 @@ impl Shell {
 
     /// Trie la page liste par cette colonne ; la redemander inverse l'ordre.
     pub fn sort_listing(&mut self, col: usize, cx: &mut Context<Self>) {
-        if let Some(Listing { by, back, .. }) = &mut self.listing {
+        if let Some(Listing { by, back, .. }) = &mut self.pane_mut().listing {
             (*back, *by) = (*by == col && !*back, col);
         }
         cx.notify();
@@ -1346,7 +1344,7 @@ impl Shell {
         })
         .detach();
         window.focus(&field.focus_handle(cx));
-        if let Some(listing) = &mut self.listing {
+        if let Some(listing) = &mut self.pane_mut().listing {
             listing.edit = Some((path, key, field));
         }
         cx.notify();
@@ -1354,7 +1352,7 @@ impl Shell {
 
     /// Referme la cellule ouverte sans rien écrire ; la frappe revient au filtre.
     fn list_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(listing) = &mut self.listing
+        if let Some(listing) = &mut self.pane_mut().listing
             && listing.edit.take().is_some()
         {
             window.focus(&listing.filter.focus_handle(cx));
@@ -1364,7 +1362,7 @@ impl Shell {
 
     /// Valide la cellule ouverte : sa clé est réécrite dans l'en-tête de la note, et rien d'autre.
     pub fn list_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((path, key, field)) = self.listing.as_mut().and_then(|listing| listing.edit.clone()) else {
+        let Some((path, key, field)) = self.pane_mut().listing.as_mut().and_then(|listing| listing.edit.clone()) else {
             return;
         };
         self.list_close(window, cx);
@@ -1390,7 +1388,7 @@ impl Shell {
         self.refresh_graph(cx);
         // La note affichée sous la liste est relue : elle vient de changer sur le disque.
         self.each_pane(|this| {
-            if this.path.as_ref() == Some(&path) {
+            if this.pane().path.as_ref() == Some(&path) {
                 this.reload(cx);
             }
         });
@@ -1405,7 +1403,7 @@ impl Shell {
     pub fn render_listing(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let (keys, rows) = self.listed(cx).unwrap_or_default();
-        let Some(Listing { of, by, back, filter, edit }) = self.listing.as_ref() else {
+        let Some(Listing { of, by, back, filter, edit }) = self.pane().listing.as_ref() else {
             return div().into_any_element();
         };
         let (by, back, count) = (*by, *back, rows.len());
@@ -1438,7 +1436,7 @@ impl Shell {
                         .child(text)
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.open_note(&path, cx);
-                            window.focus(&this.editor.focus_handle(cx));
+                            window.focus(&this.pane().editor.focus_handle(cx));
                         }))
                         .into_any_element(),
                     _ => {
@@ -1577,7 +1575,7 @@ impl Shell {
                     true => self.nav.sel.as_ref() == Some(&row.path),
                     false => marked.contains(&row.path),
                 };
-                let current = self.path.as_ref() == Some(&row.path);
+                let current = self.pane().path.as_ref() == Some(&row.path);
                 // Dans la liste des récents, le dossier de la note sert de détail.
                 let detail = match (&self.vault, row.path.parent()) {
                     (Some(root), Some(dir)) if !tree => dir
@@ -1740,15 +1738,15 @@ impl Shell {
         let t = self.theme;
         let (mode, panel) = (self.nav.mode, self.nav.panel);
         let unfolded = panel != Panel::Rail;
-        if !self.preview {
-            self.nav.anchor = self.path.clone();
+        if !self.pane().preview {
+            self.nav.anchor = self.pane().path.clone();
         }
         let source = self.rows_source();
         if source != self.nav.rows_from {
             self.nav.rows = if unfolded { self.nav_rows() } else { Vec::new() };
             self.nav.rows_from = source;
         }
-        let (current, selected) = (self.path.clone(), self.nav.sel.clone());
+        let (current, selected) = (self.pane().path.clone(), self.nav.sel.clone());
         self.graph.update(cx, |graph, _| graph.sync(t, current.as_deref(), selected.as_deref()));
         if std::mem::take(&mut self.nav.reveal)
             && let Some(ix) = self.selected_row()
@@ -1989,7 +1987,7 @@ impl Shell {
                 if this.nav.panel == Panel::Full {
                     this.nav.panel = Panel::Split;
                 }
-                window.focus(&this.editor.focus_handle(cx));
+                window.focus(&this.pane().editor.focus_handle(cx));
                 this.settle_nav(window, cx);
             }))
             .child(header)

@@ -7,7 +7,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
     cx.simulate_input("# Test");
     // Bas de page : le compteur suit la frappe, puis ne compte que la sélection.
-    let counts = |cx: &mut gpui::VisualTestContext| shell.update(cx, |s, cx| s.editor.update(cx, |e, _| e.counts()));
+    let counts = |cx: &mut gpui::VisualTestContext| shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, _| e.counts()));
     assert_eq!(counts(cx), "1 mot · 6 caractères");
     cx.simulate_keystrokes("shift-left shift-left");
     assert_eq!(counts(cx), "Sélection : 1 mot · 2 caractères");

@@ -10,7 +10,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // restent distincts, celui du bloc de code n'en est pas un), Échap le rend, Entrée l'y laisse.
     let plan = "# Un\n\ntexte\n\n## Deux\n\n```\n# code\n```\n\n## Deux\n\nfin\n";
     j.load(cx, plan, plan.find("texte").unwrap());
-    let caret = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).position());
+    let caret = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).position());
     cx.simulate_keystrokes("secondary-shift-o down");
     assert_eq!(caret(cx), plan.find("## Deux").unwrap());
     cx.simulate_keystrokes("down");

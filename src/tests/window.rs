@@ -218,8 +218,8 @@ fn empty_page(cx: &mut TestAppContext) {
     cx.update(init_fonts);
     let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
     cx.run_until_parked();
-    let open = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.path.clone());
-    let text_of = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+    let open = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.pane().path.clone());
+    let text_of = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
     assert_eq!(open(cx), None);
 
     // Le logo est dans le rail, quel que soit le système.

@@ -20,7 +20,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     let (tagged, previewed) = shell.read_with(cx, |s, _| {
         let tag = s.notes.iter().flat_map(|n| n.tags.iter()).min().unwrap().clone();
         let has = |n: &&Note| n.tags.contains(&tag);
-        (s.notes.iter().filter(has).count(), s.notes.iter().filter(has).any(|n| Some(&n.path) == s.path.as_ref()))
+        (s.notes.iter().filter(has).count(), s.notes.iter().filter(has).any(|n| Some(&n.path) == s.pane().path.as_ref()))
     });
     assert!(tagged > 0 && previewed);
     // Un tag n'est pas un fichier : Suppr n'y fait rien.
@@ -30,7 +30,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     // Rétroliens : Ctrl+L liste les notes qui mènent à la note ouverte (lien avec alias, lien
     // dans un tableau). Bas en montre une en aperçu sans que la liste change ; elle suit un
     // lien retiré ; Entrée ouvre la note, et la liste devient la sienne.
-    let was = shell.read_with(cx, |s, _| s.path.clone()).unwrap();
+    let was = shell.read_with(cx, |s, _| s.pane().path.clone()).unwrap();
     fs::write(root.join("Cible.md"), "# Cible\n").unwrap();
     fs::write(root.join("Source A.md"), "# Source A\n\nvoir [[Cible|la cible]] ici\n").unwrap();
     fs::write(root.join("Source B.md"), "# Source B\n\n| a | [[cible]] |\n").unwrap();
@@ -45,14 +45,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     assert!(vault::load_layout().starts_with("links split"));
     cx.simulate_keystrokes("down");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.path.as_ref().is_some_and(|p| p.to_string_lossy().contains("Source"))));
+    assert!(shell.read_with(cx, |s, _| s.pane().path.as_ref().is_some_and(|p| p.to_string_lossy().contains("Source"))));
     assert_eq!(rows(cx), ["Source A", "Source B"]);
     fs::write(root.join("Source B.md"), "# Source B\n").unwrap();
     j.settle(cx);
     assert_eq!(rows(cx), ["Source A"]);
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.path.as_deref() == Some(&*root.join("Source A.md"))) && rows(cx).is_empty());
+    assert!(shell.read_with(cx, |s, _| s.pane().path.as_deref() == Some(&*root.join("Source A.md"))) && rows(cx).is_empty());
     for name in ["Cible.md", "Source A.md", "Source B.md"] {
         fs::remove_file(root.join(name)).unwrap();
     }
@@ -68,7 +68,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     cx.run_until_parked();
     assert_eq!((j.kind(cx, 0), j.kind(cx, meta.find("# pas").unwrap())), (Some(markdown::Kind::Meta), Some(markdown::Kind::Meta)));
     assert_eq!(j.kind(cx, meta.len()), Some(markdown::Kind::Heading(1)));
-    shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.jump(meta.len() + "# Fiche".len(), false, cx)));
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.jump(meta.len() + "# Fiche".len(), false, cx)));
     cx.simulate_input(" 2");
     j.settle(cx);
     assert_eq!(fs::read_to_string(root.join("Fiche 2.md")).unwrap(), format!("{meta}# Fiche 2\n\ntexte\n"));
@@ -89,7 +89,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     assert!(text(cx).ends_with("[[Bref app]]"));
     shell.update(cx, |s, cx| s.open_wiki("bref APP", cx));
     j.settle(cx);
-    assert!(shell.read_with(cx, |s, _| s.path.as_deref() == Some(&*root.join("Appli.md")) && s.notes.len() == count));
+    assert!(shell.read_with(cx, |s, _| s.pane().path.as_deref() == Some(&*root.join("Appli.md")) && s.notes.len() == count));
     fs::remove_file(root.join("Appli.md")).unwrap();
     shell.update(cx, |s, cx| s.open_note(&root.join("Renvoi.md"), cx));
     shell.update(cx, |s, cx| s.open_note(&was, cx));
@@ -120,7 +120,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
 
     // Remplacer dans tout le coffre, depuis la barre de recherche : le compte d'abord, puis
     // les notes sont réécrites ; la palette défait le tout, sauf ce qui a changé depuis.
-    let here = shell.read_with(cx, |s, _| s.path.clone().unwrap());
+    let here = shell.read_with(cx, |s, _| s.pane().path.clone().unwrap());
     fs::write(root.join("Zoo A.md"), "# Zoo A\n\nle zèbre court").unwrap();
     fs::write(root.join("Zoo B.md"), "# Zoo B\n\nun zèbre, deux Zèbres").unwrap();
     j.settle(cx);
@@ -195,14 +195,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::List, Some(PathBuf::from("#classique")), window, cx));
     assert_eq!(listed(cx).unwrap().1, ["Emma"]);
     shell.update(cx, |s, cx| s.open_note(&root.join("Livres/Dune.md"), cx));
-    assert!(shell.read_with(cx, |s, _| s.listing.is_none()) && text(cx).ends_with("# Dune\n"));
+    assert!(shell.read_with(cx, |s, _| s.pane().listing.is_none()) && text(cx).ends_with("# Dune\n"));
     shell.update(cx, |s, cx| s.open_note(&here, cx));
     fs::remove_dir_all(root.join("Livres")).unwrap();
     j.settle(cx);
 
     // Calendrier : Ctrl+Maj+J montre le mois ; les flèches changent de jour, Page bas de
     // mois, Entrée ouvre la note de ce jour, ou la crée.
-    let before = shell.read_with(cx, |s, _| (s.path.clone(), s.nav.mode, s.nav.panel));
+    let before = shell.read_with(cx, |s, _| (s.pane().path.clone(), s.nav.mode, s.nav.panel));
     cx.simulate_keystrokes("secondary-shift-j");
     assert!(shell.read_with(cx, |s, _| s.nav.mode == Mode::Calendar && s.nav.panel != Panel::Rail));
     shell.update(cx, |s, _| s.nav.day = (2026, 10, 30));
@@ -261,14 +261,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     cx.simulate_input("QUINOA");
     cx.simulate_keystrokes("down enter");
     j.settle(cx);
-    let found = shell.read_with(cx, |s, cx| (s.path.clone().unwrap(), s.editor.read(cx).selected().to_lowercase()));
+    let found = shell.read_with(cx, |s, cx| (s.pane().path.clone().unwrap(), s.pane().editor.read(cx).selected().to_lowercase()));
     assert!(found.0 == root.join("Recette.md") || found.0 == root.join("Liste.md"), "{found:?}");
     assert_eq!(found.1, "quinoa");
     cx.simulate_keystrokes("secondary-shift-f");
     cx.simulate_input("quinoa r");
     cx.simulate_keystrokes("enter");
     j.settle(cx);
-    assert_eq!(shell.read_with(cx, |s, cx| (s.path.clone().unwrap(), s.editor.read(cx).selected().to_string())), (root.join("Recette.md"), "Quinoa r".to_string()));
+    assert_eq!(shell.read_with(cx, |s, cx| (s.pane().path.clone().unwrap(), s.pane().editor.read(cx).selected().to_string())), (root.join("Recette.md"), "Quinoa r".to_string()));
     shell.update(cx, |s, cx| s.open_note(&was, cx));
     for name in ["Recette.md", "Liste.md"] {
         fs::remove_file(root.join(name)).unwrap();

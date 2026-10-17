@@ -18,7 +18,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext, here: &Path) {
     cx.simulate_input("kanban");
     cx.simulate_keystrokes("down enter");
     cx.run_until_parked();
-    let on_board = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| shell.read(cx).board_focus.is_focused(window));
+    let on_board = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| shell.read(cx).pane().board.focus.is_focused(window));
     assert!(shell.read_with(cx, |s, cx| s.board_shown(cx)) && on_board(cx));
     assert_eq!(text(cx), "---\nkanban: true\n---\n# Tableau\n\n## À faire\n\n## En cours\n\n## Fait\n");
     shell.update_in(cx, |s, window, cx| s.board_write(kanban::Slot::New(0), window, cx));
@@ -27,7 +27,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext, here: &Path) {
     cx.simulate_input("Relire");
     cx.simulate_keystrokes("backspace enter escape");
     cx.run_until_parked();
-    assert!(text(cx).contains("## À faire\n- [ ] Écrire\n- [ ] Relir\n\n## En cours") && shell.read_with(cx, |s, cx| s.board_field.is_none() && s.board_shown(cx)) && on_board(cx));
+    assert!(text(cx).contains("## À faire\n- [ ] Écrire\n- [ ] Relir\n\n## En cours") && shell.read_with(cx, |s, cx| s.pane().board.field.is_none() && s.board_shown(cx)) && on_board(cx));
     shell.update_in(cx, |s, window, cx| s.board_write(kanban::Slot::Card(0, 1), window, cx));
     cx.simulate_input("e");
     cx.simulate_keystrokes("enter");
@@ -52,7 +52,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext, here: &Path) {
     // Une carte prise à la souris quitte sa place ; celle qu'elle prendrait suit le pointeur :
     // sous une colonne, son bas ; sur une carte, avant ou après elle selon la moitié visée.
     cx.run_until_parked();
-    let held = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.board_drag);
+    let held = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.pane().board.drag);
     let (none, left) = (gpui::Modifiers::none(), gpui::MouseButton::Left);
     let (first, second) = (cx.debug_bounds("card-0-0").unwrap(), cx.debug_bounds("card-0-1").unwrap());
     let under = cx.debug_bounds("column-rest-2").unwrap().center();
@@ -86,7 +86,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext, here: &Path) {
     cx.simulate_click(point(corner.width - px(65.), corner.height - px(31.)), gpui::Modifiers::none());
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, cx| s.board_shown(cx)));
-    let board_file = shell.read_with(cx, |s, _| s.path.clone());
+    let board_file = shell.read_with(cx, |s, _| s.pane().path.clone());
     shell.update(cx, |s, cx| s.open_note(here, cx));
     j.settle(cx);
     // Écrire la clé dans le texte d'une note ne la change pas en tableau sous la frappe :
@@ -95,7 +95,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext, here: &Path) {
     cx.run_until_parked();
     cx.simulate_input("---\nkanban: true\n---\n# Semaine\n\n## Lundi\n");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, cx| !s.board_shown(cx) && kanban::is_board(s.editor.read(cx).text())));
+    assert!(shell.read_with(cx, |s, cx| !s.board_shown(cx) && kanban::is_board(s.pane().editor.read(cx).text())));
     cx.simulate_click(point(corner.width - px(65.), corner.height - px(31.)), gpui::Modifiers::none());
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, cx| s.board_shown(cx)));

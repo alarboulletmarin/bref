@@ -17,8 +17,8 @@ fn commands_are_found(cx: &mut TestAppContext) {
         |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
     });
     cx.run_until_parked();
-    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
-    shell.update_in(cx, |s, window, cx| window.focus(&s.editor.focus_handle(cx)));
+    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
+    shell.update_in(cx, |s, window, cx| window.focus(&s.pane().editor.focus_handle(cx)));
     cx.simulate_input("mot");
     let runs = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.palette.as_ref().map(|p| p.read(cx).runs()).unwrap_or_default());
     let mode = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.palette.as_ref().map(|p| p.read(cx).mode()));
@@ -33,7 +33,7 @@ fn commands_are_found(cx: &mut TestAppContext) {
     // Échap la referme et rend la saisie à la note.
     cx.simulate_keystrokes("escape");
     assert_eq!(mode(cx), None);
-    assert!(shell.update_in(cx, |s, window, cx| s.editor.focus_handle(cx).is_focused(window)));
+    assert!(shell.update_in(cx, |s, window, cx| s.pane().editor.focus_handle(cx).is_focused(window)));
     // Taper filtre par ce que fait la commande ; Entrée la fait, sur la note.
     cx.simulate_keystrokes("secondary-a f10");
     cx.simulate_input("gras");
@@ -125,11 +125,11 @@ fn block_handles(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     let note = "# Titre\n\nUn\n\nDeux\n\n- a\n    - sous\n- b\n";
-    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
     let load = |cx: &mut gpui::VisualTestContext, text: &str| {
         shell.update_in(cx, |s, window, cx| {
-            s.editor.update(cx, |e, cx| e.load(text.to_string(), 0, cx));
-            window.focus(&s.editor.focus_handle(cx));
+            s.pane().editor.update(cx, |e, cx| e.load(text.to_string(), 0, cx));
+            window.focus(&s.pane().editor.focus_handle(cx));
         });
         cx.run_until_parked();
     };
@@ -137,14 +137,14 @@ fn block_handles(cx: &mut TestAppContext) {
     let none = gpui::Modifiers::none();
     let spot = |cx: &mut gpui::VisualTestContext, needle: &str| {
         let at = text(cx).find(needle).unwrap();
-        shell.read_with(cx, |s, cx| s.editor.read(cx).point_of(at).unwrap()) + gpui::point(px(3.), px(0.))
+        shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(at).unwrap()) + gpui::point(px(3.), px(0.))
     };
     let hover = |cx: &mut gpui::VisualTestContext, needle: &str| {
         let at = spot(cx, needle);
         cx.simulate_mouse_move(at, None, none);
-        shell.read_with(cx, |s, cx| s.editor.read(cx).hovered_block().map(str::to_string))
+        shell.read_with(cx, |s, cx| s.pane().editor.read(cx).hovered_block().map(str::to_string))
     };
-    let handle = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).block_handle()).expect("la poignée est là");
+    let handle = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).block_handle()).expect("la poignée est là");
 
     // Le survol d'une ligne montre la poignée de son bloc : un item emporte ses sous-items. Le
     // titre, qui nomme la note, n'en a pas.
@@ -183,7 +183,7 @@ fn block_handles(cx: &mut TestAppContext) {
     let (grip, _) = handle(cx);
     cx.simulate_click(grip.center(), none);
     assert!(shell.read_with(cx, |s, _| s.menu.as_ref().is_some_and(|m| m.block)));
-    assert_eq!(shell.read_with(cx, |s, cx| s.editor.read(cx).selected().to_string()), "Deux");
+    assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).selected().to_string()), "Deux");
     shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Block(editor::BlockOp::Turn(block::Turn::Heading(2))), None, window, cx));
     assert_eq!(text(cx), "# Titre\n\nUn\n\n## Deux\n\n- a\n    - sous\n- b\n");
     // Le même bloc, toujours visé : dupliqué, puis supprimé.
@@ -197,7 +197,7 @@ fn block_handles(cx: &mut TestAppContext) {
     load(cx, note);
     let place = |cx: &mut gpui::VisualTestContext, needle: &str| {
         let at = note.find(needle).unwrap();
-        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.place_cursor(at, cx)));
+        shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.place_cursor(at, cx)));
     };
     place(cx, "Un");
     cx.simulate_keystrokes("alt-down");
@@ -238,7 +238,7 @@ fn templates_journey(cx: &mut TestAppContext) {
         |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
     });
     cx.run_until_parked();
-    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
     let told = |cx: &mut gpui::VisualTestContext, tone, part: &str| shell.read_with(cx, |s, _| s.told(tone, part));
     let palette = |cx: &mut gpui::VisualTestContext, typed: &str| {
         cx.simulate_keystrokes("secondary-p");
@@ -276,7 +276,7 @@ fn templates_journey(cx: &mut TestAppContext) {
     cx.simulate_input("Lundi 3");
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
-    let made = shell.read_with(cx, |s, _| s.path.clone().unwrap());
+    let made = shell.read_with(cx, |s, _| s.pane().path.clone().unwrap());
     assert_eq!(made.file_name().unwrap(), "Lundi 3.md");
     let day = date_name(today());
     let body = fs::read_to_string(&made).unwrap();
@@ -284,7 +284,7 @@ fn templates_journey(cx: &mut TestAppContext) {
     assert!(stamp.len() == 5 && stamp.as_bytes()[2] == b':' && stamp.bytes().filter(u8::is_ascii_digit).count() == 4, "heure : {stamp:?} dans {body}");
     assert!(body.starts_with("# Lundi 3\n\nLe ") && body.contains("[[Lundi 3]]") && !body.contains("{{"), "{body}");
     assert_eq!(text(cx), body);
-    assert_eq!(shell.read_with(cx, |s, cx| s.editor.read(cx).position()), body.len() - 1, "le curseur est à la marque {{cursor}}");
+    assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).position()), body.len() - 1, "le curseur est à la marque {{cursor}}");
     // Le clavier est à l'éditeur : on peut écrire tout de suite, à la marque.
     cx.simulate_input("!");
     assert!(text(cx).ends_with("## Notes\n\n!\n"), "{}", text(cx));
@@ -332,7 +332,7 @@ fn templates_journey(cx: &mut TestAppContext) {
     // Insérer au curseur : rempli au nom de la note ouverte, un seul pas d'annulation.
     shell.update(cx, |s, cx| s.open_note(&made, cx));
     let before = text(cx);
-    shell.update_in(cx, |s, window, cx| window.focus(&s.editor.focus_handle(cx)));
+    shell.update_in(cx, |s, window, cx| window.focus(&s.pane().editor.focus_handle(cx)));
     cx.simulate_keystrokes("secondary-end");
     start(cx, TemplateAct::Insert);
     cx.simulate_input("Réu");
@@ -360,7 +360,7 @@ fn templates_journey(cx: &mut TestAppContext) {
     rescan(cx);
     cx.simulate_keystrokes("secondary-j");
     cx.run_until_parked();
-    assert_eq!(shell.read_with(cx, |s, _| s.path.clone().unwrap().file_name().unwrap().to_string_lossy().into_owned()), format!("{name}.md"));
+    assert_eq!(shell.read_with(cx, |s, _| s.pane().path.clone().unwrap().file_name().unwrap().to_string_lossy().into_owned()), format!("{name}.md"));
     assert_eq!(text(cx), format!("# {name}\n\n- [ ] "));
     cx.simulate_keystrokes("secondary-j");
     assert_eq!(text(cx), format!("# {name}\n\n- [ ] "));
@@ -384,18 +384,18 @@ fn formatting_journey(cx: &mut TestAppContext) {
     });
     cx.simulate_resize(size(px(900.), px(600.)));
     cx.run_until_parked();
-    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string());
+    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
     // Le texte chargé, puis `len` caractères sélectionnés à partir de `from` (en caractères).
     let pick = |cx: &mut gpui::VisualTestContext, note: &str, from: usize, len: usize| {
         let at = note.char_indices().nth(from).map_or(note.len(), |(i, _)| i);
-        shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load(note.to_string(), at, cx)));
+        shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(note.to_string(), at, cx)));
         cx.run_until_parked();
         if len > 0 {
             cx.simulate_keystrokes(&"shift-right ".repeat(len));
         }
     };
-    let selected = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.editor.read(cx).selected_text());
-    let styles = |cx: &mut gpui::VisualTestContext| shell.update(cx, |s, cx| s.editor.update(cx, |e, _| e.styles()));
+    let selected = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).selected_text());
+    let styles = |cx: &mut gpui::VisualTestContext| shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, _| e.styles()));
     // Chaque style : ses signes autour du mot, la sélection reste sur le mot, le même geste les retire.
     for (key, shown, flag) in [
         ("secondary-b", "un **mot** ici", markdown::BOLD),
@@ -573,7 +573,7 @@ fn formatting_journey(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     cx.update(|window, _| window.refresh());
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, cx| !s.editor.read(cx).swatches_open()));
+    assert!(shell.read_with(cx, |s, cx| !s.pane().editor.read(cx).swatches_open()));
     assert_eq!(text(cx), "- a\n- b");
     // Le lien depuis la barre : la sélection devient le texte, le curseur attend l'adresse.
     pick(cx, "un mot ici", 3, 3);
@@ -598,7 +598,7 @@ fn formatting_journey(cx: &mut TestAppContext) {
     click(cx, 10);
     cx.simulate_keystrokes("enter");
     assert!(text(cx).contains("|  |  |  |\n| --- | --- | --- |") || text(cx).contains("| --- |"), "{}", text(cx));
-    assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).in_table()));
+    assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).in_table()));
     cx.run_until_parked();
     let rows = |cx: &mut gpui::VisualTestContext| text(cx).lines().filter(|l| l.starts_with('|')).count();
     let columns = |cx: &mut gpui::VisualTestContext| text(cx).lines().find(|l| l.starts_with('|')).unwrap().matches('|').count() - 1;
@@ -626,7 +626,7 @@ fn formatting_journey(cx: &mut TestAppContext) {
             cx.run_until_parked();
         }
         // Les bornes d'un élément disparu restent en mémoire dans le test : c'est l'éditeur qui dit ce qui est à l'écran.
-        let (shown, folded) = shell.read_with(cx, |s, cx| (s.editor.read(cx).bar_shown(), s.editor.read(cx).bar_folded()));
+        let (shown, folded) = shell.read_with(cx, |s, cx| (s.pane().editor.read(cx).bar_shown(), s.pane().editor.read(cx).bar_folded()));
         let (counts, pane) = (cx.debug_bounds("counts").unwrap(), cx.debug_bounds("pane-0").unwrap());
         assert!(counts.left() >= pane.left() && counts.right() <= pane.right(), "{width} : {counts:?} {pane:?}");
         assert!(shown != folded, "{width} : la barre est là, ou repliée en un bouton : {shown} {folded}");
@@ -650,7 +650,7 @@ fn formatting_journey(cx: &mut TestAppContext) {
                 cx.update(|window, _| window.refresh());
                 cx.run_until_parked();
             }
-            assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).bar_shown()), "{width} : le bouton ouvre la barre");
+            assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_shown()), "{width} : le bouton ouvre la barre");
             let (bar, toggle) = (cx.debug_bounds("format-bar").unwrap(), cx.debug_bounds("format-toggle").unwrap());
             assert!(bar.left() >= pane.left() && bar.right() <= pane.right() && bar.bottom() <= toggle.top() && bar.top() >= pane.top(), "{width} : {bar:?} {toggle:?} {pane:?}");
             for name in NAMES {
@@ -677,7 +677,7 @@ fn formatting_journey(cx: &mut TestAppContext) {
             cx.simulate_keystrokes("escape");
             cx.update(|window, _| window.refresh());
             cx.run_until_parked();
-            assert!(shell.read_with(cx, |s, cx| !s.editor.read(cx).bar_shown() && s.editor.read(cx).bar_folded()), "{width}");
+            assert!(shell.read_with(cx, |s, cx| !s.pane().editor.read(cx).bar_shown() && s.pane().editor.read(cx).bar_folded()), "{width}");
             assert_eq!(text(cx), "un mot ici");
         }
         seen.push(shown);
@@ -711,13 +711,13 @@ fn formatting_journey(cx: &mut TestAppContext) {
     };
     choose(cx, "down enter");
     assert!(shell.read_with(cx, |s, _| s.prefs.bar == "off" && !s.theme.bar));
-    assert!(!shell.read_with(cx, |s, cx| s.editor.read(cx).bar_shown()) && cx.debug_bounds("counts").is_some());
+    assert!(!shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_shown()) && cx.debug_bounds("counts").is_some());
     assert!(vault::load_settings().contains("bar=off\n"));
     // Échap pendant la liste : le choix en aperçu est repris.
     choose(cx, "up escape");
     assert!(shell.read_with(cx, |s, _| s.prefs.bar == "off"));
     choose(cx, "up enter");
-    assert!(shell.read_with(cx, |s, cx| s.theme.bar && s.editor.read(cx).bar_shown()));
+    assert!(shell.read_with(cx, |s, cx| s.theme.bar && s.pane().editor.read(cx).bar_shown()));
     for (text, shown) in [("", true), ("bar=\n", true), ("bar=on\n", true), ("bar=zzz\n", true), ("bar=off\n", false)] {
         assert_eq!(Prefs::parse(text).bar != "off", shown, "{text:?}");
     }

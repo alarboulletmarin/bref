@@ -58,7 +58,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.simulate_keystrokes("secondary-shift-b");
         assert_eq!(text(cx), want);
     }
-    assert!(shell.read_with(cx, |s, cx| s.editor.read(cx).selected() == "un\ndeux\ntrois"));
+    assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).selected() == "un\ndeux\ntrois"));
     shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Numbered, None, window, cx));
     assert_eq!(text(cx), "1. un\n2. deux\n3. trois\n\nfin");
     cx.simulate_keystrokes("secondary-p");

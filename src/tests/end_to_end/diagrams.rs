@@ -10,7 +10,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // forme à l'autre s'y accroche.
     cx.simulate_keystrokes("secondary-shift-d");
     cx.run_until_parked();
-    let (file, canvas) = shell.read_with(cx, |s, _| s.drawing.clone().unwrap());
+    let (file, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
     assert_eq!(file.file_name().unwrap(), "Schéma.svg");
     let drag = |cx: &mut gpui::VisualTestContext, from: (f32, f32), to: (f32, f32)| {
         let (from, to) = canvas.read_with(cx, |c, _| (c.spot(from.0, from.1), c.spot(to.0, to.1)));
@@ -68,7 +68,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(shell.read_with(cx, |s, _| s.images.contains(&file)));
     cx.simulate_keystrokes("escape escape");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.picture.is_none() && s.drawing.is_none()));
+    assert!(shell.read_with(cx, |s, _| s.pane().file.is_none() && s.pane().drawing().is_none()));
 
     // `![[` propose les images et les schémas du coffre ; Entrée complète le nom.
     cx.simulate_keystrokes("secondary-end enter");
@@ -106,7 +106,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("enter");
     assert!(text(cx).ends_with(&format!("{table}\n{empty}")));
     cx.run_until_parked();
-    let [_, column] = shell.read_with(cx, |s, cx| s.editor.read(cx).plus_buttons().unwrap());
+    let [_, column] = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).plus_buttons().unwrap());
     cx.simulate_click(column, gpui::Modifiers::none());
     cx.simulate_input("Ville");
     // Chaque frappe réaligne les colonnes ; effacer aussi.
@@ -115,7 +115,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("backspace backspace backspace");
     assert!(text(cx).contains("| Nom    | Âge | Ville |\n| ------ | --- | ----- |\n| Élodie | 31  |       |"), "{}", text(cx));
     cx.run_until_parked();
-    let [row, _] = shell.read_with(cx, |s, cx| s.editor.read(cx).plus_buttons().unwrap());
+    let [row, _] = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).plus_buttons().unwrap());
     cx.simulate_click(row, gpui::Modifiers::none());
     // Entrée sur une dernière ligne vide la retire et sort du tableau.
     cx.simulate_keystrokes("enter");
@@ -128,7 +128,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("/table");
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
-    let cell = shell.read_with(cx, |s, cx| s.editor.read(cx).grid_cell(2, 1).unwrap());
+    let cell = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).grid_cell(2, 1).unwrap());
     cx.simulate_click(cell, gpui::Modifiers::none());
     assert!(text(cx).ends_with("fin\n\n|     |     |\n| --- | --- |"), "{}", text(cx));
     // Au clavier : une taille tapée dans la grille, au-delà de ses cases.

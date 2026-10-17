@@ -240,7 +240,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Dans une note, des cellules de tableau sélectionnées se copient en TSV, que les tableurs collent.
     shell.update_in(cx, |s, window, cx| {
         s.new_note("| a | b |\n| --- | --- |\n| 1 | 2 |\n".into(), cx);
-        window.focus(&s.editor.focus_handle(cx));
+        window.focus(&s.pane().editor.focus_handle(cx));
     });
     cx.simulate_keystrokes("secondary-a secondary-c");
     assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("a\tb\n1\t2"));

@@ -11,7 +11,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-e up");
     assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (Mode::Tree, Panel::Split));
     assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[Test]]");
-    assert!(shell.read_with(cx, |s, _| s.preview && s.recent[0] == root.join("Idées.md")));
+    assert!(shell.read_with(cx, |s, _| s.pane().preview && s.recent[0] == root.join("Idées.md")));
     // Le dossier se déplie avec Droite ; Entrée ouvre la note et rend la main à l'éditeur.
     cx.simulate_keystrokes("up right down");
     // Le bouton de repli replie tout l'arbre, puis le déplie tout entier.
@@ -22,8 +22,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(shell.update(cx, |s, _| (open(s), open(s))), (0, 1));
     assert_eq!(text(cx), "# Plan\n\n[[Courses]]\n");
     cx.simulate_keystrokes("enter");
-    assert!(shell.read_with(cx, |s, _| !s.preview && s.recent[0] == root.join("Projets/Plan.md")));
-    assert!(cx.update(|window, cx| shell.read(cx).editor.focus_handle(cx).is_focused(window)));
+    assert!(shell.read_with(cx, |s, _| !s.pane().preview && s.recent[0] == root.join("Projets/Plan.md")));
+    assert!(cx.update(|window, cx| shell.read(cx).pane().editor.focus_handle(cx).is_focused(window)));
 
     // Nouvelle note depuis l'arbre : rangée dans le dossier de la sélection.
     cx.simulate_keystrokes("secondary-n");
@@ -75,18 +75,18 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let mut linked = Vec::new();
     for _ in 0..2 {
         cx.simulate_keystrokes("tab");
-        linked.push(shell.read_with(cx, |s, _| vault::stem(s.path.as_ref().unwrap())));
-        assert!(shell.read_with(cx, |s, _| s.preview && s.recent[0] == root.join("Courses.md")));
+        linked.push(shell.read_with(cx, |s, _| vault::stem(s.pane().path.as_ref().unwrap())));
+        assert!(shell.read_with(cx, |s, _| s.pane().preview && s.recent[0] == root.join("Courses.md")));
     }
     linked.sort();
     assert_eq!(linked, ["Plan", "Test"]);
     cx.simulate_keystrokes("enter");
-    assert!(shell.read_with(cx, |s, _| !s.preview && s.recent[0] == *s.path.as_ref().unwrap()));
-    assert!(cx.update(|window, cx| shell.read(cx).editor.focus_handle(cx).is_focused(window)));
+    assert!(shell.read_with(cx, |s, _| !s.pane().preview && s.recent[0] == *s.pane().path.as_ref().unwrap()));
+    assert!(cx.update(|window, cx| shell.read(cx).pane().editor.focus_handle(cx).is_focused(window)));
     // Plein écran : la sélection ne déplace plus la note ; Entrée lui rend sa place.
     cx.simulate_keystrokes("secondary-g secondary-m tab");
-    let open = shell.read_with(cx, |s, _| s.path.clone());
-    assert!(shell.read_with(cx, |s, _| s.nav.panel == Panel::Full && s.nav.sel != s.path));
+    let open = shell.read_with(cx, |s, _| s.pane().path.clone());
+    assert!(shell.read_with(cx, |s, _| s.nav.panel == Panel::Full && s.nav.sel != s.pane().path));
     cx.simulate_keystrokes("enter");
-    assert!(shell.read_with(cx, |s, _| s.nav.panel == Panel::Split && s.path != open));
+    assert!(shell.read_with(cx, |s, _| s.nav.panel == Panel::Split && s.pane().path != open));
 }

@@ -17,7 +17,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(clipboard(cx).as_deref(), Some("let x = 1;"));
     cx.simulate_keystrokes("secondary-home secondary-shift-c");
     assert!(clipboard(cx).unwrap().starts_with("# Titre"));
-    let button = shell.read_with(cx, |s, cx| s.editor.read(cx).copy_button().unwrap());
+    let button = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).copy_button().unwrap());
     cx.simulate_click(button, gpui::Modifiers::none());
     assert_eq!(clipboard(cx).as_deref(), Some("let x = 1;"));
 
@@ -31,7 +31,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     cx.simulate_input("fin");
     cx.run_until_parked();
-    let (signs, image) = shell.read_with(cx, |s, cx| s.editor.read(cx).decorations("a -> b"));
+    let (signs, image) = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).decorations("a -> b"));
     assert_eq!((signs, image), (1, Some((40., 20.))));
     assert!(text(cx).ends_with("a -> b ![](carré.svg)\nfin"));
 
@@ -59,7 +59,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("fin");
     cx.run_until_parked();
     let figures = shell.read_with(cx, |s, cx| {
-        let editor = s.editor.read(cx);
+        let editor = s.pane().editor.read(cx);
         ["![](image-", "```\nsoit", "soit $x^2$"].map(|line| editor.decorations(line).1.is_some())
     });
     assert_eq!(figures, [true, true, true]);
@@ -84,19 +84,19 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     }
     assert_eq!(shell.read_with(cx, |s, cx| s.graph.read(cx).size().0), notes + 3);
     shell.update(cx, |s, cx| s.preview_note(&root.join("carré.svg"), cx));
-    assert_eq!(shell.read_with(cx, |s, _| s.picture.clone()), Some(root.join("carré.svg")));
+    assert_eq!(shell.read_with(cx, |s, _| s.pane().file_path().cloned()), Some(root.join("carré.svg")));
     assert!(text(cx).ends_with("fin"));
     // Revenir d'une image à la note qu'elle cachait se fait en une sélection, comme
     // d'une note à une autre.
     shell.update(cx, |s, cx| {
-        let note = s.path.clone().unwrap();
+        let note = s.pane().path.clone().unwrap();
         s.preview_note(&note, cx);
-        assert_eq!(s.picture, None);
+        assert_eq!(s.pane().file_path(), None);
         s.preview_note(&root.join("carré.svg"), cx);
     });
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert_eq!(shell.read_with(cx, |s, _| s.picture.clone()), None);
+    assert_eq!(shell.read_with(cx, |s, _| s.pane().file_path().cloned()), None);
 
     // Un SVG d'ailleurs (draw.io : texte en HTML, couleurs `light-dark()`) s'affiche dans la
     // note, dessiné en tâche de fond. Changer de thème, même vite et plusieurs fois, garde la
@@ -114,7 +114,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     let seen = |cx: &mut gpui::VisualTestContext| {
         shell.read_with(cx, |s, cx| {
-            let editor = s.editor.read(cx);
+            let editor = s.pane().editor.read(cx);
             (editor.decorations("![](drawio").1, editor.decorations("![](cassé").1, editor.figure_count())
         })
     };
@@ -151,7 +151,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
     };
     settle(cx);
-    let viewer = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.viewer.as_ref().map(|(_, v)| v.read(cx).state()));
+    let viewer = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().viewer().map(|v| v.read(cx).state()));
     let (loaded, failed, fit, _) = viewer(cx).unwrap();
     assert!(loaded && !failed && fit > 0. && fit <= 1., "{:?}", viewer(cx));
     cx.simulate_keystrokes("secondary-=");
@@ -161,13 +161,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(viewer(cx).unwrap().2, fit);
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.picture.is_none() && s.viewer.is_none()));
+    assert!(shell.read_with(cx, |s, _| s.pane().file.is_none() && s.pane().viewer().is_none()));
     // La loupe d'un bloc Mermaid montre le diagramme en grand, à la place de la note ; + et -
     // zooment ; Échap ramène à la note.
-    let button = shell.read_with(cx, |s, cx| s.editor.read(cx).view_button("```mermaid")).unwrap();
+    let button = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view_button("```mermaid")).unwrap();
     cx.simulate_click(button, gpui::Modifiers::none());
     settle(cx);
-    let figure = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.figure.as_ref().map(|f| f.read(cx).state()));
+    let figure = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().figure.as_ref().map(|f| f.read(cx).state()));
     let (loaded, failed, fit, _) = figure(cx).unwrap();
     assert!(loaded && !failed && fit > 0., "{:?}", figure(cx));
     assert!(text(cx).contains("```mermaid\nflowchart LR"), "la note n'a pas bougé");
@@ -178,7 +178,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(figure(cx).unwrap().2, fit);
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.figure.is_none()));
+    assert!(shell.read_with(cx, |s, _| s.pane().figure.is_none()));
     shell.update_in(cx, |s, window, cx| {
         s.preview_note(&root.join("cassé.svg"), cx);
         s.focus_pane(0, window, cx);
@@ -186,7 +186,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     settle(cx);
     assert_eq!(viewer(cx).map(|v| (v.0, v.1)), Some((false, true)));
     shell.update(cx, |s, cx| {
-        let note = s.path.clone().unwrap();
+        let note = s.pane().path.clone().unwrap();
         s.preview_note(&note, cx);
     });
     cx.run_until_parked();

@@ -30,18 +30,18 @@ pub(super) struct Journey {
 impl Journey {
     /// Text of the note in the active pane.
     pub fn text(&self, cx: &mut gpui::VisualTestContext) -> String {
-        self.shell.read_with(cx, |s, cx| s.editor.read(cx).text().to_string())
+        self.shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string())
     }
 
     /// Loads `text` in the active editor, the cursor at byte `cursor`.
     pub fn load(&self, cx: &mut gpui::VisualTestContext, text: &str, cursor: usize) {
-        self.shell.update(cx, |s, cx| s.editor.update(cx, |e, cx| e.load(text.to_string(), cursor, cx)));
+        self.shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(text.to_string(), cursor, cx)));
         cx.run_until_parked();
     }
 
     /// Kind of the line at byte `at` in the active editor.
     pub fn kind(&self, cx: &mut gpui::VisualTestContext, at: usize) -> Option<markdown::Kind> {
-        self.shell.read_with(cx, |s, cx| s.editor.read(cx).kind_at(at))
+        self.shell.read_with(cx, |s, cx| s.pane().editor.read(cx).kind_at(at))
     }
 
     /// Lets the vault watcher see what changed on disk.
