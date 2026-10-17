@@ -27,6 +27,24 @@ pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, 
         )
 }
 
+/// A shortcut ("Ctrl+Maj+C") as one badge per key, in a row; nothing when it is empty.
+/// `on`: the row behind is selected, so the badges are lighter than it.
+pub fn keycaps(keys: &str, t: Theme, on: bool) -> Div {
+    let caps = crate::logic::commands::keycaps(keys).into_iter().map(|key| {
+        div()
+            .min_w(px(20.))
+            .px(px(6.))
+            .rounded(px(4.))
+            .flex()
+            .justify_center()
+            .bg(if on { t.panel.opacity(0.7) } else { t.code_bg })
+            .text_size(px(11.5))
+            .text_color(t.soft)
+            .child(key)
+    });
+    div().flex().items_center().gap(px(3.)).children(caps)
+}
+
 /// Tooltip of an icon button: what it does and, if it has one, its shortcut. Without it,
 /// a bare icon forces you to know the documentation to know where to click.
 pub struct Tip {
@@ -52,7 +70,7 @@ impl Render for Tip {
             .items_center()
             .gap_2()
             .child(self.label)
-            .when(!self.keys.is_empty(), |d| d.child(div().text_color(t.soft).child(self.keys.clone())))
+            .child(keycaps(&self.keys, t, false))
     }
 }
 

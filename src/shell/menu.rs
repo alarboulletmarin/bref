@@ -301,6 +301,7 @@ impl Shell {
             let target = target.clone();
             div()
                 .id(label)
+                .debug_selector(move || format!("menu-entry-{label}"))
                 .h(px(28.))
                 .mx_1()
                 .px_2()
@@ -313,7 +314,7 @@ impl Shell {
                 // The whole label, then its shortcut, dimmer, pinned to the right: the
                 // menu takes the width they need.
                 .child(div().flex_1().whitespace_nowrap().child(label))
-                .child(div().flex_none().ml_4().whitespace_nowrap().text_size(px(11.5)).text_color(t.soft).child(what.keys(cx)))
+                .child(keycaps(&what.keys(cx), t, false).debug_selector(move || format!("menu-keys-{label}")).flex_none().ml_4())
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {

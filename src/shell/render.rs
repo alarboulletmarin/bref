@@ -500,7 +500,7 @@ impl Shell {
         ];
         let keys = actions.into_iter().enumerate().filter_map(|(i, (action, what))| {
             let keys = keys::of(cx, action.as_ref());
-            let cap = div().px(px(5.)).rounded(px(4.)).border_1().border_color(t.border).bg(t.panel).text_size(px(11.)).child(keys.clone());
+            let cap = keycaps(&keys, t, false);
             (!keys.is_empty()).then(|| {
                 row(("empty-key", i), false)
                     .gap(px(6.))

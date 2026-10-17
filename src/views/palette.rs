@@ -14,6 +14,7 @@ use gpui::{
 use crate::{
     ui::theme::Theme,
     ui::line::{self, Line},
+    ui::widgets::keycaps,
     views::editor::TableOp,
     logic::markdown::ListStyle,
     views::sheet::Pick,
@@ -866,18 +867,6 @@ impl Palette {
         let t = self.theme;
         let c = &self.commands[n];
         let on = i == self.selected;
-        let caps = crate::logic::commands::keycaps(&c.keys).into_iter().map(|key| {
-            div()
-                .min_w(px(20.))
-                .px(px(6.))
-                .rounded(px(4.))
-                .flex()
-                .justify_center()
-                .bg(if on { t.panel.opacity(0.7) } else { t.code_bg })
-                .text_size(px(11.5))
-                .text_color(t.soft)
-                .child(key)
-        });
         let title = header.then(|| {
             div().px_4().pt(px(10.)).pb(px(4.)).text_size(px(11.5)).text_color(t.soft).child(c.group.title(n < self.here))
         });
@@ -899,7 +888,7 @@ impl Palette {
             .when(!on, |d| d.hover(|s| s.bg(t.code_bg)))
             .child(svg().path(c.icon).size(px(16.)).flex_none().text_color(if on { t.accent } else { t.soft }))
             .child(div().flex_1().min_w_0().truncate().child(c.label))
-            .child(div().flex_none().flex().gap(px(3.)).children(caps))
+            .child(keycaps(&c.keys, t, on).flex_none())
             .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| this.confirm(i, cx)));
         div().flex().flex_col().children(title).child(row)
     }
@@ -1008,7 +997,13 @@ impl Render for Palette {
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
                 Item::Table(pick) => (pick.label().to_string(), String::new()),
             };
+            // Where the detail is a shortcut, not a description.
+            let shortcut = matches!(
+                item,
+                Item::Vault | Item::Help | Item::Diagram | Item::Folder | Item::Outline | Item::Grid(_) | Item::Template(_) | Item::Today | Item::Back | Item::Forward | Item::Sync
+            );
             div()
+                .debug_selector(move || format!("palette-item-{i}"))
                 .mx_1()
                 .px_3()
                 .py_1p5()
@@ -1026,14 +1021,16 @@ impl Render for Palette {
                         .when(matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none().max_w(px(220.)))
                         .child(label),
                 )
-                .child(
+                .child(if shortcut {
+                    keycaps(&detail, t, i == self.selected).debug_selector(move || format!("palette-detail-{i}")).flex_none()
+                } else {
                     div()
                         .truncate()
                         .when(!matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none())
                         .text_color(t.soft)
                         .text_size(px(12.))
-                        .child(detail),
-                )
+                        .child(detail)
+                })
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, _, cx| this.confirm(i, cx)),

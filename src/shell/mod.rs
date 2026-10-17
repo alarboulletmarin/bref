@@ -42,7 +42,7 @@ use crate::ui::{self,
     assets::{Assets, FAMILIES, init_fonts, apply_fonts, logo, mono, sans},
     figure, line,
     theme::{Page, THEMES, Theme, Wide},
-    widgets::{drag_window, icon_button},
+    widgets::{drag_window, icon_button, keycaps},
 };
 use crate::views::{canvas, editor, graph, kanban, nav, palette, sheet, viewer};
 

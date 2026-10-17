@@ -289,14 +289,18 @@ impl Shell {
                     let chosen = row.action.is_some() && row.action == self.help.sel;
                     // The keys: a button when they can be changed, text otherwise.
                     let keys = match row.action {
-                        None => div().w(px(156.)).flex_none().font_family(mono()).text_size(px(12.)).child(row.keys.clone()),
+                        // Badges for real keys; a line of words ("Drag from the tree") or of
+                        // alternatives ("F3 / Enter") stays text.
+                        None if row.keys.contains(' ') => div().w(px(156.)).flex_none().font_family(mono()).text_size(px(12.)).child(row.keys.clone()),
+                        None => div().w(px(156.)).flex_none().child(keycaps(&row.keys, t, false).flex_wrap()),
                         Some(action) => {
+                            let color = if edit.is_some() || row.changed { t.accent } else { t.text };
                             let shown = if edit.is_some() {
-                                tr("Press the keys…", "Tape les touches…").to_string()
+                                div().font_family(mono()).text_size(px(12.)).child(tr("Press the keys…", "Tape les touches…"))
                             } else if row.keys.is_empty() {
-                                "—".to_string()
+                                div().font_family(mono()).text_size(px(12.)).child("—")
                             } else {
-                                row.keys.clone()
+                                keycaps(&row.keys, t, false).flex_wrap()
                             };
                             let key = div()
                                 .id(gpui::SharedString::from(format!("key-{action}")))
@@ -305,15 +309,14 @@ impl Shell {
                                 .rounded(px(4.))
                                 .bg(t.border.opacity(0.6))
                                 .cursor_pointer()
-                                .font_family(mono())
-                                .text_size(px(12.))
-                                .text_color(if edit.is_some() || row.changed { t.accent } else { t.text })
+                                .text_color(color)
                                 .hover(|s| s.bg(t.border))
                                 .child(shown)
                                 .on_click(cx.listener(move |this, _, _, cx| this.key_edit(action, cx)));
                             let reset = small(format!("key-reset-{action}"), tr("default", "défaut"))
                                 .on_click(cx.listener(move |this, _, _, cx| this.key_reset(Some(action), cx)));
                             div()
+                                .debug_selector(move || format!("key-column-{action}"))
                                 .w(px(156.))
                                 .flex_none()
                                 .flex()
