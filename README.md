@@ -77,7 +77,8 @@ Or build the latest tagged release yourself with `makepkg -si` from the reposito
 
    ```bash
    sudo apt install build-essential pkg-config libfontconfig-dev libfreetype-dev \
-     libwayland-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan1
+     libwayland-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan1 \
+     fonts-noto-color-emoji
    ```
 
 2. Install Rust with [rustup](https://rustup.rs); the `cargo` from apt is usually too old.
@@ -97,12 +98,13 @@ Same steps as above, with these packages (names not tested):
 
 ```bash
 sudo dnf install gcc pkgconf-pkg-config fontconfig-devel freetype-devel \
-  wayland-devel libxcb-devel libxkbcommon-devel libxkbcommon-x11-devel vulkan-loader
+  wayland-devel libxcb-devel libxkbcommon-devel libxkbcommon-x11-devel vulkan-loader \
+  google-noto-color-emoji-fonts
 ```
 
 ### Other distributions
 
-You need the development files of fontconfig, freetype, Wayland, libxcb and libxkbcommon (with its X11 part), a Vulkan driver for your GPU, and Rust. Then:
+You need the development files of fontconfig, freetype, Wayland, libxcb and libxkbcommon (with its X11 part), a Vulkan driver for your GPU, an emoji font (Noto Color Emoji, for 🎉 in notes and names), and Rust. Then:
 
 ```bash
 make                    # cargo build --release --locked

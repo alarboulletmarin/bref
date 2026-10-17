@@ -14,6 +14,7 @@ pkgbase = bref
 	depends = libxkbcommon-x11
 	depends = wayland
 	depends = vulkan-icd-loader
+	depends = noto-fonts-emoji
 	optdepends = vulkan-driver: a Vulkan driver for your GPU is required to open the window
 	conflicts = encre
 	replaces = encre
