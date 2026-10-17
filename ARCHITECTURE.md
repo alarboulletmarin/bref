@@ -13,6 +13,8 @@ src/
   platform/    the outside world: disk, processes, network, OS (no gpui)
   ui/          the look shared by every view: theme, fonts and icons, widgets, figures
   views/       gpui entities: editor, side panel, palette, grid, canvas, graph, viewer, board
+  tests/       the whole app driven by simulated keystrokes (end_to_end/ is one session,
+               one file per chapter); benches.rs holds the measures run by hand
 ```
 
 A layer only uses the layers below it:
