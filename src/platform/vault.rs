@@ -37,10 +37,9 @@ fn config_path() -> PathBuf {
 
 /// (vault, open notes from most recent to oldest): one line each.
 pub fn load_config() -> (Option<PathBuf>, Vec<PathBuf>) {
-    // Falls back to the config of the app's old names; it is never rewritten.
+    // Falls back to the config of the app's old name; it is never rewritten.
     let text = fs::read_to_string(config_path())
         .or_else(|_| fs::read_to_string(config_dir().join("encre/config")))
-        .or_else(|_| fs::read_to_string(config_dir().join("onenote/config")))
         .unwrap_or_default();
     let mut lines = text.lines().filter(|l| !l.is_empty()).map(PathBuf::from);
     (lines.next(), lines.collect())
