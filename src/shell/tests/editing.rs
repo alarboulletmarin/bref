@@ -48,7 +48,7 @@ fn commands_are_found(cx: &mut TestAppContext) {
     cx.simulate_input("raccourcis");
     let at = cx.debug_bounds("command-app::ToggleHelp").expect("la commande est affichée").center();
     cx.simulate_click(at, gpui::Modifiers::none());
-    assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.help));
+    assert!(shell.read_with(cx, |s, _| s.palette.is_none() && s.help.open));
     shell.update_in(cx, |s, window, cx| s.set_help(false, window, cx));
 
     // Dans la palette des notes, « > » en tête passe aux commandes, et s'efface ; sans lui, une commande

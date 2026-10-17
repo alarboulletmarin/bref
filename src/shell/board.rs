@@ -1,0 +1,281 @@
+//! The kanban board of a note, drawn and edited in place of its text.
+
+use gpui::{
+    App, ClickEvent, Context, CursorStyle, DragMoveEvent, Focusable, Window, canvas, div, prelude::*, px,
+};
+use crate::{
+    views::editor::{Redo, Undo},
+    lang::tr,
+};
+
+use super::*;
+use crate::views::kanban::*;
+
+impl Shell {
+    /// La note ouverte se montre en tableau : elle en est un, et on ne lui a pas demandé son texte.
+    pub(super) fn board_shown(&self, cx: &gpui::App) -> bool {
+        self.pane().file.is_none() && self.pane().listing.is_none() && !self.pane().board.text && is_board(self.pane().editor.read(cx).text())
+    }
+
+    /// Passe du tableau au texte de la note, et retour ; le choix tient tant qu'elle reste ouverte.
+    pub(super) fn toggle_board(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.pane_mut().board.field = None;
+        self.pane_mut().board.text = !self.pane_mut().board.text;
+        if self.pane().board.text {
+            window.focus(&self.pane().editor.focus_handle(cx));
+        }
+        cx.notify();
+    }
+
+    /// Applique au texte de la note un geste fait sur le tableau : il s'annule comme une frappe.
+    pub(super) fn board_edit(&mut self, change: impl Fn(&str) -> Option<String>, cx: &mut Context<Self>) {
+        if let Some(text) = change(self.pane().editor.read(cx).text()) {
+            self.pane().editor.update(cx, |e, cx| e.rewrite(&text, cx));
+        }
+    }
+
+    /// Ouvre un champ de saisie dans le tableau : une carte ou un titre à réécrire, une carte ou
+    /// une colonne de plus. Celui qui était ouvert est d'abord validé.
+    pub(super) fn board_write(&mut self, slot: Slot, window: &mut Window, cx: &mut Context<Self>) {
+        self.board_commit(false, window, cx);
+        let text = {
+            let all = columns(self.pane().editor.read(cx).text());
+            match slot {
+                Slot::Card(c, i) => all.get(c).and_then(|column| column.cards.get(i)).map(|card| card.text.to_string()),
+                Slot::Column(c) => all.get(c).map(|column| column.title.to_string()),
+                Slot::New(_) | Slot::NewColumn => Some(String::new()),
+            }
+        };
+        let Some(text) = text else {
+            return;
+        };
+        let theme = self.theme;
+        let field = cx.new(|cx| Field::new(&text, theme, cx));
+        cx.subscribe_in(&field, window, |this, _, event: &FieldEvent, window, cx| match event {
+            FieldEvent::Done => this.board_commit(true, window, cx),
+            FieldEvent::Cancel => {
+                this.pane_mut().board.field = None;
+                window.focus(&this.pane().board.focus);
+                cx.notify();
+            }
+        })
+        .detach();
+        window.focus(&field.focus_handle(cx));
+        // La colonne qu'on ajoute est au bout du tableau : il défile jusqu'à elle.
+        if slot == Slot::NewColumn {
+            self.pane().board.scroll.scroll_to_item(columns(self.pane().editor.read(cx).text()).len());
+        }
+        self.pane_mut().board.field = Some((slot, field));
+        cx.notify();
+    }
+
+    /// Valide ce qui est écrit dans le champ ouvert. Après une carte ajoutée par Entrée
+    /// (`again`), le champ se rouvre pour la suivante : on enchaîne sans reprendre la souris.
+    pub(super) fn board_commit(&mut self, again: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((slot, field)) = self.pane_mut().board.field.take() else {
+            return;
+        };
+        let typed = field.read(cx).line.text.clone();
+        let written = !typed.trim().is_empty();
+        self.board_edit(
+            |text| match slot {
+                Slot::New(c) if written => add_card(text, c, &typed),
+                Slot::Card(c, i) => retitle(text, (c, i), &typed),
+                Slot::Column(c) => rename_column(text, c, &typed),
+                Slot::NewColumn => add_column(text, &typed),
+                Slot::New(_) => None,
+            },
+            cx,
+        );
+        match slot {
+            Slot::New(c) if again && written => self.board_write(Slot::New(c), window, cx),
+            _ => window.focus(&self.pane().board.focus),
+        }
+        cx.notify();
+    }
+
+    /// Le tableau, à la place de la note. Une carte qu'on prend quitte sa place et suit le
+    /// pointeur ; une place en pointillés s'ouvre là où elle se poserait, entre deux cartes ou
+    /// au bas d'une colonne. Un clic sur sa case la coche, un double-clic la réécrit sur place
+    /// (vidée, elle est retirée). « + » ajoute une carte, ou une colonne.
+    // ponytail: à la souris ; une sélection de carte au clavier (flèches, Ctrl+flèches pour
+    // la déplacer) si le tableau sert au quotidien. Le tableau ne défile pas tout seul quand on
+    // tient une carte près d'un bord : à ajouter si les colonnes dépassent souvent la fenêtre.
+    pub(super) fn render_board(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        // Le pane que ce tableau occupe : les gestes qui en partent, plus tard, le visent.
+        let pane = self.active;
+        let t = self.theme;
+        let text = self.pane().editor.read(cx).text().to_string();
+        let writing = self.pane().board.field.as_ref().map(|(slot, field)| (*slot, field.clone()));
+        let field_at = |slot: Slot| writing.as_ref().filter(|(open, _)| *open == slot).map(|(_, field)| field.clone());
+        let all = columns(&text);
+        let drag = self.pane().board.drag.filter(|_| cx.has_active_drag());
+        // La place que prendrait la carte tenue : sa taille exacte, vide.
+        let held = drag.and_then(|(from, _)| all.get(from.0)?.cards.get(from.1)).map(|card| (card.text.to_string(), card.done));
+        let place = || {
+            let (text, done) = held.as_ref()?;
+            let empty = card_box(t).bg(t.accent.opacity(0.08)).border_dashed().border_color(t.accent.opacity(0.6));
+            Some(empty.child(check_box(*done, t).invisible()).child(card_text(text, *done, t).invisible()).into_any_element())
+        };
+        /// Un double-clic ouvre le champ de saisie à cet endroit.
+        fn twice(slot: Slot, cx: &mut Context<Shell>) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+            cx.listener(move |this, e: &ClickEvent, window, cx| {
+                if e.click_count() >= 2 {
+                    this.board_write(slot, window, cx)
+                }
+            })
+        }
+        let mut shown = Vec::new();
+        for (c, column) in all.iter().enumerate() {
+            let count = column.cards.len();
+            let mut cards = Vec::new();
+            for (i, card) in column.cards.iter().enumerate() {
+                let from = (c, i);
+                if drag.is_some_and(|(_, to)| to == from) {
+                    cards.extend(place());
+                }
+                // La carte tenue a quitté sa colonne : elle est sous le pointeur.
+                if drag.is_some_and(|(held, _)| held == from) {
+                    continue;
+                }
+                if let Some(field) = field_at(Slot::Card(c, i)) {
+                    cards.push(card_box(t).border_color(t.accent).child(field).into_any_element());
+                    continue;
+                }
+                let check = check_box(card.done, t).id(("tick", c * 10_000 + i)).cursor_pointer().on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.board_edit(|text| tick(text, from), cx)
+                }));
+                let card = card_box(t)
+                    .id(("card", c * 10_000 + i))
+                    .debug_selector(|| format!("card-{c}-{i}"))
+                    .cursor_grab()
+                    .hover(|s| s.border_color(t.dim))
+                    .child(check)
+                    .child(card_text(card.text, card.done, t))
+                    .on_click(twice(Slot::Card(c, i), cx))
+                    .on_drag(Dragged { pane, from, text: card.text.to_string(), done: card.done, width: self.pane().board.card.get(), theme: t }, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
+                    .on_drag_move(aim(pane, c, i, true, cx))
+                    .into_any_element();
+                cards.push(card);
+            }
+            if drag.is_some_and(|(_, to)| to.0 == c && to.1 >= count) {
+                cards.extend(place());
+            }
+            let title = match field_at(Slot::Column(c)) {
+                Some(field) => div().flex_1().min_w_0().flex().child(field).into_any_element(),
+                None => div()
+                    .id(("column-title", c))
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .child(column.title.to_string())
+                    .on_click(twice(Slot::Column(c), cx))
+                    .into_any_element(),
+            };
+            // Au bas de la colonne : la carte qu'on écrit, sinon de quoi en ajouter une.
+            let add = match field_at(Slot::New(c)) {
+                Some(field) => card_box(t).border_color(t.accent).child(field).into_any_element(),
+                None => div()
+                    .id(("card-add", c))
+                    .px_2()
+                    .py_1()
+                    .rounded(px(6.))
+                    .cursor_pointer()
+                    .text_color(t.soft)
+                    .hover(|s| s.bg(t.bg).text_color(t.text))
+                    .child(format!("+ {}", tr("Add a card", "Ajouter une carte")))
+                    .on_click(cx.listener(move |this, _, window, cx| this.board_write(Slot::New(c), window, cx)))
+                    .into_any_element(),
+            };
+            let head = div().flex().items_center().gap_2().child(title).child(div().text_color(t.soft).child(count.to_string()));
+            // La largeur d'une carte, relevée au dessin : celle qu'on tient garde la sienne.
+            let width = self.pane().board.card.clone();
+            let measure = canvas(move |bounds, _, _| width.set(bounds.size.width), |_, _, _, _| ()).absolute().top_0().left_2().right_2().h_0();
+            let column = div()
+                .relative()
+                .when(c == 0, |d| d.child(measure))
+                .p_2()
+                .rounded(px(8.))
+                .bg(t.panel)
+                .flex()
+                .flex_col()
+                .gap_2()
+                // Sur le titre, la carte tenue vise le haut de la colonne ; sous les cartes, le bas.
+                .child(head.on_drag_move(aim(pane, c, 0, false, cx)))
+                .children(cards)
+                .child(div().child(add).on_drag_move(aim(pane, c, count, false, cx)));
+            // Le couloir de la colonne descend jusqu'en bas : une carte lâchée sous une colonne
+            // courte s'y pose quand même.
+            let rest = div().debug_selector(|| format!("column-rest-{c}")).flex_1().min_h(px(48.)).on_drag_move(aim(pane, c, count, false, cx));
+            shown.push(div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).flex().flex_col().child(column).child(rest));
+        }
+        let more = match field_at(Slot::NewColumn) {
+            Some(field) => div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().rounded(px(8.)).bg(t.panel).border_1().border_color(t.accent).flex().child(field).into_any_element(),
+            None => crate::ui::widgets::button("column-add", "plus.svg", false, t)
+                .flex_none()
+                .on_click(cx.listener(|this, _, window, cx| this.board_write(Slot::NewColumn, window, cx)))
+                .into_any_element(),
+        };
+        div()
+            .id("board")
+            .key_context("Board")
+            .track_focus(&self.pane().board.focus)
+            .on_action(cx.listener(|this, _: &Undo, _, cx| this.pane().editor.update(cx, |e, cx| e.restore(false, cx))))
+            .on_action(cx.listener(|this, _: &Redo, _, cx| this.pane().editor.update(cx, |e, cx| e.restore(true, cx))))
+            // La carte tenue sortie du tableau : sa place revient d'où elle vient, et la lâcher
+            // là ne déplace rien.
+            .on_drag_move(cx.listener(move |this, e: &DragMoveEvent<Dragged>, _, cx| {
+                let from = e.drag(cx).from;
+                if e.drag(cx).pane != pane || pane >= this.panes.len() {
+                    return;
+                }
+                if !e.bounds.contains(&e.event.position) && this.panes[pane].board.drag != Some((from, from)) {
+                    this.panes[pane].board.drag = Some((from, from));
+                    cx.notify();
+                }
+            }))
+            .size_full()
+            .pt(px(52.))
+            .px_6()
+            .pb_4()
+            .text_size(px(13.))
+            .flex()
+            .gap_3()
+            .overflow_scroll()
+            .track_scroll(&self.pane().board.scroll)
+            // Un clic à côté valide ce qu'on écrivait.
+            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| this.board_commit(false, window, cx)))
+            // La carte lâchée, où que ce soit sur le tableau, va à la place ouverte pour elle.
+            .on_drop(cx.listener(move |this, dragged: &Dragged, _, cx| {
+                if dragged.pane == pane && pane < this.panes.len() {
+                    this.in_pane(pane, |this| {
+                        if let Some((from, to)) = this.pane_mut().board.drag.take() {
+                            this.board_edit(|text| move_card(text, from, to), cx);
+                        }
+                    });
+                }
+                cx.notify();
+            }))
+            .children(shown)
+            .child(more)
+    }
+}
+/// Pendant qu'on tient une carte, le pointeur sur cette zone dit où elle se poserait : avant la
+/// carte de rang `i` de la colonne `c`, ou après elle s'il est dans sa moitié basse (`halves`).
+pub(super) fn aim(pane: usize, c: usize, i: usize, halves: bool, cx: &mut Context<Shell>) -> impl Fn(&DragMoveEvent<Dragged>, &mut Window, &mut App) + 'static {
+    cx.listener(move |this, e: &DragMoveEvent<Dragged>, window, cx| {
+        let at = e.event.position;
+        if !e.bounds.contains(&at) || e.drag(cx).pane != pane || pane >= this.panes.len() {
+            return;
+        }
+        let below = halves && at.y > e.bounds.origin.y + e.bounds.size.height / 2.;
+        let drag = Some((e.drag(cx).from, (c, i + below as usize)));
+        if this.panes[pane].board.drag != drag {
+            this.panes[pane].board.drag = drag;
+            cx.set_active_drag_cursor_style(CursorStyle::ClosedHand, window);
+            cx.notify();
+        }
+    })
+}

@@ -1,0 +1,367 @@
+//! The context menu of the tree and the note, and what each entry does.
+
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use gpui::{
+    Action, Animation, AnimationExt, ClipboardItem, Context, Focusable, MouseButton,
+    MouseDownEvent, Window, div, ease_out_quint, prelude::*, px,
+};
+use crate::{
+    views::editor, views::graph,
+    logic::markdown::Link,
+    lang::tr,
+    platform::vault,
+};
+use super::*;
+use crate::views::nav::*;
+
+impl Shell {
+    /// Exécute une entrée du menu contextuel sur `target` (`None` : le coffre).
+    pub(super) fn menu_do(&mut self, what: Do, target: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
+        let menu = self.menu.take();
+        let at = menu.as_ref().map(|menu| menu.at).unwrap_or_default();
+        let link = menu.and_then(|menu| menu.text).flatten();
+        cx.notify();
+        if let (Do::Icon, Some(path)) = (what, &target) {
+            self.icon_pick = Some((at, path.clone()));
+            return;
+        }
+        // Menu de la note : les gestes de l'éditeur, comme au clavier, et le lien visé.
+        let action: Option<Box<dyn Action>> = match (what, link) {
+            (Do::Cut, _) => Some(Box::new(editor::Cut)),
+            (Do::Copy, _) => Some(Box::new(editor::Copy)),
+            (Do::Paste, _) => Some(Box::new(editor::Paste)),
+            (Do::Bold, _) => Some(Box::new(editor::Bold)),
+            (Do::Italic, _) => Some(Box::new(editor::Italic)),
+            (Do::Underline, _) => Some(Box::new(editor::Underline)),
+            (Do::Strike, _) => Some(Box::new(editor::Strike)),
+            (Do::Highlight, _) => Some(Box::new(editor::Highlight)),
+            (Do::Code, _) => Some(Box::new(editor::InlineCode)),
+            (Do::Link, _) => Some(Box::new(editor::InsertLink)),
+            (Do::Comment, _) => Some(Box::new(editor::Comment)),
+            (Do::Bullets, _) => Some(Box::new(editor::ListBullet)),
+            (Do::Numbered, _) => Some(Box::new(editor::ListOrdered)),
+            (Do::Tasks, _) => Some(Box::new(editor::ListTask)),
+            (Do::Plain, _) => Some(Box::new(editor::ListText)),
+            (Do::Table(op), _) => Some(op.action()),
+            (Do::Block(op), _) => Some(op.action()),
+            (Do::OpenLink, Some(link)) => return self.follow(&link, window, cx),
+            (Do::CopyAddress, Some(Link::Url(url))) => return cx.write_to_clipboard(ClipboardItem::new_string(url)),
+            _ => None,
+        };
+        if let Some(action) = action {
+            window.focus(&self.pane().editor.focus_handle(cx));
+            return window.dispatch_action(action, cx);
+        }
+        let Some(root) = self.vault.clone() else {
+            return;
+        };
+        if let Do::List = what {
+            return self.open_listing(target.unwrap_or(root), window, cx);
+        }
+        // Un tag n'est ni une note ni un dossier : rien à renommer ni à jeter.
+        if target.as_ref().is_some_and(|t| !t.starts_with(&root)) {
+            return;
+        }
+        let is_dir = target.as_ref().is_none_or(|t| self.dirs.contains(t));
+        // Dossier visé : la cible elle-même, ou celui qui contient la note.
+        let dir = match &target {
+            Some(t) if is_dir => t.clone(),
+            Some(t) => t.parent().map_or(root.clone(), Path::to_path_buf),
+            None => root.clone(),
+        };
+        // Corbeille, copies et duplication portent sur toute la sélection multiple.
+        let all = target.as_deref().map_or_else(|| vec![root.clone()], |t| self.targets(t));
+        let copy = |lines: Vec<String>, cx: &mut Context<Self>| {
+            cx.write_to_clipboard(ClipboardItem::new_string(lines.join("\n")));
+        };
+        match (what, target) {
+            (Do::Open, Some(path)) => self.open_from_nav(&path, window, cx),
+            (Do::OpenAside, Some(path)) => self.open_aside(&path, window, cx),
+            (Do::NewNote, _) => {
+                self.nav.open.insert(dir.clone());
+                self.nav.sel = Some(dir);
+                self.new_note_here(window, cx);
+            }
+            (Do::FromTemplate, _) => {
+                self.nav.open.insert(dir.clone());
+                self.nav.sel = Some(dir);
+                self.open_templates(crate::views::palette::TemplateAct::New, window, cx);
+            }
+            (Do::NewDiagram, _) => {
+                self.nav.open.insert(dir.clone());
+                self.nav.sel = Some(dir);
+                self.new_diagram(window, cx);
+            }
+            (Do::NewFolder, _) => {
+                // Le dossier est créé dans celui de la sélection : le champ le dit.
+                let label = match dir.file_name().filter(|_| dir != root) {
+                    Some(name) => format!("{} « {} »", tr("Folder name, in", "Nom du dossier, dans"), name.to_string_lossy()),
+                    None => tr("Folder name", "Nom du dossier").to_string(),
+                };
+                self.ask(label, "", window, cx, move |this, name, _, cx| {
+                    let new = dir.join(name);
+                    match fs::create_dir(&new) {
+                        Ok(()) => {
+                            this.nav.open.insert(dir.clone());
+                            this.dirs.push(new.clone());
+                            this.nav.reveal(&new);
+                        }
+                        Err(e) => this.fail(tr("Folder not created", "Dossier non créé"), e, cx),
+                    }
+                });
+            }
+            (Do::Rename, Some(path)) => {
+                let label = tr("Rename: new name", "Renommer : nouveau nom");
+                let current = if is_dir { path.file_name().unwrap_or_default().to_string_lossy().into_owned() } else { vault::stem(&path) };
+                self.ask(label, &current.clone(), window, cx, move |this, name, _, cx| {
+                    if name == current {
+                        return;
+                    }
+                    this.flush(cx);
+                    let image = vault::is_image(&path) || vault::is_attachment(&path);
+                    let renamed = if is_dir {
+                        let to = path.with_file_name(&name);
+                        vault::rename(&path, &to).map(|()| to)
+                    } else if image || vault::is_table(&path) {
+                        // Une image ou un tableau garde son extension.
+                        let extension = path.extension().unwrap_or_default().to_string_lossy();
+                        let to = path.with_file_name(format!("{name}.{extension}"));
+                        vault::rename(&path, &to).map(|()| to)
+                    } else {
+                        vault::rename_note(&path, &name)
+                    };
+                    match renamed {
+                        Ok(to) => {
+                            // Le titre d'une note renommée a pu changer : on la relit.
+                            this.relocate(&path, &to, !is_dir, cx);
+                            // Les liens suivent : par nom de note, ou par nom de fichier pour une image.
+                            let (old, new) = if image {
+                                (graph::image_name(&path), graph::image_name(&to))
+                            } else {
+                                (current.clone(), name)
+                            };
+                            if !is_dir && this.relink(&old, &new, cx) {
+                                this.reload(cx);
+                            }
+                        }
+                        Err(e) => this.fail(tr("Not renamed", "Renommage impossible"), e, cx),
+                    }
+                });
+            }
+            (Do::Trash, Some(_)) => {
+                all.iter().for_each(|path| self.trash(&root, path, cx));
+                self.nav.marked.clear();
+            }
+            (Do::CopyLink, Some(_)) => {
+                let files = all.iter().filter(|p| !self.dirs.contains(p));
+                let link = |path: &PathBuf| match (vault::is_image(path), vault::is_table(path)) {
+                    (true, _) => format!("![[{}]]", graph::image_name(path)),
+                    // Un tableau n'a pas de lien : son nom de fichier.
+                    (_, true) => graph::image_name(path),
+                    // Une pièce jointe se vise par son nom de fichier, extension comprise.
+                    _ if vault::is_attachment(path) => format!("[[{}]]", graph::image_name(path)),
+                    _ => format!("[[{}]]", vault::stem(path)),
+                };
+                copy(files.map(link).collect(), cx);
+            }
+            (Do::CopyPath, _) => copy(all.iter().map(|p| p.display().to_string()).collect(), cx),
+            (Do::CopyRelative, _) => {
+                let relative = |p: &PathBuf| p.strip_prefix(&root).unwrap_or(p).display().to_string();
+                copy(all.iter().map(relative).collect(), cx);
+            }
+            (Do::Reveal, _) => cx.reveal_path(&all[0]),
+            // ponytail: seuls les fichiers se dupliquent ; copier un dossier entier
+            // demande un parcours récursif, à écrire si le besoin se présente.
+            (Do::Duplicate, Some(_)) => {
+                // La copie part de ce qui est à l'écran, pas d'un fichier en retard.
+                self.flush(cx);
+                let mut last = None;
+                for path in all.iter().filter(|p| p.is_file()) {
+                    let extension = path.extension().unwrap_or_default().to_string_lossy();
+                    let twin = vault::free_path(path.parent().unwrap_or(&root), &vault::stem(path), &extension);
+                    match fs::copy(path, &twin) {
+                        Ok(_) => last = Some(twin),
+                        Err(e) => return self.fail(tr("Not duplicated", "Duplication impossible"), e, cx),
+                    }
+                }
+                if let Some(twin) = last {
+                    let (notes, dirs, images) = vault::rescan(&root, &self.notes);
+                    self.sync(notes, dirs, images, cx);
+                    self.nav.marked.clear();
+                    self.nav.reveal(&twin);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Menu contextuel, par-dessus toute la fenêtre : un clic ailleurs le ferme.
+    pub(super) fn render_menu(&self, _: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let menu = self.menu.as_ref()?;
+        let t = self.theme;
+        let is_dir = menu.target.as_ref().is_none_or(|p| self.dirs.contains(p));
+        let tree = self.nav.mode == Mode::Tree;
+        let many = menu.target.as_ref().is_some_and(|p| self.nav.marked.contains(p)) && self.nav.marked.len() > 1;
+        // Groupes d'entrées ; un trait sépare ceux qui en ont.
+        let mut groups: Vec<Vec<(&'static str, Do)>> = vec![Vec::new(); 7];
+        if menu.block {
+            // La poignée d'un bloc : ce qu'il peut devenir, le déplacer ou le doubler, le copier, le supprimer.
+            use editor::BlockOp;
+            groups[0].extend(BlockOp::ALL.into_iter().filter(|op| matches!(op, BlockOp::Turn(_))).map(|op| (op.label(), Do::Block(op))));
+            groups[1].extend([BlockOp::Duplicate, BlockOp::Up, BlockOp::Down].map(|op| (op.label(), Do::Block(op))));
+            groups[2].push((tr("Copy", "Copier"), Do::Copy));
+            groups[2].push((tr("Cut", "Couper"), Do::Cut));
+            groups[2].push((tr("Comment", "Commenter"), Do::Comment));
+            groups[3].push((BlockOp::Delete.label(), Do::Block(BlockOp::Delete)));
+        } else if let Some(link) = &menu.text {
+            let web = matches!(link, Some(Link::Url(_)));
+            if link.is_some() {
+                groups[0].push((tr("Open the link", "Ouvrir le lien"), Do::OpenLink));
+            }
+            if web {
+                groups[0].push((tr("Copy the address", "Copier l'adresse"), Do::CopyAddress));
+            }
+            groups[1].push((tr("Cut", "Couper"), Do::Cut));
+            groups[1].push((tr("Copy", "Copier"), Do::Copy));
+            groups[1].push((tr("Paste", "Coller"), Do::Paste));
+            if self.pane().editor.read(cx).in_table() {
+                // Dans un tableau : ses lignes, ses colonnes, puis le tableau.
+                use editor::TableOp::*;
+                for (group, ops) in [
+                    (2, [RowAbove, RowBelow, DuplicateRow, MoveRowUp, MoveRowDown, DeleteRow].as_slice()),
+                    (3, [ColLeft, ColRight, DuplicateCol, MoveColLeft, MoveColRight, DeleteCol].as_slice()),
+                    (4, [SortAsc, SortDesc, Transpose, DeleteTable].as_slice()),
+                ] {
+                    groups[group].extend(ops.iter().map(|&op| (op.label(), Do::Table(op))));
+                }
+                groups[5].push((tr("Comment", "Commenter"), Do::Comment));
+            } else {
+                groups[2].push((tr("Bold", "Gras"), Do::Bold));
+                groups[2].push((tr("Italic", "Italique"), Do::Italic));
+                groups[2].push((tr("Underline", "Souligné"), Do::Underline));
+                groups[2].push((tr("Strikethrough", "Barré"), Do::Strike));
+                groups[2].push((tr("Highlight", "Surligné"), Do::Highlight));
+                groups[2].push((tr("Code", "Code"), Do::Code));
+                groups[2].push((if web { tr("Edit the link", "Modifier le lien") } else { tr("Make a link", "Faire un lien") }, Do::Link));
+                groups[2].push((if menu.commented { tr("Resolve the comment", "Résoudre le commentaire") } else { tr("Comment", "Commenter") }, Do::Comment));
+                // Les lignes visées, d'un genre de liste à l'autre.
+                groups[3].push((tr("Bulleted list", "Liste à puces"), Do::Bullets));
+                groups[3].push((tr("Numbered list", "Liste numérotée"), Do::Numbered));
+                groups[3].push((tr("Task list", "Liste de tâches"), Do::Tasks));
+                groups[3].push((tr("Plain text", "Texte simple"), Do::Plain));
+            }
+        } else if menu.target.as_deref().and_then(tag_of).is_some() {
+            // Un tag n'est ni une note ni un dossier : on ne peut qu'en lister les notes.
+            groups[0].push((tr("Show as a list", "Afficher en liste"), Do::List));
+        } else {
+            if !is_dir && !many {
+                groups[0].push((tr("Open", "Ouvrir"), Do::Open));
+                groups[0].push((tr("Open to the side", "Ouvrir à côté"), Do::OpenAside));
+            }
+            if tree && !many {
+                groups[1].push((tr("New note here", "Nouvelle note ici"), Do::NewNote));
+                if self.vault.as_ref().is_some_and(|root| vault::template_dir(root, &self.dirs).is_some()) {
+                    groups[1].push((tr("New note from a template", "Nouvelle note depuis un modèle"), Do::FromTemplate));
+                }
+                groups[1].push((tr("New diagram here", "Nouveau schéma ici"), Do::NewDiagram));
+                groups[1].push((tr("New folder", "Nouveau dossier"), Do::NewFolder));
+            }
+            if !is_dir || many {
+                groups[2].push((tr("Copy the [[link]]", "Copier le [[lien]]"), Do::CopyLink));
+            }
+            groups[2].push((tr("Copy path", "Copier le chemin"), Do::CopyPath));
+            if menu.target.is_some() {
+                groups[2].push((tr("Copy relative path", "Copier le chemin relatif"), Do::CopyRelative));
+            }
+            if !many {
+                groups[2].push((reveal_label(), Do::Reveal));
+            }
+            if is_dir && !many && tree {
+                groups[0].push((tr("Show as a list", "Afficher en liste"), Do::List));
+            }
+            if menu.target.is_some() {
+                if !is_dir || many {
+                    groups[3].push((tr("Duplicate", "Dupliquer"), Do::Duplicate));
+                }
+                if !many {
+                    groups[3].push((tr("Rename", "Renommer"), Do::Rename));
+                    groups[3].push((tr("Icon…", "Icône…"), Do::Icon));
+                }
+                groups[3].push((tr("Move to the trash", "Mettre à la corbeille"), Do::Trash));
+            }
+        }
+        groups.retain(|g| !g.is_empty());
+        let at = menu.at;
+        let target = menu.target.clone();
+        let entry = |(label, what): (&'static str, Do), cx: &mut Context<Self>| {
+            let target = target.clone();
+            div()
+                .id(label)
+                .h(px(28.))
+                .mx_1()
+                .px_2()
+                .flex()
+                .items_center()
+                .rounded(px(5.))
+                .cursor_pointer()
+                .hover(|s| s.bg(t.selection))
+                .when(matches!(what, Do::Trash), |d| d.text_color(t.accent))
+                // Le libellé en entier, puis son raccourci, plus discret, calé à droite : c'est le
+                // menu qui prend la largeur qu'il leur faut.
+                .child(div().flex_1().whitespace_nowrap().child(label))
+                .child(div().flex_none().ml_4().whitespace_nowrap().text_size(px(11.5)).text_color(t.soft).child(what.keys(cx)))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.menu_do(what, target.clone(), window, cx)
+                    }),
+                )
+                .into_any_element()
+        };
+        let mut rows = Vec::new();
+        for (i, group) in groups.into_iter().enumerate() {
+            if i > 0 {
+                rows.push(div().h(px(1.)).my(px(4.)).bg(t.border).into_any_element());
+            }
+            rows.extend(group.into_iter().map(|item| entry(item, cx)));
+        }
+        let close = || {
+            cx.listener(|this: &mut Self, _: &MouseDownEvent, _, cx| {
+                this.menu = None;
+                cx.notify();
+            })
+        };
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .occlude()
+                .on_mouse_down(MouseButton::Left, close())
+                .on_mouse_down(MouseButton::Right, close())
+                // Le menu a la largeur de son plus long libellé avec son raccourci, quelle que
+                // soit la police, et reste dans la fenêtre, même ouvert près d'un bord.
+                .child(gpui::anchored().position(at).snap_to_window_with_margin(px(8.)).child(
+                    div()
+                        .min_w(px(230.))
+                        .py(px(5.))
+                        .bg(t.panel)
+                        .border_1()
+                        .border_color(t.border)
+                        .rounded(px(8.))
+                        .shadow_lg()
+                        .text_size(px(13.))
+                        .children(rows)
+                        .with_animation(
+                            "menu-in",
+                            Animation::new(Duration::from_millis(110)).with_easing(ease_out_quint()),
+                            |menu, delta| menu.opacity(delta),
+                        ),
+                )),
+        )
+    }
+}

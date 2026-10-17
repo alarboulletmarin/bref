@@ -2924,7 +2924,7 @@ impl Editor {
         };
         let swatches = self.swatches.then(|| self.swatches(inline, cx));
         let on = tools.styles;
-        let keys = |action: &dyn gpui::Action| crate::keys::of(cx, action);
+        let keys = |action: &dyn gpui::Action| crate::ui::keys::of(cx, action);
         let mut tips = vec![
             (tr("Bold", "Gras"), keys(&Bold)),
             (tr("Italic", "Italique"), keys(&Italic)),

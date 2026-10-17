@@ -13,7 +13,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
 
     // Panneau d'aide : F1 l'ouvre, Échap le ferme et rend la main à l'éditeur.
     cx.simulate_keystrokes("f1");
-    assert!(shell.read_with(cx, |s, _| s.help));
+    assert!(shell.read_with(cx, |s, _| s.help.open));
     // La frappe va au champ de recherche, qui filtre les lignes : touches ou effet, sans
     // les accents.
     let rows = |cx: &mut gpui::VisualTestContext| {
@@ -33,10 +33,10 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(text(cx), "# Idées\n\n", "rien n'est tapé dans la note");
     // Échap vide d'abord le champ, puis ferme le panneau.
     cx.simulate_keystrokes("escape");
-    assert!(shell.read_with(cx, |s, _| s.help));
+    assert!(shell.read_with(cx, |s, _| s.help.open));
     assert_eq!(rows(cx).len(), all);
     cx.simulate_keystrokes("escape");
-    assert!(!shell.read_with(cx, |s, _| s.help));
+    assert!(!shell.read_with(cx, |s, _| s.help.open));
     cx.simulate_input("ok");
     assert_eq!(text(cx), "# Idées\n\nok");
 
@@ -47,7 +47,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         let row = rows(cx).into_iter().find(|row| row.action == Some(action)).unwrap();
         (row.keys, row.changed)
     };
-    let editing = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.help_edit.as_ref().map(|edit| (edit.action, edit.issue.clone())));
+    let editing = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.help.edit.as_ref().map(|edit| (edit.action, edit.issue.clone())));
     let graph = format!("{MOD}+G");
     cx.simulate_keystrokes("f1");
     cx.simulate_input("graphe des notes");
@@ -57,7 +57,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Refusées, avec la raison : une touche seule qui écrit, une touche réservée au texte.
     cx.simulate_keystrokes("a");
     assert!(matches!(editing(cx), Some((_, Some(KeyIssue::Refused(_))))));
-    assert_eq!(shell.read_with(cx, |s, cx| s.help_find.as_ref().unwrap().read(cx).line.text.clone()), "graphe des notes", "la touche n'est pas tapée");
+    assert_eq!(shell.read_with(cx, |s, cx| s.help.find.as_ref().unwrap().read(cx).line.text.clone()), "graphe des notes", "la touche n'est pas tapée");
     cx.simulate_keystrokes("enter");
     assert!(matches!(editing(cx), Some((_, Some(KeyIssue::Refused(_))))));
     cx.simulate_keystrokes("secondary-shift-y");
@@ -65,7 +65,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(keys_of(cx, "nav::ShowGraph"), (format!("{MOD}+Maj+Y"), true));
     assert_eq!(vault::load_file("keys"), "nav::ShowGraph=secondary-shift-y\n");
     cx.simulate_keystrokes("escape escape");
-    assert!(!shell.read_with(cx, |s, _| s.help));
+    assert!(!shell.read_with(cx, |s, _| s.help.open));
     // Sans redémarrer : les anciennes touches ne font plus rien, les nouvelles agissent.
     cx.simulate_keystrokes("secondary-e");
     assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tree);
@@ -95,7 +95,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("down enter backspace");
     assert_eq!(keys_of(cx, "nav::ShowGraph"), (String::new(), true));
     cx.simulate_keystrokes("enter escape");
-    assert_eq!((editing(cx), shell.read_with(cx, |s, _| s.help)), (None, true));
+    assert_eq!((editing(cx), shell.read_with(cx, |s, _| s.help.open)), (None, true));
     assert_eq!(rows(cx).len(), 1, "la recherche n'a pas bougé");
     // Un clic sur les touches attend aussi ; « défaut » remet celles d'origine.
     let at = cx.debug_bounds("key-nav::ShowGraph").unwrap().center();

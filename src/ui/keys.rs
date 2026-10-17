@@ -1,10 +1,13 @@
 //! Raccourcis : la table des liaisons, ce que l'utilisateur en a changé, les conflits, le
 //! fichier `keys`, et ce que le panneau d'aide montre et cherche (fonctions pures).
 
-use crate::{MOD, lang::tr};
+use crate::lang::tr;
 use crate::lang::fold;
 use gpui::{Action, App, Keystroke};
 use std::collections::BTreeMap;
+
+/// Touche des raccourcis, telle qu'affichée : Cmd sur macOS, Ctrl ailleurs.
+pub const MOD: &str = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" };
 
 /// Une liaison : des touches (écrites par `canon`), le nom d'une action, le contexte où elle vaut.
 #[derive(Clone, Debug, PartialEq)]
@@ -354,10 +357,10 @@ mod tests {
 
     #[test]
     fn show_reads_like_a_keyboard() {
-        assert_eq!(show("secondary-shift-p"), format!("{}+Maj+P", crate::MOD));
+        assert_eq!(show("secondary-shift-p"), format!("{}+Maj+P", MOD));
         assert_eq!(show("alt-enter"), "Alt+Entrée");
         assert_eq!(show("f1"), "F1");
-        assert_eq!(show("secondary--"), format!("{}+-", crate::MOD));
+        assert_eq!(show("secondary--"), format!("{}+-", MOD));
     }
 
     #[test]
@@ -471,7 +474,7 @@ mod tests {
         assert_eq!(shown(&now, "app::Help"), "F9");
         assert_eq!(shown(&now, "nav::Graph"), "");
         // Deux touches par défaut, une fois chacune même liée dans deux contextes.
-        assert_eq!(shown(&base(), "app::Help"), format!("F1 / {}+/", crate::MOD));
-        assert_eq!(shown(&base(), "editor::Find"), format!("{}+F", crate::MOD));
+        assert_eq!(shown(&base(), "app::Help"), format!("F1 / {}+/", MOD));
+        assert_eq!(shown(&base(), "editor::Find"), format!("{}+F", MOD));
     }
 }

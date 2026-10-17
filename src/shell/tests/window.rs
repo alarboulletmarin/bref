@@ -1,6 +1,7 @@
 //! The window around the notes: badge, format bar, saved shortcuts and panes, first launch, quick capture, empty page.
 
 use super::*;
+use crate::shell::render::badge_label;
 
 #[test]
 fn badge_shows_the_count_up_to_nine() {

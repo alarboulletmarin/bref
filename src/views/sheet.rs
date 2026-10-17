@@ -1274,7 +1274,7 @@ impl Sheet {
                 out.push(
                     button(gpui::SharedString::from(format!("sheet-span-{name}")), icon, false, t)
                         .debug_selector(move || format!("sheet-span-{name}"))
-                        .tooltip(tip(label, crate::keys::of(cx, action.as_ref()), t))
+                        .tooltip(tip(label, crate::ui::keys::of(cx, action.as_ref()), t))
                         .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
                         .into_any_element(),
                 );
@@ -1323,7 +1323,7 @@ impl Sheet {
             .child(div().flex_none().w(px(1.)).h(px(16.)).mx(px(6.)).bg(t.border))
             .child(
                 button("sheet-copy", if self.copied { "check.svg" } else { "copy.svg" }, false, t)
-                    .tooltip(tip(tr("Copy the selection", "Copier la sélection"), crate::keys::of(cx, &Copy), t))
+                    .tooltip(tip(tr("Copy the selection", "Copier la sélection"), crate::ui::keys::of(cx, &Copy), t))
                     .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),
             )
             .child(

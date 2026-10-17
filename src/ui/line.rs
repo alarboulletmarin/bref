@@ -12,7 +12,7 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::ui::theme::Theme;
-use crate::keys::{Bind, bind};
+use crate::ui::keys::{Bind, bind};
 
 actions!(
     line,

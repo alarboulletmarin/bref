@@ -16,13 +16,15 @@ use gpui::{Hsla, TestAppContext};
 static CONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The layers only depend downwards: `logic` and `platform` never see gpui nor the layers
-/// above them, and `ui` never sees the views. See ARCHITECTURE.md.
+/// above them, `ui` never sees the views, and the views never see the shell, whose code stays
+/// in `src/shell`. See ARCHITECTURE.md.
 #[test]
 fn layers_only_depend_downwards() {
     let rules: &[(&str, &[&str])] = &[
-        ("src/logic", &["gpui", "crate::platform", "crate::ui", "crate::views"]),
-        ("src/platform", &["gpui", "crate::ui", "crate::views"]),
-        ("src/ui", &["crate::views"]),
+        ("src/logic", &["gpui", "crate::platform", "crate::ui", "crate::views", "crate::shell"]),
+        ("src/platform", &["gpui", "crate::ui", "crate::views", "crate::shell"]),
+        ("src/ui", &["crate::views", "crate::shell", "impl Shell"]),
+        ("src/views", &["crate::shell", "impl Shell"]),
     ];
     for (dir, banned) in rules {
         for entry in fs::read_dir(dir).unwrap() {
