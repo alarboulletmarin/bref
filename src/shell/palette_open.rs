@@ -26,7 +26,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Outline of the note, like Zed's: the list of its headings, the one of the current
+    /// Outline of the note: the list of its headings, the one of the current
     /// section preselected. The heading browsed shows as a preview, Enter leaves the cursor there,
     /// Escape puts it back where it was.
     pub(super) fn open_outline(&mut self, window: &mut Window, cx: &mut Context<Self>) {

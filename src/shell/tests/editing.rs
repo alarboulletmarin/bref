@@ -110,7 +110,7 @@ fn commands_are_found(cx: &mut TestAppContext) {
     fs::remove_dir_all(&root).unwrap();
 }
 
-/// Block handles, as in Notion: hovering a line, dragging the handle moves its block,
+/// Block handles: hovering a line, dragging the handle moves its block,
 /// a click opens its menu, the "+" puts a block below with the `/` list; Alt+arrow moves it.
 #[gpui::test]
 fn block_handles(cx: &mut TestAppContext) {

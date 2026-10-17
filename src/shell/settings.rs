@@ -17,7 +17,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Choice list for a setting, like Zed's theme picker: the choice
+    /// Choice list for a setting: the choice
     /// browsed applies as a preview, Enter keeps it, Escape returns to the previous one.
     pub(super) fn choose_setting(&mut self, setting: Setting, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() {

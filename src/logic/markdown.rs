@@ -1037,7 +1037,7 @@ pub fn renumber(text: &str, cursor: usize) -> Option<(String, usize)> {
 
 // ----- Callouts and tables -----
 
-/// Kind of callout opened by a `> [!NOTE]` quote (GitHub and Obsidian syntax).
+/// Kind of callout opened by a `> [!NOTE]` quote (GitHub syntax).
 pub fn callout(line: &str) -> Option<Range<usize>> {
     let open = line.find('>')? + 1;
     let open = open + indent_len(&line[open..]);

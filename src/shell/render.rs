@@ -460,8 +460,8 @@ impl Shell {
                     "{} · {}",
                     keys::of(cx, &OpenVault),
                     tr(
-                        "an existing Obsidian vault works as it is",
-                        "un coffre Obsidian existant fonctionne tel quel",
+                        "a folder of Markdown notes you already have works as it is",
+                        "un dossier de notes Markdown existant fonctionne tel quel",
                     )
                 )))
                 // The address to clone is asked here too, without a vault.

@@ -510,7 +510,7 @@ impl Palette {
         this
     }
 
-    /// Search in the vault's text (like Zed's `Ctrl+Shift+F`): each line where
+    /// Search in the vault's text (`Ctrl+Shift+F`): each line where
     /// the typed text appears, ignoring case; Enter opens the note at that line.
     pub fn search(entries: Vec<Entry>, theme: Theme, cx: &mut Context<Self>) -> Self {
         Self { lines: true, ..Self::new(entries, "", theme, cx) }
@@ -589,7 +589,7 @@ impl Palette {
             self.selected = 0;
             return;
         }
-        // ">" first, as in VS Code: the palette shows only the commands, and the ">"
+        // ">" first: the palette shows only the commands, and the ">"
         // is cleared from the field.
         if !self.commands_only && !self.choices && self.prompt.is_none() && self.query.text.starts_with('>') {
             self.query = Line::new(self.query.text[1..].trim_start());

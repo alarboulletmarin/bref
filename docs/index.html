@@ -129,7 +129,7 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
   <header class="lead">
     <h1>Bref</h1>
     <blockquote>Notes that open before you blink.</blockquote>
-    <p>A fast, minimal note-taking app. Notes are plain Markdown files in a folder you choose, styled as you type. Written in Rust with <a href="https://www.gpui.rs">GPUI</a>, the framework behind Zed.</p>
+    <p>A fast, minimal note-taking app. Notes are plain Markdown files in a folder you choose, styled as you type. Written in Rust with <a href="https://www.gpui.rs">GPUI</a>, a GPU-accelerated UI framework.</p>
     <p><span class="tag">#markdown</span><span class="tag">#rust</span><span class="tag">#linux</span><span class="tag">#macos</span><span class="tag">#windows</span></p>
   </header>
 
@@ -171,14 +171,14 @@ footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; 
   <ul>
     <li><b>Search inside your notes</b>: the palette finds a note by its name, then by any words in its text, and shows the line that matched. <code>Ctrl + Shift + F</code> lists every matching line of the vault.</li>
     <li><b>Replace across the vault</b>: plain text or regular expressions, the count shown before anything is written, and one command to undo it all.</li>
-    <li><b>Blocks you can take</b>: like in Notion, a grip left of the line under the pointer moves its block, a click opens its menu (turn into a heading, a list, a quote, code; duplicate, delete), and <code>+</code> adds a block under it.</li>
+    <li><b>Blocks you can take</b>: a grip left of the line under the pointer moves its block, a click opens its menu (turn into a heading, a list, a quote, code; duplicate, delete), and <code>+</code> adds a block under it.</li>
     <li><b>Keyboard first</b>: one palette to find notes, tables, pictures and commands, create and switch. No toolbar, no save button; pointing at an icon names it, with its shortcut.</li>
     <li><b>Nothing hidden</b>: <code>F10</code> opens the command palette, every command the view can do with its icon, short name and keys, those of what you are on first; the bar of a CSV table shows the gestures of the selected rows or columns.</li>
     <li><b>Shortcuts you can change</b>: the help panel searches every shortcut as you type and lets you give any of them other keys; one already in use says by what, and is only taken when you ask. Menus show the shortcut of each action.</li>
   </ul>
   <h3>Your files</h3>
   <ul>
-    <li><b>Plain files</b>: one <code>.md</code> per note, plus your <code>.csv</code> and <code>.tsv</code>. Sync with git, or keep the vault in iCloud, Dropbox, Google Drive or Syncthing; an Obsidian vault works as is, front matter included (its tags and aliases are read).</li>
+    <li><b>Plain files</b>: one <code>.md</code> per note, plus your <code>.csv</code> and <code>.tsv</code>. Sync with git, or keep the vault in iCloud, Dropbox, Google Drive or Syncthing; a folder of Markdown notes you already have works as is, front matter included (its tags and aliases are read).</li>
     <li><b>CSV and TSV</b>: opened in a grid, with columns you insert, move, delete and a sort on any column, undone byte for byte, delimiter and encoding detected or chosen, selection by keyboard or mouse (<code>Shift + Space</code> a row, <code>Ctrl + Space</code> a column, as in a spreadsheet), copy, paste and export (TSV, CSV, Markdown, JSON), written straight into the file. A million rows are parsed in under a tenth of a second.</li>
     <li><b>Follows your folder</b>: notes added, renamed or changed by another program or a sync tool show up in about half a second, without restarting.</li>
     <li><b>Sync in one action</b>: <code>Ctrl + Shift + S</code> commits, receives, merges and sends a vault kept in git, in the background; a real conflict keeps both versions as two notes, never as markers in your text.</li>
@@ -213,7 +213,7 @@ cargo install --path . --locked</code></pre>
   <div class="panel"><b>[!NOTE]</b>Linux needs a few system libraries and a Vulkan driver. <a href="https://github.com/alarboulletmarin/bref#install">Steps for each system</a>, including compiling on macOS and Windows.</div>
 
   <h2 id="docs">Documentation</h2>
-  <p>On first run, one click creates your vault, the folder that holds your notes, in <code>Documents/Notes</code>; or open any folder, an Obsidian vault included. That is the only setup. The essentials, <code>Cmd</code> instead of <code>Ctrl</code> on macOS:</p>
+  <p>On first run, one click creates your vault, the folder that holds your notes, in <code>Documents/Notes</code>; or open any folder of Markdown notes. That is the only setup. The essentials, <code>Cmd</code> instead of <code>Ctrl</code> on macOS:</p>
 <pre class="table"><i>|</i> <b>Key</b>                <i>|</i> <b>Action</b>                                         <i>|</i>
 <i>| ------------------ | ---------------------------------------------- |</i>
 <i>|</i> Ctrl + P           <i>|</i> find by name or text, create, filter by #tag   <i>|</i>

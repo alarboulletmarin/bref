@@ -323,7 +323,7 @@ pub fn run() {
                 }),
                 // Must match the .desktop file name for the desktop to associate the icon.
                 app_id: Some("dev.andrea.Bref".into()),
-                // Like Zed: on Linux the app draws its title bar. Asking for
+                // On Linux the app draws its title bar. Asking for
                 // `Server` does not work on GNOME/Wayland, which provides none
                 // while gpui 0.2 still believes it is decorated. macOS and Windows
                 // ignore the request and keep their native bar.

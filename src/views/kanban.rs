@@ -1,6 +1,6 @@
 //! Kanban board: a note shown as columns. Each `##` heading is a column, each
-//! `- [ ]` task under it a card; the file stays Markdown (the layout of Obsidian's Kanban
-//! plugin). Pure functions first, then the board itself (`impl Shell`).
+//! `- [ ]` task under it a card; the file stays Markdown. Pure functions first, then what a
+//! pane keeps of a board; the board is drawn by the shell (`shell/board.rs`).
 
 use std::ops::Range;
 
@@ -59,8 +59,7 @@ impl Board {
     }
 }
 
-/// The note opens as a board: its front matter carries the `kanban` key (or `kanban-plugin`,
-/// Obsidian's).
+/// The note opens as a board: its front matter carries the `kanban` key (or `kanban-plugin`).
 pub fn is_board(text: &str) -> bool {
     markdown::front_keys(text).iter().any(|key| matches!(*key, "kanban" | "kanban-plugin"))
 }

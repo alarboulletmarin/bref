@@ -1,4 +1,4 @@
-//! A note's blocks, like Notion's: what a handle takes, moves, duplicates, deletes
+//! A note's blocks: what a handle takes, moves, duplicates, deletes
 //! or transforms. A block is made of whole lines: a heading, a line of text, a list item
 //! with what is indented further under it, a quote or a callout (its consecutive `>` lines),
 //! a code or formula block, a table, a rule, an image. Blank lines
