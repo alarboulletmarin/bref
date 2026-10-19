@@ -82,6 +82,8 @@ pub fn catalog() -> Vec<(&'static str, &'static str, &'static str, Group)> {
         ("editor::TableSortAsc", tr("Sort A to Z", "Trier de A à Z"), "c-sort-az.svg", Table),
         ("editor::TableSortDesc", tr("Sort Z to A", "Trier de Z à A"), "c-sort-za.svg", Table),
         ("editor::TableTranspose", tr("Swap rows and columns", "Échanger lignes et colonnes"), "c-transpose.svg", Table),
+        ("editor::TableAutoSum", tr("Write a total (sum of the cells above)", "Écrire un total (somme des cellules au-dessus)"), "table.svg", Table),
+        ("editor::TableCopyResults", tr("Copy the cells with their results, for a spreadsheet", "Copier les cellules avec leurs résultats, pour un tableur"), "copy.svg", Table),
         ("editor::TableDeleteRow", tr("Delete the row", "Supprimer la ligne"), "row-del.svg", Table),
         ("editor::TableDeleteCol", tr("Delete the column", "Supprimer la colonne"), "col-del.svg", Table),
         ("editor::TableDelete", tr("Delete the table", "Supprimer le tableau"), "trash.svg", Table),

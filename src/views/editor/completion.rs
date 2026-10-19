@@ -38,6 +38,9 @@ pub(super) enum Choice<'a> {
     Command(&'static Command),
         /// Day offered after `@`: its English and French name, its date.
     Date(&'static str, &'static str, md::Date),
+    /// In a formula: a function or a name, then a column (its letter and its header).
+    Word(&'static Word),
+    Column(&'static str, &'a str),
 }
 
 impl Editor {
@@ -62,7 +65,12 @@ impl Editor {
         let c = self.cursor();
         let line = self.line_range(c).start;
         let before = &self.content[line..c];
-        let (start, items) = self.names(before, c).or_else(|| self.commands(before, c, line)).or_else(|| self.days(before, c, line))?;
+        // In a formula, only what a formula takes: a `/` there is a division.
+        let found = match self.formula_cell(c) {
+            Some(_) => self.formulas(c),
+            None => self.names(before, c).or_else(|| self.commands(before, c, line)).or_else(|| self.days(before, c, line)),
+        };
+        let (start, items) = found?;
         (!items.is_empty() && self.ac_dismissed != Some(start)).then_some((start, items))
     }
 
@@ -136,6 +144,14 @@ impl Editor {
                 }
             }
                         // The day becomes a link to its daily note, created when first opened.
+            Choice::Word(&(name, _, _, after)) => {
+                self.push_undo(true);
+                self.edit(start..c, &format!("{name}{after}"), cx);
+            }
+            Choice::Column(letter, _) => {
+                self.push_undo(true);
+                self.edit(start..c, letter, cx);
+            }
             Choice::Date(_, _, date) => {
                 self.push_undo(true);
                 self.edit(start - 1..c, &format!("[[{}]]", crate::lang::date_name(date)), cx);

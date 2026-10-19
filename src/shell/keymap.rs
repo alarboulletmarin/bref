@@ -156,10 +156,21 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 ),
             ))
             .chain(editor::TableOp::ALL.into_iter().map(|op| k(op.action().as_ref(), op.label())))
-            .chain([k(
-                &editor::TableDeleteSpan,
-                tr("Remove the row, or the columns taken by their grip", "Supprimer la ligne, ou les colonnes prises par leur poignée"),
-            )])
+            .chain([
+                k(
+                    &editor::TableDeleteSpan,
+                    tr("Remove the row, or the columns taken by their grip", "Supprimer la ligne, ou les colonnes prises par leur poignée"),
+                ),
+                t(
+                    tr("Formulas", "Formules"),
+                    tr(
+                        "A cell that starts with = computes: =B*C, =sum(above), =avg(B1:B9), =round(B/C, 2), =if(B>10, 1, 0). Columns are letters, rows are numbers from the first row under the header (C2, B1:B10); B alone is column B of this row; above, left and column are ranges. Functions: sum avg min max count round abs if. The cell shows its result (right-aligned, a different color); the formula shows when the cursor is in it, and the file keeps it. A cell with no result shows #ERR: point at it for the reason. Completion offers functions, ranges and columns after =",
+                        "Une cellule qui commence par = calcule : =B*C, =sum(above), =avg(B1:B9), =round(B/C, 2), =if(B>10, 1, 0). Les colonnes sont des lettres, les lignes des numéros depuis la première ligne sous l'en-tête (C2, B1:B10) ; B seul est la colonne B de cette ligne ; above, left et column sont des plages. Fonctions : sum avg min max count round abs if. La cellule montre son résultat (à droite, d'une autre couleur) ; la formule apparaît quand le curseur y est, et le fichier la garde. Une cellule sans résultat montre #ERR : pointez-la pour la raison. La complétion propose fonctions, plages et colonnes après =",
+                    ),
+                ),
+                k(&editor::TableAutoSum, tr("Write a total in the cell: the sum of the cells above, or on its left", "Écrire un total dans la cellule : la somme des cellules au-dessus, ou à sa gauche")),
+                k(&editor::TableCopyResults, tr("Copy the cells (the taken ones, or the table) with the results of their formulas, for a spreadsheet", "Copier les cellules (celles prises, ou le tableau) avec le résultat de leurs formules, pour un tableur")),
+            ])
             .collect(),
         ),
         (
@@ -430,6 +441,8 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("alt-down", &TableMoveRowDown, sh),
         b("alt-down", &BlockDown, e),
         b("secondary-shift-backspace", &TableDeleteSpan, e),
+        b("alt-=", &TableAutoSum, e),
+        b("secondary-alt-c", &TableCopyResults, e),
         b("secondary-shift-l", &AlignLeft, e),
         b("secondary-shift-e", &AlignCenter, e),
         b("secondary-shift-r", &AlignRight, e),

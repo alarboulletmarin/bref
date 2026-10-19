@@ -458,6 +458,15 @@ impl Editor {
                 window.paint_quad(fill(line, t.accent));
             }
         }
+        // Why a formula has no result, under the pointer.
+        if let Some(reason) = &self.reason {
+            let line = label(reason, t.text, window);
+            let box_w = line.width + px(16.);
+            let left = (self.pointer.x + px(12.)).min(self.viewport.right() - box_w - px(4.)).max(self.viewport.left() + px(4.));
+            let area = Bounds::new(point(left, self.pointer.y + px(18.)), size(box_w, px(26.)));
+            window.paint_quad(quad(area, px(6.), t.panel, px(1.), t.border, BorderStyle::default()));
+            line.paint(area.origin + point(px(8.), px(3.)), px(20.), window, cx).ok();
+        }
         // The block being dragged: tinted, and a line where it would land.
         if let Some(drag) = self.handles.drag.as_ref().filter(|drag| drag.moved)
             && let Some(y) = drag.to.and_then(|to| self.line_top(to)) {
@@ -540,6 +549,8 @@ impl Editor {
                     Choice::Name(name) => write(name, ""),
                     Choice::Command((name, en, fr, ..)) => write(tr(en, fr), &format!("/{name}")),
                     Choice::Date(en, fr, date) => write(tr(en, fr), &crate::lang::date_name(*date)),
+                    Choice::Word((name, en, fr, after)) => write(tr(en, fr), &format!("{name}{after}")),
+                    Choice::Column(letter, header) => write(header, letter),
                 }
             }
         }

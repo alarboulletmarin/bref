@@ -4,6 +4,7 @@
 pub mod block;
 pub mod commands;
 pub mod diagram;
+pub mod formula;
 pub mod history;
 pub mod import;
 pub mod markdown;

@@ -33,8 +33,10 @@ fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
         format!("# Gros\n\navant\n\n{}\naprès\n\n> citation\n\n- fin\n", table(grid::BIG + 40)),
         "# Code\n\n```rust\nfn main() {}\n```\n\ntexte\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n".to_string(),
         "texte seul\n\n---\n\n## deux\n\n- [ ] tâche\n- [x] faite\n".to_string(),
+        // Formulas: their results depend on the cells around and on where the cursor is.
+        "# Formules\n\navant\n\n| a | b | c |\n| --- | --- | --- |\n| 1 | 2 | =A+B |\n| 3 | 4 | =sum(above) |\n| x | =C1*2 | =B9 |\n\naprès\n".to_string(),
     ];
-    let pieces = ["a", "é", " ", "| x | y |", "> [!NOTE]", "> q", "```", "- ", "1. ", "# ", "$$", "---", "![](x.png)", "|", "texte", "\n", "\n\n"];
+    let pieces = ["a", "é", " ", "| x | y |", "> [!NOTE]", "> q", "```", "- ", "1. ", "# ", "$$", "---", "![](x.png)", "|", "texte", "\n", "\n\n", "=", "=sum(above)", "=B*C", "=1/0"];
     let keys = ["enter", "backspace", "delete", "left", "right", "up", "down", "home", "end", "tab"];
     let (mut full, mut reused, mut inside) = (0, 0, 0);
     for (n, doc) in docs.into_iter().enumerate() {

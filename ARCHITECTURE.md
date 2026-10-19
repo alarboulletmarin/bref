@@ -57,6 +57,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 |---|---|
 | how Markdown is read (headings, links, tags, styles) | `logic/markdown/` (`mod.rs`; `tables.rs`, `lists.rs`, `front.rs`, `dates.rs`, `search.rs`) |
 | CSV/TSV parsing and writing | `logic/table.rs` |
+| formulas of the cells of a table (parser, evaluator, numbers as written) | `logic/formula.rs`; shown by `views/editor/grid.rs` (`results`, `Shown`), written and completed by `views/editor/formulas.rs` |
 | diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram.rs`, `logic/import.rs` |
 | the vault on disk (scan, save, rename, trash, config files) | `platform/vault.rs` |
 | git commands, update check | `platform/git.rs`, `platform/update.rs` |

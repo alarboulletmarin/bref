@@ -9,6 +9,7 @@ mod cursor;
 mod edit;
 mod find;
 mod format_bar;
+mod formulas;
 mod input;
 mod layout;
 mod links;
@@ -28,6 +29,7 @@ use cursor::*;
 use edit::*;
 use find::*;
 pub use format_bar::*;
+use formulas::*;
 pub use layout::*;
 use mouse::*;
 pub use notes::*;
@@ -123,6 +125,8 @@ actions!(
         TableSortAsc,
         TableSortDesc,
         TableTranspose,
+        TableAutoSum,
+        TableCopyResults,
         BlockText,
         BlockHeading1,
         BlockHeading2,
@@ -277,6 +281,8 @@ pub struct Editor {
     geos: Vec<Geo>,
     /// The commented parts of each table, for one version of the text and one cursor.
     marks: Option<Marks>,
+    /// Why the formula under the pointer has no result.
+    reason: Option<Rc<str>>,
     /// The handle under the pointer: (table start, handle).
     part_hover: Option<(usize, Part)>,
     /// Where the pointer was at its last move.
@@ -402,6 +408,7 @@ impl Editor {
             table_hover: None,
             geos: Vec::new(),
             marks: None,
+            reason: None,
             part_hover: None,
             pointer: Point::default(),
             hand: None,

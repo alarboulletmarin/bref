@@ -121,6 +121,8 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &TableSortAsc, _, cx| this.table_op(TableOp::SortAsc, cx)))
         .on_action(cx.listener(|this, _: &TableSortDesc, _, cx| this.table_op(TableOp::SortDesc, cx)))
         .on_action(cx.listener(|this, _: &TableTranspose, _, cx| this.table_op(TableOp::Transpose, cx)))
+        .on_action(cx.listener(|this, _: &TableAutoSum, _, cx| this.auto_sum(cx)))
+        .on_action(cx.listener(|this, _: &TableCopyResults, _, cx| this.copy_results(cx)))
         .on_action(cx.listener(|this, _: &AlignLeft, _, cx| this.align(":--", cx)))
         .on_action(cx.listener(|this, _: &AlignCenter, _, cx| this.align(":-:", cx)))
         .on_action(cx.listener(|this, _: &AlignRight, _, cx| this.align("--:", cx)))
