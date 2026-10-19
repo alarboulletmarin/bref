@@ -323,6 +323,7 @@ impl Editor {
             return false;
         };
         let at = ranges.first().map_or(self.sel.start, |r| r.start);
+        let guard = self.name_guard(self.sel.start);
         if !ranges.is_empty() {
             self.push_undo(true);
             for r in ranges.iter().rev() {
@@ -334,6 +335,9 @@ impl Editor {
         self.reversed = false;
         self.changed(cx);
         self.realign(cx);
+        if let Some((table, old)) = guard {
+            self.rename_scopes(table, old, cx);
+        }
         true
     }
 
@@ -653,21 +657,33 @@ impl Editor {
         };
         // The comments under the table follow what they are about, or go with it, in the same undo step.
         let lines = self.comment_lines_after(range.end);
-        let tracks = !lines.is_empty() && matches!(op, TableOp::DeleteRow | TableOp::DeleteCol | TableOp::DeleteTable);
+        let tracks = !lines.is_empty();
         let held = self.held;
         if tracks {
             let shift = |n: usize, gone: Range<usize>| -> Vec<Option<usize>> {
                 (0..n).map(|i| (!gone.contains(&i)).then(|| i - gone.clone().filter(|g| *g < i).count())).collect()
             };
-            let (rows_to, cols_to) = match op {
-                TableOp::DeleteRow => (shift(tall, r0..r1 + 1), (0..wide).map(Some).collect()),
-                TableOp::DeleteCol => ((0..tall).map(Some).collect(), shift(wide, c0..c1 + 1)),
-                _ => (vec![None; tall], vec![None; wide]),
+            let (old_rows, old_cols) = md::keys(&rows);
+            let old = md::scopes(&rows);
+            let (rows_to, cols_to, new, gone) = match (&grid, op) {
+                (None, _) => (vec![None; tall], vec![None; wide], Default::default(), true),
+                (Some(_), TableOp::DeleteRow) => (shift(tall, r0..r1 + 1), (0..wide).map(Some).collect(), md::scopes(grid.as_ref().unwrap()), false),
+                (Some(_), TableOp::DeleteCol) => ((0..tall).map(Some).collect(), shift(wide, c0..c1 + 1), md::scopes(grid.as_ref().unwrap()), false),
+                // Rows become columns: each is looked for among the other kind, and named by it.
+                (Some(g), TableOp::Transpose) => {
+                    let (new_rows, new_cols) = md::keys(g);
+                    let (names, cols) = md::scopes(g);
+                    (md::track(&old_rows, &new_cols), md::track(&old_cols, &new_rows), (cols, names), false)
+                }
+                // Moved, inserted, duplicated, sorted: found again by their content.
+                (Some(g), _) => {
+                    let (new_rows, new_cols) = md::keys(g);
+                    (md::track(&old_rows, &new_rows), md::track(&old_cols, &new_cols), md::scopes(g), false)
+                }
             };
-            let new = grid.as_ref().map_or_else(Default::default, |g| md::scopes(g));
             self.push_undo(true);
             self.held = true;
-            self.retarget_comments(&lines, (&rows_to, &cols_to), &md::scopes(&rows), &new, grid.is_none(), cx);
+            self.retarget_comments(&lines, (&rows_to, &cols_to), &old, &new, gone, cx);
         }
         match grid {
             Some(grid) => self.set_table(range, &grid, at, cx),
@@ -797,7 +813,11 @@ impl Editor {
             last = (at, c + cells.len() - 1);
             at += 1;
         }
+        let guard = self.name_guard(range.start);
         self.set_table(range, &rows, last, cx);
+        if let Some((table, old)) = guard {
+            self.rename_scopes(table, old, cx);
+        }
         true
     }
 }

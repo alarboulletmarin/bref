@@ -553,8 +553,8 @@ impl Shell {
         // click leads to the comment, ready to be edited; the check mark resolves it.
         // ponytail: the note is reread on every render (a search for `{==`); keep the
         // list from one version of the text to the next if very long notes suffer from it.
-        let said: Vec<(String, String, usize, usize)> = match self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx) {
-            true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|(noted, said, at, inside)| (noted.into(), said.into(), at, inside)).collect(),
+        let said: Vec<(String, String, usize, usize, String)> = match self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx) {
+            true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|n| (n.noted.into(), n.said.into(), n.at, n.inside, n.scope)).collect(),
             false => Vec::new(),
         };
         // Their button, left of the copy one, opens and closes the panel; the
@@ -644,7 +644,7 @@ impl Shell {
         if active && column.is_none() {
             self.nav.aside = px(0.);
         }
-        let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at, inside))| {
+        let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at, inside, scope))| {
             let (at, inside) = (*at, *inside);
             div()
                 .id(("comment", i))
@@ -658,15 +658,19 @@ impl Shell {
                 .gap_1()
                 .cursor_pointer()
                 .hover(|s| s.border_color(t.accent.opacity(0.6)))
+                // Where it is, in a table: `Cell C2`, above the commented text.
+                .when(!scope.is_empty() && !noted.is_empty(), |d| d.child(div().px_1().text_size(px(11.)).text_color(t.soft).child(scope.to_string())))
                 .child(
                     div()
                         .flex()
                         .items_start()
                         .gap_1()
-                        .child(match noted.is_empty() {
-                            // Nothing commented (a row, a column, the table): the comment takes the place.
-                            true => div().flex_1().min_w_0().px_1().text_color(if said.is_empty() { t.soft } else { t.text }).child(if said.is_empty() { tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string() } else { said.to_string() }),
-                            false => div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(noted.to_string()),
+                        .child(match (noted.is_empty(), scope.is_empty()) {
+                            // A row, a column, the table: what it is about is the chip.
+                            (true, false) => div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(scope.to_string()),
+                            // A comment on its own, in the text: it takes the place.
+                            (true, true) => div().flex_1().min_w_0().px_1().text_color(if said.is_empty() { t.soft } else { t.text }).child(if said.is_empty() { tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string() } else { said.to_string() }),
+                            (false, _) => div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(noted.to_string()),
                         })
                         .child(ui::widgets::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
@@ -674,7 +678,7 @@ impl Shell {
                             window.focus(&this.pane().editor.focus_handle(cx));
                         }))),
                 )
-                .when(!noted.is_empty(), |d| {
+                .when(!noted.is_empty() || !scope.is_empty(), |d| {
                     d.child(div().text_color(if said.is_empty() { t.soft } else { t.text }).child(match said.is_empty() {
                         true => tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string(),
                         false => said.to_string(),

@@ -152,18 +152,39 @@ pub fn scopes(rows: &[Vec<String>]) -> Scopes {
     let first = |v: usize| rows[if v == 0 { 0 } else { v + 1 }].first().map_or("", |c| c.as_str());
     let named = |label: &str, text: &str, nth: usize| if text.is_empty() { format!("{label} {nth}") } else { format!("{label} \"{text}\"") };
     let tall = if rows.len() > 1 { visible_rows(rows) } else { rows.len() };
+    // How many rows begin with each text, and how many of those came before.
+    let mut total: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    (0..tall).for_each(|v| *total.entry(first(v)).or_default() += 1);
+    let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     let names = (0..tall)
         .map(|v| {
-            let same: Vec<usize> = (0..tall).filter(|&w| first(w) == first(v)).collect();
+            let nth = seen.entry(first(v)).or_default();
+            *nth += 1;
             let name = named("Row", first(v), v + 1);
-            match same.iter().position(|&w| w == v) {
-                Some(k) if same.len() > 1 && !first(v).is_empty() => format!("{name} ({})", k + 1),
-                _ => name,
-            }
+            if total[first(v)] > 1 && !first(v).is_empty() { format!("{name} ({nth})") } else { name }
         })
         .collect();
     let cols = rows.first().map_or(Vec::new(), |head| head.iter().enumerate().map(|(c, text)| named("Column", text, c + 1)).collect());
     (names, cols)
+}
+
+/// What names each row of a grid (its first cell, the dash line left out) and each column (its header).
+pub fn keys(rows: &[Vec<String>]) -> (Vec<String>, Vec<String>) {
+    let shown = rows.iter().enumerate().filter(|(i, _)| *i != 1).map(|(_, r)| r);
+    (shown.map(|r| r.first().cloned().unwrap_or_default()).collect(), rows.first().cloned().unwrap_or_default())
+}
+
+/// Where each of `old` went in `new`: the first still unclaimed entry that is the same, `None` if
+/// there is none. A row or a column that only moved is found again; one that was deleted is not.
+pub fn track(old: &[String], new: &[String]) -> Vec<Option<usize>> {
+    let mut taken = vec![false; new.len()];
+    old.iter()
+        .map(|item| {
+            let at = (0..new.len()).find(|&i| !taken[i] && new[i] == *item)?;
+            taken[at] = true;
+            Some(at)
+        })
+        .collect()
 }
 
 /// The comment lines under a table (`{>>Row "Léa": …<<}`) after its rows and columns changed:

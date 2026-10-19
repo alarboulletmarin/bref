@@ -44,7 +44,10 @@ impl Shell {
         self.comments_shut = false;
         let said = markdown::all_comments(self.pane().editor.read(cx).text())
             .into_iter()
-            .map(|(noted, said, at, _)| (if noted.is_empty() { said.to_string() } else { format!("{noted} — {said}") }, at))
+            .map(|n| {
+                let who = if n.noted.is_empty() { n.scope.clone() } else { n.noted.to_string() };
+                (if who.is_empty() { n.said.to_string() } else { format!("{who} — {}", n.said) }, n.at)
+            })
             .collect();
         let none = tr("This note has no comments", "Cette note n'a pas de commentaires");
         self.open_places(tr("Comments", "Commentaires"), none, said, window, cx)

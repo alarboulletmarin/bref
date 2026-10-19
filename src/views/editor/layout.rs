@@ -92,6 +92,8 @@ pub(super) struct Geo {
     /// (one more than shown rows: the header, then the body).
     pub(super) xs: Vec<Pixels>,
     pub(super) ys: Vec<Pixels>,
+    /// Its commented rows, columns and cells.
+    pub(super) notes: Notes,
 }
 
 /// A table handle: a column, a row, the corner (the whole table), or the "+" of a line.
@@ -1374,6 +1376,8 @@ impl Editor {
         self.tables.clear();
         self.geos.clear();
         self.thumbs.clear();
+        let starts: Vec<usize> = self.table_meta.iter().map(|m| m.range.start).collect();
+        let marks = self.note_marks(&starts);
         for meta in &self.table_meta {
             let (start, end) = (meta.range.start, meta.range.end);
             let wide = meta.wide;
@@ -1420,7 +1424,7 @@ impl Editor {
                 let lines = self.rows[meta.rows.clone()].iter().filter(|r| !r.hidden()).map(|r| self.origin.y + r.y);
                 let mut ys: Vec<Pixels> = std::iter::once(frame.top()).chain(lines.skip(1)).collect();
                 ys.push(frame.bottom());
-                self.geos.push(Geo { start, frame, xs, ys });
+                self.geos.push(Geo { start, frame, xs, ys, notes: marks.get(&start).cloned().unwrap_or_default() });
             }
         }
         let bars = self.tables.iter().flat_map(|(_, frame)| plus_bars(*frame));

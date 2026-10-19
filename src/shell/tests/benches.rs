@@ -181,7 +181,9 @@ fn md_table_scale(cx: &mut TestAppContext) {
     for n in std::env::var("BREF_ROWS").ok().map_or(vec![500usize, 1000, 2000, 5000, 10000, 20000, 50000], |v| v.split(',').filter_map(|n| n.parse().ok()).collect()) {
         let rows: String = (0..n).map(|i| format!("| {i} | Produit {} | {} | FR | note, {i} |\n", i % 977, i % 99)).collect();
         let file = root.join(format!("t{n}.md"));
-        fs::write(&file, format!("| id | produit | qte | pays | commentaire |\n| --- | --- | --- | --- | --- |\n{rows}")).unwrap();
+        // `BREF_COMMENTS=1`: comments under the table, which each keystroke in it must keep up with.
+        let notes = if std::env::var("BREF_COMMENTS").is_ok() { "\n{>>Row \"0\": a<<}\n\n{>>Column \"id\": b<<}\n\n{>>Table: c<<}\n" } else { "" };
+        fs::write(&file, format!("| id | produit | qte | pays | commentaire |\n| --- | --- | --- | --- | --- |\n{rows}{notes}")).unwrap();
         let start = Instant::now();
         shell.update_in(cx, |s, window, cx| {
             s.open_note(&file, cx);

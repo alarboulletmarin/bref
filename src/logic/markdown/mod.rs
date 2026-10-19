@@ -806,21 +806,85 @@ pub fn comments(line: &str) -> Vec<(Range<usize>, Range<usize>, Range<usize>)> {
     found
 }
 
-/// All the note's comments, outside code blocks: the commented text (empty for a comment on
-/// its own), the comment, the byte where the whole starts and the one where the comment does.
-pub fn all_comments(text: &str) -> Vec<(&str, &str, usize, usize)> {
+/// A comment of the note, as its panel lists it.
+#[derive(Debug, PartialEq)]
+pub struct Note<'a> {
+    /// The commented text; empty for a comment on its own.
+    pub noted: &'a str,
+    /// What is said, without the name of the row or column it starts with, if any.
+    pub said: &'a str,
+    /// The byte where the whole starts, and the one where the comment starts.
+    pub at: usize,
+    pub inside: usize,
+    /// What it is on, in a table: `Cell C2`, `Header B`, `Row Léa`, `Column Âge`, `Table`; empty elsewhere.
+    pub scope: String,
+}
+
+/// Name of column `c` as a spreadsheet writes it: `A`, `B`… `Z`, `AA`.
+pub fn column_letters(c: usize) -> String {
+    let (mut n, mut name) = (c + 1, String::new());
+    while n > 0 {
+        name.insert(0, (b'A' + ((n - 1) % 26) as u8) as char);
+        n = (n - 1) / 26;
+    }
+    name
+}
+
+/// A comment line under a table starts with what it is about (see `scopes`): its name as the
+/// panel says it, and what follows.
+pub fn split_scope(said: &str) -> Option<(String, &str)> {
+    if let Some(rest) = said.strip_prefix("Table: ") {
+        return Some(("Table".into(), rest));
+    }
+    let (kind, tail) = said.strip_prefix("Row ").map(|t| ("Row", t)).or_else(|| said.strip_prefix("Column ").map(|t| ("Column", t)))?;
+    let digits = |t: &str| t.bytes().take_while(u8::is_ascii_digit).count();
+    let Some(quoted) = tail.strip_prefix('"') else {
+        let n = digits(tail);
+        return tail[n..].strip_prefix(": ").filter(|_| n > 0).map(|rest| (format!("{kind} {}", &tail[..n]), rest));
+    };
+    let plain = quoted.find("\": ").map(|i| (i, quoted[i + 3..].len(), String::new()));
+    let numbered = quoted.match_indices("\" (").find_map(|(i, _)| {
+        let n = digits(&quoted[i + 3..]);
+        let rest = quoted[i + 3 + n..].strip_prefix("): ")?;
+        (n > 0).then(|| (i, rest.len(), format!(" ({})", &quoted[i + 3..i + 3 + n])))
+    });
+    let (i, left, number) = [plain, numbered].into_iter().flatten().min_by_key(|(i, ..)| *i)?;
+    Some((format!("{kind} {}{number}", &quoted[..i]), &quoted[quoted.len() - left..]))
+}
+
+/// All the note's comments, outside code blocks.
+pub fn all_comments(text: &str) -> Vec<Note<'_>> {
         // Almost no note has any: a single search says so, without reading the lines.
     if !text.contains("{==") && !text.contains("{>>") {
         return Vec::new();
     }
     let fences = text.lines().filter(|line| is_fence(line)).count();
     let (mut seen, mut in_code, mut at, mut found) = (0, false, 0, Vec::new());
+    // Line of the table we are in (the header is 0, the dashes 1).
+    let mut row: Option<usize> = None;
     for line in text.split('\n') {
         if is_fence(line) {
             seen += 1;
             in_code = !in_code && seen < fences;
+            row = None;
         } else if !in_code {
-            found.extend(comments(line).into_iter().map(|(whole, noted, said)| (&line[noted], &line[said.clone()], at + whole.start, at + said.start)));
+            row = line.trim_start().starts_with('|').then(|| row.map_or(0, |r| r + 1));
+            let cells = row.map(|_| cells(line));
+            for (whole, noted, said) in comments(line) {
+                let mut note = Note { noted: &line[noted.clone()], said: &line[said.clone()], at: at + whole.start, inside: at + said.start, scope: String::new() };
+                if let Some(cells) = &cells {
+                    let c = cells.iter().rposition(|cell| cell.start <= whole.start).unwrap_or(0);
+                    note.scope = match row {
+                        Some(0) => format!("Header {}", column_letters(c)),
+                        Some(r) => format!("Cell {}{}", column_letters(c), r.saturating_sub(1)),
+                        None => String::new(),
+                    };
+                } else if noted.start == whole.start && let Some((scope, rest)) = split_scope(note.said) {
+                    note.scope = scope;
+                    note.said = rest;
+                }
+                found.push(note);
+            }
         }
         at += line.len() + 1;
     }
@@ -919,10 +983,20 @@ mod tests {
                 // Comments: the text, the comment, and where the whole starts; not in code.
         let line = "un {==mot **fort**==}{>>à revoir<<} et {==deux==}{>><<} {==seul==}";
         assert_eq!(comments(line), [(3..36, 6..18, 24..33), (40..56, 43..47, 53..53)]);
-        assert_eq!(all_comments(&format!("# T\n{line}\n```\n{line}\n```")), [("mot **fort**", "à revoir", 7, 28), ("deux", "", 44, 57)]);
+        let note = format!("# T\n{line}\n```\n{line}\n```");
+        let found: Vec<_> = all_comments(&note).into_iter().map(|n| (n.noted, n.said, n.at, n.inside)).collect();
+        assert_eq!(found, [("mot **fort**", "à revoir", 7, 28), ("deux", "", 44, 57)]);
                 // A comment on its own has nothing commented, and a full one is not counted twice.
         assert_eq!(comments("a {>>seul<<} b {==x==}{>>y<<}"), [(2..12, 2..2, 5..9), (15..29, 18..19, 25..26)]);
         assert_eq!(comments("{>>pas fini"), []);
+                // Where a comment is: in a cell, a header, or a line under a table named by what it is about.
+        let table = "| a | b |\n| - | - |\n| {==x==}{>>1<<} | y |\n| u | {==v==}{>>2<<} |\n\n{>>Row \"x\" (2): trois<<}\n\n{>>Column 2: quatre<<}\n\n{>>Table: cinq<<}\n\n{>>libre<<}";
+        let scopes: Vec<_> = all_comments(table).into_iter().map(|n| (n.scope, n.said)).collect();
+        assert_eq!(scopes, [("Cell A1".into(), "1"), ("Cell B2".into(), "2"), ("Row x (2)".into(), "trois"), ("Column 2".into(), "quatre"), ("Table".into(), "cinq"), (String::new(), "libre")]);
+        assert_eq!(split_scope("Row \"a\": b\": c"), Some(("Row a".into(), "b\": c")));
+        assert_eq!(split_scope("Column \"\": x"), Some(("Column ".into(), "x")));
+        assert_eq!((split_scope("Row x: y"), split_scope("Rowing: y"), split_scope("Table:x")), (None, None, None));
+        assert_eq!((column_letters(0), column_letters(25), column_letters(26), column_letters(701), column_letters(702)), ("A".into(), "Z".into(), "AA".into(), "ZZ".into(), "AAA".into()));
         let mut flags = vec![0u16; line.len()];
         inline(line, 0, &mut flags);
         assert!(flags[3..6].iter().all(|f| *f == DIM) && flags[6] == 0 && flags[12] == BOLD);

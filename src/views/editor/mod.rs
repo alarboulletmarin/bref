@@ -13,6 +13,7 @@ mod input;
 mod layout;
 mod links;
 mod mouse;
+mod notes;
 mod paint;
 mod render;
 mod style;
@@ -29,6 +30,7 @@ use find::*;
 pub use format_bar::*;
 pub use layout::*;
 use mouse::*;
+pub use notes::*;
 use paint::*;
 pub use table::*;
 
@@ -273,6 +275,8 @@ pub struct Editor {
     table_hover: Option<(usize, Option<usize>)>,
     /// Where the lines of each displayed table are, in the last frame.
     geos: Vec<Geo>,
+    /// The commented parts of each table, for one version of the text and one cursor.
+    marks: Option<Marks>,
     /// The handle under the pointer: (table start, handle).
     part_hover: Option<(usize, Part)>,
     /// Where the pointer was at its last move.
@@ -397,6 +401,7 @@ impl Editor {
             table_hitboxes: Vec::new(),
             table_hover: None,
             geos: Vec::new(),
+            marks: None,
             part_hover: None,
             pointer: Point::default(),
             hand: None,

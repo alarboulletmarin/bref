@@ -13,7 +13,9 @@ impl Editor {
     /// code, and not already an address.
     pub(super) fn linkable(&self) -> bool {
         let text = &self.content[self.sel.clone()];
-        !text.contains('\n') && !md::is_url(text.trim()) && !self.in_code(self.line_range(self.sel.start).start)
+        // Over several cells, a link would mean nothing: it would hold a `|`.
+        let cells = self.selected_cells().is_some() || self.pick_cells().is_some_and(|c| c.len() > 1);
+        !text.contains('\n') && !cells && !md::is_url(text.trim()) && !self.in_code(self.line_range(self.sel.start).start)
     }
 
     /// Makes a link `[text](address)`. On an existing link, its address is selected,
@@ -229,10 +231,25 @@ impl Editor {
     /// if it is a change inside a line of a table that has such comments.
     pub(super) fn scopes_before(&self, range: &Range<usize>, text: &str) -> Option<(usize, md::Scopes)> {
         let lr = self.line_range(range.start);
-        if range.end > lr.end || text.contains('\n') || !self.is_table_line(&lr) || !self.content.contains("{>>") {
+        if range.end > lr.end || text.contains('\n') || !self.is_table_line(&lr) {
             return None;
         }
-        let (table, rows, _) = self.table_at(range.start)?;
+        // Only a first cell or a header names something: typing elsewhere costs nothing.
+        let first_cell = md::cells(&self.content[lr.clone()]).first().is_none_or(|c| range.start <= lr.start + c.end + 1);
+        let header = lr.start == 0 || !self.is_table_line(&self.line_range(lr.start - 1));
+        if !first_cell && !header {
+            return None;
+        }
+        self.name_guard(range.start)
+    }
+
+    /// The table around `at`, if comments sit under it, and the names they could use: to give
+    /// back to `rename_scopes` once an edit that does not go through `splice` is done.
+    pub(super) fn name_guard(&self, at: usize) -> Option<(usize, md::Scopes)> {
+        if !self.content.contains("{>>") {
+            return None;
+        }
+        let (table, rows, _) = self.table_at(at)?;
         (!self.comment_lines_after(table.end).is_empty()).then(|| (table.start, md::scopes(&rows)))
     }
 

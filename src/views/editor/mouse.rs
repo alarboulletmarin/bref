@@ -167,6 +167,7 @@ impl Editor {
         let Some(pick) = self.live_pick(range.start).cloned() else {
             return false;
         };
+        let guard = self.name_guard(range.start);
         for v in pick.rows.clone() {
             for c in pick.cols.clone() {
                 rows[if v == 0 { 0 } else { v + 1 }][c].clear();
@@ -174,6 +175,10 @@ impl Editor {
         }
         self.set_table(range.clone(), &rows, (if pick.rows.start == 0 { 0 } else { pick.rows.start + 1 }, pick.cols.start), cx);
         self.pick(range.start, pick.rows, pick.cols, cx);
+        // A header or a first cell emptied: its comments take the new name.
+        if let Some((table, old)) = guard {
+            self.rename_scopes(table, old, cx);
+        }
         true
     }
 

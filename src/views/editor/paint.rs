@@ -365,6 +365,31 @@ impl Editor {
                 let area = geo.cells(&pick.rows, &pick.cols).intersect(&geo.frame);
                 window.paint_quad(quad(area, px(2.), t.selection, px(1.), t.accent.opacity(0.7), BorderStyle::default()));
             }
+            // What carries a comment: a cell is tinted and marked in its corner, a row, a column or the
+            // table is outlined; the comment the cursor is in is drawn stronger.
+            for target in &geo.notes.found {
+                let active = geo.notes.active == Some(*target);
+                let (rows, cols) = (0..geo.tall(), 0..geo.cols());
+                let area = match *target {
+                    Target::Row(v) => geo.cells(&(v..v + 1), &cols),
+                    Target::Col(c) => geo.cells(&rows, &(c..c + 1)),
+                    Target::Table => geo.frame,
+                    Target::Cell(v, c) => geo.cells(&(v..v + 1), &(c..c + 1)),
+                }
+                .intersect(&geo.frame);
+                // Scrolled out of the frame: nothing to draw.
+                if area.size.width < px(14.) || area.size.height < px(8.) {
+                    continue;
+                }
+                if let Target::Cell(..) = target {
+                    window.paint_quad(fill(area, t.accent.opacity(if active { 0.3 } else { 0.14 })));
+                    let dot = Bounds::new(point(area.right() - px(9.), area.top() + px(3.)), size(px(6.), px(6.)));
+                    window.paint_quad(fill(dot, t.accent).corner_radii(px(3.)));
+                } else {
+                    let (back, width) = if active { (t.accent.opacity(0.1), px(2.)) } else { (t.accent.opacity(0.), px(1.)) };
+                    window.paint_quad(quad(area, px(2.), back, width, t.accent.opacity(if active { 0.9 } else { 0.55 }), BorderStyle::default()));
+                }
+            }
             let held = |part: Part| {
                 pick.is_some_and(|p| {
                     let (all_rows, all_cols) = (p.rows.len() == geo.tall(), p.cols.len() == geo.cols());
@@ -407,6 +432,19 @@ impl Editor {
                         let dot = Bounds::new(center - point(px(1.), px(1.)), size(px(2.), px(2.)));
                         window.paint_quad(fill(dot, dots).corner_radii(px(1.)));
                     }
+                }
+            }
+            // A mark on the handle of what carries a comment, shown or not.
+            for target in &geo.notes.found {
+                let part = match *target {
+                    Target::Row(v) => Part::Row(v),
+                    Target::Col(c) => Part::Col(c),
+                    Target::Table => Part::Corner,
+                    Target::Cell(..) => continue,
+                };
+                if let Some((_, zone)) = geo.parts().into_iter().find(|(p, _)| *p == part) {
+                    let dot = Bounds::new(point(zone.right() - px(5.), zone.top() - px(3.)), size(px(8.), px(8.)));
+                    window.paint_quad(quad(dot, px(4.), t.accent, px(1.), t.bg, BorderStyle::default()));
                 }
             }
             if let Some(Moving { table, part, to: Some(b), .. }) = &self.moving

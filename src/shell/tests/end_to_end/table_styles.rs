@@ -137,7 +137,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(text(cx), format!("{}\n\n{{>>Column \"Âge\": en années<<}}\n\nsuite", grid.trim_end_matches("\n\nsuite")));
     let note = text(cx);
     let said = markdown::all_comments(&note);
-    assert_eq!((said[0].0, said[0].1), ("", "Column \"Âge\": en années"));
+    assert_eq!((said[0].noted, said[0].scope.as_str(), said[0].said), ("", "Column Âge", "en années"));
     cx.simulate_keystrokes("secondary-shift-m");
     assert_eq!(text(cx), grid, "resolving a comment on its own removes its line");
     start(cx, grid);
@@ -205,6 +205,53 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(comments(cx), "{>>libre<<}", "{:?}", text(cx));
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(text(cx), note);
+    // Emptying cells renames too: a cleared column and a pasted header carry their comments along; and a
+    // link over several cells is refused (it would hold a `|`).
+    j.load(cx, note, note.find("Léa").unwrap());
+    cx.run_until_parked();
+    let at = center(cx, Part::Col(1));
+    cx.simulate_click(at, none);
+    cx.simulate_keystrokes("delete");
+    assert!(comments(cx).contains("{>>Column 2: b<<}") && comments(cx).contains("{>>Row \"Léa\": a<<}"), "{}", comments(cx));
+    cx.simulate_keystrokes("secondary-z");
+    assert_eq!(text(cx), note, "one undo for the clearing and the renaming");
+    cx.run_until_parked();
+    let at = center(cx, Part::Col(0));
+    cx.simulate_click(at, none);
+    cx.simulate_keystrokes("delete");
+    assert!(comments(cx).starts_with("{>>Row 3: a<<}") || comments(cx).starts_with("{>>Row 2: a<<}"), "{}", comments(cx));
+    cx.simulate_keystrokes("secondary-z");
+    let at = center(cx, Part::Corner);
+    cx.simulate_click(at, none);
+    cx.simulate_keystrokes("secondary-k");
+    assert_eq!(text(cx), note, "no link on a whole table");
+    j.load(cx, note, note.find("Léa").unwrap());
+    cx.simulate_keystrokes("shift-down shift-right");
+    cx.simulate_keystrokes("secondary-k");
+    assert_eq!(text(cx), note, "no link across two rows");
+    j.load(cx, "| a | b |\n| - | - |\n| mot | y |", 22);
+    cx.simulate_keystrokes("shift-right shift-right shift-right");
+    cx.simulate_keystrokes("secondary-k");
+    assert!(text(cx).contains("[mot]()"), "a link on one cell still works: {:?}", text(cx));
+    // Duplicated, the row keeps its comment on the original, now told from its copy; swapping rows and
+    // columns turns the comments of the rows into those of the columns, and the other way round.
+    j.load(cx, note, note.find("Léa").unwrap());
+    cx.run_until_parked();
+    op(cx, editor::TableOp::DuplicateRow);
+    assert!(comments(cx).starts_with("{>>Row \"Léa\" (1): a<<} {>>Column \"Âge\": b<<}"), "{}", comments(cx));
+    cx.simulate_keystrokes("secondary-z");
+    assert_eq!(text(cx), note);
+    j.load(cx, note, note.find("Léa").unwrap());
+    cx.run_until_parked();
+    op(cx, editor::TableOp::Transpose);
+    assert_eq!(comments(cx), "{>>Column \"Léa\": a<<} {>>Row \"Âge\": b<<} {>>Table: c<<} {>>libre<<}", "{:?}", text(cx));
+    cx.simulate_keystrokes("secondary-z");
+    assert_eq!(text(cx), note);
+    // A row inserted above does not take the comment of the one that was there.
+    j.load(cx, note, note.find("Léa").unwrap());
+    cx.run_until_parked();
+    op(cx, editor::TableOp::RowAbove);
+    assert!(comments(cx).starts_with("{>>Row \"Léa\": a<<}"), "{}", comments(cx));
     // Deleting a row that is not commented leaves the comment of another row where it is, and the
     // rows that shared a first cell lose their number.
     let twins = "| a | b |\n| - | - |\n| x | 1 |\n| x | 2 |\n\n{>>Row \"x\" (2): n<<}";
@@ -212,6 +259,28 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     op(cx, editor::TableOp::DeleteRow);
     assert_eq!(comments(cx), "{>>Row \"x\": n<<}", "{:?}", text(cx));
+    // What is drawn: the parts that carry a comment, and the one the cursor is in the comment of.
+    use editor::Target::*;
+    let notes = |cx: &mut gpui::VisualTestContext| shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, _| e.first_notes()));
+    let marked = "| Nom | {==Âge==}{>>a<<} | Ville |\n| --- | --- | --- |\n| Léa | 31 | {==Lyon==}{>>b<<} |\n| Max | {==7==}{>>c<<} é | x |\n\n{>>Row \"Max\": d<<}\n\n{>>Column \"Ville\": e<<}\n\n{>>Table: f<<}\n\n{>>Row 9: g<<}\n\nsuite";
+    j.load(cx, marked, 0);
+    cx.run_until_parked();
+    let n = notes(cx);
+    // `7 é` is more than the comment: the words only are highlighted, the cell is not tinted.
+    assert_eq!(n.found, [Row(2), Col(2), Table, Cell(0, 1), Cell(1, 2)], "{n:?}");
+    assert_eq!(n.active, None);
+    for (at, want) in [("Row \"Max\": d", Row(2)), ("Column \"Ville\": e", Col(2)), ("Table: f", Table), ("Lyon", Cell(1, 2)), ("Âge", Cell(0, 1))] {
+        j.load(cx, marked, marked.find(at).unwrap() + 2);
+        cx.run_until_parked();
+        assert_eq!(notes(cx).active, Some(want), "cursor in {at:?}");
+    }
+    j.load(cx, marked, marked.find("suite").unwrap());
+    cx.run_until_parked();
+    assert_eq!(notes(cx).active, None);
+    // No comment, no mark; an orphan line (`Row 9`) marks nothing.
+    j.load(cx, grid, 0);
+    cx.run_until_parked();
+    assert!(notes(cx).found.is_empty());
     // A comment on its own: resolving takes its line, at the start of the note, between two
     // paragraphs, at the end; in the middle of a line, only its markup goes.
     for (note, at, left) in [("{>>a<<}\nsuite", 3, "suite"), ("avant\n\n{>>a<<}\n\nsuite", 10, "avant\n\nsuite"), ("avant\n\n{>>a<<}", 10, "avant"), ("un {>>a<<} deux", 6, "un  deux")] {
