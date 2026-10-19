@@ -344,6 +344,16 @@ impl Editor {
             .detach();
             return cx.notify();
         }
+        // An embedded section: its source's name, or a double click, opens the note there; a click elsewhere in
+        // the frame puts the cursor on the line that says what it embeds.
+        if let Some((row, embed, on_label)) = self.embed_at(e.position) {
+            let (end, target) = (row.start + row.len, embed.target.clone());
+            if on_label || e.click_count >= 2 {
+                return self.open_embed(target, e.modifiers.shift, cx);
+            }
+            self.more.clear();
+            return self.move_to(end, cx);
+        }
         if let Some((cols, rows)) = self.grid_at(e.position) {
             return self.insert_table(cols, rows, cx);
         }
@@ -388,8 +398,12 @@ impl Editor {
         let line = &self.content[lr.clone()];
         let col = i - lr.start;
         if e.modifiers.secondary()
-            && let Some((_, link)) = md::links(line).into_iter().find(|(r, _)| r.contains(&col))
+            && let Some((range, link)) = md::links(line).into_iter().find(|(r, _)| r.contains(&col))
         {
+            // A link to a heading or a block of a note opens the note there.
+            if let Some(target) = Some(&link).filter(|l| matches!(l, Link::Wiki(_))).and_then(|_| crate::logic::embed::link_target(&line[range.start + 2..range.end - 2])).filter(|t| t.anchor != crate::logic::embed::Anchor::Whole) {
+                return cx.emit(EditorEvent::OpenAt(target, e.modifiers.shift));
+            }
             return cx.emit(if e.modifiers.shift { EditorEvent::OpenAside(link) } else { EditorEvent::Open(link) });
         }
         if !e.modifiers.secondary()

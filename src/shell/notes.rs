@@ -251,6 +251,41 @@ impl Shell {
         showing(&self.panes[self.active])
     }
 
+    /// A heading of the note was renamed (the same headings but one, which reads differently): the links
+    /// and embeds of the other notes that point at it, `[[Note#old]]` and `![[Note#old]]`, now point at the new one.
+    // ponytail: synchronous rewrite, limited to the notes the index says link to this one, like `relink`;
+    // typing a heading rewrites them at each save, which is as often as the note is written.
+    fn follow_heading(&mut self, path: &Path, before: &str, after: &str, cx: &mut Context<Self>) {
+        let (old, new): (Vec<_>, Vec<_>) = (markdown::headings(before), markdown::headings(after));
+        let changed: Vec<_> = old.iter().zip(&new).filter(|(a, b)| a.0 != b.0 || a.1 != b.1).collect();
+        let [(was, now)] = changed.as_slice() else { return };
+        if old.len() != new.len() || was.0 != now.0 || now.1.trim().is_empty() || was.1.trim().is_empty() {
+            return;
+        }
+        let (name, key) = (vault::stem(path), vault::stem(path).to_lowercase());
+        let mut rewritten = Vec::new();
+        for note in self.notes.iter_mut().filter(|n| n.path != path && n.links.contains(&key)) {
+            let fresh = fs::read_to_string(&note.path)
+                .ok()
+                .map(|text| embed::rename_heading(&text, &name, was.1.trim(), now.1.trim()))
+                .filter(|(_, count)| *count > 0)
+                .filter(|(text, _)| vault::write(&note.path, text).is_ok());
+            if let Some((text, _)) = fresh {
+                (note.tags, note.links) = Note::index(&text);
+                rewritten.push(note.path.clone());
+            }
+        }
+        for pane in 0..self.panes.len() {
+            if pane != self.active && self.panes[pane].path.as_ref().is_some_and(|p| rewritten.contains(p)) {
+                self.in_pane(pane, |this| this.reload(cx));
+            }
+        }
+        // A note shown here that embeds the renamed section follows too.
+        for pane in &self.panes {
+            pane.editor.update(cx, |e, cx| e.refresh_embeds(cx));
+        }
+    }
+
     /// Reloads the shown note from disk, rewritten outside the editor.
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
         if let Some(path) = self.pane().path.clone() {
@@ -264,6 +299,10 @@ impl Shell {
     /// Brings the disk up to date: each pane writes what is waiting in it.
     pub(super) fn flush(&mut self, cx: &mut Context<Self>) {
         self.each_pane(|this| this.flush_one(cx));
+        // What was just written may be shown in an embed, in this window.
+        for pane in &self.panes {
+            pane.editor.update(cx, |e, cx| e.refresh_embeds(cx));
+        }
     }
 
     /// Writes the pane's note to disk if it changed.
@@ -300,6 +339,8 @@ impl Shell {
                 if known.is_none_or(|n| n.path != path || n.links[..] != links[..]) {
                     self.graph_stale = true;
                 }
+                // The text as it was last saved, to see which heading was renamed.
+                let before = self.notes.iter().find(|n| Some(&n.path) == old.as_ref()).map(|n| n.body.clone());
                 self.notes.retain(|n| Some(&n.path) != old.as_ref() && n.path != path);
                 let body: Arc<str> = Arc::from(content);
                 self.notes.insert(
@@ -327,9 +368,12 @@ impl Shell {
                     self.recent.retain(|p| Some(p) != old.as_ref());
                     self.touch(&path);
                     self.nav.reveal(&path);
-                    self.pane_mut().path = Some(path);
+                    self.pane_mut().path = Some(path.clone());
                     self.push_names(cx);
                     self.push_dirs(cx);
+                }
+                if let Some(before) = before {
+                    self.follow_heading(&path, &before, &self.notes[0].body.clone(), cx);
                 }
                 self.refresh_graph(cx);
             }
@@ -385,6 +429,7 @@ impl Shell {
                 },
                 _ => self.follow(link, window, cx),
             },
+            EditorEvent::OpenAt(target, aside) => self.open_at(target, *aside, window, cx),
             EditorEvent::Swap(swap) => self.replace_in_vault(swap.clone(), window, cx),
             EditorEvent::Menu(at, link, commented) => {
                 self.menu = Some(nav::Menu { at: *at, target: None, text: Some(link.clone()), commented: *commented, block: false });
@@ -416,6 +461,21 @@ impl Shell {
                 None => self.open_wiki(name, cx),
             },
             Link::Wiki(name) => self.open_wiki(name, cx),
+        }
+    }
+
+    /// Opens the note of an embed or of a link to a heading, scrolled to what it points at: the heading,
+    /// the block (a note comes back from there with Alt+Left, like after any link).
+    pub(super) fn open_at(&mut self, target: &embed::Target, aside: bool, window: &mut Window, cx: &mut Context<Self>) {
+        match (aside, self.wiki_path(&target.note)) {
+            (true, Some(path)) => self.open_aside(&path, window, cx),
+            _ => self.open_wiki(&target.note, cx),
+        }
+        let anchor = target.anchor.clone();
+        let at = self.pane().editor.read(cx).text();
+        let at = embed::position(at, &anchor).filter(|_| anchor != embed::Anchor::Whole);
+        if let Some(at) = at {
+            self.pane().editor.update(cx, |e, cx| e.jump(at, true, cx));
         }
     }
 

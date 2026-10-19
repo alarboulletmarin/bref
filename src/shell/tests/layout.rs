@@ -36,7 +36,7 @@ fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
         // Formulas: their results depend on the cells around and on where the cursor is.
         "# Formules\n\navant\n\n| a | b | c |\n| --- | --- | --- |\n| 1 | 2 | =A+B |\n| 3 | 4 | =sum(above) |\n| x | =C1*2 | =B9 |\n\naprès\n".to_string(),
     ];
-    let pieces = ["a", "é", " ", "| x | y |", "> [!NOTE]", "> q", "```", "- ", "1. ", "# ", "$$", "---", "![](x.png)", "|", "texte", "\n", "\n\n", "=", "=sum(above)", "=B*C", "=1/0"];
+    let pieces = ["a", "é", " ", "| x | y |", "> [!NOTE]", "> q", "```", "- ", "1. ", "# ", "$$", "---", "![](x.png)", "|", "texte", "\n", "\n\n", "=", "=sum(above)", "=B*C", "=1/0", "\n\n![[Inconnue]]\n\n", "![[Cas#Haut]]"];
     let keys = ["enter", "backspace", "delete", "left", "right", "up", "down", "home", "end", "tab"];
     let (mut full, mut reused, mut inside) = (0, 0, 0);
     for (n, doc) in docs.into_iter().enumerate() {

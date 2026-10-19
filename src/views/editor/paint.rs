@@ -281,6 +281,9 @@ impl Editor {
                 let at = block(px(0.), o.y + row.image_top(), s.width, s.height);
                 window.paint_image(at, Corners::all(px(6.)), image.clone(), 0, false).ok();
             }
+            if let Some(embed) = &row.embed {
+                self.paint_embed(row, embed, window, cx);
+            }
             // "Enlarge" button, on the picture, formula or figure the pointer is over.
             if self.big_hover == Some(row.start)
                 && let Some(bounds) = self.big_bounds(row)
@@ -474,7 +477,7 @@ impl Editor {
                 window.paint_quad(fill(line, t.accent).corner_radii(px(1.)));
             }
         // The handle of the block under the pointer, and its "+".
-        if let Some((grip, plus)) = self.handle_bounds() {
+        if let Some((grip, plus)) = self.handle_bounds().filter(|_| !self.readonly) {
             let on = |b: Bounds<Pixels>| b.contains(&self.pointer) || (self.handles.drag.is_some() && b == grip);
             for (spot, icon) in [(Some(grip), "grip.svg"), (plus, "plus.svg")] {
                 let Some(spot) = spot else { continue };
@@ -551,6 +554,7 @@ impl Editor {
                     Choice::Date(en, fr, date) => write(tr(en, fr), &crate::lang::date_name(*date)),
                     Choice::Word((name, en, fr, after)) => write(tr(en, fr), &format!("{name}{after}")),
                     Choice::Column(letter, header) => write(header, letter),
+                    Choice::Anchor(text) => write(text, ""),
                 }
             }
         }

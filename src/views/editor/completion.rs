@@ -32,7 +32,7 @@ pub(super) const COMMANDS: &[Command] = &[
 ];
 
 /// What completion offers: a name to put after `[[`, or a command.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) enum Choice<'a> {
     Name(&'a str),
     Command(&'static Command),
@@ -41,6 +41,8 @@ pub(super) enum Choice<'a> {
     /// In a formula: a function or a name, then a column (its letter and its header).
     Word(&'static Word),
     Column(&'static str, &'a str),
+    /// After `#` in a link: a heading of the note, or `^id` of one of its blocks.
+    Anchor(String),
 }
 
 impl Editor {
@@ -81,6 +83,10 @@ impl Editor {
         if query.contains("]]") || query.contains('|') {
             return None;
         }
+        // After `#`, what the note holds: its headings, or after `#^` its blocks.
+        if let Some((note, anchor)) = query.split_once('#') {
+            return Some((c - anchor.len(), self.anchors(note, anchor)));
+        }
         let start = c - query.len();
         let query = query.to_lowercase();
                 // `![[` displays a file: the vault's images and diagrams are
@@ -96,6 +102,18 @@ impl Editor {
         }
         items.truncate(6);
         Some((start, items.into_iter().map(Choice::Name).collect()))
+    }
+
+        /// The headings of `note` that contain `query`, or its block ids if `query` starts with `^`.
+    fn anchors(&self, note: &str, query: &str) -> Vec<Choice<'_>> {
+        let text = self.embeds.sources.get(&note.trim().to_lowercase()).and_then(|path| fs::read_to_string(path).ok()).unwrap_or_default();
+        let wanted = query.to_lowercase();
+        let mut found: Vec<String> = match wanted.strip_prefix('^') {
+            Some(id) => crate::logic::embed::block_ids(&text).into_iter().filter(|b| b.to_lowercase().contains(id)).map(|b| format!("^{b}")).collect(),
+            None => md::headings(&text).into_iter().filter(|(_, label, _)| label.to_lowercase().contains(&wanted)).map(|(_, label, _)| label.to_string()).collect(),
+        };
+        found.truncate(SHOWN);
+        found.into_iter().map(Choice::Anchor).collect()
     }
 
         /// After a `/` at the start of a line or word, outside code: the commands whose
@@ -133,7 +151,7 @@ impl Editor {
             return false;
         };
         let c = self.cursor();
-        match items[self.ac_index.min(items.len() - 1)] {
+        match items[self.ac_index.min(items.len() - 1)].clone() {
             Choice::Name(name) => {
                 let name = name.to_string();
                 let closed = self.content[c..].starts_with("]]");
@@ -144,6 +162,14 @@ impl Editor {
                 }
             }
                         // The day becomes a link to its daily note, created when first opened.
+            Choice::Anchor(text) => {
+                let closed = self.content[c..].starts_with("]]");
+                self.edit(start..c, &format!("{text}]]"), cx);
+                if closed {
+                    let end = self.cursor();
+                    self.splice(end..end + 2, "", cx);
+                }
+            }
             Choice::Word(&(name, _, _, after)) => {
                 self.push_undo(true);
                 self.edit(start..c, &format!("{name}{after}"), cx);

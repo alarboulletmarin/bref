@@ -224,6 +224,14 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 k(&editor::SelectNext, tr("Several cursors: select the word, then its next occurrence (Esc: back to one)", "Plusieurs curseurs : prendre le mot, puis son occurrence suivante (Échap : un seul)")),
                 t(&format!("Alt+{click}"), tr("Add a cursor", "Ajouter un curseur")),
                 k(&editor::InsertLink, tr("Link: [text](address) from the selection; on a link, change its address", "Lien : [texte](adresse) depuis la sélection ; sur un lien, changer son adresse")),
+                t(
+                    tr("Embed a section", "Incorporer une section"),
+                    tr(
+                        "![[Note#Heading]] alone on a line shows that heading and what is under it, up to the next heading of the same level, in place and live: ![[Note]] the whole note (without its front matter), ![[Note#^id]] the block that ends with ^id. Framed, with the source's name at the top right: a click on it, or a double click on the frame, opens the note there (Alt+Left comes back). Typing ![[Note# offers the headings of the note, #^ its blocks. Read-only; an embed that leads back to itself says so, and three levels are shown at most. Renaming the note or the heading rewrites the embeds and links to it",
+                        "![[Note#Titre]] seul sur une ligne montre ce titre et ce qu'il y a dessous, jusqu'au titre suivant de même niveau, sur place et en direct : ![[Note]] toute la note (sans son en-tête), ![[Note#^id]] le bloc qui finit par ^id. Dans un cadre, avec le nom de la source en haut à droite : un clic dessus, ou un double clic sur le cadre, ouvre la note à cet endroit (Alt+Gauche revient). Taper ![[Note# propose les titres de la note, #^ ses blocs. Lecture seule ; une incorporation qui revient sur elle-même le dit, et trois niveaux s'affichent au plus. Renommer la note ou le titre réécrit les incorporations et les liens qui y mènent",
+                    ),
+                ),
+                k(&editor::OpenEmbed, tr("On the line of an embed: open its note, at the section", "Sur la ligne d'une incorporation : ouvrir sa note, à la section")),
                 k(&editor::Comment, tr("Comment the selection or the line (in a table: the cell, or the taken row, column or table); on a comment, resolve it", "Commenter la sélection ou la ligne (dans un tableau : la cellule, ou la ligne, la colonne, le tableau pris) ; sur un commentaire, le résoudre")),
                 p(tr("comments", "commentaires"), tr("Comments: show their panel, jump to one (a badge on the speech bubble counts them)", "Commentaires : montrer leur panneau, aller à l'un d'eux (une pastille sur la bulle les compte)")),
                 t(tr("Right click", "Clic droit"), tr("Menu of the note: link, comment, cut, copy, paste, bold, italic", "Menu de la note : lien, commentaire, couper, copier, coller, gras, italique")),
@@ -442,6 +450,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("alt-down", &BlockDown, e),
         b("secondary-shift-backspace", &TableDeleteSpan, e),
         b("alt-=", &TableAutoSum, e),
+        b("alt-enter", &OpenEmbed, e),
         b("secondary-alt-c", &TableCopyResults, e),
         b("secondary-shift-l", &AlignLeft, e),
         b("secondary-shift-e", &AlignCenter, e),

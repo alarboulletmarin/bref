@@ -7,6 +7,7 @@ mod clipboard;
 mod completion;
 mod cursor;
 mod edit;
+mod embed;
 mod find;
 mod format_bar;
 mod formulas;
@@ -27,6 +28,7 @@ pub use blocks::*;
 use completion::*;
 use cursor::*;
 use edit::*;
+use embed::*;
 use find::*;
 pub use format_bar::*;
 use formulas::*;
@@ -127,6 +129,7 @@ actions!(
         TableTranspose,
         TableAutoSum,
         TableCopyResults,
+        OpenEmbed,
         BlockText,
         BlockHeading1,
         BlockHeading2,
@@ -210,6 +213,8 @@ pub enum EditorEvent {
     BlockMenu(Point<Pixels>),
     /// A diagram, formula or picture to view large.
     View(Source),
+    /// An embedded section, or a link to a heading, to open: the note and where in it; with Shift, aside.
+    OpenAt(crate::logic::embed::Target, bool),
 }
 
 /// What the footer counter depends on: the text version and the selection.
@@ -283,6 +288,10 @@ pub struct Editor {
     marks: Option<Marks>,
     /// Why the formula under the pointer has no result.
     reason: Option<Rc<str>>,
+    /// This editor shows an embedded section: nothing in it can be edited, clicked or focused.
+    readonly: bool,
+    /// The notes embedded in this one, and what is kept of them.
+    embeds: Embeds,
     /// The handle under the pointer: (table start, handle).
     part_hover: Option<(usize, Part)>,
     /// Where the pointer was at its last move.
@@ -409,6 +418,8 @@ impl Editor {
             geos: Vec::new(),
             marks: None,
             reason: None,
+            readonly: false,
+            embeds: Embeds::default(),
             part_hover: None,
             pointer: Point::default(),
             hand: None,

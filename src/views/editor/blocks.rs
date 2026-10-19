@@ -129,6 +129,10 @@ impl Editor {
         if !self.viewport.contains(&at) {
             return None;
         }
+        // The source's name on an embed's frame opens it.
+        if self.embed_at(at).is_some_and(|(.., on_label)| on_label) {
+            return Some(CursorStyle::PointingHand);
+        }
         if let Some((_, part)) = self.part_at(at) {
             return Some(match part {
                 Part::JoinCol(_) | Part::JoinRow(_) => CursorStyle::PointingHand,

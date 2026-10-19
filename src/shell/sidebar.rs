@@ -498,7 +498,12 @@ impl Shell {
                     Some(target) => {
                         let note = |path: &Path| self.notes.iter().find(|n| n.path == path);
                         let line = note(target).zip(note(&row.path)).and_then(|(aimed, from)| graph::link_line(&from.body, aimed));
-                        line.map(|line| line.trim().to_string()).unwrap_or_default()
+                        // An embedded section is said to be one.
+                        line.map(|line| match embed::parse(line) {
+                            Some(_) => format!("{} · {}", tr("embedded", "incorporé"), line.trim()),
+                            None => line.trim().to_string(),
+                        })
+                        .unwrap_or_default()
                     }
                     None => detail,
                 };

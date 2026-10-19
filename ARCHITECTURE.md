@@ -57,13 +57,14 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 |---|---|
 | how Markdown is read (headings, links, tags, styles) | `logic/markdown/` (`mod.rs`; `tables.rs`, `lists.rs`, `front.rs`, `dates.rs`, `search.rs`) |
 | CSV/TSV parsing and writing | `logic/table.rs` |
+| embedded sections (`![[Note#Heading]]`: reading the line, finding the section, rewriting links to a renamed heading) | `logic/embed.rs`; laid out and drawn by `views/editor/embed.rs` (a read-only `Editor` per section, framed under its line) |
 | formulas of the cells of a table (parser, evaluator, numbers as written) | `logic/formula.rs`; shown by `views/editor/grid.rs` (`results`, `Shown`), written and completed by `views/editor/formulas.rs` |
 | diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram.rs`, `logic/import.rs` |
 | the vault on disk (scan, save, rename, trash, config files) | `platform/vault.rs` |
 | git commands, update check | `platform/git.rs`, `platform/update.rs` |
 | colours, themes, page width | `ui/theme.rs` |
 | icons and fonts | `ui/assets.rs` |
-| the text editor | `views/editor/`: `edit.rs` (changes, undo), `cursor.rs`, `style.rs`, `table.rs`, `blocks.rs`, `find.rs`, `completion.rs`, `links.rs` (links and comments, in a table too), `notes.rs` (which rows, columns and cells of a table carry a comment, for the marks drawn on it), `format_bar.rs`, `mouse.rs`, `clipboard.rs`, `input.rs` (IME) |
+| the text editor | `views/editor/`: `edit.rs` (changes, undo), `cursor.rs`, `style.rs`, `table.rs`, `blocks.rs`, `find.rs`, `completion.rs`, `links.rs` (links and comments, in a table too), `notes.rs` (which rows, columns and cells of a table carry a comment, for the marks drawn on it), `embed.rs` (sections of other notes shown in place), `format_bar.rs`, `mouse.rs`, `clipboard.rs`, `input.rs` (IME) |
 | what a keystroke costs | `views/editor/layout.rs` (`plan` redoes only the damaged lines) then `paint.rs`; the test `layout_reuse_matches_full_layout` checks every reuse against a full layout |
 | the tree, recent notes, calendar | `views/nav.rs` (state), `shell/sidebar.rs` (drawing) |
 | the command palette | `views/palette.rs`, `shell/palette_open.rs` |

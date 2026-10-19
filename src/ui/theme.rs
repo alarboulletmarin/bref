@@ -86,7 +86,7 @@ impl Wide {
         }
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Theme {
     pub bg: Hsla,
     pub text: Hsla,

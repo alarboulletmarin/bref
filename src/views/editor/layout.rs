@@ -219,6 +219,8 @@ pub(super) struct Row {
     pub(super) dx: Pixels,
     /// Table line shown as a grid: its cells, which wrap.
     pub(super) grid: Option<Rc<TableRow>>,
+    /// The section of another note this line embeds, framed under it.
+    pub(super) embed: Option<Rc<EmbedRow>>,
 }
 
 impl Row {
@@ -250,6 +252,11 @@ impl Row {
         self.image.as_ref().map_or(px(0.), |(_, s)| s.height.max(COPY_SIZE) + IMAGE_GAP)
     }
 
+    /// Room taken under the line by its picture or its embedded section.
+    pub(super) fn below(&self) -> Pixels {
+        self.image_height() + self.embed.as_ref().map_or(px(0.), |e| e.height())
+    }
+
     /// Top of the picture's band: at least as tall as the enlarge button, so that a tiny
     /// picture's button never lands on the next line.
     pub(super) fn image_top(&self) -> Pixels {
@@ -272,7 +279,7 @@ impl Row {
     pub(super) fn visual_rows(&self) -> i32 {
         match &self.grid {
             Some(grid) => grid.lines,
-            None => (f32::from(self.height - self.pad - self.image_height() - self.gap) / f32::from(self.lh)).round() as i32,
+            None => (f32::from(self.height - self.pad - self.below() - self.gap) / f32::from(self.lh)).round() as i32,
         }
     }
 
@@ -649,6 +656,11 @@ impl Editor {
     /// Each frame: the heavy layout is only redone if the text, the width, the theme
     /// or the cursor changed; otherwise, only what depends on scrolling is recomputed.
     pub(super) fn layout(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
+        // A note shown in an embed changed on disk: every line is laid out again.
+        if self.embeds.poll() {
+            self.epoch += 1;
+            self.laid_out = None;
+        }
         let key = LayoutKey {
             version: self.version,
             width: f32::from(bounds.size.width).to_bits(),
@@ -775,6 +787,7 @@ impl Editor {
         };
         let mut cells = std::mem::take(&mut self.cells);
         cells.next_frame();
+        let mut embeds = std::mem::take(&mut self.embeds);
         // Lines of a table already laid out, waiting for their turn in the loop.
         let mut pending: VecDeque<Option<Rc<TableRow>>> = VecDeque::new();
         let empty = Rc::new(Shaped { line: None, subs: Vec::new(), formula: None, picture: None });
@@ -874,6 +887,7 @@ impl Editor {
                     tint: None,
                     dx: px(0.),
                     grid: None,
+                    embed: None,
                 });
                 y += height;
                 offset += line.len() + 1;
@@ -971,6 +985,7 @@ impl Editor {
                             tint: None,
                             dx: px(0.),
                             grid: None,
+                            embed: None,
                         });
                         y += height;
                     }
@@ -1120,6 +1135,7 @@ impl Editor {
                     self.images.get(&name).cloned()
                 })
             });
+            let has_file = file.is_some();
             let svg = file.as_ref().is_some_and(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")));
             // The picture wins over a formula on the same line: it is what is drawn.
             enlarge = file
@@ -1163,6 +1179,13 @@ impl Editor {
                 Some((image, size(s.width * scale, s.height * scale)))
             });
             let enlarge = enlarge.filter(|_| image.is_some());
+            // `![[Note#Heading]]` alone on a line, that is no picture and no other file: the section it points at,
+            // framed under it.
+            let embed = (!code && !has_file && made.picture.is_some())
+                .then(|| crate::logic::embed::parse(line))
+                .flatten()
+                .filter(|target| !vault::is_file_shown(Path::new(&target.note)))
+                .map(|target| Rc::new(embeds.row(&target, width, self, frame as u64, window, cx)));
 
             let text_height = made.line.as_ref().map_or(lh, |l| l.size(lh).height);
             let (pad, lh, height) = match &grid_row {
@@ -1188,9 +1211,10 @@ impl Editor {
                 tint,
                 dx: px(0.),
                 grid: grid_row,
+                embed: None,
             };
-            let height = row.height + row.image_height();
-            rows.push(Row { height, ..row });
+            let height = row.height + row.image_height() + embed.as_ref().map_or(px(0.), |e| e.height());
+            rows.push(Row { height, embed, ..row });
             y += height;
             offset += line.len() + 1;
             }
@@ -1200,7 +1224,10 @@ impl Editor {
             last.height += TABLE_GAP;
             y += TABLE_GAP;
         }
+        embeds.sweep(&rows, frame as u64);
         self.rows = rows;
+        loading |= embeds.loading(cx);
+        self.embeds = embeds;
         // Reused very big tables: their lines are no longer the ones that were styled.
         for (geom, first) in carried {
             let end = first + self.rows[first..].iter().take_while(|r| r.kind == Kind::Table).count();
@@ -1325,7 +1352,6 @@ impl Editor {
     /// What depends on scrolling and the window size, and is redone every frame:
     /// view, table frames, clickable zones.
     pub(super) fn place(&mut self, bounds: Bounds<Pixels>, window: &mut Window, _: &mut App) {
-        let (cursor, width, room) = (self.cursor(), self.width, self.room);
         let reveal = std::mem::take(&mut self.reveal);
         let to_top = std::mem::take(&mut self.reveal_top);
         if reveal {
@@ -1344,11 +1370,12 @@ impl Editor {
         let max_scroll = (TOP + self.total_y - bounds.size.height * 0.4).max(px(0.));
         self.scroll_y = self.scroll_y.max(px(0.)).min(max_scroll);
         self.origin = point(
-            bounds.left() + (bounds.size.width - width) / 2.,
+            bounds.left() + (bounds.size.width - self.width) / 2.,
             bounds.top() + TOP - self.scroll_y,
         );
         self.viewport = bounds;
         self.materialize(bounds, window);
+        if !self.readonly {
         self.view_hitbox = Some(window.insert_hitbox(bounds, HitboxBehavior::Normal));
         self.copy_hitboxes = self
             .opening
@@ -1370,6 +1397,24 @@ impl Editor {
             .collect();
         let grid = self.grid.and_then(|_| self.popup_at(Self::grid_size()));
         self.grid_hitbox = grid.map(|at| window.insert_hitbox(Bounds::new(at, Self::grid_size()), HitboxBehavior::Normal));
+        }
+        self.frames(reveal, window);
+    }
+
+    /// What an embedded section shows: where it is on screen, and what is visible of it.
+    pub(super) fn place_embedded(&mut self, origin: Point<Pixels>, clip: Bounds<Pixels>, window: &mut Window) {
+        self.origin = origin;
+        self.viewport = clip;
+        self.scroll_y = px(0.);
+        self.pointer = point(px(-1e5), px(-1e5));
+        // Everything of it is near enough: a very big table of it has all its cells.
+        self.materialize(Bounds::new(origin, size(self.width, self.total_y)), window);
+        self.frames(false, window);
+    }
+
+    /// The frame of each table of the layout, and the zones of its handles.
+    fn frames(&mut self, reveal: bool, window: &mut Window) {
+        let (cursor, width, room) = (self.cursor(), self.width, self.room);
         // Frame of each table: its lines, at the width of the longest without
         // going past the page; beyond that, it scrolls and follows the cursor.
         let scrolled = std::mem::take(&mut self.table_x);
@@ -1426,6 +1471,9 @@ impl Editor {
                 ys.push(frame.bottom());
                 self.geos.push(Geo { start, frame, xs, ys, notes: marks.get(&start).cloned().unwrap_or_default() });
             }
+        }
+        if self.readonly {
+            return;
         }
         let bars = self.tables.iter().flat_map(|(_, frame)| plus_bars(*frame));
         self.table_hitboxes = bars.map(|bar| window.insert_hitbox(bar, HitboxBehavior::Normal)).collect();

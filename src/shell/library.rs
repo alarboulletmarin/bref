@@ -228,10 +228,16 @@ impl Shell {
         let notes: Vec<&Note> = self.notes.iter().filter(|n| !self.is_template(n)).collect();
         let names: Vec<String> = notes.iter().map(|n| n.name.clone()).chain(notes.iter().flat_map(|n| n.aliases.iter().cloned())).collect();
         let pictures = vault::pictures(&self.images);
+        // Notes and their aliases, for the sections embedded from them.
+        let sources: std::collections::HashMap<String, PathBuf> =
+            notes.iter().flat_map(|n| std::iter::once(n.name.as_str()).chain(n.aliases.iter().map(String::as_str)).map(|name| (name.to_lowercase(), n.path.clone()))).collect();
+        let me = |pane: &Pane| pane.path.as_deref().and_then(Path::file_stem).map(|s| s.to_string_lossy().to_string());
         for pane in &self.panes {
+            let me = me(pane);
             pane.editor.update(cx, |e, _| {
                 e.set_notes(names.clone());
                 e.set_images(&pictures);
+                e.set_sources(sources.clone(), me);
             });
         }
     }
@@ -240,7 +246,11 @@ impl Shell {
     pub(super) fn push_dirs(&mut self, cx: &mut Context<Self>) {
         let note_dir = self.pane().path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
         let dirs = note_dir.into_iter().chain(self.vault.clone()).collect();
-        self.pane().editor.update(cx, |e, _| e.set_dirs(dirs));
+        let me = self.pane().path.as_deref().and_then(Path::file_stem).map(|s| s.to_string_lossy().to_string());
+        self.pane().editor.update(cx, |e, _| {
+            e.set_dirs(dirs);
+            e.set_trail(me);
+        });
     }
 
     /// Puts the note at the head of the recent ones and saves the list.

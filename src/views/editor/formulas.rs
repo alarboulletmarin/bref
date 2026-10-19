@@ -137,6 +137,7 @@ impl Editor {
                 Choice::Name(name) => name.to_string(),
                 Choice::Command((name, ..)) => format!("/{name}"),
                 Choice::Date(..) => "date".into(),
+                Choice::Anchor(text) => format!("#{text}"),
             })
             .collect()
     }
