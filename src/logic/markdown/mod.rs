@@ -783,7 +783,8 @@ pub fn headings(text: &str) -> Vec<(u8, &str, usize)> {
 }
 
 /// Comments of the line, written in CriticMarkup `{==text==}{>>comment<<}`: the range
-/// of the whole, that of the commented text and that of the comment.
+/// of the whole, that of the commented text and that of the comment. A comment on its own,
+/// `{>>comment<<}`, has an empty commented text, at its start.
 pub fn comments(line: &str) -> Vec<(Range<usize>, Range<usize>, Range<usize>)> {
     let (mut found, mut from) = (Vec::new(), 0);
     while let Some(open) = line[from..].find("{==").map(|i| i + from) {
@@ -792,14 +793,24 @@ pub fn comments(line: &str) -> Vec<(Range<usize>, Range<usize>, Range<usize>)> {
         found.push((open..end + 3, open + 3..mid, mid + 6..end));
         from = end + 3;
     }
+    let full = found.len();
+    from = 0;
+    while let Some(open) = line[from..].find("{>>").map(|i| i + from) {
+        let Some(end) = line[open + 3..].find("<<}").map(|i| i + open + 3) else { break };
+        if !found[..full].iter().any(|(whole, ..)| whole.contains(&open)) {
+            found.push((open..end + 3, open..open, open + 3..end));
+        }
+        from = end + 3;
+    }
+    found.sort_by_key(|(whole, ..)| whole.start);
     found
 }
 
-/// All the note's comments, outside code blocks: the commented text, the
-/// comment, and the byte where the whole starts.
-pub fn all_comments(text: &str) -> Vec<(&str, &str, usize)> {
+/// All the note's comments, outside code blocks: the commented text (empty for a comment on
+/// its own), the comment, the byte where the whole starts and the one where the comment does.
+pub fn all_comments(text: &str) -> Vec<(&str, &str, usize, usize)> {
         // Almost no note has any: a single search says so, without reading the lines.
-    if !text.contains("{==") {
+    if !text.contains("{==") && !text.contains("{>>") {
         return Vec::new();
     }
     let fences = text.lines().filter(|line| is_fence(line)).count();
@@ -809,7 +820,7 @@ pub fn all_comments(text: &str) -> Vec<(&str, &str, usize)> {
             seen += 1;
             in_code = !in_code && seen < fences;
         } else if !in_code {
-            found.extend(comments(line).into_iter().map(|(whole, noted, said)| (&line[noted], &line[said], at + whole.start)));
+            found.extend(comments(line).into_iter().map(|(whole, noted, said)| (&line[noted], &line[said.clone()], at + whole.start, at + said.start)));
         }
         at += line.len() + 1;
     }
@@ -887,10 +898,31 @@ mod tests {
         let all = Swap { query: "le".into(), with: "un".into(), case: false, word: true, regex: false };
         assert_eq!(swap("Le chat, le chien.", &all), Some(("un chat, un chien.".into(), 2)));
         assert_eq!(swap("rien", &all), None);
+                // Comment names: by content, numbered when the first cells are alike, by position when empty.
+        let grid = |rows: &[&[&str]]| rows.iter().map(|r| r.iter().map(|c| c.to_string()).collect::<Vec<_>>()).collect::<Vec<_>>();
+        let rows = grid(&[&["Nom", "", "Âge"], &["---", "---", "---"], &["Léa", "", "1"], &["Léa", "", "2"], &["", "", ""]]);
+        let (names, cols) = scopes(&rows);
+        assert_eq!(names, ["Row \"Nom\"", "Row \"Léa\" (1)", "Row \"Léa\" (2)", "Row 4"]);
+        assert_eq!(cols, ["Column \"Nom\"", "Column 2", "Column \"Âge\""]);
+                // A line follows its row when it is renamed or moved up, goes with it when it is deleted, and the others stay.
+        let old = (names.clone(), cols.clone());
+        let after = grid(&[&["Nom", "", "Âge"], &["---", "---", "---"], &["Léa", "", "2"], &["", "", ""]]);
+        let new = scopes(&after);
+        let lines = ["{>>Row \"Léa\" (1): a<<}", "{>>Row \"Léa\" (2): b<<}", "{>>Column 2: c<<}", "{>>Table: d<<}", "{>>libre<<}", "  {>>Row 4: e<<}"];
+        let moved = [Some(0), None, Some(1), Some(2)];
+        let kept = [Some(0), Some(1), Some(2)];
+        assert_eq!(
+            retarget(&lines, &old, &new, (&moved, &kept), false),
+            [None, Some("{>>Row \"Léa\": b<<}".to_string()), Some(lines[2].to_string()), Some(lines[3].to_string()), Some(lines[4].to_string()), Some("  {>>Row 3: e<<}".to_string())]
+        );
+        assert_eq!(retarget(&lines, &old, &new, (&[None; 4], &[None; 3]), true), [None, None, None, None, Some(lines[4].to_string()), None]);
                 // Comments: the text, the comment, and where the whole starts; not in code.
         let line = "un {==mot **fort**==}{>>à revoir<<} et {==deux==}{>><<} {==seul==}";
         assert_eq!(comments(line), [(3..36, 6..18, 24..33), (40..56, 43..47, 53..53)]);
-        assert_eq!(all_comments(&format!("# T\n{line}\n```\n{line}\n```")), [("mot **fort**", "à revoir", 7), ("deux", "", 44)]);
+        assert_eq!(all_comments(&format!("# T\n{line}\n```\n{line}\n```")), [("mot **fort**", "à revoir", 7, 28), ("deux", "", 44, 57)]);
+                // A comment on its own has nothing commented, and a full one is not counted twice.
+        assert_eq!(comments("a {>>seul<<} b {==x==}{>>y<<}"), [(2..12, 2..2, 5..9), (15..29, 18..19, 25..26)]);
+        assert_eq!(comments("{>>pas fini"), []);
         let mut flags = vec![0u16; line.len()];
         inline(line, 0, &mut flags);
         assert!(flags[3..6].iter().all(|f| *f == DIM) && flags[6] == 0 && flags[12] == BOLD);

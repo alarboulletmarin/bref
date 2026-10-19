@@ -59,6 +59,13 @@ impl EntityInputHandler for Editor {
         if self.type_grid(text, cx) {
             return;
         }
+        let escaped;
+        let text = if text.contains('|') && self.in_cell_comment(range.start) {
+            escaped = text.replace('|', "\\|");
+            &escaped
+        } else {
+            text
+        };
         self.edit(range, text, cx);
         self.realign(cx);
         if text != " " {

@@ -238,16 +238,9 @@ impl Editor {
                 return None;
             }
             if !self.is_dash_row(&line) {
-                let text = &self.content[line.clone()];
                 let inside = |at: usize| (sel.start..sel.end).contains(&at);
-                bars |= md::bars(text).into_iter().any(|bar| inside(line.start + bar));
-                for cell in md::cells(text) {
-                    let (from, to) = (line.start + cell.start, line.start + cell.end);
-                    let (from, to) = (from.max(sel.start), to.min(sel.end));
-                    if from < to {
-                        found.push(self.off_escape(from, false)..self.off_escape(to, true));
-                    }
-                }
+                bars |= md::bars(&self.content[line.clone()]).into_iter().any(|bar| inside(line.start + bar));
+                found.extend(self.line_cells(&line, &sel));
             }
             if line.end >= last.end {
                 break;
@@ -255,6 +248,72 @@ impl Editor {
             line = self.line_range(line.end + 1);
         }
         (first != last || bars || found.len() > 1).then_some(found)
+    }
+
+    /// The text of each cell of table `line` that `sel` touches, cut to the selection.
+    pub(super) fn line_cells(&self, line: &Range<usize>, sel: &Range<usize>) -> Vec<Range<usize>> {
+        md::cells(&self.content[line.clone()])
+            .into_iter()
+            .filter_map(|cell| {
+                let (from, to) = ((line.start + cell.start).max(sel.start), (line.start + cell.end).min(sel.end));
+                (from < to).then(|| self.off_escape(from, false)..self.off_escape(to, true))
+            })
+            .collect()
+    }
+
+    /// Runs a gesture that edits cells, then realigns the tables it touched: the selection
+    /// follows its text, and the cells a handle took stay taken, if the gesture left a selection.
+    pub(super) fn aligned(&mut self, cx: &mut Context<Self>, act: impl FnOnce(&mut Self, &mut Context<Self>)) {
+        let pick = self.table_at(self.sel.start).and_then(|(range, ..)| self.live_pick(range.start).cloned());
+        let version = self.version;
+        act(self, cx);
+        if self.version == version {
+            return;
+        }
+        // The later table first: realigning it leaves the earlier one where it is.
+        self.align_at(self.sel.end, cx);
+        self.align_at(self.sel.start, cx);
+        if let Some(p) = pick.filter(|_| !self.sel.is_empty()) {
+            self.pick(p.table, p.rows, p.cols, cx);
+        }
+    }
+
+    /// Realigns the table holding byte `at`, as `realign` does, but the whole selection follows
+    /// its text (an end that lands in padding goes to the end of its cell).
+    fn align_at(&mut self, at: usize, cx: &mut Context<Self>) {
+        let Some((range, rows, _)) = self.table_at(at) else {
+            return;
+        };
+        let text = self.format_table(&range, &rows);
+        let old = self.content[range.clone()].to_string();
+        // A table without its dash line yet is left alone, as in `realign`.
+        if text == old || old.matches('\n').count() + 1 != rows.len() {
+            return;
+        }
+        let start_of = |t: &str, l: usize| t.split('\n').take(l).map(|x| x.len() + 1).sum::<usize>();
+        let map = |p: usize| -> usize {
+            if p <= range.start {
+                return p;
+            }
+            if p >= range.end {
+                return p + text.len() - old.len();
+            }
+            let q = p - range.start;
+            let l = old[..q].matches('\n').count();
+            let (ol, nl) = (old.split('\n').nth(l).unwrap_or_default(), text.split('\n').nth(l).unwrap_or_default());
+            let (col, base) = (q - start_of(&old, l), range.start + start_of(&text, l));
+            let (oc, nc) = (md::cells(ol), md::cells(nl));
+            let Some(k) = oc.iter().rposition(|c| c.start <= col) else {
+                return base + col.min(nl.len());
+            };
+            let off = (col - oc[k].start).min(oc[k].len());
+            base + nc.get(k).map_or(nl.len(), |c| c.start + off.min(c.len()))
+        };
+        let sel = map(self.sel.start)..map(self.sel.end);
+        self.damaged(&range);
+        self.content.replace_range(range, &text);
+        self.sel = sel;
+        self.changed(cx);
     }
 
     /// Empties the selection's cells, `|` included in the selection: they keep their
@@ -592,6 +651,24 @@ impl Editor {
             // A gesture with nowhere to go: the header stays on top, the last row does not go down.
             _ => return,
         };
+        // The comments under the table follow what they are about, or go with it, in the same undo step.
+        let lines = self.comment_lines_after(range.end);
+        let tracks = !lines.is_empty() && matches!(op, TableOp::DeleteRow | TableOp::DeleteCol | TableOp::DeleteTable);
+        let held = self.held;
+        if tracks {
+            let shift = |n: usize, gone: Range<usize>| -> Vec<Option<usize>> {
+                (0..n).map(|i| (!gone.contains(&i)).then(|| i - gone.clone().filter(|g| *g < i).count())).collect()
+            };
+            let (rows_to, cols_to) = match op {
+                TableOp::DeleteRow => (shift(tall, r0..r1 + 1), (0..wide).map(Some).collect()),
+                TableOp::DeleteCol => ((0..tall).map(Some).collect(), shift(wide, c0..c1 + 1)),
+                _ => (vec![None; tall], vec![None; wide]),
+            };
+            let new = grid.as_ref().map_or_else(Default::default, |g| md::scopes(g));
+            self.push_undo(true);
+            self.held = true;
+            self.retarget_comments(&lines, (&rows_to, &cols_to), &md::scopes(&rows), &new, grid.is_none(), cx);
+        }
         match grid {
             Some(grid) => self.set_table(range, &grid, at, cx),
             // Nothing left in the table: it goes with the line break that follows it.
@@ -602,6 +679,7 @@ impl Editor {
                 self.move_to(range.start.min(self.content.len()), cx);
             }
         }
+        self.held = held;
     }
 
     /// Aligns the cursor's column: `:--`, `:-:` or `--:` under its header. The dash

@@ -553,8 +553,8 @@ impl Shell {
         // click leads to the comment, ready to be edited; the check mark resolves it.
         // ponytail: the note is reread on every render (a search for `{==`); keep the
         // list from one version of the text to the next if very long notes suffer from it.
-        let said: Vec<(String, String, usize)> = match self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx) {
-            true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|(noted, said, at)| (noted.into(), said.into(), at)).collect(),
+        let said: Vec<(String, String, usize, usize)> = match self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx) {
+            true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|(noted, said, at, inside)| (noted.into(), said.into(), at, inside)).collect(),
             false => Vec::new(),
         };
         // Their button, left of the copy one, opens and closes the panel; the
@@ -644,9 +644,8 @@ impl Shell {
         if active && column.is_none() {
             self.nav.aside = px(0.);
         }
-        let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at))| {
-            let at = *at;
-            let inside = at + noted.len() + 9;
+        let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at, inside))| {
+            let (at, inside) = (*at, *inside);
             div()
                 .id(("comment", i))
                 .p_2()
@@ -664,17 +663,23 @@ impl Shell {
                         .flex()
                         .items_start()
                         .gap_1()
-                        .child(div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(noted.to_string()))
+                        .child(match noted.is_empty() {
+                            // Nothing commented (a row, a column, the table): the comment takes the place.
+                            true => div().flex_1().min_w_0().px_1().text_color(if said.is_empty() { t.soft } else { t.text }).child(if said.is_empty() { tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string() } else { said.to_string() }),
+                            false => div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(noted.to_string()),
+                        })
                         .child(ui::widgets::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.pane().editor.update(cx, |e, cx| e.resolve_comment(at, cx));
                             window.focus(&this.pane().editor.focus_handle(cx));
                         }))),
                 )
-                .child(div().text_color(if said.is_empty() { t.soft } else { t.text }).child(match said.is_empty() {
-                    true => tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string(),
-                    false => said.to_string(),
-                }))
+                .when(!noted.is_empty(), |d| {
+                    d.child(div().text_color(if said.is_empty() { t.soft } else { t.text }).child(match said.is_empty() {
+                        true => tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string(),
+                        false => said.to_string(),
+                    }))
+                })
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.pane().editor.update(cx, |e, cx| e.jump(inside, false, cx));
                     window.focus(&this.pane().editor.focus_handle(cx));

@@ -138,6 +138,27 @@ impl Editor {
         }
     }
 
+    /// The text of each cell a handle took, in reading order, edge blanks left out.
+    pub(super) fn pick_cells(&self) -> Option<Vec<Range<usize>>> {
+        let (range, ..) = self.table_at(self.sel.start)?;
+        let pick = self.live_pick(range.start)?;
+        let lines: Vec<(usize, &str)> = self.content[range.clone()]
+            .split('\n')
+            .scan(range.start, |at, l| {
+                let start = *at;
+                *at += l.len() + 1;
+                Some((start, l))
+            })
+            .collect();
+        let mut cells = Vec::new();
+        for v in pick.rows.clone() {
+            let (start, line) = lines[if v == 0 { 0 } else { v + 1 }];
+            let found = md::cells(line);
+            cells.extend(pick.cols.clone().filter_map(|c| found.get(c)).map(|r| start + r.start..start + r.end));
+        }
+        Some(cells)
+    }
+
     /// Empties the taken cells, without touching the table's shape. False if there are none.
     pub(super) fn clear_pick(&mut self, cx: &mut Context<Self>) -> bool {
         let Some((range, mut rows, _)) = self.table_at(self.sel.start) else {

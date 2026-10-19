@@ -141,6 +141,64 @@ pub fn visible_rows(rows: &[Vec<String>]) -> usize {
     rows.len().saturating_sub(1)
 }
 
+/// The names of a table's rows and of its columns, see `scopes`.
+pub type Scopes = (Vec<String>, Vec<String>);
+
+/// What a comment under a table can start with, to say what it is about: for each visible row
+/// `Row "Léa"` (`Row "Léa" (2)` when several rows begin alike, `Row 3` for an empty first
+/// cell), for each column `Column "Âge"` (`Column 2` for an empty header). A name comes from
+/// the content, not from a position: a sort leaves the comment with its row.
+pub fn scopes(rows: &[Vec<String>]) -> Scopes {
+    let first = |v: usize| rows[if v == 0 { 0 } else { v + 1 }].first().map_or("", |c| c.as_str());
+    let named = |label: &str, text: &str, nth: usize| if text.is_empty() { format!("{label} {nth}") } else { format!("{label} \"{text}\"") };
+    let tall = if rows.len() > 1 { visible_rows(rows) } else { rows.len() };
+    let names = (0..tall)
+        .map(|v| {
+            let same: Vec<usize> = (0..tall).filter(|&w| first(w) == first(v)).collect();
+            let name = named("Row", first(v), v + 1);
+            match same.iter().position(|&w| w == v) {
+                Some(k) if same.len() > 1 && !first(v).is_empty() => format!("{name} ({})", k + 1),
+                _ => name,
+            }
+        })
+        .collect();
+    let cols = rows.first().map_or(Vec::new(), |head| head.iter().enumerate().map(|(c, text)| named("Column", text, c + 1)).collect());
+    (names, cols)
+}
+
+/// The comment lines under a table (`{>>Row "Léa": …<<}`) after its rows and columns changed:
+/// what each becomes, `None` when what it is about is gone. `rows` and `cols` say where each old
+/// row and column went (`None`: deleted); `old` and `new` are their `scopes`. A line that is about
+/// something else, or a table that stays, is left as it is.
+pub fn retarget(
+    lines: &[&str],
+    old: &Scopes,
+    new: &Scopes,
+    (rows, cols): (&[Option<usize>], &[Option<usize>]),
+    table_gone: bool,
+) -> Vec<Option<String>> {
+    lines
+        .iter()
+        .map(|line| {
+            let indent = &line[..line.len() - line.trim_start().len()];
+            let Some(body) = line.trim().strip_prefix("{>>") else { return Some(line.to_string()) };
+            if body.starts_with("Table: ") {
+                return (!table_gone).then(|| line.to_string());
+            }
+            let hit = [(&old.0, rows, &new.0), (&old.1, cols, &new.1)].into_iter().find_map(|(names, moved, fresh)| {
+                names.iter().enumerate().find_map(|(i, name)| {
+                    body.strip_prefix(&format!("{name}: ")).map(|rest| (moved.get(i).copied().flatten().and_then(|j| fresh.get(j)), rest))
+                })
+            });
+            match hit {
+                None => Some(line.to_string()),
+                Some((Some(name), rest)) if !table_gone => Some(format!("{indent}{{>>{name}: {rest}")),
+                Some(_) => None,
+            }
+        })
+        .collect()
+}
+
 /// An empty row at visible rank `at` (never before the header, never past the end).
 pub fn insert_row(rows: &[Vec<String>], at: usize) -> Vec<Vec<String>> {
     let (mut visible, dashes) = split_grid(rows);

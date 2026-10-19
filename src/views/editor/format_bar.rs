@@ -63,20 +63,22 @@ impl Editor {
     /// the highlight goes; in another, it changes color; otherwise it is applied.
     pub(super) fn paint_with(&mut self, color: usize, cx: &mut Context<Self>) {
         let (open, close) = md::mark_signs(color);
-        let parts = self.mark_parts();
-        if parts.is_empty() {
-            return;
-        }
-        let cuts: Option<Vec<_>> = parts.iter().map(|part| self.cut(part, md::HIGHLIGHT)).collect();
-        self.push_undo(true);
-        let Some(cuts) = cuts else {
-            return self.wrap(&parts, &open, close, cx);
-        };
-        let same = cuts.iter().all(|(o, _)| self.content[o.clone()] == open);
-        for (o, c) in cuts.into_iter().rev() {
-            self.splice(c, if same { "" } else { close }, cx);
-            self.splice(o, if same { "" } else { &open }, cx);
-        }
+        self.aligned(cx, |this, cx| {
+            let parts = this.mark_parts();
+            if parts.is_empty() {
+                return;
+            }
+            let cuts: Vec<_> = parts.iter().map(|part| this.cut(part, md::HIGHLIGHT)).collect();
+            this.push_undo(true);
+            if cuts.iter().any(Option::is_none) {
+                return this.restyle_parts(&parts, &cuts, &open, close, true, cx);
+            }
+            let same = cuts.iter().flatten().all(|(o, _)| this.content[o.clone()] == open);
+            for (o, c) in cuts.into_iter().flatten().rev() {
+                this.splice(c, if same { "" } else { close }, cx);
+                this.splice(o, if same { "" } else { &open }, cx);
+            }
+        });
     }
 
     #[cfg(test)]
@@ -110,8 +112,8 @@ impl Editor {
     }
 
     /// What the bar offers for the selection, recomputed only when the text or the selection change.
-    // ponytail: nothing lights up for a selection over several lines (the gesture does handle them):
-    // computing it at each mouse move would weigh on a large selection.
+    // ponytail: nothing lights up for a selection over several lines (the gesture does handle them),
+    // unless handles took cells: computing it at each mouse move would weigh on a large selection.
     pub(super) fn tools(&mut self) -> Tools {
         let key = (self.version, self.sel.clone());
         if let Some((known, tools)) = &self.bar.tools
@@ -121,10 +123,12 @@ impl Editor {
         }
         let line = self.line_range(self.sel.start);
         let one_line = self.sel.end <= line.end;
-        let parts = if one_line { self.mark_parts() } else { Vec::new() };
-        let styles = match parts.as_slice() {
-            [part] => md::STYLES.into_iter().filter(|&flag| self.cut(part, flag).is_some()).fold(0, |all, flag| all | flag),
-            _ => 0,
+        let parts = if one_line || self.pick_cells().is_some() { self.mark_parts() } else { Vec::new() };
+        // A button lights when every span taken has the style, as the gesture would remove it.
+        let styles = if parts.is_empty() || parts.len() > 2000 {
+            0
+        } else {
+            md::STYLES.into_iter().filter(|&flag| parts.iter().all(|part| self.cut(part, flag).is_some())).fold(0, |all, flag| all | flag)
         };
         let list = match md::classify(&self.content[line], false).0 {
             Kind::Bullet => Some(ListStyle::Bullet),

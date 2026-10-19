@@ -117,8 +117,13 @@ impl Editor {
     }
 
     /// The spans `mark` wraps: the text of each line of the selection, without edge whitespace
-    /// and bullet, without code blocks; the lone cursor, outside a code block, is one, empty.
+    /// and bullet, without code blocks; the text of each cell on a table line, whatever the
+    /// selection covers (a `|` is never inside a span), or of each cell a handle took; the lone
+    /// cursor, outside a code block, is one, empty.
     pub(super) fn mark_parts(&self) -> Vec<Range<usize>> {
+        if let Some(cells) = self.pick_cells() {
+            return cells.into_iter().filter_map(|c| self.trimmed(c.start, c.end)).collect();
+        }
         let sel = self.sel.clone();
         let first = self.line_range(sel.start);
         let mut code = self.in_code(first.start);
@@ -135,20 +140,25 @@ impl Editor {
             let line = &self.content[lr.clone()];
             if md::is_fence(line) {
                 code = !code && self.content[lr.end..].lines().any(md::is_fence);
+            } else if !code && self.is_table_line(&lr) {
+                if !self.is_dash_row(&lr) {
+                    parts.extend(self.line_cells(&lr, &sel).into_iter().filter_map(|c| self.trimmed(c.start, c.end)));
+                }
             } else if !code {
                 let (a, b) = (sel.start.max(lr.start + md::classify(line, false).1), sel.end.min(lr.end));
-                if a < b {
-                    let text = &self.content[a..b];
-                    let lead = text.len() - text.trim_start().len();
-                    let kept = text.trim().len();
-                    if kept > 0 {
-                        parts.push(a + lead..a + lead + kept);
-                    }
-                }
+                parts.extend(self.trimmed(a, b));
             }
             at = lr.end + 1;
         }
         parts
+    }
+
+    /// `a..b` without its edge whitespace; `None` if nothing is left.
+    pub(super) fn trimmed(&self, a: usize, b: usize) -> Option<Range<usize>> {
+        let text = self.content.get(a..b)?;
+        let lead = text.len() - text.trim_start().len();
+        let kept = text.trim().len();
+        (kept > 0).then_some(a + lead..a + lead + kept)
     }
 
     /// The signs of style `flag` around `part` (text bytes), if it is wholly inside a span of that style.
@@ -162,35 +172,60 @@ impl Editor {
 
     /// Puts style `flag` on the selection, or removes it when everything it holds already has it
     /// (see `md::unmark`). A lone cursor puts both signs and sits between them. Over
-    /// several lines, each gets its own signs: a style does not run from one line to the next.
+    /// several lines or cells, each gets its own signs, only where it lacks them: a style does
+    /// not run from one line to the next, nor across a `|`.
     pub(super) fn mark(&mut self, flag: u16, cx: &mut Context<Self>) {
         let Some(&(open, close)) = md::delimiters(flag).first() else { return };
-        let parts = self.mark_parts();
-        if parts.is_empty() {
-            return;
-        }
-        let cuts: Option<Vec<_>> = parts.iter().map(|part| self.cut(part, flag)).collect();
-        self.push_undo(true);
-        // Everything already has it: the signs go, closing ones first so the bytes stay right.
-        if let Some(cuts) = cuts {
-            for (open, close) in cuts.into_iter().rev() {
-                self.splice(close, "", cx);
-                self.splice(open, "", cx);
+        self.aligned(cx, |this, cx| {
+            let parts = this.mark_parts();
+            if parts.is_empty() {
+                return;
             }
-            return;
-        }
-        self.wrap(&parts, open, close, cx);
+            let cuts: Vec<_> = parts.iter().map(|part| this.cut(part, flag)).collect();
+            this.push_undo(true);
+            // Everything already has it: the signs go, closing ones first so the bytes stay right.
+            if cuts.iter().all(Option::is_some) {
+                for (open, close) in cuts.into_iter().flatten().rev() {
+                    this.splice(close, "", cx);
+                    this.splice(open, "", cx);
+                }
+                return;
+            }
+            this.restyle_parts(&parts, &cuts, open, close, false, cx);
+        });
     }
 
-    /// Wraps each span in `open` and `close`; the selection goes from the first to the last, signs outside.
-    pub(super) fn wrap(&mut self, parts: &[Range<usize>], open: &str, close: &str, cx: &mut Context<Self>) {
-        let (Some(head), Some(tail)) = (parts.first().map(|p| p.start), parts.last().map(|p| p.end)) else { return };
-        for part in parts.iter().rev() {
-            self.splice(part.end..part.end, close, cx);
-            self.splice(part.start..part.start, open, cx);
+    /// Puts `open` and `close` around each part that has no signs (`cuts`, see `cut`); with
+    /// `replace`, the parts that have some get these instead. The selection goes from the
+    /// first part to the last, signs outside.
+    pub(super) fn restyle_parts(&mut self, parts: &[Range<usize>], cuts: &[Option<(Range<usize>, Range<usize>)>], open: &str, close: &str, replace: bool, cx: &mut Context<Self>) {
+        for (part, cut) in parts.iter().zip(cuts).rev() {
+            match cut {
+                Some((o, c)) if replace => {
+                    self.splice(c.clone(), close, cx);
+                    self.splice(o.clone(), open, cx);
+                }
+                Some(_) => {}
+                None => {
+                    self.splice(part.end..part.end, close, cx);
+                    self.splice(part.start..part.start, open, cx);
+                }
+            }
         }
-        let grown = parts.len() * open.len() + (parts.len() - 1) * close.len();
-        self.sel = head + open.len()..tail + grown;
+        // Where the first and the last text land: each part moves by what the signs before it added.
+        let (mut shift, mut moved) = (0isize, Vec::new());
+        for cut in cuts {
+            let (o, c) = match cut {
+                Some((o, c)) if replace => (open.len() as isize - o.len() as isize, close.len() as isize - c.len() as isize),
+                Some(_) => (0, 0),
+                None => (open.len() as isize, close.len() as isize),
+            };
+            moved.push(shift + o);
+            shift += o + c;
+        }
+        let at = |i: usize, p: usize| (p as isize + moved[i]) as usize;
+        let last = parts.len() - 1;
+        self.sel = at(0, parts[0].start)..at(last, parts[last].end);
         self.reversed = false;
     }
 }

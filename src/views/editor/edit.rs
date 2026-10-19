@@ -86,6 +86,7 @@ impl Editor {
     /// Replaces `range` with `text`, keeping the selection as well as possible.
     pub(super) fn splice(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
         self.push_undo(text.contains('\n') || text == " ");
+        let scopes = self.scopes_before(&range, text);
         self.damaged(&range);
         self.content.replace_range(range.clone(), text);
         let map = |p: usize| {
@@ -101,6 +102,9 @@ impl Editor {
         // The other cursors follow the text: this is where, and the only place where, it changes.
         self.more.iter_mut().for_each(|(sel, _)| *sel = map(sel.start)..map(sel.end));
         self.changed(cx);
+        if let Some((table, old)) = scopes {
+            self.rename_scopes(table, old, cx);
+        }
     }
 
     /// Makes each cursor do `act`: each in turn becomes the main cursor,
