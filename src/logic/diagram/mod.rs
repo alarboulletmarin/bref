@@ -386,7 +386,8 @@ impl Shape {
         let name = self.text.lines().next().unwrap_or("");
         // Never wider than the package, whatever its size: it is a point while it is being drawn.
         let room = self.w.max(1.);
-        (Diagram::guess_width(name) + 14.).max(48f32.min(room)).min(room)
+        // The name is bold: a bit wider than the guess for plain text.
+        (Diagram::guess_width(name) * 1.08 + 16.).max(48f32.min(room)).min(room)
     }
 
     pub fn center(&self) -> (f32, f32) {
@@ -935,11 +936,23 @@ impl Diagram {
         }
     }
 
-    /// Width a text takes, as a rough guess for places that cannot measure it (the file's size,
-    /// finding a text under the pointer): the longest line, CJK twice as wide.
+    /// Width a text takes, as a guess for the places that cannot measure it (the size of a tab, of
+    /// the file's drawing, finding a text under the pointer): the longest line, each letter by its
+    /// usual share of an em in the app's font, CJK and emoji wide.
     pub fn guess_width(text: &str) -> f32 {
-        let wide = |c: char| if c as u32 >= 0x2E80 { FONT } else { FONT * 0.55 };
-        text.split('\n').map(|line| line.chars().map(wide).sum::<f32>()).fold(0., f32::max)
+        let em = |c: char| match c {
+            'i' | 'l' | 'j' | '!' | '|' | '.' | ',' | ':' | ';' | '\'' | '`' | ' ' => 0.27,
+            'I' | 't' | 'f' | 'r' | '(' | ')' | '[' | ']' | '/' | '-' => 0.38,
+            'W' | 'M' | '@' => 0.95,
+            'm' | 'w' | 'O' | 'Q' | 'G' | 'D' | 'H' | 'N' | 'U' | 'C' | 'R' | 'A' | 'B' | 'K' | 'V' | 'X' | 'Y' | 'Z' => 0.72,
+            c if c.is_ascii_uppercase() => 0.64,
+            c if c.is_ascii_digit() => 0.6,
+            c if c.is_ascii() => 0.56,
+            c if c as u32 >= 0x1F000 => 1.2,
+            c if c as u32 >= 0x2E80 => 1.,
+            _ => 0.58,
+        };
+        text.split('\n').map(|line| line.chars().map(|c| em(c) * FONT).sum::<f32>()).fold(0., f32::max)
     }
 
     /// Rectangle (left, top, right, bottom) of the text at an end of an arrow.

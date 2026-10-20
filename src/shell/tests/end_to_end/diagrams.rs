@@ -473,6 +473,68 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         fs::remove_file(&hold).unwrap();
     }
+    // A package diagram and an object diagram, made of what the engine already has: containers, notation, relationships.
+    {
+        use crate::logic::relation::Relation;
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (pk, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let drawn = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().clone());
+        let write = |cx: &mut gpui::VisualTestContext, lines: &[&str]| {
+            cx.simulate_keystrokes("enter");
+            for (i, line) in lines.iter().enumerate() {
+                if i > 0 {
+                    cx.simulate_keystrokes("enter");
+                }
+                cx.simulate_input(line);
+            }
+            cx.simulate_keystrokes("escape");
+        };
+        // Two packages with their qualified name under the tab, a third inside the first, an import between them.
+        cx.simulate_input("g");
+        rows(cx, &canvas, (0., 0.), (300., 200.));
+        write(cx, &["billing", "pkg::billing"]);
+        cx.simulate_input("g");
+        rows(cx, &canvas, (400., 0.), (700., 200.));
+        write(cx, &["shipping"]);
+        cx.simulate_input("g");
+        rows(cx, &canvas, (20., 80.), (140., 170.));
+        write(cx, &["invoices"]);
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("k");
+        cx.simulate_input("i");
+        rows(cx, &canvas, (295., 100.), (405., 100.));
+        let d = drawn(cx);
+        let (billing, shipping, invoices) = (d.shapes[0].clone(), d.shapes[1].clone(), d.shapes[2].clone());
+        assert_eq!((invoices.parent, shipping.parent), (Some(billing.id), None));
+        let import = d.links[0].clone();
+        assert_eq!((Relation::of(&import), import.dashed, import.text.as_str()), (Some(Relation::Import), true, "«import»"));
+        assert_eq!((import.from, import.to), (diagram::End::Pin(billing.id, 1., 0.5), diagram::End::Pin(shipping.id, 0., 0.5)));
+        let svg = saved(&pk);
+        assert!(svg.contains(">billing</text>") && svg.contains(">pkg::billing</text>") && svg.contains(">invoices</text>") && svg.contains("version 5\n"), "{svg}");
+        // An object diagram: instances are underlined, their slots are not; one has no name; they are linked.
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("r");
+        rows(cx, &canvas, (20., 300.), (220., 380.));
+        write(cx, &["order1 : Order", "---", "total = 12"]);
+        cx.simulate_input("r");
+        rows(cx, &canvas, (400., 300.), (600., 380.));
+        write(cx, &[": Customer", "---", "name = \"Ann\""]);
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("l");
+        rows(cx, &canvas, (215., 340.), (405., 340.));
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("placed by");
+        cx.simulate_keystrokes("escape");
+        let svg = saved(&pk);
+        assert!(svg.contains("text-decoration=\"underline\" fill=\"#7d8590\" stroke=\"none\">order1 : Order</text>"), "{svg}");
+        assert!(svg.contains(">: Customer</text>") && svg.contains(">total = 12</text>") && svg.contains(">name = \"Ann\"</text>") && svg.contains(">placed by</text>"), "{svg}");
+        let underlined = svg.matches("text-decoration=\"underline\"").count();
+        assert_eq!(underlined, 2, "only the two instances: {svg}");
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&pk).unwrap();
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

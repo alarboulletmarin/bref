@@ -218,10 +218,10 @@ pub fn stereotype(line: &str) -> Option<&str> {
     Some(inner.trim()).filter(|name| !name.is_empty())
 }
 
-/// An *object* is written `name : Type` (a class name has no single colon).
+/// An *object* (an instance) is written `name : Type`, or `: Type` when it has no name (a class name has no single colon).
 fn is_object(name: &str) -> bool {
     let mut colons = name.match_indices(':').filter(|(i, _)| !name[..*i].ends_with(':') && !name[i + 1..].starts_with(':'));
-    colons.next().is_some_and(|(i, _)| !name[..i].trim().is_empty() && !name[i + 1..].trim().is_empty())
+    colons.next().is_some_and(|(i, _)| !name[i + 1..].trim().is_empty())
 }
 
 /// A title line of a compartment after the second: `Responsibilities:`.
@@ -383,7 +383,8 @@ mod tests {
     fn reads_stereotypes_names_and_objects() {
         assert_eq!((stereotype("«interface»"), stereotype("<<enumeration>>"), stereotype(" « a b » ")), (Some("interface"), Some("enumeration"), Some("a b")));
         assert_eq!((stereotype("«»"), stereotype("<<>>"), stereotype("Name"), stereotype("«open")), (None, None, None, None));
-        assert!(is_object("order : Order") && is_object("a:B") && !is_object("Order") && !is_object("pkg::Order") && !is_object(": B") && !is_object("a :"));
+        assert!(is_object("order : Order") && is_object("a:B") && is_object(": B") && is_object(":pkg::Order") && is_object("pkg::order : Order"));
+        assert!(!is_object("Order") && !is_object("pkg::Order") && !is_object("a :") && !is_object(":") && !is_object(""));
     }
 
     fn describe(runs: &[Span]) -> String {
