@@ -23,7 +23,7 @@ impl Render for Canvas {
         )
         .size_full();
 
-        let (dock, cluster, zoom, drawer, bar) = (self.bottom(cx), self.cluster(cx), self.zoom_box(cx), self.drawer(cx), self.selection_bar(cx));
+        let (dock, cluster, zoom, drawer, bar, menu) = (self.bottom(cx), self.cluster(cx), self.zoom_box(cx), self.drawer(cx), self.selection_bar(cx), self.context_menu(cx));
 
         div()
             .size_full()
@@ -44,10 +44,7 @@ impl Render for Canvas {
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
-            .on_action(cx.listener(|this, _: &SelectAll, _, cx| {
-                this.selected = this.diagram.shapes.iter().map(|s| s.id).chain(this.diagram.links.iter().map(|l| l.id)).collect();
-                cx.notify();
-            }))
+            .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &Paste, _, cx| {
                 if let Some(text) = cx.read_from_clipboard().and_then(|item: ClipboardItem| item.text()) {
                     this.typed(&text, cx);
@@ -71,6 +68,8 @@ impl Render for Canvas {
             .on_action(cx.listener(|this, _: &Cancel, _, cx| {
                 if this.editing.is_some() {
                     this.stop_editing(cx);
+                } else if this.context.take().is_some() {
+                    cx.notify();
                 } else if this.library.is_some() {
                     this.library = None;
                     cx.notify();
@@ -96,6 +95,7 @@ impl Render for Canvas {
                         MouseButton::Middle,
                         cx.listener(|this, e: &MouseDownEvent, _, _| this.drag = Drag::Pan { last: e.position }),
                     )
+                    .on_mouse_down(MouseButton::Right, cx.listener(Self::context_down))
                     .on_mouse_move(cx.listener(Self::mouse_move))
                     .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
                     .on_mouse_up(MouseButton::Middle, cx.listener(|this, _, _, _| this.drag = Drag::None))
@@ -109,7 +109,8 @@ impl Render for Canvas {
                     .children(drawer)
                     .children(bar)
                     .child(zoom)
-                    .child(dock),
+                    .child(dock)
+                    .children(menu),
             )
     }
 }

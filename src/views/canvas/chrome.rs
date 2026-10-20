@@ -38,6 +38,7 @@ fn floating(t: Theme) -> Div {
 impl Canvas {
     /// Closes the menus and the library, the one that is asked for excepted.
     fn only(&mut self, shapes: bool, relations: bool, library: bool) {
+        self.context = None;
         self.shapes = shapes;
         self.relations = relations;
         if !library {
@@ -104,6 +105,61 @@ impl Canvas {
         let (a, b) = (Relation::Association.group(), Relation::Generalization.group());
         let (c, d) = (Relation::Dependency.group(), Relation::Sync.group());
         floating(t).flex().flex_wrap().max_w(px(480.)).child(column(&[a], cx).child(nary)).child(column(&[b], cx)).child(column(&[c], cx)).child(column(&[d], cx))
+    }
+
+    /// The menu of a right click: what can be done with what is under it, or with the canvas when nothing is.
+    pub(super) fn context_menu(&self, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+        let at = self.context?;
+        let t = self.theme;
+        let links = self.selected.iter().any(|id| self.diagram.link(*id).is_some());
+        let single = self.selected.len() == 1;
+        let alone = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| !s.form.holds() || s.form == Form::Composite));
+        let holder = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| s.form.holds()) && !self.diagram.children(id).is_empty());
+        let item = |id: &'static str, icon: &'static str, label: &'static str, key: String, cx: &mut Context<Self>, act: fn(&mut Self, &mut Context<Self>)| {
+            row(id, icon, label, key, false, t).debug_selector(move || id.to_string()).on_click(cx.listener(move |this, _, _, cx| {
+                this.context = None;
+                act(this, cx);
+                cx.notify();
+            }))
+        };
+        let mut rows: Vec<Stateful<Div>> = Vec::new();
+        if self.selected.is_empty() {
+            rows.push(row("d-cm-text", "d-text.svg", tr("Add a text here", "Ajouter un texte ici"), String::new(), false, t).debug_selector(|| "d-cm-text".into()).on_click(cx.listener(move |this, _, _, cx| {
+                this.context = None;
+                this.text_at(at, cx);
+            })));
+            rows.push(item("d-cm-all", "d-select.svg", tr("Select all", "Tout sélectionner"), crate::ui::keys::of(cx, &SelectAll), cx, Self::select_all));
+            rows.push(item("d-cm-fit", "d-fit.svg", tr("Fit the diagram", "Ajuster au diagramme"), "0".into(), cx, Self::zoom_fit));
+        } else {
+            if single {
+                rows.push(item("d-cm-edit", "d-text.svg", tr("Write in it", "Écrire dedans"), crate::ui::keys::of(cx, &Confirm), cx, |this, cx| {
+                    if let [id] = this.selected[..] {
+                        this.start_editing(id, cx);
+                    }
+                }));
+            }
+            if links {
+                rows.push(item("d-cm-reverse", "d-head-end.svg", tr("Turn the arrow around", "Retourner la flèche"), String::new(), cx, Self::reverse));
+                rows.push(item("d-cm-elbow", "d-route.svg", tr("Route: elbowed", "Tracé : coudé"), String::new(), cx, |this, cx| this.set_route(Route::Elbow, cx)));
+                rows.push(item("d-cm-straight", "d-route.svg", tr("Route: straight", "Tracé : droit"), String::new(), cx, |this, cx| this.set_route(Route::Straight, cx)));
+                rows.push(item("d-cm-curve", "d-route.svg", tr("Route: curved", "Tracé : courbe"), String::new(), cx, |this, cx| this.set_route(Route::Curve, cx)));
+            }
+            if alone {
+                rows.push(item("d-cm-loop", "d-st-loop.svg", tr("Transition to itself", "Transition vers elle-même"), String::new(), cx, Self::self_link));
+            }
+            if holder {
+                rows.push(item("d-cm-fit-holder", "d-fit.svg", tr("Fit to what it holds", "Ajuster à son contenu"), String::new(), cx, Self::fit_container));
+            }
+            rows.push(item("d-cm-duplicate", "copy.svg", tr("Duplicate", "Dupliquer"), crate::ui::keys::of(cx, &Duplicate), cx, Self::duplicate));
+            rows.push(item("d-cm-delete", "trash.svg", tr("Delete", "Supprimer"), crate::ui::keys::of(cx, &Erase), cx, |this, cx| this.erase(false, cx)));
+        }
+        // Where it opens: at the pointer, pushed back inside the canvas.
+        let (width, height) = (216., 28. * rows.len() as f32 + 8.);
+        let known = |side: Pixels, otherwise: f32| if f32::from(side) < 1. { otherwise } else { f32::from(side) };
+        let (canvas_w, canvas_h) = (known(self.bounds.size.width, 800.), known(self.bounds.size.height, 600.));
+        let (x, y) = (f32::from(at.x - self.bounds.origin.x), f32::from(at.y - self.bounds.origin.y));
+        let (left, top) = (x.min(canvas_w - width - 8.).max(8.), y.min(canvas_h - height - 8.).max(8.));
+        Some(floating(t).id("d-context-menu").debug_selector(|| "d-context-menu".into()).absolute().left(px(left)).top(px(top)).w(px(width)).flex().flex_col().children(rows))
     }
 
     /// The bar at the bottom: select, shapes, arrows, text, and the library.

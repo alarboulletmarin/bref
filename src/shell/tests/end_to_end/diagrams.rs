@@ -1264,6 +1264,60 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         // Nothing selected, no bar.
         cx.simulate_keystrokes("escape");
         assert!(!chrome_of(cx).2);
+        // Pointing at a shape lights it and shows the handles an arrow is drawn from; dragging one to another shape
+        // draws it, with the look of the last arrow picked (the key `A` made it a plain arrow).
+        let (rect, ellipse) = canvas.read_with(cx, |c, _| (c.diagram().shapes[0].clone(), c.diagram().shapes[1].clone()));
+        let (before, over) = canvas.read_with(cx, |c, _| (c.diagram().links.len(), c.spot(rect.x + rect.w / 2., rect.y + rect.h / 2.)));
+        cx.simulate_mouse_move(over, None, gpui::Modifiers::none());
+        assert_eq!(canvas.read_with(cx, |c, _| c.pointed().0), Some(rect.id));
+        let handle = canvas.read_with(cx, |c, _| c.handle_spot(rect.id, 1)).unwrap();
+        cx.simulate_mouse_move(handle, None, gpui::Modifiers::none());
+        assert_eq!(canvas.read_with(cx, |c, _| c.pointed().0), Some(rect.id), "the handle is part of the shape it belongs to");
+        let target = canvas.read_with(cx, |c, _| c.spot(ellipse.x + ellipse.w / 2., ellipse.y + ellipse.h / 2.));
+        cx.simulate_mouse_down(handle, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_move(target, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_up(target, MouseButton::Left, gpui::Modifiers::none());
+        cx.run_until_parked();
+        let drawn = canvas.read_with(cx, |c, _| c.diagram().clone());
+        let made = drawn.links.last().unwrap();
+        assert_eq!(drawn.links.len(), before + 1);
+        assert_eq!((made.from, made.end), (diagram::End::Pin(rect.id, 1., 0.5), diagram::Head::Arrow), "{made:?}");
+        assert_eq!(made.to.shape(), Some(ellipse.id));
+        // Nothing under the pointer: nothing is lit.
+        let far = canvas.read_with(cx, |c, _| c.spot(430., 220.));
+        cx.simulate_mouse_move(far, None, gpui::Modifiers::none());
+        assert_eq!(canvas.read_with(cx, |c, _| c.pointed().0), None);
+        // A right click on a shape selects it and opens its menu; a row of it acts, and the menu closes.
+        let right = |cx: &mut gpui::VisualTestContext, at: gpui::Point<gpui::Pixels>| {
+            cx.simulate_mouse_down(at, MouseButton::Right, gpui::Modifiers::none());
+            cx.simulate_mouse_up(at, MouseButton::Right, gpui::Modifiers::none());
+            cx.run_until_parked();
+        };
+        let shapes = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().shapes.len());
+        let count = shapes(cx);
+        right(cx, over);
+        assert_eq!(canvas.read_with(cx, |c, _| (c.pointed().1, c.selected_ids())), (true, vec![rect.id]));
+        let menu = bounds(cx, "d-context-menu".into()).expect("the menu of a right click");
+        assert!(inside(menu));
+        click(cx, "d-cm-duplicate".into());
+        assert_eq!((shapes(cx), canvas.read_with(cx, |c, _| c.pointed().1)), (count + 1, false));
+        // On an arrow: turn it around.
+        let (link, mid) = canvas.read_with(cx, |c, _| (c.diagram().links.last().unwrap().clone(), c.diagram().mid(c.diagram().links.last().unwrap().id).unwrap()));
+        let on = canvas.read_with(cx, |c, _| c.spot(mid.0, mid.1));
+        right(cx, on);
+        click(cx, "d-cm-reverse".into());
+        let turned = canvas.read_with(cx, |c, _| c.diagram().link(link.id).unwrap().clone());
+        assert_eq!((turned.from, turned.to, turned.start, turned.end), (link.to, link.from, link.end, link.start));
+        // On the empty canvas: a text, written at once, where the click was; Esc closes a menu.
+        right(cx, far);
+        assert!(bounds(cx, "d-cm-text".into()).is_some());
+        cx.simulate_keystrokes("escape");
+        assert!(!canvas.read_with(cx, |c, _| c.pointed().1));
+        right(cx, far);
+        click(cx, "d-cm-text".into());
+        let text = canvas.read_with(cx, |c, _| c.diagram().shapes.last().unwrap().clone());
+        assert_eq!(text.form, diagram::Form::Text);
+        cx.simulate_keystrokes("escape");
         fs::remove_file(&chrome).unwrap();
         cx.simulate_keystrokes("escape escape");
         cx.run_until_parked();

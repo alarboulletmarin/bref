@@ -2,11 +2,55 @@
 
 use super::*;
 
+/// How far out of a shape its handles are, and how near the pointer must be to take one (pixels).
+const HANDLE_OUT: f32 = 16.;
+const HANDLE_REACH: f32 = 9.;
+
 impl Canvas {
     /// Corners of the shape, in order: top-left, top-right, bottom-right, bottom-left.
     pub(super) fn corners(shape: &diagram::Shape) -> [(f32, f32); 4] {
         let (x, y, x1, y1) = (shape.x, shape.y, shape.x + shape.w, shape.y + shape.h);
         [(x, y), (x1, y), (x1, y1), (x, y1)]
+    }
+
+    /// The handles of a shape from which an arrow is drawn: the middle of each side, a little way out, and the
+    /// place of the border an arrow from there leaves by (fractions of the width and the height).
+    pub(super) fn handles(shape: &diagram::Shape, zoom: f32) -> [((f32, f32), (f32, f32)); 4] {
+        let (cx, cy, off) = (shape.x + shape.w / 2., shape.y + shape.h / 2., HANDLE_OUT / zoom);
+        [
+            ((cx, shape.y - off), (0.5, 0.)),
+            ((shape.x + shape.w + off, cy), (1., 0.5)),
+            ((cx, shape.y + shape.h + off), (0.5, 1.)),
+            ((shape.x - off, cy), (0., 0.5)),
+        ]
+    }
+
+    /// Whether an arrow can be drawn from a handle of this shape: a lifeline is joined by messages, a pin
+    /// sits on a border, a fragment is drawn around messages.
+    pub(super) fn drawable_from(shape: &diagram::Shape) -> bool {
+        !matches!(shape.form, Form::Lifeline | Form::Pin | Form::Fragment | Form::Divider)
+    }
+
+    /// The handle under this point, on the shape under the pointer: the shape, and where on its border it leaves from.
+    pub(super) fn handle_at(&self, p: (f32, f32)) -> Option<(u32, (f32, f32))> {
+        let shape = self.hover.and_then(|id| self.diagram.shape(id)).filter(|s| Self::drawable_from(s))?;
+        Self::handles(shape, self.zoom).into_iter().find(|(h, _)| (h.0 - p.0).hypot(h.1 - p.1) <= HANDLE_REACH / self.zoom).map(|(_, at)| (shape.id, at))
+    }
+
+    /// What is under the pointer, when nothing is being dragged: it is lit, and a shape shows its handles.
+    pub(super) fn aim_hover(&mut self, p: (f32, f32), cx: &mut Context<Self>) {
+        let idle = self.tool == Tool::Select && self.drag == Drag::None && self.editing.is_none() && self.context.is_none();
+        let next = if !idle {
+            None
+        } else if self.handle_at(p).is_some() {
+            self.hover
+        } else {
+            self.diagram.hit(p.0, p.1, 7. / self.zoom)
+        };
+        if next != self.hover {
+            self.hover = next;
+            cx.notify();
+        }
     }
 
     /// Arrow end for this point: attached to the shape found there, at the
@@ -64,13 +108,46 @@ impl Canvas {
         }
     }
 
+    /// A right click: what is under it is selected, and the menu of what can be done with it opens there.
+    pub(super) fn context_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus);
+        self.set_tool(Tool::Select, cx);
+        self.library = None;
+        let p = self.world(e.position);
+        match self.diagram.hit(p.0, p.1, 7. / self.zoom) {
+            Some(id) if !self.selected.contains(&id) => self.selected = vec![id],
+            Some(_) => {}
+            None => self.selected.clear(),
+        }
+        (self.drag, self.hover, self.context) = (Drag::None, None, Some(e.position));
+        cx.notify();
+    }
+
     pub(super) fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus);
         self.stop_editing(cx);
+        self.context = None;
         let p = self.world(e.position);
         let near = 7. / self.zoom;
         let close = |a: (f32, f32)| (a.0 - p.0).hypot(a.1 - p.1) <= near;
+        let handle = if self.tool == Tool::Select { self.handle_at(p) } else { None };
+        self.hover = None;
         self.drag = match self.tool {
+            // A handle of a shape: the arrow that is drawn from it, with the look of the last relationship picked.
+            _ if handle.is_some() => {
+                let (from, (fx, fy)) = handle.unwrap_or_default();
+                self.remember();
+                // A message needs lifelines, an association class a middle: those are not drawn from a handle.
+                let relation = match self.link_pick {
+                    Relation::AssociationClass | Relation::Sync | Relation::Create | Relation::Destroy | Relation::Found | Relation::Lost => Relation::Navigable,
+                    other => other,
+                };
+                let id = self.diagram.add_link(End::Pin(from, fx, fy), End::Point(p.0, p.1), diagram::Head::None, self.route);
+                if let Some(link) = self.diagram.link_mut(id) {
+                    relation.apply(link);
+                }
+                Drag::Tip { id, to: true }
+            }
             Tool::Shape(_) | Tool::Preset(_) => {
                 self.remember();
                 let (form, preset) = made_by(self.tool).unwrap_or((Form::Rect, None));
@@ -187,6 +264,9 @@ impl Canvas {
             return CursorStyle::Crosshair;
         }
         let p = self.world(at);
+        if self.handle_at(p).is_some() {
+            return CursorStyle::Crosshair;
+        }
         let near = 7. / self.zoom;
         let close = |a: (f32, f32)| (a.0 - p.0).hypot(a.1 - p.1) <= near;
         let only = (self.selected.len() == 1).then(|| self.selected[0]);
@@ -222,6 +302,7 @@ impl Canvas {
     pub(super) fn mouse_move(&mut self, e: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
         let held = e.pressed_button;
         let p = self.world(e.position);
+        self.aim_hover(p, cx);
         self.aim_hand(e.position, cx);
         match self.drag {
             Drag::Pan { last } if held == Some(MouseButton::Middle) => {

@@ -271,6 +271,34 @@ impl Canvas {
                 knob(window, b);
             }
         }
+        // What is under the pointer is lit, and a shape shows the handles an arrow is drawn from.
+        if let Some(id) = self.hover {
+            if let Some(shape) = self.diagram.shape(id) {
+                if !self.selected.contains(&id) {
+                    let path = [Cmd::Move(shape.x - pad, shape.y - pad), Cmd::Line(shape.x + shape.w + pad, shape.y - pad), Cmd::Line(shape.x + shape.w + pad, shape.y + shape.h + pad), Cmd::Line(shape.x - pad, shape.y + shape.h + pad), Cmd::Close];
+                    let mut builder = PathBuilder::stroke(px(1.5));
+                    trace(&mut builder, &path);
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, t.accent.opacity(0.55));
+                    }
+                }
+                if Self::drawable_from(shape) {
+                    for (h, _) in Self::handles(shape, zoom) {
+                        let c = at(h);
+                        let bounds = Bounds::new(point(c.x - px(6.), c.y - px(6.)), size(px(12.), px(12.)));
+                        window.paint_quad(quad(bounds, px(6.), t.panel, px(1.5), t.accent, gpui::BorderStyle::default()));
+                    }
+                }
+            } else if !self.selected.contains(&id)
+                && let Some(drawn) = self.diagram.link(id).and_then(|l| self.diagram.trace(l))
+            {
+                let mut builder = PathBuilder::stroke(px(4.));
+                trace(&mut builder, &drawn.line);
+                if let Ok(path) = builder.build() {
+                    window.paint_path(path, t.accent.opacity(0.35));
+                }
+            }
+        }
         // While dragging an end over a shape: its attachment points.
         if let Drag::Tip { id, to } = self.drag
             && let Some(link) = self.diagram.link(id)
@@ -308,8 +336,8 @@ impl Canvas {
         }
         if self.diagram.shapes.is_empty() && self.diagram.links.is_empty() {
             let hint = tr(
-                "Pick a shape above, or press R, O, D, A, T…, then drag. Double-click to write.",
-                "Choisis une forme ci-dessus, ou tape R, O, D, A, T…, puis fais glisser. Double-clic pour écrire.",
+                "Pick a shape in the dock below, or press R, O, D, A, T… or S for the library, then drag. Double-click to write.",
+                "Choisis une forme dans le dock en bas, ou tape R, O, D, A, T… ou S pour la bibliothèque, puis fais glisser. Double-clic pour écrire.",
             );
             // Word by word: the hint wraps in a narrow canvas.
             let room = bounds.size.width - px(32.);

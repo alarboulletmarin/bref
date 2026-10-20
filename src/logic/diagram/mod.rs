@@ -931,6 +931,20 @@ impl Diagram {
         id
     }
 
+    /// Turns an arrow around: its ends, its heads and the texts at its ends change places. `false` if it holds
+    /// on to the middle of another arrow (an association class), which has a way round only.
+    pub fn reverse(&mut self, id: u32) -> bool {
+        let Some(link) = self.link_mut(id) else { return false };
+        if matches!(link.from, End::Mid(_)) || matches!(link.to, End::Mid(_)) {
+            return false;
+        }
+        std::mem::swap(&mut link.from, &mut link.to);
+        std::mem::swap(&mut link.start, &mut link.end);
+        std::mem::swap(&mut link.start_text, &mut link.end_text);
+        std::mem::swap(&mut link.start_along, &mut link.end_along);
+        true
+    }
+
     /// Copy of elements `ids`, offset; returns the ids of the copies.
     /// An arrow is only copied along with the shapes it links.
     pub fn duplicate(&mut self, ids: &[u32], by: f32) -> Vec<u32> {
@@ -1655,5 +1669,24 @@ mod tests {
         let other = d.add_link(End::Shape(a), End::Shape(b), Head::Arrow, Route::Straight);
         assert!(d.trace(d.link(own).unwrap()).unwrap().points.len() > 2);
         assert_eq!(d.trace(d.link(other).unwrap()).unwrap().points.len(), 2);
+    }
+
+    #[test]
+    fn an_arrow_turned_around_has_its_ends_heads_and_texts_changed_and_still_reads_back() {
+        let mut d = Diagram::blank();
+        let (a, b) = (d.add_shape(Form::Rect, 0., 0., 100., 60.), d.add_shape(Form::Rect, 300., 0., 100., 60.));
+        let id = d.add_link(End::Shape(a), End::Pin(b, 0., 0.5), Head::None, Route::Straight);
+        let link = d.link_mut(id).unwrap();
+        (link.end, link.start_text, link.end_text, link.end_along) = (Head::Triangle, "1".into(), "0..*".into(), 12.);
+        assert!(d.reverse(id));
+        let link = d.link(id).unwrap();
+        assert_eq!((link.from, link.to, link.start, link.end), (End::Pin(b, 0., 0.5), End::Shape(a), Head::Triangle, Head::None));
+        assert_eq!((link.start_text.as_str(), link.end_text.as_str(), link.start_along, link.end_along), ("0..*", "1", 12., 0.));
+        assert!(d.reverse(id) && d.link(id).unwrap().from == End::Shape(a));
+        // Twice is no change; the file reads back the same; what is not an arrow, or holds on to a middle, is not turned.
+        assert_eq!(Diagram::from_svg(&d.to_svg(COLORS[0])).as_ref(), Some(&d));
+        assert!(!d.reverse(999) && !d.reverse(a));
+        let held = d.add_link(End::Shape(a), End::Mid(id), Head::None, Route::Straight);
+        assert!(!d.reverse(held));
     }
 }

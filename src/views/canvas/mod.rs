@@ -212,6 +212,10 @@ pub struct Canvas {
     relations: bool,
     /// The menu of shapes is open.
     shapes: bool,
+    /// The shape or the arrow under the pointer, when nothing is being dragged.
+    hover: Option<u32>,
+    /// Where the menu of a right click is (a point of the window).
+    context: Option<Point<Pixels>>,
     /// The last shape and the last relationship picked: what the dock shows on their buttons.
     shape_pick: Form,
     link_pick: Relation,
@@ -253,6 +257,8 @@ impl Canvas {
             slot: Slot::Middle,
             relations: false,
             shapes: false,
+            hover: None,
+            context: None,
             shape_pick: Form::Rect,
             link_pick: Relation::Navigable,
             library: None,
@@ -275,6 +281,19 @@ impl Canvas {
     #[cfg(test)]
     pub fn chrome(&self) -> (bool, bool, bool) {
         (self.shapes, self.relations, self.bar_wanted())
+    }
+
+    /// The shape or arrow under the pointer, and whether the menu of a right click is open.
+    #[cfg(test)]
+    pub fn pointed(&self) -> (Option<u32>, bool) {
+        (self.hover, self.context.is_some())
+    }
+
+    /// Where the handle on side `side` (top, right, bottom, left) of a shape is, in the window.
+    #[cfg(test)]
+    pub fn handle_spot(&self, id: u32, side: usize) -> Option<Point<Pixels>> {
+        let h = Self::handles(self.diagram.shape(id)?, self.zoom)[side].0;
+        Some(self.spot(h.0, h.1))
     }
 
     /// What is typed in the library, if it is open.
@@ -436,7 +455,7 @@ impl Canvas {
 
     fn set_tool(&mut self, tool: Tool, cx: &mut Context<Self>) {
         self.stop_editing(cx);
-        (self.shapes, self.relations) = (false, false);
+        (self.shapes, self.relations, self.context) = (false, false, None);
         match tool {
             Tool::Shape(form) if form != Form::Text && form != Form::Branch => self.shape_pick = form,
             Tool::Link(relation) => self.link_pick = relation,

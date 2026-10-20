@@ -208,6 +208,43 @@ impl Canvas {
         }
     }
 
+    /// Selects everything.
+    pub(super) fn select_all(&mut self, cx: &mut Context<Self>) {
+        self.selected = self.diagram.shapes.iter().map(|s| s.id).chain(self.diagram.links.iter().map(|l| l.id)).collect();
+        cx.notify();
+    }
+
+    /// Turns the selected arrows around: one step of undo.
+    pub(super) fn reverse(&mut self, cx: &mut Context<Self>) {
+        let links: Vec<u32> = self.selected.iter().copied().filter(|id| self.diagram.link(*id).is_some()).collect();
+        self.remember();
+        let turned = links.iter().fold(false, |any, id| self.diagram.reverse(*id) | any);
+        if turned {
+            self.changed(cx);
+        } else {
+            self.undo.pop();
+        }
+    }
+
+    /// The route of the selected arrows, and of those to come.
+    pub(super) fn set_route(&mut self, route: Route, cx: &mut Context<Self>) {
+        self.route = route;
+        self.style(cx, move |_, link| {
+            if let Some(link) = link {
+                link.route = route;
+            }
+        });
+    }
+
+    /// A text, written at once, at this point of the window.
+    pub(super) fn text_at(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
+        self.remember();
+        let p = self.world(at);
+        let id = self.diagram.add_shape(Form::Text, diagram::snap(p.0), diagram::snap(p.1), 80., diagram::LINE);
+        (self.editing, self.selected) = (Some((id, 0)), vec![id]);
+        self.changed(cx);
+    }
+
     /// Applies a setting to the selected elements.
     pub(super) fn style(&mut self, cx: &mut Context<Self>, set: impl Fn(Option<&mut diagram::Shape>, Option<&mut diagram::Link>)) {
         self.remember();
