@@ -14,3 +14,4 @@ pub mod prefs;
 pub mod recall;
 pub mod richtext;
 pub mod table;
+pub mod uml;

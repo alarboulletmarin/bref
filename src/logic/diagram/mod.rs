@@ -4,7 +4,10 @@
 
 use std::fmt::Write;
 
-use super::richtext::{self, Span, Style};
+use super::{
+    richtext::{self, Span, Style},
+    uml,
+};
 
 mod file;
 
@@ -286,6 +289,8 @@ pub struct TextLine<'a> {
     pub text: &'a str,
     pub centered: bool,
     pub bold: bool,
+    /// Index of the line in the shape's text (the rules between compartments count).
+    pub index: usize,
 }
 
 pub fn snap(v: f32) -> f32 {
@@ -332,7 +337,7 @@ impl Shape {
     }
 
     /// The text splits the box into compartments.
-    fn boxed(&self) -> bool {
+    pub(super) fn boxed(&self) -> bool {
         matches!(self.form, Form::Rect | Form::Round) && self.text.lines().any(|l| l.trim() == RULE)
     }
 
@@ -412,14 +417,14 @@ impl Shape {
         if self.boxed() {
             let (mut y, mut first) = (self.y + 6., true);
             let mut out = Vec::new();
-            for text in lines {
+            for (index, text) in lines.into_iter().enumerate() {
                 if text.trim() == RULE {
                     rules.push(y + 4.);
                     y += 8.;
                     first = false;
                 } else {
                     let x = if first { cx } else { self.x + 8. };
-                    out.push(TextLine { x, y, text, centered: first, bold: first });
+                    out.push(TextLine { x, y, text, centered: first, bold: first, index });
                     y += LINE;
                 }
             }
@@ -433,7 +438,7 @@ impl Shape {
             _ => (cx, cy - height / 2., true),
         };
         let placed = lines.into_iter().enumerate();
-        (placed.map(|(i, text)| TextLine { x, y: top + i as f32 * LINE, text, centered, bold: false }).collect(), rules)
+        (placed.map(|(i, text)| TextLine { x, y: top + i as f32 * LINE, text, centered, bold: false, index: i }).collect(), rules)
     }
 
     /// Arrow end for a point of the shape: in the middle, the attachment follows
@@ -504,6 +509,20 @@ impl Diagram {
     /// The runs of one line of text, in the styles its marks ask for, if this diagram reads them.
     pub fn styled(&self, text: &str, bold: bool) -> Vec<Span> {
         if self.rich { richtext::spans(text, bold) } else { richtext::plain(text, bold) }
+    }
+
+    /// The runs of each line `shape.text_lines()` places, in the same order: styled as the diagram
+    /// reads its texts, a class box by the notation of UML, or as typed (`plain`: while it is written).
+    pub fn runs(&self, shape: &Shape, plain: bool) -> Vec<Vec<Span>> {
+        let (lines, _) = shape.text_lines();
+        if plain || !self.rich {
+            return lines.iter().map(|l| richtext::plain(l.text, l.bold)).collect();
+        }
+        let class = shape.boxed().then(|| uml::class_runs(&shape.text, RULE)).flatten();
+        match class {
+            Some(mut by_line) => lines.iter().map(|l| std::mem::take(&mut by_line[l.index])).collect(),
+            None => lines.iter().map(|l| richtext::spans(l.text, l.bold)).collect(),
+        }
     }
 
     /// The lowest version of the source that can say all this diagram holds.

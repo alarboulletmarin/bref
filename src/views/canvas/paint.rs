@@ -25,7 +25,7 @@ impl Canvas {
         let Some(shape) = self.editing.and_then(|(id, _)| self.diagram.shape(id)) else { return };
         let (lines, _) = shape.text_lines();
         // What is written is shown as typed: its marks are not applied.
-        let widest = lines.iter().map(|l| self.measure(&self.spans_of(shape.id, Slot::Middle, l.text, l.bold), 1., window)).fold(0f32, f32::max);
+        let widest = self.diagram.runs(shape, true).iter().map(|spans| self.measure(spans, 1., window)).fold(0f32, f32::max);
         let tall = lines.last().map_or(0., |l| l.y + diagram::LINE - shape.y);
         let (form, id) = (shape.form, shape.id);
         let Some(shape) = self.diagram.shape_mut(id) else { return };
@@ -162,8 +162,9 @@ impl Canvas {
             // Separator strokes are not text lines: the cursor's line
             // is found by its place in the text.
             let starts: Vec<usize> = shape.text.split('\n').scan(0, |at, l| Some(std::mem::replace(at, *at + l.len() + 1))).collect();
-            for line in &lines {
-                write(self, window, cx, line.x, line.y, &self.spans_of(shape.id, Slot::Middle, line.text, line.bold), line.centered.into(), ink);
+            let runs = self.diagram.runs(shape, self.editing.is_some_and(|(id, _)| id == shape.id));
+            for (line, spans) in lines.iter().zip(&runs) {
+                write(self, window, cx, line.x, line.y, spans, line.centered.into(), ink);
                 if let Some((id, row, col)) = caret
                     && id == shape.id
                     && starts.get(row) == Some(&(line.text.as_ptr() as usize - shape.text.as_ptr() as usize))

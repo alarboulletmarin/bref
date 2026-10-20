@@ -290,6 +290,27 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("escape escape");
     cx.run_until_parked();
     fs::remove_file(&ends).unwrap();
+    // A class: typed as UML notation, it grows to hold its lines and is drawn with its styles.
+    cx.simulate_keystrokes("secondary-shift-d");
+    cx.run_until_parked();
+    let (class, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+    cx.simulate_input("r");
+    rows(cx, &canvas, (0., 0.), (60., 40.));
+    cx.simulate_keystrokes("enter");
+    let long = "- veryLongMemberNameWithoutAnySpaceToMakeTheBoxGrow(argument: List<String>): Map<String, List<Integer>>";
+    for line in ["«interface»", "Shape", "---", "+ static count: int", "---", "+ abstract area(): f32", long] {
+        cx.simulate_input(line);
+        cx.simulate_keystrokes("enter");
+    }
+    cx.simulate_keystrokes("backspace escape");
+    let shape = canvas.read_with(cx, |c, _| c.diagram().shapes[0].clone());
+    assert!(shape.w >= 600. && shape.h >= 130. && shape.text.ends_with(long), "{shape:?}");
+    let svg = saved(&class);
+    assert!(svg.contains("font-weight=\"bold\" fill") && svg.contains("text-decoration=\"underline\" fill=\"#7d8590\" stroke=\"none\">+ count: int</text>") && svg.contains("font-style=\"italic\" fill=\"#7d8590\" stroke=\"none\">+ area(): f32</text>"), "{svg}");
+    // Typing a text with a lone `---` and nothing else makes no class of it: it is drawn as typed.
+    cx.simulate_keystrokes("escape escape");
+    cx.run_until_parked();
+    fs::remove_file(&class).unwrap();
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

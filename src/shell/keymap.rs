@@ -101,6 +101,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 t(tr("Enter, double click", "Entrée, double-clic"), tr("Write in the shape or on the arrow; Esc when done", "Écrire dans la forme ou sur la flèche ; Échap pour finir")),
                 k(&canvas::NextText, tr("Arrow: the text at its start, in its middle, at its end (a role, a multiplicity); drag one along the stroke", "Flèche : le texte à son début, au milieu, à sa fin (un rôle, une multiplicité) ; en faire glisser un le long du trait")),
                 t("---", tr("Alone on a line of a box: a compartment (UML class)", "Seul sur une ligne d'une boîte : un compartiment (classe UML)")),
+                t("«interface»  + static x: int  abstract f()", tr("In a class: a stereotype line, then members; static is underlined, abstract in italics; name : Type is an object", "Dans une classe : une ligne de stéréotype, puis des membres ; static est souligné, abstract en italique ; nom : Type est un objet")),
                 t(&format!("{shift}+{click} / {MOD}+{click}"), tr("Add a shape to the selection, or take it out", "Ajouter une forme à la sélection, ou l'en retirer")),
                 t(tr("Delete", "Suppr"), tr("Remove the selection", "Retirer la sélection")),
                 k(&canvas::Duplicate, tr("Diagram: duplicate the selection", "Schéma : dupliquer la sélection")),

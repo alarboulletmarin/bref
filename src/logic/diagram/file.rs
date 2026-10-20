@@ -41,8 +41,8 @@ impl Diagram {
             for y in rules {
                 let _ = writeln!(out, "<path d=\"M{} {}H{}\" stroke=\"{ink}\"/>", num(shape.x), num(y), num(shape.x + shape.w));
             }
-            for line in lines {
-                label(&mut out, line.x, line.y, &self.styled(line.text, line.bold), line.centered.into(), &ink);
+            for (line, spans) in lines.iter().zip(self.runs(shape, false)) {
+                label(&mut out, line.x, line.y, &spans, line.centered.into(), &ink);
             }
         }
         for link in &self.links {
@@ -410,5 +410,27 @@ mod tests {
         let d = Diagram::from_svg(&svg).unwrap();
         assert_eq!(d.kept, ["ends 9 a\tb\t0\t0", "ends 3 only", "ends x"]);
         assert!(!d.links[0].has_end_texts());
+    }
+
+    #[test]
+    fn draws_a_class_with_its_notation() {
+        let mut d = Diagram::blank();
+        let a = d.add_shape(Form::Rect, 0., 0., 240., 160.);
+        d.shape_mut(a).unwrap().text = "«abstract»\nShape\n---\n+ static count: int\n- /area: f32 {readOnly}\n---\n+ abstract draw()\n+ see | the \\ note".into();
+        let svg = d.to_svg(COLORS[0]);
+        // The stereotype is plain and centered; the name is bold and, the class being abstract, italic.
+        assert!(svg.contains("text-anchor=\"middle\" fill=\"#7d8590\" stroke=\"none\">«abstract»</text>"), "{svg}");
+        assert!(svg.contains("font-weight=\"bold\" font-style=\"italic\" fill=\"#7d8590\" stroke=\"none\">Shape</text>"), "{svg}");
+        // A static member is underlined, an abstract one in italics, the keyword is not drawn.
+        assert!(svg.contains("font-style=\"italic\"") && svg.contains("text-decoration=\"underline\" fill=\"#7d8590\" stroke=\"none\">+ count: int</text>"), "{svg}");
+        let drawing = svg.split("<metadata").next().unwrap();
+        assert!(drawing.contains(">+ draw()</text>") && !drawing.contains("static ") && !drawing.contains("abstract draw"));
+        // What is not a member is drawn as typed.
+        assert!(svg.contains(">+ see | the \\ note</text>") && svg.contains(">- /area: f32 {readOnly}</text>"));
+        // The source keeps what was typed, and a diagram of before the styles draws the same text as typed.
+        assert!(Diagram::source_of(&svg).unwrap().contains("+ static count: int"));
+        d.rich = false;
+        let old = d.to_svg(COLORS[0]);
+        assert!(old.contains(">+ static count: int</text>") && old.contains(">«abstract»</text>") && !old.contains("italic"), "{old}");
     }
 }
