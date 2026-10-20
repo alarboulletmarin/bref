@@ -90,13 +90,31 @@ fn tool_label(tool: Tool) -> &'static str {
     }
 }
 
-/// Shape dragged from the toolbar or the library, drawn under the pointer up to the canvas.
+/// Shape dragged from the toolbar or the library, drawn under the pointer up to the canvas; the last field is
+/// where the pointer took hold of the row or the button it comes from.
 #[derive(Clone)]
-struct Placing(Tool, &'static str, Theme);
+struct Placing(Tool, &'static str, Theme, Point<Pixels>);
+
+/// Side of the button that is drawn under the pointer.
+const GHOST: f32 = 28.;
+
+impl Placing {
+    /// The same, taken hold of at `at` in the element it is dragged from.
+    fn grabbed(&self, at: Point<Pixels>) -> Self {
+        Self(self.0, self.1, self.2, at)
+    }
+
+    /// How far the picture is moved so that it is centred on the pointer: gpui draws a dragged view at
+    /// the pointer minus the place it was taken hold of at, which is far from the pointer for a wide row.
+    fn shift(&self) -> (f32, f32) {
+        (f32::from(self.3.x) - GHOST / 2., f32::from(self.3.y) - GHOST / 2.)
+    }
+}
 
 impl Render for Placing {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        button("d-placing", self.1, true, self.2)
+        let (dx, dy) = self.shift();
+        div().ml(px(dx)).mt(px(dy)).child(button("d-placing", self.1, true, self.2))
     }
 }
 
@@ -430,3 +448,19 @@ pub fn neutral(theme: Theme) -> u32 {
     byte(c.r) << 16 | byte(c.g) << 8 | byte(c.b)
 }
 
+
+#[cfg(test)]
+mod ghost_tests {
+    use super::*;
+
+    #[test]
+    fn the_picture_dragged_is_centred_on_the_pointer_wherever_it_was_taken_hold_of() {
+        // gpui draws it at pointer - grab; moved by `shift`, its centre is the pointer, for a button and for a wide row.
+        for grab in [(0., 0.), (14., 14.), (3., 25.), (240., 12.), (600., 30.), (-4., -2.)] {
+            let placing = Placing(Tool::Select, "d-rect.svg", crate::ui::theme::Theme::of(&crate::logic::prefs::Prefs::parse("theme=Bref Light\n"), gpui::WindowAppearance::Light), point(px(grab.0), px(grab.1)));
+            let (dx, dy) = placing.shift();
+            let (left, top) = (-grab.0 + dx, -grab.1 + dy);
+            assert_eq!((left + GHOST / 2., top + GHOST / 2.), (0., 0.), "{grab:?}");
+        }
+    }
+}

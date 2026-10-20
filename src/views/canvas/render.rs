@@ -21,7 +21,7 @@ impl Render for Canvas {
         let tools = TOOLS.iter().map(|&(tool, icon, key)| {
             let tool_button = button(icon, icon, self.tool == tool, t).tooltip(tip(tool_label(tool), key.to_uppercase(), t)).on_click(cx.listener(move |this, _, _, cx| this.set_tool(tool, cx)));
             match tool {
-                Tool::Shape(_) => tool_button.on_drag(Placing(tool, icon, t), |placing, _, _, cx| cx.new(|_| placing.clone())),
+                Tool::Shape(_) => tool_button.on_drag(Placing(tool, icon, t, Point::default()), |placing, grab, _, cx| cx.new(|_| placing.grabbed(grab))),
                 _ => tool_button,
             }
         });
@@ -180,7 +180,7 @@ impl Render for Canvas {
                 body = body.child(
                     row(("d-preset", i).into(), preset.icon, preset.name)
                         .on_click(cx.listener(move |this, _, _, cx| this.choose_preset(i, cx)))
-                        .on_drag(Placing(Tool::Preset(i), preset.icon, t), |placing, _, _, cx| cx.new(|_| placing.clone())),
+                        .on_drag(Placing(Tool::Preset(i), preset.icon, t, Point::default()), |placing, grab, _, cx| cx.new(|_| placing.grabbed(grab))),
                 );
             }
             if presets.iter().all(|p| !p.matches(query)) {
