@@ -87,6 +87,42 @@ impl Render for Canvas {
                 }
             }))
         };
+        // The menu of relationships, a row of its own: those that look like the selected arrow, or the tool, are lit.
+        let current = self.selected.iter().find_map(|id| self.diagram.link(*id)).and_then(Relation::of);
+        let relation_button = |relation: Relation, cx: &Context<Self>| {
+            let lit = match self.tool {
+                Tool::Link(tool) => tool == relation,
+                _ => current == Some(relation),
+            };
+            let id = ("d-relation", relation as usize);
+            let hint = tip(relation.name(), relation.key().to_uppercase().to_string(), t);
+            let pick = cx.listener(move |this, _, _, cx| this.choose_relation(relation, cx));
+            match relation.icon() {
+                Some(icon) => button(id, icon, lit, t).tooltip(hint).on_click(pick).into_any_element(),
+                // A dependency with a stereotype is told by it: its name is its button.
+                None => div()
+                    .id(id)
+                    .h(px(28.))
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .rounded(px(6.))
+                    .cursor_pointer()
+                    .text_size(px(12.))
+                    .text_color(if lit { t.accent } else { t.soft })
+                    .when(lit, |d| d.bg(t.selection))
+                    .hover(|s| s.bg(t.border))
+                    .child(relation.name())
+                    .tooltip(hint)
+                    .on_click(pick)
+                    .into_any_element(),
+            }
+        };
+        let relations = div().w_full().flex().flex_wrap().items_center().gap_1().children(Relation::ALL.map(|r| relation_button(r, cx))).child(
+            button("d-nary", "d-rel-nary.svg", self.tool == Tool::Shape(Form::Branch), t)
+                .tooltip(tip(tool_label(Tool::Shape(Form::Branch)), Self::NARY.to_uppercase(), t))
+                .on_click(cx.listener(|this, _, _, cx| this.set_tool(Tool::Shape(Form::Branch), cx))),
+        );
         // In a narrow window, the bar wraps: no tool is out of reach.
         let bar = div()
             .flex_none()
@@ -143,13 +179,22 @@ impl Render for Canvas {
                     }
                 }))
             })
+            .child(
+                button("d-relations", "d-rel-menu.svg", self.relations, t)
+                    .tooltip(tip(tr("Relationships: generalization, composition, dependency…", "Relations : généralisation, composition, dépendance…"), Self::RELATIONS.to_uppercase(), t))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.relations = !this.relations;
+                        cx.notify();
+                    })),
+            )
             // A diagram made before styled text keeps its texts as they are, until asked.
             .when(!self.diagram.rich, |d| {
                 let tooltip = tr("Style the text: *italic*, **bold**, <u>underlined</u>, ~~struck~~", "Mettre le texte en forme : *italique*, **gras**, <u>souligné</u>, ~~barré~~");
                 d.child(button("d-rich", "c-italic.svg", false, t).tooltip(tip(tooltip, String::new(), t)).on_click(cx.listener(|this, _, _, cx| this.enrich(cx))))
             })
             .child(div().flex_1())
-            .child(button("d-export", if self.exported { "check.svg" } else { "export.svg" }, false, t).tooltip(tip(tr("Export as PNG", "Exporter en PNG"), String::new(), t)).on_click(cx.listener(|_, _, _, cx| cx.emit(CanvasEvent::Export))));
+            .child(button("d-export", if self.exported { "check.svg" } else { "export.svg" }, false, t).tooltip(tip(tr("Export as PNG", "Exporter en PNG"), String::new(), t)).on_click(cx.listener(|_, _, _, cx| cx.emit(CanvasEvent::Export))))
+            .when(self.relations, |d| d.child(relations));
 
         div()
             .size_full()
@@ -195,6 +240,9 @@ impl Render for Canvas {
             .on_action(cx.listener(|this, _: &Cancel, _, cx| {
                 if this.editing.is_some() {
                     this.stop_editing(cx);
+                } else if this.relations {
+                    this.relations = false;
+                    cx.notify();
                 } else if this.tool != Tool::Select {
                     this.set_tool(Tool::Select, cx);
                 } else if !this.selected.is_empty() {

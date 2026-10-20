@@ -28,7 +28,8 @@ pub const RULE: &str = "---";
 /// that uses nothing new still opens in the builds before.
 ///
 /// 1: shapes and arrows. 2: `rich`, styled text. 3: `ends`, the texts at the ends of an arrow.
-pub const VERSION: u32 = 3;
+/// 4: the heads `cross`, `ball`, `socket`, and an arrow held by another's middle (`m<id>`).
+pub const VERSION: u32 = 4;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Form {
@@ -40,10 +41,12 @@ pub enum Form {
     Cylinder,
     Actor,
     Note,
+    /// A small diamond, its text under it: an association of three or more ends, a decision.
+    Branch,
 }
 
 impl Form {
-    pub const ALL: [(Form, &str); 8] = [
+    pub const ALL: [(Form, &str); 9] = [
         (Form::Rect, "rect"),
         (Form::Round, "round"),
         (Form::Ellipse, "ellipse"),
@@ -52,7 +55,16 @@ impl Form {
         (Form::Cylinder, "cylinder"),
         (Form::Actor, "actor"),
         (Form::Note, "note"),
+        (Form::Branch, "branch"),
     ];
+
+    /// The version of the file that first had this form.
+    pub fn since(self) -> u32 {
+        match self {
+            Form::Branch => 4,
+            _ => 1,
+        }
+    }
 }
 
 /// Arrowhead. With solid or dashed stroke, they cover UML:
@@ -64,16 +76,33 @@ pub enum Head {
     Triangle,
     Diamond,
     DiamondFull,
+    /// A small cross on the stroke: an association end that cannot be navigated.
+    Cross,
+    /// A ball (`-o`): a provided interface.
+    Ball,
+    /// A socket (`-(`): a required interface.
+    Socket,
 }
 
 impl Head {
-    pub const ALL: [(Head, &str); 5] = [
+    pub const ALL: [(Head, &str); 8] = [
         (Head::None, "none"),
         (Head::Arrow, "arrow"),
         (Head::Triangle, "triangle"),
         (Head::Diamond, "diamond"),
         (Head::DiamondFull, "fulldiamond"),
+        (Head::Cross, "cross"),
+        (Head::Ball, "ball"),
+        (Head::Socket, "socket"),
     ];
+
+    /// The version of the file that first had this head.
+    pub fn since(self) -> u32 {
+        match self {
+            Head::Cross | Head::Ball | Head::Socket => 4,
+            _ => 1,
+        }
+    }
 
     /// The next head, to switch with one click.
     pub fn next(self) -> Head {
@@ -107,6 +136,8 @@ pub enum End {
     /// contains it, from 0 to 1 in width and height.
     Pin(u32, f32, f32),
     Point(f32, f32),
+    /// The middle of another arrow, which it follows: the dotted line of an association class.
+    Mid(u32),
 }
 
 impl End {
@@ -114,7 +145,7 @@ impl End {
     pub fn shape(self) -> Option<u32> {
         match self {
             End::Shape(id) | End::Pin(id, ..) => Some(id),
-            End::Point(..) => None,
+            End::Point(..) | End::Mid(_) => None,
         }
     }
 }
@@ -351,7 +382,7 @@ impl Shape {
             Form::Rect => vec![rounded(x, y, w, h, 2.)],
             Form::Round => vec![rounded(x, y, w, h, 14.)],
             Form::Ellipse => vec![ellipse(cx, cy, w / 2., h / 2.)],
-            Form::Diamond => vec![vec![
+            Form::Diamond | Form::Branch => vec![vec![
                 Cmd::Move(cx, y),
                 Cmd::Line(x + w, cy),
                 Cmd::Line(cx, y + h),
@@ -434,7 +465,7 @@ impl Shape {
         let (x, top, centered) = match self.form {
             Form::Text => (self.x, self.y, false),
             // Under the stick figure.
-            Form::Actor => (cx, self.y + self.h + 4., true),
+            Form::Actor | Form::Branch => (cx, self.y + self.h + 4., true),
             _ => (cx, cy - height / 2., true),
         };
         let placed = lines.into_iter().enumerate();
@@ -468,7 +499,7 @@ impl Shape {
         let (a, b) = ((self.w / 2.).max(1.), (self.h / 2.).max(1.));
         let reach = match self.form {
             Form::Ellipse => ((dx / a).powi(2) + (dy / b).powi(2)).sqrt(),
-            Form::Diamond => dx.abs() / a + dy.abs() / b,
+            Form::Diamond | Form::Branch => dx.abs() / a + dy.abs() / b,
             _ => (dx.abs() / a).max(dy.abs() / b),
         };
         if reach < 1e-6 { (cx, cy) } else { (cx + dx / reach, cy + dy / reach) }
@@ -482,6 +513,9 @@ fn head_reach(head: Head) -> f32 {
         Head::Arrow => 10.,
         Head::Triangle => 12.,
         Head::Diamond | Head::DiamondFull => 16.,
+        Head::Cross => 0.,
+        Head::Ball => 12.,
+        Head::Socket => 8.,
     }
 }
 
@@ -497,6 +531,44 @@ pub fn head(head: Head, tip: (f32, f32), u: (f32, f32)) -> (Vec<(f32, f32)>, boo
         Head::Triangle => (vec![tip, at(12., 6.), at(12., -6.)], true, false, 12.),
         Head::Diamond => (vec![tip, at(8., 5.), at(16., 0.), at(8., -5.)], true, false, 16.),
         Head::DiamondFull => (vec![tip, at(8., 5.), at(16., 0.), at(8., -5.)], true, true, 16.),
+        Head::Cross | Head::Ball | Head::Socket => (Vec::new(), false, false, 0.),
+    }
+}
+
+/// Path of a head set at `tip`, for a stroke arriving in the unit direction `u`: the path, whether
+/// it is filled, and by how much to shorten the stroke so it stops at its base.
+pub fn head_path(kind: Head, tip: (f32, f32), u: (f32, f32)) -> (Vec<Cmd>, bool, f32) {
+    let n = (-u.1, u.0);
+    let at = |back: f32, side: f32| (tip.0 - u.0 * back + n.0 * side, tip.1 - u.1 * back + n.1 * side);
+    // An arc of a circle of radius `r` around `c`, from angle `a0` to `a1` (0 = along the stroke, backwards).
+    let arc = |c: (f32, f32), r: f32, a0: f32, a1: f32, steps: usize| -> Vec<(f32, f32)> {
+        (0..=steps)
+            .map(|i| {
+                let a = a0 + (a1 - a0) * i as f32 / steps as f32;
+                (c.0 - u.0 * r * a.cos() + n.0 * r * a.sin(), c.1 - u.1 * r * a.cos() + n.1 * r * a.sin())
+            })
+            .collect()
+    };
+    let path = |points: &[(f32, f32)], close: bool| -> Vec<Cmd> {
+        let mut path: Vec<Cmd> = points.iter().enumerate().map(|(i, p)| if i == 0 { Cmd::Move(p.0, p.1) } else { Cmd::Line(p.0, p.1) }).collect();
+        if close {
+            path.push(Cmd::Close);
+        }
+        path
+    };
+    match kind {
+        Head::Cross => {
+            let (a, b, c, d) = (at(3., 5.), at(13., -5.), at(3., -5.), at(13., 5.));
+            (vec![Cmd::Move(a.0, a.1), Cmd::Line(b.0, b.1), Cmd::Move(c.0, c.1), Cmd::Line(d.0, d.1)], false, 0.)
+        }
+        // A circle touching the tip, the stroke stopping at its edge.
+        Head::Ball => (path(&arc(at(6., 0.), 6., 0., std::f32::consts::TAU, 24), true), false, 12.),
+        // A half circle around the tip, its back toward the stroke's start: the stroke stops at its apex.
+        Head::Socket => (path(&arc(tip, 8., -std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2, 12), false), false, 8.),
+        other => {
+            let (points, closed, full, shorten) = head(other, tip, u);
+            (path(&points, closed), full, shorten)
+        }
     }
 }
 
@@ -527,8 +599,12 @@ impl Diagram {
 
     /// The lowest version of the source that can say all this diagram holds.
     pub(super) fn needed(&self) -> u32 {
-        let ends = self.links.iter().any(Link::has_end_texts);
-        if ends { 3 } else if self.rich { 2 } else { 1 }
+        let links = self.links.iter().map(|l| {
+            let mid = matches!(l.from, End::Mid(_)) || matches!(l.to, End::Mid(_));
+            [l.start.since(), l.end.since(), if mid { 4 } else { 1 }, if l.has_end_texts() { 3 } else { 1 }].into_iter().max().unwrap_or(1)
+        });
+        let shapes = self.shapes.iter().map(|s| s.form.since()).max().unwrap_or(1);
+        links.max().unwrap_or(1).max(shapes).max(if self.rich { 2 } else { 1 })
     }
 
     pub fn shape(&self, id: u32) -> Option<&Shape> {
@@ -573,28 +649,44 @@ impl Diagram {
             twin.push((shape.id, id));
             self.shapes.push(Shape { id, x: shape.x + by, y: shape.y + by, ..shape });
         }
-        let copy = |id: u32| twin.iter().find(|(old, _)| *old == id).map(|(_, new)| *new);
-        let moved = |end: End| match end {
-            End::Shape(id) => copy(id).map(End::Shape),
-            End::Pin(id, fx, fy) => copy(id).map(|id| End::Pin(id, fx, fy)),
-            End::Point(x, y) => Some(End::Point(x + by, y + by)),
-        };
+        let mut copies: Vec<(u32, u32)> = Vec::new();
         let mut made: Vec<u32> = twin.iter().map(|(_, new)| *new).collect();
-        for link in self.links.clone().into_iter().filter(|l| ids.contains(&l.id)) {
+        // An arrow that holds on to another's middle is copied after it, to find its copy.
+        let mut wanted: Vec<Link> = self.links.clone().into_iter().filter(|l| ids.contains(&l.id)).collect();
+        wanted.sort_by_key(|l| matches!(l.from, End::Mid(_)) || matches!(l.to, End::Mid(_)));
+        for link in wanted {
+            let moved = |end: End| match end {
+                End::Shape(id) => twin.iter().find(|(old, _)| *old == id).map(|(_, new)| End::Shape(*new)),
+                End::Pin(id, fx, fy) => twin.iter().find(|(old, _)| *old == id).map(|(_, new)| End::Pin(*new, fx, fy)),
+                End::Point(x, y) => Some(End::Point(x + by, y + by)),
+                End::Mid(id) => copies.iter().find(|(old, _)| *old == id).map(|(_, new)| End::Mid(*new)),
+            };
             if let (Some(from), Some(to)) = (moved(link.from), moved(link.to)) {
                 let id = self.fresh();
                 made.push(id);
+                copies.push((link.id, id));
                 self.links.push(Link { id, from, to, ..link });
             }
         }
         made
     }
 
-    /// Removes elements `ids`, and the arrows attached to removed shapes.
+    /// Removes elements `ids`, the arrows attached to removed shapes, and those attached to removed arrows.
     pub fn remove(&mut self, ids: &[u32]) {
-        self.shapes.retain(|s| !ids.contains(&s.id));
-        let gone = |end: End| end.shape().is_some_and(|id| ids.contains(&id));
-        self.links.retain(|l| !ids.contains(&l.id) && !gone(l.from) && !gone(l.to));
+        let mut gone = ids.to_vec();
+        self.shapes.retain(|s| !gone.contains(&s.id));
+        loop {
+            let held = |end: End, gone: &[u32]| match end {
+                End::Mid(id) => gone.contains(&id),
+                other => other.shape().is_some_and(|id| gone.contains(&id)),
+            };
+            let dropped: Vec<u32> = self.links.iter().filter(|l| gone.contains(&l.id) || held(l.from, &gone) || held(l.to, &gone)).map(|l| l.id).collect();
+            if dropped.is_empty() {
+                break;
+            }
+            self.links.retain(|l| !dropped.contains(&l.id));
+            gone.extend(dropped);
+        }
     }
 
     /// The topmost shape under this point.
@@ -620,12 +712,32 @@ impl Diagram {
         Some((*points.first()?, *points.last()?))
     }
 
+    /// The middle of arrow `id`, where an association class holds on. Not of an arrow that itself
+    /// holds on to another's middle: the middle of a middle would never end.
+    pub fn mid(&self, id: u32) -> Option<(f32, f32)> {
+        let link = self.link(id)?;
+        if matches!(link.from, End::Mid(_)) || matches!(link.to, End::Mid(_)) {
+            return None;
+        }
+        Some(self.trace(link)?.middle)
+    }
+
+    /// The arrow whose middle is within `reach` of this point, other than `except`.
+    pub fn mid_at(&self, x: f32, y: f32, reach: f32, except: Option<u32>) -> Option<u32> {
+        let near = |id: u32| self.mid(id).is_some_and(|m| (m.0 - x).hypot(m.1 - y) <= reach);
+        self.links.iter().rev().map(|l| l.id).find(|id| Some(*id) != except && near(*id))
+    }
+
     /// Where an end leaves what it holds, and in which direction: toward
     /// `toward` for a straight stroke, otherwise through the side facing it.
     fn leave(&self, end: End, toward: (f32, f32), straight: bool) -> Option<((f32, f32), (f32, f32))> {
         let side = |dx: f32, dy: f32, w: f32, h: f32| if dx.abs() * h >= dy.abs() * w { (dx.signum(), 0.) } else { (0., dy.signum()) };
         Some(match end {
             End::Point(x, y) => ((x, y), side(toward.0 - x, toward.1 - y, 1., 1.)),
+            End::Mid(id) => {
+                let (x, y) = self.mid(id)?;
+                ((x, y), side(toward.0 - x, toward.1 - y, 1., 1.))
+            }
             End::Shape(id) => {
                 let shape = self.shape(id)?;
                 let (cx, cy) = shape.center();
@@ -651,6 +763,7 @@ impl Diagram {
             End::Shape(id) => self.shape(id).map(Shape::center),
             End::Pin(id, fx, fy) => self.shape(id).map(|s| (s.x + fx * s.w, s.y + fy * s.h)),
             End::Point(x, y) => Some((x, y)),
+            End::Mid(id) => self.mid(id),
         };
         let straight = link.route == Route::Straight;
         let (a, da) = self.leave(link.from, aim(link.to)?, straight)?;
@@ -674,9 +787,9 @@ impl Diagram {
         };
         let last = points.len() - 1;
         let (ua, ub) = (toward(points[1], points[0]), toward(points[last - 1], points[last]));
-        let (start, end) = (head(link.start, a, ua), head(link.end, b, ub));
+        let (start, end) = (head_path(link.start, a, ua), head_path(link.end, b, ub));
         // The stroke stops at the base of a closed head.
-        let (a2, b2) = ((a.0 - ua.0 * start.3, a.1 - ua.1 * start.3), (b.0 - ub.0 * end.3, b.1 - ub.1 * end.3));
+        let (a2, b2) = ((a.0 - ua.0 * start.2, a.1 - ua.1 * start.2), (b.0 - ub.0 * end.2, b.1 - ub.1 * end.2));
         let line = match link.route {
             Route::Curve => vec![Cmd::Move(a2.0, a2.1), Cmd::Curve(c1.0, c1.1, c2.0, c2.1, b2.0, b2.1)],
             _ => {
@@ -685,13 +798,7 @@ impl Diagram {
                 drawn.iter().enumerate().map(|(i, p)| if i == 0 { Cmd::Move(p.0, p.1) } else { Cmd::Line(p.0, p.1) }).collect()
             }
         };
-        let heads = [start, end].into_iter().filter(|(points, ..)| !points.is_empty()).map(|(points, closed, full, _)| {
-            let mut path: Vec<Cmd> = points.iter().enumerate().map(|(i, p)| if i == 0 { Cmd::Move(p.0, p.1) } else { Cmd::Line(p.0, p.1) }).collect();
-            if closed {
-                path.push(Cmd::Close);
-            }
-            (path, full)
-        });
+        let heads = [start, end].into_iter().filter(|(path, ..)| !path.is_empty()).map(|(path, full, _)| (path, full));
         // The middle is found along the stroke, not between its two ends.
         let lengths: Vec<f32> = points.windows(2).map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1)).collect();
         let mut left = lengths.iter().sum::<f32>() / 2.;
@@ -793,7 +900,7 @@ impl Diagram {
     pub fn bounds(&self) -> Option<(f32, f32, f32, f32)> {
         // A stick figure's text is written under it.
         let boxes = self.shapes.iter().map(|s| {
-            let below = if s.form == Form::Actor { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
+            let below = if matches!(s.form, Form::Actor | Form::Branch) { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
             (s.x, s.y, s.x + s.w, s.y + s.h + below)
         });
         let ends = self.links.iter().filter_map(|l| self.trace(l)).flat_map(|t| t.points);
@@ -980,5 +1087,62 @@ mod tests {
         assert_eq!((d.tip_label_hit(200., 100.), d.tip_label_hit(150., 30.)), (None, None));
         let link = d.link(id).unwrap();
         assert_eq!((d.along_to(link, Slot::End, 290., 0.), d.along_to(link, Slot::End, 240., 0.), d.along_to(link, Slot::End, -500., 0.)), (0., 42., 174.));
+    }
+
+    #[test]
+    fn an_arrow_can_hold_on_to_the_middle_of_another() {
+        let mut d = Diagram::default();
+        let a = d.add_shape(Form::Rect, 0., 0., 100., 60.);
+        let b = d.add_shape(Form::Rect, 300., 0., 100., 60.);
+        let c = d.add_shape(Form::Rect, 150., 200., 100., 60.);
+        let assoc = d.add_link(End::Shape(a), End::Shape(b), Head::None, Route::Straight);
+        let class = d.add_link(End::Shape(c), End::Mid(assoc), Head::None, Route::Straight);
+        // The dotted line ends in the middle of the association, and follows it.
+        assert_eq!(d.mid(assoc), Some((200., 30.)));
+        assert_eq!(d.ends(d.link(class).unwrap()).unwrap().1, (200., 30.));
+        d.shape_mut(b).unwrap().x = 500.;
+        assert_eq!(d.ends(d.link(class).unwrap()).unwrap().1, (300., 30.));
+        // Found by the pointer near the middle, but not for the arrow itself.
+        assert_eq!((d.mid_at(305., 35., 16., None), d.mid_at(305., 35., 16., Some(assoc)), d.mid_at(200., 100., 16., None)), (Some(assoc), None, None));
+        // An arrow held by a middle has none to offer: no middle of a middle.
+        let again = d.add_link(End::Shape(c), End::Mid(class), Head::None, Route::Straight);
+        assert!(d.mid(class).is_none() && d.trace(d.link(again).unwrap()).is_none());
+        d.remove(&[again]);
+        // Copying the association with its class copies the hold; copying the class alone does not.
+        let made = d.duplicate(&[a, b, c, assoc, class], 20.);
+        assert_eq!(made.len(), 5);
+        let copy = d.links.iter().find(|l| l.id == made[4]).unwrap();
+        assert_eq!(copy.to, End::Mid(made[3]));
+        let before = d.links.len();
+        assert_eq!(d.duplicate(&[class], 20.).len(), 0);
+        assert_eq!(d.links.len(), before);
+        // Removing the association takes the class along; removing a shape takes the association, then the class.
+        d.remove(&[a]);
+        assert!(d.link(assoc).is_none() && d.link(class).is_none() && d.link(made[3]).is_some());
+    }
+
+    #[test]
+    fn the_new_heads_stop_the_stroke_where_they_begin() {
+        let (u, tip) = ((1., 0.), (100., 0.));
+        let ends = |head| {
+            let (path, full, shorten) = head_path(head, tip, u);
+            let xs: Vec<f32> = path.iter().filter_map(|c| match c { Cmd::Move(x, _) | Cmd::Line(x, _) => Some(*x), _ => None }).collect();
+            (xs.iter().copied().fold(f32::MAX, f32::min), xs.iter().copied().fold(f32::MIN, f32::max), full, shorten)
+        };
+        // A ball touches the tip with its edge; the stroke stops 12 before, where the ball's far edge is.
+        assert_eq!(ends(Head::Ball), (88., 100., false, 12.));
+        // A socket spans 8 on each side of the tip, apex back; the stroke stops at the apex.
+        let (lo, hi, _, shorten) = ends(Head::Socket);
+        assert_eq!((lo.round(), hi.round(), shorten), (92., 100., 8.));
+        // A cross sits on the stroke, 8 before the tip, and does not shorten it.
+        let (lo, hi, _, shorten) = ends(Head::Cross);
+        assert_eq!((lo, hi, shorten), (87., 97., 0.));
+        // Pointing any way, the head keeps its size.
+        for u in [(0., 1.), (-1., 0.), (0., -1.)] {
+            let (path, ..) = head_path(Head::Ball, (50., 50.), u);
+            let (xs, ys): (Vec<f32>, Vec<f32>) = path.iter().filter_map(|c| match c { Cmd::Move(x, y) | Cmd::Line(x, y) => Some((*x, *y)), _ => None }).unzip();
+            let (w, h) = (xs.iter().copied().fold(f32::MIN, f32::max) - xs.iter().copied().fold(f32::MAX, f32::min), ys.iter().copied().fold(f32::MIN, f32::max) - ys.iter().copied().fold(f32::MAX, f32::min));
+            assert!((w - 12.).abs() < 0.1 || (h - 12.).abs() < 0.1, "{u:?}: {w}x{h}");
+        }
     }
 }

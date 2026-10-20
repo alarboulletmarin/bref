@@ -10,12 +10,16 @@ impl Canvas {
     }
 
     /// Arrow end for this point: attached to the shape found there, at the
-    /// edge if close to it; otherwise the snapped point.
-    pub(super) fn end_at(&self, p: (f32, f32), not: Option<u32>) -> End {
+    /// edge if close to it; otherwise the snapped point. With `mid` (an association class), near
+    /// the middle of another arrow than `except`, it holds on to that.
+    pub(super) fn end_at(&self, p: (f32, f32), not: Option<u32>, mid: bool, except: Option<u32>) -> End {
         let shape = self.diagram.shape_at(p.0, p.1).filter(|id| Some(*id) != not).and_then(|id| self.diagram.shape(id));
         match shape {
             Some(shape) => shape.hook(p.0, p.1),
-            None => End::Point(diagram::snap(p.0), diagram::snap(p.1)),
+            None => match self.diagram.mid_at(p.0, p.1, 16. / self.zoom, except).filter(|_| mid) {
+                Some(id) => End::Mid(id),
+                None => End::Point(diagram::snap(p.0), diagram::snap(p.1)),
+            },
         }
     }
 
@@ -60,10 +64,16 @@ impl Canvas {
                 let id = self.diagram.add_shape(form, from.0, from.1, 0., 0.);
                 Drag::Create { id, from }
             }
-            Tool::Link(head) => {
+            Tool::Link(relation) => {
                 self.remember();
-                let from = self.end_at(p, None);
-                let id = self.diagram.add_link(from, End::Point(p.0, p.1), head, self.route);
+                let held = relation == Relation::AssociationClass;
+                let from = self.end_at(p, None, held, None);
+                // The dotted line of an association class is straight, to the middle of the association.
+                let route = if held { Route::Straight } else { self.route };
+                let id = self.diagram.add_link(from, End::Point(p.0, p.1), diagram::Head::None, route);
+                if let Some(link) = self.diagram.link_mut(id) {
+                    relation.apply(link);
+                }
                 Drag::Tip { id, to: true }
             }
             Tool::Select => {
@@ -213,7 +223,8 @@ impl Canvas {
                 // An end does not attach to the shape the other end starts from.
                 let other = self.diagram.link(id).map(|l| if to { l.from } else { l.to });
                 let not = other.and_then(End::shape);
-                let end = self.end_at(p, not);
+                let held = self.diagram.link(id).is_some_and(|l| Relation::of(l) == Some(Relation::AssociationClass));
+                let end = self.end_at(p, not, held, Some(id));
                 if let Some(link) = self.diagram.link_mut(id) {
                     *(if to { &mut link.to } else { &mut link.from }) = end;
                 }

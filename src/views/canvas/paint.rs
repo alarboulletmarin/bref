@@ -259,6 +259,19 @@ impl Canvas {
                 window.paint_quad(quad(dot, px(2.5), t.accent, px(0.), t.accent, gpui::BorderStyle::default()));
             }
         }
+        // An association class held by the middle of an arrow: a dot there.
+        for link in &self.diagram.links {
+            for end in [link.from, link.to] {
+                if let End::Mid(id) = end
+                    && let Some(m) = self.diagram.mid(id)
+                    && self.selected.contains(&link.id)
+                {
+                    let c = at(m);
+                    let dot = Bounds::new(point(c.x - px(3.), c.y - px(3.)), size(px(6.), px(6.)));
+                    window.paint_quad(quad(dot, px(3.), t.accent, px(0.), t.accent, gpui::BorderStyle::default()));
+                }
+            }
+        }
         if let Drag::Marquee { from, to } = self.drag {
             let (a, b) = (at((from.0.min(to.0), from.1.min(to.1))), at((from.0.max(to.0), from.1.max(to.1))));
             window.paint_quad(fill(Bounds::from_corners(a, b), t.selection));

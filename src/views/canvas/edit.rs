@@ -60,6 +60,26 @@ impl Canvas {
                 "+" | "=" => self.zoom_by(1.25, cx),
                 "-" => self.zoom_by(0.8, cx),
                 "0" => self.zoom_fit(cx),
+                // The menu of relationships: `k` opens it, then a letter picks one.
+                _ if self.relations => {
+                    let relation = Relation::ALL.iter().find(|r| text.chars().next().is_some_and(|c| c.eq_ignore_ascii_case(&r.key())));
+                    match relation {
+                        Some(relation) => self.choose_relation(*relation, cx),
+                        None if text.eq_ignore_ascii_case(Self::NARY) => self.set_tool(Tool::Shape(Form::Branch), cx),
+                        // Not in the menu: it closes, and the letter acts as it would have.
+                        None => {
+                            self.relations = false;
+                            if let Some((tool, ..)) = TOOLS.iter().find(|(_, _, key)| key.eq_ignore_ascii_case(text)) {
+                                self.set_tool(*tool, cx);
+                            }
+                        }
+                    }
+                    cx.notify();
+                }
+                _ if text.eq_ignore_ascii_case(Self::RELATIONS) => {
+                    self.relations = true;
+                    cx.notify();
+                }
                 _ => {
                     if let Some((tool, ..)) = TOOLS.iter().find(|(_, _, key)| key.eq_ignore_ascii_case(text)) {
                         self.set_tool(*tool, cx);

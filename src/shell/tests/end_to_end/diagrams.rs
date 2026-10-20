@@ -311,6 +311,105 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("escape escape");
     cx.run_until_parked();
     fs::remove_file(&class).unwrap();
+    // Relationships: `k` opens the menu, a letter picks one. Each of the seventeen is drawn with its look,
+    // and recognised again from the file.
+    {
+        use crate::logic::relation::Relation;
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (rel, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let tool = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.tool());
+        cx.simulate_input("r");
+        rows(cx, &canvas, (0., 0.), (140., 400.));
+        cx.simulate_input("r");
+        rows(cx, &canvas, (300., 0.), (440., 400.));
+        for (i, relation) in Relation::ALL.into_iter().enumerate() {
+            if relation == Relation::AssociationClass {
+                continue;
+            }
+            cx.simulate_input("k");
+            cx.simulate_input(&relation.key().to_string());
+            assert_eq!(tool(cx), canvas::Tool::Link(relation), "{relation:?}");
+            let y = 20. + 22. * i as f32;
+            rows(cx, &canvas, (150., y), (290., y));
+            let link = canvas.read_with(cx, |c, _| c.diagram().links.last().cloned().unwrap());
+            assert_eq!(Relation::of(&link), Some(relation), "{relation:?}: {link:?}");
+            assert_eq!(link.text, relation.stereotype().map_or(String::new(), |n| format!("«{n}»")), "{relation:?}");
+            // One arrow per pick: the tool goes back to the selection. (Escape drops the arrow's selection,
+            // else the next pick would change it instead of drawing.)
+            assert_eq!(tool(cx), canvas::Tool::Select);
+            cx.simulate_keystrokes("escape");
+        }
+        let svg = saved(&rel);
+        assert!(svg.contains("version 4\nrich 1\n") && svg.contains(" ball ") && svg.contains(" socket ") && svg.contains(" cross "), "{svg}");
+        // Escape closes the menu: the next letter is a tool, not a relationship.
+        cx.simulate_input("k");
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("a");
+        assert_eq!(tool(cx), canvas::Tool::Link(Relation::Navigable));
+        // A letter that is nowhere in the menu closes it, then acts as usual.
+        cx.simulate_input("k");
+        cx.simulate_input("o");
+        assert_eq!(tool(cx), canvas::Tool::Shape(diagram::Form::Ellipse));
+        cx.simulate_input("k");
+        cx.simulate_input("7");
+        assert_eq!(tool(cx), canvas::Tool::Shape(diagram::Form::Ellipse));
+        cx.simulate_keystrokes("escape");
+        // The n-ary association: a small diamond.
+        cx.simulate_input("k");
+        cx.simulate_input("y");
+        let at = canvas.read_with(cx, |c, _| c.spot(520., 100.));
+        cx.simulate_click(at, gpui::Modifiers::none());
+        let diamond = canvas.read_with(cx, |c, _| c.diagram().shapes.last().cloned().unwrap());
+        assert_eq!((diamond.form, diamond.w, diamond.h), (diagram::Form::Branch, 40., 40.));
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&rel).unwrap();
+    }
+    // An association class: a dotted line from a class to the middle of an association, which follows it.
+    {
+        use crate::logic::relation::Relation;
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (ac, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        for (from, to) in [((0., 0.), (100., 60.)), ((300., 0.), (400., 60.)), ((150., 200.), (250., 260.))] {
+            cx.simulate_input("r");
+            rows(cx, &canvas, from, to);
+        }
+        cx.simulate_input("l");
+        rows(cx, &canvas, (90., 30.), (310., 30.));
+        let assoc = canvas.read_with(cx, |c, _| c.diagram().links[0].id);
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("k");
+        cx.simulate_input("k");
+        rows(cx, &canvas, (200., 230.), (203., 36.));
+        let d = canvas.read_with(cx, |c, _| c.diagram().clone());
+        assert_eq!(d.links[1].to, diagram::End::Mid(assoc));
+        assert_eq!(Relation::of(&d.links[1]), Some(Relation::AssociationClass));
+        assert_eq!(d.ends(&d.links[1]).unwrap().1, (200., 30.));
+        assert!(saved(&ac).contains(&format!(" m{assoc} ")) && saved(&ac).contains("version 4\n"));
+        // The association moves with its end shape: the dotted line still meets its middle.
+        rows(cx, &canvas, (350., 30.), (350., 130.));
+        let d = canvas.read_with(cx, |c, _| c.diagram().clone());
+        assert_eq!(d.ends(&d.links[1]).unwrap().1, d.mid(assoc).unwrap());
+        // Removing the association takes the dotted line along, in one step of undo.
+        let click = canvas.read_with(cx, |c, _| c.spot(130., 30.));
+        cx.simulate_click(click, gpui::Modifiers::none());
+        cx.simulate_keystrokes("delete");
+        assert_eq!(canvas.read_with(cx, |c, _| c.diagram().links.len()), 0);
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(canvas.read_with(cx, |c, _| c.diagram().links.len()), 2);
+        // With the association selected, the menu changes it instead of drawing another.
+        let click = canvas.read_with(cx, |c, _| c.spot(130., 30.));
+        cx.simulate_click(click, gpui::Modifiers::none());
+        cx.simulate_input("k");
+        cx.simulate_input("h");
+        let first = canvas.read_with(cx, |c, _| c.diagram().links[0].clone());
+        assert_eq!(Relation::of(&first), Some(Relation::Generalization));
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&ac).unwrap();
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

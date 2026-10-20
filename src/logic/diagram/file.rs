@@ -79,6 +79,7 @@ impl Diagram {
             End::Shape(id) => format!("s{id}"),
             End::Pin(id, fx, fy) => format!("s{id}@{fx},{fy}"),
             End::Point(x, y) => format!("p{},{}", num(x), num(y)),
+            End::Mid(id) => format!("m{id}"),
         };
         let text = |text: &str| text.replace('\\', "\\\\").replace('\n', "\\n");
         let mut out = format!("version {}\n{}", self.needed(), if self.rich { "rich 1\n" } else { "" });
@@ -145,6 +146,7 @@ impl Diagram {
                 None => Some(End::Shape(id.parse().ok()?)),
             },
             ("p", at) => at.split_once(',').and_then(|(x, y)| Some(End::Point(x.parse().ok()?, y.parse().ok()?))),
+            ("m", id) => Some(End::Mid(id.parse().ok()?)),
             _ => None,
         };
         let mut diagram = Diagram::default();
@@ -432,5 +434,32 @@ mod tests {
         d.rich = false;
         let old = d.to_svg(COLORS[0]);
         assert!(old.contains(">+ static count: int</text>") && old.contains(">«abstract»</text>") && !old.contains("italic"), "{old}");
+    }
+
+    #[test]
+    fn what_a_build_before_cannot_draw_asks_for_version_4() {
+        let mut d = Diagram::default();
+        let a = d.add_shape(Form::Rect, 0., 0., 100., 60.);
+        let b = d.add_shape(Form::Rect, 300., 0., 100., 60.);
+        let link = d.add_link(End::Shape(a), End::Shape(b), Head::Arrow, Route::Straight);
+        let version = |d: &Diagram| Diagram::source_of(&d.to_svg(COLORS[0])).unwrap().trim_start().lines().next().unwrap().to_string();
+        assert_eq!(version(&d), "version 1");
+        // A new head, an arrow held by a middle, a new form: each asks for it, and reads back the same.
+        for change in ["cross", "ball", "socket", "mid", "branch"] {
+            let mut d = d.clone();
+            match change {
+                "cross" => d.link_mut(link).unwrap().end = Head::Cross,
+                "ball" => d.link_mut(link).unwrap().start = Head::Ball,
+                "socket" => d.link_mut(link).unwrap().end = Head::Socket,
+                "mid" => drop(d.add_link(End::Shape(a), End::Mid(link), Head::None, Route::Straight)),
+                _ => drop(d.add_shape(Form::Branch, 150., 150., 40., 40.)),
+            }
+            let svg = d.to_svg(COLORS[0]);
+            assert_eq!(version(&d), "version 4", "{change}");
+            assert_eq!(Diagram::from_svg(&svg).as_ref(), Some(&d), "{change}");
+            assert_eq!(Diagram::from_svg(&svg).unwrap().to_svg(COLORS[0]), svg, "{change}");
+        }
+        d.add_link(End::Shape(a), End::Mid(link), Head::None, Route::Straight);
+        assert!(Diagram::source_of(&d.to_svg(COLORS[0])).unwrap().contains("\nlink 4 s1 m3 none none straight 0 0 \n"));
     }
 }

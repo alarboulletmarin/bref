@@ -18,7 +18,8 @@ use gpui::{
 
 use crate::{
     ui::theme::Theme,
-    logic::diagram::{self, Anchor, Cmd, Diagram, End, Form, Head, Route, Slot},
+    logic::diagram::{self, Anchor, Cmd, Diagram, End, Form, Route, Slot},
+    logic::relation::Relation,
     logic::richtext::{self, Span},
     ui::widgets::{button, tip},
     ui::assets::{mono, sans}, lang::tr,
@@ -37,8 +38,8 @@ pub enum CanvasEvent {
 pub enum Tool {
     Select,
     Shape(Form),
-    /// Line or arrow, depending on its head.
-    Link(Head),
+    /// An arrow of one of the relationships: a line, an arrow, a generalization…
+    Link(Relation),
 }
 
 /// Bar tools: (tool, icon, letter).
@@ -52,8 +53,8 @@ const TOOLS: [(Tool, &str, &str); 11] = [
     (Tool::Shape(Form::Actor), "d-actor.svg", "p"),
     (Tool::Shape(Form::Note), "d-note.svg", "n"),
     (Tool::Shape(Form::Text), "d-text.svg", "t"),
-    (Tool::Link(Head::Arrow), "d-arrow.svg", "a"),
-    (Tool::Link(Head::None), "d-line.svg", "l"),
+    (Tool::Link(Relation::Navigable), "d-arrow.svg", "a"),
+    (Tool::Link(Relation::Association), "d-line.svg", "l"),
 ];
 
 /// Name of a bar tool, for its tooltip.
@@ -68,8 +69,10 @@ fn tool_label(tool: Tool) -> &'static str {
         Tool::Shape(Form::Actor) => tr("Person (an actor)", "Personnage (un acteur)"),
         Tool::Shape(Form::Note) => "Note",
         Tool::Shape(Form::Text) => tr("Text", "Texte"),
-        Tool::Link(Head::None) => tr("Line", "Trait"),
-        Tool::Link(_) => tr("Arrow", "Flèche"),
+        Tool::Shape(Form::Branch) => tr("N-ary association (a small diamond)", "Association n-aire (un petit losange)"),
+        Tool::Link(Relation::Association) => tr("Line", "Trait"),
+        Tool::Link(Relation::Navigable) => tr("Arrow", "Flèche"),
+        Tool::Link(relation) => relation.name(),
     }
 }
 
@@ -89,6 +92,7 @@ fn usual(form: Form) -> (f32, f32) {
         Form::Text => (80., diagram::LINE),
         Form::Actor => (40., 80.),
         Form::Cylinder => (80., 100.),
+        Form::Branch => (40., 40.),
         Form::Ellipse | Form::Diamond => (120., 80.),
         _ => (140., 60.),
     }
@@ -129,6 +133,8 @@ pub struct Canvas {
     editing: Option<(u32, usize)>,
     /// Which of an arrow's three texts is being written.
     slot: Slot,
+    /// The menu of relationships is open: a letter picks one.
+    relations: bool,
     undo: Vec<Diagram>,
     redo: Vec<Diagram>,
     /// The pointer's shape, depending on what it hovers and what is dragged.
@@ -163,6 +169,7 @@ impl Canvas {
             fit: true,
             editing: None,
             slot: Slot::Middle,
+            relations: false,
             undo: Vec::new(),
             redo: Vec::new(),
             hand: CursorStyle::Arrow,
@@ -170,6 +177,12 @@ impl Canvas {
             exported: false,
             route: Route::Elbow,
         }
+    }
+
+    /// The tool picked.
+    #[cfg(test)]
+    pub fn tool(&self) -> Tool {
+        self.tool
     }
 
     pub fn diagram(&self) -> &Diagram {
@@ -252,8 +265,30 @@ impl Canvas {
         }
     }
 
+    /// The key that opens the menu of relationships, and the one that picks the n-ary association in it.
+    const RELATIONS: &str = "k";
+    const NARY: &str = "y";
+
+    /// A relationship picked in the menu: it changes the selected arrows, or else it is the tool that draws the next ones.
+    pub(super) fn choose_relation(&mut self, relation: Relation, cx: &mut Context<Self>) {
+        self.relations = false;
+        let links: Vec<u32> = self.selected.iter().copied().filter(|id| self.diagram.link(*id).is_some()).collect();
+        if self.editing.is_none() && self.tool == Tool::Select && !links.is_empty() {
+            self.remember();
+            for id in links {
+                if let Some(link) = self.diagram.link_mut(id) {
+                    relation.apply(link);
+                }
+            }
+            self.changed(cx);
+        } else {
+            self.set_tool(Tool::Link(relation), cx);
+        }
+    }
+
     fn set_tool(&mut self, tool: Tool, cx: &mut Context<Self>) {
         self.stop_editing(cx);
+        self.relations = false;
         self.tool = tool;
         self.hand = if tool == Tool::Select { CursorStyle::Arrow } else { CursorStyle::Crosshair };
         cx.notify();
