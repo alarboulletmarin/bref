@@ -23,242 +23,327 @@
   }
 }
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
-  font: 16px/1.7 Inter, "Noto Sans", "Segoe UI", "Helvetica Neue", sans-serif;
+  font: 16px/1.65 Inter, "Noto Sans", "Segoe UI", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-code, pre { font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: .86em; }
-main { max-width: 720px; margin: 0 auto; padding: 0 24px 40px; }
-
-/* Links read like the app's [[links]]: faded brackets, text in the accent colour. */
+code, pre, kbd, .mono { font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: .86em; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 3px; }
-a.wiki::before { content: "[["; color: var(--dim); }
-a.wiki::after { content: "]]"; color: var(--dim); }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+section { padding-top: 112px; }
 
 /* Markdown markers stay visible, faded, as in the editor. */
-h1, h2, h3 { line-height: 1.25; letter-spacing: -.01em; margin: 0; }
-h1::before, h2::before, h3::before { color: var(--dim); }
-h1 { font-size: 2.1rem; }  h1::before { content: "# "; }
-h2 { font-size: 1.45rem; margin: 72px 0 20px; }  h2::before { content: "## "; }
-h3 { font-size: 1.1rem; margin: 28px 0 8px; }  h3::before { content: "### "; }
+.md::before { color: var(--dim); font-weight: 400; margin-right: .35em; }
+h2.md::before { content: "##"; }
 
-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 22px 0; font-size: .92rem; }
-nav .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; color: var(--text); font-weight: 600; }
-nav .brand:hover { text-decoration: none; }
-nav img { width: 24px; height: 24px; }
+/* Top bar */
+header.top { position: sticky; top: 0; z-index: 10; background: var(--bg); border-bottom: 1px solid var(--border); }
+header.top .wrap { display: flex; align-items: center; gap: 28px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 650; margin-right: auto; }
+.brand:hover { text-decoration: none; }
+.brand img { width: 24px; height: 24px; }
+header.top nav { display: flex; gap: 24px; font-size: .9rem; }
+header.top nav a { color: var(--soft); }
+header.top nav a:hover { color: var(--text); text-decoration: none; }
 
-.lead { margin: 56px 0 0; }
-.lead h1 { margin-bottom: 20px; }
-blockquote {
-  margin: 0 0 20px -14px; padding: 0 0 0 11px; border-left: 3px solid var(--border);
-  font-style: italic; font-size: 1.15rem;
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; height: 42px; padding: 0 18px;
+  border-radius: 6px; font: inherit; font-size: .93rem; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text);
 }
-blockquote::before { content: "> "; color: var(--dim); }
-.lead p { margin: 0 0 14px; }
-.tag { color: var(--accent); margin-right: 10px; }
+.btn:hover { text-decoration: none; border-color: var(--soft); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { .btn.primary { color: #1b1a19; } }
+.btn.primary:hover { filter: brightness(1.06); }
 
-.wide { width: min(1040px, calc(100vw - 32px)); margin-left: 50%; transform: translateX(-50%); }
-.wide img { display: block; width: 100%; height: auto; }
-.hero { margin-top: 48px; }
-.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
-.cap { color: var(--soft); font-size: .88rem; margin: 6px 0 0; }
+/* Hero */
+.hero { padding-top: 80px; }
+.hero h1 { margin: 0; max-width: 15ch; font-size: clamp(2.6rem, 6.5vw, 4.4rem); line-height: 1.05; letter-spacing: -.04em; font-weight: 700; }
+.hero .sub { margin: 24px 0 0; max-width: 48ch; font-size: 1.2rem; color: var(--soft); }
+.cta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-top: 32px; }
+.cta .os { font-size: .85rem; color: var(--dim); }
+.shot { margin: 64px 0 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.shot img { display: block; width: 100%; height: auto; }
 
-ul { list-style: none; margin: 0; padding: 0; }
-li { padding-left: 1.6em; position: relative; margin: 4px 0; }
-li::before { content: "-"; position: absolute; left: .4em; color: var(--accent); }
-li b { font-weight: 600; }
+/* Numbers */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 56px; border-top: 1px solid var(--border); }
+.stat { padding: 24px 24px 0 0; }
+.stat b { display: block; font-size: 1.9rem; line-height: 1.1; letter-spacing: -.03em; }
+.stat b small { font-size: .5em; font-weight: 600; color: var(--soft); margin-left: 3px; letter-spacing: 0; }
+.stat span { display: block; margin-top: 6px; font-size: .88rem; color: var(--soft); max-width: 22ch; }
 
-pre {
-   background: var(--code);
-  margin: 10px 0 16px; padding: 14px 52px 14px 16px; overflow-x: auto; line-height: 1.6;
+/* Section heads */
+.head h2 { margin: 0; font-size: clamp(1.8rem, 3.6vw, 2.4rem); line-height: 1.15; letter-spacing: -.03em; max-width: 20ch; }
+.head p { margin: 14px 0 0; max-width: 52ch; color: var(--soft); }
+
+/* Features: hairlines, no boxes */
+.feats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 48px; border-top: 1px solid var(--border); }
+.feat { padding: 28px 28px 32px 0; border-bottom: 1px solid var(--border); }
+.feat:not(:nth-child(3n+1)) { padding-left: 28px; border-left: 1px solid var(--border); }
+.feat h3 { margin: 0 0 8px; font-size: 1.05rem; letter-spacing: -.01em; }
+.feat p { margin: 0; font-size: .93rem; color: var(--soft); }
+.feat code { display: inline-block; margin-top: 14px; padding: 2px 8px; background: var(--code); border-radius: 4px; color: var(--text); font-size: .8rem; }
+.more { margin: 40px 0 0; font-size: .93rem; color: var(--soft); max-width: 70ch; }
+.more b { color: var(--text); font-weight: 600; }
+
+/* Install */
+.tabs { display: flex; gap: 4px; margin-top: 40px; border-bottom: 1px solid var(--border); }
+.tab {
+  padding: 10px 16px; margin-bottom: -1px; font: inherit; font-size: .93rem; font-weight: 600; color: var(--soft);
+  background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer;
 }
-pre code { font-size: 1em; }
-:not(pre) > code::before, :not(pre) > code::after { content: "`"; color: var(--dim); }
-div.code { position: relative; }
-button.copy {
-  position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; padding: 0;
-  background: none; border: 0; border-radius: 6px; color: var(--dim); cursor: pointer;
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.panel { padding-top: 28px; max-width: 720px; }
+.panel[hidden], [data-distro-panel][hidden] { display: none; }
+.panel p { margin: 0 0 18px; color: var(--soft); }
+.panel p b { color: var(--text); }
+.sub-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; }
+.sub-tab { padding: 5px 12px; font: inherit; font-size: .85rem; color: var(--soft); background: none; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; }
+.sub-tab:hover { color: var(--text); border-color: var(--soft); }
+.sub-tab[aria-selected="true"] { color: var(--text); background: var(--code); border-color: var(--dim); }
+.code { position: relative; margin: 0 0 18px; }
+.code pre { margin: 0; padding: 14px 48px 14px 16px; background: var(--code); border: 1px solid var(--border); border-radius: 6px; overflow-x: auto; font-size: .8rem; line-height: 1.7; }
+button.copy { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; padding: 0; background: var(--code); border: 0; border-radius: 6px; color: var(--dim); cursor: pointer; }
+button.copy:hover { color: var(--text); }
+button.copy svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.fine { margin: 24px 0 0; font-size: .88rem; color: var(--soft); max-width: 70ch; }
+.panel .fine { margin-top: 0; }
+
+/* Releases */
+#release-list { margin-top: 36px; border-top: 1px solid var(--border); }
+#release-list > p { margin: 16px 0 0; }
+.release { padding: 20px 0; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 160px 1fr; gap: 6px 24px; }
+.release h3 { margin: 0; font-size: 1rem; }
+.release time { display: block; color: var(--soft); font-weight: 400; font-size: .82rem; margin-top: 2px; }
+.release ul { margin: 0; padding-left: 1.1em; color: var(--soft); font-size: .92rem; }
+.release li { margin: 3px 0; }
+
+/* Footer */
+footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; margin-top: 112px; padding: 28px 0 40px; border-top: 1px solid var(--border); color: var(--soft); font-size: .88rem; }
+footer .brand { font-size: .95rem; margin-right: 0; }
+footer a { color: var(--soft); }
+footer a:hover { color: var(--text); }
+
+@media (max-width: 860px) {
+  .feats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .feat:not(:nth-child(3n+1)) { padding-left: 0; border-left: 0; }
+  .feat:nth-child(2n) { padding-left: 28px; border-left: 1px solid var(--border); }
 }
-button.copy:hover { background: var(--border); color: var(--text); }
-button.copy svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-
-.panel {
-  --tint: hsl(209 70% 50%);
-  margin: 16px -14px; padding: 6px 14px 6px 11px; font-style: italic;
-  border-left: 3px solid var(--tint);
-  background: color-mix(in srgb, var(--tint) 10%, transparent);
-}
-.panel::before { content: "> "; color: var(--dim); font-style: normal; }
-.panel b { color: var(--tint); font-style: normal; font-weight: 700; margin-right: .4em; }
-
-/* A Bref table stays text, in the code font. */
-pre.table { background: none; padding: 0; margin: 14px 0 20px; }
-pre.table kbd { font: inherit; }
-pre.table i { font-style: normal; color: var(--dim); }
-
-.release time { color: var(--soft); font-weight: 400; font-size: .8rem; margin-left: 10px; }
-.release ul { color: var(--soft); font-size: .95rem; }
-
-hr { border: 0; border-top: 1px solid var(--border); margin: 72px 0 24px; }
-footer { color: var(--soft); font-size: .88rem; display: flex; flex-wrap: wrap; gap: 6px 22px; }
-
 @media (max-width: 640px) {
-  .pair { grid-template-columns: 1fr; }
-  h2 { margin-top: 56px; }
-  nav { gap: 6px 14px; }
-  nav .brand { flex-basis: 100%; }
+  section { padding-top: 80px; }
+  header.top nav a:not(.keep) { display: none; }
+  .hero { padding-top: 48px; }
+  .shot { margin-top: 44px; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stat { padding-bottom: 20px; }
+  .feats { grid-template-columns: minmax(0, 1fr); }
+  .feat, .feat:nth-child(n) { padding-left: 0; padding-right: 0; border-left: 0; }
+  .release { grid-template-columns: 1fr; }
   /* Only one of the two windows of the screenshot, the one of the page's theme: readable at this width. */
-  .hero img { aspect-ratio: 860 / 720; object-fit: cover; object-position: left; }
+  .shot img { aspect-ratio: 860 / 720; object-fit: cover; object-position: left; }
 }
 @media (max-width: 640px) and (prefers-color-scheme: dark) {
-  .hero img { object-position: right; }
+  .shot img { object-position: right; }
 }
 </style>
 </head>
 <body>
-<main>
-  <nav>
+
+<header class="top">
+  <div class="wrap">
     <a class="brand" href="#"><img src="icon.svg" alt="">Bref</a>
-    <a class="wiki" href="#install">Install</a>
-    <a class="wiki" href="#docs">Docs</a>
-    <a class="wiki" href="#releases">Releases</a>
-    <a class="wiki" href="https://github.com/alarboulletmarin/bref">GitHub</a>
-  </nav>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#install" class="keep">Install</a>
+      <a href="#releases">Releases</a>
+      <a href="https://github.com/alarboulletmarin/bref#using-bref">Docs</a>
+      <a href="https://github.com/alarboulletmarin/bref" class="keep">GitHub</a>
+    </nav>
+  </div>
+</header>
 
-  <header class="lead">
-    <h1>Bref</h1>
-    <blockquote>Notes that open before you blink.</blockquote>
-    <p>A fast, minimal note-taking app. Notes are plain Markdown files in a folder you choose, styled as you type. Written in Rust with <a href="https://www.gpui.rs">GPUI</a>, a GPU-accelerated UI framework.</p>
-    <p><span class="tag">#markdown</span><span class="tag">#rust</span><span class="tag">#linux</span><span class="tag">#macos</span><span class="tag">#windows</span></p>
-  </header>
+<main>
+  <div class="wrap hero">
+    <h1>Notes that open before you blink.</h1>
+    <p class="sub">A fast, minimal note-taking app. Your notes are plain Markdown files in a folder you choose, styled as you type.</p>
+    <div class="cta">
+      <a class="btn primary" id="dl" href="#install">Download Bref</a>
+      <a class="btn" href="https://github.com/alarboulletmarin/bref">View on GitHub</a>
+      <span class="os">Free and open source · Linux, macOS, Windows</span>
+    </div>
 
-  <div class="wide hero"><img src="site/bref.png" width="1720" height="720" alt="Bref showing the same note in the light and dark themes"></div>
+    <div class="shot"><img src="site/bref.png" width="1720" height="720" alt="Bref showing the same note in the light and dark themes"></div>
 
-  <h2>Features</h2>
-  <h3>Writing</h3>
-  <ul>
-    <li><b>Styled as you type</b>: headings grow, markers stay visible but dimmed. The file is always plain Markdown.</li>
-    <li><b>Formatting bar</b>: bold, italic, underline, strikethrough, highlight in five colors, code, link, lists, tasks and tables from a small bar at the bottom of the note (inside a table: add or delete a row or a column; it folds into one button when the window is narrow), or with <code>Ctrl + B</code>, <code>Ctrl + I</code>, <code>Ctrl + U</code>, <code>Ctrl + Shift + X</code>, <code>H</code> and <code>K</code>; the same gesture takes a style off, and over several lines each line gets its own signs.</li>
-    <li><b>Lists that change kind</b>: select lines and turn them into bullets, a numbered list, tasks or plain text with <code>Ctrl + Shift + B</code>, the right-click menu or the palette; indentation, numbering and ticked boxes follow.</li>
-    <li><b>Drop files in</b>: drag pictures, videos, PDFs or whole folders onto a note or onto the tree. A line and a label show where they land, they are copied (never overwritten, originals untouched) and linked, and a PDF or a video opens in its own application.</li>
-    <li><b>Templates</b>: notes kept in a <code>Templates</code> folder become new notes with <code>{{title}}</code>, <code>{{date}}</code>, <code>{{time}}</code> and a cursor mark; the palette inserts one anywhere or makes one of the open note, and a <code>Daily</code> template starts every note of the day.</li>
-    <li><b>Slash commands</b>: <code>/</code> inserts a heading, list, panel, code block, formula, or a table sized on a grid.</li>
-    <li><b>Tables like on the web</b>: cells wrap inside their column, <code>[ ]</code> boxes tick with a click, and a table pasted from a web page, a spreadsheet or Markdown just works. A table wider than the text spills out of the column, centered, or stays in it if you prefer. Grips take a column, a row or the whole table; drag one to move it, click a + to insert there. Right click for the rest: duplicate, delete, sort, swap rows and columns. A table of 300,000 rows still opens in about 40 ms.</li>
-    <li><b>Formulas in tables</b>: a cell that starts with <code>=</code> computes (<code>=B*C</code>, <code>=sum(above)</code>, <code>=avg(B1:B9)</code>, <code>=if(…)</code>); the cell shows the result, the file keeps the formula, completion helps to write it and <code>Alt + =</code> writes a total.</li>
-    <li><b>Embedded sections</b>: <code>![[Note#Heading]]</code> alone on a line shows that section of another note in place, live, in a frame with its source's name; a click opens it, and renaming the note or the heading rewrites the embeds.</li>
-    <li><b>Several cursors</b>: <code>Ctrl + D</code> takes the next occurrence, <code>Alt + click</code> adds a cursor; type once, change every place.</li>
-    <li><b>Links with a readable text</b>: <code>[text](address)</code>, made from a selection with <code>Ctrl + K</code> or by pasting an address over it; a right click in the note opens, copies or edits it.</li>
-    <li><b>Comments in the margin of your text</b>: <code>Ctrl + Shift + M</code> annotates a word or a line, kept in the note as CriticMarkup; a panel beside the note lists them, a click goes to one or resolves it, and a badge on the speech bubble counts them. In a table, a comment goes on a cell, or, from a row, column or table grip, on a line under the table.</li>
-    <li><b>Diagrams</b>: Mermaid, LaTeX, or shapes and arrows drawn on a canvas, saved as SVG in your vault. A dock at the bottom with named menus of shapes and relationships, and a bar that floats over the selection to colour, restyle and rewire it. Large diagrams and SVG files from draw.io open in a viewer that zooms and pans. Point at a picture, a formula or a diagram in a note and a button at its corner enlarges it in the same viewer. A library of the shapes of each diagram family, searched by typing, with starting points: a new class, use case or package diagram. Use case diagrams, with the extension points inside the ellipse. Package and object diagrams. Sequence diagrams: lifelines and messages placed by their order, activation bars, create and destroy, numbering, combined fragments (alt, opt, loop, par, break, critical, neg, ref) that wrap the messages selected. State machines: states, pseudostates, composite states, transitions with their guard, loops on a state. Activity diagrams: actions, decisions, forks and joins, object nodes with pins that stay on the border, swimlanes in rows or columns, interruptible regions. From Mermaid: a class, sequence or state diagram of a note becomes a canvas diagram to carry on by hand. Component and deployment diagrams: components with ports, provided and required interfaces, nodes that hold what runs on them, artifacts, «deploy» and «manifest». Right-angled arrows go around the shapes in their way. Packages, frames and swimlanes that hold shapes and move, copy and remove them together. A menu of the UML relationships (generalization, realization, dependency, aggregation, composition, association class, interfaces). Class boxes read the notation of UML: stereotypes, visibilities, static and abstract members, objects. Arrows carry a role or a multiplicity at each end. Texts of a diagram take bold, italic, underline and strike with the marks of notes. A diagram saved by a newer Bref opens read-only instead of being damaged.</li>
-    <li><b>Find and replace</b>: <code>Ctrl + F</code> highlights every match in the note, <code>Ctrl + H</code> replaces one or all, with case and whole-word options.</li>
-    <li><b>Outline</b>: <code>Ctrl + Shift + O</code> lists the headings of the note; move through them to preview each section, Enter to go there.</li>
-    <li><b>Word count</b>: words and characters at the bottom of the note, or those of the selection.</li>
-  </ul>
-  <h3>Linking and organizing</h3>
-  <ul>
-    <li><b>Links and graph</b>: <code>[[links]]</code>, <code>#tags</code>, renames that rewrite your links, backlinks to the open note, and a graph of your notes.</li>
-    <li><b>Daily note</b>: <code>Ctrl + J</code> opens the note of the day, named after the date, or creates it. <code>/date</code> writes the date.</li>
-    <li><b>Days at your fingertips</b>: <code>@tomorrow</code>, <code>@monday</code> or <code>@2026-10-09</code> insert a link to the daily note of that day.</li>
-    <li><b>A calendar of your daily notes</b>: one month beside the note, the days you wrote stand out, a click opens or creates the note of a day.</li>
-    <li><b>Capture in one line</b>: one shortcut of your desktop, set up from the palette (<code>Super + Shift + N</code> on GNOME), opens a single line: type, <code>Enter</code>, it is in today's note and the window is gone.</li>
-    <li><b>A blank page that remembers</b>: an empty note shows today's date, the keys that matter and what to read again: the daily notes of a week, a month and a year ago, and one old note a day.</li>
-    <li><b>Kanban boards</b>: a note shown as columns of cards you drag around; underneath, still headings and tasks in plain Markdown.</li>
-    <li><b>A folder or a tag as a table</b>: its notes listed with the keys of their front matter as columns; sort with a click, filter as you type, and rewrite a cell to change that key in the note.</li>
-    <li><b>Icons on notes and folders</b>: forty drawn icons to tell a long tree apart at a glance; they follow renames and travel with the vault.</li>
-    <li><b>Two panes side by side</b>: <code>Ctrl + \</code> opens a second pane; write a note while reading another, or keep a table next to it. Drag a file from the tree onto the pane where you want it.</li>
-    <li><b>Back and forward</b>: <code>Alt + Left</code> and <code>Alt + Right</code>, or the side buttons of the mouse, walk through what you opened and land on the same line.</li>
-  </ul>
-  <h3>Finding</h3>
-  <ul>
-    <li><b>Search inside your notes</b>: the palette finds a note by its name, then by any words in its text, and shows the line that matched. <code>Ctrl + Shift + F</code> lists every matching line of the vault.</li>
-    <li><b>Replace across the vault</b>: plain text or regular expressions, the count shown before anything is written, and one command to undo it all.</li>
-    <li><b>Blocks you can take</b>: a grip left of the line under the pointer moves its block, a click opens its menu (turn into a heading, a list, a quote, code; duplicate, delete), and <code>+</code> adds a block under it.</li>
-    <li><b>Keyboard first</b>: one palette to find notes, tables, pictures and commands, create and switch. No toolbar, no save button; pointing at an icon names it, with its shortcut.</li>
-    <li><b>Nothing hidden</b>: <code>F10</code> opens the command palette, every command the view can do with its icon, short name and keys, those of what you are on first; the bar of a CSV table shows the gestures of the selected rows or columns.</li>
-    <li><b>Shortcuts you can change</b>: the help panel searches every shortcut as you type and lets you give any of them other keys; one already in use says by what, and is only taken when you ask. Menus show the shortcut of each action.</li>
-  </ul>
-  <h3>Your files</h3>
-  <ul>
-    <li><b>Plain files</b>: one <code>.md</code> per note, plus your <code>.csv</code> and <code>.tsv</code>. Sync with git, or keep the vault in iCloud, Dropbox, Google Drive or Syncthing; a folder of Markdown notes you already have works as is, front matter included (its tags and aliases are read).</li>
-    <li><b>CSV and TSV</b>: opened in a grid, with columns you insert, move, delete and a sort on any column, undone byte for byte, delimiter and encoding detected or chosen, selection by keyboard or mouse (<code>Shift + Space</code> a row, <code>Ctrl + Space</code> a column, as in a spreadsheet), copy, paste and export (TSV, CSV, Markdown, JSON), written straight into the file. A million rows are parsed in under a tenth of a second.</li>
-    <li><b>Follows your folder</b>: notes added, renamed or changed by another program or a sync tool show up in about half a second, without restarting.</li>
-    <li><b>Sync in one action</b>: <code>Ctrl + Shift + S</code> commits, receives, merges and sends a vault kept in git, in the background; a real conflict keeps both versions as two notes, never as markers in your text.</li>
-    <li><b>Backup in one command</b>: the palette writes a dated archive of the whole vault where you choose.</li>
-    <li><b>A trash you can undo</b>: nothing is deleted; the palette lists the trash of the vault and puts a note back.</li>
-    <li><b>A terminal one command away</b>: the palette opens the terminal of your system in the folder of the vault.</li>
-  </ul>
-  <h3>The app</h3>
-  <ul>
-    <li><b>Opens instantly</b>: the window is on screen in about 75 ms on the author's machine.</li>
-    <li><b>Stays fast as it grows</b>: a keystroke costs about a millisecond of work, in a short note as in one of 5,000 lines; the palette opens in 4 ms on a vault of 5,000 notes, in 11 ms on 20,000. <a href="https://github.com/alarboulletmarin/bref#speed">Every figure, and how to measure it</a>.</li>
-    <li><b>Quiet status messages</b>: what just happened, or failed, shows in a corner and leaves after four seconds or on a click.</li>
-    <li><b>Keeps itself current</b>: a banner says when a new version is out. On Windows, macOS and Arch, one click installs it and restarts Bref. It can be turned off.</li>
-    <li><b>Yours to dress</b>: a dozen themes, each one readable (links and secondary text at WCAG AA contrast), IBM Plex built in so nothing to install (or any font you have), the width of the text column, English and French, following your system.</li>
-  </ul>
+    <div class="stats">
+      <div class="stat"><b>75<small>ms</small></b><span>to put the window on screen</span></div>
+      <div class="stat"><b>1<small>ms</small></b><span>of work per keystroke, even in 5,000 lines</span></div>
+      <div class="stat"><b>4<small>ms</small></b><span>to open the palette on 5,000 notes</span></div>
+      <div class="stat"><b>.md</b><span>plain files, nothing locked in</span></div>
+    </div>
+  </div>
 
-  <h2 id="install">Install</h2>
-  <h3>Arch Linux</h3>
-  <p>A prebuilt package ships with every release. No compiler needed.</p>
-<pre><code>curl -LO https://github.com/alarboulletmarin/bref/releases/latest/download/bref-x86_64.pkg.tar.zst
-sudo pacman -U ./bref-x86_64.pkg.tar.zst</code></pre>
-  <h3>macOS</h3>
-  <p>Apple Silicon and Intel, macOS 11 or later: <a href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-macos.dmg">download <code>bref-macos.dmg</code></a>, open it and drag Bref to Applications. The app is not notarized, so the first launch needs <b>Open Anyway</b> in System Settings, Privacy &amp; Security.</p>
-  <h3>Windows</h3>
-  <p>Windows 10 or 11, 64-bit: <a href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64-setup.exe">download the installer</a> (no administrator rights needed), or the <a href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64.zip">zip</a> to install nothing. The files are not signed: if SmartScreen warns, click <b>More info</b>, then <b>Run anyway</b>.</p>
-  <h3>Other Linux</h3>
-  <p>Bref is compiled on your machine, with a recent <a href="https://rustup.rs">Rust</a> (1.88 or later).</p>
-<pre><code>git clone https://github.com/alarboulletmarin/bref.git
+  <section id="features">
+    <div class="wrap">
+      <div class="head">
+        <h2 class="md">Everything to write. Nothing in the way.</h2>
+        <p>One window, one palette, one folder of files. The rest stays out of sight until you need it.</p>
+      </div>
+
+      <div class="feats">
+        <div class="feat"><h3>Styled as you type</h3><p>Headings grow, bold and links render, the markers stay visible but dimmed. The file is always plain Markdown.</p><code>## Heading</code></div>
+        <div class="feat"><h3>Plain files, your folder</h3><p>One .md per note, plus your .csv and .tsv. Sync with git, Syncthing, iCloud or Dropbox. A folder of notes you already have works as is.</p><code>vault/trip.md</code></div>
+        <div class="feat"><h3>Keyboard first</h3><p>One palette finds notes by name or text, creates, switches and runs every command. No toolbar, no save button.</p><code>Ctrl + P</code></div>
+        <div class="feat"><h3>Links and graph</h3><p>Links between notes, tags, backlinks to the open note, renames that rewrite your links, and a graph of it all.</p><code>[[Budget 2026]]</code></div>
+        <div class="feat"><h3>Tables with formulas</h3><p>Paste a table from a web page or a spreadsheet. A cell that starts with = computes, the file keeps the formula.</p><code>=sum(above)</code></div>
+        <div class="feat"><h3>Diagrams</h3><p>Mermaid, LaTeX, or shapes and arrows drawn on a canvas, UML included. Saved as SVG in your vault.</p><code>diagram.svg</code></div>
+        <div class="feat"><h3>Daily note and capture</h3><p>One key opens today's note. One shortcut of your desktop captures a line from anywhere, and the window is gone.</p><code>Ctrl + J</code></div>
+        <div class="feat"><h3>Sync in one action</h3><p>Commit, receive, merge and send a vault kept in git. A real conflict keeps both versions as two notes.</p><code>Ctrl + Shift + S</code></div>
+        <div class="feat"><h3>Yours to dress</h3><p>A dozen readable themes, light and dark, IBM Plex built in, English and French, following your system.</p><code>Dracula · Nord · Gruvbox</code></div>
+      </div>
+
+      <p class="more"><b>And also:</b> slash commands, a formatting bar, blocks you drag, templates, find and replace, several cursors, comments, embedded sections, kanban boards, a folder or a tag shown as a table, two panes, CSV and TSV in a grid, a trash you can undo.</p>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap">
+      <div class="head">
+        <h2 class="md">Install</h2>
+        <p>On first run, one click creates your vault in <code>Documents/Notes</code>, or open any folder of Markdown notes. That is the only setup.</p>
+      </div>
+
+      <div class="tabs" role="tablist" id="os-tabs">
+        <button class="tab" role="tab" data-os="windows" aria-selected="false">Windows</button>
+        <button class="tab" role="tab" data-os="macos" aria-selected="false">macOS</button>
+        <button class="tab" role="tab" data-os="linux" aria-selected="true">Linux</button>
+      </div>
+
+      <div class="panel" data-panel="windows" hidden>
+        <p>Windows 10 or 11, 64-bit. Installs for your user only, no administrator rights needed.</p>
+        <p><a class="btn primary" href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64-setup.exe">Download the installer</a>
+           &nbsp;<a href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64.zip">or the .zip</a>, to install nothing</p>
+        <p class="fine">The files are not signed. If SmartScreen shows “Windows protected your PC”, click <b>More info</b>, then <b>Run anyway</b>.</p>
+      </div>
+
+      <div class="panel" data-panel="macos" hidden>
+        <p>Apple Silicon and Intel, macOS 11 or later. Open the .dmg and drag Bref to Applications.</p>
+        <p><a class="btn primary" href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-macos.dmg">Download the .dmg</a></p>
+        <p class="fine">The app is not notarized, so the first launch needs <b>Open Anyway</b> in System Settings, Privacy &amp; Security.</p>
+      </div>
+
+      <div class="panel" data-panel="linux">
+        <div class="sub-tabs" role="tablist" id="distro-tabs">
+          <button class="sub-tab" role="tab" data-distro="arch" aria-selected="true">Arch</button>
+          <button class="sub-tab" role="tab" data-distro="debian" aria-selected="false">Ubuntu, Mint, Debian</button>
+          <button class="sub-tab" role="tab" data-distro="fedora" aria-selected="false">Fedora</button>
+          <button class="sub-tab" role="tab" data-distro="other" aria-selected="false">Other</button>
+        </div>
+
+        <div data-distro-panel="arch">
+          <p>A prebuilt package ships with every release, no compiler needed. pacman then tracks it as <code>bref</code>.</p>
+          <div class="code"><pre><code>curl -LO https://github.com/alarboulletmarin/bref/releases/latest/download/bref-x86_64.pkg.tar.zst
+sudo pacman -U ./bref-x86_64.pkg.tar.zst</code></pre></div>
+        </div>
+
+        <div data-distro-panel="debian" hidden>
+          <p>Bref is compiled on your machine. Install the libraries, <a href="https://rustup.rs">Rust</a> (the one from apt is usually too old), then build.</p>
+          <div class="code"><pre><code>sudo apt install build-essential pkg-config libfontconfig-dev libfreetype-dev \
+  libwayland-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan1 \
+  fonts-noto-color-emoji
+git clone https://github.com/alarboulletmarin/bref.git
 cd bref
-cargo install --path . --locked</code></pre>
-  <div class="panel"><b>[!TIP]</b>Bref tells you when a new version is out. Where it can, the banner offers <b>Update</b>: the Windows installer, the macOS app and the Arch package are replaced and Bref restarts. Elsewhere it links here. Type <code>updates</code> in the palette to check right away, or to stop the daily check.</div>
-  <div class="panel"><b>[!NOTE]</b>Linux needs a few system libraries and a Vulkan driver. <a href="https://github.com/alarboulletmarin/bref#install">Steps for each system</a>, including compiling on macOS and Windows.</div>
+make
+sudo make install</code></pre></div>
+        </div>
 
-  <h2 id="docs">Documentation</h2>
-  <p>On first run, one click creates your vault, the folder that holds your notes, in <code>Documents/Notes</code>; or open any folder of Markdown notes. That is the only setup. The essentials, <code>Cmd</code> instead of <code>Ctrl</code> on macOS:</p>
-<pre class="table"><i>|</i> <b>Key</b>                <i>|</i> <b>Action</b>                                         <i>|</i>
-<i>| ------------------ | ---------------------------------------------- |</i>
-<i>|</i> Ctrl + P           <i>|</i> find by name or text, create, filter by #tag   <i>|</i>
-<i>|</i> Ctrl + N           <i>|</i> new note                                       <i>|</i>
-<i>|</i> /                  <i>|</i> insert a heading, list, panel, code or table   <i>|</i>
-<i>|</i> Ctrl + E R G T     <i>|</i> tree, recent, graph, tags                      <i>|</i>
-<i>|</i> Ctrl + Shift + D   <i>|</i> new diagram                                    <i>|</i>
-<i>|</i> Ctrl + K           <i>|</i> link: [text](address) from the selection       <i>|</i>
-<i>|</i> F1                 <i>|</i> every shortcut, inside the app; type to search <i>|</i></pre>
-  <p>The README covers the rest:
-    <a class="wiki" href="https://github.com/alarboulletmarin/bref#using-bref">shortcuts</a>
-    <a class="wiki" href="https://github.com/alarboulletmarin/bref#navigation">navigation</a>
-    <a class="wiki" href="https://github.com/alarboulletmarin/bref#markdown">markdown</a>
-    <a class="wiki" href="https://github.com/alarboulletmarin/bref#diagrams">diagrams</a>
-    <a class="wiki" href="https://github.com/alarboulletmarin/bref#notes-and-vault">vault</a>
-    <a class="wiki" href="https://github.com/alarboulletmarin/bref#troubleshooting">troubleshooting</a></p>
+        <div data-distro-panel="fedora" hidden>
+          <p>Same steps as Debian, with these packages. Install <a href="https://rustup.rs">Rust</a> too.</p>
+          <div class="code"><pre><code>sudo dnf install gcc pkgconf-pkg-config fontconfig-devel freetype-devel \
+  wayland-devel libxcb-devel libxkbcommon-devel libxkbcommon-x11-devel vulkan-loader \
+  google-noto-color-emoji-fonts
+git clone https://github.com/alarboulletmarin/bref.git
+cd bref
+make
+sudo make install</code></pre></div>
+        </div>
 
-  <h2 id="releases">Releases</h2>
-  <div id="release-list"><p><a class="wiki" href="https://github.com/alarboulletmarin/bref/releases">Releases on GitHub</a></p></div>
+        <div data-distro-panel="other" hidden>
+          <p>You need the development files of fontconfig, freetype, Wayland, libxcb and libxkbcommon, a Vulkan driver, an emoji font and <a href="https://rustup.rs">Rust</a> 1.88 or later.</p>
+          <div class="code"><pre><code>git clone https://github.com/alarboulletmarin/bref.git
+cd bref
+make
+sudo make install</code></pre></div>
+        </div>
 
-  <hr>
-  <footer>
-    <span>MIT</span>
-    <a class="wiki" href="https://github.com/alarboulletmarin/bref">Source</a>
-    <a class="wiki" href="https://github.com/alarboulletmarin/bref/issues">Issues</a>
-    <a class="wiki" href="https://ko-fi.com/T6T01WC5ZC">Ko-fi</a>
-  </footer>
+        <p class="fine">With <code>make install</code>, Bref adds the <code>bref</code> command, an application menu entry and its icon; <code>sudo make uninstall</code> removes them. <a href="https://github.com/alarboulletmarin/bref#install">Full steps for each system</a>.</p>
+      </div>
+
+      <p class="fine">Bref tells you when a new version is out. On Windows, macOS and Arch, one click updates it.</p>
+    </div>
+  </section>
+
+  <section id="releases">
+    <div class="wrap">
+      <div class="head"><h2 class="md">Releases</h2></div>
+      <div id="release-list"><p><a href="https://github.com/alarboulletmarin/bref/releases">Releases on GitHub →</a></p></div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <footer>
+      <a class="brand" href="#"><img src="icon.svg" alt="">Bref</a>
+      <span style="margin-right:auto">MIT licence</span>
+      <a href="https://github.com/alarboulletmarin/bref#using-bref">Docs</a>
+      <a href="https://github.com/alarboulletmarin/bref">Source</a>
+      <a href="https://github.com/alarboulletmarin/bref/issues">Issues</a>
+      <a href="https://ko-fi.com/T6T01WC5ZC">Ko-fi</a>
+    </footer>
+  </div>
 </main>
 
 <script>
-// Copy button on each code block, as in the app.
+// Copy button on each code block.
 const COPY = '<svg viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.5"/></svg>';
-for (const pre of document.querySelectorAll("pre:not(.table)")) {
-  const wrap = document.createElement("div");
-  wrap.className = "code"; pre.replaceWith(wrap); wrap.append(pre);
+for (const wrap of document.querySelectorAll(".code")) {
+  const pre = wrap.querySelector("pre");
   const b = document.createElement("button");
   b.className = "copy"; b.title = "Copy"; b.setAttribute("aria-label", "Copy"); b.innerHTML = COPY;
   b.onclick = () => navigator.clipboard.writeText(pre.textContent).then(() => { b.style.color = "var(--accent)"; setTimeout(() => b.style.color = "", 900); });
   wrap.append(b);
 }
 
+// Install tabs: one per system, with the Linux distributions inside the Linux tab.
+function pick(buttons, attr, panels, panelAttr, value) {
+  for (const b of buttons) b.setAttribute("aria-selected", String(b.dataset[attr] === value));
+  for (const p of panels) p.hidden = p.getAttribute(panelAttr) !== value;
+}
+const osTabs = [...document.querySelectorAll("#os-tabs .tab")];
+const osPanels = [...document.querySelectorAll("[data-panel]")];
+const distroTabs = [...document.querySelectorAll("#distro-tabs .sub-tab")];
+const distroPanels = [...document.querySelectorAll("[data-distro-panel]")];
+osTabs.forEach(t => t.onclick = () => pick(osTabs, "os", osPanels, "data-panel", t.dataset.os));
+distroTabs.forEach(t => t.onclick = () => pick(distroTabs, "distro", distroPanels, "data-distro-panel", t.dataset.distro));
+
+// Open on the visitor's system, and point the main button at its download.
+(() => {
+  const ua = navigator.userAgent;
+  const rel = "https://github.com/alarboulletmarin/bref/releases/latest/download/";
+  const os = /Windows/i.test(ua) ? "windows" : /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua) ? "macos" : /Linux/i.test(ua) && !/Android/i.test(ua) ? "linux" : null;
+  if (!os) return;
+  pick(osTabs, "os", osPanels, "data-panel", os);
+  const dl = document.getElementById("dl");
+  if (os === "windows") { dl.href = rel + "bref-windows-x86_64-setup.exe"; dl.textContent = "Download for Windows"; }
+  if (os === "macos") { dl.href = rel + "bref-macos.dmg"; dl.textContent = "Download for macOS"; }
+  if (os === "linux") dl.textContent = "Install on Linux";
+})();
+
 // Latest releases read from the GitHub API; without network, the static link stays.
-fetch("https://api.github.com/repos/alarboulletmarin/bref/releases?per_page=5")
+fetch("https://api.github.com/repos/alarboulletmarin/bref/releases?per_page=3")
   .then(r => r.ok ? r.json() : Promise.reject())
   .then(list => {
     if (!list.length) return;
@@ -274,7 +359,7 @@ fetch("https://api.github.com/repos/alarboulletmarin/bref/releases?per_page=5")
       t.textContent = new Date(r.published_at).toLocaleDateString("en", { dateStyle: "medium" });
       h.append(a, t);
       const ul = document.createElement("ul");
-      for (const m of (r.body || "").matchAll(/^- (.+)$/gm)) {
+      for (const m of [...(r.body || "").matchAll(/^- (.+)$/gm)].slice(0, 5)) {
         const li = document.createElement("li");
         li.textContent = m[1].replace(/^\w+: /, "");
         ul.append(li);
@@ -283,7 +368,7 @@ fetch("https://api.github.com/repos/alarboulletmarin/bref/releases?per_page=5")
       out.append(box);
     }
     const more = document.createElement("p");
-    more.innerHTML = '<a class="wiki" href="https://github.com/alarboulletmarin/bref/releases">All releases</a>';
+    more.innerHTML = '<a href="https://github.com/alarboulletmarin/bref/releases">All releases →</a>';
     out.append(more);
   })
   .catch(() => {});
