@@ -22,6 +22,14 @@ use crate::{
     ui::figure, ui::svg, lang::tr,
 };
 
+/// What the viewer asks of the window.
+pub enum ViewerEvent {
+    /// The Mermaid diagram shown, to be made a canvas diagram.
+    ToCanvas(String),
+}
+
+impl gpui::EventEmitter<ViewerEvent> for Viewer {}
+
 /// Side of a tile, in screen pixels.
 const TILE: u32 = 512;
 /// Most tiles kept in memory (4 MB each); the oldest go.
@@ -202,6 +210,13 @@ impl Viewer {
             bounds: Bounds::default(),
             tiles: VecDeque::new(),
             flying: Vec::new(),
+        }
+    }
+
+    /// Asks for the Mermaid diagram shown to become a canvas diagram; nothing for another source.
+    pub fn edit_on_canvas(&mut self, cx: &mut Context<Self>) {
+        if let Source::Mermaid(text) = &self.source {
+            cx.emit(ViewerEvent::ToCanvas(text.clone()));
         }
     }
 
@@ -463,6 +478,20 @@ impl Render for Viewer {
                     })),
             )
             .child(button("v-zoom-in", "plus.svg", false, t).tooltip(tip(tr("Zoom in", "Zoomer"), "+".into(), t)).on_click(cx.listener(|this, _, _, cx| this.zoom_by(1.25, cx))));
+        // A Mermaid class, sequence or state diagram can be carried on by hand, on the canvas.
+        let edit = matches!(&self.source, Source::Mermaid(text) if crate::logic::mermaid::kind(text).is_some()).then(|| {
+            div()
+                .absolute()
+                .top_3()
+                .left_3()
+                .p(px(2.))
+                .rounded(px(8.))
+                .bg(t.panel)
+                .border_1()
+                .border_color(t.border)
+                .occlude()
+                .child(button("v-to-canvas", "pencil.svg", false, t).tooltip(tip(tr("Edit on the canvas", "Modifier sur le canevas"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| this.edit_on_canvas(cx))))
+        });
         let note = |text: &'static str| div().absolute().inset_0().flex().items_center().justify_center().text_color(t.soft).child(text);
         let shown = self.doc.is_some() || self.picture.is_some();
         let status = match (shown, self.failed) {
@@ -535,6 +564,7 @@ impl Render for Viewer {
             }))
             .child(drawing)
             .children(status)
+            .children(edit)
             .child(zoom)
     }
 }

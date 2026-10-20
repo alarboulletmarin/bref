@@ -117,6 +117,33 @@ impl Shell {
         cx.notify();
     }
 
+    /// Shows a diagram, a formula or a picture of the note in its place.
+    pub(super) fn show_figure(&mut self, source: viewer::Source, window: &mut Window, cx: &mut Context<Self>) {
+        let theme = self.theme;
+        let figure = cx.new(|cx| viewer::Viewer::new(source, theme, cx));
+        cx.subscribe_in(&figure, window, |this, _, event, window, cx| match event {
+            viewer::ViewerEvent::ToCanvas(text) => this.mermaid_to_canvas(text, window, cx),
+        })
+        .detach();
+        window.focus(&figure.focus_handle(cx));
+        self.pane_mut().figure = Some(figure);
+        cx.notify();
+    }
+
+    /// A Mermaid diagram of a note becomes a canvas diagram, next to the note, to carry on by hand. The note is
+    /// not touched; what could not be read is counted.
+    pub(super) fn mermaid_to_canvas(&mut self, source: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let (Some(made), Some(dir)) = (logic::mermaid::to_diagram(source), self.diagram_dir().filter(|_| self.vault.is_some())) else { return };
+        let name = self.pane().path.as_deref().map(vault::stem).unwrap_or_default();
+        let name = if name.is_empty() { tr("Diagram", "Schéma").to_string() } else { format!("{name} - {}", tr("diagram", "schéma")) };
+        self.pane_mut().figure = None;
+        self.add_diagram(&dir, &name, made.diagram, window, cx);
+        if made.skipped > 0 {
+            let lines = format!("{} {}", made.skipped, if made.skipped == 1 { tr("line was not understood", "ligne n'a pas été comprise") } else { tr("lines were not understood", "lignes n'ont pas été comprises") });
+            self.say(Tone::Info, lines, cx);
+        }
+    }
+
     /// Saves `diagram` in `dir` under a free name, and opens it.
     pub(super) fn add_diagram(&mut self, dir: &Path, name: &str, diagram: Diagram, window: &mut Window, cx: &mut Context<Self>) {
         let path = vault::free_path(dir, name, "svg");

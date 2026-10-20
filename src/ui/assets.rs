@@ -202,6 +202,7 @@ impl AssetSource for Assets {
             "d-comp-component.svg" => r#"<rect x="2.5" y="3.5" width="11" height="9" rx="0.5"/><rect x="8" y="5.2" width="4.5" height="5.6" /><path d="M6 6.5H8M6 9.5H8"/>"#,
             "d-comp-node.svg" => r#"<path d="M2.5 6H11V13.5H2.5ZM2.5 6L5 3.5H13.5L11 6M13.5 3.5V11L11 13.5"/>"#,
             "d-comp-artifact.svg" => r#"<path d="M4.5 2.5H9.5L12 5V13.5H4.5ZM9.5 2.5V5H12"/>"#,
+            "pencil.svg" => r#"<path d="M3 13L3.6 10L10.8 2.8L13.2 5.2L6 12.4ZM9.4 4.2L11.8 6.6"/>"#,
             "d-fill.svg" => r#"<rect x="3" y="3" width="10" height="10" rx="1.5" fill="black" fill-opacity="0.35"/>"#,
             "d-dash.svg" => r#"<path d="M2.5 8H5M7 8H9M11 8H13.5"/>"#,
             "d-head-start.svg" => r#"<path d="M13.5 8H3M6.5 4.5L3 8L6.5 11.5"/>"#,

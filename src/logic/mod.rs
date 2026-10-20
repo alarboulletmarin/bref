@@ -9,6 +9,7 @@ pub mod formula;
 pub mod history;
 pub mod import;
 pub mod library;
+pub mod mermaid;
 pub mod markdown;
 pub mod note;
 pub mod prefs;

@@ -1019,6 +1019,56 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         fs::remove_file(&dep).unwrap();
     }
+    // From Mermaid to the canvas: the diagram shown large becomes a diagram of the vault, next to the note, which is not touched.
+    {
+        use crate::views::viewer::Source;
+        let note = shell.read_with(cx, |s, _| s.pane().path.clone());
+        let before = note.as_ref().map(|n| fs::read_to_string(n).unwrap_or_default());
+        let show = |cx: &mut gpui::VisualTestContext, text: &str| {
+            shell.update_in(cx, |s, window, cx| s.show_figure(Source::Mermaid(text.to_string()), window, cx));
+            cx.run_until_parked();
+        };
+        let ask = |cx: &mut gpui::VisualTestContext| {
+            let figure = shell.read_with(cx, |s, _| s.pane().figure.clone()).unwrap();
+            figure.update(cx, |f, cx| f.edit_on_canvas(cx));
+            cx.run_until_parked();
+        };
+        // A flowchart is not one of the three: nothing is made, and the figure stays.
+        let files = |root: &Path| fs::read_dir(root).unwrap().count();
+        let root = shell.read_with(cx, |s, _| s.vault.clone().unwrap());
+        let count = files(&root);
+        show(cx, "flowchart LR\nA --> B");
+        ask(cx);
+        assert!(shell.read_with(cx, |s, _| s.pane().figure.is_some() && s.pane().drawing().is_none()));
+        assert_eq!(files(&root), count);
+        // A sequence diagram, one line of which is not understood.
+        show(cx, "sequenceDiagram\nA->>B: hi\nB-->>A: ho\nNote over A,B: x");
+        ask(cx);
+        let (path, canvas, figure) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned(), s.pane().drawing().cloned(), s.pane().figure.is_some()));
+        let (path, canvas) = (path.unwrap(), canvas.unwrap());
+        assert!(!figure, "the diagram takes the figure's place");
+        let d = canvas.read_with(cx, |c, _| c.diagram().clone());
+        assert_eq!((d.shapes.len(), d.messages().len()), (2, 2));
+        assert_eq!(d.shapes[0].text, "A");
+        assert!(path.starts_with(&root) && path.extension().is_some_and(|e| e == "svg") && path.file_name().unwrap().to_string_lossy().contains(tr("diagram", "schéma")), "{path:?}");
+        assert_eq!(Diagram::from_svg(&fs::read_to_string(&path).unwrap()).unwrap(), d);
+        assert_eq!(files(&root), count + 1);
+        // What was not understood is said: one line.
+        assert!(shell.read_with(cx, |s, _| s.toasts.iter().any(|t| t.text.starts_with("1 ") && t.text.contains(tr("not understood", "pas été comprise")))));
+        // The same again makes a second file under another name: nothing is overwritten.
+        show(cx, "sequenceDiagram\nA->>B: hi\nB-->>A: ho");
+        ask(cx);
+        let second = shell.read_with(cx, |s, _| s.pane().file_path().cloned()).unwrap();
+        assert_ne!(second, path);
+        assert_eq!(files(&root), count + 2);
+        fs::remove_file(&second).unwrap();
+        if let Some(note) = &note {
+            assert_eq!(&fs::read_to_string(note).unwrap_or_default(), before.as_ref().unwrap());
+        }
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&path).unwrap();
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));
