@@ -1069,6 +1069,33 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         fs::remove_file(&path).unwrap();
     }
+    // A picture or a diagram selected in the tree is not a folder: what is created from the tree goes beside it, not "inside" it.
+    {
+        let root = shell.read_with(cx, |s, _| s.vault.clone().unwrap());
+        let drawing = root.join("Dessin choisi.svg");
+        fs::write(&drawing, Diagram::blank().to_svg(diagram::COLORS[0])).unwrap();
+        let before: std::collections::HashSet<_> = fs::read_dir(&root).unwrap().flatten().map(|e| e.path()).collect();
+        shell.update_in(cx, |s, window, cx| {
+            s.nav.sel = Some(drawing.clone());
+            s.nav.mode = crate::views::nav::Mode::Tree;
+            s.nav.panel = crate::views::nav::Panel::Split;
+            s.new_diagram(window, cx);
+        });
+        cx.run_until_parked();
+        let made: Vec<_> = fs::read_dir(&root).unwrap().flatten().map(|e| e.path()).filter(|p| !before.contains(p)).collect();
+        assert!(made.len() == 1 && made[0].extension().is_some_and(|e| e == "svg") && made[0].is_file(), "{made:?}");
+        // The same for a new note.
+        shell.update_in(cx, |s, window, cx| {
+            s.nav.sel = Some(drawing.clone());
+            s.new_note_in(s.nav.target_dir(), window, cx);
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&drawing).unwrap();
+        fs::remove_file(&made[0]).unwrap();
+        shell.update(cx, |s, _| s.nav.sel = None);
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

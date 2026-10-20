@@ -293,13 +293,14 @@ impl Nav {
         if self.panel == Panel::Rail || self.mode != Mode::Tree {
             return None;
         }
-        let sel = self.sel.as_ref()?;
-        if sel.extension().is_some_and(|e| e == "md") {
-            sel.parent().map(Path::to_path_buf)
-        } else {
-            Some(sel.clone())
-        }
+        folder_of(self.sel.as_ref()?)
     }
+}
+
+/// The folder a new file goes in when `sel` is selected in the tree: itself if it is a folder, otherwise the
+/// folder it is in (a note, a picture, a diagram, a table: none of them can hold a file).
+pub fn folder_of(sel: &Path) -> Option<PathBuf> {
+    if sel.is_dir() { Some(sel.to_path_buf()) } else { sel.parent().map(Path::to_path_buf) }
 }
 
 /// Visible rows of the tree: folders first, then notes, in alphabetical
@@ -428,7 +429,28 @@ pub fn reveal_label() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::SystemTime;
+    use std::{fs, time::SystemTime};
+
+    #[test]
+    fn a_file_selected_in_the_tree_is_not_a_folder() {
+        let root = std::env::temp_dir().join(format!("bref-nav-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("Dossier.v2")).unwrap();
+        for file in ["note.md", "schéma.svg", "photo.png", "table.csv", "sans extension", "Dossier.v2/dedans.md"] {
+            fs::write(root.join(file), "").unwrap();
+        }
+        // A folder is its own target, even with a dot in its name; every file gives the folder it is in.
+        assert_eq!(folder_of(&root.join("Dossier.v2")), Some(root.join("Dossier.v2")));
+        assert_eq!(folder_of(&root), Some(root.clone()));
+        for file in ["note.md", "schéma.svg", "photo.png", "table.csv", "sans extension"] {
+            assert_eq!(folder_of(&root.join(file)), Some(root.clone()), "{file}");
+        }
+        assert_eq!(folder_of(&root.join("Dossier.v2/dedans.md")), Some(root.join("Dossier.v2")));
+        // What is not there any more (removed outside) is looked for beside, never inside; the root of the disk is its own folder.
+        assert_eq!(folder_of(&root.join("disparu.svg")), Some(root.clone()));
+        assert_eq!(folder_of(Path::new("/")), Some(PathBuf::from("/")));
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn builds_tree_rows() {
