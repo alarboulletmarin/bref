@@ -15,216 +15,134 @@
   --bg: #fbfaf8; --text: #26231f; --dim: #a8a29a; --accent: #b4532a;
   --code: #f1eeea; --panel: #ffffff; --border: #e2ddd6;
   --soft: color-mix(in srgb, var(--text) 62%, var(--bg));
-  --glow: color-mix(in srgb, var(--accent) 16%, transparent);
-  --on-accent: #fff;
-  --shadow: 0 1px 2px rgba(38,35,31,.05), 0 12px 40px -12px rgba(38,35,31,.18);
-  --radius: 16px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #1b1a19; --text: #e4e0da; --dim: #77716a; --accent: #e0926b;
     --code: #262423; --panel: #242221; --border: #3a3735;
-    --on-accent: #1b1a19;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 40px -12px rgba(0,0,0,.6);
   }
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
-  font: 16px/1.6 Inter, "Noto Sans", "Segoe UI", "Helvetica Neue", sans-serif;
+  font: 16px/1.65 Inter, "Noto Sans", "Segoe UI", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-code, pre, kbd { font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: .86em; }
+code, pre, kbd, .mono { font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: .86em; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 3px; }
-.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
-section { padding: 96px 0 0; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+section { padding-top: 112px; }
+
+/* Markdown markers stay visible, faded, as in the editor. */
+.md::before { color: var(--dim); font-weight: 400; margin-right: .35em; }
+h2.md::before { content: "##"; }
 
 /* Top bar */
-header.top {
-  position: sticky; top: 0; z-index: 10;
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid transparent;
-}
-header.top .wrap { display: flex; align-items: center; gap: 28px; height: 64px; }
-.brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 650; font-size: 1.05rem; margin-right: auto; }
+header.top { position: sticky; top: 0; z-index: 10; background: var(--bg); border-bottom: 1px solid var(--border); }
+header.top .wrap { display: flex; align-items: center; gap: 28px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 650; margin-right: auto; }
 .brand:hover { text-decoration: none; }
-.brand img { width: 26px; height: 26px; }
-header.top nav { display: flex; gap: 26px; font-size: .92rem; }
+.brand img { width: 24px; height: 24px; }
+header.top nav { display: flex; gap: 24px; font-size: .9rem; }
 header.top nav a { color: var(--soft); }
 header.top nav a:hover { color: var(--text); text-decoration: none; }
 
 /* Buttons */
 .btn {
-  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px;
-  border-radius: 10px; font: inherit; font-size: .95rem; font-weight: 600; cursor: pointer;
-  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  display: inline-flex; align-items: center; height: 42px; padding: 0 18px;
+  border-radius: 6px; font: inherit; font-size: .93rem; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text);
 }
-.btn:hover { text-decoration: none; border-color: var(--dim); }
-.btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
-.btn.primary:hover { opacity: .88; }
-.btn.small { height: 36px; padding: 0 14px; font-size: .88rem; }
-
-/* Little labels, like the "USE CASES" chip of the inspiration */
-.chip {
-  display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 8px;
-  border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
-  font-size: .72rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase;
-}
-.chip i { width: 16px; height: 16px; border-radius: 5px; background: var(--accent); display: block; }
+.btn:hover { text-decoration: none; border-color: var(--soft); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { .btn.primary { color: #1b1a19; } }
+.btn.primary:hover { filter: brightness(1.06); }
 
 /* Hero */
-.hero {
-  position: relative; text-align: center; padding: 88px 0 0;
-  background:
-    radial-gradient(60% 55% at 50% 0%, var(--glow), transparent 70%),
-    radial-gradient(40% 40% at 90% 30%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%);
-}
-.hero h1 {
-  margin: 22px auto 0; max-width: 14ch; font-size: clamp(2.6rem, 7vw, 4.6rem);
-  line-height: 1.04; letter-spacing: -.035em; font-weight: 700;
-}
-.hero h1 em { font-style: normal; color: var(--accent); }
-.hero p.sub { margin: 22px auto 0; max-width: 46ch; font-size: 1.15rem; color: var(--soft); }
-.cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 32px; }
-.os { margin: 16px 0 0; font-size: .85rem; color: var(--dim); }
-
-.shot { margin: 56px auto 0; padding: 10px; border: 1px solid var(--border); border-radius: 22px; background: color-mix(in srgb, var(--panel) 60%, transparent); box-shadow: var(--shadow); max-width: 1040px; }
-.shot img { display: block; width: 100%; height: auto; border-radius: 14px; }
+.hero { padding-top: 80px; }
+.hero h1 { margin: 0; max-width: 15ch; font-size: clamp(2.6rem, 6.5vw, 4.4rem); line-height: 1.05; letter-spacing: -.04em; font-weight: 700; }
+.hero .sub { margin: 24px 0 0; max-width: 48ch; font-size: 1.2rem; color: var(--soft); }
+.cta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-top: 32px; }
+.cta .os { font-size: .85rem; color: var(--dim); }
+.shot { margin: 64px 0 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.shot img { display: block; width: 100%; height: auto; }
 
 /* Numbers */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 72px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-.stat { padding: 28px 24px; border-left: 1px solid var(--border); }
-.stat:first-child { border-left: 0; padding-left: 0; }
-.stat b { display: block; font-size: 2.1rem; line-height: 1.1; letter-spacing: -.03em; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 56px; border-top: 1px solid var(--border); }
+.stat { padding: 24px 24px 0 0; }
+.stat b { display: block; font-size: 1.9rem; line-height: 1.1; letter-spacing: -.03em; }
 .stat b small { font-size: .5em; font-weight: 600; color: var(--soft); margin-left: 3px; letter-spacing: 0; }
-.stat span { display: block; margin-top: 6px; font-size: .88rem; color: var(--soft); }
+.stat span { display: block; margin-top: 6px; font-size: .88rem; color: var(--soft); max-width: 22ch; }
 
 /* Section heads */
-.head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 20px 48px; }
-.head h2 { margin: 18px 0 0; font-size: clamp(1.9rem, 4vw, 2.7rem); line-height: 1.1; letter-spacing: -.03em; max-width: 16ch; }
-.head p { margin: 0; max-width: 36ch; color: var(--soft); text-align: right; }
-.head > div { flex: 1 1 320px; }
+.head h2 { margin: 0; font-size: clamp(1.8rem, 3.6vw, 2.4rem); line-height: 1.15; letter-spacing: -.03em; max-width: 20ch; }
+.head p { margin: 14px 0 0; max-width: 52ch; color: var(--soft); }
 
-/* Cards */
-.grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 44px; }
-.card {
-  grid-column: span 2; display: flex; flex-direction: column; overflow: hidden;
-  border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel);
-}
-.card.w3 { grid-column: span 3; }
-.card .art {
-  height: 190px; padding: 22px; overflow: hidden; position: relative;
-  background:
-    radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0) 0 0 / 16px 16px,
-    var(--bg);
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: center;
-}
-.card .txt { padding: 20px 22px 24px; }
-.card h3 { margin: 0 0 6px; font-size: 1.02rem; letter-spacing: -.01em; }
-.card p { margin: 0; font-size: .9rem; color: var(--soft); }
-
-/* Mini illustrations */
-.mini {
-  width: 100%; max-width: 300px; background: var(--panel); border: 1px solid var(--border);
-  border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); font-size: .82rem; line-height: 1.7;
-}
-.mini .m { color: var(--dim); }
-.mini .h { font-weight: 700; font-size: 1.05rem; }
-.mini .lnk { color: var(--accent); }
-.mini .done { color: var(--soft); text-decoration: line-through; }
-.mini .hl { background: color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 3px; padding: 0 2px; }
-.files { font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: .78rem; line-height: 1.9; }
-.files div { display: flex; align-items: center; gap: 8px; }
-.files .ext { color: var(--accent); }
-.files .d { color: var(--dim); }
-.tbl { width: 100%; border-collapse: collapse; font-size: .78rem; }
-.tbl th, .tbl td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
-.tbl th { background: var(--code); }
-.tbl td.r, .tbl th.r { text-align: right; }
-.tbl .f { color: var(--accent); font-weight: 600; }
-.nodes { position: relative; width: 100%; max-width: 280px; height: 130px; }
-.node { position: absolute; padding: 6px 12px; border: 1.5px solid var(--text); border-radius: 8px; background: var(--panel); font-size: .78rem; font-weight: 600; }
-.node.a { left: 0; top: 8px; } .node.b { right: 0; top: 8px; border-color: var(--accent); color: var(--accent); }
-.node.c { left: 50%; bottom: 0; transform: translateX(-50%); }
-.nodes svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.nodes path { fill: none; stroke: var(--dim); stroke-width: 1.5; }
-.keys { display: flex; flex-wrap: wrap; gap: 8px 10px; justify-content: center; max-width: 300px; }
-.key { display: inline-flex; align-items: center; gap: 4px; font-size: .78rem; color: var(--soft); }
-kbd {
-  display: inline-block; min-width: 24px; padding: 2px 7px; text-align: center;
-  border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px;
-  background: var(--panel); color: var(--text); font-size: .76rem;
-}
-.pal { width: 100%; max-width: 300px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); font-size: .8rem; overflow: hidden; }
-.pal .q { padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--dim); }
-.pal .q b { color: var(--text); font-weight: 500; }
-.pal .row { display: flex; justify-content: space-between; padding: 7px 12px; color: var(--soft); }
-.pal .row.on { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text); }
-.pal .row kbd { font-size: .68rem; min-width: 0; padding: 0 5px; }
-
-/* More, in one calm list */
-.more { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px 40px; margin-top: 56px; }
-.more h4 { margin: 0 0 8px; font-size: .74rem; letter-spacing: .08em; text-transform: uppercase; color: var(--soft); }
-.more ul { list-style: none; margin: 0; padding: 0; }
-.more li { padding: 5px 0; font-size: .92rem; border-top: 1px solid var(--border); }
+/* Features: hairlines, no boxes */
+.feats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 48px; border-top: 1px solid var(--border); }
+.feat { padding: 28px 28px 32px 0; border-bottom: 1px solid var(--border); }
+.feat:not(:nth-child(3n+1)) { padding-left: 28px; border-left: 1px solid var(--border); }
+.feat h3 { margin: 0 0 8px; font-size: 1.05rem; letter-spacing: -.01em; }
+.feat p { margin: 0; font-size: .93rem; color: var(--soft); }
+.feat code { display: inline-block; margin-top: 14px; padding: 2px 8px; background: var(--code); border-radius: 4px; color: var(--text); font-size: .8rem; }
+.more { margin: 40px 0 0; font-size: .93rem; color: var(--soft); max-width: 70ch; }
+.more b { color: var(--text); font-weight: 600; }
 
 /* Install */
-.os-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 44px; }
-.os-card { min-width: 0; display: flex; flex-direction: column; padding: 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
-.os-card.me { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
-.os-card h3 { margin: 0 0 4px; font-size: 1.05rem; }
-.os-card p { margin: 0 0 18px; font-size: .88rem; color: var(--soft); flex: 1; }
-.os-card .btn { justify-content: center; }
-.os-card .code { position: relative; }
-.os-card pre { margin: 0; padding: 12px 40px 12px 12px; background: var(--code); border-radius: 8px; overflow-x: auto; font-size: .74rem; line-height: 1.6; }
-button.copy {
-  position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; padding: 0;
-  background: none; border: 0; border-radius: 6px; color: var(--dim); cursor: pointer;
+.tabs { display: flex; gap: 4px; margin-top: 40px; border-bottom: 1px solid var(--border); }
+.tab {
+  padding: 10px 16px; margin-bottom: -1px; font: inherit; font-size: .93rem; font-weight: 600; color: var(--soft);
+  background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer;
 }
-button.copy:hover { background: var(--border); color: var(--text); }
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.panel { padding-top: 28px; max-width: 720px; }
+.panel[hidden], [data-distro-panel][hidden] { display: none; }
+.panel p { margin: 0 0 18px; color: var(--soft); }
+.panel p b { color: var(--text); }
+.sub-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; }
+.sub-tab { padding: 5px 12px; font: inherit; font-size: .85rem; color: var(--soft); background: none; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; }
+.sub-tab:hover { color: var(--text); border-color: var(--soft); }
+.sub-tab[aria-selected="true"] { color: var(--text); background: var(--code); border-color: var(--dim); }
+.code { position: relative; margin: 0 0 18px; }
+.code pre { margin: 0; padding: 14px 48px 14px 16px; background: var(--code); border: 1px solid var(--border); border-radius: 6px; overflow-x: auto; font-size: .8rem; line-height: 1.7; }
+button.copy { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; padding: 0; background: var(--code); border: 0; border-radius: 6px; color: var(--dim); cursor: pointer; }
+button.copy:hover { color: var(--text); }
 button.copy svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-.note { margin: 20px 0 0; font-size: .88rem; color: var(--soft); }
+.fine { margin: 24px 0 0; font-size: .88rem; color: var(--soft); max-width: 70ch; }
+.panel .fine { margin-top: 0; }
 
 /* Releases */
-.release { padding: 18px 0; border-top: 1px solid var(--border); display: grid; grid-template-columns: 160px 1fr; gap: 6px 24px; }
+#release-list { margin-top: 36px; border-top: 1px solid var(--border); }
+#release-list > p { margin: 16px 0 0; }
+.release { padding: 20px 0; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 160px 1fr; gap: 6px 24px; }
 .release h3 { margin: 0; font-size: 1rem; }
 .release time { display: block; color: var(--soft); font-weight: 400; font-size: .82rem; margin-top: 2px; }
 .release ul { margin: 0; padding-left: 1.1em; color: var(--soft); font-size: .92rem; }
 .release li { margin: 3px 0; }
-#release-list { margin-top: 36px; }
-#release-list > p { margin: 0; }
 
-/* Closing + footer */
-.end { margin-top: 96px; padding: 56px 24px; text-align: center; border: 1px solid var(--border); border-radius: 24px;
-  background: radial-gradient(70% 90% at 50% 0%, var(--glow), transparent 70%), var(--panel); }
-.end h2 { margin: 0 auto; max-width: 18ch; font-size: clamp(1.7rem, 4vw, 2.4rem); line-height: 1.12; letter-spacing: -.03em; }
-.end .cta { margin-top: 26px; }
-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding: 40px 0 48px; margin-top: 8px; color: var(--soft); font-size: .88rem; }
-footer .brand { font-size: .95rem; }
-footer .sp { margin-right: auto; }
+/* Footer */
+footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; margin-top: 112px; padding: 28px 0 40px; border-top: 1px solid var(--border); color: var(--soft); font-size: .88rem; }
+footer .brand { font-size: .95rem; margin-right: 0; }
 footer a { color: var(--soft); }
 footer a:hover { color: var(--text); }
 
 @media (max-width: 860px) {
-  .grid { grid-template-columns: repeat(2, 1fr); }
-  .card, .card.w3 { grid-column: span 1; }
-  .os-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .more { grid-template-columns: 1fr; gap: 28px; }
-  .head p { text-align: left; }
+  .feats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .feat:not(:nth-child(3n+1)) { padding-left: 0; border-left: 0; }
+  .feat:nth-child(2n) { padding-left: 28px; border-left: 1px solid var(--border); }
 }
 @media (max-width: 640px) {
-  section { padding-top: 72px; }
+  section { padding-top: 80px; }
   header.top nav a:not(.keep) { display: none; }
-  header.top .wrap { gap: 18px; }
-  .hero { padding-top: 56px; }
-  .grid, .os-grid { grid-template-columns: minmax(0, 1fr); }
+  .hero { padding-top: 48px; }
+  .shot { margin-top: 44px; }
   .stats { grid-template-columns: 1fr 1fr; }
-  .stat:nth-child(3) { border-left: 0; padding-left: 0; }
-  .stat:nth-child(n+3) { border-top: 1px solid var(--border); }
+  .stat { padding-bottom: 20px; }
+  .feats { grid-template-columns: minmax(0, 1fr); }
+  .feat, .feat:nth-child(n) { padding-left: 0; padding-right: 0; border-left: 0; }
   .release { grid-template-columns: 1fr; }
   /* Only one of the two windows of the screenshot, the one of the page's theme: readable at this width. */
   .shot img { aspect-ratio: 860 / 720; object-fit: cover; object-position: left; }
@@ -250,190 +168,137 @@ footer a:hover { color: var(--text); }
 </header>
 
 <main>
-  <div class="hero">
-    <div class="wrap">
-      <span class="chip"><i></i>Markdown notes</span>
-      <h1>Notes that open <em>before you blink.</em></h1>
-      <p class="sub">A fast, minimal note-taking app. Your notes are plain Markdown files in a folder you choose, styled as you type.</p>
-      <div class="cta">
-        <a class="btn primary" id="dl" href="#install">Download Bref</a>
-        <a class="btn" href="https://github.com/alarboulletmarin/bref">View on GitHub</a>
-      </div>
-      <p class="os" id="os-line">Free and open source · Linux, macOS and Windows</p>
+  <div class="wrap hero">
+    <h1>Notes that open before you blink.</h1>
+    <p class="sub">A fast, minimal note-taking app. Your notes are plain Markdown files in a folder you choose, styled as you type.</p>
+    <div class="cta">
+      <a class="btn primary" id="dl" href="#install">Download Bref</a>
+      <a class="btn" href="https://github.com/alarboulletmarin/bref">View on GitHub</a>
+      <span class="os">Free and open source · Linux, macOS, Windows</span>
+    </div>
 
-      <div class="shot"><img src="site/bref.png" width="1720" height="720" alt="Bref showing the same note in the light and dark themes"></div>
+    <div class="shot"><img src="site/bref.png" width="1720" height="720" alt="Bref showing the same note in the light and dark themes"></div>
 
-      <div class="stats">
-        <div class="stat"><b>75<small>ms</small></b><span>to open the window</span></div>
-        <div class="stat"><b>1<small>ms</small></b><span>of work per keystroke, even in 5,000 lines</span></div>
-        <div class="stat"><b>4<small>ms</small></b><span>to open the palette on 5,000 notes</span></div>
-        <div class="stat"><b>.md</b><span>plain files, nothing locked in</span></div>
-      </div>
+    <div class="stats">
+      <div class="stat"><b>75<small>ms</small></b><span>to put the window on screen</span></div>
+      <div class="stat"><b>1<small>ms</small></b><span>of work per keystroke, even in 5,000 lines</span></div>
+      <div class="stat"><b>4<small>ms</small></b><span>to open the palette on 5,000 notes</span></div>
+      <div class="stat"><b>.md</b><span>plain files, nothing locked in</span></div>
     </div>
   </div>
 
   <section id="features">
     <div class="wrap">
       <div class="head">
-        <div>
-          <span class="chip"><i></i>Features</span>
-          <h2>Everything to write. Nothing in the way.</h2>
-        </div>
+        <h2 class="md">Everything to write. Nothing in the way.</h2>
         <p>One window, one palette, one folder of files. The rest stays out of sight until you need it.</p>
       </div>
 
-      <div class="grid">
-        <article class="card">
-          <div class="art"><div class="mini">
-            <div class="h"><span class="m"># </span>Trip to Lisbon</div>
-            <div>Three days in <span class="m">**</span><b>May</b><span class="m">**</span>, see <span class="lnk"><span class="m">[[</span>Budget<span class="m">]]</span></span></div>
-            <div><span class="m">- [x] </span><span class="done">Flights</span></div>
-            <div><span class="m">- [ ] </span>Hotel near Alfama</div>
-          </div></div>
-          <div class="txt"><h3>Styled as you type</h3><p>Headings grow, bold and links render, the markers stay visible but dimmed. The file is always plain Markdown.</p></div>
-        </article>
-
-        <article class="card">
-          <div class="art"><div class="mini files">
-            <div><span class="d">vault/</span></div>
-            <div>&nbsp;&nbsp;trip-to-lisbon<span class="ext">.md</span></div>
-            <div>&nbsp;&nbsp;budget-2026<span class="ext">.md</span></div>
-            <div>&nbsp;&nbsp;expenses<span class="ext">.csv</span></div>
-            <div>&nbsp;&nbsp;map<span class="ext">.svg</span></div>
-          </div></div>
-          <div class="txt"><h3>Plain files, your folder</h3><p>One .md per note. Sync with git, Syncthing, iCloud or Dropbox. An existing folder of notes works as is.</p></div>
-        </article>
-
-        <article class="card">
-          <div class="art"><div class="pal">
-            <div class="q"><b>trip</b></div>
-            <div class="row on"><span>Trip to Lisbon</span><kbd>↵</kbd></div>
-            <div class="row"><span>Trip budget</span></div>
-            <div class="row"><span>New note “trip”</span><kbd>Ctrl N</kbd></div>
-          </div></div>
-          <div class="txt"><h3>Keyboard first</h3><p>One palette finds notes by name or text, creates, switches and runs every command. No toolbar, no save button.</p></div>
-        </article>
-
-        <article class="card w3">
-          <div class="art"><div class="mini" style="max-width:340px">
-            <table class="tbl">
-              <tr><th>Item</th><th class="r">Cost</th><th class="r">Qty</th><th class="r">Total</th></tr>
-              <tr><td>Hotel</td><td class="r">80 €</td><td class="r">3</td><td class="r f">=B*C</td></tr>
-              <tr><td>Train</td><td class="r">12 €</td><td class="r">2</td><td class="r f">=B*C</td></tr>
-              <tr><td><b>Sum</b></td><td></td><td></td><td class="r f">=sum(above)</td></tr>
-            </table>
-          </div></div>
-          <div class="txt"><h3>Tables with formulas</h3><p>Tables like on the web: paste from a page or a spreadsheet, wrap in cells, and start a cell with = to compute. The file keeps the formula.</p></div>
-        </article>
-
-        <article class="card w3">
-          <div class="art"><div class="nodes">
-            <svg viewBox="0 0 280 130" preserveAspectRatio="none"><path d="M90 25 H190"/><path d="M45 40 V70 Q45 100 75 100 H110"/><path d="M235 40 V70 Q235 100 205 100 H170"/></svg>
-            <div class="node a">Note</div><div class="node b">[[Link]]</div><div class="node c">Diagram</div>
-          </div></div>
-          <div class="txt"><h3>Links, graph and diagrams</h3><p>[[Links]], #tags, backlinks and a graph of your notes. Draw UML and flow diagrams on a canvas, saved as SVG in your vault.</p></div>
-        </article>
+      <div class="feats">
+        <div class="feat"><h3>Styled as you type</h3><p>Headings grow, bold and links render, the markers stay visible but dimmed. The file is always plain Markdown.</p><code>## Heading</code></div>
+        <div class="feat"><h3>Plain files, your folder</h3><p>One .md per note, plus your .csv and .tsv. Sync with git, Syncthing, iCloud or Dropbox. A folder of notes you already have works as is.</p><code>vault/trip.md</code></div>
+        <div class="feat"><h3>Keyboard first</h3><p>One palette finds notes by name or text, creates, switches and runs every command. No toolbar, no save button.</p><code>Ctrl + P</code></div>
+        <div class="feat"><h3>Links and graph</h3><p>Links between notes, tags, backlinks to the open note, renames that rewrite your links, and a graph of it all.</p><code>[[Budget 2026]]</code></div>
+        <div class="feat"><h3>Tables with formulas</h3><p>Paste a table from a web page or a spreadsheet. A cell that starts with = computes, the file keeps the formula.</p><code>=sum(above)</code></div>
+        <div class="feat"><h3>Diagrams</h3><p>Mermaid, LaTeX, or shapes and arrows drawn on a canvas, UML included. Saved as SVG in your vault.</p><code>diagram.svg</code></div>
+        <div class="feat"><h3>Daily note and capture</h3><p>One key opens today's note. One shortcut of your desktop captures a line from anywhere, and the window is gone.</p><code>Ctrl + J</code></div>
+        <div class="feat"><h3>Sync in one action</h3><p>Commit, receive, merge and send a vault kept in git. A real conflict keeps both versions as two notes.</p><code>Ctrl + Shift + S</code></div>
+        <div class="feat"><h3>Yours to dress</h3><p>A dozen readable themes, light and dark, IBM Plex built in, English and French, following your system.</p><code>Dracula · Nord · Gruvbox</code></div>
       </div>
 
-      <div class="more">
-        <div>
-          <h4>Writing</h4>
-          <ul>
-            <li>Slash commands and a formatting bar</li>
-            <li>Blocks you can drag, with a menu</li>
-            <li>Templates and a daily note</li>
-            <li>Find, replace and several cursors</li>
-            <li>Comments kept as CriticMarkup</li>
-          </ul>
-        </div>
-        <div>
-          <h4>Organizing</h4>
-          <ul>
-            <li>Embedded sections of other notes</li>
-            <li>Kanban boards in plain Markdown</li>
-            <li>A folder or a tag shown as a table</li>
-            <li>Two panes, back and forward</li>
-            <li>CSV and TSV opened in a grid</li>
-          </ul>
-        </div>
-        <div>
-          <h4>The app</h4>
-          <ul>
-            <li>Sync a git vault in one action</li>
-            <li>A dozen readable themes, light and dark</li>
-            <li>English and French</li>
-            <li>Trash you can undo, backup in one command</li>
-            <li>Updates itself, if you let it</li>
-          </ul>
-        </div>
-      </div>
+      <p class="more"><b>And also:</b> slash commands, a formatting bar, blocks you drag, templates, find and replace, several cursors, comments, embedded sections, kanban boards, a folder or a tag shown as a table, two panes, CSV and TSV in a grid, a trash you can undo.</p>
     </div>
   </section>
 
   <section id="install">
     <div class="wrap">
       <div class="head">
-        <div>
-          <span class="chip"><i></i>Install</span>
-          <h2>Ready in a minute.</h2>
-        </div>
+        <h2 class="md">Install</h2>
         <p>On first run, one click creates your vault in <code>Documents/Notes</code>, or open any folder of Markdown notes. That is the only setup.</p>
       </div>
 
-      <div class="os-grid">
-        <div class="os-card" data-os="windows">
-          <h3>Windows</h3>
-          <p>Windows 10 or 11, 64-bit. No administrator rights needed. If SmartScreen warns, click <b>More info</b>, then <b>Run anyway</b>.</p>
-          <a class="btn small primary" href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64-setup.exe">Download installer</a>
+      <div class="tabs" role="tablist" id="os-tabs">
+        <button class="tab" role="tab" data-os="windows" aria-selected="false">Windows</button>
+        <button class="tab" role="tab" data-os="macos" aria-selected="false">macOS</button>
+        <button class="tab" role="tab" data-os="linux" aria-selected="true">Linux</button>
+      </div>
+
+      <div class="panel" data-panel="windows" hidden>
+        <p>Windows 10 or 11, 64-bit. Installs for your user only, no administrator rights needed.</p>
+        <p><a class="btn primary" href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64-setup.exe">Download the installer</a>
+           &nbsp;<a href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64.zip">or the .zip</a>, to install nothing</p>
+        <p class="fine">The files are not signed. If SmartScreen shows “Windows protected your PC”, click <b>More info</b>, then <b>Run anyway</b>.</p>
+      </div>
+
+      <div class="panel" data-panel="macos" hidden>
+        <p>Apple Silicon and Intel, macOS 11 or later. Open the .dmg and drag Bref to Applications.</p>
+        <p><a class="btn primary" href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-macos.dmg">Download the .dmg</a></p>
+        <p class="fine">The app is not notarized, so the first launch needs <b>Open Anyway</b> in System Settings, Privacy &amp; Security.</p>
+      </div>
+
+      <div class="panel" data-panel="linux">
+        <div class="sub-tabs" role="tablist" id="distro-tabs">
+          <button class="sub-tab" role="tab" data-distro="arch" aria-selected="true">Arch</button>
+          <button class="sub-tab" role="tab" data-distro="debian" aria-selected="false">Ubuntu, Mint, Debian</button>
+          <button class="sub-tab" role="tab" data-distro="fedora" aria-selected="false">Fedora</button>
+          <button class="sub-tab" role="tab" data-distro="other" aria-selected="false">Other</button>
         </div>
-        <div class="os-card" data-os="macos">
-          <h3>macOS</h3>
-          <p>Apple Silicon and Intel, macOS 11 or later. Not notarized: the first launch needs <b>Open Anyway</b> in Privacy &amp; Security.</p>
-          <a class="btn small primary" href="https://github.com/alarboulletmarin/bref/releases/latest/download/bref-macos.dmg">Download .dmg</a>
-        </div>
-        <div class="os-card" data-os="arch">
-          <h3>Arch Linux</h3>
-          <p>A prebuilt package ships with every release.</p>
+
+        <div data-distro-panel="arch">
+          <p>A prebuilt package ships with every release, no compiler needed. pacman then tracks it as <code>bref</code>.</p>
           <div class="code"><pre><code>curl -LO https://github.com/alarboulletmarin/bref/releases/latest/download/bref-x86_64.pkg.tar.zst
 sudo pacman -U ./bref-x86_64.pkg.tar.zst</code></pre></div>
         </div>
-        <div class="os-card" data-os="linux">
-          <h3>Other Linux</h3>
-          <p>Compiled on your machine with Rust 1.88 or later.</p>
+
+        <div data-distro-panel="debian" hidden>
+          <p>Bref is compiled on your machine. Install the libraries, <a href="https://rustup.rs">Rust</a> (the one from apt is usually too old), then build.</p>
+          <div class="code"><pre><code>sudo apt install build-essential pkg-config libfontconfig-dev libfreetype-dev \
+  libwayland-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan1 \
+  fonts-noto-color-emoji
+git clone https://github.com/alarboulletmarin/bref.git
+cd bref
+make
+sudo make install</code></pre></div>
+        </div>
+
+        <div data-distro-panel="fedora" hidden>
+          <p>Same steps as Debian, with these packages. Install <a href="https://rustup.rs">Rust</a> too.</p>
+          <div class="code"><pre><code>sudo dnf install gcc pkgconf-pkg-config fontconfig-devel freetype-devel \
+  wayland-devel libxcb-devel libxkbcommon-devel libxkbcommon-x11-devel vulkan-loader \
+  google-noto-color-emoji-fonts
+git clone https://github.com/alarboulletmarin/bref.git
+cd bref
+make
+sudo make install</code></pre></div>
+        </div>
+
+        <div data-distro-panel="other" hidden>
+          <p>You need the development files of fontconfig, freetype, Wayland, libxcb and libxkbcommon, a Vulkan driver, an emoji font and <a href="https://rustup.rs">Rust</a> 1.88 or later.</p>
           <div class="code"><pre><code>git clone https://github.com/alarboulletmarin/bref.git
 cd bref
-cargo install --path . --locked</code></pre></div>
+make
+sudo make install</code></pre></div>
         </div>
+
+        <p class="fine">With <code>make install</code>, Bref adds the <code>bref</code> command, an application menu entry and its icon; <code>sudo make uninstall</code> removes them. <a href="https://github.com/alarboulletmarin/bref#install">Full steps for each system</a>.</p>
       </div>
-      <p class="note">Linux needs a few system libraries and a Vulkan driver: <a href="https://github.com/alarboulletmarin/bref#install">steps for each system</a>. Bref tells you when a new version is out, and on Windows, macOS and Arch one click updates it.</p>
+
+      <p class="fine">Bref tells you when a new version is out. On Windows, macOS and Arch, one click updates it.</p>
     </div>
   </section>
 
   <section id="releases">
     <div class="wrap">
-      <div class="head">
-        <div>
-          <span class="chip"><i></i>Releases</span>
-          <h2>Always getting better.</h2>
-        </div>
-        <p>The latest versions, straight from GitHub.</p>
-      </div>
+      <div class="head"><h2 class="md">Releases</h2></div>
       <div id="release-list"><p><a href="https://github.com/alarboulletmarin/bref/releases">Releases on GitHub →</a></p></div>
     </div>
   </section>
 
   <div class="wrap">
-    <div class="end">
-      <h2>Write now, think about the tool never.</h2>
-      <div class="cta">
-        <a class="btn primary" href="#install">Download Bref</a>
-        <a class="btn" href="https://github.com/alarboulletmarin/bref#using-bref">Read the docs</a>
-      </div>
-    </div>
-
     <footer>
-      <a class="brand sp" href="#"><img src="icon.svg" alt="">Bref</a>
-      <span>MIT licence</span>
+      <a class="brand" href="#"><img src="icon.svg" alt="">Bref</a>
+      <span style="margin-right:auto">MIT licence</span>
+      <a href="https://github.com/alarboulletmarin/bref#using-bref">Docs</a>
       <a href="https://github.com/alarboulletmarin/bref">Source</a>
       <a href="https://github.com/alarboulletmarin/bref/issues">Issues</a>
       <a href="https://ko-fi.com/T6T01WC5ZC">Ko-fi</a>
@@ -452,14 +317,25 @@ for (const wrap of document.querySelectorAll(".code")) {
   wrap.append(b);
 }
 
-// Point the main button at the download for the visitor's system, and mark that card.
+// Install tabs: one per system, with the Linux distributions inside the Linux tab.
+function pick(buttons, attr, panels, panelAttr, value) {
+  for (const b of buttons) b.setAttribute("aria-selected", String(b.dataset[attr] === value));
+  for (const p of panels) p.hidden = p.getAttribute(panelAttr) !== value;
+}
+const osTabs = [...document.querySelectorAll("#os-tabs .tab")];
+const osPanels = [...document.querySelectorAll("[data-panel]")];
+const distroTabs = [...document.querySelectorAll("#distro-tabs .sub-tab")];
+const distroPanels = [...document.querySelectorAll("[data-distro-panel]")];
+osTabs.forEach(t => t.onclick = () => pick(osTabs, "os", osPanels, "data-panel", t.dataset.os));
+distroTabs.forEach(t => t.onclick = () => pick(distroTabs, "distro", distroPanels, "data-distro-panel", t.dataset.distro));
+
+// Open on the visitor's system, and point the main button at its download.
 (() => {
   const ua = navigator.userAgent;
   const rel = "https://github.com/alarboulletmarin/bref/releases/latest/download/";
   const os = /Windows/i.test(ua) ? "windows" : /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua) ? "macos" : /Linux/i.test(ua) && !/Android/i.test(ua) ? "linux" : null;
   if (!os) return;
-  const card = document.querySelector('.os-card[data-os="' + os + '"]');
-  if (card) card.classList.add("me");
+  pick(osTabs, "os", osPanels, "data-panel", os);
   const dl = document.getElementById("dl");
   if (os === "windows") { dl.href = rel + "bref-windows-x86_64-setup.exe"; dl.textContent = "Download for Windows"; }
   if (os === "macos") { dl.href = rel + "bref-macos.dmg"; dl.textContent = "Download for macOS"; }
@@ -492,7 +368,6 @@ fetch("https://api.github.com/repos/alarboulletmarin/bref/releases?per_page=3")
       out.append(box);
     }
     const more = document.createElement("p");
-    more.style.marginTop = "16px";
     more.innerHTML = '<a href="https://github.com/alarboulletmarin/bref/releases">All releases →</a>';
     out.append(more);
   })
