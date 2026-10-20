@@ -37,9 +37,10 @@ impl Diagram {
                 let fill = if i == 0 && shape.fill { format!(" fill=\"{ink}\" fill-opacity=\"0.15\"") } else { String::new() };
                 let _ = writeln!(out, "<path d=\"{}\" stroke=\"{ink}\"{fill}{}/>", path_d(path), dash(shape.dashed));
             }
-            let (lines, rules) = shape.text_lines();
+            let (lines, rules) = self.lines(shape);
             for y in rules {
-                let _ = writeln!(out, "<path d=\"M{} {}H{}\" stroke=\"{ink}\"/>", num(shape.x), num(y), num(shape.x + shape.w));
+                let (x0, x1) = shape.rule_span(y);
+                let _ = writeln!(out, "<path d=\"M{} {}H{}\" stroke=\"{ink}\"/>", num(x0), num(y), num(x1));
             }
             for (line, spans) in lines.iter().zip(self.runs(shape, false)) {
                 label(&mut out, line.x, line.y, &spans, line.centered.into(), &ink);

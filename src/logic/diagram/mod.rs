@@ -399,8 +399,20 @@ impl Shape {
     }
 
     /// The text splits the box into compartments.
-    pub(super) fn boxed(&self) -> bool {
-        matches!(self.form, Form::Rect | Form::Round) && self.text.lines().any(|l| l.trim() == RULE)
+    /// (An ellipse only in a diagram that reads styles: a use case with its extension points.)
+    pub(super) fn boxed(&self, rich: bool) -> bool {
+        let form = matches!(self.form, Form::Rect | Form::Round) || (rich && self.form == Form::Ellipse);
+        form && self.text.lines().any(|l| l.trim() == RULE)
+    }
+
+    /// Where a separator at height `y` starts and ends: the whole width, or the chord of an ellipse.
+    pub fn rule_span(&self, y: f32) -> (f32, f32) {
+        if self.form != Form::Ellipse {
+            return (self.x, self.x + self.w);
+        }
+        let (cx, cy) = self.center();
+        let half = self.w / 2. * (1. - ((y - cy) / (self.h / 2.).max(1.)).powi(2)).max(0.).sqrt();
+        (cx - half, cx + half)
     }
 
     /// Paths of the shape. The first is its body, which can take a
@@ -486,12 +498,22 @@ impl Shape {
     /// Where each line of text is written, and the height of the separator strokes.
     /// A compartment box is written from the top, its first compartment
     /// centered and bold (the class name), the next ones left-aligned.
+    #[cfg(test)]
     pub fn text_lines(&self) -> (Vec<TextLine<'_>>, Vec<f32>) {
+        self.text_lines_for(false)
+    }
+
+    /// `text_lines`, for a diagram that reads styles (`rich`) or not.
+    pub fn text_lines_for(&self, rich: bool) -> (Vec<TextLine<'_>>, Vec<f32>) {
         let (cx, cy) = self.center();
         let lines: Vec<&str> = self.text.split('\n').collect();
         let mut rules = Vec::new();
-        if self.boxed() {
-            let (mut y, mut first) = (self.y + 6., true);
+        if self.boxed(rich) {
+            // An ellipse (a use case, with its extension points) has them all centered, as a block in the middle.
+            let round = self.form == Form::Ellipse;
+            let rule_lines = lines.iter().filter(|l| l.trim() == RULE).count() as f32;
+            let block = (lines.len() as f32 - rule_lines) * LINE + rule_lines * 8.;
+            let (mut y, mut first) = (if round { cy - block / 2. } else { self.y + 6. }, true);
             let mut out = Vec::new();
             for (index, text) in lines.into_iter().enumerate() {
                 if text.trim() == RULE {
@@ -499,8 +521,8 @@ impl Shape {
                     y += 8.;
                     first = false;
                 } else {
-                    let x = if first { cx } else { self.x + 8. };
-                    out.push(TextLine { x, y, text, centered: first, bold: first, index });
+                    let (x, centered) = if first || round { (cx, true) } else { (self.x + 8., false) };
+                    out.push(TextLine { x, y, text, centered, bold: first && !round, index });
                     y += LINE;
                 }
             }
@@ -643,14 +665,19 @@ impl Diagram {
         if self.rich { richtext::spans(text, bold) } else { richtext::plain(text, bold) }
     }
 
+    /// Where each line of the text of `shape` is written, and its separators, as this diagram reads its texts.
+    pub fn lines<'a>(&self, shape: &'a Shape) -> (Vec<TextLine<'a>>, Vec<f32>) {
+        shape.text_lines_for(self.rich)
+    }
+
     /// The runs of each line `shape.text_lines()` places, in the same order: styled as the diagram
     /// reads its texts, a class box by the notation of UML, or as typed (`plain`: while it is written).
     pub fn runs(&self, shape: &Shape, plain: bool) -> Vec<Vec<Span>> {
-        let (lines, _) = shape.text_lines();
+        let (lines, _) = self.lines(shape);
         if plain || !self.rich {
             return lines.iter().map(|l| richtext::plain(l.text, l.bold)).collect();
         }
-        let class = shape.boxed().then(|| uml::class_runs(&shape.text, RULE)).flatten();
+        let class = (shape.boxed(true) && shape.form != Form::Ellipse).then(|| uml::class_runs(&shape.text, RULE)).flatten();
         match class {
             Some(mut by_line) => lines.iter().map(|l| std::mem::take(&mut by_line[l.index])).collect(),
             None => lines.iter().map(|l| richtext::spans(l.text, l.bold)).collect(),
@@ -1262,6 +1289,31 @@ mod tests {
                         assert!(tab - 5. <= w.max(1.) + 0.01 && tab > 5., "tab {tab} of {w}");
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn a_use_case_has_its_extension_points_under_its_name() {
+        let shape = Shape { id: 1, form: Form::Ellipse, x: 0., y: 0., w: 200., h: 100., text: "Pay\n---\nextension points\nby card".into(), color: 0, fill: false, dashed: false, parent: None };
+        // In a diagram that reads styles: a block in the middle, all centered, a separator in the chord.
+        let (lines, rules) = shape.text_lines_for(true);
+        assert_eq!(lines.iter().map(|l| (l.text, l.y, l.centered, l.bold)).collect::<Vec<_>>(), [("Pay", 19., true, false), ("extension points", 45., true, false), ("by card", 63., true, false)]);
+        assert_eq!(rules, [41.]);
+        let (x0, x1) = shape.rule_span(41.);
+        assert!((1.0..3.0).contains(&x0) && (197.0..199.0).contains(&x1), "{x0} {x1}");
+        // Outside the ellipse the chord has no width; a rectangle has the whole width.
+        assert_eq!(shape.rule_span(-500.), (100., 100.));
+        assert_eq!(Shape { form: Form::Rect, ..shape.clone() }.rule_span(41.), (0., 200.));
+        // In a diagram from before, the same text is as typed: a line of dashes among the others.
+        let (lines, rules) = shape.text_lines_for(false);
+        assert!(rules.is_empty() && lines.iter().map(|l| l.text).collect::<Vec<_>>() == ["Pay", "---", "extension points", "by card"]);
+        // The rule of any chord of a flat or a tall ellipse stays inside it.
+        for (w, h) in [(0., 0.), (10., 200.), (400., 20.), (1., 1.)] {
+            let flat = Shape { w, h, ..shape.clone() };
+            for y in [-10., 0., h / 2., h, h + 10.] {
+                let (a, b) = flat.rule_span(y);
+                assert!(a <= b && a >= flat.x - 0.01 && b <= flat.x + w.max(1.) + 0.01, "{w}x{h} at {y}: {a} {b}");
             }
         }
     }

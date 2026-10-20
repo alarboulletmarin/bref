@@ -535,6 +535,66 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         fs::remove_file(&pk).unwrap();
     }
+    // A use case diagram: a system boundary that holds use cases, actors outside, and the relationships between them.
+    {
+        use crate::logic::relation::Relation;
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (uc, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let drawn = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().clone());
+        let write = |cx: &mut gpui::VisualTestContext, lines: &[&str]| {
+            cx.simulate_keystrokes("enter");
+            for (i, line) in lines.iter().enumerate() {
+                if i > 0 {
+                    cx.simulate_keystrokes("enter");
+                }
+                cx.simulate_input(line);
+            }
+            cx.simulate_keystrokes("escape");
+        };
+        cx.simulate_input("f");
+        rows(cx, &canvas, (100., 0.), (500., 300.));
+        write(cx, &["Shop"]);
+        for (from, to, text) in [((150., 60.), (310., 140.), vec!["Pay", "---", "extension points", "by card"]), ((150., 180.), (310., 260.), vec!["Invoice"]), ((340., 60.), (480., 140.), vec!["Discount"])] {
+            cx.simulate_input("o");
+            rows(cx, &canvas, from, to);
+            write(cx, &text);
+        }
+        for (from, to, text) in [((0., 100.), (40., 180.), "Customer"), ((0., 220.), (40., 300.), "Member")] {
+            cx.simulate_input("p");
+            rows(cx, &canvas, from, to);
+            write(cx, &[text]);
+        }
+        cx.simulate_keystrokes("escape");
+        let links = [("line", (20., 140.), (230., 100.)), ("l", (230., 100.), (230., 220.)), ("e", (410., 100.), (230., 100.)), ("h", (20., 260.), (20., 140.))];
+        for (letter, from, to) in links {
+            if letter == "line" {
+                cx.simulate_input("l");
+            } else {
+                cx.simulate_input("k");
+                cx.simulate_input(letter);
+            }
+            rows(cx, &canvas, from, to);
+            cx.simulate_keystrokes("escape");
+        }
+        let d = drawn(cx);
+        let frame = d.shapes[0].id;
+        let held: Vec<bool> = d.shapes.iter().skip(1).map(|s| s.parent == Some(frame)).collect();
+        assert_eq!(held, [true, true, true, false, false], "use cases are in the boundary, actors are not");
+        let kinds: Vec<Option<Relation>> = d.links.iter().map(Relation::of).collect();
+        assert_eq!(kinds, [Some(Relation::Association), Some(Relation::Include), Some(Relation::Extend), Some(Relation::Generalization)]);
+        let svg = saved(&uc);
+        // The extension points are under the name, behind a separator that stays inside the ellipse.
+        let pay = &d.shapes[1];
+        assert_eq!(pay.text, "Pay\n---\nextension points\nby card");
+        let rule = svg.lines().find(|l| l.starts_with("<path d=\"M") && l.contains('H') && !l.contains('L') && !l.contains('C')).unwrap();
+        let (x0, x1) = rule.trim_start_matches("<path d=\"M").split_once("\"").unwrap().0.split_once(' ').map(|(x, rest)| (x.parse::<f32>().unwrap(), rest.split_once('H').unwrap().1.parse::<f32>().unwrap())).unwrap();
+        assert!(x0 > pay.x && x1 < pay.x + pay.w, "{rule}");
+        assert!(svg.contains(">«include»</text>") && svg.contains(">«extend»</text>") && svg.contains(">Customer</text>") && svg.contains(">Shop</text>"), "{svg}");
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&uc).unwrap();
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));
