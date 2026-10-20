@@ -2,7 +2,7 @@
 //! is a plain SVG, readable anywhere, that also carries its source: that is what
 //! the app rereads to continue the drawing. Pure functions, no UI dependency.
 
-use std::fmt::Write;
+use std::{cell::OnceCell, fmt::Write};
 
 use super::{
     richtext::{self, Span, Style},
@@ -13,6 +13,7 @@ mod file;
 mod hold;
 mod route;
 mod sequence;
+use sequence::Flow;
 
 /// Stroke colors, as `0xrrggbb`: mid tones, readable on a light background
 /// as on a dark one. The first is the neutral; in the app, the
@@ -1040,7 +1041,8 @@ impl Diagram {
             let t = (((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy).max(1e-6)).clamp(0., 1.);
             (x - ax - t * dx).hypot(y - ay - t * dy) <= reach
         };
-        let hit = |l: &&Link| self.trace(l).is_some_and(|t| t.points.windows(2).any(|w| near(w[0], w[1])));
+        let flow = OnceCell::new();
+        let hit = |l: &&Link| self.trace_in(l, &flow).is_some_and(|t| t.points.windows(2).any(|w| near(w[0], w[1])));
         self.links.iter().rev().find(hit).map(|l| l.id)
     }
 
@@ -1150,6 +1152,18 @@ impl Diagram {
     // lets it pass elsewhere. Search for a free path (A* on a
     // grid) if dense diagrams call for it.
     pub fn trace(&self, link: &Link) -> Option<Trace> {
+        self.trace_in(link, &OnceCell::new())
+    }
+
+    /// The drawing of every arrow, and what the messages add, worked out together: one pass over
+    /// the diagram instead of one for each message.
+    pub fn traces(&self) -> (Vec<Option<Trace>>, Flow) {
+        let flow = OnceCell::new();
+        let list = self.links.iter().map(|l| self.trace_in(l, &flow)).collect();
+        (list, flow.into_inner().unwrap_or_else(|| self.flow()))
+    }
+
+    fn trace_in(&self, link: &Link, flow: &OnceCell<Flow>) -> Option<Trace> {
         let aim = |end: End| match end {
             End::Shape(id) => self.shape(id).map(Shape::center),
             End::Pin(id, fx, fy) => self.shape(id).map(|s| (s.x + fx * s.w, s.y + fy * s.h)),
@@ -1160,7 +1174,7 @@ impl Diagram {
         let straight = link.route == Route::Straight;
         let spread = self.spread(link);
         // A loop, a message: the way is given, the ends are where it begins and ends.
-        let looped = self.self_loop(link).or_else(|| self.message_path(link));
+        let looped = self.self_loop(link).or_else(|| self.message_path(link, flow));
         let (a, da, b, db);
         if let Some(path) = &looped {
             let unit = |from: (f32, f32), to: (f32, f32)| {
@@ -1299,8 +1313,9 @@ impl Diagram {
 
     /// The arrow end text under this point.
     pub fn tip_label_hit(&self, x: f32, y: f32) -> Option<(u32, Slot)> {
+        let flow = OnceCell::new();
         self.links.iter().rev().find_map(|link| {
-            let trace = self.trace(link)?;
+            let trace = self.trace_in(link, &flow)?;
             [Slot::Start, Slot::End].into_iter().find_map(|slot| {
                 let (x0, y0, x1, y1) = self.tip_label_box(link, slot, &trace)?;
                 ((x0 - 4.)..=(x1 + 4.)).contains(&x).then_some(())?;
@@ -1320,6 +1335,11 @@ impl Diagram {
 
     /// Rectangle containing the whole diagram: (left, top, right, bottom).
     pub fn bounds(&self) -> Option<(f32, f32, f32, f32)> {
+        self.bounds_of(&self.traces().0)
+    }
+
+    /// The same, from the drawing of the arrows when it is at hand.
+    pub fn bounds_of(&self, traces: &[Option<Trace>]) -> Option<(f32, f32, f32, f32)> {
         // A stick figure's text is written under it.
         let boxes = self.shapes.iter().map(|s| {
             if s.form == Form::Pin {
@@ -1331,8 +1351,9 @@ impl Diagram {
             let below = if matches!(s.form, Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Pin) { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
             (s.x, s.y, s.x + s.w, s.y + s.h + below)
         });
-        let ends = self.links.iter().filter_map(|l| self.trace(l)).flat_map(|t| t.points);
-        let texts = self.links.iter().filter_map(|l| Some((l, self.trace(l)?))).flat_map(|(l, t)| [Slot::Start, Slot::End].map(|slot| self.tip_label_box(l, slot, &t)).into_iter().flatten().collect::<Vec<_>>());
+        let drawn = || self.links.iter().zip(traces).filter_map(|(l, t)| Some((l, t.as_ref()?)));
+        let ends = drawn().flat_map(|(_, t)| t.points.iter().copied());
+        let texts = drawn().flat_map(|(l, t)| [Slot::Start, Slot::End].map(|slot| self.tip_label_box(l, slot, t)).into_iter().flatten().collect::<Vec<_>>());
         boxes.chain(texts).chain(ends.map(|(x, y)| (x, y, x, y))).reduce(|a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)))
     }
 }

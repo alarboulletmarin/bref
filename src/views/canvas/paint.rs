@@ -181,7 +181,8 @@ impl Canvas {
             }
         }
         // What the messages add: the bars of the lifelines that are busy, the cross of one that is destroyed.
-        let marks = self.diagram.marks();
+        let (traces, flow) = self.diagram.traces();
+        let marks = &flow.marks;
         for bar in &marks.bars {
             let (x, y, w, h) = bar.rect();
             let ink = self.ink(self.diagram.shape(bar.life).map_or(0, |s| s.color));
@@ -194,8 +195,8 @@ impl Canvas {
             stroke(window, &[Cmd::Move(x - 10., y - 10.), Cmd::Line(x + 10., y + 10.)], false, ink);
             stroke(window, &[Cmd::Move(x + 10., y - 10.), Cmd::Line(x - 10., y + 10.)], false, ink);
         }
-        for link in &self.diagram.links {
-            let Some(drawn) = self.diagram.trace(link) else { continue };
+        for (link, drawn) in self.diagram.links.iter().zip(traces) {
+            let Some(drawn) = drawn else { continue };
             let ink = self.ink(link.color);
             stroke(window, &drawn.line, link.dashed, ink);
             for (path, full) in &drawn.heads {

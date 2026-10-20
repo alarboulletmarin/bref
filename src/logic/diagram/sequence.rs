@@ -98,7 +98,21 @@ pub struct Layout {
     pub frames: Vec<Frame>,
 }
 
+/// What drawing the messages takes, worked out once for all of them: the height of each and the marks.
+#[derive(Default)]
+pub struct Flow {
+    ys: std::collections::HashMap<u32, f32>,
+    pub marks: Marks,
+}
+
 impl Diagram {
+    /// The heights of the messages and the marks they make, for a drawing that traces all of them.
+    pub fn flow(&self) -> Flow {
+        let (order, ys) = (self.messages(), self.layout().ys);
+        let marks = self.marks_at(&order, &ys);
+        Flow { ys: order.into_iter().zip(ys).collect(), marks }
+    }
+
     /// The messages, in order: the arrows that have a lifeline at an end.
     pub fn messages(&self) -> Vec<u32> {
         self.links.iter().filter(|l| matches!(l.from, End::Life(_)) || matches!(l.to, End::Life(_))).map(|l| l.id).collect()
@@ -222,7 +236,12 @@ impl Diagram {
     /// The bars and crosses the messages make: a call that waits opens a bar on the lifeline it
     /// reaches, closed by the answer that comes back from it to the caller; a destroy message closes
     /// what is open and puts a cross; a bar never answered stays open to the last message of its lifeline.
+    #[cfg(test)]
     pub fn marks(&self) -> Marks {
+        self.marks_at(&self.messages(), &self.layout().ys)
+    }
+
+    fn marks_at(&self, order: &[u32], ys: &[f32]) -> Marks {
         let mut marks = Marks::default();
         let mut open: Vec<(u32, f32, Option<u32>)> = Vec::new();
         let mut last: Vec<(u32, f32)> = Vec::new();
@@ -233,9 +252,8 @@ impl Diagram {
         let life = |end: End| if let End::Life(id) = end { Some(id) } else { None };
         let depth = |open: &[(u32, f32, Option<u32>)], on: u32| open.iter().filter(|(l, ..)| *l == on).count();
         let x_of = |on: u32, depth: usize| self.shape(on).map_or(0., |s| s.x + s.w / 2. - BAR / 2. + NEST * depth as f32);
-        let ys = self.layout().ys;
-        for (rank, id) in self.messages().into_iter().enumerate() {
-            let Some(link) = self.link(id) else { continue };
+        for (rank, id) in order.iter().enumerate() {
+            let Some(link) = self.link(*id) else { continue };
             let y = ys[rank];
             let (from, to) = (life(link.from), life(link.to));
             for on in [from, to].into_iter().flatten() {
@@ -287,13 +305,14 @@ impl Diagram {
 
     /// The way of a message: straight across at its height from one lifeline's bar to the other's,
     /// or a loop on the right of its lifeline when it is to itself. A free end (found or lost) keeps its place across.
-    pub(super) fn message_path(&self, link: &Link) -> Option<Vec<(f32, f32)>> {
+    pub(super) fn message_path(&self, link: &Link, flow: &OnceCell<Flow>) -> Option<Vec<(f32, f32)>> {
         let life = |end: End| if let End::Life(id) = end { Some(id) } else { None };
         if life(link.from).is_none() && life(link.to).is_none() {
             return None;
         }
-        let y = self.message_y(link.id)?;
-        let marks = self.marks();
+        let flow = flow.get_or_init(|| self.flow());
+        let y = *flow.ys.get(&link.id)?;
+        let marks = &flow.marks;
         // The middle of what the end is on, and which side of it the other end is.
         let across = |end: End| match end {
             End::Life(id) => self.shape(id).map(|s| s.x + s.w / 2.),
@@ -528,6 +547,26 @@ mod tests {
             .collect();
         d.fit_sequence();
         (d, lifes, links)
+    }
+
+    #[test]
+    fn tracing_all_the_arrows_at_once_draws_what_one_by_one_does() {
+        let kinds = [Message::Sync, Message::Sync, Message::Reply, Message::Async, Message::Create, Message::Destroy, Message::Found, Message::Lost, Message::Reply];
+        let (mut d, lives, _) = talk(4, &kinds.iter().enumerate().map(|(i, k)| (i % 3, (i + 1) % 4, *k)).collect::<Vec<_>>());
+        // A plain arrow between two shapes is among them, and so is a broken one.
+        d.add_link(End::Shape(lives[0]), End::Point(500., 500.), Head::Arrow, Route::Elbow);
+        d.add_link(End::Shape(999), End::Shape(lives[1]), Head::Arrow, Route::Straight);
+        let (all, flow) = d.traces();
+        assert_eq!(all.len(), d.links.len());
+        for (link, one) in d.links.iter().zip(&all) {
+            assert_eq!(one.as_ref().map(|t| &t.points), d.trace(link).as_ref().map(|t| &t.points));
+        }
+        assert!(all.last().unwrap().is_none());
+        assert_eq!(flow.marks, d.marks());
+        assert_eq!(d.bounds_of(&all), d.bounds());
+        // Without a message, nothing is worked out and the marks are empty.
+        let (_, none) = Diagram::blank().traces();
+        assert_eq!(none.marks, Marks::default());
     }
 
     #[test]

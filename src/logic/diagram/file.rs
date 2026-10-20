@@ -7,7 +7,8 @@ impl Diagram {
     /// `neutral` is the neutral stroke color, as `0xrrggbb`.
     pub fn to_svg(&self, neutral: u32) -> String {
         let color = |i: u8| format!("#{:06x}", if i == 0 { neutral } else { COLORS[i as usize % COLORS.len()] });
-        let (x0, y0, x1, y1) = self.bounds().unwrap_or((0., 0., 100., 60.));
+        let (traces, flow) = self.traces();
+        let (x0, y0, x1, y1) = self.bounds_of(&traces).unwrap_or((0., 0., 100., 60.));
         let (x0, y0, w, h) = (x0 - 16., y0 - 16., x1 - x0 + 32., y1 - y0 + 32.);
         let mut out = format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" fill=\"none\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" font-family=\"sans-serif\" font-size=\"{FONT}\">\n",
@@ -54,7 +55,7 @@ impl Diagram {
             }
         }
         // What the messages add: the bars of the lifelines that are busy, the cross of one that is destroyed.
-        let marks = self.marks();
+        let marks = &flow.marks;
         for bar in &marks.bars {
             let (x, y, w, h) = bar.rect();
             let ink = color(self.shape(bar.life).map_or(0, |s| s.color));
@@ -63,8 +64,8 @@ impl Diagram {
         for (x, y) in &marks.crosses {
             let _ = writeln!(out, "<path d=\"M{} {}L{} {}M{} {}L{} {}\" stroke=\"{}\"/>", num(x - 10.), num(y - 10.), num(x + 10.), num(y + 10.), num(x + 10.), num(y - 10.), num(x - 10.), num(y + 10.), color(0));
         }
-        for link in &self.links {
-            let Some(trace) = self.trace(link) else { continue };
+        for (link, trace) in self.links.iter().zip(traces) {
+            let Some(trace) = trace else { continue };
             let ink = color(link.color);
             let _ = writeln!(out, "<path d=\"{}\" stroke=\"{ink}\"{}/>", path_d(&trace.line), dash(link.dashed));
             for (path, full) in &trace.heads {
