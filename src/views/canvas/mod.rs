@@ -114,7 +114,8 @@ impl Placing {
 impl Render for Placing {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let (dx, dy) = self.shift();
-        div().ml(px(dx)).mt(px(dy)).child(button("d-placing", self.1, true, self.2))
+        // A margin on the root itself is ignored: the picture is moved inside it.
+        div().child(div().ml(px(dx)).mt(px(dy)).child(button("d-placing", self.1, true, self.2).debug_selector(|| "d-placing".into())))
     }
 }
 

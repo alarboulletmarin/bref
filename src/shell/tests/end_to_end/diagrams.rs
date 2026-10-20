@@ -1096,6 +1096,66 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         fs::remove_file(&made[0]).unwrap();
         shell.update(cx, |s, _| s.nav.sel = None);
     }
+    // Dragged from the bar or from the library, a shape lands centred on the pointer, and what is drawn under the pointer
+    // while it is dragged is centred on it too.
+    {
+        use crate::logic::library;
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (drag, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let centre = |cx: &mut gpui::VisualTestContext, selector: &'static str| cx.debug_bounds(selector).map(|b| b.center());
+        // From the bar: the rectangle.
+        let from = centre(cx, "d-tool-r").expect("the rectangle button");
+        let to = canvas.read_with(cx, |c, _| c.spot(250., 150.));
+        cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_move(from + gpui::point(gpui::px(10.), gpui::px(10.)), MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_move(to, MouseButton::Left, gpui::Modifiers::none());
+        let ghost = |cx: &mut gpui::VisualTestContext| {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+            cx.debug_bounds("d-placing").map(|b| b.center())
+        };
+        let bar_ghost = ghost(cx);
+        cx.simulate_mouse_up(to, MouseButton::Left, gpui::Modifiers::none());
+        cx.run_until_parked();
+        let d = canvas.read_with(cx, |c, _| c.diagram().clone());
+        let spot = |cx: &mut gpui::VisualTestContext, s: &diagram::Shape| canvas.read_with(cx, |c, _| c.spot(s.x + s.w / 2., s.y + s.h / 2.));
+        let rect = spot(cx, &d.shapes[0]);
+        let near = |a: gpui::Point<gpui::Pixels>, b: gpui::Point<gpui::Pixels>| f32::from((a.x - b.x).abs()).max(f32::from((a.y - b.y).abs()));
+        assert!(near(rect, to) <= 5., "bar: the shape is at {rect:?}, the pointer at {to:?}");
+        if let Some(g) = bar_ghost {
+            assert!(near(g, to) <= 3., "bar: the picture under the pointer is at {g:?}, the pointer at {to:?}, the button was at {from:?}, bounds {:?}", cx.debug_bounds("d-placing"));
+        }
+        // From the library: a class, from the middle of its row, and from the left end of it.
+        cx.simulate_input("s");
+        let class = library::presets().iter().position(|p| p.form == diagram::Form::Rect && p.text.starts_with("NomDeClasse") || p.text.starts_with("ClassName")).unwrap();
+        for (k, grab) in [0.5f32, 0.05].into_iter().enumerate() {
+            let selector: &'static str = Box::leak(format!("d-preset-{class}").into_boxed_str());
+            let bounds = cx.debug_bounds(selector).expect("the class row");
+            let from = gpui::point(bounds.origin.x + bounds.size.width * grab, bounds.center().y);
+            let to = canvas.read_with(cx, |c, _| c.spot(250., 150. + 120. * (k as f32 + 1.)));
+            cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
+            cx.simulate_mouse_move(from + gpui::point(gpui::px(10.), gpui::px(10.)), MouseButton::Left, gpui::Modifiers::none());
+            cx.simulate_mouse_move(to, MouseButton::Left, gpui::Modifiers::none());
+            let library_ghost = ghost(cx);
+            cx.simulate_mouse_up(to, MouseButton::Left, gpui::Modifiers::none());
+            cx.run_until_parked();
+            let d = canvas.read_with(cx, |c, _| c.diagram().clone());
+            let shape = d.shapes.last().unwrap().clone();
+            let at = spot(cx, &shape);
+            assert!(near(at, to) <= 5., "library, grab {grab}: the shape is at {at:?}, the pointer at {to:?}");
+            if let Some(g) = library_ghost {
+                assert!(near(g, to) <= 3., "library, grab {grab}: the picture under the pointer is at {g:?}, the pointer at {to:?}");
+            }
+            // The library is still open for the next one.
+            if k == 0 {
+                cx.simulate_input("s");
+            }
+        }
+        cx.simulate_keystrokes("escape secondary-a delete escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&drag).unwrap();
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));
