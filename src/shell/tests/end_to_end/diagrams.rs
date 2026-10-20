@@ -70,6 +70,49 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, _| s.pane().file.is_none() && s.pane().drawing().is_none()));
 
+    // A diagram written by a newer Bref opens in the viewer, with a notice: whatever is typed,
+    // its bytes do not change.
+    let future = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 60\"><rect width=\"100\" height=\"60\"/><metadata id=\"bref-diagram\">\nversion 99\nshape 1 hexagon 0 0 100 60 0 0 0 A\n</metadata></svg>\n";
+    let newer = j.root.join("Futur.svg");
+    fs::write(&newer, future).unwrap();
+    // The editor must not have the focus when the window is drawn, or the file is put away.
+    shell.update_in(cx, |s, window, cx| {
+        s.toasts.clear();
+        s.load_note(&newer, cx);
+        let viewer = s.pane().viewer().cloned().unwrap();
+        window.focus(&viewer.focus_handle(cx));
+    });
+    cx.run_until_parked();
+    assert!(shell.read_with(cx, |s, _| s.pane().drawing().is_none() && s.pane().viewer().is_some() && s.told(Tone::Info, "Bref plus récent")));
+    cx.simulate_keystrokes("+ - 0 delete secondary-z secondary-a backspace");
+    assert_eq!(fs::read_to_string(&newer).unwrap(), future);
+    // One of this version keeps the lines it cannot read, and does not reuse their ids.
+    let mixed = j.root.join("Mixte.svg");
+    let unknown = "shape 9 hexagon 0 0 10 10 0 0 0 H";
+    fs::write(&mixed, format!("<svg><metadata id=\"bref-diagram\">\nversion 1\n{unknown}\nshape 1 rect 0 0 100 60 0 0 0 \n</metadata></svg>\n")).unwrap();
+    let canvas = shell.update_in(cx, |s, window, cx| {
+        s.toasts.clear();
+        s.load_note(&mixed, cx);
+        let canvas = s.pane().drawing().cloned().unwrap();
+        window.focus(&canvas.focus_handle(cx));
+        canvas
+    });
+    cx.run_until_parked();
+    assert!(shell.read_with(cx, |s, _| s.toasts.is_empty()));
+    cx.simulate_input("r");
+    let (from, to) = canvas.read_with(cx, |c, _| (c.spot(200., 0.), c.spot(300., 80.)));
+    cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
+    cx.simulate_mouse_move(to, MouseButton::Left, gpui::Modifiers::none());
+    cx.simulate_mouse_up(to, MouseButton::Left, gpui::Modifiers::none());
+    let written = fs::read_to_string(&mixed).unwrap();
+    let edited = Diagram::from_svg(&written).unwrap();
+    assert!(written.lines().any(|l| l == unknown) && edited.shapes.len() == 2 && edited.shapes[1].id == 10);
+    cx.simulate_keystrokes("escape escape");
+    cx.run_until_parked();
+    assert!(shell.read_with(cx, |s, _| s.pane().file.is_none()));
+    fs::remove_file(&newer).unwrap();
+    fs::remove_file(&mixed).unwrap();
+
     // `![[` offers the vault's images and diagrams; Enter completes the name.
     cx.simulate_keystrokes("secondary-end enter");
     cx.simulate_input("![[sch");

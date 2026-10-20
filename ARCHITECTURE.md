@@ -80,3 +80,9 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 - **Pure first**: logic that can be a pure function lives in `logic/` and is unit-tested there;
   every user journey is tested end to end with simulated keystrokes (GPUI's test platform).
 - **No new dependency** without asking: `Cargo.lock` comes from GPUI 0.2.2's and is fragile.
+- **A diagram file never loses what it says**: its source starts with `version N` (`diagram::VERSION`).
+  A line this version cannot read is kept and written back; a file of a higher (or unreadable)
+  version is not a diagram for this build (`Diagram::from_svg` is `None`, `Diagram::newer` is true)
+  and opens read-only in the viewer. New data of an element goes on a **line of its own, keyed by
+  the element's id**, never in a new column: the text is last on `shape` and `link` lines, so an
+  older reader would take a new column for text. Bump `VERSION` whenever the meaning of a line changes.

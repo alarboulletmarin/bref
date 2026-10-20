@@ -62,21 +62,29 @@ impl Shell {
                 _ if !svg => FileKind::Image,
                 // A diagram opens in its canvas, ready to be edited again.
                 Some(FileKind::Drawing(canvas)) => FileKind::Drawing(canvas),
-                open => match fs::read_to_string(path).ok().and_then(|svg| Diagram::from_svg(&svg)) {
-                    Some(diagram) => {
-                        let canvas = cx.new(|cx| Canvas::new(diagram, theme, cx));
-                        cx.subscribe(&canvas, Self::on_canvas_event).detach();
-                        FileKind::Drawing(canvas)
-                    }
-                    // An SVG from elsewhere opens in the viewer: zoom in, move around.
-                    None => match open {
-                        Some(FileKind::Svg(viewer)) => FileKind::Svg(viewer),
-                        _ => {
-                            let source = viewer::Source::File(path.to_path_buf(), None);
-                            FileKind::Svg(cx.new(|cx| viewer::Viewer::new(source, theme, cx)))
+                open => {
+                    let text = fs::read_to_string(path).ok();
+                    match text.as_deref().and_then(Diagram::from_svg) {
+                        Some(diagram) => {
+                            let canvas = cx.new(|cx| Canvas::new(diagram, theme, cx));
+                            cx.subscribe(&canvas, Self::on_canvas_event).detach();
+                            FileKind::Drawing(canvas)
                         }
-                    },
-                },
+                        // An SVG from elsewhere opens in the viewer: zoom in, move around. So does a
+                        // diagram of a newer Bref, which this one could only damage by saving it.
+                        None => match open {
+                            Some(FileKind::Svg(viewer)) => FileKind::Svg(viewer),
+                            _ => {
+                                if text.as_deref().is_some_and(Diagram::newer) {
+                                    let notice = tr("Made by a newer Bref: shown read-only", "Fait par un Bref plus récent : en lecture seule");
+                                    self.say(Tone::Info, notice, cx);
+                                }
+                                let source = viewer::Source::File(path.to_path_buf(), None);
+                                FileKind::Svg(cx.new(|cx| viewer::Viewer::new(source, theme, cx)))
+                            }
+                        },
+                    }
+                }
             };
             self.set_file(Some(FileView { path: path.to_path_buf(), kind }), cx);
             cx.notify();

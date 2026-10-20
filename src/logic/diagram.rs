@@ -15,6 +15,9 @@ pub const FONT: f32 = 14.;
 pub const LINE: f32 = 18.;
 /// Text line that separates two compartments of a box (UML class, table).
 pub const RULE: &str = "---";
+/// Version of the file's source that this build writes and reads. A file of a higher version
+/// is never opened for editing: saving it would drop what this build does not know.
+pub const VERSION: u32 = 1;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Form {
@@ -156,6 +159,8 @@ pub struct Diagram {
     pub shapes: Vec<Shape>,
     pub links: Vec<Link>,
     next: u32,
+    /// Source lines this build cannot read, kept as they were and written back after the elements.
+    kept: Vec<String>,
 }
 
 /// Path segment, as in the `d` attribute of a `<path>`.
@@ -626,7 +631,7 @@ impl Diagram {
         out
     }
 
-    /// The source: one line per element, text last.
+    /// The source: its version, then one line per element, text last, then the lines kept as found.
     fn source(&self) -> String {
         let name = |form: Form| Form::ALL.iter().find(|(f, _)| *f == form).map_or("rect", |(_, n)| n);
         let tip = |head: Head| Head::ALL.iter().find(|(h, _)| *h == head).map_or("none", |(_, n)| n);
@@ -636,7 +641,7 @@ impl Diagram {
             End::Point(x, y) => format!("p{},{}", num(x), num(y)),
         };
         let text = |text: &str| text.replace('\\', "\\\\").replace('\n', "\\n");
-        let mut out = String::new();
+        let mut out = format!("version {VERSION}\n");
         for s in &self.shapes {
             let _ = writeln!(out, "shape {} {} {} {} {} {} {} {} {} {}", s.id, name(s.form), num(s.x), num(s.y), num(s.w), num(s.h), s.color, s.fill as u8, s.dashed as u8, text(&s.text));
         }
@@ -644,13 +649,38 @@ impl Diagram {
             let route = Route::ALL.iter().find(|(r, _)| *r == l.route).map_or("straight", |(_, n)| n);
             let _ = writeln!(out, "link {} {} {} {} {} {route} {} {} {}", l.id, end(l.from), end(l.to), tip(l.start), tip(l.end), l.color, l.dashed as u8, text(&l.text));
         }
+        for line in &self.kept {
+            let _ = writeln!(out, "{line}");
+        }
         out
     }
 
-    /// The diagram this SVG file carries; `None` if it is not one.
-    pub fn from_svg(svg: &str) -> Option<Diagram> {
+    /// The source a Bref diagram file carries, unescaped.
+    fn source_of(svg: &str) -> Option<String> {
         let body = svg.split_once("<metadata id=\"bref-diagram\">")?.1.split_once("</metadata>")?.0;
-        let body = body.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&");
+        Some(body.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
+    }
+
+    /// Version declared by a source: the first `version` line, 0 without one. An
+    /// unreadable number counts as the highest: what is not understood is not overwritten.
+    fn version_of(source: &str) -> u32 {
+        match source.lines().find(|l| is_version(l)) {
+            Some(line) => line.strip_prefix("version ").and_then(|v| v.parse().ok()).unwrap_or(u32::MAX),
+            None => 0,
+        }
+    }
+
+    /// Whether this is a Bref diagram written by a version this one cannot read.
+    pub fn newer(svg: &str) -> bool {
+        Diagram::source_of(svg).is_some_and(|source| Diagram::version_of(&source) > VERSION)
+    }
+
+    /// The diagram this SVG file carries; `None` if it is not one, or if a newer version wrote it.
+    pub fn from_svg(svg: &str) -> Option<Diagram> {
+        let body = Diagram::source_of(svg)?;
+        if Diagram::version_of(&body) > VERSION {
+            return None;
+        }
         let text = |raw: &str| {
             let (mut out, mut chars) = (String::new(), raw.chars());
             while let Some(c) = chars.next() {
@@ -671,8 +701,15 @@ impl Diagram {
             _ => None,
         };
         let mut diagram = Diagram::default();
-        // An unreadable line is skipped: the rest of the diagram opens.
+        // A line this version cannot read is kept as it is: the rest of the diagram opens.
+        let mut declared = false;
         for line in body.lines() {
+            // The first `version` line is the file's; a second one is just another unknown line.
+            let version = !declared && is_version(line);
+            declared |= version;
+            if version || line.trim().is_empty() {
+                continue;
+            }
             let mut read = || -> Option<()> {
                 if let Some(rest) = line.strip_prefix("shape ") {
                     let f: Vec<&str> = rest.splitn(10, ' ').collect();
@@ -689,6 +726,7 @@ impl Diagram {
                         dashed: *f.get(8)? == "1",
                         text: text(f.get(9).unwrap_or(&"")),
                     });
+                    Some(())
                 } else if let Some(rest) = line.strip_prefix("link ") {
                     let f: Vec<&str> = rest.splitn(9, ' ').collect();
                     let tip = |i: usize| Head::ALL.iter().find(|(_, name)| Some(name) == f.get(i)).map(|(head, _)| *head);
@@ -703,15 +741,25 @@ impl Diagram {
                         dashed: *f.get(7)? == "1",
                         text: text(f.get(8).unwrap_or(&"")),
                     });
+                    Some(())
+                } else {
+                    None
                 }
-                Some(())
             };
-            read();
+            if read().is_none() {
+                diagram.kept.push(line.to_string());
+            }
         }
-        let ids = diagram.shapes.iter().map(|s| s.id).chain(diagram.links.iter().map(|l| l.id));
+        // A kept line still owns its id (its second field), which no new element may take.
+        let owned = diagram.kept.iter().filter_map(|l| l.split(' ').nth(1)?.parse().ok());
+        let ids = diagram.shapes.iter().map(|s| s.id).chain(diagram.links.iter().map(|l| l.id)).chain(owned);
         diagram.next = ids.max().unwrap_or(0);
         Some(diagram)
     }
+}
+
+fn is_version(line: &str) -> bool {
+    line == "version" || line.starts_with("version ")
 }
 
 /// Right-angled stroke from `a` to `b`, leaving in direction `da` and
@@ -810,6 +858,72 @@ mod tests {
         assert_eq!((copies.len(), d.links.len()), (3, 3));
         d.remove(&[a]);
         assert_eq!((d.shapes.len(), d.links.len()), (3, 1));
+    }
+
+    /// A diagram file around `source`, as another version of Bref would have written it.
+    fn file(source: &str) -> String {
+        format!("<svg>\n<metadata id=\"bref-diagram\">\n{}</metadata>\n</svg>\n", xml(source))
+    }
+
+    #[test]
+    fn keeps_the_lines_it_cannot_read() {
+        let shape = "shape 1 rect 0 0 100 60 0 0 0 A";
+        // An unknown form, an unknown kind of line, a short line, a second `version`, and text
+        // that XML escapes: none is dropped, and none is changed.
+        let kept = [
+            "shape 9 hexagon 5 5 10 10 0 0 0 <&> é 日本 😀",
+            "note 4 &lt; &amp; ]]> \\\\ \u{3000}",
+            "link 3 s1",
+            "version 1",
+            &format!("shape 7 oval {}", "x".repeat(10_000)),
+        ];
+        let source = format!("version 1\n{shape}\n{}\nlink 2 s1 s9 none arrow straight 0 0 x\n\n   \n{}\n", kept[0], kept[1..].join("\n"));
+        let mut d = Diagram::from_svg(&file(&source)).unwrap();
+        assert_eq!((d.shapes.len(), d.links.len()), (1, 1));
+        assert_eq!(d.kept, kept);
+        // A link to a shape it cannot read stays on disk without being drawn.
+        assert!(d.trace(&d.links[0]).is_none());
+        // Written back: the same bytes, and the same again after another round.
+        let svg = d.to_svg(COLORS[0]);
+        let source = Diagram::source_of(&svg).unwrap();
+        assert!(kept.iter().all(|line| source.lines().any(|l| l == *line)));
+        let back = Diagram::from_svg(&svg).unwrap();
+        assert_eq!((back.to_svg(COLORS[0]), &back), (svg, &d));
+        // No new element takes the id of one it cannot read.
+        assert_eq!(d.add_shape(Form::Rect, 0., 0., 10., 10.), 10);
+    }
+
+    #[test]
+    fn refuses_what_a_newer_version_wrote() {
+        let shape = "shape 1 rect 0 0 100 60 0 0 0 A\n";
+        // Higher, unreadable, not a number, beyond `u32`, with a stray space, empty: all newer.
+        for version in ["2", "99999999999", "-1", "1.5", "x", " 1", "", "1 "] {
+            let svg = file(&format!("version {version}\n{shape}"));
+            assert!((Diagram::from_svg(&svg), Diagram::newer(&svg)) == (None, true), "version {version:?}");
+        }
+        let svg = file(&format!("{shape}version\n"));
+        assert!((Diagram::from_svg(&svg), Diagram::newer(&svg)) == (None, true));
+        // The version may come after the elements.
+        assert!(Diagram::newer(&file(&format!("{shape}version 2\n"))));
+        // Version 0, 1, none, or an empty source: opens. Not a Bref file: not "newer", just foreign.
+        for source in ["version 0\n", "version 1\n", "", "\n"] {
+            let svg = file(&format!("{source}{shape}"));
+            assert!(Diagram::from_svg(&svg).is_some_and(|d| d.shapes.len() == 1) && !Diagram::newer(&svg), "{source:?}");
+        }
+        assert_eq!(Diagram::from_svg(&file("")), Some(Diagram::default()));
+        assert!(!Diagram::newer("<svg></svg>") && !Diagram::newer(""));
+    }
+
+    #[test]
+    fn an_old_file_opens_as_it_was() {
+        // Written by 0.3.8: no `version` line.
+        let old = "shape 1 rect 0 0 120 60 0 0 0 Compte\\n---\\n+ solde\nshape 2 ellipse 300 0 100 100 1 1 0 \nlink 3 s1 s2@0.5,1 none triangle elbow 0 1 hérite\n";
+        let d = Diagram::from_svg(&file(old)).unwrap();
+        assert!(d.kept.is_empty() && (d.shapes.len(), d.links.len()) == (2, 1));
+        // Saving adds the version line, and nothing else.
+        let svg = d.to_svg(COLORS[0]);
+        assert_eq!(Diagram::source_of(&svg).unwrap().trim_start(), format!("version {VERSION}\n{old}"));
+        assert_eq!(Diagram::from_svg(&svg).unwrap().to_svg(COLORS[0]), svg);
     }
 
     #[test]
