@@ -148,6 +148,20 @@ impl Canvas {
         });
         let mut caret_at = None;
 
+        // A faint grid of dots, where shapes snap to; spaced out as the view shrinks, so that it stays a texture.
+        let mut step = diagram::GRID * 2.;
+        while step * zoom < 14. {
+            step *= 2.;
+        }
+        let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+        let (first, last) = (((-self.pan.0 / zoom) / step).floor() as i32, (((w - self.pan.0) / zoom) / step).ceil() as i32);
+        let (top, bottom) = (((-self.pan.1 / zoom) / step).floor() as i32, (((h - self.pan.1) / zoom) / step).ceil() as i32);
+        for i in first..=last {
+            for j in top..=bottom {
+                let c = at((i as f32 * step, j as f32 * step));
+                window.paint_quad(fill(Bounds::new(point(c.x - px(0.75), c.y - px(0.75)), size(px(1.5), px(1.5))), t.border));
+            }
+        }
         for shape in &self.diagram.shapes {
             let ink = self.ink(shape.color);
             let outline = shape.outline();
@@ -248,7 +262,7 @@ impl Canvas {
         // Selection: a frame, and handles at the corners of a single shape.
         let frame = |window: &mut Window, x0: f32, y0: f32, x1: f32, y1: f32, color: Hsla| {
             let path = [Cmd::Move(x0, y0), Cmd::Line(x1, y0), Cmd::Line(x1, y1), Cmd::Line(x0, y1), Cmd::Close];
-            let mut builder = PathBuilder::stroke(px(1.)).dash_array(&[px(4.), px(3.)]);
+            let mut builder = PathBuilder::stroke(px(1.5));
             trace(&mut builder, &path);
             if let Ok(path) = builder.build() {
                 window.paint_path(path, color);
@@ -269,6 +283,53 @@ impl Canvas {
             } else if let Some((a, b)) = self.diagram.link(id).and_then(|l| self.diagram.ends(l)) {
                 knob(window, a);
                 knob(window, b);
+            }
+        }
+        // Moving: a line where the shapes moved line up, by side or by middle, with another.
+        if let Drag::Move { begun: true, .. } = self.drag {
+            let moving: Vec<&diagram::Shape> = self.selected.iter().filter_map(|id| self.diagram.shape(*id)).collect();
+            let edges = |s: &diagram::Shape| ([s.x, s.x + s.w / 2., s.x + s.w], [s.y, s.y + s.h / 2., s.y + s.h]);
+            if let Some(((mx0, my0), (mx1, my1))) = moving.iter().map(|s| ((s.x, s.y), (s.x + s.w, s.y + s.h))).reduce(|a, b| ((a.0.0.min(b.0.0), a.0.1.min(b.0.1)), (a.1.0.max(b.1.0), a.1.1.max(b.1.1)))) {
+                let mine = ([mx0, (mx0 + mx1) / 2., mx1], [my0, (my0 + my1) / 2., my1]);
+                let mut guides: Vec<[Cmd; 2]> = Vec::new();
+                for other in self.diagram.shapes.iter().filter(|s| !self.selected.contains(&s.id) && !s.form.holds() && s.form != Form::Lifeline) {
+                    let theirs = edges(other);
+                    let (lo_x, hi_x, lo_y, hi_y) = (mx0.min(other.x), mx1.max(other.x + other.w), my0.min(other.y), my1.max(other.y + other.h));
+                    for (a, b) in mine.0.iter().flat_map(|a| theirs.0.iter().map(move |b| (a, b))) {
+                        if (a - b).abs() < 0.5 {
+                            guides.push([Cmd::Move(*b, lo_y), Cmd::Line(*b, hi_y)]);
+                        }
+                    }
+                    for (a, b) in mine.1.iter().flat_map(|a| theirs.1.iter().map(move |b| (a, b))) {
+                        if (a - b).abs() < 0.5 {
+                            guides.push([Cmd::Move(lo_x, *b), Cmd::Line(hi_x, *b)]);
+                        }
+                    }
+                }
+                for guide in guides {
+                    let mut builder = PathBuilder::stroke(px(1.)).dash_array(&[px(3.), px(3.)]);
+                    trace(&mut builder, &guide);
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, t.accent);
+                    }
+                }
+            }
+        }
+        // A shape tool: the shape it would drop, where the pointer is.
+        if let (Some((form, _)), Some(pointer), Drag::None) = (made_by(self.tool), self.pointer, self.drag)
+            && bounds.contains(&pointer)
+        {
+            let (w, h) = usual(self.tool);
+            let p = self.world(pointer);
+            let (x, y) = (diagram::snap(p.0 - w / 2.), diagram::snap(p.1 - h / 2.));
+            let mut scratch = Diagram::blank();
+            let ghost = scratch.add_shape(form, x, y, w, h);
+            for (i, path) in scratch.shape(ghost).map(|s| s.outline()).unwrap_or_default().iter().enumerate() {
+                let mut builder = PathBuilder::stroke(px(1.5)).dash_array(&[px(5.), px(4.)]);
+                trace(&mut builder, path);
+                if let Ok(path) = builder.build() {
+                    window.paint_path(path, t.accent.opacity(if i == 0 { 0.7 } else { 0.4 }));
+                }
             }
         }
         // What is under the pointer is lit, and a shape shows the handles an arrow is drawn from.

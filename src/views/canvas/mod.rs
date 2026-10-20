@@ -214,6 +214,8 @@ pub struct Canvas {
     shapes: bool,
     /// The shape or the arrow under the pointer, when nothing is being dragged.
     hover: Option<u32>,
+    /// Where the pointer was last seen over the canvas.
+    pointer: Option<Point<Pixels>>,
     /// Where the menu of a right click is (a point of the window).
     context: Option<Point<Pixels>>,
     /// The last shape and the last relationship picked: what the dock shows on their buttons.
@@ -258,6 +260,7 @@ impl Canvas {
             relations: false,
             shapes: false,
             hover: None,
+            pointer: None,
             context: None,
             shape_pick: Form::Rect,
             link_pick: Relation::Navigable,

@@ -302,6 +302,7 @@ impl Canvas {
     pub(super) fn mouse_move(&mut self, e: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
         let held = e.pressed_button;
         let p = self.world(e.position);
+        self.pointer = Some(e.position);
         self.aim_hover(p, cx);
         self.aim_hand(e.position, cx);
         match self.drag {
