@@ -126,7 +126,7 @@ impl Canvas {
     pub(super) fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus);
         self.stop_editing(cx);
-        self.context = None;
+        (self.context, self.shapes, self.relations) = (None, false, false);
         let p = self.world(e.position);
         let near = 7. / self.zoom;
         let close = |a: (f32, f32)| (a.0 - p.0).hypot(a.1 - p.1) <= near;
@@ -146,6 +146,7 @@ impl Canvas {
                 if let Some(link) = self.diagram.link_mut(id) {
                     relation.apply(link);
                 }
+                self.from_handle = Some(id);
                 Drag::Tip { id, to: true }
             }
             Tool::Shape(_) | Tool::Preset(_) => {
@@ -400,9 +401,15 @@ impl Canvas {
             Drag::Tip { id, .. } => {
                 // A line with no length has no reason to exist.
                 let flat = self.diagram.link(id).and_then(|l| self.diagram.ends(l));
-                if flat.is_none_or(|(a, b)| (a.0 - b.0).hypot(a.1 - b.1) < diagram::GRID) {
+                // One begun at a handle that is let go next to it is a click, not an arrow.
+                let least = if self.from_handle.take() == Some(id) { (HANDLE_OUT + 12.) / self.zoom } else { diagram::GRID };
+                if flat.is_none_or(|(a, b)| (a.0 - b.0).hypot(a.1 - b.1) < least) {
                     self.diagram.remove(&[id]);
                     self.selected.clear();
+                    // A click on a handle changed nothing: it is no step of undo either.
+                    if self.undo.last().is_some_and(|d| d.shapes == self.diagram.shapes && d.links == self.diagram.links) {
+                        self.undo.pop();
+                    }
                 } else {
                     self.selected = vec![id];
                 }

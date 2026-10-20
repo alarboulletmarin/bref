@@ -77,7 +77,7 @@ impl Canvas {
     }
 
     /// The menu of relationships, by family: a name and a letter for each; the one the selected arrow looks like is lit.
-    pub(super) fn relations_menu(&self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn relations_menu(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
         let current = self.selected.iter().find_map(|id| self.diagram.link(*id)).and_then(Relation::of);
         let item = |relation: Relation, cx: &mut Context<Self>| {
@@ -104,7 +104,10 @@ impl Canvas {
         };
         let (a, b) = (Relation::Association.group(), Relation::Generalization.group());
         let (c, d) = (Relation::Dependency.group(), Relation::Sync.group());
-        floating(t).flex().flex_wrap().max_w(px(480.)).child(column(&[a], cx).child(nary)).child(column(&[b], cx)).child(column(&[c], cx)).child(column(&[d], cx))
+        // As high as the canvas leaves room for above the dock: it scrolls beyond that.
+        let room = f32::from(self.bounds.size.height);
+        let max_h = if room < 1. { 560. } else { (room - DOCK - 16.).max(120.) };
+        floating(t).id("d-relations-menu").max_h(px(max_h)).overflow_y_scroll().flex().flex_wrap().max_w(px(480.)).child(column(&[a], cx).child(nary)).child(column(&[b], cx)).child(column(&[c], cx)).child(column(&[d], cx))
     }
 
     /// The menu of a right click: what can be done with what is under it, or with the canvas when nothing is.
@@ -113,7 +116,7 @@ impl Canvas {
         let t = self.theme;
         let links = self.selected.iter().any(|id| self.diagram.link(*id).is_some());
         let single = self.selected.len() == 1;
-        let alone = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| !s.form.holds() || s.form == Form::Composite));
+        let alone = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| matches!(s.form, Form::Round | Form::Composite)));
         let holder = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| s.form.holds()) && !self.diagram.children(id).is_empty());
         let item = |id: &'static str, icon: &'static str, label: &'static str, key: String, cx: &mut Context<Self>, act: fn(&mut Self, &mut Context<Self>)| {
             row(id, icon, label, key, false, t).debug_selector(move || id.to_string()).on_click(cx.listener(move |this, _, _, cx| {
@@ -235,9 +238,9 @@ impl Canvas {
     /// The dock, and the menu that is open above it.
     pub(super) fn bottom(&self, cx: &mut Context<Self>) -> Div {
         let menu = if self.shapes {
-            Some(self.shapes_menu(cx))
+            Some(self.shapes_menu(cx).into_any_element())
         } else if self.relations {
-            Some(self.relations_menu(cx))
+            Some(self.relations_menu(cx).into_any_element())
         } else {
             None
         };

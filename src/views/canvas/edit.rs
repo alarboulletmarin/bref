@@ -18,6 +18,7 @@ impl Canvas {
     /// Writes in an arrow's text at `slot` (a shape has only one).
     pub(super) fn start_editing_slot(&mut self, id: u32, slot: Slot, cx: &mut Context<Self>) {
         self.remember();
+        self.context = None;
         self.slot = slot;
         let Some(len) = self.text_of(id).map(|t| t.len()) else { return };
         self.editing = Some((id, len));
@@ -67,6 +68,8 @@ impl Canvas {
                 "-" => self.zoom_by(0.8, cx),
                 "0" => self.zoom_fit(cx),
                 // The menu of relationships: `k` opens it, then a letter picks one.
+                // The menu is open: `k` closes it, a letter picks a relationship.
+                _ if self.relations && text.eq_ignore_ascii_case(Self::RELATIONS) => self.toggle_relations(cx),
                 _ if self.relations => {
                     let relation = Relation::ALL.iter().find(|r| text.chars().next().is_some_and(|c| c.eq_ignore_ascii_case(&r.key())));
                     match relation {
@@ -82,10 +85,7 @@ impl Canvas {
                     }
                     cx.notify();
                 }
-                _ if text.eq_ignore_ascii_case(Self::RELATIONS) => {
-                    self.relations = true;
-                    cx.notify();
-                }
+                _ if text.eq_ignore_ascii_case(Self::RELATIONS) => self.toggle_relations(cx),
                 _ if text.eq_ignore_ascii_case(Self::LIBRARY) => self.toggle_library(cx),
                 _ => {
                     if let Some((tool, ..)) = TOOLS.iter().find(|(_, _, key)| key.eq_ignore_ascii_case(text)) {
@@ -138,6 +138,10 @@ impl Canvas {
 
     /// Arrow keys: the cursor while writing, otherwise the selection, by one grid step.
     pub(super) fn nudge(&mut self, dx: f32, dy: f32, cx: &mut Context<Self>) {
+        // A menu or the library is open: the keys are not for the selection.
+        if self.library.is_some() || self.context.is_some() || self.shapes || self.relations {
+            return;
+        }
         if self.editing.is_some() {
             if dx != 0. {
                 self.step(dx > 0., false, cx);

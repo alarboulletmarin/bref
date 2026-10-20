@@ -46,7 +46,10 @@ impl Render for Canvas {
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &Paste, _, cx| {
-                if let Some(text) = cx.read_from_clipboard().and_then(|item: ClipboardItem| item.text()) {
+                // Into a text being written or the library's search; elsewhere a pasted letter would pick a tool.
+                if (this.editing.is_some() || this.library.is_some())
+                    && let Some(text) = cx.read_from_clipboard().and_then(|item: ClipboardItem| item.text())
+                {
                     this.typed(&text, cx);
                 }
             }))
@@ -61,6 +64,7 @@ impl Render for Canvas {
                     cx.notify();
                 }
                 (Some(_), _) => this.typed("\n", cx),
+                (None, _) if this.context.is_some() || this.shapes || this.relations => {}
                 (None, &[id]) => this.start_editing(id, cx),
                 _ => {}
             }))
@@ -87,6 +91,7 @@ impl Render for Canvas {
             }))
             .child(
                 div()
+                    .id("d-canvas")
                     .flex_1()
                     .min_h_0()
                     .cursor(self.hand)
@@ -98,6 +103,15 @@ impl Render for Canvas {
                     .on_mouse_down(MouseButton::Right, cx.listener(Self::context_down))
                     .on_mouse_move(cx.listener(Self::mouse_move))
                     .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
+                    // Let go over the dock or a bar, which hide the pointer from the canvas: the gesture ends all the same.
+                    .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
+                    // Pointing at something else (a bar, the dock) or leaving: nothing is lit, no tool outline follows.
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                        if !hovered && (this.hover.is_some() || this.pointer.is_some()) {
+                            (this.hover, this.pointer) = (None, None);
+                            cx.notify();
+                        }
+                    }))
                     .on_mouse_up(MouseButton::Middle, cx.listener(|this, _, _, _| this.drag = Drag::None))
                     .on_scroll_wheel(cx.listener(Self::scroll))
                     .on_drop(cx.listener(|this, placing: &Placing, window, cx| {

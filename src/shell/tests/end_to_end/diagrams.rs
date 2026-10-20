@@ -349,10 +349,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.simulate_keystrokes("escape");
         cx.simulate_input("a");
         assert_eq!(tool(cx), canvas::Tool::Link(Relation::Navigable));
-        // A letter that is nowhere in the menu closes it, then acts as usual.
+        // The association class has the letter `R` in the menu, not the rectangle's meaning.
         cx.simulate_input("k");
         cx.simulate_input("r");
-        assert_eq!(tool(cx), canvas::Tool::Shape(diagram::Form::Rect));
+        assert_eq!(tool(cx), canvas::Tool::Link(Relation::AssociationClass));
+        // A key that is nowhere in the menu closes it, then acts as usual.
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("r");
         cx.simulate_input("k");
         cx.simulate_input("7");
         assert_eq!(tool(cx), canvas::Tool::Shape(diagram::Form::Rect));
@@ -383,7 +386,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         let assoc = canvas.read_with(cx, |c, _| c.diagram().links[0].id);
         cx.simulate_keystrokes("escape");
         cx.simulate_input("k");
-        cx.simulate_input("k");
+        cx.simulate_input("r");
         rows(cx, &canvas, (200., 230.), (203., 36.));
         let d = canvas.read_with(cx, |c, _| c.diagram().clone());
         assert_eq!(d.links[1].to, diagram::End::Mid(assoc));
@@ -1140,7 +1143,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             let selector: &'static str = Box::leak(format!("d-preset-{class}").into_boxed_str());
             let bounds = cx.debug_bounds(selector).expect("the class row");
             let from = gpui::point(bounds.origin.x + bounds.size.width * grab, bounds.center().y);
-            let to = canvas.read_with(cx, |c, _| c.spot(250., 150. + 120. * (k as f32 + 1.)));
+            let to = canvas.read_with(cx, |c, _| c.spot(250., 150. + 80. * (k as f32 + 1.)));
             cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
             cx.simulate_mouse_move(from + gpui::point(gpui::px(10.), gpui::px(10.)), MouseButton::Left, gpui::Modifiers::none());
             cx.simulate_mouse_move(to, MouseButton::Left, gpui::Modifiers::none());
@@ -1317,6 +1320,67 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         click(cx, "d-cm-text".into());
         let text = canvas.read_with(cx, |c, _| c.diagram().shapes.last().unwrap().clone());
         assert_eq!(text.form, diagram::Form::Text);
+        cx.simulate_keystrokes("escape");
+        // The bar keeps clear of the handles of the shape it is over, so that an arrow can be drawn from it.
+        click(cx, "d-tool-v".into());
+        let on_rect = canvas.read_with(cx, |c, _| c.spot(rect.x + 10., rect.y + rect.h - 10.));
+        cx.simulate_click(on_rect, gpui::Modifiers::none());
+        cx.run_until_parked();
+        let bar = bounds(cx, "d-selection-bar".into()).expect("the bar over the rectangle");
+        for side in 0..4 {
+            let handle = canvas.read_with(cx, |c, _| c.handle_spot(rect.id, side)).unwrap();
+            assert!(!bar.contains(&handle), "the bar {bar:?} covers the handle of side {side} at {handle:?}");
+        }
+        // A click on a handle changes nothing, and is no step of undo.
+        let handle = canvas.read_with(cx, |c, _| c.handle_spot(rect.id, 2)).unwrap();
+        cx.simulate_mouse_move(on_rect, None, gpui::Modifiers::none());
+        cx.simulate_mouse_move(handle, None, gpui::Modifiers::none());
+        let (_, depth) = canvas.read_with(cx, |c, _| c.gesture());
+        cx.simulate_click(handle, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(canvas.read_with(cx, |c, _| c.gesture()), (false, depth));
+        // K opens and closes the menu of relationships, and opening one closes the other.
+        cx.simulate_input("k");
+        assert!(chrome_of(cx).1);
+        cx.simulate_input("k");
+        assert_eq!((chrome_of(cx).0, chrome_of(cx).1), (false, false));
+        click(cx, "d-shapes".into());
+        cx.simulate_input("k");
+        assert_eq!((chrome_of(cx).0, chrome_of(cx).1), (false, true));
+        // A click on the canvas closes the menus.
+        cx.simulate_click(far, gpui::Modifiers::none());
+        assert_eq!((chrome_of(cx).0, chrome_of(cx).1), (false, false));
+        // With a menu open, the arrow keys are not for the selection.
+        cx.simulate_click(on_rect, gpui::Modifiers::none());
+        right(cx, on_rect);
+        let x = canvas.read_with(cx, |c, _| c.diagram().shape(rect.id).unwrap().x);
+        cx.simulate_keystrokes("right");
+        assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shape(rect.id).unwrap().x), x);
+        cx.simulate_keystrokes("escape");
+        // Fill and dashes agree on a mixed selection: on, unless all are on already.
+        let fills = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().shapes.iter().map(|s| s.fill).collect::<Vec<_>>());
+        cx.simulate_keystrokes("secondary-a");
+        click(cx, "d-fill".into());
+        assert!(fills(cx).iter().all(|f| *f), "{:?}", fills(cx));
+        cx.simulate_keystrokes("escape");
+        cx.simulate_click(on_rect, gpui::Modifiers::none());
+        click(cx, "d-fill".into());
+        assert_eq!(fills(cx).iter().filter(|f| !**f).count(), 1);
+        cx.simulate_keystrokes("secondary-a");
+        click(cx, "d-fill".into());
+        assert!(fills(cx).iter().all(|f| *f), "a mixed selection is all filled, not turned over: {:?}", fills(cx));
+        // Let go over the dock, which hides the pointer from the canvas: the gesture ends there all the same.
+        cx.simulate_keystrokes("escape");
+        let dock = bounds(cx, "d-tool-v".into()).unwrap().center();
+        let (from, to) = canvas.read_with(cx, |c, _| (c.spot(120., 250.), c.spot(240., 300.)));
+        cx.simulate_input("r");
+        cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_move(to, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_up(dock, MouseButton::Left, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert!(!canvas.read_with(cx, |c, _| c.gesture().0), "the drag is still on after the button was let go over the dock");
+        let last = canvas.read_with(cx, |c, _| c.diagram().shapes.last().unwrap().clone());
+        assert_eq!((last.w, last.h), (120., 50.), "{last:?}");
         cx.simulate_keystrokes("escape");
         fs::remove_file(&chrome).unwrap();
         cx.simulate_keystrokes("escape escape");

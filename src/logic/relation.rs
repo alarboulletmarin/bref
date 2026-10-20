@@ -170,7 +170,7 @@ impl Relation {
             Merge => 'm',
             Deploy => 'j',
             Manifest => 'v',
-            AssociationClass => 'k',
+            AssociationClass => 'r',
             Ball => 'b',
             Socket => 'q',
             Sync => 'f',

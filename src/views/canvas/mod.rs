@@ -1,6 +1,6 @@
 //! Canvas: the diagram editor. Shapes and arrows are placed with the
 //! mouse, moved, written in; tools are chosen with one
-//! letter, as in Excalidraw. The drawing itself lives in `diagram`.
+//! letter. The drawing itself lives in `diagram`.
 
 mod chrome;
 mod edit;
@@ -118,6 +118,8 @@ struct Placing(Tool, &'static str, Theme, Point<Pixels>);
 
 /// What the dock takes at the bottom of the canvas, where a diagram is not fitted.
 const DOCK: f32 = 72.;
+/// What the cluster of buttons takes at the top.
+const TOP: f32 = 52.;
 
 /// Side of the button that is drawn under the pointer.
 const GHOST: f32 = 28.;
@@ -214,6 +216,8 @@ pub struct Canvas {
     shapes: bool,
     /// The shape or the arrow under the pointer, when nothing is being dragged.
     hover: Option<u32>,
+    /// The arrow being drawn from a handle: a click on the handle, with no drag, draws none.
+    from_handle: Option<u32>,
     /// Where the pointer was last seen over the canvas.
     pointer: Option<Point<Pixels>>,
     /// Where the menu of a right click is (a point of the window).
@@ -260,6 +264,7 @@ impl Canvas {
             relations: false,
             shapes: false,
             hover: None,
+            from_handle: None,
             pointer: None,
             context: None,
             shape_pick: Form::Rect,
@@ -290,6 +295,12 @@ impl Canvas {
     #[cfg(test)]
     pub fn pointed(&self) -> (Option<u32>, bool) {
         (self.hover, self.context.is_some())
+    }
+
+    /// Whether a gesture is in progress, and how many steps of undo there are.
+    #[cfg(test)]
+    pub fn gesture(&self) -> (bool, usize) {
+        (self.drag != Drag::None, self.undo.len())
     }
 
     /// Where the handle on side `side` (top, right, bottom, left) of a shape is, in the window.

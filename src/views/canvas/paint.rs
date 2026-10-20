@@ -86,13 +86,13 @@ impl Canvas {
         self.bounds = bounds;
         if std::mem::take(&mut self.fit) {
             // The dock floats over the bottom of the canvas: the diagram is fitted above it.
-            let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height) - DOCK);
+            let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height) - DOCK - TOP);
             match self.diagram.bounds() {
                 Some((x0, y0, x1, y1)) => {
                     self.zoom = (w / (x1 - x0 + 80.)).min(h / (y1 - y0 + 80.)).clamp(0.2, 1.);
-                    self.pan = (w / 2. - (x0 + x1) / 2. * self.zoom, h / 2. - (y0 + y1) / 2. * self.zoom);
+                    self.pan = (w / 2. - (x0 + x1) / 2. * self.zoom, TOP + h / 2. - (y0 + y1) / 2. * self.zoom);
                 }
-                None => (self.pan, self.zoom) = ((w / 2., h / 2.), 1.),
+                None => (self.pan, self.zoom) = ((w / 2., TOP + h / 2.), 1.),
             }
         }
         self.fit_text(window);

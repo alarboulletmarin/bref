@@ -9,10 +9,12 @@ const BUTTON: f32 = 28.;
 const GAP: f32 = 4.;
 const DIVIDER: f32 = 9.;
 /// Width of the chip that names the relationship of an arrow.
-const CHIP: f32 = 168.;
+const CHIP: f32 = 200.;
 /// Height of a row of the bar, and the room it keeps from the selection.
-const ROW: f32 = 36.;
-const AWAY: f32 = 10.;
+const ROW: f32 = 32.;
+const AWAY: f32 = 30.;
+/// Side of a colour in the palette.
+const SWATCH: f32 = 20.;
 /// How far right the cluster of buttons at the top left reaches (it grows with the buttons of a sequence diagram).
 const CLUSTER: f32 = 200.;
 
@@ -52,19 +54,23 @@ impl Canvas {
         }
     }
 
-    /// The six colours of the palette, side by side.
+    /// The six colours of the palette, side by side; the one the whole selection has is ringed.
     fn swatches(&self, cx: &mut Context<Self>) -> Item {
+        let names = [tr("Neutral", "Neutre"), tr("Red", "Rouge"), tr("Orange", "Orange"), tr("Green", "Vert"), tr("Blue", "Bleu"), tr("Purple", "Violet")];
+        let colors: Vec<u8> = self.selected.iter().filter_map(|id| self.diagram.shape(*id).map(|s| s.color).or_else(|| self.diagram.link(*id).map(|l| l.color))).collect();
+        let shared = colors.first().copied().filter(|c| colors.iter().all(|o| o == c));
         let row = div().flex().items_center().gap(px(GAP)).children((0..diagram::COLORS.len() as u8).map(|i| {
             div()
                 .id(("d-color", i as usize))
-                .size(px(16.))
+                .size(px(SWATCH))
                 .flex_none()
                 .rounded_full()
                 .cursor_pointer()
                 .bg(self.ink(i))
-                .border_1()
-                .border_color(self.theme.border)
+                .border_2()
+                .border_color(if shared == Some(i) { self.theme.accent } else { self.theme.panel })
                 .hover(|s| s.opacity(0.75))
+                .tooltip(tip(names[i as usize % names.len()], String::new(), self.theme))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.style(cx, |shape, link| {
                         if let Some(shape) = shape {
@@ -77,7 +83,7 @@ impl Canvas {
                 }))
         }));
         let n = diagram::COLORS.len() as f32;
-        (row.into_any_element(), n * 16. + (n - 1.) * GAP)
+        (row.into_any_element(), n * SWATCH + (n - 1.) * GAP)
     }
 
     /// Whether the bar is over the selection: there is one, nothing is being written, dragged or drawn.
@@ -95,10 +101,11 @@ impl Canvas {
         let t = self.theme;
         let links = self.selected.iter().any(|id| self.diagram.link(*id).is_some());
         let shapes = self.selected.iter().any(|id| self.diagram.shape(*id).is_some());
-        let alone = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| !s.form.holds() || s.form == diagram::Form::Composite));
+        let alone = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| matches!(s.form, diagram::Form::Round | diagram::Form::Composite)));
         let holder = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| s.form.holds()) && !self.diagram.children(id).is_empty());
-        let filled = self.selected.iter().filter_map(|id| self.diagram.shape(*id)).any(|s| s.fill);
-        let dashed = self.selected.iter().any(|id| self.diagram.shape(*id).map(|s| s.dashed).or_else(|| self.diagram.link(*id).map(|l| l.dashed)) == Some(true));
+        // On a mixed selection a switch sets all to the same state: on unless all are on already.
+        let filled = self.selected.iter().filter_map(|id| self.diagram.shape(*id)).all(|s| s.fill);
+        let dashed = self.selected.iter().all(|id| self.diagram.shape(*id).map(|s| s.dashed).or_else(|| self.diagram.link(*id).map(|l| l.dashed)) == Some(true));
         let mut items: Vec<Item> = Vec::new();
         let divider = |items: &mut Vec<Item>| {
             if !items.is_empty() {
@@ -178,11 +185,12 @@ impl Canvas {
         if shapes {
             items.push((
                 button("d-fill", "d-fill.svg", filled, t)
+                    .debug_selector(|| "d-fill".into())
                     .tooltip(tip(tr("Fill", "Remplir"), String::new(), t))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.style(cx, |shape, _| {
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.style(cx, move |shape, _| {
                             if let Some(shape) = shape {
-                                shape.fill = !shape.fill;
+                                shape.fill = !filled;
                             }
                         })
                     }))
@@ -193,13 +201,13 @@ impl Canvas {
         items.push((
             button("d-dash", "d-dash.svg", dashed, t)
                 .tooltip(tip(tr("Dashed stroke", "Trait en pointillés"), String::new(), t))
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.style(cx, |shape, link| {
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.style(cx, move |shape, link| {
                         if let Some(shape) = shape {
-                            shape.dashed = !shape.dashed;
+                            shape.dashed = !dashed;
                         }
                         if let Some(link) = link {
-                            link.dashed = !link.dashed;
+                            link.dashed = !dashed;
                         }
                     })
                 }))
@@ -227,7 +235,8 @@ impl Canvas {
         let natural = items.iter().map(|(_, w)| *w).sum::<f32>() + GAP * (items.len() as f32 - 1.) + 12.;
         let width = natural.min(canvas_w - 16.);
         let rows = (natural / width).ceil().max(1.);
-        let height = ROW * rows - 4.;
+        // Padding and border, then a row of buttons and the gap to the next.
+        let height = 10. + ROW * rows - 4.;
         let middle = self.pan.0 + (x0 + x1) / 2. * self.zoom;
         let left = (middle - width / 2.).clamp(8., (canvas_w - width - 8.).max(8.));
         // Above the selection or below it, whichever covers fewer shapes; at the top if neither fits.
