@@ -56,15 +56,9 @@ impl Render for Canvas {
             // Enter: write in the selected element; while writing, new line.
             .on_action(cx.listener(|this, _: &Confirm, _, cx| match (this.editing, this.selected.as_slice()) {
                 // In the library: Enter picks the first shape that answers the search.
-                (None, _) if this.library.is_some() => {
-                    let query = this.library.take().unwrap_or_default();
-                    if let Some(first) = library::presets().iter().position(|p| p.matches(&query)) {
-                        this.choose_preset(first, cx);
-                    }
-                    cx.notify();
-                }
+                // A menu is open: the row the arrow keys are on.
+                (None, _) if this.menu_open() => this.pick(cx),
                 (Some(_), _) => this.typed("\n", cx),
-                (None, _) if this.context.is_some() || this.shapes || this.relations => {}
                 (None, &[id]) => this.start_editing(id, cx),
                 _ => {}
             }))

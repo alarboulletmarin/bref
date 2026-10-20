@@ -1251,6 +1251,10 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             assert!(fits(bar) && fits(dock), "{width}: bar {bar:?}, dock {dock:?}, window {narrow:?}");
             let menu = bounds(cx, "d-delete".into()).unwrap();
             assert!(bar.contains(&menu.center()) && fits(menu), "{width}: the last button of the bar is outside it: {menu:?}");
+            // The zoom is not on the dock.
+            let zoom = [bounds(cx, "d-zoom-in".into()).unwrap(), bounds(cx, "d-zoom-out".into()).unwrap()];
+            let row: Vec<_> = ["d-tool-v", "d-shapes", "d-relations", "d-tool-t", "d-library"].iter().map(|s| bounds(cx, s.to_string()).unwrap()).collect();
+            assert!(zoom.iter().all(|z| fits(*z) && row.iter().all(|d| !z.intersects(d))), "{width}: the zoom {zoom:?} is on the dock {row:?}");
         }
         cx.simulate_resize(window);
         cx.update(|window, _| window.refresh());
@@ -1381,6 +1385,53 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         assert!(!canvas.read_with(cx, |c, _| c.gesture().0), "the drag is still on after the button was let go over the dock");
         let last = canvas.read_with(cx, |c, _| c.diagram().shapes.last().unwrap().clone());
         assert_eq!((last.w, last.h), (120., 50.), "{last:?}");
+        cx.simulate_keystrokes("escape");
+        // The menus are walked with the keys: down, up and Enter pick the row the cursor is on.
+        click(cx, "d-shapes".into());
+        cx.simulate_keystrokes("down down enter");
+        assert_eq!(canvas.read_with(cx, |c, _| c.tool()), canvas::Tool::Shape(diagram::Form::Ellipse));
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("k");
+        cx.simulate_keystrokes("down enter");
+        assert_eq!(canvas.read_with(cx, |c, _| c.tool()), canvas::Tool::Link(Relation::Navigable));
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("k");
+        cx.simulate_keystrokes("up enter");
+        assert_eq!(canvas.read_with(cx, |c, _| c.tool()), canvas::Tool::Link(Relation::Lost), "the cursor goes round: up from the first row is the last");
+        cx.simulate_keystrokes("escape");
+        // In the menu of a right click: delete is the third row of a shape's.
+        let count = shapes(cx);
+        right(cx, on_rect);
+        cx.simulate_keystrokes("down down enter");
+        assert_eq!((shapes(cx), canvas.read_with(cx, |c, _| c.pointed().1)), (count - 1, false));
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(shapes(cx), count);
+        // In the library, typing narrows it and the keys pick.
+        cx.simulate_input("s");
+        cx.simulate_input("interface");
+        cx.simulate_keystrokes("enter");
+        let first = match canvas.read_with(cx, |c, _| c.tool()) {
+            canvas::Tool::Preset(i) => i,
+            other => panic!("{other:?}"),
+        };
+        assert!(crate::logic::library::presets()[first].name.to_lowercase().contains("interface"));
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("s");
+        cx.simulate_input("interface");
+        cx.simulate_keystrokes("down enter");
+        let second = match canvas.read_with(cx, |c, _| c.tool()) {
+            canvas::Tool::Preset(i) => i,
+            other => panic!("{other:?}"),
+        };
+        let answers = crate::logic::library::presets().iter().filter(|p| p.matches("interface")).count();
+        assert!(answers < 2 || second != first, "down did not move to another row: {first} {second}");
+        cx.simulate_keystrokes("escape");
+        // 1 to 6 colour the selection.
+        cx.simulate_click(on_rect, gpui::Modifiers::none());
+        cx.simulate_input("3");
+        assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shape(rect.id).unwrap().color), 2);
+        cx.simulate_input("1");
+        assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shape(rect.id).unwrap().color), 0);
         cx.simulate_keystrokes("escape");
         fs::remove_file(&chrome).unwrap();
         cx.simulate_keystrokes("escape escape");

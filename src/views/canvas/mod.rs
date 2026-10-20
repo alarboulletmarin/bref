@@ -67,6 +67,33 @@ const TOOLS: [(Tool, &str, &str); 14] = [
     (Tool::Link(Relation::Association), "d-line.svg", "l"),
 ];
 
+/// The icon that draws an arrow head, and whether it is drawn at the end of the line (else at its start): turned
+/// half a way round, it serves for the other end.
+fn head_icon(head: diagram::Head) -> (&'static str, bool) {
+    use diagram::Head::*;
+    match head {
+        None => ("d-rel-association.svg", true),
+        Arrow => ("d-rel-navigable.svg", true),
+        Triangle => ("d-rel-generalization.svg", true),
+        Diamond => ("d-rel-aggregation.svg", false),
+        DiamondFull => ("d-rel-composition.svg", false),
+        Cross => ("d-rel-nonnavigable.svg", true),
+        Ball => ("d-rel-ball.svg", true),
+        Socket => ("d-rel-socket.svg", true),
+        TriangleFull => ("d-rel-sync.svg", true),
+        Dot => ("d-rel-lost.svg", true),
+    }
+}
+
+/// The icon of a route.
+fn route_icon(route: Route) -> &'static str {
+    match route {
+        Route::Elbow => "d-route.svg",
+        Route::Straight => "d-line.svg",
+        Route::Curve => "d-route-curve.svg",
+    }
+}
+
 /// Name of a bar tool, for its tooltip.
 fn tool_label(tool: Tool) -> &'static str {
     match tool {
@@ -115,6 +142,9 @@ fn tool_name(tool: Tool) -> &'static str {
 /// where the pointer took hold of the row or the button it comes from.
 #[derive(Clone)]
 struct Placing(Tool, &'static str, Theme, Point<Pixels>);
+
+/// Under this width of canvas the zoom is stacked above the dock instead of beside it.
+const NARROW: f32 = 520.;
 
 /// What the dock takes at the bottom of the canvas, where a diagram is not fitted.
 const DOCK: f32 = 72.;
@@ -218,6 +248,10 @@ pub struct Canvas {
     hover: Option<u32>,
     /// The arrow being drawn from a handle: a click on the handle, with no drag, draws none.
     from_handle: Option<u32>,
+    /// The row of the open menu the arrow keys are on.
+    cursor: usize,
+    /// The scroll of the library's list.
+    library_scroll: gpui::ScrollHandle,
     /// Where the pointer was last seen over the canvas.
     pointer: Option<Point<Pixels>>,
     /// Where the menu of a right click is (a point of the window).
@@ -265,6 +299,8 @@ impl Canvas {
             shapes: false,
             hover: None,
             from_handle: None,
+            cursor: 0,
+            library_scroll: gpui::ScrollHandle::new(),
             pointer: None,
             context: None,
             shape_pick: Form::Rect,
@@ -540,5 +576,19 @@ mod ghost_tests {
             let (left, top) = (-grab.0 + dx, -grab.1 + dy);
             assert_eq!((left + GHOST / 2., top + GHOST / 2.), (0., 0.), "{grab:?}");
         }
+    }
+
+    #[test]
+    fn every_head_and_every_route_has_an_icon_the_assets_know() {
+        use gpui::AssetSource;
+        let icons = diagram::Head::ALL.iter().map(|(h, _)| head_icon(*h).0).chain(Route::ALL.iter().map(|(r, _)| route_icon(*r))).chain(["d-reverse.svg"]);
+        for icon in icons {
+            assert!(crate::ui::assets::Assets.load(icon).unwrap().is_some(), "{icon} is not an asset");
+        }
+        // Two heads of one family are not drawn alike: the buttons tell them apart.
+        let mut seen: Vec<&str> = diagram::Head::ALL.iter().map(|(h, _)| head_icon(*h).0).collect();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), diagram::Head::ALL.len());
     }
 }

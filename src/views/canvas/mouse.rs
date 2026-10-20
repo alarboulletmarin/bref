@@ -119,7 +119,7 @@ impl Canvas {
             Some(_) => {}
             None => self.selected.clear(),
         }
-        (self.drag, self.hover, self.context) = (Drag::None, None, Some(e.position));
+        (self.drag, self.hover, self.context, self.cursor) = (Drag::None, None, Some(e.position), 0);
         cx.notify();
     }
 

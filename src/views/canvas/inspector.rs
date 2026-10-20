@@ -2,6 +2,7 @@
 //! bar at the top that grows and shrinks.
 
 use super::*;
+use crate::ui::widgets::button_turned;
 use gpui::Div;
 
 /// Side of a button, the gap between two items, and what a separator takes (a hairline and its margins).
@@ -141,32 +142,30 @@ impl Canvas {
                 .on_click(cx.listener(|this, _, _, cx| this.toggle_relations(cx)));
             items.push((chip.into_any_element(), CHIP));
             divider(&mut items);
-            let toggle = |id: &'static str, icon: &'static str, tooltip: &'static str, cx: &mut Context<Self>, set: fn(Option<&mut diagram::Shape>, Option<&mut diagram::Link>)| -> Item {
-                (button(id, icon, false, t).tooltip(tip(tooltip, String::new(), t)).on_click(cx.listener(move |this, _, _, cx| this.style(cx, set))).into_any_element(), BUTTON)
+            // The heads and the route show their state in their icon: a click goes to the next.
+            let first = self.selected.iter().find_map(|id| self.diagram.link(*id));
+            let (start, end, route) = first.map_or((diagram::Head::None, diagram::Head::None, self.route), |l| (l.start, l.end, l.route));
+            let head = |id: &'static str, tooltip: &'static str, head: diagram::Head, at_end: bool, cx: &mut Context<Self>| -> Item {
+                let (icon, native_end) = head_icon(head);
+                let button = button_turned(id, icon, false, native_end != at_end, t).tooltip(tip(tooltip, String::new(), t)).on_click(cx.listener(move |this, _, _, cx| {
+                    this.style(cx, move |_, link| {
+                        if let Some(link) = link {
+                            *(if at_end { &mut link.end } else { &mut link.start }) = head.next();
+                        }
+                    })
+                }));
+                (button.into_any_element(), BUTTON)
             };
-            items.push(toggle("d-head-start", "d-head-start.svg", tr("Head at the start", "Extrémité du début"), cx, |_, link| {
-                if let Some(link) = link {
-                    link.start = link.start.next();
-                }
-            }));
-            items.push(toggle("d-head-end", "d-head-end.svg", tr("Head at the end", "Extrémité de la fin"), cx, |_, link| {
-                if let Some(link) = link {
-                    link.end = link.end.next();
-                }
-            }));
-            let route = button("d-route", "d-route.svg", false, t).tooltip(tip(tr("Route: elbowed, straight or curved", "Tracé : coudé, droit ou courbe"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {
+            items.push(head("d-head-start", tr("Head at the start: click for the next", "Extrémité du début : un clic passe à la suivante"), start, false, cx));
+            items.push(head("d-head-end", tr("Head at the end: click for the next", "Extrémité de la fin : un clic passe à la suivante"), end, true, cx));
+            let route_button = button("d-route", route_icon(route), false, t).tooltip(tip(tr("Route: elbowed, straight or curved; click for the next", "Tracé : coudé, droit ou courbe ; un clic passe au suivant"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {
                 // The chosen path also applies to arrows to come.
                 let first = this.selected.iter().find_map(|id| this.diagram.link(*id)).map(|l| l.route.next());
                 if let Some(route) = first {
-                    this.route = route;
-                    this.style(cx, move |_, link| {
-                        if let Some(link) = link {
-                            link.route = route;
-                        }
-                    });
+                    this.set_route(route, cx);
                 }
             }));
-            items.push((route.into_any_element(), BUTTON));
+            items.push((route_button.into_any_element(), BUTTON));
             divider(&mut items);
             let text = |id: &'static str, icon: &'static str, slot: Slot, tooltip: &'static str, cx: &mut Context<Self>| -> Item {
                 let button = button(id, icon, false, t).tooltip(tip(tooltip, String::new(), t)).on_click(cx.listener(move |this, _, _, cx| {

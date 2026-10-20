@@ -60,6 +60,7 @@ impl Canvas {
             // The library is open: what is typed searches it.
             if let Some(query) = &mut self.library {
                 query.push_str(text);
+                self.reset_cursor();
                 cx.notify();
                 return;
             }
@@ -87,6 +88,18 @@ impl Canvas {
                 }
                 _ if text.eq_ignore_ascii_case(Self::RELATIONS) => self.toggle_relations(cx),
                 _ if text.eq_ignore_ascii_case(Self::LIBRARY) => self.toggle_library(cx),
+                // 1 to 6: the colour of the selection, as the palette gives them.
+                _ if !self.selected.is_empty() && matches!(text.as_bytes(), [b'1'..=b'6']) => {
+                    let color = text.as_bytes()[0] - b'1';
+                    self.style(cx, move |shape, link| {
+                        if let Some(shape) = shape {
+                            shape.color = color;
+                        }
+                        if let Some(link) = link {
+                            link.color = color;
+                        }
+                    })
+                }
                 _ => {
                     if let Some((tool, ..)) = TOOLS.iter().find(|(_, _, key)| key.eq_ignore_ascii_case(text)) {
                         self.set_tool(*tool, cx);
@@ -124,6 +137,7 @@ impl Canvas {
     pub(super) fn erase(&mut self, forward: bool, cx: &mut Context<Self>) {
         if let Some(query) = &mut self.library {
             query.pop();
+            self.reset_cursor();
             return cx.notify();
         }
         if self.editing.is_some() {
@@ -138,8 +152,12 @@ impl Canvas {
 
     /// Arrow keys: the cursor while writing, otherwise the selection, by one grid step.
     pub(super) fn nudge(&mut self, dx: f32, dy: f32, cx: &mut Context<Self>) {
-        // A menu or the library is open: the keys are not for the selection.
-        if self.library.is_some() || self.context.is_some() || self.shapes || self.relations {
+        // A menu or the library is open: up and down go along its rows, the other keys are not for the selection.
+        if self.menu_open() {
+            if dy != 0. {
+                self.walk(dy as isize, cx);
+                self.show_cursor();
+            }
             return;
         }
         if self.editing.is_some() {

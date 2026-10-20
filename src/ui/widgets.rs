@@ -6,6 +6,11 @@ use crate::ui::theme::Theme;
 
 /// Icon button of the rail and of panel headers.
 pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, t: Theme) -> Stateful<Div> {
+    button_turned(id, icon, active, false, t)
+}
+
+/// The same, its icon turned half a way round: one drawing for the two ends of an arrow.
+pub fn button_turned(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, turned: bool, t: Theme) -> Stateful<Div> {
     div()
         .id(id)
         .size(px(28.))
@@ -23,6 +28,7 @@ pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, 
                 .path(icon)
                 .size(px(16.))
                 .flex_none()
+                .when(turned, |s| s.with_transformation(gpui::Transformation::rotate(gpui::radians(std::f32::consts::PI))))
                 .text_color(if active { t.accent } else { t.soft }),
         )
 }
