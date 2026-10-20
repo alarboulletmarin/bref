@@ -154,14 +154,20 @@ impl Diagram {
         let (x1, y1) = (inside.iter().map(|s| s.x + s.w).fold(f32::MIN, f32::max), inside.iter().map(|s| s.y + s.h).fold(f32::MIN, f32::max));
         let top = match form.0 {
             Form::Row => 20.,
+            Form::Node => DEPTH + 6. + LINE * form.1 as f32 + 12.,
             Form::Package => 18. + 16.,
             Form::Lane | Form::Composite => LANE + 16.,
             _ => 6. + LINE * form.1 as f32 + 12.,
         };
         let grid = |v: f32, up: bool| if up { (v / GRID).ceil() * GRID } else { (v / GRID).floor() * GRID };
         // A horizontal swimlane has its header on the left.
-        let side = if form.0 == Form::Row { ROW + 20. } else { 20. };
-        let (left, above, right, below) = (grid(x0 - side, false), grid(y0 - top, false), grid(x1 + 20., true), grid(y1 + 20., true));
+        let (side, behind) = match form.0 {
+            Form::Row => (ROW + 20., 20.),
+            // A node has its right face behind its front face.
+            Form::Node => (20., 20. + DEPTH),
+            _ => (20., 20.),
+        };
+        let (left, above, right, below) = (grid(x0 - side, false), grid(y0 - top, false), grid(x1 + behind, true), grid(y1 + 20., true));
         if let Some(shape) = self.shape_mut(id) {
             (shape.x, shape.y, shape.w, shape.h) = (left, above, right - left, below - above);
         }
@@ -413,5 +419,28 @@ mod tests {
         let r = d.shape(row).unwrap();
         // Content at 200..300 by 30..80: 20 around it, and the header (100) on the left of it.
         assert_eq!((r.x, r.y, r.w, r.h), (80., 10., 240., 90.));
+    }
+
+    #[test]
+    fn a_node_holds_what_runs_on_it_and_fits_around_it() {
+        let mut d = Diagram::blank();
+        let node = d.add_shape(Form::Node, 0., 0., 300., 200.);
+        d.shape_mut(node).unwrap().text = "«device»\nServer".into();
+        let artifact = d.add_shape(Form::Rect, 100., 100., 100., 50.);
+        d.adopt(&[artifact]);
+        assert_eq!(d.shape(artifact).unwrap().parent, Some(node));
+        // The text is in the front face, under the top: 12 for the depth, 6 for the margin.
+        let (lines, _) = d.lines(d.shape(node).unwrap());
+        assert_eq!((lines[0].x, lines[0].y, lines[1].y), (8., 18., 36.));
+        // Fitted around 100..200 by 100..150: the top (12 + 6 + two lines + 12 = 66 above), 20 left, 20 and the right face (12) on the right.
+        d.fit(node);
+        let n = d.shape(node).unwrap();
+        assert_eq!((n.x, n.y, n.w, n.h), (80., 30., 160., 140.), "{n:?}");
+        // A node smaller than its depth, or of no size, still draws: the faces never leave the box.
+        for (w, h) in [(0., 0.), (5., 5.), (12., 200.), (200., 12.)] {
+            let shape = Shape { id: 9, form: Form::Node, x: 10., y: 10., w, h, text: String::new(), color: 0, fill: false, dashed: false, parent: None, operand: 0 };
+            let ok = |c: &Cmd| match *c { Cmd::Move(x, y) | Cmd::Line(x, y) => x >= 9.99 && x <= 10.01 + w && y >= 9.99 && y <= 10.01 + h, _ => true };
+            assert!(shape.outline().iter().flatten().all(ok), "{w}x{h}");
+        }
     }
 }

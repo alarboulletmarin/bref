@@ -30,6 +30,10 @@ pub enum Relation {
     Include,
     Extend,
     Merge,
+    /// A dashed arrow `«deploy»`: an artifact on the node that runs it.
+    Deploy,
+    /// A dashed arrow `«manifest»`: an artifact that is the physical form of a component.
+    Manifest,
     /// A dotted line from a class to the middle of an association.
     AssociationClass,
     /// A ball at the end: a provided interface.
@@ -49,7 +53,7 @@ pub enum Relation {
 }
 
 impl Relation {
-    pub const ALL: [Relation; 22] = [
+    pub const ALL: [Relation; 24] = [
         Relation::Association,
         Relation::Navigable,
         Relation::NonNavigable,
@@ -64,6 +68,8 @@ impl Relation {
         Relation::Include,
         Relation::Extend,
         Relation::Merge,
+        Relation::Deploy,
+        Relation::Manifest,
         Relation::AssociationClass,
         Relation::Ball,
         Relation::Socket,
@@ -85,7 +91,7 @@ impl Relation {
             Composition => (Head::DiamondFull, Head::None, false),
             Generalization => (Head::None, Head::Triangle, false),
             Realization => (Head::None, Head::Triangle, true),
-            Dependency | Use | Import | Access | Include | Extend | Merge => (Head::None, Head::Arrow, true),
+            Dependency | Use | Import | Access | Include | Extend | Merge | Deploy | Manifest => (Head::None, Head::Arrow, true),
             AssociationClass => (Head::None, Head::None, true),
             Ball => (Head::None, Head::Ball, false),
             Socket => (Head::None, Head::Socket, false),
@@ -105,6 +111,8 @@ impl Relation {
             Relation::Include => Some("include"),
             Relation::Extend => Some("extend"),
             Relation::Merge => Some("merge"),
+            Relation::Deploy => Some("deploy"),
+            Relation::Manifest => Some("manifest"),
             Relation::Create => Some("create"),
             Relation::Destroy => Some("destroy"),
             _ => None,
@@ -160,6 +168,8 @@ impl Relation {
             Include => 'l',
             Extend => 'e',
             Merge => 'm',
+            Deploy => 'j',
+            Manifest => 'v',
             AssociationClass => 'k',
             Ball => 'b',
             Socket => 'q',
@@ -188,6 +198,8 @@ impl Relation {
             Include => "«include»",
             Extend => "«extend»",
             Merge => "«merge»",
+            Deploy => "«deploy»",
+            Manifest => "«manifest»",
             AssociationClass => tr("Association class (dotted line to the middle of an association)", "Classe d'association (pointillés vers le milieu d'une association)"),
             Ball => tr("Provided interface (ball)", "Interface fournie (boule)"),
             Socket => tr("Required interface (socket)", "Interface requise (prise)"),
@@ -217,7 +229,7 @@ impl Relation {
             Sync => "d-rel-sync.svg",
             Found => "d-rel-found.svg",
             Lost => "d-rel-lost.svg",
-            Use | Import | Access | Include | Extend | Merge | Create | Destroy => return None,
+            Use | Import | Access | Include | Extend | Merge | Deploy | Manifest | Create | Destroy => return None,
         })
     }
 }
@@ -255,6 +267,8 @@ mod tests {
             (Relation::Include, true, 1, false),
             (Relation::Extend, true, 1, false),
             (Relation::Merge, true, 1, false),
+            (Relation::Deploy, true, 1, false),
+            (Relation::Manifest, true, 1, false),
             (Relation::AssociationClass, true, 0, false),
             (Relation::Ball, false, 1, false),
             (Relation::Socket, false, 1, false),

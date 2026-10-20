@@ -311,7 +311,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("escape escape");
     cx.run_until_parked();
     fs::remove_file(&class).unwrap();
-    // Relationships: `k` opens the menu, a letter picks one. Each of the seventeen is drawn with its look,
+    // Relationships: `k` opens the menu, a letter picks one. Each of them is drawn with its look,
     // and recognised again from the file.
     {
         use crate::logic::relation::Relation;
@@ -330,7 +330,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             cx.simulate_input("k");
             cx.simulate_input(&relation.key().to_string());
             assert_eq!(tool(cx), canvas::Tool::Link(relation), "{relation:?}");
-            let y = 20. + 22. * i as f32;
+            let y = 20. + 19. * i as f32;
             rows(cx, &canvas, (150., y), (290., y));
             let link = canvas.read_with(cx, |c, _| c.diagram().links.last().cloned().unwrap());
             assert_eq!(Relation::of(&link), Some(relation), "{relation:?}: {link:?}");
@@ -964,6 +964,60 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.simulate_keystrokes("secondary-a delete escape escape");
         cx.run_until_parked();
         fs::remove_file(&act).unwrap();
+    }
+    // Components and deployment: a device (a 3D box) holds the artifact dropped on it and takes it along; a port sits on the border of
+    // a component; `K` then `J` draws a «deploy» arrow, and `V` makes it a «manifest».
+    {
+        use crate::logic::{library, relation::Relation};
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (dep, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let drawn = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().clone());
+        let family = tr("Component", "Composant");
+        let preset = |name: &str| library::presets().iter().position(|p| p.family == family && p.name == name).unwrap();
+        let drop = |cx: &mut gpui::VisualTestContext, name: &str, x: f32, y: f32| {
+            let at = canvas.read_with(cx, |c, _| c.spot(x, y));
+            canvas.update(cx, |c, cx| c.drop_preset(preset(name), at, cx));
+        };
+        drop(cx, tr("Device", "Appareil"), 100., 120.);
+        drop(cx, tr("Artifact", "Artefact"), 100., 160.);
+        drop(cx, tr("Component", "Composant"), 360., 100.);
+        let d = drawn(cx);
+        let by = |d: &Diagram, form: diagram::Form| d.shapes.iter().find(|s| s.form == form).unwrap().clone();
+        let (node, artifact, component) = (by(&d, diagram::Form::Node), by(&d, diagram::Form::Rect), by(&d, diagram::Form::Component));
+        assert_eq!((artifact.parent, component.parent), (Some(node.id), None));
+        assert!(node.text.starts_with("«device»") && artifact.text.starts_with("«artifact»"));
+        // The port, let go a little inside the left border of the component, is on it.
+        drop(cx, tr("Port (on the border of a component)", "Port (sur le bord d'un composant)"), component.x + 4., component.y + component.h / 2.);
+        let port = by(&drawn(cx), diagram::Form::Pin);
+        assert_eq!((port.parent, port.center().0), (Some(component.id), component.x));
+        // `K` then `J`: a dashed arrow with its stereotype, from the artifact to the component; then `V` changes it.
+        cx.simulate_input("k");
+        cx.simulate_input("j");
+        rows(cx, &canvas, (100., 160.), (400., 100.));
+        let d = drawn(cx);
+        let arrow = d.links.last().unwrap();
+        assert_eq!((Relation::of(arrow), arrow.text.as_str(), arrow.dashed), (Some(Relation::Deploy), "«deploy»", true));
+        cx.simulate_keystrokes("escape");
+        let id = arrow.id;
+        let (mx, my) = (262., 123.);
+        rows(cx, &canvas, (mx, my), (mx, my));
+        cx.simulate_input("k");
+        cx.simulate_input("v");
+        let arrow = drawn(cx).links.last().unwrap().clone();
+        assert_eq!((arrow.id, Relation::of(&arrow), arrow.text.as_str()), (id, Some(Relation::Manifest), "«manifest»"));
+        // The device dragged by its front face takes its artifact along, the 3D box and what it holds.
+        cx.simulate_keystrokes("escape");
+        rows(cx, &canvas, (-30., 60.), (10., 60.));
+        let d = drawn(cx);
+        let (moved, held) = (by(&d, diagram::Form::Node), by(&d, diagram::Form::Rect));
+        assert_eq!((moved.x, held.x, held.parent), (node.x + 40., artifact.x + 40., Some(node.id)));
+        let text = saved(&dep);
+        assert!(text.contains("version 10\n") && text.contains(" node ") && text.contains(" component "), "{text}");
+        assert!(Diagram::from_svg(&text).unwrap() == d);
+        cx.simulate_keystrokes("secondary-a delete escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&dep).unwrap();
     }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);

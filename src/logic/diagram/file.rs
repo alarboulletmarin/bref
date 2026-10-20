@@ -698,4 +698,23 @@ mod tests {
         let read = Diagram::from_svg(&damaged).unwrap();
         assert!(read.kept.contains(&"in 77 99".to_string()) && read.to_svg(COLORS[0]).contains("in 77 99"));
     }
+
+    #[test]
+    fn components_and_deployment_ask_for_version_10() {
+        for name in [("Component diagram", "Diagramme de composants"), ("Deployment diagram", "Diagramme de déploiement")] {
+            let template = crate::logic::library::templates().into_iter().find(|t| t.name == crate::lang::tr(name.0, name.1)).unwrap();
+            let d = (template.make)();
+            let svg = d.to_svg(COLORS[0]);
+            let source = Diagram::source_of(&svg).unwrap();
+            assert!(source.trim_start().starts_with("version 10\n") || name.0 == "Component diagram", "{source}");
+            let back = Diagram::from_svg(&svg).unwrap();
+            assert!(back == d && back.to_svg(COLORS[0]) == svg, "{}", name.0);
+        }
+        // Each form asks for 10 on its own; the diagram of a build that reads 9 would keep them as lines it does not know.
+        for form in [Form::Component, Form::Node] {
+            let mut d = Diagram::blank();
+            d.add_shape(form, 0., 0., 40., 40.);
+            assert!(Diagram::source_of(&d.to_svg(COLORS[0])).unwrap().trim_start().starts_with("version 10\n"), "{form:?}");
+        }
+    }
 }

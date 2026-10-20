@@ -31,6 +31,8 @@ pub const LANE: f32 = 26.;
 pub const ROW: f32 = 100.;
 /// Side of a pin, and how far from a border a pin is let go to sit on it.
 pub const PIN: f32 = 14.;
+/// How far the top and the right face of a node (a 3D box) stand out of its front face.
+pub const DEPTH: f32 = 12.;
 /// Text line that separates two compartments of a box (UML class, table).
 pub const RULE: &str = "---";
 /// Highest version of the file's source that this build reads. A file of a higher version
@@ -45,7 +47,8 @@ pub const RULE: &str = "---";
 /// 7: sequence diagrams: the form `lifeline`, the heads `solidtriangle` and `dot`, the ends `l<id>`.
 /// 8: combined fragments: the form `fragment`, the `held` lines of the messages in them.
 /// 9: activity diagrams: the forms `behavior`, `pin` (held by the shape whose border it sits on) and `row`.
-pub const VERSION: u32 = 9;
+/// 10: components and deployment: the forms `component` and `node`.
+pub const VERSION: u32 = 10;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Form {
@@ -91,10 +94,14 @@ pub enum Form {
     Pin,
     /// A horizontal swimlane: a row with its name in a header on the left. Holds shapes.
     Row,
+    /// A component: a rectangle with its small icon in the top right corner.
+    Component,
+    /// A node of a deployment diagram: a 3D box, its name in the front face. Holds shapes.
+    Node,
 }
 
 impl Form {
-    pub const ALL: [(Form, &str); 24] = [
+    pub const ALL: [(Form, &str); 26] = [
         (Form::Rect, "rect"),
         (Form::Round, "round"),
         (Form::Ellipse, "ellipse"),
@@ -119,11 +126,13 @@ impl Form {
         (Form::Behavior, "behavior"),
         (Form::Pin, "pin"),
         (Form::Row, "row"),
+        (Form::Component, "component"),
+        (Form::Node, "node"),
     ];
 
     /// Whether shapes dropped on it belong to it.
     pub fn holds(self) -> bool {
-        matches!(self, Form::Package | Form::Frame | Form::Lane | Form::Composite | Form::Row)
+        matches!(self, Form::Package | Form::Frame | Form::Lane | Form::Composite | Form::Row | Form::Node)
     }
 
     /// The version of the file that first had this form.
@@ -135,6 +144,7 @@ impl Form {
             Form::Lifeline => 7,
             Form::Fragment => 8,
             Form::Behavior | Form::Pin | Form::Row => 9,
+            Form::Component | Form::Node => 10,
             _ => 1,
         }
     }
@@ -588,6 +598,25 @@ impl Shape {
                     vec![Cmd::Move(rx + 6., ry), Cmd::Line(rx + 6., ry + 8.), Cmd::Move(rx, ry + 8.), Cmd::Line(rx + 12., ry + 8.), Cmd::Move(rx, ry + 8.), Cmd::Line(rx, ry + 14.), Cmd::Move(rx + 6., ry + 8.), Cmd::Line(rx + 6., ry + 14.), Cmd::Move(rx + 12., ry + 8.), Cmd::Line(rx + 12., ry + 14.)],
                 ]
             }
+            Form::Component => {
+                // Its icon: a box with two small tabs on its left, in the top right corner.
+                let (ix, iy) = ((x + w - 26.).max(x), y + 6.);
+                vec![
+                    rounded(x, y, w, h, 2.),
+                    vec![Cmd::Move(ix + 4., iy), Cmd::Line(ix + 16., iy), Cmd::Line(ix + 16., iy + 12.), Cmd::Line(ix + 4., iy + 12.), Cmd::Close],
+                    vec![Cmd::Move(ix, iy + 2.), Cmd::Line(ix + 8., iy + 2.), Cmd::Line(ix + 8., iy + 5.), Cmd::Line(ix, iy + 5.), Cmd::Close],
+                    vec![Cmd::Move(ix, iy + 7.), Cmd::Line(ix + 8., iy + 7.), Cmd::Line(ix + 8., iy + 10.), Cmd::Line(ix, iy + 10.), Cmd::Close],
+                ]
+            }
+            Form::Node => {
+                // The front face, then the top and the right face behind it.
+                let d = DEPTH.min(w / 3.).min(h / 3.);
+                vec![
+                    vec![Cmd::Move(x, y + d), Cmd::Line(x + w - d, y + d), Cmd::Line(x + w - d, y + h), Cmd::Line(x, y + h), Cmd::Close],
+                    vec![Cmd::Move(x, y + d), Cmd::Line(x + d, y), Cmd::Line(x + w, y), Cmd::Line(x + w - d, y + d)],
+                    vec![Cmd::Move(x + w - d, y + h), Cmd::Line(x + w, y + h - d), Cmd::Line(x + w, y), Cmd::Move(x + w - d, y + d), Cmd::Line(x + w, y)],
+                ]
+            }
             Form::Pin => vec![vec![Cmd::Move(x, y), Cmd::Line(x + w, y), Cmd::Line(x + w, y + h), Cmd::Line(x, y + h), Cmd::Close]],
             Form::Row => vec![rounded(x, y, w, h, 2.), vec![Cmd::Move(x + ROW.min(w), y), Cmd::Line(x + ROW.min(w), y + h)]],
             Form::Lifeline => vec![rounded(x, y, w, sequence::HEAD.min(h), 2.), vec![Cmd::Move(cx, y + sequence::HEAD.min(h)), Cmd::Line(cx, y + h)]],
@@ -661,6 +690,8 @@ impl Shape {
                     (Form::Row, 0) if Diagram::guess_width(text) * 1.08 > ROW.min(self.w) - 8. => (self.x + 6., cy - LINE / 2., false),
                     (Form::Row, 0) => (self.x + ROW.min(self.w) / 2., cy - LINE / 2., true),
                     (Form::Row, i) => (self.x + ROW.min(self.w) + 8., self.y + 6. + LINE * (i - 1) as f32, false),
+                    // In the front face of a node, under its top.
+                    (Form::Node, i) => (self.x + 8., self.y + DEPTH.min(self.w / 3.).min(self.h / 3.) + 6. + LINE * i as f32, false),
                     (Form::Lane | Form::Composite, 0) => (cx, self.y + (LANE - LINE) / 2., true),
                     (Form::Lane | Form::Composite, i) => (self.x + 8., self.y + LANE + 6. + LINE * (i - 1) as f32, false),
                     (_, i) => (self.x + 8., self.y + 6. + LINE * i as f32, false),
@@ -1550,7 +1581,7 @@ mod tests {
     #[test]
     fn the_shapes_of_state_machines_have_an_outline_of_any_size() {
         for (w, h) in [(0., 0.), (1., 1.), (8., 8.), (12., 12.), (26., 26.), (90., 8.), (300., 10.), (10_000., 3.)] {
-            for form in [Form::Dot, Form::Final, Form::Terminate, Form::Bar, Form::Exit, Form::Composite, Form::Divider, Form::Behavior, Form::Pin, Form::Row] {
+            for form in [Form::Dot, Form::Final, Form::Terminate, Form::Bar, Form::Exit, Form::Composite, Form::Divider, Form::Behavior, Form::Pin, Form::Row, Form::Component, Form::Node] {
                 for text in ["", "a", "a long name\nsecond line", "日本語 😀"] {
                     let shape = Shape { id: 1, form, x: 5., y: 5., w, h, text: text.into(), color: 0, fill: false, dashed: false, parent: None, operand: 0 };
                     let outline = shape.outline();

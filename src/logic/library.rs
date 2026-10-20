@@ -56,6 +56,7 @@ fn shapes() -> Vec<Preset> {
     let state = tr("State machine", "Machine à états");
     let sequence = tr("Sequence", "Séquence");
     let activity = tr("Activity", "Activité");
+    let component = tr("Component", "Composant");
     let p = |family: &'static str, name: &'static str, icon: &'static str, form: Form, (w, h): (f32, f32), text: &'static str| Preset { family, name, icon, form, w, h, text, fill: false, dashed: false };
     vec![
         p(class, tr("Class", "Classe"), "d-rect.svg", Form::Rect, (160., 120.), tr("ClassName\n---\n+ attribute: Type\n---\n+ operation()", "NomDeClasse\n---\n+ attribut: Type\n---\n+ operation()")),
@@ -95,6 +96,12 @@ fn shapes() -> Vec<Preset> {
         p(activity, tr("Swimlane (row)", "Couloir (ligne)"), "d-act-row.svg", Form::Row, (520., 130.), tr("Lane", "Couloir")),
         Preset { dashed: true, ..p(activity, tr("Interruptible region", "Région interruptible"), "d-act-region.svg", Form::Frame, (260., 170.), "«interruptible»") },
         p(activity, tr("Activity frame", "Cadre d'activité"), "d-frame.svg", Form::Frame, (400., 300.), tr("act Activity", "act Activité")),
+        p(component, tr("Component", "Composant"), "d-comp-component.svg", Form::Component, (170., 80.), tr("«component»\nName", "«component»\nNom")),
+        p(component, tr("Port (on the border of a component)", "Port (sur le bord d'un composant)"), "d-act-pin.svg", Form::Pin, (14., 14.), ""),
+        p(component, tr("Node", "Nœud"), "d-comp-node.svg", Form::Node, (300., 200.), tr("Node", "Nœud")),
+        p(component, tr("Device", "Appareil"), "d-comp-node.svg", Form::Node, (300., 200.), tr("«device»\nDevice", "«device»\nAppareil")),
+        p(component, tr("Execution environment", "Environnement d'exécution"), "d-comp-node.svg", Form::Node, (260., 160.), tr("«executionEnvironment»\nEnvironment", "«executionEnvironment»\nEnvironnement")),
+        p(component, tr("Artifact", "Artefact"), "d-comp-artifact.svg", Form::Rect, (130., 60.), tr("«artifact»\nname.jar", "«artifact»\nnom.jar")),
         p(sequence, tr("Lifeline", "Ligne de vie"), "d-seq-life.svg", Form::Lifeline, (110., 276.), tr("name : Type", "nom : Type")),
         p(sequence, tr("Actor", "Acteur"), "d-actor.svg", Form::Actor, (40., 80.), tr("Actor", "Acteur")),
         p(sequence, tr("Fragment alt (choice)", "Fragment alt (choix)"), "d-seq-frag.svg", Form::Fragment, (300., 150.), tr("alt\n[condition]\n[else]", "alt\n[condition]\n[sinon]")),
@@ -122,6 +129,8 @@ pub fn templates() -> Vec<Template> {
         Template { name: tr("State machine diagram", "Diagramme d'états"), make: state_machine },
         Template { name: tr("Sequence diagram", "Diagramme de séquence"), make: sequence_diagram },
         Template { name: tr("Activity diagram", "Diagramme d'activité"), make: activity_diagram },
+        Template { name: tr("Component diagram", "Diagramme de composants"), make: component_diagram },
+        Template { name: tr("Deployment diagram", "Diagramme de déploiement"), make: deployment_diagram },
     ]
 }
 
@@ -270,6 +279,69 @@ fn activity_diagram() -> Diagram {
     go(&mut d, ship, end, "");
     go(&mut d, choice, tell, tr("[out of stock]", "[rupture]"));
     go(&mut d, tell, stop, "");
+    d
+}
+
+/// A shop that needs a payment service: two components, the provided interface of one (a ball, on its port) and the
+/// required interface of the other (a socket) meeting at the same point.
+fn component_diagram() -> Diagram {
+    let mut d = Diagram::blank();
+    let family = tr("Component", "Composant");
+    let component = tr("Component", "Composant");
+    let (shop, billing) = (put(&mut d, family, component, (40., 60.)), put(&mut d, family, component, (400., 60.)));
+    say(&mut d, shop, tr("«component»\nWeb shop", "«component»\nBoutique"));
+    say(&mut d, billing, tr("«component»\nBilling", "«component»\nFacturation"));
+    let port = put(&mut d, family, tr("Port (on the border of a component)", "Port (sur le bord d'un composant)"), (393., 93.));
+    say(&mut d, port, "pay");
+    d.set_parent(port, Some(billing));
+    d.seat(port);
+    // The ball and the socket meet halfway, at the same point.
+    let meeting = (300., 100.);
+    let ball = d.add_link(End::Shape(port), End::Point(meeting.0, meeting.1), Head::None, Route::Straight);
+    let socket = d.add_link(End::Shape(shop), End::Point(meeting.0, meeting.1), Head::None, Route::Straight);
+    for (id, relation) in [(ball, Relation::Ball), (socket, Relation::Socket)] {
+        if let Some(link) = d.link_mut(id) {
+            relation.apply(link);
+        }
+    }
+    if let Some(link) = d.link_mut(socket) {
+        link.text = tr("Payment", "Paiement").into();
+    }
+    d
+}
+
+/// A shop running on a server, which a browser reaches: nodes that hold what runs on them, an artifact that
+/// manifests a component, and the communication path between the nodes.
+fn deployment_diagram() -> Diagram {
+    let mut d = Diagram::blank();
+    let family = tr("Component", "Composant");
+    let (client, server) = (put(&mut d, family, tr("Device", "Appareil"), (40., 40.)), put(&mut d, family, tr("Device", "Appareil"), (400., 40.)));
+    for (id, text, w, h) in [(client, tr("«device»\nLaptop", "«device»\nOrdinateur"), 260., 220.), (server, tr("«device»\nServer", "«device»\nServeur"), 300., 220.)] {
+        say(&mut d, id, text);
+        if let Some(shape) = d.shape_mut(id) {
+            (shape.w, shape.h) = (w, h);
+        }
+    }
+    let environment = tr("Execution environment", "Environnement d'exécution");
+    let (browser, runtime) = (put(&mut d, family, environment, (70., 110.)), put(&mut d, family, environment, (430., 110.)));
+    say(&mut d, browser, tr("«executionEnvironment»\nBrowser", "«executionEnvironment»\nNavigateur"));
+    say(&mut d, runtime, tr("«executionEnvironment»\nJVM", "«executionEnvironment»\nJVM"));
+    for (shape, holder) in [(browser, client), (runtime, server)] {
+        d.set_parent(shape, Some(holder));
+    }
+    if let Some(shape) = d.shape_mut(browser) {
+        (shape.w, shape.h) = (200., 110.);
+    }
+    if let Some(shape) = d.shape_mut(runtime) {
+        (shape.w, shape.h) = (240., 130.);
+    }
+    let artifact = put(&mut d, family, tr("Artifact", "Artefact"), (460., 170.));
+    say(&mut d, artifact, "«artifact»\nshop.jar");
+    d.set_parent(artifact, Some(runtime));
+    let link = d.add_link(End::Shape(client), End::Shape(server), Head::None, Route::Straight);
+    if let Some(link) = d.link_mut(link) {
+        link.text = "«HTTPS»".into();
+    }
     d
 }
 
