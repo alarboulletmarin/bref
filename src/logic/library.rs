@@ -40,7 +40,17 @@ impl Template {
 
 /// The shapes, family by family.
 pub fn presets() -> Vec<Preset> {
+    let mut all = shapes();
+    // The border of a region is dashed.
+    for preset in &mut all {
+        preset.dashed |= preset.form == Form::Divider;
+    }
+    all
+}
+
+fn shapes() -> Vec<Preset> {
     let class = tr("Class", "Classe");
+    let state = tr("State machine", "Machine à états");
     let p = |family: &'static str, name: &'static str, icon: &'static str, form: Form, (w, h): (f32, f32), text: &'static str| Preset { family, name, icon, form, w, h, text, fill: false, dashed: false };
     vec![
         p(class, tr("Class", "Classe"), "d-rect.svg", Form::Rect, (160., 120.), tr("ClassName\n---\n+ attribute: Type\n---\n+ operation()", "NomDeClasse\n---\n+ attribut: Type\n---\n+ operation()")),
@@ -54,6 +64,19 @@ pub fn presets() -> Vec<Preset> {
         p(tr("Use case", "Cas d'utilisation"), tr("Use case", "Cas d'utilisation"), "d-ellipse.svg", Form::Ellipse, (160., 80.), tr("Use case", "Cas d'utilisation")),
         p(tr("Use case", "Cas d'utilisation"), tr("Actor", "Acteur"), "d-actor.svg", Form::Actor, (40., 80.), tr("Actor", "Acteur")),
         p(tr("Use case", "Cas d'utilisation"), tr("System boundary", "Frontière du système"), "d-frame.svg", Form::Frame, (320., 220.), tr("System", "Système")),
+        p(state, tr("State", "État"), "d-round.svg", Form::Round, (140., 90.), tr("State\n---\nentry / action\ndo / activity\nexit / action", "État\n---\nentry / action\ndo / activité\nexit / action")),
+        p(state, tr("Composite state", "État composite"), "d-st-composite.svg", Form::Composite, (300., 200.), tr("Composite state", "État composite")),
+        p(state, tr("Initial state", "État initial"), "d-st-dot.svg", Form::Dot, (20., 20.), ""),
+        p(state, tr("Final state", "État final"), "d-st-final.svg", Form::Final, (26., 26.), ""),
+        p(state, tr("Choice", "Choix"), "d-diamond.svg", Form::Branch, (30., 30.), ""),
+        p(state, tr("Junction", "Jonction"), "d-st-dot.svg", Form::Dot, (12., 12.), ""),
+        p(state, tr("Fork or join", "Fourche ou jointure"), "d-st-bar.svg", Form::Bar, (90., 8.), ""),
+        p(state, tr("Shallow history", "Historique simple"), "d-ellipse.svg", Form::Ellipse, (30., 30.), "H"),
+        p(state, tr("Deep history", "Historique profond"), "d-ellipse.svg", Form::Ellipse, (30., 30.), "H*"),
+        p(state, tr("Terminate", "Terminaison"), "d-st-terminate.svg", Form::Terminate, (24., 24.), ""),
+        p(state, tr("Entry point", "Point d'entrée"), "d-ellipse.svg", Form::Ellipse, (16., 16.), ""),
+        p(state, tr("Exit point", "Point de sortie"), "d-st-exit.svg", Form::Exit, (16., 16.), ""),
+        p(state, tr("Region divider (dashed)", "Séparateur de régions (pointillés)"), "d-dash.svg", Form::Divider, (300., 10.), ""),
     ]
 }
 
@@ -68,6 +91,7 @@ pub fn templates() -> Vec<Template> {
         Template { name: tr("Class diagram", "Diagramme de classes"), make: class_diagram },
         Template { name: tr("Use case diagram", "Diagramme de cas d'utilisation"), make: use_case_diagram },
         Template { name: tr("Package diagram", "Diagramme de paquetages"), make: package_diagram },
+        Template { name: tr("State machine diagram", "Diagramme d'états"), make: state_machine },
     ]
 }
 
@@ -111,6 +135,38 @@ fn use_case_diagram() -> Diagram {
     d
 }
 
+/// A traffic light: an initial state, three states in a ring, a transition with its guard and its
+/// effect, and one that stays in its state.
+fn state_machine() -> Diagram {
+    let mut d = Diagram::blank();
+    let family = tr("State machine", "Machine à états");
+    let start = put(&mut d, family, tr("Initial state", "État initial"), (40., 90.));
+    let state = tr("State", "État");
+    let at = [(140., 60.), (420., 60.), (280., 210.)];
+    let names = [tr("Red", "Rouge"), tr("Green", "Vert"), tr("Yellow", "Orange")];
+    let [red, green, yellow] = [0, 1, 2].map(|i| {
+        let id = put(&mut d, family, state, at[i]);
+        say(&mut d, id, names[i]);
+        if let Some(shape) = d.shape_mut(id) {
+            shape.h = 50.;
+        }
+        id
+    });
+    let go = |d: &mut Diagram, from: End, to: End, text: &str| {
+        let id = d.add_link(from, to, Head::Arrow, Route::Elbow);
+        if let Some(link) = d.link_mut(id) {
+            link.text = text.to_string();
+        }
+    };
+    go(&mut d, End::Shape(start), End::Shape(red), "");
+    go(&mut d, End::Shape(red), End::Shape(green), "timer [clear] / go()");
+    // The way back is on the sides that leave room: out of the bottom, into the right of the last state, and out of its left.
+    go(&mut d, End::Pin(green, 0.5, 1.), End::Pin(yellow, 1., 0.5), "timer");
+    go(&mut d, End::Pin(yellow, 0., 0.5), End::Pin(red, 0.5, 1.), "timer");
+    go(&mut d, End::Shape(green), End::Shape(green), "sensor / extend()");
+    d
+}
+
 fn package_diagram() -> Diagram {
     let mut d = Diagram::blank();
     let class = tr("Class", "Classe");
@@ -138,7 +194,7 @@ mod tests {
         seen.sort();
         seen.dedup();
         assert_eq!(seen.len(), all.len());
-        assert!(all.iter().all(|p| p.w >= 20. && p.h >= 20. && !p.name.is_empty() && !p.family.is_empty() && p.icon.ends_with(".svg")));
+        assert!(all.iter().all(|p| p.w >= 8. && p.h >= 8. && !p.name.is_empty() && !p.family.is_empty() && p.icon.ends_with(".svg")));
         // A search is every word, in the name or the family, with accents and case ignored.
         let found = |q: &str| all.iter().filter(|p| p.matches(q)).map(|p| p.name).collect::<Vec<_>>();
         assert_eq!(found("").len(), all.len());

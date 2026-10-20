@@ -6,7 +6,7 @@ use std::fmt::Write;
 
 use super::{
     richtext::{self, Span, Style},
-    uml,
+    state, uml,
 };
 
 mod file;
@@ -36,7 +36,8 @@ pub const RULE: &str = "---";
 /// 1: shapes and arrows. 2: `rich`, styled text. 3: `ends`, the texts at the ends of an arrow.
 /// 4: the heads `cross`, `ball`, `socket`, and an arrow held by another's middle (`m<id>`).
 /// 5: the forms `package`, `frame`, `lane` and the `in` lines: what a shape holds.
-pub const VERSION: u32 = 5;
+/// 6: the forms of state machines: `dot`, `final`, `terminate`, `bar`, `exit`, `composite`, `divider`.
+pub const VERSION: u32 = 6;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Form {
@@ -56,10 +57,24 @@ pub enum Form {
     Frame,
     /// A swimlane: a column under a header with its name. Holds shapes.
     Lane,
+    /// A filled dot, text under it: an initial state, a junction.
+    Dot,
+    /// A circle with a dot in it: a final state.
+    Final,
+    /// A cross: the end of a state machine's life.
+    Terminate,
+    /// A thick bar: a fork or a join.
+    Bar,
+    /// A circle with a cross in it: an exit point.
+    Exit,
+    /// A composite state: a rounded frame, its name in a header. Holds shapes.
+    Composite,
+    /// A dashed line across a composite state: the border of its regions.
+    Divider,
 }
 
 impl Form {
-    pub const ALL: [(Form, &str); 12] = [
+    pub const ALL: [(Form, &str); 19] = [
         (Form::Rect, "rect"),
         (Form::Round, "round"),
         (Form::Ellipse, "ellipse"),
@@ -72,11 +87,18 @@ impl Form {
         (Form::Package, "package"),
         (Form::Frame, "frame"),
         (Form::Lane, "lane"),
+        (Form::Dot, "dot"),
+        (Form::Final, "final"),
+        (Form::Terminate, "terminate"),
+        (Form::Bar, "bar"),
+        (Form::Exit, "exit"),
+        (Form::Composite, "composite"),
+        (Form::Divider, "divider"),
     ];
 
     /// Whether shapes dropped on it belong to it.
     pub fn holds(self) -> bool {
-        matches!(self, Form::Package | Form::Frame | Form::Lane)
+        matches!(self, Form::Package | Form::Frame | Form::Lane | Form::Composite)
     }
 
     /// The version of the file that first had this form.
@@ -84,6 +106,7 @@ impl Form {
         match self {
             Form::Branch => 4,
             Form::Package | Form::Frame | Form::Lane => 5,
+            Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Composite | Form::Divider => 6,
             _ => 1,
         }
     }
@@ -384,6 +407,15 @@ fn rounded(x: f32, y: f32, w: f32, h: f32, r: f32) -> Vec<Cmd> {
 }
 
 impl Shape {
+    /// The paths of the outline that are filled solid, in the stroke's color: a dot, a bar, the dot of a final state.
+    pub fn solid(&self) -> &'static [usize] {
+        match self.form {
+            Form::Dot | Form::Bar => &[0],
+            Form::Final => &[1],
+            _ => &[],
+        }
+    }
+
     /// Width of the tab of a package: what its name takes.
     fn tab_width(&self) -> f32 {
         let name = self.text.lines().next().unwrap_or("");
@@ -480,6 +512,16 @@ impl Shape {
                 ]]
             }
             Form::Frame => vec![rounded(x, y, w, h, 2.)],
+            Form::Dot => vec![ellipse(cx, cy, w / 2., h / 2.)],
+            Form::Final => vec![ellipse(cx, cy, w / 2., h / 2.), ellipse(cx, cy, (w / 2. - 4.).max(1.), (h / 2. - 4.).max(1.))],
+            Form::Terminate => vec![vec![Cmd::Move(x, y), Cmd::Line(x + w, y + h), Cmd::Move(x + w, y), Cmd::Line(x, y + h)]],
+            Form::Bar => vec![vec![Cmd::Move(x, y), Cmd::Line(x + w, y), Cmd::Line(x + w, y + h), Cmd::Line(x, y + h), Cmd::Close]],
+            Form::Exit => {
+                let (dx, dy) = (w * 0.3, h * 0.3);
+                vec![ellipse(cx, cy, w / 2., h / 2.), vec![Cmd::Move(x + dx, y + dy), Cmd::Line(x + w - dx, y + h - dy), Cmd::Move(x + w - dx, y + dy), Cmd::Line(x + dx, y + h - dy)]]
+            }
+            Form::Composite => vec![rounded(x, y, w, h, 14.), vec![Cmd::Move(x, y + LANE), Cmd::Line(x + w, y + LANE)]],
+            Form::Divider => vec![vec![Cmd::Move(x, cy), Cmd::Line(x + w, cy)]],
             Form::Lane => vec![rounded(x, y, w, h, 2.), vec![Cmd::Move(x, y + LANE), Cmd::Line(x + w, y + LANE)]],
             Form::Note => {
                 let fold = 12f32.min(w / 2.).min(h / 2.);
@@ -538,8 +580,8 @@ impl Shape {
                 let (x, y, centered) = match (self.form, index) {
                     (Form::Package, 0) => (self.x + 6., self.y + 1., false),
                     (Form::Package, i) => (self.x + 8., self.y + 22. + LINE * (i - 1) as f32, false),
-                    (Form::Lane, 0) => (cx, self.y + (LANE - LINE) / 2., true),
-                    (Form::Lane, i) => (self.x + 8., self.y + LANE + 6. + LINE * (i - 1) as f32, false),
+                    (Form::Lane | Form::Composite, 0) => (cx, self.y + (LANE - LINE) / 2., true),
+                    (Form::Lane | Form::Composite, i) => (self.x + 8., self.y + LANE + 6. + LINE * (i - 1) as f32, false),
                     (_, i) => (self.x + 8., self.y + 6. + LINE * i as f32, false),
                 };
                 out.push(TextLine { x, y, text, centered, bold: index == 0, index });
@@ -550,7 +592,7 @@ impl Shape {
         let (x, top, centered) = match self.form {
             Form::Text => (self.x, self.y, false),
             // Under the stick figure.
-            Form::Actor | Form::Branch => (cx, self.y + self.h + 4., true),
+            Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit => (cx, self.y + self.h + 4., true),
             _ => (cx, cy - height / 2., true),
         };
         let placed = lines.into_iter().enumerate();
@@ -586,7 +628,7 @@ impl Shape {
         let (depth, wide) = if out.0 != 0. { (a, b) } else { (b, a) };
         let off = spread.clamp(-(wide - 6.).max(0.), (wide - 6.).max(0.));
         let reach = match self.form {
-            Form::Ellipse => depth * (1. - (off / wide).powi(2)).max(0.).sqrt(),
+            Form::Ellipse | Form::Dot | Form::Final | Form::Terminate | Form::Exit => depth * (1. - (off / wide).powi(2)).max(0.).sqrt(),
             Form::Diamond | Form::Branch => depth * (1. - off.abs() / wide).max(0.),
             _ => depth,
         };
@@ -599,7 +641,7 @@ impl Shape {
         let (dx, dy) = (toward.0 - cx, toward.1 - cy);
         let (a, b) = ((self.w / 2.).max(1.), (self.h / 2.).max(1.));
         let reach = match self.form {
-            Form::Ellipse => ((dx / a).powi(2) + (dy / b).powi(2)).sqrt(),
+            Form::Ellipse | Form::Dot | Form::Final | Form::Terminate | Form::Exit => ((dx / a).powi(2) + (dy / b).powi(2)).sqrt(),
             Form::Diamond | Form::Branch => dx.abs() / a + dy.abs() / b,
             _ => (dx.abs() / a).max(dy.abs() / b),
         };
@@ -687,6 +729,11 @@ impl Diagram {
     /// Where each line of the text of `shape` is written, and its separators, as this diagram reads its texts.
     pub fn lines<'a>(&self, shape: &'a Shape) -> (Vec<TextLine<'a>>, Vec<f32>) {
         shape.text_lines_for(self.rich)
+    }
+
+    /// The runs of a line of the text in the middle of an arrow: a transition's `[guard]` is in italics.
+    pub fn label_runs(&self, text: &str) -> Vec<Span> {
+        if self.rich { state::runs(text) } else { richtext::plain(text, false) }
     }
 
     /// The runs of each line `shape.text_lines()` places, in the same order: styled as the diagram
@@ -908,6 +955,23 @@ impl Diagram {
         }
     }
 
+    /// The way of an arrow from a shape to itself (a transition that stays in its state): a loop out of
+    /// its right side and back into its top, wider for each further one on the same shape.
+    fn self_loop(&self, link: &Link) -> Option<Vec<(f32, f32)>> {
+        let (End::Shape(id), End::Shape(back)) = (link.from, link.to) else { return None };
+        if id != back {
+            return None;
+        }
+        let shape = self.shape(id)?;
+        let mine: Vec<u32> = self.links.iter().filter(|l| l.from == End::Shape(id) && l.to == End::Shape(id)).map(|l| l.id).collect();
+        let k = mine.iter().position(|l| *l == link.id)? as f32;
+        let reach = 26. + 14. * k;
+        // Down the right side, a little lower for each; in at the top, a little further left.
+        let start = shape.border_beside((1., 0.), -shape.h * (0.2 - 0.12 * k.min(3.)).max(-0.2));
+        let end = shape.border_beside((0., -1.), shape.w * (0.2 - 0.12 * k.min(3.)));
+        Some(vec![start, (start.0 + reach, start.1), (start.0 + reach, end.1 - reach), (end.0, end.1 - reach), end])
+    }
+
     /// The boxes a right-angled arrow goes around: those of the shapes that hold nothing (a frame is
     /// crossed, what is in it is not), and apart, the boxes of the two shapes it links.
     fn obstacles(&self, link: &Link) -> (Vec<route::Rect>, Vec<route::Rect>) {
@@ -932,11 +996,20 @@ impl Diagram {
         };
         let straight = link.route == Route::Straight;
         let spread = self.spread(link);
-        let (a, da) = self.leave(link.from, aim(link.to)?, straight, spread)?;
-        let (b, db) = self.leave(link.to, aim(link.from)?, straight, spread)?;
+        let looped = self.self_loop(link);
+        let (a, da, b, db);
+        if let Some(path) = &looped {
+            (a, da, b, db) = (path[0], (1., 0.), path[path.len() - 1], (0., -1.));
+        } else {
+            (a, da) = self.leave(link.from, aim(link.to)?, straight, spread)?;
+            (b, db) = self.leave(link.to, aim(link.from)?, straight, spread)?;
+        }
         let reach = ((b.0 - a.0).hypot(b.1 - a.1) * 0.4).max(30.);
         let (c1, c2) = ((a.0 + da.0 * reach, a.1 + da.1 * reach), (b.0 + db.0 * reach, b.1 + db.1 * reach));
-        let mut points = match link.route {
+        // A loop is right-angled, whatever the route asked for.
+        let route = if looped.is_some() { Route::Elbow } else { link.route };
+        let mut points = match route {
+            _ if looped.is_some() => looped.clone().unwrap_or_default(),
             Route::Straight => vec![a, b],
             Route::Elbow => {
                 let (boxes, own) = self.obstacles(link);
@@ -959,7 +1032,7 @@ impl Diagram {
         let (start, end) = (head_path(link.start, a, ua), head_path(link.end, b, ub));
         // The stroke stops at the base of a closed head.
         let (a2, b2) = ((a.0 - ua.0 * start.2, a.1 - ua.1 * start.2), (b.0 - ub.0 * end.2, b.1 - ub.1 * end.2));
-        let line = match link.route {
+        let line = match route {
             Route::Curve => vec![Cmd::Move(a2.0, a2.1), Cmd::Curve(c1.0, c1.1, c2.0, c2.1, b2.0, b2.1)],
             _ => {
                 let mut drawn = points.clone();
@@ -1081,7 +1154,7 @@ impl Diagram {
     pub fn bounds(&self) -> Option<(f32, f32, f32, f32)> {
         // A stick figure's text is written under it.
         let boxes = self.shapes.iter().map(|s| {
-            let below = if matches!(s.form, Form::Actor | Form::Branch) { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
+            let below = if matches!(s.form, Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit) { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
             (s.x, s.y, s.x + s.w, s.y + s.h + below)
         });
         let ends = self.links.iter().filter_map(|l| self.trace(l)).flat_map(|t| t.points);
@@ -1329,5 +1402,63 @@ mod tests {
                 assert!(a <= b && a >= flat.x - 0.01 && b <= flat.x + w.max(1.) + 0.01, "{w}x{h} at {y}: {a} {b}");
             }
         }
+    }
+
+    #[test]
+    fn the_shapes_of_state_machines_have_an_outline_of_any_size() {
+        for (w, h) in [(0., 0.), (1., 1.), (8., 8.), (12., 12.), (26., 26.), (90., 8.), (300., 10.), (10_000., 3.)] {
+            for form in [Form::Dot, Form::Final, Form::Terminate, Form::Bar, Form::Exit, Form::Composite, Form::Divider] {
+                for text in ["", "a", "a long name\nsecond line", "日本語 😀"] {
+                    let shape = Shape { id: 1, form, x: 5., y: 5., w, h, text: text.into(), color: 0, fill: false, dashed: false, parent: None };
+                    let outline = shape.outline();
+                    assert!(!outline.is_empty() && shape.solid().iter().all(|i| *i < outline.len()), "{form:?} {w}x{h}");
+                    let finite = |p: &Vec<Cmd>| p.iter().all(|c| match *c { Cmd::Move(x, y) | Cmd::Line(x, y) => x.is_finite() && y.is_finite(), _ => true });
+                    assert!(outline.iter().all(finite), "{form:?} {w}x{h}");
+                    let (lines, _) = shape.text_lines();
+                    assert_eq!(lines.len(), text.split('\n').count());
+                    // Where a link meets it is on its outline's box, never at the center of a point.
+                    let border = shape.border((1e4, 5. + h / 2.));
+                    assert!(border.0.is_finite() && border.0 >= 4. && border.0 <= 5. + w.max(2.) + 0.01, "{form:?} {w}x{h}: {border:?}");
+                }
+            }
+        }
+        // Filled solid: a dot, a bar, the dot of a final state; nothing else.
+        let solid = |form| Shape { id: 1, form, x: 0., y: 0., w: 20., h: 20., text: String::new(), color: 0, fill: false, dashed: false, parent: None }.solid().to_vec();
+        assert_eq!((solid(Form::Dot), solid(Form::Bar), solid(Form::Final), solid(Form::Rect), solid(Form::Exit)), (vec![0], vec![0], vec![1], vec![], vec![]));
+        // A composite state holds shapes and has its name in a header, like a lane.
+        assert!(Form::Composite.holds() && !Form::Dot.holds());
+        let composite = Shape { id: 1, form: Form::Composite, x: 0., y: 0., w: 200., h: 100., text: "Active".into(), color: 0, fill: false, dashed: false, parent: None };
+        let (lines, _) = composite.text_lines();
+        assert_eq!((lines[0].centered, lines[0].bold, lines[0].y), (true, true, 4.));
+    }
+
+    #[test]
+    fn a_transition_from_a_state_to_itself_is_a_loop() {
+        for form in [Form::Rect, Form::Round, Form::Ellipse, Form::Diamond, Form::Dot] {
+            let mut d = Diagram::default();
+            let s = d.add_shape(form, 100., 100., 120., 60.);
+            let ids: Vec<u32> = (0..4).map(|_| d.add_link(End::Shape(s), End::Shape(s), Head::Arrow, Route::Elbow)).collect();
+            let mut reached: Vec<f32> = Vec::new();
+            for id in &ids {
+                let trace = d.trace(d.link(*id).unwrap()).unwrap();
+                let (first, last) = (trace.points[0], *trace.points.last().unwrap());
+                // It leaves by the right side and comes back into the top, outside the shape in between.
+                assert!(first.0 >= 100. + 120. / 2. && last.1 <= 100. + 60. / 2., "{form:?}: {:?}", trace.points);
+                assert!(trace.points.len() >= 4 && trace.points.windows(2).all(|w| w[0].0 == w[1].0 || w[0].1 == w[1].1), "{form:?}: {:?}", trace.points);
+                let top = trace.points.iter().map(|p| p.1).fold(f32::MAX, f32::min);
+                assert!(top < 100., "{form:?}: the loop rises above the shape");
+                assert_eq!(trace.heads.len(), 1);
+                reached.push(top);
+            }
+            // Each further loop is wider: none on top of another.
+            assert!(reached.windows(2).all(|w| w[1] < w[0]), "{form:?}: {reached:?}");
+        }
+        // A loop on a shape inside a frame, and a plain arrow to another shape, are not confused with it.
+        let mut d = Diagram::default();
+        let (a, b) = (d.add_shape(Form::Rect, 0., 0., 100., 60.), d.add_shape(Form::Rect, 300., 0., 100., 60.));
+        let own = d.add_link(End::Shape(a), End::Shape(a), Head::Arrow, Route::Straight);
+        let other = d.add_link(End::Shape(a), End::Shape(b), Head::Arrow, Route::Straight);
+        assert!(d.trace(d.link(own).unwrap()).unwrap().points.len() > 2);
+        assert_eq!(d.trace(d.link(other).unwrap()).unwrap().points.len(), 2);
     }
 }

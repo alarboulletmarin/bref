@@ -15,5 +15,6 @@ pub mod prefs;
 pub mod recall;
 pub mod relation;
 pub mod richtext;
+pub mod state;
 pub mod table;
 pub mod uml;

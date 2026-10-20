@@ -178,6 +178,20 @@ impl Canvas {
         }
     }
 
+    /// A transition from the selected shape to itself, a loop: its text is written at once.
+    pub fn self_link(&mut self, cx: &mut Context<Self>) {
+        let [id] = self.selected[..] else { return };
+        if self.diagram.shape(id).is_none() {
+            return;
+        }
+        self.remember();
+        let link = self.diagram.add_link(End::Shape(id), End::Shape(id), diagram::Head::Arrow, Route::Elbow);
+        self.slot = Slot::Middle;
+        self.editing = Some((link, 0));
+        self.selected = vec![link];
+        self.changed(cx);
+    }
+
     /// Makes the container selected fit what it holds.
     pub fn fit_container(&mut self, cx: &mut Context<Self>) {
         if let [id] = self.selected[..] {

@@ -81,6 +81,8 @@ fn tool_label(tool: Tool) -> &'static str {
         Tool::Shape(Form::Frame) => tr("Frame: a system boundary, a composite state (holds shapes)", "Cadre : frontière d'un système, état composite (contient des formes)"),
         Tool::Shape(Form::Lane) => tr("Swimlane (holds shapes)", "Couloir (contient des formes)"),
         Tool::Shape(Form::Branch) => tr("N-ary association (a small diamond)", "Association n-aire (un petit losange)"),
+        // The shapes of state machines and the like come from the library, by their preset.
+        Tool::Shape(_) => "",
         Tool::Link(Relation::Association) => tr("Line", "Trait"),
         Tool::Link(Relation::Navigable) => tr("Arrow", "Flèche"),
         Tool::Link(relation) => relation.name(),

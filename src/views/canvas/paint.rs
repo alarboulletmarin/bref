@@ -43,6 +43,7 @@ impl Canvas {
     pub(super) fn spans_of(&self, id: u32, slot: Slot, text: &str, bold: bool) -> Vec<Span> {
         match self.editing {
             Some((editing, _)) if editing == id && slot == self.slot => richtext::plain(text, bold),
+            _ if slot == Slot::Middle && self.diagram.link(id).is_some() => self.diagram.label_runs(text),
             _ => self.diagram.styled(text, bold),
         }
     }
@@ -152,7 +153,10 @@ impl Canvas {
             if shape.fill && let Some(body) = outline.first() {
                 flood(window, body, ink.opacity(0.15));
             }
-            for path in &outline {
+            for (i, path) in outline.iter().enumerate() {
+                if shape.solid().contains(&i) {
+                    flood(window, path, ink);
+                }
                 stroke(window, path, shape.dashed, ink);
             }
             let (lines, rules) = self.diagram.lines(shape);

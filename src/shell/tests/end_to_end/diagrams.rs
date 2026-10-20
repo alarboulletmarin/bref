@@ -695,6 +695,57 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         fs::remove_file(&way).unwrap();
     }
+    // A state machine: states and pseudostates from the library, transitions with their label, one that loops.
+    {
+        use crate::logic::library;
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (sm, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let drawn = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().clone());
+        let presets = library::presets();
+        let pick = |form: diagram::Form, name: &str| presets.iter().position(|p| p.form == form && (name.is_empty() || p.name == name)).unwrap();
+        let (initial, state, last) = (pick(diagram::Form::Dot, tr("Initial state", "État initial")), pick(diagram::Form::Round, ""), pick(diagram::Form::Final, ""));
+        for (preset, at) in [(initial, (20., 100.)), (state, (200., 100.)), (last, (460., 100.))] {
+            let at = canvas.read_with(cx, |c, _| c.spot(at.0, at.1));
+            canvas.update(cx, |c, cx| c.drop_preset(preset, at, cx));
+        }
+        cx.simulate_keystrokes("escape");
+        let d = drawn(cx);
+        assert_eq!(d.shapes.iter().map(|s| s.form).collect::<Vec<_>>(), [diagram::Form::Dot, diagram::Form::Round, diagram::Form::Final]);
+        let at = |d: &diagram::Diagram, i: usize| d.shapes[i].center();
+        for (from, to, label) in [(0, 1, ""), (1, 2, "stop [ready] / log()")] {
+            cx.simulate_input("a");
+            let ((x0, y0), (x1, y1)) = (at(&d, from), at(&d, to));
+            rows(cx, &canvas, (x0, y0), (x1, y1));
+            if !label.is_empty() {
+                cx.simulate_keystrokes("enter");
+                cx.simulate_input(label);
+                cx.simulate_keystrokes("escape");
+            }
+            cx.simulate_keystrokes("escape");
+        }
+        // The state selected: a loop on it, its label written at once.
+        let click = canvas.read_with(cx, |c, _| c.spot(at(&d, 1).0 - 40., at(&d, 1).1 + 20.));
+        cx.simulate_click(click, gpui::Modifiers::none());
+        canvas.update(cx, |c, cx| c.self_link(cx));
+        cx.simulate_input("tick / n++");
+        cx.simulate_keystrokes("escape");
+        let d = drawn(cx);
+        let own = d.links.last().unwrap();
+        assert_eq!((own.from, own.to, own.text.as_str()), (diagram::End::Shape(d.shapes[1].id), diagram::End::Shape(d.shapes[1].id), "tick / n++"));
+        let svg = saved(&sm);
+        assert!(svg.contains("version 6\n") && svg.contains("<tspan font-style=\"italic\">[ready]</tspan>") && svg.contains(">tick / n++</text>"), "{svg}");
+        assert!(svg.contains("fill=\"#7d8590\" stroke") || svg.matches(" fill=\"#").count() >= 2, "the dot is filled: {svg}");
+        // One step of undo takes the loop away; the label is not left behind.
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(drawn(cx).links.len(), 2);
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&sm).unwrap();
+        // The starting point: a traffic light, with its loop.
+        let (from, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned(), s.pane().drawing().cloned()));
+        assert!(from.is_none() && canvas.is_none());
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

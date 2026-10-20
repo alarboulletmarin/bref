@@ -88,7 +88,7 @@ impl Diagram {
         let (x1, y1) = (inside.iter().map(|s| s.x + s.w).fold(f32::MIN, f32::max), inside.iter().map(|s| s.y + s.h).fold(f32::MIN, f32::max));
         let top = match form.0 {
             Form::Package => 18. + 16.,
-            Form::Lane => LANE + 16.,
+            Form::Lane | Form::Composite => LANE + 16.,
             _ => 6. + LINE * form.1 as f32 + 12.,
         };
         let grid = |v: f32, up: bool| if up { (v / GRID).ceil() * GRID } else { (v / GRID).floor() * GRID };

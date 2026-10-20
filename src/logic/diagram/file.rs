@@ -34,7 +34,13 @@ impl Diagram {
         for shape in &self.shapes {
             let ink = color(shape.color);
             for (i, path) in shape.outline().iter().enumerate() {
-                let fill = if i == 0 && shape.fill { format!(" fill=\"{ink}\" fill-opacity=\"0.15\"") } else { String::new() };
+                let fill = if shape.solid().contains(&i) {
+                    format!(" fill=\"{ink}\"")
+                } else if i == 0 && shape.fill {
+                    format!(" fill=\"{ink}\" fill-opacity=\"0.15\"")
+                } else {
+                    String::new()
+                };
                 let _ = writeln!(out, "<path d=\"{}\" stroke=\"{ink}\"{fill}{}/>", path_d(path), dash(shape.dashed));
             }
             let (lines, rules) = self.lines(shape);
@@ -57,7 +63,7 @@ impl Diagram {
             let lines: Vec<&str> = link.text.split('\n').collect();
             for (i, text) in lines.iter().enumerate() {
                 let (x, y, centered) = Diagram::label_at(&trace, i, lines.len());
-                label(&mut out, x, y, &self.styled(text, false), centered.into(), &ink);
+                label(&mut out, x, y, &self.label_runs(text), centered.into(), &ink);
             }
             for (tip, slot) in [(trace.tips[0], Slot::Start), (trace.tips[1], Slot::End)] {
                 let along = if slot == Slot::Start { link.start_along } else { link.end_along };
@@ -523,5 +529,32 @@ mod tests {
         assert_eq!(d.shapes.iter().map(|s| s.id).collect::<Vec<_>>(), [2, 1]);
         assert_eq!(d.shape(1).unwrap().parent, Some(2));
         assert_eq!(d.kept, ["in 1 9", "in 2 2", "in x"]);
+    }
+
+    #[test]
+    fn a_state_machine_is_drawn_with_its_dots_and_its_guards() {
+        let mut d = Diagram::blank();
+        let start = d.add_shape(Form::Dot, 20., 40., 20., 20.);
+        let red = d.add_shape(Form::Round, 100., 20., 120., 60.);
+        d.shape_mut(red).unwrap().text = "Red\n---\nentry / stop()".into();
+        let end = d.add_shape(Form::Final, 300., 40., 26., 26.);
+        let fork = d.add_shape(Form::Bar, 100., 120., 90., 8.);
+        let link = d.add_link(End::Shape(red), End::Shape(end), Head::Arrow, Route::Straight);
+        d.link_mut(link).unwrap().text = "timer [clear] / go()".into();
+        d.add_link(End::Shape(red), End::Shape(red), Head::Arrow, Route::Elbow);
+        let _ = (start, fork);
+        let svg = d.to_svg(COLORS[0]);
+        assert!(Diagram::source_of(&svg).unwrap().trim_start().starts_with("version 6\n"), "{svg}");
+        // The dot and the bar are filled solid, the final state has its inner dot filled and not its ring.
+        let paths: Vec<&str> = svg.lines().filter(|l| l.starts_with("<path")).collect();
+        assert_eq!(paths.iter().filter(|p| p.contains("fill=\"#7d8590\"") && !p.contains("fill-opacity")).count(), 3, "{svg}");
+        // The guard alone is in italics.
+        assert!(svg.contains("<tspan font-style=\"italic\">[clear]</tspan>") && svg.contains(">timer </tspan>") && svg.contains("> / go()</tspan>"), "{svg}");
+        // Read back and written again: the same.
+        let back = Diagram::from_svg(&svg).unwrap();
+        assert!(back == d && back.to_svg(COLORS[0]) == svg);
+        // A diagram from before keeps the label as typed.
+        d.rich = false;
+        assert!(d.to_svg(COLORS[0]).contains(">timer [clear] / go()</text>"));
     }
 }
