@@ -424,8 +424,11 @@ mod tests {
         moved.shape_mut(100).unwrap().x += 30.;
         let (after, _) = time(&moved);
         eprintln!("route: {} arrows, cold {cold:.3} ms, again {warm:.4} ms, after a move {after:.3} ms", d.links.len());
-        // Debug builds are ten times slower than the app: generous bounds, the real ones are measured by hand.
-        assert!(cold < 60. && warm < 3. && after < 25., "{cold} {warm} {after}");
+        // Debug builds are ten times slower than the app, and a CI runner twice slower than a desktop:
+        // the bounds only catch a blow-up, the real figures are measured by hand. What is remembered
+        // must cost next to nothing, whatever the machine.
+        assert!(cold < 200. && warm < 10. && after < 150., "{cold} {warm} {after}");
+        assert!(warm * 10. < cold, "{cold} {warm}");
         assert!(n >= 2 * d.links.len());
     }
 
