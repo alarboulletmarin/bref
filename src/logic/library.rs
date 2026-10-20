@@ -55,6 +55,7 @@ fn shapes() -> Vec<Preset> {
     let class = tr("Class", "Classe");
     let state = tr("State machine", "Machine à états");
     let sequence = tr("Sequence", "Séquence");
+    let activity = tr("Activity", "Activité");
     let p = |family: &'static str, name: &'static str, icon: &'static str, form: Form, (w, h): (f32, f32), text: &'static str| Preset { family, name, icon, form, w, h, text, fill: false, dashed: false };
     vec![
         p(class, tr("Class", "Classe"), "d-rect.svg", Form::Rect, (160., 120.), tr("ClassName\n---\n+ attribute: Type\n---\n+ operation()", "NomDeClasse\n---\n+ attribut: Type\n---\n+ operation()")),
@@ -81,6 +82,19 @@ fn shapes() -> Vec<Preset> {
         p(state, tr("Entry point", "Point d'entrée"), "d-ellipse.svg", Form::Ellipse, (16., 16.), ""),
         p(state, tr("Exit point", "Point de sortie"), "d-st-exit.svg", Form::Exit, (16., 16.), ""),
         p(state, tr("Region divider (dashed)", "Séparateur de régions (pointillés)"), "d-dash.svg", Form::Divider, (300., 10.), ""),
+        p(activity, tr("Action", "Action"), "d-round.svg", Form::Round, (140., 50.), tr("Action", "Action")),
+        p(activity, tr("Call behaviour", "Appel de comportement"), "d-act-call.svg", Form::Behavior, (140., 50.), tr("Behaviour", "Comportement")),
+        p(activity, tr("Object node", "Nœud d'objet"), "d-rect.svg", Form::Rect, (110., 50.), tr("Object", "Objet")),
+        p(activity, tr("Pin (on the border of an action)", "Broche (sur le bord d'une action)"), "d-act-pin.svg", Form::Pin, (14., 14.), ""),
+        p(activity, tr("Initial node", "Nœud initial"), "d-st-dot.svg", Form::Dot, (20., 20.), ""),
+        p(activity, tr("Activity final", "Fin d'activité"), "d-st-final.svg", Form::Final, (26., 26.), ""),
+        p(activity, tr("Flow final", "Fin de flot"), "d-st-exit.svg", Form::Exit, (24., 24.), ""),
+        p(activity, tr("Decision or merge", "Décision ou fusion"), "d-diamond.svg", Form::Branch, (30., 30.), ""),
+        p(activity, tr("Fork or join (bar)", "Fourche ou jointure (barre)"), "d-st-bar.svg", Form::Bar, (90., 8.), ""),
+        p(activity, tr("Swimlane (column)", "Couloir (colonne)"), "d-lane.svg", Form::Lane, (200., 400.), tr("Lane", "Couloir")),
+        p(activity, tr("Swimlane (row)", "Couloir (ligne)"), "d-act-row.svg", Form::Row, (520., 130.), tr("Lane", "Couloir")),
+        Preset { dashed: true, ..p(activity, tr("Interruptible region", "Région interruptible"), "d-act-region.svg", Form::Frame, (260., 170.), "«interruptible»") },
+        p(activity, tr("Activity frame", "Cadre d'activité"), "d-frame.svg", Form::Frame, (400., 300.), tr("act Activity", "act Activité")),
         p(sequence, tr("Lifeline", "Ligne de vie"), "d-seq-life.svg", Form::Lifeline, (110., 276.), tr("name : Type", "nom : Type")),
         p(sequence, tr("Actor", "Acteur"), "d-actor.svg", Form::Actor, (40., 80.), tr("Actor", "Acteur")),
         p(sequence, tr("Fragment alt (choice)", "Fragment alt (choix)"), "d-seq-frag.svg", Form::Fragment, (300., 150.), tr("alt\n[condition]\n[else]", "alt\n[condition]\n[sinon]")),
@@ -107,6 +121,7 @@ pub fn templates() -> Vec<Template> {
         Template { name: tr("Package diagram", "Diagramme de paquetages"), make: package_diagram },
         Template { name: tr("State machine diagram", "Diagramme d'états"), make: state_machine },
         Template { name: tr("Sequence diagram", "Diagramme de séquence"), make: sequence_diagram },
+        Template { name: tr("Activity diagram", "Diagramme d'activité"), make: activity_diagram },
     ]
 }
 
@@ -205,6 +220,56 @@ fn sequence_diagram() -> Diagram {
     send(&mut d, 1, 1, Relation::Sync, tr("check(password)", "vérifier(mot de passe)"));
     send(&mut d, 1, 0, Relation::Dependency, "token");
     d.fit_sequence();
+    d
+}
+
+/// An order in two swimlanes: the customer places it, the shop checks the stock and either ships it or tells the
+/// customer; the order leaves the first action through a pin, and a decision cuts the flow in two with guards.
+fn activity_diagram() -> Diagram {
+    let mut d = Diagram::blank();
+    let family = tr("Activity", "Activité");
+    let lane = tr("Swimlane (column)", "Couloir (colonne)");
+    let (customer, shop) = (put(&mut d, family, lane, (40., 20.)), put(&mut d, family, lane, (280., 20.)));
+    say(&mut d, customer, tr("Customer", "Client"));
+    say(&mut d, shop, tr("Shop", "Boutique"));
+    let action = tr("Action", "Action");
+    let held = |d: &mut Diagram, name: &str, at: (f32, f32), text: &str, lane: u32| {
+        let id = put(d, family, name, at);
+        if !text.is_empty() {
+            say(d, id, text);
+        }
+        // An action is wide enough for its text.
+        if let Some(shape) = d.shape_mut(id).filter(|s| s.form == Form::Round) {
+            shape.w = 160.;
+        }
+        d.set_parent(id, Some(lane));
+        id
+    };
+    let start = held(&mut d, tr("Initial node", "Nœud initial"), (140., 70.), "", customer);
+    let place = held(&mut d, action, (70., 120.), tr("Place the order", "Passer la commande"), customer);
+    let check = held(&mut d, action, (300., 120.), tr("Check the stock", "Vérifier le stock"), shop);
+    let choice = held(&mut d, tr("Decision or merge", "Décision ou fusion"), (365., 210.), "", shop);
+    let ship = held(&mut d, action, (300., 290.), tr("Ship the order", "Expédier la commande"), shop);
+    let end = held(&mut d, tr("Activity final", "Fin d'activité"), (367., 380.), "", shop);
+    let tell = held(&mut d, action, (70., 290.), tr("Tell the customer", "Prévenir le client"), customer);
+    let stop = held(&mut d, tr("Flow final", "Fin de flot"), (138., 380.), "", customer);
+    let pin = put(&mut d, family, tr("Pin (on the border of an action)", "Broche (sur le bord d'une action)"), (223., 138.));
+    say(&mut d, pin, tr("order", "commande"));
+    d.set_parent(pin, Some(place));
+    d.seat(pin);
+    let go = |d: &mut Diagram, from: u32, to: u32, text: &str| {
+        let id = d.add_link(End::Shape(from), End::Shape(to), Head::Arrow, Route::Elbow);
+        if let Some(link) = d.link_mut(id) {
+            link.text = text.to_string();
+        }
+    };
+    go(&mut d, start, place, "");
+    go(&mut d, pin, check, "");
+    go(&mut d, check, choice, "");
+    go(&mut d, choice, ship, tr("[in stock]", "[en stock]"));
+    go(&mut d, ship, end, "");
+    go(&mut d, choice, tell, tr("[out of stock]", "[rupture]"));
+    go(&mut d, tell, stop, "");
     d
 }
 

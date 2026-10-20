@@ -906,6 +906,65 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         fs::remove_file(&fr).unwrap();
     }
+    // Activity diagrams: a row of the library holds an action; a pin dropped on the border of the action sits on it, is held by
+    // it, follows it when it is moved or resized, and is let go when it is dragged far from every border; the starting point opens.
+    {
+        use crate::logic::library;
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (act, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let drawn = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().clone());
+        let family = tr("Activity", "Activité");
+        let preset = |form: diagram::Form| library::presets().iter().position(|p| p.family == family && p.form == form).unwrap();
+        let drop = |cx: &mut gpui::VisualTestContext, form: diagram::Form, x: f32, y: f32| {
+            let at = canvas.read_with(cx, |c, _| c.spot(x, y));
+            canvas.update(cx, |c, cx| c.drop_preset(preset(form), at, cx));
+        };
+        drop(cx, diagram::Form::Row, 150., 100.);
+        drop(cx, diagram::Form::Round, 180., 100.);
+        let d = drawn(cx);
+        let by = |d: &Diagram, form: diagram::Form| d.shapes.iter().find(|s| s.form == form).unwrap().clone();
+        let (row, action) = (by(&d, diagram::Form::Row), by(&d, diagram::Form::Round));
+        assert_eq!((action.parent, row.w, row.h), (Some(row.id), 520., 130.));
+        // The pin, let go on the right border of the action: on it, whatever the side it was let go on, and held by it.
+        drop(cx, diagram::Form::Pin, 255., 104.);
+        let d = drawn(cx);
+        let pin = by(&d, diagram::Form::Pin);
+        assert_eq!((pin.parent, pin.center()), (Some(action.id), (250., 107.)), "{pin:?}");
+        // Dragged with the action, it goes with it, and stays held; the action stays in its row.
+        rows(cx, &canvas, (150., 85.), (150., 125.));
+        let d = drawn(cx);
+        let (moved, pin) = (by(&d, diagram::Form::Round), by(&d, diagram::Form::Pin));
+        assert_eq!((moved.y, pin.center(), pin.parent, moved.parent), (action.y + 40., (250., 147.), Some(action.id), Some(row.id)));
+        // Resized by its corner, the pin stays on the border.
+        rows(cx, &canvas, (250., moved.y + moved.h), (210., moved.y + moved.h));
+        let d = drawn(cx);
+        let (resized, pin) = (by(&d, diagram::Form::Round), by(&d, diagram::Form::Pin));
+        assert_eq!((resized.w, pin.center().0, pin.parent), (100., 210., Some(action.id)), "{resized:?} {pin:?}");
+        // Dragged far from every border, it is let go; one step of undo puts it back on the border.
+        rows(cx, &canvas, pin.center(), (210., 10.));
+        let d = drawn(cx);
+        let pin = by(&d, diagram::Form::Pin);
+        assert!(pin.parent.is_none() && pin.center().0 == 210. && pin.center().1 < 20., "{pin:?}");
+        cx.simulate_keystrokes("secondary-z");
+        let pin = by(&drawn(cx), diagram::Form::Pin);
+        assert_eq!((pin.parent, pin.center()), (Some(action.id), (210., 147.)));
+        // Removing the action removes its pin with it; one step of undo brings back both.
+        let before = drawn(cx);
+        rows(cx, &canvas, (150., 125.), (150., 125.));
+        cx.simulate_keystrokes("delete");
+        let gone = drawn(cx);
+        assert!(gone.shapes.iter().all(|s| s.form == diagram::Form::Row), "{:?}", gone.shapes);
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(drawn(cx).shapes.len(), before.shapes.len());
+        // The file has them, and reads back the same.
+        let text = saved(&act);
+        assert!(text.contains("version 9\n") && text.contains(" pin ") && text.contains(" row "), "{text}");
+        assert!(Diagram::from_svg(&text).unwrap() == drawn(cx));
+        cx.simulate_keystrokes("secondary-a delete escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&act).unwrap();
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

@@ -312,6 +312,8 @@ impl Canvas {
     fn changed(&mut self, cx: &mut Context<Self>) {
         // The lifelines of a sequence diagram follow their messages.
         self.diagram.fit_sequence();
+        // A pin stays on the border of the shape it is on, when that was moved or resized.
+        self.diagram.seat_pins();
         cx.emit(CanvasEvent::Changed);
         cx.notify();
     }

@@ -68,6 +68,11 @@ impl Diagram {
         let roots: Vec<u32> = ids.iter().copied().filter(|id| self.shape(*id).is_some() && !ids.iter().any(|other| other != id && self.shape(*id).and_then(|s| s.parent).is_some_and(|p| self.within(p, *other)))).collect();
         let mut changed = false;
         for id in roots {
+            // A pin is not held like what a container holds: it sits on a border.
+            if self.shape(id).is_some_and(|s| s.form == Form::Pin) {
+                changed |= self.seat(id);
+                continue;
+            }
             let Some((cx, cy)) = self.shape(id).map(Shape::center) else { continue };
             let mut except = self.descendants(id);
             except.push(id);
@@ -75,6 +80,67 @@ impl Diagram {
             changed |= self.set_parent(id, holder);
         }
         changed
+    }
+
+    /// Sits pin `id` on the border of the shape it was let go on (the topmost one that is not a pin, whose border
+    /// is within `PIN` of its center), and has that shape hold it; far from every border it is let go. `true` if it changed.
+    pub fn seat(&mut self, id: u32) -> bool {
+        let Some(pin) = self.shape(id).cloned() else { return false };
+        let (cx, cy) = pin.center();
+        let reach = |s: &Shape| {
+            // How far the center is from the border of the box: inside or outside.
+            let inside = (s.x..=s.x + s.w).contains(&cx) && (s.y..=s.y + s.h).contains(&cy);
+            if inside { (cx - s.x).min(s.x + s.w - cx).min(cy - s.y).min(s.y + s.h - cy) } else { (s.x - cx).max(cx - s.x - s.w).max(0.).hypot((s.y - cy).max(cy - s.y - s.h).max(0.)) }
+        };
+        let mut except = self.descendants(id);
+        except.push(id);
+        let holder = self.shapes.iter().rev().filter(|s| s.form != Form::Pin && s.form != Form::Text && !except.contains(&s.id) && reach(s) <= PIN).min_by(|a, b| reach(a).total_cmp(&reach(b))).map(|s| s.id);
+        let changed = self.set_parent(id, holder);
+        holder.is_some_and(|h| self.snap_to(id, h)) || changed
+    }
+
+    /// Moves pin `id` onto the nearest point of the border of `holder`. `true` if it moved.
+    fn snap_to(&mut self, id: u32, holder: u32) -> bool {
+        let (Some(h), Some(pin)) = (self.shape(holder).cloned(), self.shape(id).cloned()) else { return false };
+        let (cx, cy) = pin.center();
+        let (px, py) = (cx.clamp(h.x, h.x + h.w), cy.clamp(h.y, h.y + h.h));
+        // On the side the point is nearest.
+        let sides = [(px - h.x, (h.x, py)), (h.x + h.w - px, (h.x + h.w, py)), (py - h.y, (px, h.y)), (h.y + h.h - py, (px, h.y + h.h))];
+        let (x, y) = sides.into_iter().min_by(|a, b| a.0.total_cmp(&b.0)).map_or((px, py), |(_, at)| at);
+        let Some(shape) = self.shape_mut(id) else { return false };
+        let (x, y) = (x - shape.w / 2., y - shape.h / 2.);
+        let moved = (shape.x, shape.y) != (x, y);
+        (shape.x, shape.y) = (x, y);
+        moved
+    }
+
+    /// The name of a pin: outside the border it sits on, above and beside it at the sides, above or under it elsewhere.
+    pub(super) fn pin_lines<'a>(&self, shape: &'a Shape) -> Vec<TextLine<'a>> {
+        let (cx, cy) = shape.center();
+        let lines: Vec<&str> = shape.text.split('\n').collect();
+        let tall = LINE * lines.len() as f32;
+        let wide = lines.iter().map(|l| Diagram::guess_width(l)).fold(0., f32::max);
+        // 0 right, 1 left, 2 above, 3 under: the side of the holder the pin is nearest.
+        let side = shape.parent.and_then(|p| self.shape(p)).map_or(3, |h| {
+            let near = [h.x + h.w - cx, cx - h.x, cy - h.y, h.y + h.h - cy];
+            (0..4).min_by(|a, b| near[*a].total_cmp(&near[*b])).unwrap_or(3)
+        });
+        let (x, y, centered) = match side {
+            // Above the line an arrow leaves along, not on it.
+            0 => (shape.x + shape.w + 2., shape.y - tall, false),
+            1 => (shape.x - 2. - wide, shape.y - tall, false),
+            2 => (cx, shape.y - 2. - tall, true),
+            _ => (cx, shape.y + shape.h + 4., true),
+        };
+        lines.into_iter().enumerate().map(|(index, text)| TextLine { x, y: y + LINE * index as f32, text, centered, bold: false, index }).collect()
+    }
+
+    /// Keeps each pin on the border of its holder when that was moved or resized.
+    pub fn seat_pins(&mut self) {
+        let pins: Vec<(u32, u32)> = self.shapes.iter().filter(|s| s.form == Form::Pin).filter_map(|s| Some((s.id, s.parent?))).collect();
+        for (id, holder) in pins {
+            self.snap_to(id, holder);
+        }
     }
 
     /// Resizes container `id` around what it holds, leaving room for its title.
@@ -87,12 +153,15 @@ impl Diagram {
         let (x0, y0) = (inside.iter().map(|s| s.x).fold(f32::MAX, f32::min), inside.iter().map(|s| s.y).fold(f32::MAX, f32::min));
         let (x1, y1) = (inside.iter().map(|s| s.x + s.w).fold(f32::MIN, f32::max), inside.iter().map(|s| s.y + s.h).fold(f32::MIN, f32::max));
         let top = match form.0 {
+            Form::Row => 20.,
             Form::Package => 18. + 16.,
             Form::Lane | Form::Composite => LANE + 16.,
             _ => 6. + LINE * form.1 as f32 + 12.,
         };
         let grid = |v: f32, up: bool| if up { (v / GRID).ceil() * GRID } else { (v / GRID).floor() * GRID };
-        let (left, above, right, below) = (grid(x0 - 20., false), grid(y0 - top, false), grid(x1 + 20., true), grid(y1 + 20., true));
+        // A horizontal swimlane has its header on the left.
+        let side = if form.0 == Form::Row { ROW + 20. } else { 20. };
+        let (left, above, right, below) = (grid(x0 - side, false), grid(y0 - top, false), grid(x1 + 20., true), grid(y1 + 20., true));
         if let Some(shape) = self.shape_mut(id) {
             (shape.x, shape.y, shape.w, shape.h) = (left, above, right - left, below - above);
         }
@@ -238,5 +307,111 @@ mod tests {
         assert_eq!(d.shapes.len(), 4);
         // Still finite: a descendant walk on what is left ends.
         assert!(d.descendants(c).len() <= 1);
+    }
+
+    #[test]
+    fn a_pin_sits_on_the_border_of_the_shape_it_is_let_go_on() {
+        let mut d = Diagram::blank();
+        let action = d.add_shape(Form::Round, 100., 100., 160., 50.);
+        let pin = d.add_shape(Form::Pin, 0., 0., PIN, PIN);
+        let at = |d: &mut Diagram, x: f32, y: f32| {
+            let shape = d.shape_mut(pin).unwrap();
+            (shape.x, shape.y) = (x - PIN / 2., y - PIN / 2.);
+        };
+        let centre = |d: &Diagram| d.shape(pin).unwrap().center();
+        // On the right side, a little inside or outside: it goes on the border, and the action holds it.
+        for (x, y) in [(255., 120.), (265., 120.), (260., 120.)] {
+            at(&mut d, x, y);
+            d.adopt(&[pin]);
+            assert_eq!((d.shape(pin).unwrap().parent, centre(&d)), (Some(action), (260., 120.)), "{x} {y}");
+        }
+        // The four sides, and a corner (the nearer side, never off the box).
+        for ((x, y), want) in [((180., 98.), (180., 100.)), ((180., 152.), (180., 150.)), ((102., 125.), (100., 125.)), ((100., 100.), (100., 100.)), ((258., 148.), (260., 148.))] {
+            at(&mut d, x, y);
+            d.adopt(&[pin]);
+            assert_eq!((d.shape(pin).unwrap().parent, centre(&d)), (Some(action), want), "{x} {y}");
+        }
+        // Far from every border, inside or outside, it is let go and stays where it is.
+        for (x, y) in [(180., 125.), (400., 400.), (180., 60.)] {
+            at(&mut d, x, y);
+            d.adopt(&[pin]);
+            assert_eq!((d.shape(pin).unwrap().parent, centre(&d)), (None, (x, y)), "{x} {y}");
+        }
+        // Held, it follows the action when that is moved or resized, staying on the border.
+        at(&mut d, 260., 120.);
+        d.adopt(&[pin]);
+        assert!(d.descendants(action) == [pin]);
+        d.shape_mut(action).unwrap().w = 100.;
+        d.seat_pins();
+        assert_eq!(centre(&d), (200., 120.));
+        d.shape_mut(action).unwrap().h = 4.;
+        d.seat_pins();
+        let c = centre(&d);
+        assert!(c.0 >= 100. && c.0 <= 200. && c.1 >= 100. && c.1 <= 104., "{c:?}");
+        // A shape of no size, and two pins on the same spot, never panic or leave a pin off the box.
+        let other = d.add_shape(Form::Pin, 0., 0., PIN, PIN);
+        d.shape_mut(action).unwrap().w = 0.;
+        d.shape_mut(action).unwrap().h = 0.;
+        d.seat_pins();
+        d.shape_mut(other).unwrap().x = 100. - PIN / 2.;
+        d.shape_mut(other).unwrap().y = 100. - PIN / 2.;
+        d.adopt(&[other]);
+        assert!(d.shape(other).unwrap().center().0.is_finite());
+        // Removing the action removes its pins, and the arrows on them.
+        let arrow = d.add_link(End::Shape(pin), End::Shape(other), Head::Arrow, Route::Straight);
+        d.remove(&[action]);
+        assert!(d.shape(pin).is_none() && d.link(arrow).is_none());
+    }
+
+    #[test]
+    fn the_name_of_a_pin_is_outside_the_border_it_sits_on() {
+        let mut d = Diagram::blank();
+        let action = d.add_shape(Form::Round, 100., 100., 160., 50.);
+        let pin = d.add_shape(Form::Pin, 0., 0., PIN, PIN);
+        d.shape_mut(pin).unwrap().text = "order".into();
+        // Right and left: above and beside it, not on the arrow that leaves along its middle; top: above; bottom: under.
+        for ((x, y), side) in [((260., 125.), "right"), ((100., 125.), "left"), ((180., 100.), "top"), ((180., 150.), "bottom")] {
+            let shape = d.shape_mut(pin).unwrap();
+            (shape.x, shape.y) = (x - PIN / 2., y - PIN / 2.);
+            d.adopt(&[pin]);
+            let pin_shape = d.shape(pin).unwrap();
+            let (lines, _) = d.lines(pin_shape);
+            let (cy, line) = (pin_shape.center().1, &lines[0]);
+            let outside = match side {
+                "right" => line.x > 260. && line.y + LINE <= cy + 1.,
+                "left" => line.x + Diagram::guess_width("order") < 100. && line.y + LINE <= cy + 1.,
+                "top" => line.y + LINE <= 100.,
+                _ => line.y >= 150.,
+            };
+            assert!(outside, "{side}: {line:?}");
+        }
+        let _ = action;
+    }
+
+    #[test]
+    fn a_row_holds_shapes_to_the_right_of_its_header() {
+        let mut d = Diagram::blank();
+        let row = d.add_shape(Form::Row, 0., 0., 500., 120.);
+        d.shape_mut(row).unwrap().text = "Customer".into();
+        let a = d.add_shape(Form::Round, 200., 30., 100., 50.);
+        d.adopt(&[a]);
+        assert_eq!(d.shape(a).unwrap().parent, Some(row));
+        // Its name is in the header, on the left, in the middle of the height; the rest is in the body.
+        let (lines, _) = d.lines(d.shape(row).unwrap());
+        assert_eq!((lines[0].centered, lines[0].x, lines[0].y + LINE / 2.), (true, ROW / 2., 60.));
+        // A name too long for the header starts at its left edge, inside the shape, whatever the text: empty, CJK, a long word.
+        for name in ["", "Département des commandes internationales", &"x".repeat(300), "日本語日本語日本語日本語", "😀"] {
+            d.shape_mut(row).unwrap().text = name.to_string();
+            let shape = d.shape(row).unwrap();
+            let (lines, _) = d.lines(shape);
+            let line = &lines[0];
+            assert!(line.x >= shape.x && (line.centered || line.x == shape.x + 6.), "{name:?}: {line:?}");
+        }
+        d.shape_mut(row).unwrap().text = "Customer".into();
+        // It fits around what it holds, the header on the left.
+        d.fit(row);
+        let r = d.shape(row).unwrap();
+        // Content at 200..300 by 30..80: 20 around it, and the header (100) on the left of it.
+        assert_eq!((r.x, r.y, r.w, r.h), (80., 10., 240., 90.));
     }
 }

@@ -27,6 +27,10 @@ pub const LINE: f32 = 18.;
 const SPREAD: f32 = 18.;
 /// Height of the header of a swimlane.
 pub const LANE: f32 = 26.;
+/// Width of the header of a horizontal swimlane, where its name is written.
+pub const ROW: f32 = 100.;
+/// Side of a pin, and how far from a border a pin is let go to sit on it.
+pub const PIN: f32 = 14.;
 /// Text line that separates two compartments of a box (UML class, table).
 pub const RULE: &str = "---";
 /// Highest version of the file's source that this build reads. A file of a higher version
@@ -40,7 +44,8 @@ pub const RULE: &str = "---";
 /// 6: the forms of state machines: `dot`, `final`, `terminate`, `bar`, `exit`, `composite`, `divider`.
 /// 7: sequence diagrams: the form `lifeline`, the heads `solidtriangle` and `dot`, the ends `l<id>`.
 /// 8: combined fragments: the form `fragment`, the `held` lines of the messages in them.
-pub const VERSION: u32 = 8;
+/// 9: activity diagrams: the forms `behavior`, `pin` (held by the shape whose border it sits on) and `row`.
+pub const VERSION: u32 = 9;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Form {
@@ -80,10 +85,16 @@ pub enum Form {
     /// A combined fragment of a sequence diagram: an operator in a tab (`alt`, `loop`…), operands under
     /// guards cut by dashed lines. The messages it holds give it its height (`Diagram::fit_sequence`).
     Fragment,
+    /// A call behaviour action of an activity diagram: a rounded rectangle with a rake in a corner.
+    Behavior,
+    /// A pin or a port: a small square that sits on the border of the shape that holds it (`Diagram::seat`).
+    Pin,
+    /// A horizontal swimlane: a row with its name in a header on the left. Holds shapes.
+    Row,
 }
 
 impl Form {
-    pub const ALL: [(Form, &str); 21] = [
+    pub const ALL: [(Form, &str); 24] = [
         (Form::Rect, "rect"),
         (Form::Round, "round"),
         (Form::Ellipse, "ellipse"),
@@ -105,11 +116,14 @@ impl Form {
         (Form::Divider, "divider"),
         (Form::Lifeline, "lifeline"),
         (Form::Fragment, "fragment"),
+        (Form::Behavior, "behavior"),
+        (Form::Pin, "pin"),
+        (Form::Row, "row"),
     ];
 
     /// Whether shapes dropped on it belong to it.
     pub fn holds(self) -> bool {
-        matches!(self, Form::Package | Form::Frame | Form::Lane | Form::Composite)
+        matches!(self, Form::Package | Form::Frame | Form::Lane | Form::Composite | Form::Row)
     }
 
     /// The version of the file that first had this form.
@@ -120,6 +134,7 @@ impl Form {
             Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Composite | Form::Divider => 6,
             Form::Lifeline => 7,
             Form::Fragment => 8,
+            Form::Behavior | Form::Pin | Form::Row => 9,
             _ => 1,
         }
     }
@@ -565,6 +580,16 @@ impl Shape {
                 let tab = self.tab_width();
                 vec![rounded(x, y, w, h, 2.), vec![Cmd::Move(x, y), Cmd::Line(x + tab, y), Cmd::Line(x + tab, y + 11.), Cmd::Line(x + tab - 9., y + 20.), Cmd::Line(x, y + 20.), Cmd::Close]]
             }
+            Form::Behavior => {
+                // The rake: a stem, a bar and three prongs, in the corner at the bottom right.
+                let (rx, ry) = ((x + w - 22.).max(x), (y + h - 18.).max(y));
+                vec![
+                    rounded(x, y, w, h, 14.),
+                    vec![Cmd::Move(rx + 6., ry), Cmd::Line(rx + 6., ry + 8.), Cmd::Move(rx, ry + 8.), Cmd::Line(rx + 12., ry + 8.), Cmd::Move(rx, ry + 8.), Cmd::Line(rx, ry + 14.), Cmd::Move(rx + 6., ry + 8.), Cmd::Line(rx + 6., ry + 14.), Cmd::Move(rx + 12., ry + 8.), Cmd::Line(rx + 12., ry + 14.)],
+                ]
+            }
+            Form::Pin => vec![vec![Cmd::Move(x, y), Cmd::Line(x + w, y), Cmd::Line(x + w, y + h), Cmd::Line(x, y + h), Cmd::Close]],
+            Form::Row => vec![rounded(x, y, w, h, 2.), vec![Cmd::Move(x + ROW.min(w), y), Cmd::Line(x + ROW.min(w), y + h)]],
             Form::Lifeline => vec![rounded(x, y, w, sequence::HEAD.min(h), 2.), vec![Cmd::Move(cx, y + sequence::HEAD.min(h)), Cmd::Line(cx, y + h)]],
             Form::Lane => vec![rounded(x, y, w, h, 2.), vec![Cmd::Move(x, y + LANE), Cmd::Line(x + w, y + LANE)]],
             Form::Note => {
@@ -631,6 +656,11 @@ impl Shape {
                 let (x, y, centered) = match (self.form, index) {
                     (Form::Package, 0) => (self.x + 6., self.y + 1., false),
                     (Form::Package, i) => (self.x + 8., self.y + 22. + LINE * (i - 1) as f32, false),
+                    // The name of a horizontal swimlane is in its header, on the left, in the middle of its height.
+                    // ponytail: a name longer than the header is written from its left edge and runs into the row; wrap it if that is asked.
+                    (Form::Row, 0) if Diagram::guess_width(text) * 1.08 > ROW.min(self.w) - 8. => (self.x + 6., cy - LINE / 2., false),
+                    (Form::Row, 0) => (self.x + ROW.min(self.w) / 2., cy - LINE / 2., true),
+                    (Form::Row, i) => (self.x + ROW.min(self.w) + 8., self.y + 6. + LINE * (i - 1) as f32, false),
                     (Form::Lane | Form::Composite, 0) => (cx, self.y + (LANE - LINE) / 2., true),
                     (Form::Lane | Form::Composite, i) => (self.x + 8., self.y + LANE + 6. + LINE * (i - 1) as f32, false),
                     (_, i) => (self.x + 8., self.y + 6. + LINE * i as f32, false),
@@ -643,7 +673,7 @@ impl Shape {
         let (x, top, centered) = match self.form {
             Form::Text => (self.x, self.y, false),
             // Under the stick figure.
-            Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit => (cx, self.y + self.h + 4., true),
+            Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Pin => (cx, self.y + self.h + 4., true),
             _ => (cx, cy - height / 2., true),
         };
         let placed = lines.into_iter().enumerate();
@@ -788,6 +818,9 @@ impl Diagram {
         if shape.form == Form::Fragment {
             return self.fragment_lines(shape);
         }
+        if shape.form == Form::Pin {
+            return (self.pin_lines(shape), Vec::new());
+        }
         shape.text_lines_for(self.rich)
     }
 
@@ -829,7 +862,7 @@ impl Diagram {
             let life = matches!(l.from, End::Life(_)) || matches!(l.to, End::Life(_));
             [l.start.since(), l.end.since(), if mid { 4 } else { 1 }, if life { 7 } else { 1 }, if l.holder.is_some() { 8 } else { 1 }, if l.has_end_texts() { 3 } else { 1 }].into_iter().max().unwrap_or(1)
         });
-        let shapes = self.shapes.iter().map(|s| if s.operand != 0 { 8 } else if s.parent.is_some() { 5 } else { s.form.since() }).max().unwrap_or(1);
+        let shapes = self.shapes.iter().map(|s| s.form.since().max(if s.operand != 0 { 8 } else if s.parent.is_some() { 5 } else { 1 })).max().unwrap_or(1);
         links.max().unwrap_or(1).max(shapes).max(if self.rich { 2 } else { 1 }).max(if self.numbered { 7 } else { 1 })
     }
 
@@ -1258,7 +1291,13 @@ impl Diagram {
     pub fn bounds(&self) -> Option<(f32, f32, f32, f32)> {
         // A stick figure's text is written under it.
         let boxes = self.shapes.iter().map(|s| {
-            let below = if matches!(s.form, Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit) { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
+            if s.form == Form::Pin {
+                // Its name is outside the border, on whichever side that is.
+                let room = s.text.split('\n').map(Diagram::guess_width).fold(0., f32::max) + 4.;
+                let tall = LINE * s.text.split('\n').count() as f32 + 4.;
+                return (s.x - room, s.y - tall, s.x + s.w + room, s.y + s.h + tall);
+            }
+            let below = if matches!(s.form, Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Pin) { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
             (s.x, s.y, s.x + s.w, s.y + s.h + below)
         });
         let ends = self.links.iter().filter_map(|l| self.trace(l)).flat_map(|t| t.points);
@@ -1511,7 +1550,7 @@ mod tests {
     #[test]
     fn the_shapes_of_state_machines_have_an_outline_of_any_size() {
         for (w, h) in [(0., 0.), (1., 1.), (8., 8.), (12., 12.), (26., 26.), (90., 8.), (300., 10.), (10_000., 3.)] {
-            for form in [Form::Dot, Form::Final, Form::Terminate, Form::Bar, Form::Exit, Form::Composite, Form::Divider] {
+            for form in [Form::Dot, Form::Final, Form::Terminate, Form::Bar, Form::Exit, Form::Composite, Form::Divider, Form::Behavior, Form::Pin, Form::Row] {
                 for text in ["", "a", "a long name\nsecond line", "日本語 😀"] {
                     let shape = Shape { id: 1, form, x: 5., y: 5., w, h, text: text.into(), color: 0, fill: false, dashed: false, parent: None, operand: 0 };
                     let outline = shape.outline();

@@ -663,4 +663,39 @@ mod tests {
         let read = Diagram::from_svg(&looped).unwrap();
         assert_eq!(read.layout().ys.len(), read.messages().len());
     }
+
+    #[test]
+    fn an_activity_diagram_asks_for_version_9_only_for_its_new_forms() {
+        let template = crate::logic::library::templates().into_iter().find(|t| t.name == crate::lang::tr("Activity diagram", "Diagramme d'activité")).unwrap();
+        let activity = (template.make)();
+        let svg = activity.to_svg(COLORS[0]);
+        let source = Diagram::source_of(&svg).unwrap();
+        assert!(source.trim_start().starts_with("version 9\n") && source.contains(" pin ") && source.contains("\nin "), "{source}");
+        let back = Diagram::from_svg(&svg).unwrap();
+        assert!(back == activity && back.to_svg(COLORS[0]) == svg);
+        // The pin is held by its action, and read back on the border.
+        let pin = back.shapes.iter().find(|s| s.form == Form::Pin).unwrap();
+        let holder = back.shape(pin.parent.unwrap()).unwrap();
+        assert_eq!(holder.form, Form::Round);
+        assert_eq!(pin.center().0, holder.x + holder.w);
+        // Only the swimlanes and the nodes it shares with state machines: still version 6, so older builds read it.
+        let mut plain = Diagram::blank();
+        plain.add_shape(Form::Bar, 0., 0., 90., 8.);
+        plain.add_shape(Form::Lane, 0., 20., 100., 100.);
+        assert!(Diagram::source_of(&plain.to_svg(COLORS[0])).unwrap().trim_start().starts_with("version 6\n"));
+        // A form held by a container keeps the version of its form (a dot in a lane is not a version 5).
+        let mut held = Diagram::blank();
+        let (lane, dot) = (held.add_shape(Form::Lane, 0., 0., 100., 100.), held.add_shape(Form::Dot, 40., 40., 20., 20.));
+        held.set_parent(dot, Some(lane));
+        assert!(Diagram::source_of(&held.to_svg(COLORS[0])).unwrap().trim_start().starts_with("version 6\n"));
+        // Each of the new forms asks for 9 on its own; a damaged `in` line (a pin held by a shape that is not there) is kept.
+        for form in [Form::Behavior, Form::Pin, Form::Row] {
+            let mut d = Diagram::blank();
+            d.add_shape(form, 0., 0., 40., 40.);
+            assert!(Diagram::source_of(&d.to_svg(COLORS[0])).unwrap().trim_start().starts_with("version 9\n"), "{form:?}");
+        }
+        let damaged = svg.replacen("\nin ", "\nin 77 99\nin ", 1);
+        let read = Diagram::from_svg(&damaged).unwrap();
+        assert!(read.kept.contains(&"in 77 99".to_string()) && read.to_svg(COLORS[0]).contains("in 77 99"));
+    }
 }
