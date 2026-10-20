@@ -4,6 +4,8 @@
 
 use std::fmt::Write;
 
+use super::richtext::{self, Span, Style};
+
 /// Stroke colors, as `0xrrggbb`: mid tones, readable on a light background
 /// as on a dark one. The first is the neutral; in the app, the
 /// theme replaces it with its text color.
@@ -15,9 +17,13 @@ pub const FONT: f32 = 14.;
 pub const LINE: f32 = 18.;
 /// Text line that separates two compartments of a box (UML class, table).
 pub const RULE: &str = "---";
-/// Version of the file's source that this build writes and reads. A file of a higher version
-/// is never opened for editing: saving it would drop what this build does not know.
-pub const VERSION: u32 = 1;
+/// Highest version of the file's source that this build reads. A file of a higher version
+/// is never opened for editing: saving it would drop what this build does not know. A file is
+/// written with the lowest version that can say what it holds (`Diagram::needed`), so a diagram
+/// that uses nothing new still opens in the builds before.
+///
+/// 1: shapes and arrows. 2: `rich`, styled text.
+pub const VERSION: u32 = 2;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Form {
@@ -158,6 +164,9 @@ pub struct Diagram {
     /// In drawing order: the last shape is on top.
     pub shapes: Vec<Shape>,
     pub links: Vec<Link>,
+    /// Texts are read for the marks of notes (`*italic*`, `<u>underline</u>`…). Off for a diagram
+    /// made before they existed, whose texts keep their stars as they are.
+    pub rich: bool,
     next: u32,
     /// Source lines this build cannot read, kept as they were and written back after the elements.
     kept: Vec<String>,
@@ -381,6 +390,21 @@ pub fn head(head: Head, tip: (f32, f32), u: (f32, f32)) -> (Vec<(f32, f32)>, boo
 }
 
 impl Diagram {
+    /// An empty diagram of today: its texts are styled.
+    pub fn blank() -> Diagram {
+        Diagram { rich: true, ..Diagram::default() }
+    }
+
+    /// The runs of one line of text, in the styles its marks ask for, if this diagram reads them.
+    pub fn styled(&self, text: &str, bold: bool) -> Vec<Span> {
+        if self.rich { richtext::spans(text, bold) } else { richtext::plain(text, bold) }
+    }
+
+    /// The lowest version of the source that can say all this diagram holds.
+    fn needed(&self) -> u32 {
+        if self.rich { 2 } else { 1 }
+    }
+
     pub fn shape(&self, id: u32) -> Option<&Shape> {
         self.shapes.iter().find(|s| s.id == id)
     }
@@ -592,12 +616,18 @@ impl Diagram {
             num(w), num(h), num(x0), num(y0), num(w), num(h),
         );
         let dash = |dashed: bool| if dashed { " stroke-dasharray=\"6 4\"" } else { "" };
-        let label = |out: &mut String, x: f32, y: f32, text: &str, centered: bool, bold: bool, ink: &str| {
-            if !text.is_empty() {
-                let anchor = if centered { " text-anchor=\"middle\"" } else { "" };
-                let weight = if bold { " font-weight=\"bold\"" } else { "" };
-                let _ = writeln!(out, "<text x=\"{}\" y=\"{}\"{anchor}{weight} fill=\"{ink}\" stroke=\"none\">{}</text>", num(x), num(y + FONT), xml(text));
+        let label = |out: &mut String, x: f32, y: f32, spans: &[Span], centered: bool, ink: &str| {
+            if spans.is_empty() {
+                return;
             }
+            let anchor = if centered { " text-anchor=\"middle\"" } else { "" };
+            // One style for the whole line: on the `<text>`; several: a `<tspan>` for each run.
+            let uniform = spans.windows(2).all(|w| w[0].style == w[1].style);
+            let (attrs, body) = match uniform {
+                true => (style_attrs(spans[0].style), xml(&spans.iter().map(|s| s.text.as_str()).collect::<String>())),
+                false => (String::new(), spans.iter().map(|s| format!("<tspan{}>{}</tspan>", style_attrs(s.style), xml(&s.text))).collect()),
+            };
+            let _ = writeln!(out, "<text x=\"{}\" y=\"{}\"{anchor}{attrs} fill=\"{ink}\" stroke=\"none\">{body}</text>", num(x), num(y + FONT));
         };
         for shape in &self.shapes {
             let ink = color(shape.color);
@@ -610,7 +640,7 @@ impl Diagram {
                 let _ = writeln!(out, "<path d=\"M{} {}H{}\" stroke=\"{ink}\"/>", num(shape.x), num(y), num(shape.x + shape.w));
             }
             for line in lines {
-                label(&mut out, line.x, line.y, line.text, line.centered, line.bold, &ink);
+                label(&mut out, line.x, line.y, &self.styled(line.text, line.bold), line.centered, &ink);
             }
         }
         for link in &self.links {
@@ -624,7 +654,7 @@ impl Diagram {
             let lines: Vec<&str> = link.text.split('\n').collect();
             for (i, text) in lines.iter().enumerate() {
                 let (x, y, centered) = Diagram::label_at(&trace, i, lines.len());
-                label(&mut out, x, y, text, centered, false, &ink);
+                label(&mut out, x, y, &self.styled(text, false), centered, &ink);
             }
         }
         let _ = write!(out, "<metadata id=\"bref-diagram\">\n{}</metadata>\n</svg>\n", xml(&self.source()));
@@ -641,7 +671,7 @@ impl Diagram {
             End::Point(x, y) => format!("p{},{}", num(x), num(y)),
         };
         let text = |text: &str| text.replace('\\', "\\\\").replace('\n', "\\n");
-        let mut out = format!("version {VERSION}\n");
+        let mut out = format!("version {}\n{}", self.needed(), if self.rich { "rich 1\n" } else { "" });
         for s in &self.shapes {
             let _ = writeln!(out, "shape {} {} {} {} {} {} {} {} {} {}", s.id, name(s.form), num(s.x), num(s.y), num(s.w), num(s.h), s.color, s.fill as u8, s.dashed as u8, text(&s.text));
         }
@@ -727,6 +757,9 @@ impl Diagram {
                         text: text(f.get(9).unwrap_or(&"")),
                     });
                     Some(())
+                } else if line == "rich 1" {
+                    diagram.rich = true;
+                    Some(())
                 } else if let Some(rest) = line.strip_prefix("link ") {
                     let f: Vec<&str> = rest.splitn(9, ' ').collect();
                     let tip = |i: usize| Head::ALL.iter().find(|(_, name)| Some(name) == f.get(i)).map(|(head, _)| *head);
@@ -756,6 +789,27 @@ impl Diagram {
         diagram.next = ids.max().unwrap_or(0);
         Some(diagram)
     }
+}
+
+/// SVG attributes of a text style, with a leading space each.
+fn style_attrs(style: Style) -> String {
+    let mut out = String::new();
+    if style.bold {
+        out += " font-weight=\"bold\"";
+    }
+    if style.italic {
+        out += " font-style=\"italic\"";
+    }
+    match (style.under, style.strike) {
+        (true, true) => out += " text-decoration=\"underline line-through\"",
+        (true, false) => out += " text-decoration=\"underline\"",
+        (false, true) => out += " text-decoration=\"line-through\"",
+        _ => {}
+    }
+    if style.code {
+        out += " font-family=\"monospace\"";
+    }
+    out
 }
 
 fn is_version(line: &str) -> bool {
@@ -897,14 +951,14 @@ mod tests {
     fn refuses_what_a_newer_version_wrote() {
         let shape = "shape 1 rect 0 0 100 60 0 0 0 A\n";
         // Higher, unreadable, not a number, beyond `u32`, with a stray space, empty: all newer.
-        for version in ["2", "99999999999", "-1", "1.5", "x", " 1", "", "1 "] {
+        for version in [&(VERSION + 1).to_string(), "99999999999", "-1", "1.5", "x", " 1", "", "1 "] {
             let svg = file(&format!("version {version}\n{shape}"));
             assert!((Diagram::from_svg(&svg), Diagram::newer(&svg)) == (None, true), "version {version:?}");
         }
         let svg = file(&format!("{shape}version\n"));
         assert!((Diagram::from_svg(&svg), Diagram::newer(&svg)) == (None, true));
         // The version may come after the elements.
-        assert!(Diagram::newer(&file(&format!("{shape}version 2\n"))));
+        assert!(Diagram::newer(&file(&format!("{shape}version {}\n", VERSION + 1))));
         // Version 0, 1, none, or an empty source: opens. Not a Bref file: not "newer", just foreign.
         for source in ["version 0\n", "version 1\n", "", "\n"] {
             let svg = file(&format!("{source}{shape}"));
@@ -922,8 +976,42 @@ mod tests {
         assert!(d.kept.is_empty() && (d.shapes.len(), d.links.len()) == (2, 1));
         // Saving adds the version line, and nothing else.
         let svg = d.to_svg(COLORS[0]);
-        assert_eq!(Diagram::source_of(&svg).unwrap().trim_start(), format!("version {VERSION}\n{old}"));
+        assert_eq!(Diagram::source_of(&svg).unwrap().trim_start(), format!("version 1\n{old}"));
         assert_eq!(Diagram::from_svg(&svg).unwrap().to_svg(COLORS[0]), svg);
+    }
+
+    #[test]
+    fn styled_text_is_written_and_read_back() {
+        let mut d = Diagram::blank();
+        let a = d.add_shape(Form::Rect, 0., 0., 200., 80.);
+        d.shape_mut(a).unwrap().text = "*Shape*\n---\n+ <u>count</u>: int\n+ **area**(): f32\n~~old~~ `List<T>`".into();
+        let b = d.add_shape(Form::Rect, 300., 0., 100., 40.);
+        d.shape_mut(b).unwrap().text = "*whole line*".into();
+        let link = d.add_link(End::Shape(a), End::Shape(b), Head::Arrow, Route::Straight);
+        d.link_mut(link).unwrap().text = "*calls*".into();
+        let svg = d.to_svg(COLORS[0]);
+        // A line with several styles has a run for each; a line with one has it on the text itself.
+        assert!(svg.contains("<tspan font-style=\"italic\">Shape</tspan>") || svg.contains("font-style=\"italic\" fill"), "{svg}");
+        assert!(svg.contains("<tspan text-decoration=\"underline\">count</tspan>") && svg.contains("<tspan font-weight=\"bold\">area</tspan>"));
+        assert!(svg.contains("text-decoration=\"line-through\"") && svg.contains("font-family=\"monospace\">List&lt;T&gt;"));
+        assert!(svg.contains("font-style=\"italic\" fill=\"#7d8590\" stroke=\"none\">whole line</text>"));
+        // The marks are not drawn, but they are in the source.
+        assert!(!svg.contains(">*Shape*<") && Diagram::source_of(&svg).unwrap().contains("*Shape*"));
+        assert_eq!(Diagram::source_of(&svg).unwrap().trim_start().lines().take(2).collect::<Vec<_>>(), ["version 2", "rich 1"]);
+        let back = Diagram::from_svg(&svg).unwrap();
+        assert!(back.rich && back == d && back.to_svg(COLORS[0]) == svg);
+    }
+
+    #[test]
+    fn a_diagram_from_before_styles_keeps_its_stars() {
+        let mut d = Diagram::default();
+        let a = d.add_shape(Form::Rect, 0., 0., 100., 40.);
+        d.shape_mut(a).unwrap().text = "a * b * c *d* <u>e</u>".into();
+        let svg = d.to_svg(COLORS[0]);
+        assert!(svg.contains(">a * b * c *d* &lt;u&gt;e&lt;/u&gt;</text>") && !svg.contains("italic") && !svg.contains("tspan"));
+        // Plain, it still opens in the builds that know only version 1.
+        assert_eq!(Diagram::source_of(&svg).unwrap().trim_start().lines().next(), Some("version 1"));
+        assert!(!Diagram::from_svg(&svg).unwrap().rich);
     }
 
     #[test]

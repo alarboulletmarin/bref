@@ -66,7 +66,7 @@ impl Shell {
 
     pub(super) fn new_diagram(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(dir) = self.diagram_dir().filter(|_| self.vault.is_some()) {
-            self.add_diagram(&dir, tr("Diagram", "Schéma"), Diagram::default(), window, cx);
+            self.add_diagram(&dir, tr("Diagram", "Schéma"), Diagram::blank(), window, cx);
         }
     }
 

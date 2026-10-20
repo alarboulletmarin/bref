@@ -11,16 +11,17 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, ElementInputHandler, EntityInputHandler,
-    EventEmitter, FocusHandle, Focusable, FontWeight, Hsla, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PathBuilder, Pixels, Point, Rgba, ScrollWheelEvent, SharedString, TextRun, UTF16Selection,
+    EventEmitter, FocusHandle, Focusable, FontStyle, FontWeight, Hsla, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PathBuilder, Pixels, Point, Rgba, ScrollWheelEvent, SharedString, StrikethroughStyle, TextRun, UTF16Selection, UnderlineStyle,
     Window, actions, canvas, div, fill, font, point, prelude::*, px, quad, rgb, size,
 };
 
 use crate::{
     ui::theme::Theme,
     logic::diagram::{self, Cmd, Diagram, End, Form, Head, Route},
+    logic::richtext::{self, Span},
     ui::widgets::{button, tip},
-    ui::assets::sans, lang::tr,
+    ui::assets::{mono, sans}, lang::tr,
 };
 
 actions!(canvas, [ZoomIn, ZoomOut, ZoomFit, Erase, EraseNext, Duplicate, SelectAll, Undo, Redo, Confirm, Cancel, Left, Right, Up, Down, Paste]);
@@ -168,6 +169,13 @@ impl Canvas {
 
     pub fn diagram(&self) -> &Diagram {
         &self.diagram
+    }
+
+    /// Makes this diagram read the marks of notes in its texts (`*italic*`): one step of undo.
+    pub fn enrich(&mut self, cx: &mut Context<Self>) {
+        self.remember();
+        self.diagram.rich = true;
+        self.changed(cx);
     }
 
     /// The theme, as the window knows it.

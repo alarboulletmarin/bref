@@ -12,4 +12,5 @@ pub mod markdown;
 pub mod note;
 pub mod prefs;
 pub mod recall;
+pub mod richtext;
 pub mod table;

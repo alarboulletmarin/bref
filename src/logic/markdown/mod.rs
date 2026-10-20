@@ -255,8 +255,23 @@ pub fn mark_signs(color: usize) -> (String, &'static str) {
     }
 }
 
-/// Fills `flags` with the inline styles of `line` from byte `from`.
+/// Fills `flags` with the inline styles of `line` from byte `from`: all of them.
 pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
+    emphasis(line, from, flags);
+    let b = line.as_bytes();
+    // A `[ ]` or `[x]` checkbox: colored, bold once checked.
+    for r in boxes(line, from) {
+        if flags[r.start] & CODE == 0 {
+            let checked = if b[r.start + 1] == b' ' { 0 } else { BOLD };
+            flags[r.clone()].iter_mut().for_each(|f| *f |= MARK | checked);
+        }
+    }
+    links_and_comments(line, from, flags);
+}
+
+/// Fills `flags` with the styles made by marks alone (`**`, `*`, `_`, `~~`, `==`, `<u>`, `<mark>`, backticks):
+/// the marks are `DIM`. Texts that are not notes (a diagram's) read only this part.
+pub fn emphasis(line: &str, from: usize, flags: &mut [u16]) {
     let b = line.as_bytes();
     let alnum = |i: Option<usize>| i.and_then(|i| b.get(i)).is_some_and(u8::is_ascii_alphanumeric);
     let mut active = 0u16;
@@ -330,13 +345,10 @@ pub fn inline(line: &str, from: usize, flags: &mut [u16]) {
         flags[i..i + n].iter_mut().for_each(|f| *f |= active);
         i += n;
     }
-        // A `[ ]` or `[x]` checkbox: colored, bold once checked.
-    for r in boxes(line, from) {
-        if flags[r.start] & CODE == 0 {
-            let checked = if b[r.start + 1] == b' ' { 0 } else { BOLD };
-            flags[r.clone()].iter_mut().for_each(|f| *f |= MARK | checked);
-        }
-    }
+}
+
+/// Links, tags and comments: what notes add to the styles of the marks.
+fn links_and_comments(line: &str, from: usize, flags: &mut [u16]) {
     for (r, link) in links(line) {
         if r.start < from {
             continue;

@@ -59,7 +59,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | CSV/TSV parsing and writing | `logic/table.rs` |
 | embedded sections (`![[Note#Heading]]`: reading the line, finding the section, rewriting links to a renamed heading) | `logic/embed.rs`; laid out and drawn by `views/editor/embed.rs` (a read-only `Editor` per section, framed under its line) |
 | formulas of the cells of a table (parser, evaluator, numbers as written) | `logic/formula.rs`; shown by `views/editor/grid.rs` (`results`, `Shown`), written and completed by `views/editor/formulas.rs` |
-| diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram.rs`, `logic/import.rs` |
+| diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram.rs`, `logic/import.rs`; styled text of their labels: `logic/richtext.rs` (the marks of `markdown::emphasis`); the editor: `views/canvas/` |
 | the vault on disk (scan, save, rename, trash, config files) | `platform/vault.rs` |
 | git commands, update check | `platform/git.rs`, `platform/update.rs` |
 | colours, themes, page width | `ui/theme.rs` |
@@ -86,3 +86,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
   and opens read-only in the viewer. New data of an element goes on a **line of its own, keyed by
   the element's id**, never in a new column: the text is last on `shape` and `link` lines, so an
   older reader would take a new column for text. Bump `VERSION` whenever the meaning of a line changes.
+  A file is written with the **lowest** version that can say what it holds (`Diagram::needed`), so a
+  diagram that uses nothing new still opens in the builds before. What changes how an existing text
+  reads (styled text, `rich`) is a line of its own that a diagram made before does not have: its
+  texts keep their stars until the user asks.

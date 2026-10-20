@@ -137,5 +137,18 @@ mod tests {
         assert!(svg.starts_with("<svg") && svg.contains("<path") && w > 4. && h > 16.);
         assert!(latex(r"\frac{1}{", false, [0, 0, 0], 16.).is_none());
     }
-}
 
+    #[test]
+    fn exports_a_styled_diagram() {
+        use crate::logic::diagram::{Diagram, Form};
+        let text = "*Shape*\n---\n+ <u>count</u>: int\n+ **area**(): f32";
+        let png = |mut d: Diagram| {
+            let id = d.add_shape(Form::Rect, 0., 0., 200., 90.);
+            d.shape_mut(id).unwrap().text = text.into();
+            png(&d.to_svg(0x1e1e1e), 2.).unwrap()
+        };
+        let (styled, plain) = (png(Diagram::blank()), png(Diagram::default()));
+        // The same text, drawn with its marks or without: two different pictures.
+        assert!(styled.starts_with(b"\x89PNG") && plain.starts_with(b"\x89PNG") && styled != plain);
+    }
+}
