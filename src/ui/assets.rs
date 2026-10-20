@@ -181,6 +181,7 @@ impl AssetSource for Assets {
             "d-frame.svg" => r#"<rect x="2.5" y="3" width="11" height="10" rx="0.5"/><path d="M5 5.5H8.5"/>"#,
             "d-lane.svg" => r#"<rect x="3.5" y="2.5" width="9" height="11" rx="0.5"/><path d="M3.5 5.5H12.5"/>"#,
             "d-fit.svg" => r#"<path d="M3 6V3H6M10 3H13V6M13 10V13H10M6 13H3V10M6.5 6.5H9.5V9.5H6.5Z"/>"#,
+            "d-library.svg" => r#"<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="0.8"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="3"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="3"/><path d="M9 11.25H13.5M11.25 9V13.5"/>"#,
             "d-fill.svg" => r#"<rect x="3" y="3" width="10" height="10" rx="1.5" fill="black" fill-opacity="0.35"/>"#,
             "d-dash.svg" => r#"<path d="M2.5 8H5M7 8H9M11 8H13.5"/>"#,
             "d-head-start.svg" => r#"<path d="M13.5 8H3M6.5 4.5L3 8L6.5 11.5"/>"#,

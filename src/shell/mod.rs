@@ -131,6 +131,8 @@ struct Shell {
     toasts: Vec<Toast>,
     /// Number of the last message, to remove the right one when it expires.
     toasted: usize,
+    /// A starting point asked for from the library of a canvas, to open when the window is drawn.
+    template: Option<usize>,
     /// Newer version than the running one, found on GitHub.
     update: Option<update::Release>,
     /// Its install is in progress.
@@ -223,6 +225,7 @@ impl Shell {
             comments_shut: false,
             toasts: Vec::new(),
             toasted: 0,
+            template: None,
             update: None,
             updating: false,
             title: String::new(),

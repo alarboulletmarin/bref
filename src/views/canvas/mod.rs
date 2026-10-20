@@ -13,12 +13,13 @@ use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, ElementInputHandler, EntityInputHandler,
     EventEmitter, FocusHandle, Focusable, FontStyle, FontWeight, Hsla, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, PathBuilder, Pixels, Point, Rgba, ScrollWheelEvent, SharedString, StrikethroughStyle, TextRun, UTF16Selection, UnderlineStyle,
-    Window, actions, canvas, div, fill, font, point, prelude::*, px, quad, rgb, size,
+    Window, actions, canvas, div, fill, font, point, prelude::*, px, quad, rgb, size, svg,
 };
 
 use crate::{
     ui::theme::Theme,
     logic::diagram::{self, Anchor, Cmd, Diagram, End, Form, Route, Slot},
+    logic::library::{self, Preset},
     logic::relation::Relation,
     logic::richtext::{self, Span},
     ui::widgets::{button, tip},
@@ -32,6 +33,8 @@ pub enum CanvasEvent {
     Changed,
     /// A PNG image of the diagram is requested.
     Export,
+    /// A new diagram that starts from the library's template of this number.
+    Template(usize),
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -40,6 +43,8 @@ pub enum Tool {
     Shape(Form),
     /// An arrow of one of the relationships: a line, an arrow, a generalization…
     Link(Relation),
+    /// A shape of the library, with its text and size (the number in `library::presets`).
+    Preset(usize),
 }
 
 /// Bar tools: (tool, icon, letter).
@@ -79,12 +84,13 @@ fn tool_label(tool: Tool) -> &'static str {
         Tool::Link(Relation::Association) => tr("Line", "Trait"),
         Tool::Link(Relation::Navigable) => tr("Arrow", "Flèche"),
         Tool::Link(relation) => relation.name(),
+        Tool::Preset(i) => library::presets().get(i).map_or("", |p| p.name),
     }
 }
 
-/// Shape dragged from the toolbar, drawn under the pointer up to the canvas.
+/// Shape dragged from the toolbar or the library, drawn under the pointer up to the canvas.
 #[derive(Clone)]
-struct Placing(Form, &'static str, Theme);
+struct Placing(Tool, &'static str, Theme);
 
 impl Render for Placing {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -92,8 +98,12 @@ impl Render for Placing {
     }
 }
 
-/// Size of a shape placed with a click or dropped from the bar.
-fn usual(form: Form) -> (f32, f32) {
+/// Size of a shape placed with a click or dropped from the bar or the library.
+fn usual(tool: Tool) -> (f32, f32) {
+    if let Tool::Preset(i) = tool {
+        return library::presets().get(i).map_or((140., 60.), |p| (p.w, p.h));
+    }
+    let Tool::Shape(form) = tool else { return (140., 60.) };
     match form {
         Form::Text => (80., diagram::LINE),
         Form::Actor => (40., 80.),
@@ -104,6 +114,15 @@ fn usual(form: Form) -> (f32, f32) {
         Form::Lane => (160., 320.),
         Form::Ellipse | Form::Diamond => (120., 80.),
         _ => (140., 60.),
+    }
+}
+
+/// The form a shape tool draws, and what is written in it to begin with.
+fn made_by(tool: Tool) -> Option<(Form, Option<Preset>)> {
+    match tool {
+        Tool::Shape(form) => Some((form, None)),
+        Tool::Preset(i) => library::presets().into_iter().nth(i).map(|p| (p.form, Some(p))),
+        _ => None,
     }
 }
 
@@ -144,6 +163,8 @@ pub struct Canvas {
     slot: Slot,
     /// The menu of relationships is open: a letter picks one.
     relations: bool,
+    /// The library is open, with what is typed to search it.
+    library: Option<String>,
     undo: Vec<Diagram>,
     redo: Vec<Diagram>,
     /// The pointer's shape, depending on what it hovers and what is dragged.
@@ -179,6 +200,7 @@ impl Canvas {
             editing: None,
             slot: Slot::Middle,
             relations: false,
+            library: None,
             undo: Vec::new(),
             redo: Vec::new(),
             hand: CursorStyle::Arrow,
@@ -192,6 +214,24 @@ impl Canvas {
     #[cfg(test)]
     pub fn tool(&self) -> Tool {
         self.tool
+    }
+
+    /// What is typed in the library, if it is open.
+    #[cfg(test)]
+    pub fn library_query(&self) -> Option<&str> {
+        self.library.as_deref()
+    }
+
+    /// Drops the library's shape number `preset` at this screen point, as dragging it there does.
+    #[cfg(test)]
+    pub fn drop_preset(&mut self, preset: usize, at: Point<Pixels>, cx: &mut Context<Self>) {
+        self.place(Tool::Preset(preset), at, cx);
+    }
+
+    /// Asks for a new diagram that starts from the library's template of this number.
+    #[cfg(test)]
+    pub fn start_template(&mut self, template: usize, cx: &mut Context<Self>) {
+        cx.emit(CanvasEvent::Template(template));
     }
 
     pub fn diagram(&self) -> &Diagram {
@@ -277,8 +317,22 @@ impl Canvas {
     /// The key that opens the menu of relationships, and the one that picks the n-ary association in it.
     const RELATIONS: &str = "k";
     const NARY: &str = "y";
+    /// The key that opens the library.
+    const LIBRARY: &str = "s";
 
     /// A relationship picked in the menu: it changes the selected arrows, or else it is the tool that draws the next ones.
+    /// Opens or closes the library.
+    pub(super) fn toggle_library(&mut self, cx: &mut Context<Self>) {
+        self.library = if self.library.is_some() { None } else { Some(String::new()) };
+        self.relations = false;
+        cx.notify();
+    }
+
+    /// A shape of the library picked: it is the tool that draws the next one.
+    pub(super) fn choose_preset(&mut self, preset: usize, cx: &mut Context<Self>) {
+        self.set_tool(Tool::Preset(preset), cx);
+    }
+
     pub(super) fn choose_relation(&mut self, relation: Relation, cx: &mut Context<Self>) {
         self.relations = false;
         let links: Vec<u32> = self.selected.iter().copied().filter(|id| self.diagram.link(*id).is_some()).collect();

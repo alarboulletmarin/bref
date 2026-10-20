@@ -595,6 +595,73 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         fs::remove_file(&uc).unwrap();
     }
+    // The library: `s` opens it, typing searches it, Enter picks the first shape, a click draws it at its size
+    // with its text, a drop places it, and a starting point opens a new diagram that already holds a few shapes.
+    {
+        use crate::logic::library;
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (lib, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let query = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.library_query().map(str::to_string));
+        let tool = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.tool());
+        assert_eq!(query(cx), None);
+        cx.simulate_input("s");
+        assert_eq!(query(cx), Some(String::new()));
+        // What is typed is the search, not the tools' letters (`a` is the arrow, `r` the rectangle).
+        cx.simulate_input("ar");
+        assert_eq!((query(cx), tool(cx)), (Some("ar".into()), canvas::Tool::Select));
+        cx.simulate_keystrokes("backspace backspace backspace");
+        let interface = library::presets().iter().position(|p| p.matches(tr("interface", "interface"))).unwrap();
+        cx.simulate_input(tr("interface", "interface"));
+        // Escape closes; `s` opens again, empty.
+        cx.simulate_keystrokes("escape");
+        assert_eq!(query(cx), None);
+        cx.simulate_input("s");
+        assert_eq!(query(cx), Some(String::new()));
+        cx.simulate_input(tr("interface", "interface"));
+        cx.simulate_keystrokes("enter");
+        assert_eq!((query(cx), tool(cx)), (None, canvas::Tool::Preset(interface)));
+        // A click draws it, at the size and with the text of the preset.
+        let at = canvas.read_with(cx, |c, _| c.spot(100., 100.));
+        cx.simulate_click(at, gpui::Modifiers::none());
+        let d = canvas.read_with(cx, |c, _| c.diagram().clone());
+        let preset = &library::presets()[interface];
+        assert_eq!((d.shapes[0].w, d.shapes[0].h, d.shapes[0].text.as_str()), (preset.w, preset.h, preset.text));
+        assert!(saved(&lib).contains("«interface»"), "{}", saved(&lib));
+        // Dragged out with the mouse, it is the size dragged.
+        cx.simulate_input("s");
+        cx.simulate_input(tr("package", "paquetage"));
+        cx.simulate_keystrokes("enter");
+        rows(cx, &canvas, (300., 0.), (500., 100.));
+        let d = canvas.read_with(cx, |c, _| c.diagram().clone());
+        assert_eq!((d.shapes[1].form, d.shapes[1].w, d.shapes[1].h), (diagram::Form::Package, 200., 100.));
+        // A drop places it centered on the pointer, inside a container if it is over one; no shape answers a strange search.
+        let at = canvas.read_with(cx, |c, _| c.spot(400., 60.));
+        let actor = library::presets().iter().position(|p| p.form == diagram::Form::Actor).unwrap();
+        canvas.update(cx, |c, cx| c.drop_preset(actor, at, cx));
+        let d = canvas.read_with(cx, |c, _| c.diagram().clone());
+        assert_eq!((d.shapes[2].form, d.shapes[2].parent, d.shapes[2].x), (diagram::Form::Actor, Some(d.shapes[1].id), 380.));
+        cx.simulate_input("s");
+        cx.simulate_input("|\\ é 日本語 😀");
+        assert_eq!(query(cx).as_deref(), Some("|\\ é 日本語 😀"));
+        cx.simulate_keystrokes("enter");
+        assert_eq!(tool(cx), canvas::Tool::Select, "nothing answers: Enter picks nothing");
+        // A starting point opens a new diagram of its own, and leaves this one as it is.
+        let before = saved(&lib);
+        canvas.update(cx, |c, cx| c.start_template(0, cx));
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let (new, fresh) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        assert_ne!(new, lib);
+        assert_eq!(saved(&lib), before);
+        let d = fresh.read_with(cx, |c, _| c.diagram().clone());
+        assert_eq!((d.shapes.len(), d.links.len(), d.rich), (2, 1, true));
+        assert_eq!(saved(&new), d.to_svg(diagram::COLORS[0]));
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&lib).unwrap();
+        fs::remove_file(&new).unwrap();
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

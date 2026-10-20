@@ -21,7 +21,7 @@ impl Render for Canvas {
         let tools = TOOLS.iter().map(|&(tool, icon, key)| {
             let tool_button = button(icon, icon, self.tool == tool, t).tooltip(tip(tool_label(tool), key.to_uppercase(), t)).on_click(cx.listener(move |this, _, _, cx| this.set_tool(tool, cx)));
             match tool {
-                Tool::Shape(form) => tool_button.on_drag(Placing(form, icon, t), |placing, _, _, cx| cx.new(|_| placing.clone())),
+                Tool::Shape(_) => tool_button.on_drag(Placing(tool, icon, t), |placing, _, _, cx| cx.new(|_| placing.clone())),
                 _ => tool_button,
             }
         });
@@ -124,6 +124,83 @@ impl Render for Canvas {
                 .tooltip(tip(tool_label(Tool::Shape(Form::Branch)), Self::NARY.to_uppercase(), t))
                 .on_click(cx.listener(|this, _, _, cx| this.set_tool(Tool::Shape(Form::Branch), cx))),
         );
+        // The library: a panel over the canvas, shapes by family and starting points, searched by typing.
+        let panel = self.library.as_ref().map(|query| {
+            let presets = library::presets();
+            let row = |id: gpui::ElementId, icon: &'static str, label: &'static str| {
+                div()
+                    .id(id)
+                    .h(px(26.))
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .rounded(px(6.))
+                    .cursor_pointer()
+                    .text_size(px(12.5))
+                    .text_color(t.text)
+                    .hover(|s| s.bg(t.border))
+                    .child(svg().path(icon).size(px(14.)).flex_none().text_color(t.soft))
+                    .child(label)
+            };
+            let title = |text: &'static str| div().px_2().pt_2().pb_1().text_size(px(11.)).text_color(t.soft).child(text.to_uppercase());
+            let search = div()
+                .h(px(28.))
+                .px_2()
+                .flex()
+                .items_center()
+                .gap_2()
+                .rounded(px(6.))
+                .bg(t.bg)
+                .border_1()
+                .border_color(t.border)
+                .text_size(px(12.5))
+                .child(svg().path("search.svg").size(px(14.)).flex_none().text_color(t.soft))
+                .child(if query.is_empty() { div().text_color(t.soft).child(tr("Search shapes…", "Chercher une forme…")) } else { div().child(format!("{query}▏")) });
+            let mut body = div().flex().flex_col().gap_px().child(search);
+            // Starting points are listed with no search, or when their name answers it.
+            let starts: Vec<(usize, library::Template)> = library::templates().into_iter().enumerate().filter(|(_, t)| t.matches(query)).collect();
+            if !starts.is_empty() {
+                body = body.child(title(tr("Starting points", "Points de départ")));
+                for (i, template) in starts {
+                    body = body.child(row(("d-start", i).into(), "file-plus.svg", template.name).on_click(cx.listener(move |this, _, _, cx| {
+                        this.library = None;
+                        cx.emit(CanvasEvent::Template(i));
+                        cx.notify();
+                    })));
+                }
+            }
+            let mut family = "";
+            for (i, preset) in presets.iter().enumerate().filter(|(_, p)| p.matches(query)) {
+                if preset.family != family {
+                    family = preset.family;
+                    body = body.child(title(family));
+                }
+                body = body.child(
+                    row(("d-preset", i).into(), preset.icon, preset.name)
+                        .on_click(cx.listener(move |this, _, _, cx| this.choose_preset(i, cx)))
+                        .on_drag(Placing(Tool::Preset(i), preset.icon, t), |placing, _, _, cx| cx.new(|_| placing.clone())),
+                );
+            }
+            if presets.iter().all(|p| !p.matches(query)) {
+                body = body.child(div().px_2().py_1().text_size(px(12.)).text_color(t.soft).child(tr("No shape answers.", "Aucune forme ne répond.")));
+            }
+            div()
+                .id("d-library-panel")
+                .absolute()
+                .top_3()
+                .left_3()
+                .w(px(244.))
+                .max_h(px(560.))
+                .overflow_y_scroll()
+                .p_2()
+                .rounded(px(8.))
+                .bg(t.panel)
+                .border_1()
+                .border_color(t.border)
+                .occlude()
+                .child(body)
+        });
         // In a narrow window, the bar wraps: no tool is out of reach.
         let bar = div()
             .flex_none()
@@ -184,6 +261,11 @@ impl Render for Canvas {
                 }))
             })
             .child(
+                button("d-library", "d-library.svg", self.library.is_some(), t)
+                    .tooltip(tip(tr("Shape library: classes, use cases… and starting points", "Bibliothèque de formes : classes, cas d'utilisation… et points de départ"), Self::LIBRARY.to_uppercase(), t))
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_library(cx))),
+            )
+            .child(
                 button("d-relations", "d-rel-menu.svg", self.relations, t)
                     .tooltip(tip(tr("Relationships: generalization, composition, dependency…", "Relations : généralisation, composition, dépendance…"), Self::RELATIONS.to_uppercase(), t))
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -236,6 +318,14 @@ impl Render for Canvas {
             }))
             // Enter: write in the selected element; while writing, new line.
             .on_action(cx.listener(|this, _: &Confirm, _, cx| match (this.editing, this.selected.as_slice()) {
+                // In the library: Enter picks the first shape that answers the search.
+                (None, _) if this.library.is_some() => {
+                    let query = this.library.take().unwrap_or_default();
+                    if let Some(first) = library::presets().iter().position(|p| p.matches(&query)) {
+                        this.choose_preset(first, cx);
+                    }
+                    cx.notify();
+                }
                 (Some(_), _) => this.typed("\n", cx),
                 (None, &[id]) => this.start_editing(id, cx),
                 _ => {}
@@ -244,6 +334,9 @@ impl Render for Canvas {
             .on_action(cx.listener(|this, _: &Cancel, _, cx| {
                 if this.editing.is_some() {
                     this.stop_editing(cx);
+                } else if this.library.is_some() {
+                    this.library = None;
+                    cx.notify();
                 } else if this.relations {
                     this.relations = false;
                     cx.notify();
@@ -276,7 +369,8 @@ impl Render for Canvas {
                     }))
                     .relative()
                     .child(drawing)
-                    .child(zoom),
+                    .child(zoom)
+                    .children(panel),
             )
     }
 }

@@ -23,7 +23,7 @@ impl Canvas {
     /// The shape being written in grows to hold its text.
     pub(super) fn fit_text(&mut self, window: &mut Window) {
         let Some(shape) = self.editing.and_then(|(id, _)| self.diagram.shape(id)) else { return };
-        let (lines, _) = shape.text_lines();
+        let (lines, _) = self.diagram.lines(shape);
         // What is written is shown as typed: its marks are not applied.
         let widest = self.diagram.runs(shape, true).iter().map(|spans| self.measure(spans, 1., window)).fold(0f32, f32::max);
         let tall = lines.last().map_or(0., |l| l.y + diagram::LINE - shape.y);
@@ -155,9 +155,10 @@ impl Canvas {
             for path in &outline {
                 stroke(window, path, shape.dashed, ink);
             }
-            let (lines, rules) = shape.text_lines();
+            let (lines, rules) = self.diagram.lines(shape);
             for y in rules {
-                stroke(window, &[Cmd::Move(shape.x, y), Cmd::Line(shape.x + shape.w, y)], false, ink);
+                let (x0, x1) = shape.rule_span(y);
+                stroke(window, &[Cmd::Move(x0, y), Cmd::Line(x1, y)], false, ink);
             }
             // Separator strokes are not text lines: the cursor's line
             // is found by its place in the text.

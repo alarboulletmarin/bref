@@ -8,6 +8,7 @@ pub mod embed;
 pub mod formula;
 pub mod history;
 pub mod import;
+pub mod library;
 pub mod markdown;
 pub mod note;
 pub mod prefs;

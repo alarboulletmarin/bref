@@ -20,6 +20,10 @@ impl Shell {
         let result = match event {
             CanvasEvent::Changed => vault::write(path, &canvas.read(cx).diagram().to_svg(diagram::COLORS[0])),
             CanvasEvent::Export => return self.export_png(path.clone(), &canvas, cx),
+            CanvasEvent::Template(i) => {
+                self.template = Some(*i);
+                return cx.notify();
+            }
         };
         match result {
             Ok(()) => self.calm(),
@@ -67,6 +71,14 @@ impl Shell {
     pub(super) fn new_diagram(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(dir) = self.diagram_dir().filter(|_| self.vault.is_some()) {
             self.add_diagram(&dir, tr("Diagram", "Schéma"), Diagram::blank(), window, cx);
+        }
+    }
+
+    /// A new diagram that starts from one of the library's, and opens.
+    pub(super) fn new_diagram_from(&mut self, template: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(template) = crate::logic::library::templates().into_iter().nth(template) else { return };
+        if let Some(dir) = self.diagram_dir().filter(|_| self.vault.is_some()) {
+            self.add_diagram(&dir, template.name, (template.make)(), window, cx);
         }
     }
 

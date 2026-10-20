@@ -39,17 +39,26 @@ impl Canvas {
     }
 
     /// Places a shape at its usual size, centred on this screen point.
-    pub(super) fn place(&mut self, form: Form, at: Point<Pixels>, cx: &mut Context<Self>) {
+    pub(super) fn place(&mut self, tool: Tool, at: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some((form, preset)) = made_by(tool) else { return };
         self.stop_editing(cx);
         self.remember();
-        let (p, (w, h)) = (self.world(at), usual(form));
+        let (p, (w, h)) = (self.world(at), usual(tool));
         let id = self.diagram.add_shape(form, diagram::snap(p.0 - w / 2.), diagram::snap(p.1 - h / 2.), w, h);
+        self.dress(id, preset);
         self.diagram.adopt(&[id]);
         (self.selected, self.tool) = (vec![id], Tool::Select);
         if form == Form::Text {
             self.editing = Some((id, 0));
         }
         self.changed(cx);
+    }
+
+    /// Writes in a shape what its preset begins with.
+    pub(super) fn dress(&mut self, id: u32, preset: Option<Preset>) {
+        if let (Some(preset), Some(shape)) = (preset, self.diagram.shape_mut(id)) {
+            (shape.text, shape.fill, shape.dashed) = (preset.text.to_string(), preset.fill, preset.dashed);
+        }
     }
 
     pub(super) fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -59,10 +68,12 @@ impl Canvas {
         let near = 7. / self.zoom;
         let close = |a: (f32, f32)| (a.0 - p.0).hypot(a.1 - p.1) <= near;
         self.drag = match self.tool {
-            Tool::Shape(form) => {
+            Tool::Shape(_) | Tool::Preset(_) => {
                 self.remember();
+                let (form, preset) = made_by(self.tool).unwrap_or((Form::Rect, None));
                 let from = (diagram::snap(p.0), diagram::snap(p.1));
                 let id = self.diagram.add_shape(form, from.0, from.1, 0., 0.);
+                self.dress(id, preset);
                 Drag::Create { id, from }
             }
             Tool::Link(relation) => {
@@ -276,7 +287,7 @@ impl Canvas {
                 let Some(shape) = self.diagram.shape_mut(id) else { return };
                 // A simple click places the shape at its usual size.
                 if shape.w < diagram::GRID || shape.h < diagram::GRID {
-                    (shape.w, shape.h) = usual(shape.form);
+                    (shape.w, shape.h) = usual(self.tool);
                 }
                 let text = shape.form == Form::Text;
                 self.diagram.adopt(&[id]);

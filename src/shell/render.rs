@@ -15,6 +15,9 @@ impl Render for Shell {
         let t = self.theme;
         // The pane holding the focus is the active one; when the code changed it without moving
         // input (a note already open in the other pane), it follows.
+        if let Some(template) = self.template.take() {
+            self.new_diagram_from(template, window, cx);
+        }
         if std::mem::take(&mut self.grab) {
             self.focus_pane(self.active, window, cx);
         } else if let Some(pane) = (0..self.panes.len()).find(|&pane| self.panes[pane].zone.contains_focused(window, cx)) {

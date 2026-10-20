@@ -56,6 +56,12 @@ impl Canvas {
     /// Inserts `text` at the cursor; outside writing, a letter picks a tool.
     pub(super) fn typed(&mut self, text: &str, cx: &mut Context<Self>) {
         let Some((id, at)) = self.editing else {
+            // The library is open: what is typed searches it.
+            if let Some(query) = &mut self.library {
+                query.push_str(text);
+                cx.notify();
+                return;
+            }
             match text {
                 "+" | "=" => self.zoom_by(1.25, cx),
                 "-" => self.zoom_by(0.8, cx),
@@ -80,6 +86,7 @@ impl Canvas {
                     self.relations = true;
                     cx.notify();
                 }
+                _ if text.eq_ignore_ascii_case(Self::LIBRARY) => self.toggle_library(cx),
                 _ => {
                     if let Some((tool, ..)) = TOOLS.iter().find(|(_, _, key)| key.eq_ignore_ascii_case(text)) {
                         self.set_tool(*tool, cx);
@@ -115,6 +122,10 @@ impl Canvas {
     }
 
     pub(super) fn erase(&mut self, forward: bool, cx: &mut Context<Self>) {
+        if let Some(query) = &mut self.library {
+            query.pop();
+            return cx.notify();
+        }
         if self.editing.is_some() {
             return self.step(forward, true, cx);
         }
