@@ -1291,7 +1291,7 @@ impl Diagram {
     }
 
     /// Rectangle (left, top, right, bottom) of the text at an end of an arrow.
-    fn tip_label_box(&self, link: &Link, slot: Slot, trace: &Trace) -> Option<(f32, f32, f32, f32)> {
+    pub fn tip_label_box(&self, link: &Link, slot: Slot, trace: &Trace) -> Option<(f32, f32, f32, f32)> {
         let (text, along, tip) = match slot {
             Slot::Start => (&link.start_text, link.start_along, trace.tips[0]),
             Slot::End => (&link.end_text, link.end_along, trace.tips[1]),

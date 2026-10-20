@@ -45,6 +45,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("0");
     cx.run_until_parked();
     assert!(span(cx) <= 100.);
+    // The bar over a selected arrow can cover what is next to it: the selection is dropped first.
+    cx.simulate_keystrokes("escape");
     // A shape moves by dragging it, on the grid; Ctrl+Z puts it back.
     drag(cx, (350., 40.), (350., 143.));
     assert_eq!(saved().shapes[1].y, 100.);
@@ -931,7 +933,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         let d = drawn(cx);
         let pin = by(&d, diagram::Form::Pin);
         assert_eq!((pin.parent, pin.center()), (Some(action.id), (250., 107.)), "{pin:?}");
-        // Dragged with the action, it goes with it, and stays held; the action stays in its row.
+        // Dragged with the action, it goes with it, and stays held; the action stays in its row. The bar over
+        // the selected pin could cover the action: nothing is selected when the drag begins.
+        cx.simulate_keystrokes("escape");
         rows(cx, &canvas, (150., 85.), (150., 125.));
         let d = drawn(cx);
         let (moved, pin) = (by(&d, diagram::Form::Round), by(&d, diagram::Form::Pin));
@@ -1104,8 +1108,11 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         let (drag, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
         let centre = |cx: &mut gpui::VisualTestContext, selector: &'static str| cx.debug_bounds(selector).map(|b| b.center());
-        // From the bar: the rectangle.
-        let from = centre(cx, "d-tool-r").expect("the rectangle button");
+        // From the dock: the rectangle, in the menu of shapes.
+        let opener = centre(cx, "d-shapes").expect("the shapes button");
+        cx.simulate_click(opener, gpui::Modifiers::none());
+        cx.run_until_parked();
+        let from = centre(cx, "d-tool-r").expect("the rectangle row");
         let to = canvas.read_with(cx, |c, _| c.spot(250., 150.));
         cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
         cx.simulate_mouse_move(from + gpui::point(gpui::px(10.), gpui::px(10.)), MouseButton::Left, gpui::Modifiers::none());
@@ -1155,6 +1162,111 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.simulate_keystrokes("escape secondary-a delete escape escape");
         cx.run_until_parked();
         fs::remove_file(&drag).unwrap();
+    }
+    // The chrome of the canvas: a dock at the bottom, menus that name what they hold, a bar over the selection.
+    {
+        use crate::logic::relation::Relation;
+        use gpui::{Bounds, Pixels};
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (chrome, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let window = cx.update(|w, _| w.viewport_size());
+        let bounds = |cx: &mut gpui::VisualTestContext, selector: String| -> Option<Bounds<Pixels>> {
+            let selector: &'static str = Box::leak(selector.into_boxed_str());
+            // What is not drawn any more stays in the table until the next frame.
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+            cx.debug_bounds(selector)
+        };
+        let inside = |b: Bounds<Pixels>| b.origin.x >= gpui::px(0.) && b.origin.y >= gpui::px(0.) && b.origin.x + b.size.width <= window.width && b.origin.y + b.size.height <= window.height;
+        let click = |cx: &mut gpui::VisualTestContext, selector: String| {
+            let at = bounds(cx, selector.clone()).unwrap_or_else(|| panic!("{selector} is not on the screen")).center();
+            cx.simulate_click(at, gpui::Modifiers::none());
+            cx.run_until_parked();
+        };
+        // The dock: one row, in the lower half of the window, nothing on anything else.
+        let dock: Vec<Bounds<Pixels>> = ["d-tool-v", "d-shapes", "d-relations", "d-tool-t", "d-library"].iter().map(|s| bounds(cx, s.to_string()).unwrap_or_else(|| panic!("{s}: no button"))).collect();
+        assert!(dock.iter().all(|b| inside(*b) && b.center().y > window.height / 2. && (b.center().y - dock[0].center().y).abs() < gpui::px(2.)), "{dock:?}");
+        assert!(dock.iter().enumerate().all(|(i, a)| dock.iter().skip(i + 1).all(|b| !a.intersects(b))), "{dock:?}");
+        // The menu of shapes names ten, one under the other, inside the window, and picking one is the tool.
+        click(cx, "d-shapes".into());
+        let keys = ["r", "u", "o", "d", "c", "p", "n", "g", "f", "w"];
+        let rows: Vec<Bounds<Pixels>> = keys.iter().map(|k| bounds(cx, format!("d-tool-{k}")).unwrap_or_else(|| panic!("no row for {k}"))).collect();
+        assert!(rows.iter().all(|b| inside(*b)) && rows.windows(2).all(|w| w[0].origin.y + w[0].size.height <= w[1].origin.y + gpui::px(0.5)), "{rows:?}");
+        click(cx, "d-tool-o".into());
+        assert_eq!(canvas.read_with(cx, |c, _| c.tool()), canvas::Tool::Shape(diagram::Form::Ellipse));
+        // (The bounds of what is not drawn any more stay in the table: the state is what is read.)
+        let chrome_of = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.chrome());
+        assert_eq!(chrome_of(cx), (false, false, false), "the menu closes once a shape is picked");
+        // The menu of relationships: the 24 of them and the n-ary association, none on another, all in the window.
+        cx.simulate_keystrokes("escape");
+        click(cx, "d-relations".into());
+        let all: Vec<Bounds<Pixels>> = Relation::ALL.iter().map(|r| bounds(cx, format!("d-relation-{}", *r as usize)).unwrap_or_else(|| panic!("no row for {r:?}"))).collect();
+        assert!(all.iter().all(|b| inside(*b)), "{all:?}");
+        assert!(all.iter().enumerate().all(|(i, a)| all.iter().skip(i + 1).all(|b| !a.intersects(b))), "rows overlap");
+        click(cx, format!("d-relation-{}", Relation::Generalization as usize));
+        assert_eq!(canvas.read_with(cx, |c, _| c.tool()), canvas::Tool::Link(Relation::Generalization));
+        assert_eq!(chrome_of(cx), (false, false, false));
+        // Escape drops the tool; a menu that is open closes with it first.
+        click(cx, "d-shapes".into());
+        assert!(chrome_of(cx).0);
+        cx.simulate_keystrokes("escape");
+        assert_eq!(chrome_of(cx), (false, false, false));
+        // Two shapes and an arrow between them: the arrow is selected, and a bar floats over it.
+        let drag = |cx: &mut gpui::VisualTestContext, from: (f32, f32), to: (f32, f32)| {
+            let (from, to) = canvas.read_with(cx, |c, _| (c.spot(from.0, from.1), c.spot(to.0, to.1)));
+            cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
+            cx.simulate_mouse_move(to, MouseButton::Left, gpui::Modifiers::none());
+            cx.simulate_mouse_up(to, MouseButton::Left, gpui::Modifiers::none());
+        };
+        cx.simulate_input("r");
+        drag(cx, (0., 0.), (120., 60.));
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("o");
+        drag(cx, (300., 0.), (420., 80.));
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("a");
+        drag(cx, (60., 30.), (350., 40.));
+        let bar = bounds(cx, "d-selection-bar".into()).expect("a bar over the selected arrow");
+        assert!(inside(bar) && dock.iter().all(|b| !bar.intersects(b)), "{bar:?} {dock:?}");
+        let chip = bounds(cx, "d-relation-chip".into()).expect("the chip that names the relationship");
+        assert!(bar.contains(&chip.center()));
+        // Naming the relationship opens the menu; a row of it changes the arrow.
+        click(cx, "d-relation-chip".into());
+        click(cx, format!("d-relation-{}", Relation::Realization as usize));
+        let link = canvas.read_with(cx, |c, _| c.diagram().links[0].clone());
+        assert_eq!((link.start, link.end, link.dashed), Relation::Realization.look());
+        assert_eq!(canvas.read_with(cx, |c, _| c.tool()), canvas::Tool::Select);
+        // In a narrow window the bar wraps, and bar and dock stay inside it.
+        for width in [420., 700.] {
+            cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(600.)));
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+            let narrow = cx.update(|w, _| w.viewport_size());
+            let (bar, dock) = (bounds(cx, "d-selection-bar".into()).unwrap(), bounds(cx, "d-library".into()).unwrap());
+            let fits = |b: Bounds<Pixels>| b.origin.x >= gpui::px(0.) && b.origin.y >= gpui::px(0.) && b.origin.x + b.size.width <= narrow.width && b.origin.y + b.size.height <= narrow.height;
+            assert!(fits(bar) && fits(dock), "{width}: bar {bar:?}, dock {dock:?}, window {narrow:?}");
+            let menu = bounds(cx, "d-delete".into()).unwrap();
+            assert!(bar.contains(&menu.center()) && fits(menu), "{width}: the last button of the bar is outside it: {menu:?}");
+        }
+        cx.simulate_resize(window);
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        // While a shape is dragged the bar is out of the way; let go, it comes back.
+        let (from, to) = canvas.read_with(cx, |c, _| (c.spot(20., 52.), c.spot(20., 132.)));
+        cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_move(to, MouseButton::Left, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert!(!chrome_of(cx).2, "the bar hides while a shape is dragged");
+        cx.simulate_mouse_up(to, MouseButton::Left, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert!(chrome_of(cx).2);
+        // Nothing selected, no bar.
+        cx.simulate_keystrokes("escape");
+        assert!(!chrome_of(cx).2);
+        fs::remove_file(&chrome).unwrap();
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
     }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);

@@ -2,7 +2,9 @@
 //! mouse, moved, written in; tools are chosen with one
 //! letter, as in Excalidraw. The drawing itself lives in `diagram`.
 
+mod chrome;
 mod edit;
+mod inspector;
 mod mouse;
 mod paint;
 mod render;
@@ -90,10 +92,32 @@ fn tool_label(tool: Tool) -> &'static str {
     }
 }
 
+/// Name of a shape tool, for its row in the menu of shapes.
+fn tool_name(tool: Tool) -> &'static str {
+    match tool {
+        Tool::Shape(Form::Rect) => "Rectangle",
+        Tool::Shape(Form::Round) => tr("Rounded rectangle", "Rectangle arrondi"),
+        Tool::Shape(Form::Ellipse) => "Ellipse",
+        Tool::Shape(Form::Diamond) => tr("Diamond", "Losange"),
+        Tool::Shape(Form::Cylinder) => tr("Cylinder", "Cylindre"),
+        Tool::Shape(Form::Actor) => tr("Person", "Personnage"),
+        Tool::Shape(Form::Note) => "Note",
+        Tool::Shape(Form::Text) => tr("Text", "Texte"),
+        Tool::Shape(Form::Package) => tr("Package", "Paquetage"),
+        Tool::Shape(Form::Frame) => tr("Frame", "Cadre"),
+        Tool::Shape(Form::Lane) => tr("Swimlane", "Couloir"),
+        Tool::Shape(Form::Branch) => tr("N-ary association", "Association n-aire"),
+        other => tool_label(other),
+    }
+}
+
 /// Shape dragged from the toolbar or the library, drawn under the pointer up to the canvas; the last field is
 /// where the pointer took hold of the row or the button it comes from.
 #[derive(Clone)]
 struct Placing(Tool, &'static str, Theme, Point<Pixels>);
+
+/// What the dock takes at the bottom of the canvas, where a diagram is not fitted.
+const DOCK: f32 = 72.;
 
 /// Side of the button that is drawn under the pointer.
 const GHOST: f32 = 28.;
@@ -186,6 +210,11 @@ pub struct Canvas {
     slot: Slot,
     /// The menu of relationships is open: a letter picks one.
     relations: bool,
+    /// The menu of shapes is open.
+    shapes: bool,
+    /// The last shape and the last relationship picked: what the dock shows on their buttons.
+    shape_pick: Form,
+    link_pick: Relation,
     /// The library is open, with what is typed to search it.
     library: Option<String>,
     undo: Vec<Diagram>,
@@ -223,6 +252,9 @@ impl Canvas {
             editing: None,
             slot: Slot::Middle,
             relations: false,
+            shapes: false,
+            shape_pick: Form::Rect,
+            link_pick: Relation::Navigable,
             library: None,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -237,6 +269,12 @@ impl Canvas {
     #[cfg(test)]
     pub fn tool(&self) -> Tool {
         self.tool
+    }
+
+    /// Whether the menu of shapes and the menu of relationships are open, and whether the bar is over the selection.
+    #[cfg(test)]
+    pub fn chrome(&self) -> (bool, bool, bool) {
+        (self.shapes, self.relations, self.bar_wanted())
     }
 
     /// What is typed in the library, if it is open.
@@ -356,8 +394,9 @@ impl Canvas {
     /// A relationship picked in the menu: it changes the selected arrows, or else it is the tool that draws the next ones.
     /// Opens or closes the library.
     pub(super) fn toggle_library(&mut self, cx: &mut Context<Self>) {
-        self.library = if self.library.is_some() { None } else { Some(String::new()) };
+        self.shapes = false;
         self.relations = false;
+        self.library = if self.library.is_some() { None } else { Some(String::new()) };
         cx.notify();
     }
 
@@ -397,7 +436,12 @@ impl Canvas {
 
     fn set_tool(&mut self, tool: Tool, cx: &mut Context<Self>) {
         self.stop_editing(cx);
-        self.relations = false;
+        (self.shapes, self.relations) = (false, false);
+        match tool {
+            Tool::Shape(form) if form != Form::Text && form != Form::Branch => self.shape_pick = form,
+            Tool::Link(relation) => self.link_pick = relation,
+            _ => {}
+        }
         self.tool = tool;
         self.hand = if tool == Tool::Select { CursorStyle::Arrow } else { CursorStyle::Crosshair };
         cx.notify();

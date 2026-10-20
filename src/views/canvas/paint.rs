@@ -85,7 +85,8 @@ impl Canvas {
     pub(super) fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         self.bounds = bounds;
         if std::mem::take(&mut self.fit) {
-            let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+            // The dock floats over the bottom of the canvas: the diagram is fitted above it.
+            let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height) - DOCK);
             match self.diagram.bounds() {
                 Some((x0, y0, x1, y1)) => {
                     self.zoom = (w / (x1 - x0 + 80.)).min(h / (y1 - y0 + 80.)).clamp(0.2, 1.);

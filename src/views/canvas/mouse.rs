@@ -44,6 +44,7 @@ impl Canvas {
     pub(super) fn place(&mut self, tool: Tool, at: Point<Pixels>, cx: &mut Context<Self>) {
         let Some((form, preset)) = made_by(tool) else { return };
         self.stop_editing(cx);
+        (self.shapes, self.relations) = (false, false);
         self.remember();
         let (p, (w, h)) = (self.world(at), usual(tool));
         let id = self.diagram.add_shape(form, diagram::snap(p.0 - w / 2.), diagram::snap(p.1 - h / 2.), w, h);

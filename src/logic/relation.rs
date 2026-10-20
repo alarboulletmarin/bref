@@ -211,6 +211,40 @@ impl Relation {
         }
     }
 
+    /// The short name of its row in the menu: the name itself is a sentence, for a tooltip.
+    pub fn label(self) -> &'static str {
+        use Relation::*;
+        match self {
+            Association => tr("Association", "Association"),
+            Navigable => tr("Navigable", "Navigable"),
+            NonNavigable => tr("Non-navigable", "Non navigable"),
+            Aggregation => tr("Aggregation", "Agrégation"),
+            Composition => tr("Composition", "Composition"),
+            Generalization => tr("Generalization", "Généralisation"),
+            Realization => tr("Realization", "Réalisation"),
+            Dependency => tr("Dependency", "Dépendance"),
+            AssociationClass => tr("Association class", "Classe d'association"),
+            Ball => tr("Provided interface", "Interface fournie"),
+            Socket => tr("Required interface", "Interface requise"),
+            Sync => tr("Synchronous call", "Appel synchrone"),
+            Found => tr("Found message", "Message trouvé"),
+            Lost => tr("Lost message", "Message perdu"),
+            // The others are told by their stereotype.
+            other => other.name(),
+        }
+    }
+
+    /// The family of the menu it is listed in.
+    pub fn group(self) -> &'static str {
+        use Relation::*;
+        match self {
+            Association | Navigable | NonNavigable | Aggregation | Composition | AssociationClass => tr("Associations", "Associations"),
+            Generalization | Realization | Ball | Socket => tr("Inheritance and interfaces", "Héritage et interfaces"),
+            Dependency | Use | Import | Access | Include | Extend | Merge | Deploy | Manifest => tr("Dependencies", "Dépendances"),
+            Sync | Create | Destroy | Found | Lost => tr("Messages", "Messages"),
+        }
+    }
+
     /// The icon of its button, or `None` for those drawn as their stereotype.
     pub fn icon(self) -> Option<&'static str> {
         use Relation::*;
@@ -349,5 +383,21 @@ mod tests {
         assert_eq!(keys.len(), Relation::ALL.len());
         // Those with no icon are drawn as their stereotype.
         assert!(Relation::ALL.iter().all(|r| r.icon().is_some() || r.stereotype().is_some()));
+    }
+
+    #[test]
+    fn every_relationship_has_a_short_name_and_a_family_for_the_menu() {
+        let families: Vec<&str> = Relation::ALL.iter().map(|r| r.group()).collect();
+        for relation in Relation::ALL {
+            assert!(!relation.label().is_empty() && relation.label().chars().count() <= 24, "{relation:?}: {}", relation.label());
+        }
+        // Four families, each with at least one relationship; the menu lists them in this order.
+        let mut seen: Vec<&str> = Vec::new();
+        for family in families {
+            if !seen.contains(&family) {
+                seen.push(family);
+            }
+        }
+        assert_eq!(seen.len(), 4, "{seen:?}");
     }
 }
