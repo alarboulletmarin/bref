@@ -24,8 +24,8 @@ pub const RULE: &str = "---";
 /// written with the lowest version that can say what it holds (`Diagram::needed`), so a diagram
 /// that uses nothing new still opens in the builds before.
 ///
-/// 1: shapes and arrows. 2: `rich`, styled text.
-pub const VERSION: u32 = 2;
+/// 1: shapes and arrows. 2: `rich`, styled text. 3: `ends`, the texts at the ends of an arrow.
+pub const VERSION: u32 = 3;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Form {
@@ -134,6 +134,50 @@ impl Route {
     }
 }
 
+/// Which side of its text a line of text is attached by.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Anchor {
+    Start,
+    Middle,
+    End,
+}
+
+impl From<bool> for Anchor {
+    /// `centered`, as a placed line of text says it.
+    fn from(centered: bool) -> Anchor {
+        if centered { Anchor::Middle } else { Anchor::Start }
+    }
+}
+
+/// The three texts of an arrow: at its start, in its middle, at its end.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Slot {
+    Start,
+    Middle,
+    End,
+}
+
+impl Slot {
+    /// The next one, to go through them with one key.
+    pub fn next(self) -> Slot {
+        match self {
+            Slot::Start => Slot::Middle,
+            Slot::Middle => Slot::End,
+            Slot::End => Slot::Start,
+        }
+    }
+}
+
+/// One end of an arrow: where its stroke meets what it links, and which way it goes from there.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Tip {
+    pub at: (f32, f32),
+    /// Unit direction of the stroke, going away from the end.
+    pub out: (f32, f32),
+    /// How far the head reaches along the stroke.
+    pub head: f32,
+}
+
 /// An arrow ready to draw.
 pub struct Trace {
     /// The stroke, shortened where a closed head ends it.
@@ -146,6 +190,8 @@ pub struct Trace {
     pub upright: bool,
     /// Points the stroke passes through, from one end to the other.
     pub points: Vec<(f32, f32)>,
+    /// Its two ends: start, then end.
+    pub tips: [Tip; 2],
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -156,9 +202,57 @@ pub struct Link {
     pub start: Head,
     pub end: Head,
     pub route: Route,
+    /// The text in the middle of the stroke.
     pub text: String,
+    /// The texts at its ends (a role, a multiplicity), and how far from the end each was dragged.
+    pub start_text: String,
+    pub end_text: String,
+    pub start_along: f32,
+    pub end_along: f32,
     pub color: u8,
     pub dashed: bool,
+}
+
+impl Link {
+    /// An arrow with nothing set, for the file's reader to fill.
+    pub(super) fn blank() -> Link {
+        Link {
+            id: 0,
+            from: End::Point(0., 0.),
+            to: End::Point(0., 0.),
+            start: Head::None,
+            end: Head::None,
+            route: Route::Straight,
+            text: String::new(),
+            start_text: String::new(),
+            end_text: String::new(),
+            start_along: 0.,
+            end_along: 0.,
+            color: 0,
+            dashed: false,
+        }
+    }
+
+    pub fn text_of(&self, slot: Slot) -> &str {
+        match slot {
+            Slot::Start => &self.start_text,
+            Slot::Middle => &self.text,
+            Slot::End => &self.end_text,
+        }
+    }
+
+    pub fn text_mut(&mut self, slot: Slot) -> &mut String {
+        match slot {
+            Slot::Start => &mut self.start_text,
+            Slot::Middle => &mut self.text,
+            Slot::End => &mut self.end_text,
+        }
+    }
+
+    /// Whether the arrow has anything at its ends: it then needs a file of version 3.
+    pub fn has_end_texts(&self) -> bool {
+        !self.start_text.is_empty() || !self.end_text.is_empty() || self.start_along != 0. || self.end_along != 0.
+    }
 }
 
 #[derive(Clone, Default, PartialEq, Debug)]
@@ -376,6 +470,16 @@ impl Shape {
     }
 }
 
+/// How far a head reaches along the stroke.
+fn head_reach(head: Head) -> f32 {
+    match head {
+        Head::None => 0.,
+        Head::Arrow => 10.,
+        Head::Triangle => 12.,
+        Head::Diamond | Head::DiamondFull => 16.,
+    }
+}
+
 /// Polygon of a head set at `tip`, for a stroke arriving in the
 /// unit direction `u`: its points, whether it is closed, whether it is filled, and by
 /// how much to shorten the stroke so it stops at its base.
@@ -403,8 +507,9 @@ impl Diagram {
     }
 
     /// The lowest version of the source that can say all this diagram holds.
-    fn needed(&self) -> u32 {
-        if self.rich { 2 } else { 1 }
+    pub(super) fn needed(&self) -> u32 {
+        let ends = self.links.iter().any(Link::has_end_texts);
+        if ends { 3 } else if self.rich { 2 } else { 1 }
     }
 
     pub fn shape(&self, id: u32) -> Option<&Shape> {
@@ -436,7 +541,7 @@ impl Diagram {
 
     pub fn add_link(&mut self, from: End, to: End, end: Head, route: Route) -> u32 {
         let id = self.fresh();
-        self.links.push(Link { id, from, to, start: Head::None, end, route, text: String::new(), color: 0, dashed: false });
+        self.links.push(Link { id, from, to, end, route, ..Link::blank() });
         id
     }
 
@@ -581,8 +686,12 @@ impl Diagram {
             }
             left -= len;
         }
+        let tips = [
+            Tip { at: a, out: (-ua.0, -ua.1), head: head_reach(link.start) },
+            Tip { at: b, out: (-ub.0, -ub.1), head: head_reach(link.end) },
+        ];
         points.dedup();
-        Some(Trace { line, heads: heads.collect(), middle, upright, points })
+        Some(Trace { line, heads: heads.collect(), middle, upright, points, tips })
     }
 
     /// Where line `i` of the `count` lines of an arrow's text is written: above
@@ -596,6 +705,71 @@ impl Diagram {
         }
     }
 
+    /// Where line `i` of the `count` lines of the text at an end of an arrow is written, `along`
+    /// further down its stroke: beyond the head, above a lying stroke, right of a standing one,
+    /// so that it covers neither the shape, nor the head, nor the stroke.
+    pub fn tip_label_at(tip: &Tip, along: f32, i: usize, count: usize) -> (f32, f32, Anchor) {
+        let gap = tip.head + 8. + along;
+        let (x, y) = (tip.at.0 + tip.out.0 * gap, tip.at.1 + tip.out.1 * gap);
+        let height = LINE * count as f32;
+        if tip.out.0.abs() >= tip.out.1.abs() {
+            let anchor = if tip.out.0 >= 0. { Anchor::Start } else { Anchor::End };
+            (x, y - height - 2. + LINE * i as f32, anchor)
+        } else {
+            let top = if tip.out.1 >= 0. { y } else { y - height };
+            (x + 8., top + LINE * i as f32, Anchor::Start)
+        }
+    }
+
+    /// Width a text takes, as a rough guess for places that cannot measure it (the file's size,
+    /// finding a text under the pointer): the longest line, CJK twice as wide.
+    pub fn guess_width(text: &str) -> f32 {
+        let wide = |c: char| if c as u32 >= 0x2E80 { FONT } else { FONT * 0.55 };
+        text.split('\n').map(|line| line.chars().map(wide).sum::<f32>()).fold(0., f32::max)
+    }
+
+    /// Rectangle (left, top, right, bottom) of the text at an end of an arrow.
+    fn tip_label_box(&self, link: &Link, slot: Slot, trace: &Trace) -> Option<(f32, f32, f32, f32)> {
+        let (text, along, tip) = match slot {
+            Slot::Start => (&link.start_text, link.start_along, trace.tips[0]),
+            Slot::End => (&link.end_text, link.end_along, trace.tips[1]),
+            Slot::Middle => return None,
+        };
+        if text.is_empty() {
+            return None;
+        }
+        let count = text.split('\n').count();
+        let (x, y, anchor) = Diagram::tip_label_at(&tip, along, 0, count);
+        let w = Diagram::guess_width(text);
+        let left = match anchor {
+            Anchor::Start => x,
+            Anchor::Middle => x - w / 2.,
+            Anchor::End => x - w,
+        };
+        Some((left, y, left + w, y + LINE * count as f32))
+    }
+
+    /// The arrow end text under this point.
+    pub fn tip_label_hit(&self, x: f32, y: f32) -> Option<(u32, Slot)> {
+        self.links.iter().rev().find_map(|link| {
+            let trace = self.trace(link)?;
+            [Slot::Start, Slot::End].into_iter().find_map(|slot| {
+                let (x0, y0, x1, y1) = self.tip_label_box(link, slot, &trace)?;
+                ((x0 - 4.)..=(x1 + 4.)).contains(&x).then_some(())?;
+                ((y0 - 2.)..=(y1 + 2.)).contains(&y).then_some((link.id, slot))
+            })
+        })
+    }
+
+    /// How far down the stroke from its end a text dragged to this point goes.
+    pub fn along_to(&self, link: &Link, slot: Slot, x: f32, y: f32) -> f32 {
+        let Some(trace) = self.trace(link) else { return 0. };
+        let tip = if slot == Slot::Start { trace.tips[0] } else { trace.tips[1] };
+        let stroke: f32 = trace.points.windows(2).map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1)).sum();
+        let dragged = (x - tip.at.0) * tip.out.0 + (y - tip.at.1) * tip.out.1;
+        (dragged - tip.head - 8.).clamp(0., (stroke - tip.head - 16.).max(0.))
+    }
+
     /// Rectangle containing the whole diagram: (left, top, right, bottom).
     pub fn bounds(&self) -> Option<(f32, f32, f32, f32)> {
         // A stick figure's text is written under it.
@@ -604,7 +778,8 @@ impl Diagram {
             (s.x, s.y, s.x + s.w, s.y + s.h + below)
         });
         let ends = self.links.iter().filter_map(|l| self.trace(l)).flat_map(|t| t.points);
-        boxes.chain(ends.map(|(x, y)| (x, y, x, y))).reduce(|a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)))
+        let texts = self.links.iter().filter_map(|l| Some((l, self.trace(l)?))).flat_map(|(l, t)| [Slot::Start, Slot::End].map(|slot| self.tip_label_box(l, slot, &t)).into_iter().flatten().collect::<Vec<_>>());
+        boxes.chain(texts).chain(ends.map(|(x, y)| (x, y, x, y))).reduce(|a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)))
     }
 }
 
@@ -713,5 +888,78 @@ mod tests {
         assert_eq!((trace.heads.len(), trace.middle), (1, (90., 230.)));
         d.link_mut(link).unwrap().route = Route::Curve;
         assert_eq!(d.trace(d.link(link).unwrap()).unwrap().points.len(), 17);
+    }
+
+    #[test]
+    fn places_the_texts_at_the_ends_of_an_arrow() {
+        let link = |from: (f32, f32), to: (f32, f32)| {
+            let mut d = Diagram::default();
+            let a = d.add_shape(Form::Rect, from.0, from.1, 100., 60.);
+            let b = d.add_shape(Form::Rect, to.0, to.1, 100., 60.);
+            let id = d.add_link(End::Shape(a), End::Shape(b), Head::Arrow, Route::Straight);
+            let trace = d.trace(d.link(id).unwrap()).unwrap();
+            (d, trace)
+        };
+        let at = |trace: &Trace, i: usize| Diagram::tip_label_at(&trace.tips[i], 0., 0, 1);
+        // Leaving by the right, arriving by the left: beyond the head, above the stroke.
+        let (_, t) = link((0., 0.), (300., 0.));
+        assert_eq!((at(&t, 0), at(&t, 1)), ((108., 10., Anchor::Start), (282., 10., Anchor::End)));
+        // The other way round.
+        let (_, t) = link((300., 0.), (0., 0.));
+        assert_eq!((at(&t, 0), at(&t, 1)), ((292., 10., Anchor::End), (118., 10., Anchor::Start)));
+        // Leaving by the bottom, arriving by the top: right of the stroke, beyond the head.
+        let (_, t) = link((0., 0.), (0., 200.));
+        assert_eq!((at(&t, 0), at(&t, 1)), ((58., 68., Anchor::Start), (58., 164., Anchor::Start)));
+        let (_, t) = link((0., 200.), (0., 0.));
+        assert_eq!((at(&t, 0), at(&t, 1)), ((58., 174., Anchor::Start), (58., 78., Anchor::Start)));
+        // Several lines stack away from the end; dragging moves the text along the stroke.
+        let lines: Vec<f32> = (0..3).map(|i| Diagram::tip_label_at(&t.tips[1], 0., i, 3).1).collect();
+        assert_eq!(lines, [78., 96., 114.]);
+        assert_eq!(Diagram::tip_label_at(&t.tips[1], 40., 0, 1).1, 118.);
+    }
+
+    #[test]
+    fn end_texts_never_cover_the_shape_or_the_head() {
+        // On the four sides, for every head and a text of one, three lines, and dragged away.
+        for (from, to) in [((0., 0.), (300., 0.)), ((300., 0.), (0., 0.)), ((0., 0.), (0., 200.)), ((0., 200.), (0., 0.)), ((0., 0.), (300., 200.))] {
+            for head in [Head::None, Head::Arrow, Head::Triangle, Head::Diamond, Head::DiamondFull] {
+                let mut d = Diagram::default();
+                let a = d.add_shape(Form::Rect, from.0, from.1, 100., 60.);
+                let b = d.add_shape(Form::Rect, to.0, to.1, 100., 60.);
+                let id = d.add_link(End::Shape(a), End::Shape(b), head, Route::Straight);
+                let link = d.link_mut(id).unwrap();
+                link.start = head;
+                (link.start_text, link.end_text) = ("0..*".into(), "role\nname\n+items".into());
+                for along in [0., 25.] {
+                    d.link_mut(id).unwrap().start_along = along;
+                    d.link_mut(id).unwrap().end_along = along;
+                    let link = d.link(id).unwrap().clone();
+                    let trace = d.trace(&link).unwrap();
+                    for (slot, shape) in [(Slot::Start, a), (Slot::End, b)] {
+                        let (x0, y0, x1, y1) = d.tip_label_box(&link, slot, &trace).unwrap();
+                        let s = d.shape(shape).unwrap();
+                        let apart = x1 <= s.x || x0 >= s.x + s.w || y1 <= s.y || y0 >= s.y + s.h;
+                        assert!(apart, "{slot:?} text ({x0},{y0},{x1},{y1}) covers {:?} for {from:?} -> {to:?}, {head:?}", (s.x, s.y));
+                        // Nor the head: a head is within its reach of the end, along the stroke.
+                        let tip = trace.tips[if slot == Slot::Start { 0 } else { 1 }];
+                        let corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)];
+                        let into = |c: (f32, f32)| (c.0 - tip.at.0) * tip.out.0 + (c.1 - tip.at.1) * tip.out.1;
+                        let across = |c: (f32, f32)| ((c.0 - tip.at.0) * -tip.out.1 + (c.1 - tip.at.1) * tip.out.0).abs();
+                        assert!(corners.iter().all(|c| into(*c) >= tip.head - 0.01 || across(*c) > 8.), "{slot:?} text touches its head");
+                    }
+                }
+            }
+        }
+        // The text is found under the pointer, and dragging it goes along the stroke, never past it.
+        let mut d = Diagram::default();
+        let a = d.add_shape(Form::Rect, 0., 0., 100., 60.);
+        let b = d.add_shape(Form::Rect, 300., 0., 100., 60.);
+        let id = d.add_link(End::Shape(a), End::Shape(b), Head::Arrow, Route::Straight);
+        d.link_mut(id).unwrap().end_text = "0..*".into();
+        let box_ = d.tip_label_box(d.link(id).unwrap(), Slot::End, &d.trace(d.link(id).unwrap()).unwrap()).unwrap();
+        assert_eq!(d.tip_label_hit((box_.0 + box_.2) / 2., (box_.1 + box_.3) / 2.), Some((id, Slot::End)));
+        assert_eq!((d.tip_label_hit(200., 100.), d.tip_label_hit(150., 30.)), (None, None));
+        let link = d.link(id).unwrap();
+        assert_eq!((d.along_to(link, Slot::End, 290., 0.), d.along_to(link, Slot::End, 240., 0.), d.along_to(link, Slot::End, -500., 0.)), (0., 42., 174.));
     }
 }

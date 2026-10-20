@@ -99,6 +99,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 t("R U O D C P N T", tr("Rectangle, rounded, ellipse, diamond, cylinder, person, note, text", "Rectangle, arrondi, ellipse, losange, cylindre, personnage, note, texte")),
                 t("A / L / V", tr("Arrow / line, held by the shapes they join / select", "Flèche / trait, accrochés aux formes reliées / sélection")),
                 t(tr("Enter, double click", "Entrée, double-clic"), tr("Write in the shape or on the arrow; Esc when done", "Écrire dans la forme ou sur la flèche ; Échap pour finir")),
+                k(&canvas::NextText, tr("Arrow: the text at its start, in its middle, at its end (a role, a multiplicity); drag one along the stroke", "Flèche : le texte à son début, au milieu, à sa fin (un rôle, une multiplicité) ; en faire glisser un le long du trait")),
                 t("---", tr("Alone on a line of a box: a compartment (UML class)", "Seul sur une ligne d'une boîte : un compartiment (classe UML)")),
                 t(&format!("{shift}+{click} / {MOD}+{click}"), tr("Add a shape to the selection, or take it out", "Ajouter une forme à la sélection, ou l'en retirer")),
                 t(tr("Delete", "Suppr"), tr("Remove the selection", "Retirer la sélection")),
@@ -320,6 +321,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary-d", &canvas::Duplicate, c),
         b("secondary-a", &canvas::SelectAll, c),
         b("secondary-v", &canvas::Paste, c),
+        b("tab", &canvas::NextText, c),
         b("enter", &canvas::Confirm, c),
         b("escape", &canvas::Cancel, c),
         // Table (CSV, TSV): arrows, selection with Shift, input, clipboard, undo.

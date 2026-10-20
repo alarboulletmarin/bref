@@ -18,13 +18,13 @@ use gpui::{
 
 use crate::{
     ui::theme::Theme,
-    logic::diagram::{self, Cmd, Diagram, End, Form, Head, Route},
+    logic::diagram::{self, Anchor, Cmd, Diagram, End, Form, Head, Route, Slot},
     logic::richtext::{self, Span},
     ui::widgets::{button, tip},
     ui::assets::{mono, sans}, lang::tr,
 };
 
-actions!(canvas, [ZoomIn, ZoomOut, ZoomFit, Erase, EraseNext, Duplicate, SelectAll, Undo, Redo, Confirm, Cancel, Left, Right, Up, Down, Paste]);
+actions!(canvas, [ZoomIn, ZoomOut, ZoomFit, Erase, EraseNext, Duplicate, SelectAll, Undo, Redo, Confirm, Cancel, Left, Right, Up, Down, Paste, NextText]);
 
 pub enum CanvasEvent {
     /// The diagram changed: it needs saving.
@@ -106,6 +106,8 @@ enum Drag {
     Create { id: u32, from: (f32, f32) },
     /// End of an arrow (`to`: its head) being dragged.
     Tip { id: u32, to: bool },
+    /// Text at an end of an arrow being dragged along its stroke; `begun` once it has moved.
+    Along { id: u32, slot: Slot, begun: bool },
     Pan { last: Point<Pixels> },
 }
 
@@ -125,6 +127,8 @@ pub struct Canvas {
     fit: bool,
     /// Element whose text is being written, and cursor position (byte).
     editing: Option<(u32, usize)>,
+    /// Which of an arrow's three texts is being written.
+    slot: Slot,
     undo: Vec<Diagram>,
     redo: Vec<Diagram>,
     /// The pointer's shape, depending on what it hovers and what is dragged.
@@ -158,6 +162,7 @@ impl Canvas {
             zoom: 1.,
             fit: true,
             editing: None,
+            slot: Slot::Middle,
             undo: Vec::new(),
             redo: Vec::new(),
             hand: CursorStyle::Arrow,
@@ -241,7 +246,7 @@ impl Canvas {
         let (from, to) = if redo { (&mut self.redo, &mut self.undo) } else { (&mut self.undo, &mut self.redo) };
         if let Some(diagram) = from.pop() {
             to.push(std::mem::replace(&mut self.diagram, diagram));
-            (self.editing, self.drag) = (None, Drag::None);
+            (self.editing, self.drag, self.slot) = (None, Drag::None, Slot::Middle);
             self.selected.clear();
             self.changed(cx);
         }

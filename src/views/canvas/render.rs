@@ -78,6 +78,15 @@ impl Render for Canvas {
         let toggle = |id, icon, cx: &Context<Self>, set: fn(Option<&mut diagram::Shape>, Option<&mut diagram::Link>)| {
             button(id, icon, false, t).on_click(cx.listener(move |this, _, _, cx| this.style(cx, set)))
         };
+        // Writes in the text of an end of the selected arrow.
+        let text_button = |id: &'static str, icon: &'static str, slot: Slot, tooltip: &'static str, cx: &Context<Self>| {
+            button(id, icon, false, t).tooltip(tip(tooltip, String::new(), t)).on_click(cx.listener(move |this, _, _, cx| {
+                if let Some(link) = this.selected.iter().copied().find(|id| this.diagram.link(*id).is_some()) {
+                    this.stop_editing(cx);
+                    this.start_editing_slot(link, slot, cx);
+                }
+            }))
+        };
         // In a narrow window, the bar wraps: no tool is out of reach.
         let bar = div()
             .flex_none()
@@ -121,6 +130,8 @@ impl Render for Canvas {
                         });
                     }
                 })))
+                .child(text_button("d-text-start", "d-label-start.svg", Slot::Start, tr("Text at the start of the arrow: a role, a multiplicity", "Texte au début de la flèche : un rôle, une multiplicité"), cx))
+                .child(text_button("d-text-end", "d-label-end.svg", Slot::End, tr("Text at the end of the arrow: a role, a multiplicity", "Texte à la fin de la flèche : un rôle, une multiplicité"), cx))
                 .child(toggle("d-head-start", "d-head-start.svg", cx, |_, link| {
                     if let Some(link) = link {
                         link.start = link.start.next();
@@ -155,6 +166,7 @@ impl Render for Canvas {
             .on_action(cx.listener(|this, _: &Right, _, cx| this.nudge(1., 0., cx)))
             .on_action(cx.listener(|this, _: &Up, _, cx| this.nudge(0., -1., cx)))
             .on_action(cx.listener(|this, _: &Down, _, cx| this.nudge(0., 1., cx)))
+            .on_action(cx.listener(|this, _: &NextText, _, cx| this.next_text(cx)))
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| {

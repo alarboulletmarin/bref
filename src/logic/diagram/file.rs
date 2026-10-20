@@ -14,11 +14,15 @@ impl Diagram {
             num(w), num(h), num(x0), num(y0), num(w), num(h),
         );
         let dash = |dashed: bool| if dashed { " stroke-dasharray=\"6 4\"" } else { "" };
-        let label = |out: &mut String, x: f32, y: f32, spans: &[Span], centered: bool, ink: &str| {
+        let label = |out: &mut String, x: f32, y: f32, spans: &[Span], anchor: Anchor, ink: &str| {
             if spans.is_empty() {
                 return;
             }
-            let anchor = if centered { " text-anchor=\"middle\"" } else { "" };
+            let anchor = match anchor {
+                Anchor::Start => "",
+                Anchor::Middle => " text-anchor=\"middle\"",
+                Anchor::End => " text-anchor=\"end\"",
+            };
             // One style for the whole line: on the `<text>`; several: a `<tspan>` for each run.
             let uniform = spans.windows(2).all(|w| w[0].style == w[1].style);
             let (attrs, body) = match uniform {
@@ -38,7 +42,7 @@ impl Diagram {
                 let _ = writeln!(out, "<path d=\"M{} {}H{}\" stroke=\"{ink}\"/>", num(shape.x), num(y), num(shape.x + shape.w));
             }
             for line in lines {
-                label(&mut out, line.x, line.y, &self.styled(line.text, line.bold), line.centered, &ink);
+                label(&mut out, line.x, line.y, &self.styled(line.text, line.bold), line.centered.into(), &ink);
             }
         }
         for link in &self.links {
@@ -52,7 +56,15 @@ impl Diagram {
             let lines: Vec<&str> = link.text.split('\n').collect();
             for (i, text) in lines.iter().enumerate() {
                 let (x, y, centered) = Diagram::label_at(&trace, i, lines.len());
-                label(&mut out, x, y, &self.styled(text, false), centered, &ink);
+                label(&mut out, x, y, &self.styled(text, false), centered.into(), &ink);
+            }
+            for (tip, slot) in [(trace.tips[0], Slot::Start), (trace.tips[1], Slot::End)] {
+                let along = if slot == Slot::Start { link.start_along } else { link.end_along };
+                let lines: Vec<&str> = link.text_of(slot).split('\n').filter(|_| !link.text_of(slot).is_empty()).collect();
+                for (i, text) in lines.iter().enumerate() {
+                    let (x, y, anchor) = Diagram::tip_label_at(&tip, along, i, lines.len());
+                    label(&mut out, x, y, &self.styled(text, false), anchor, &ink);
+                }
             }
         }
         let _ = write!(out, "<metadata id=\"bref-diagram\">\n{}</metadata>\n</svg>\n", xml(&self.source()));
@@ -76,6 +88,12 @@ impl Diagram {
         for l in &self.links {
             let route = Route::ALL.iter().find(|(r, _)| *r == l.route).map_or("straight", |(_, n)| n);
             let _ = writeln!(out, "link {} {} {} {} {} {route} {} {} {}", l.id, end(l.from), end(l.to), tip(l.start), tip(l.end), l.color, l.dashed as u8, text(&l.text));
+        }
+        // The texts at the ends of arrows: a line of their own, so that a build that does not know
+        // them leaves the arrow as it is. Fields are told apart by tabs.
+        let field = |t: &str| t.replace('\\', "\\\\").replace('\n', "\\n").replace('\t', "\\t");
+        for l in self.links.iter().filter(|l| l.has_end_texts()) {
+            let _ = writeln!(out, "ends {} {}\t{}\t{}\t{}", l.id, field(&l.start_text), field(&l.end_text), num(l.start_along), num(l.end_along));
         }
         for line in &self.kept {
             let _ = writeln!(out, "{line}");
@@ -114,6 +132,7 @@ impl Diagram {
             while let Some(c) = chars.next() {
                 match (c == '\\').then(|| chars.next()).flatten() {
                     Some('n') => out.push('\n'),
+                    Some('t') => out.push('\t'),
                     Some(other) => out.push(other),
                     None => out.push(c),
                 }
@@ -131,11 +150,17 @@ impl Diagram {
         let mut diagram = Diagram::default();
         // A line this version cannot read is kept as it is: the rest of the diagram opens.
         let mut declared = false;
+        // Lines about the arrows' ends wait for the arrows.
+        let mut ends: Vec<(&str, &str)> = Vec::new();
         for line in body.lines() {
             // The first `version` line is the file's; a second one is just another unknown line.
             let version = !declared && is_version(line);
             declared |= version;
             if version || line.trim().is_empty() {
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("ends ") {
+                ends.push((line, rest));
                 continue;
             }
             let mut read = || -> Option<()> {
@@ -171,11 +196,26 @@ impl Diagram {
                         color: f.get(6)?.parse().ok()?,
                         dashed: *f.get(7)? == "1",
                         text: text(f.get(8).unwrap_or(&"")),
+                        ..Link::blank()
                     });
                     Some(())
                 } else {
                     None
                 }
+            };
+            if read().is_none() {
+                diagram.kept.push(line.to_string());
+            }
+        }
+        for (line, rest) in ends {
+            let mut read = || -> Option<()> {
+                let (id, fields) = rest.split_once(' ')?;
+                let f: Vec<&str> = fields.split('\t').collect();
+                let id: u32 = id.parse().ok()?;
+                let link = diagram.links.iter_mut().find(|l| l.id == id)?;
+                (link.start_text, link.end_text) = (text(f.first()?), text(f.get(1)?));
+                (link.start_along, link.end_along) = (f.get(2)?.parse().ok()?, f.get(3)?.parse().ok()?);
+                Some(())
             };
             if read().is_none() {
                 diagram.kept.push(line.to_string());
@@ -339,5 +379,36 @@ mod tests {
         // Plain, it still opens in the builds that know only version 1.
         assert_eq!(Diagram::source_of(&svg).unwrap().trim_start().lines().next(), Some("version 1"));
         assert!(!Diagram::from_svg(&svg).unwrap().rich);
+    }
+
+    #[test]
+    fn the_texts_at_the_ends_of_an_arrow_have_a_line_of_their_own() {
+        let mut d = Diagram::blank();
+        let a = d.add_shape(Form::Rect, 0., 0., 100., 60.);
+        let b = d.add_shape(Form::Rect, 300., 0., 100., 60.);
+        let link = d.add_link(End::Shape(a), End::Shape(b), Head::DiamondFull, Route::Straight);
+        let l = d.link_mut(link).unwrap();
+        (l.text, l.start_text, l.end_text, l.start_along, l.end_along) = ("owns".into(), "1".into(), "0..*\n+items\t| \\ é 日本 😀 <&>".into(), 12.5, 0.);
+        let svg = d.to_svg(COLORS[0]);
+        let source = Diagram::source_of(&svg).unwrap();
+        assert_eq!(source.trim_start().lines().take(2).collect::<Vec<_>>(), ["version 3", "rich 1"]);
+        // The shape and link lines are the ones of the builds before: only a line is added.
+        assert!(source.contains("\nlink 3 s1 s2 none fulldiamond straight 0 0 owns\n") && source.contains("\nends 3 1\t0..*\\n+items\\t| \\\\ é 日本 😀 <&>\t12.5\t0\n"));
+        // Drawn: the start text before the diamond's head, the end text after the other end.
+        assert!(svg.contains(">1</text>") && svg.contains("text-anchor=\"end\" fill=\"#7d8590\" stroke=\"none\">0..*</text>"), "{svg}");
+        let back = Diagram::from_svg(&svg).unwrap();
+        assert!(back == d && back.to_svg(COLORS[0]) == svg);
+        // No text at the ends, no line, and the file stays readable by the builds before.
+        let mut plain = d.clone();
+        let l = plain.link_mut(link).unwrap();
+        (l.start_text, l.end_text) = (String::new(), String::new());
+        l.start_along = 0.;
+        let source = Diagram::source_of(&plain.to_svg(COLORS[0])).unwrap();
+        assert!(!source.contains("ends ") && source.contains("version 2\n"));
+        // A line about an arrow that is not there, or that is cut short, is kept, not applied.
+        let svg = file("version 3\nshape 1 rect 0 0 10 10 0 0 0 \nshape 2 rect 50 0 10 10 0 0 0 \nlink 3 s1 s2 none arrow straight 0 0 \nends 9 a\tb\t0\t0\nends 3 only\nends x\n");
+        let d = Diagram::from_svg(&svg).unwrap();
+        assert_eq!(d.kept, ["ends 9 a\tb\t0\t0", "ends 3 only", "ends x"]);
+        assert!(!d.links[0].has_end_texts());
     }
 }

@@ -162,6 +162,8 @@ impl AssetSource for Assets {
             "d-arrow.svg" => r#"<path d="M3 13L13 3M7.5 3H13V8.5"/>"#,
             "d-line.svg" => r#"<path d="M3 13L13 3"/>"#,
             "d-route.svg" => r#"<path d="M2.5 12.5H8V3.5H13.5"/>"#,
+            "d-label-start.svg" => r#"<path d="M2.5 11.5H13.5M3 3.5H7M5 3.5V8"/>"#,
+            "d-label-end.svg" => r#"<path d="M2.5 11.5H13.5M9 3.5H13M11 3.5V8"/>"#,
             "d-fill.svg" => r#"<rect x="3" y="3" width="10" height="10" rx="1.5" fill="black" fill-opacity="0.35"/>"#,
             "d-dash.svg" => r#"<path d="M2.5 8H5M7 8H9M11 8H13.5"/>"#,
             "d-head-start.svg" => r#"<path d="M13.5 8H3M6.5 4.5L3 8L6.5 11.5"/>"#,

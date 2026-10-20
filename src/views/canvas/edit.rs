@@ -7,18 +7,41 @@ impl Canvas {
         if self.diagram.shape(id).is_some() {
             return self.diagram.shape_mut(id).map(|s| &mut s.text);
         }
-        self.diagram.link_mut(id).map(|l| &mut l.text)
+        let slot = self.slot;
+        self.diagram.link_mut(id).map(|l| l.text_mut(slot))
     }
 
     pub(super) fn start_editing(&mut self, id: u32, cx: &mut Context<Self>) {
+        self.start_editing_slot(id, Slot::Middle, cx);
+    }
+
+    /// Writes in an arrow's text at `slot` (a shape has only one).
+    pub(super) fn start_editing_slot(&mut self, id: u32, slot: Slot, cx: &mut Context<Self>) {
         self.remember();
+        self.slot = slot;
         let Some(len) = self.text_of(id).map(|t| t.len()) else { return };
         self.editing = Some((id, len));
         self.selected = vec![id];
         cx.notify();
     }
 
+    /// Tab: from one text of an arrow to the next; on a selected arrow, starts with its first.
+    pub(super) fn next_text(&mut self, cx: &mut Context<Self>) {
+        match (self.editing, self.selected.as_slice()) {
+            (Some((id, _)), _) if self.diagram.link(id).is_some() => {
+                self.slot = self.slot.next();
+                let len = self.text_of(id).map_or(0, |t| t.len());
+                self.editing = Some((id, len));
+                cx.notify();
+            }
+            (None, &[id]) if self.diagram.link(id).is_some() => self.start_editing_slot(id, Slot::Start, cx),
+            (None, _) if self.tool == Tool::Select => cx.propagate(),
+            _ => {}
+        }
+    }
+
     pub(super) fn stop_editing(&mut self, cx: &mut Context<Self>) {
+        self.slot = Slot::Middle;
         if let Some((id, _)) = self.editing.take() {
             // A text left empty leaves nothing behind.
             let empty = self.diagram.shape(id).is_some_and(|s| s.form == Form::Text && s.text.trim().is_empty());

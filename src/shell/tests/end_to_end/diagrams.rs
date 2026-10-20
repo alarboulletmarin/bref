@@ -230,6 +230,66 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("escape escape");
     cx.run_until_parked();
     fs::remove_file(&old).unwrap();
+    // The texts at the ends of an arrow: Tab goes from one to the next, one step of undo for the
+    // three; a text can be dragged along the stroke.
+    cx.simulate_keystrokes("secondary-shift-d");
+    cx.run_until_parked();
+    let (ends, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+    cx.simulate_input("r");
+    rows(cx, &canvas, (0., 0.), (140., 60.));
+    cx.simulate_input("r");
+    rows(cx, &canvas, (300., 0.), (440., 60.));
+    cx.simulate_input("a");
+    rows(cx, &canvas, (140., 30.), (300., 30.));
+    let drawn = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().clone());
+    let link = drawn(cx).links[0].clone();
+    assert_eq!((link.from, link.to), (diagram::End::Pin(1, 1., 0.5), diagram::End::Pin(2, 0., 0.5)));
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("1");
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("owns");
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("0..*");
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("é");
+    cx.simulate_keystrokes("tab tab escape");
+    let link = drawn(cx).links[0].clone();
+    assert_eq!((link.start_text.as_str(), link.text.as_str(), link.end_text.as_str()), ("1", "owns", "0..*\né"));
+    let svg = saved(&ends);
+    assert!(svg.contains("version 3\nrich 1\n") && svg.contains("\nends 3 1\t0..*\\né\t0\t0\n"), "{svg}");
+    // Drawn at the right spots: the start text beyond the arrow's start, the end text before its head.
+    assert!(svg.contains("<text x=\"148\" y=\"24\" fill=\"#7d8590\" stroke=\"none\">1</text>"), "{svg}");
+    assert!(svg.contains("text-anchor=\"end\"") && svg.contains(">0..*</text>") && svg.contains(">é</text>"), "{svg}");
+    // One step of undo for the three texts, and one to put them back.
+    cx.simulate_keystrokes("secondary-z");
+    let link = drawn(cx).links[0].clone();
+    assert!(!link.has_end_texts() && link.text.is_empty() && saved(&ends).contains("version 2\n"));
+    cx.simulate_keystrokes("secondary-shift-z");
+    assert_eq!(drawn(cx).links[0].end_text, "0..*\né");
+    // Dragged along the stroke: the pointer goes toward the middle, the text follows.
+    let before = drawn(cx);
+    let trace = before.trace(&before.links[0]).unwrap();
+    let (x, y, anchor) = diagram::Diagram::tip_label_at(&trace.tips[1], 0., 0, 2);
+    assert_eq!(anchor, diagram::Anchor::End);
+    let on = (x - 8., y + 6.);
+    let click = canvas.read_with(cx, |c, _| c.spot(220., 30.));
+    cx.simulate_click(click, gpui::Modifiers::none());
+    rows(cx, &canvas, on, (on.0 - 50., on.1));
+    let moved = drawn(cx).links[0].clone();
+    assert!(moved.end_along > 40. && moved.start_along == 0., "{moved:?}");
+    assert!(saved(&ends).contains(&format!("\t{}\n", moved.end_along)));
+    cx.simulate_keystrokes("secondary-z");
+    assert_eq!(drawn(cx).links[0].end_along, 0.);
+    // A double click on the text writes in it; emptied, the arrow has no text at that end.
+    let at = canvas.read_with(cx, |c, _| c.spot(on.0, on.1));
+    cx.simulate_click(at, gpui::Modifiers::none());
+    cx.simulate_event(gpui::MouseDownEvent { position: at, modifiers: gpui::Modifiers::none(), button: MouseButton::Left, click_count: 2, first_mouse: false });
+    cx.simulate_event(gpui::MouseUpEvent { position: at, modifiers: gpui::Modifiers::none(), button: MouseButton::Left, click_count: 2 });
+    cx.simulate_keystrokes("backspace backspace backspace backspace backspace backspace escape");
+    assert_eq!(drawn(cx).links[0].end_text, "");
+    cx.simulate_keystrokes("escape escape");
+    cx.run_until_parked();
+    fs::remove_file(&ends).unwrap();
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

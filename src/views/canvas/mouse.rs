@@ -79,12 +79,26 @@ impl Canvas {
                     Some(Drag::Tip { id: link.id, to })
                 });
                 let hit = self.diagram.shape_at(p.0, p.1).or_else(|| self.diagram.link_at(p.0, p.1, near));
-                match (corner.or(tip), hit) {
-                    (Some(drag), _) => {
+                let label = self.diagram.tip_label_hit(p.0, p.1).filter(|_| hit.is_none_or(|id| self.diagram.link(id).is_some()));
+                match (corner.or(tip), label, hit) {
+                    (Some(drag), ..) => {
                         self.remember();
                         drag
                     }
-                    (None, Some(id)) => {
+                    // The text at an end of an arrow: a double click writes in it; once the arrow is
+                    // selected, it can be dragged along the stroke.
+                    (None, Some((id, slot)), _) => {
+                        if e.click_count >= 2 {
+                            self.start_editing_slot(id, slot, cx);
+                            Drag::None
+                        } else if self.selected == [id] {
+                            Drag::Along { id, slot, begun: false }
+                        } else {
+                            self.selected = vec![id];
+                            Drag::None
+                        }
+                    }
+                    (None, None, Some(id)) => {
                         // Shift+click or Ctrl+click: the shape joins the selection, or leaves it.
                         if e.modifiers.shift || e.modifiers.secondary() {
                             match self.selected.iter().position(|s| *s == id) {
@@ -95,20 +109,22 @@ impl Canvas {
                             self.selected = vec![id];
                         }
                         if e.click_count >= 2 {
-                            self.start_editing(id, cx);
+                            // On an arrow, near one of its ends: the text of that end.
+                            let slot = self.slot_near(id, p);
+                            self.start_editing_slot(id, slot, cx);
                             Drag::None
                         } else {
                             Drag::Move { last: p, begun: false }
                         }
                     }
                     // Double-click on empty space: a text, at that spot.
-                    (None, None) if e.click_count >= 2 => {
+                    (None, None, None) if e.click_count >= 2 => {
                         self.remember();
                         let id = self.diagram.add_shape(Form::Text, diagram::snap(p.0), diagram::snap(p.1), 80., diagram::LINE);
                         (self.editing, self.selected) = (Some((id, 0)), vec![id]);
                         Drag::None
                     }
-                    (None, None) => {
+                    (None, None, None) => {
                         if !(e.modifiers.shift || e.modifiers.secondary()) {
                             self.selected.clear();
                         }
@@ -120,12 +136,23 @@ impl Canvas {
         cx.notify();
     }
 
+    /// The text of arrow `id` a double click at `p` asks for: that of an end it is near, or the middle.
+    pub(super) fn slot_near(&self, id: u32, p: (f32, f32)) -> Slot {
+        let Some(trace) = self.diagram.link(id).and_then(|l| self.diagram.trace(l)) else { return Slot::Middle };
+        let close = |tip: &diagram::Tip| (tip.at.0 - p.0).hypot(tip.at.1 - p.1) <= 36.;
+        match (close(&trace.tips[0]), close(&trace.tips[1])) {
+            (true, false) => Slot::Start,
+            (false, true) => Slot::End,
+            _ => Slot::Middle,
+        }
+    }
+
     /// What the pointer announces: a shape or an arrow can be grabbed (hand), a corner drags
     /// diagonally, an arrow end reattaches, the dragged view is held, a tool draws.
     pub(super) fn hand_at(&self, at: Point<Pixels>) -> CursorStyle {
         match self.drag {
-            Drag::Pan { .. } | Drag::Move { begun: true, .. } => return CursorStyle::ClosedHand,
-            Drag::Resize { .. } | Drag::Tip { .. } | Drag::Create { .. } | Drag::Marquee { .. } => return self.hand,
+            Drag::Pan { .. } | Drag::Move { begun: true, .. } | Drag::Along { begun: true, .. } => return CursorStyle::ClosedHand,
+            Drag::Resize { .. } | Drag::Tip { .. } | Drag::Create { .. } | Drag::Marquee { .. } | Drag::Along { .. } => return self.hand,
             _ => {}
         }
         if self.tool != Tool::Select {
@@ -150,7 +177,7 @@ impl Canvas {
         {
             return CursorStyle::IBeam;
         }
-        match self.diagram.shape_at(p.0, p.1).or_else(|| self.diagram.link_at(p.0, p.1, near)) {
+        match self.diagram.shape_at(p.0, p.1).or_else(|| self.diagram.link_at(p.0, p.1, near)).or_else(|| self.diagram.tip_label_hit(p.0, p.1).map(|(id, _)| id)) {
             Some(_) => CursorStyle::PointingHand,
             None => CursorStyle::Arrow,
         }
@@ -190,6 +217,20 @@ impl Canvas {
                 if let Some(link) = self.diagram.link_mut(id) {
                     *(if to { &mut link.to } else { &mut link.from }) = end;
                 }
+            }
+            Drag::Along { id, slot, begun } => {
+                let along = self.diagram.link(id).map_or(0., |l| self.diagram.along_to(l, slot, p.0, p.1).round());
+                let held = self.diagram.link(id).map_or(0., |l| if slot == Slot::Start { l.start_along } else { l.end_along });
+                if along == held {
+                    return;
+                }
+                if !begun {
+                    self.remember();
+                }
+                if let Some(link) = self.diagram.link_mut(id) {
+                    *(if slot == Slot::Start { &mut link.start_along } else { &mut link.end_along }) = along;
+                }
+                self.drag = Drag::Along { id, slot, begun: true };
             }
             Drag::Move { last, begun } => {
                 let (dx, dy) = (diagram::snap(p.0 - last.0), diagram::snap(p.1 - last.1));
@@ -244,7 +285,7 @@ impl Canvas {
                 self.tool = Tool::Select;
                 self.changed(cx);
             }
-            Drag::Move { begun: true, .. } | Drag::Resize { .. } => self.changed(cx),
+            Drag::Move { begun: true, .. } | Drag::Resize { .. } | Drag::Along { begun: true, .. } => self.changed(cx),
             Drag::Marquee { from, to } => {
                 let (x0, y0, x1, y1) = (from.0.min(to.0), from.1.min(to.1), from.0.max(to.0), from.1.max(to.1));
                 let inside = |p: (f32, f32)| (x0..=x1).contains(&p.0) && (y0..=y1).contains(&p.1);
