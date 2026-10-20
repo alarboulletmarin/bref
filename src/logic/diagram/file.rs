@@ -90,6 +90,10 @@ impl Diagram {
             let route = Route::ALL.iter().find(|(r, _)| *r == l.route).map_or("straight", |(_, n)| n);
             let _ = writeln!(out, "link {} {} {} {} {} {route} {} {} {}", l.id, end(l.from), end(l.to), tip(l.start), tip(l.end), l.color, l.dashed as u8, text(&l.text));
         }
+        // What holds what: a line of its own for each held shape.
+        for s in self.shapes.iter().filter(|s| s.parent.is_some()) {
+            let _ = writeln!(out, "in {} {}", s.id, s.parent.unwrap_or(0));
+        }
         // The texts at the ends of arrows: a line of their own, so that a build that does not know
         // them leaves the arrow as it is. Fields are told apart by tabs.
         let field = |t: &str| t.replace('\\', "\\\\").replace('\n', "\\n").replace('\t', "\\t");
@@ -154,6 +158,7 @@ impl Diagram {
         let mut declared = false;
         // Lines about the arrows' ends wait for the arrows.
         let mut ends: Vec<(&str, &str)> = Vec::new();
+        let mut held: Vec<(&str, &str)> = Vec::new();
         for line in body.lines() {
             // The first `version` line is the file's; a second one is just another unknown line.
             let version = !declared && is_version(line);
@@ -163,6 +168,10 @@ impl Diagram {
             }
             if let Some(rest) = line.strip_prefix("ends ") {
                 ends.push((line, rest));
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("in ") {
+                held.push((line, rest));
                 continue;
             }
             let mut read = || -> Option<()> {
@@ -180,6 +189,7 @@ impl Diagram {
                         fill: *f.get(7)? == "1",
                         dashed: *f.get(8)? == "1",
                         text: text(f.get(9).unwrap_or(&"")),
+                        parent: None,
                     });
                     Some(())
                 } else if line == "rich 1" {
@@ -209,6 +219,21 @@ impl Diagram {
                 diagram.kept.push(line.to_string());
             }
         }
+        for (line, rest) in held {
+            let read = || -> Option<(u32, u32)> {
+                let (id, parent) = rest.split_once(' ')?;
+                Some((id.parse().ok()?, parent.parse().ok()?)).filter(|(id, parent)| id != parent)
+            };
+            match read().filter(|(id, parent)| diagram.shape(*id).is_some() && diagram.shape(*parent).is_some()) {
+                Some((id, parent)) => {
+                    if let Some(shape) = diagram.shape_mut(id) {
+                        shape.parent = Some(parent);
+                    }
+                }
+                None => diagram.kept.push(line.to_string()),
+            }
+        }
+        diagram.arrange();
         for (line, rest) in ends {
             let mut read = || -> Option<()> {
                 let (id, fields) = rest.split_once(' ')?;
@@ -461,5 +486,41 @@ mod tests {
         }
         d.add_link(End::Shape(a), End::Mid(link), Head::None, Route::Straight);
         assert!(Diagram::source_of(&d.to_svg(COLORS[0])).unwrap().contains("\nlink 4 s1 m3 none none straight 0 0 \n"));
+    }
+
+    #[test]
+    fn what_a_shape_holds_has_a_line_of_its_own() {
+        let mut d = Diagram::blank();
+        let pack = d.add_shape(Form::Package, 0., 0., 300., 200.);
+        d.shape_mut(pack).unwrap().text = "billing\npkg::billing".into();
+        let frame = d.add_shape(Form::Frame, 20., 40., 200., 140.);
+        d.shape_mut(frame).unwrap().text = "System".into();
+        let a = d.add_shape(Form::Rect, 40., 90., 80., 40.);
+        let lane = d.add_shape(Form::Lane, 400., 0., 160., 300.);
+        d.shape_mut(lane).unwrap().text = "Customer".into();
+        assert!(d.set_parent(frame, Some(pack)) && d.set_parent(a, Some(frame)));
+        let svg = d.to_svg(COLORS[0]);
+        let source = Diagram::source_of(&svg).unwrap();
+        assert_eq!(source.trim_start().lines().take(2).collect::<Vec<_>>(), ["version 5", "rich 1"]);
+        // The shape lines are those of the builds before; each held shape adds a line of its own.
+        assert!(source.contains(&format!("\nin {frame} {pack}\n")) && source.contains(&format!("\nin {a} {frame}\n")) && !source.contains(&format!("in {pack} ")));
+        // The package's name is in its tab, the second line under it; the lane's in its header.
+        assert!(svg.contains(">billing</text>") && svg.contains(">pkg::billing</text>") && svg.contains("text-anchor=\"middle\"") && svg.contains(">Customer</text>"), "{svg}");
+        let back = Diagram::from_svg(&svg).unwrap();
+        assert!(back == d && back.to_svg(COLORS[0]) == svg);
+        // No holding, no line, and no version 5.
+        let mut plain = d.clone();
+        plain.set_parent(a, None);
+        plain.set_parent(frame, None);
+        plain.shapes.retain(|s| !s.form.holds());
+        assert!(!Diagram::source_of(&plain.to_svg(COLORS[0])).unwrap().contains("\nin "));
+        assert!(Diagram::source_of(&plain.to_svg(COLORS[0])).unwrap().contains("version 2\n"));
+        // A held shape before its holder is put after; a line about a shape that is not there, or that holds
+        // itself, is kept and not applied.
+        let svg = file("version 5\nshape 1 rect 0 0 10 10 0 0 0 \nshape 2 package 0 0 100 100 0 0 0 P\nin 1 2\nin 1 9\nin 2 2\nin x\n");
+        let d = Diagram::from_svg(&svg).unwrap();
+        assert_eq!(d.shapes.iter().map(|s| s.id).collect::<Vec<_>>(), [2, 1]);
+        assert_eq!(d.shape(1).unwrap().parent, Some(2));
+        assert_eq!(d.kept, ["in 1 9", "in 2 2", "in x"]);
     }
 }

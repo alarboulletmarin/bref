@@ -138,20 +138,41 @@ impl Canvas {
         }
     }
 
-    /// Moves the selection; an arrow carries its free ends.
+    /// Moves the selection, and what its containers hold; an arrow carries its free ends.
     pub(super) fn shift(&mut self, dx: f32, dy: f32) {
         let moved = |end: &mut End| {
             if let End::Point(x, y) = end {
                 (*x, *y) = (*x + dx, *y + dy);
             }
         };
+        let mut shapes: Vec<u32> = Vec::new();
         for &id in &self.selected {
+            if self.diagram.shape(id).is_some() {
+                shapes.push(id);
+                shapes.extend(self.diagram.descendants(id));
+            }
+        }
+        shapes.sort_unstable();
+        shapes.dedup();
+        for id in shapes {
             if let Some(shape) = self.diagram.shape_mut(id) {
                 (shape.x, shape.y) = (shape.x + dx, shape.y + dy);
-            } else if let Some(link) = self.diagram.link_mut(id) {
+            }
+        }
+        for &id in &self.selected {
+            if let Some(link) = self.diagram.link_mut(id) {
                 moved(&mut link.from);
                 moved(&mut link.to);
             }
+        }
+    }
+
+    /// Makes the container selected fit what it holds.
+    pub fn fit_container(&mut self, cx: &mut Context<Self>) {
+        if let [id] = self.selected[..] {
+            self.remember();
+            self.diagram.fit(id);
+            self.changed(cx);
         }
     }
 

@@ -410,6 +410,69 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         fs::remove_file(&ac).unwrap();
     }
+    // Containers: a package of five classes moves as one, a class dragged out leaves it, a class dragged in
+    // joins it, and one step of undo puts both the place and the holder back.
+    {
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (hold, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let drawn = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().clone());
+        cx.simulate_input("g");
+        rows(cx, &canvas, (0., 0.), (400., 300.));
+        for i in 0..5 {
+            cx.simulate_input("r");
+            let (x, y) = (20. + 120. * (i % 3) as f32, 60. + 90. * (i / 3) as f32);
+            rows(cx, &canvas, (x, y), (x + 100., y + 60.));
+        }
+        let d = drawn(cx);
+        let pack = d.shapes[0].id;
+        assert_eq!((d.shapes[0].form, d.shapes.len()), (diagram::Form::Package, 6));
+        assert!(d.shapes[1..].iter().all(|s| s.parent == Some(pack)), "created over the package, held by it");
+        let svg = saved(&hold);
+        assert!(svg.contains("version 5\n") && svg.matches("\nin ").count() == 5, "{svg}");
+        // Dragged by an empty part of the package, it takes its classes along.
+        rows(cx, &canvas, (350., 250.), (450., 350.));
+        let moved = drawn(cx);
+        assert_eq!((moved.shapes[0].x, moved.shapes[0].y), (100., 100.));
+        assert!(moved.shapes.iter().zip(&d.shapes).skip(1).all(|(m, o)| (m.x, m.y) == (o.x + 100., o.y + 100.)));
+        // One class dragged out of the package: it leaves it, the others do not.
+        let out = moved.shapes[1].clone();
+        rows(cx, &canvas, (out.x + 50., out.y + 30.), (-150., 50.));
+        let after = drawn(cx);
+        assert_eq!(after.shapes.iter().filter(|s| s.parent == Some(pack)).count(), 4);
+        assert!(after.shape(out.id).unwrap().parent.is_none() && after.shape(out.id).unwrap().x < 0.);
+        // One step of undo: back in place, and back in the package.
+        cx.simulate_keystrokes("secondary-z");
+        let undone = drawn(cx);
+        assert_eq!(undone.shape(out.id), moved.shape(out.id));
+        assert_eq!(undone.shapes.iter().filter(|s| s.parent == Some(pack)).count(), 5);
+        // Dragged out and back in, it is held again.
+        rows(cx, &canvas, (out.x + 50., out.y + 30.), (-150., 50.));
+        rows(cx, &canvas, (-150., 50.), (out.x + 50., out.y + 30.));
+        assert_eq!(drawn(cx).shape(out.id).unwrap().parent, Some(pack));
+        // Fit to content: the package closes around its classes.
+        let click = canvas.read_with(cx, |c, _| c.spot(450., 380.));
+        cx.simulate_click(click, gpui::Modifiers::none());
+        assert_eq!(canvas.read_with(cx, |c, _| c.picked()), 1);
+        canvas.update(cx, |c, cx| c.fit_container(cx));
+        let fit = drawn(cx).shapes[0].clone();
+        assert!(fit.w < 400. && fit.h < 300. && fit.x <= 120. && fit.y <= 160., "{fit:?}");
+        // Copied, it copies what it holds; removed, it removes it.
+        cx.simulate_keystrokes("secondary-d");
+        assert_eq!(drawn(cx).shapes.len(), 12);
+        cx.simulate_keystrokes("delete");
+        assert_eq!(drawn(cx).shapes.len(), 6);
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(drawn(cx).shapes.len(), 12);
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(drawn(cx).shapes.len(), 6);
+        // Everything selected and removed: the package, its classes, nothing left behind.
+        cx.simulate_keystrokes("secondary-a delete");
+        assert_eq!(drawn(cx).shapes.len(), 0);
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&hold).unwrap();
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

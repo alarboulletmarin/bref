@@ -10,6 +10,7 @@ use super::{
 };
 
 mod file;
+mod hold;
 
 /// Stroke colors, as `0xrrggbb`: mid tones, readable on a light background
 /// as on a dark one. The first is the neutral; in the app, the
@@ -20,6 +21,8 @@ pub const GRID: f32 = 10.;
 /// Text size and line height.
 pub const FONT: f32 = 14.;
 pub const LINE: f32 = 18.;
+/// Height of the header of a swimlane.
+pub const LANE: f32 = 26.;
 /// Text line that separates two compartments of a box (UML class, table).
 pub const RULE: &str = "---";
 /// Highest version of the file's source that this build reads. A file of a higher version
@@ -29,7 +32,8 @@ pub const RULE: &str = "---";
 ///
 /// 1: shapes and arrows. 2: `rich`, styled text. 3: `ends`, the texts at the ends of an arrow.
 /// 4: the heads `cross`, `ball`, `socket`, and an arrow held by another's middle (`m<id>`).
-pub const VERSION: u32 = 4;
+/// 5: the forms `package`, `frame`, `lane` and the `in` lines: what a shape holds.
+pub const VERSION: u32 = 5;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Form {
@@ -43,10 +47,16 @@ pub enum Form {
     Note,
     /// A small diamond, its text under it: an association of three or more ends, a decision.
     Branch,
+    /// A package: a folder, its name in the tab. Holds shapes.
+    Package,
+    /// A frame, its title at the top left: a system boundary, a composite state. Holds shapes.
+    Frame,
+    /// A swimlane: a column under a header with its name. Holds shapes.
+    Lane,
 }
 
 impl Form {
-    pub const ALL: [(Form, &str); 9] = [
+    pub const ALL: [(Form, &str); 12] = [
         (Form::Rect, "rect"),
         (Form::Round, "round"),
         (Form::Ellipse, "ellipse"),
@@ -56,12 +66,21 @@ impl Form {
         (Form::Actor, "actor"),
         (Form::Note, "note"),
         (Form::Branch, "branch"),
+        (Form::Package, "package"),
+        (Form::Frame, "frame"),
+        (Form::Lane, "lane"),
     ];
+
+    /// Whether shapes dropped on it belong to it.
+    pub fn holds(self) -> bool {
+        matches!(self, Form::Package | Form::Frame | Form::Lane)
+    }
 
     /// The version of the file that first had this form.
     pub fn since(self) -> u32 {
         match self {
             Form::Branch => 4,
+            Form::Package | Form::Frame | Form::Lane => 5,
             _ => 1,
         }
     }
@@ -125,6 +144,9 @@ pub struct Shape {
     /// Background tinted with the stroke color.
     pub fill: bool,
     pub dashed: bool,
+    /// The shape that holds this one: it moves, is copied and removed with it. It comes first in
+    /// `Diagram::shapes`, so it is drawn under.
+    pub parent: Option<u32>,
 }
 
 /// End of an arrow: attached to a shape, which it follows, or set at a place.
@@ -359,6 +381,14 @@ fn rounded(x: f32, y: f32, w: f32, h: f32, r: f32) -> Vec<Cmd> {
 }
 
 impl Shape {
+    /// Width of the tab of a package: what its name takes.
+    fn tab_width(&self) -> f32 {
+        let name = self.text.lines().next().unwrap_or("");
+        // Never wider than the package, whatever its size: it is a point while it is being drawn.
+        let room = self.w.max(1.);
+        (Diagram::guess_width(name) + 14.).max(48f32.min(room)).min(room)
+    }
+
     pub fn center(&self) -> (f32, f32) {
         (self.x + self.w / 2., self.y + self.h / 2.)
     }
@@ -421,6 +451,20 @@ impl Shape {
                     vec![Cmd::Move(x, y + h), Cmd::Line(cx, hip), Cmd::Line(x + w, y + h)],
                 ]
             }
+            Form::Package => {
+                let (tab, th) = (self.tab_width(), 18f32.min(h));
+                vec![vec![
+                    Cmd::Move(x, y),
+                    Cmd::Line(x + tab, y),
+                    Cmd::Line(x + tab, y + th),
+                    Cmd::Line(x + w, y + th),
+                    Cmd::Line(x + w, y + h),
+                    Cmd::Line(x, y + h),
+                    Cmd::Close,
+                ]]
+            }
+            Form::Frame => vec![rounded(x, y, w, h, 2.)],
+            Form::Lane => vec![rounded(x, y, w, h, 2.), vec![Cmd::Move(x, y + LANE), Cmd::Line(x + w, y + LANE)]],
             Form::Note => {
                 let fold = 12f32.min(w / 2.).min(h / 2.);
                 vec![
@@ -458,6 +502,21 @@ impl Shape {
                     out.push(TextLine { x, y, text, centered: first, bold: first, index });
                     y += LINE;
                 }
+            }
+            return (out, rules);
+        }
+        // What holds shapes has its title at the top: in the tab of a package, in the header of a lane.
+        if self.form.holds() {
+            let mut out = Vec::new();
+            for (index, text) in lines.into_iter().enumerate() {
+                let (x, y, centered) = match (self.form, index) {
+                    (Form::Package, 0) => (self.x + 6., self.y + 1., false),
+                    (Form::Package, i) => (self.x + 8., self.y + 22. + LINE * (i - 1) as f32, false),
+                    (Form::Lane, 0) => (cx, self.y + (LANE - LINE) / 2., true),
+                    (Form::Lane, i) => (self.x + 8., self.y + LANE + 6. + LINE * (i - 1) as f32, false),
+                    (_, i) => (self.x + 8., self.y + 6. + LINE * i as f32, false),
+                };
+                out.push(TextLine { x, y, text, centered, bold: index == 0, index });
             }
             return (out, rules);
         }
@@ -603,7 +662,7 @@ impl Diagram {
             let mid = matches!(l.from, End::Mid(_)) || matches!(l.to, End::Mid(_));
             [l.start.since(), l.end.since(), if mid { 4 } else { 1 }, if l.has_end_texts() { 3 } else { 1 }].into_iter().max().unwrap_or(1)
         });
-        let shapes = self.shapes.iter().map(|s| s.form.since()).max().unwrap_or(1);
+        let shapes = self.shapes.iter().map(|s| if s.parent.is_some() { 5 } else { s.form.since() }).max().unwrap_or(1);
         links.max().unwrap_or(1).max(shapes).max(if self.rich { 2 } else { 1 })
     }
 
@@ -630,7 +689,7 @@ impl Diagram {
 
     pub fn add_shape(&mut self, form: Form, x: f32, y: f32, w: f32, h: f32) -> u32 {
         let id = self.fresh();
-        self.shapes.push(Shape { id, form, x, y, w, h, text: String::new(), color: 0, fill: false, dashed: false });
+        self.shapes.push(Shape { id, form, x, y, w, h, text: String::new(), color: 0, fill: false, dashed: false, parent: None });
         id
     }
 
@@ -643,11 +702,37 @@ impl Diagram {
     /// Copy of elements `ids`, offset; returns the ids of the copies.
     /// An arrow is only copied along with the shapes it links.
     pub fn duplicate(&mut self, ids: &[u32], by: f32) -> Vec<u32> {
+        // What a container holds comes with it, and so do the arrows between those shapes.
+        let mut ids = ids.to_vec();
+        let mut family: Vec<u32> = Vec::new();
+        for id in ids.clone() {
+            if self.shape(id).is_some_and(|s| s.form.holds()) {
+                family.push(id);
+                family.extend(self.descendants(id));
+            }
+        }
+        for id in &family {
+            if !ids.contains(id) {
+                ids.push(*id);
+            }
+        }
+        let inside = |end: End| end.shape().is_some_and(|id| family.contains(&id));
+        let between: Vec<u32> = self.links.iter().filter(|l| inside(l.from) && inside(l.to) && !ids.contains(&l.id)).map(|l| l.id).collect();
+        ids.extend(between);
+        let before = self.shapes.clone();
         let mut twin = Vec::new();
-        for shape in self.shapes.clone().into_iter().filter(|s| ids.contains(&s.id)) {
+        for shape in before.iter().filter(|s| ids.contains(&s.id)) {
             let id = self.fresh();
             twin.push((shape.id, id));
-            self.shapes.push(Shape { id, x: shape.x + by, y: shape.y + by, ..shape });
+            self.shapes.push(Shape { id, x: shape.x + by, y: shape.y + by, ..shape.clone() });
+        }
+        // A copy is held by the copy of its holder, or else by the holder of the original.
+        for (old, new) in &twin {
+            let holder = before.iter().find(|s| s.id == *old).and_then(|s| s.parent);
+            let copy = holder.and_then(|p| twin.iter().find(|(o, _)| *o == p).map(|(_, n)| *n));
+            if let Some(shape) = self.shape_mut(*new) {
+                shape.parent = copy.or(holder);
+            }
         }
         let mut copies: Vec<(u32, u32)> = Vec::new();
         let mut made: Vec<u32> = twin.iter().map(|(_, new)| *new).collect();
@@ -671,9 +756,12 @@ impl Diagram {
         made
     }
 
-    /// Removes elements `ids`, the arrows attached to removed shapes, and those attached to removed arrows.
+    /// Removes elements `ids`, the shapes they hold, the arrows attached to removed shapes, and those attached to removed arrows.
     pub fn remove(&mut self, ids: &[u32]) {
         let mut gone = ids.to_vec();
+        for id in ids {
+            gone.extend(self.descendants(*id));
+        }
         self.shapes.retain(|s| !gone.contains(&s.id));
         loop {
             let held = |end: End, gone: &[u32]| match end {
@@ -986,7 +1074,7 @@ mod tests {
 
     #[test]
     fn lays_out_text_and_borders() {
-        let mut shape = Shape { id: 1, form: Form::Rect, x: 0., y: 0., w: 100., h: 80., text: "A\nB".into(), color: 0, fill: false, dashed: false };
+        let mut shape = Shape { id: 1, form: Form::Rect, x: 0., y: 0., w: 100., h: 80., text: "A\nB".into(), color: 0, fill: false, dashed: false, parent: None };
         let (lines, rules) = shape.text_lines();
         assert!(rules.is_empty() && lines[0].centered && (lines[0].x, lines[0].y, lines[1].y) == (50., 22., 40.));
         shape.text = "Nom\n---\nchamp".into();
@@ -1143,6 +1231,25 @@ mod tests {
             let (xs, ys): (Vec<f32>, Vec<f32>) = path.iter().filter_map(|c| match c { Cmd::Move(x, y) | Cmd::Line(x, y) => Some((*x, *y)), _ => None }).unzip();
             let (w, h) = (xs.iter().copied().fold(f32::MIN, f32::max) - xs.iter().copied().fold(f32::MAX, f32::min), ys.iter().copied().fold(f32::MIN, f32::max) - ys.iter().copied().fold(f32::MAX, f32::min));
             assert!((w - 12.).abs() < 0.1 || (h - 12.).abs() < 0.1, "{u:?}: {w}x{h}");
+        }
+    }
+
+    #[test]
+    fn containers_of_any_size_have_an_outline_and_a_title() {
+        // From a point, while it is drawn, to a very large one; with no text, a one-letter name or a very long one.
+        for (w, h) in [(0., 0.), (1., 1.), (10., 10.), (47., 17.), (48., 18.), (100., 100.), (10_000., 10_000.)] {
+            for form in [Form::Package, Form::Frame, Form::Lane] {
+                for text in ["", "a", "billing\npkg::billing\nthird", &"x".repeat(500), "日本語 😀"] {
+                    let shape = Shape { id: 1, form, x: 5., y: 5., w, h, text: text.into(), color: 0, fill: false, dashed: false, parent: None };
+                    let (lines, rules) = shape.text_lines();
+                    assert!(rules.is_empty() && lines.len() == text.split('\n').count() && !shape.outline().is_empty(), "{form:?} {w}x{h} {text:?}");
+                    assert!(lines.iter().all(|l| l.x.is_finite() && l.y.is_finite()) && lines[0].bold && lines.iter().skip(1).all(|l| !l.bold));
+                    if form == Form::Package {
+                        let Cmd::Line(tab, _) = shape.outline()[0][1] else { panic!() };
+                        assert!(tab - 5. <= w.max(1.) + 0.01 && tab > 5., "tab {tab} of {w}");
+                    }
+                }
+            }
         }
     }
 }

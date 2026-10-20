@@ -54,6 +54,7 @@ impl Render for Canvas {
         // Selection settings: colour, fill, dashes, arrow heads.
         let any = !self.selected.is_empty();
         let links = self.selected.iter().any(|id| self.diagram.shape(*id).is_none());
+        let holder = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| s.form.holds()) && !self.diagram.children(id).is_empty());
         let swatches = (0..diagram::COLORS.len() as u8).map(|i| {
             let color = self.ink(i);
             div()
@@ -152,6 +153,9 @@ impl Render for Canvas {
                             link.dashed = !link.dashed;
                         }
                     }))
+            })
+            .when(holder, |d| {
+                d.child(button("d-fit", "d-fit.svg", false, t).tooltip(tip(tr("Fit to what it holds", "Ajuster à son contenu"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| this.fit_container(cx))))
             })
             .when(links, |d| {
                 d.child(button("d-route", "d-route.svg", false, t).tooltip(tip(tr("Route: elbowed, straight or curved", "Tracé : coudé, droit ou courbe"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {

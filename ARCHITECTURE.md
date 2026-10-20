@@ -59,7 +59,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | CSV/TSV parsing and writing | `logic/table.rs` |
 | embedded sections (`![[Note#Heading]]`: reading the line, finding the section, rewriting links to a renamed heading) | `logic/embed.rs`; laid out and drawn by `views/editor/embed.rs` (a read-only `Editor` per section, framed under its line) |
 | formulas of the cells of a table (parser, evaluator, numbers as written) | `logic/formula.rs`; shown by `views/editor/grid.rs` (`results`, `Shown`), written and completed by `views/editor/formulas.rs` |
-| diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram/` (`file.rs`: the SVG and its source), `logic/import.rs`; styled text of their labels: `logic/richtext.rs` (the marks of `markdown::emphasis`); the editor: `views/canvas/` |
+| diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram/` (`file.rs`: the SVG and its source; `hold.rs`: what a package or a frame holds); relationships (`logic/relation.rs`), class notation (`logic/uml.rs`), `logic/import.rs`; styled text of their labels: `logic/richtext.rs` (the marks of `markdown::emphasis`); the editor: `views/canvas/` |
 | the vault on disk (scan, save, rename, trash, config files) | `platform/vault.rs` |
 | git commands, update check | `platform/git.rs`, `platform/update.rs` |
 | colours, themes, page width | `ui/theme.rs` |

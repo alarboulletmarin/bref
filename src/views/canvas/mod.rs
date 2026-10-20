@@ -43,7 +43,7 @@ pub enum Tool {
 }
 
 /// Bar tools: (tool, icon, letter).
-const TOOLS: [(Tool, &str, &str); 11] = [
+const TOOLS: [(Tool, &str, &str); 14] = [
     (Tool::Select, "d-select.svg", "v"),
     (Tool::Shape(Form::Rect), "d-rect.svg", "r"),
     (Tool::Shape(Form::Round), "d-round.svg", "u"),
@@ -53,6 +53,9 @@ const TOOLS: [(Tool, &str, &str); 11] = [
     (Tool::Shape(Form::Actor), "d-actor.svg", "p"),
     (Tool::Shape(Form::Note), "d-note.svg", "n"),
     (Tool::Shape(Form::Text), "d-text.svg", "t"),
+    (Tool::Shape(Form::Package), "d-package.svg", "g"),
+    (Tool::Shape(Form::Frame), "d-frame.svg", "f"),
+    (Tool::Shape(Form::Lane), "d-lane.svg", "w"),
     (Tool::Link(Relation::Navigable), "d-arrow.svg", "a"),
     (Tool::Link(Relation::Association), "d-line.svg", "l"),
 ];
@@ -69,6 +72,9 @@ fn tool_label(tool: Tool) -> &'static str {
         Tool::Shape(Form::Actor) => tr("Person (an actor)", "Personnage (un acteur)"),
         Tool::Shape(Form::Note) => "Note",
         Tool::Shape(Form::Text) => tr("Text", "Texte"),
+        Tool::Shape(Form::Package) => tr("Package (holds shapes)", "Paquetage (contient des formes)"),
+        Tool::Shape(Form::Frame) => tr("Frame: a system boundary, a composite state (holds shapes)", "Cadre : frontière d'un système, état composite (contient des formes)"),
+        Tool::Shape(Form::Lane) => tr("Swimlane (holds shapes)", "Couloir (contient des formes)"),
         Tool::Shape(Form::Branch) => tr("N-ary association (a small diamond)", "Association n-aire (un petit losange)"),
         Tool::Link(Relation::Association) => tr("Line", "Trait"),
         Tool::Link(Relation::Navigable) => tr("Arrow", "Flèche"),
@@ -93,6 +99,9 @@ fn usual(form: Form) -> (f32, f32) {
         Form::Actor => (40., 80.),
         Form::Cylinder => (80., 100.),
         Form::Branch => (40., 40.),
+        Form::Package => (220., 150.),
+        Form::Frame => (260., 170.),
+        Form::Lane => (160., 320.),
         Form::Ellipse | Form::Diamond => (120., 80.),
         _ => (140., 60.),
     }

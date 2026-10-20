@@ -44,6 +44,7 @@ impl Canvas {
         self.remember();
         let (p, (w, h)) = (self.world(at), usual(form));
         let id = self.diagram.add_shape(form, diagram::snap(p.0 - w / 2.), diagram::snap(p.1 - h / 2.), w, h);
+        self.diagram.adopt(&[id]);
         (self.selected, self.tool) = (vec![id], Tool::Select);
         if form == Form::Text {
             self.editing = Some((id, 0));
@@ -278,6 +279,7 @@ impl Canvas {
                     (shape.w, shape.h) = usual(shape.form);
                 }
                 let text = shape.form == Form::Text;
+                self.diagram.adopt(&[id]);
                 (self.selected, self.tool) = (vec![id], Tool::Select);
                 if text {
                     self.editing = Some((id, 0));
@@ -296,7 +298,13 @@ impl Canvas {
                 self.tool = Tool::Select;
                 self.changed(cx);
             }
-            Drag::Move { begun: true, .. } | Drag::Resize { .. } | Drag::Along { begun: true, .. } => self.changed(cx),
+            Drag::Move { begun: true, .. } => {
+                // Dropped on a container, the shapes dragged are held by it; dropped elsewhere, they are let go.
+                let moved = self.selected.clone();
+                self.diagram.adopt(&moved);
+                self.changed(cx);
+            }
+            Drag::Resize { .. } | Drag::Along { begun: true, .. } => self.changed(cx),
             Drag::Marquee { from, to } => {
                 let (x0, y0, x1, y1) = (from.0.min(to.0), from.1.min(to.1), from.0.max(to.0), from.1.max(to.1));
                 let inside = |p: (f32, f32)| (x0..=x1).contains(&p.0) && (y0..=y1).contains(&p.1);

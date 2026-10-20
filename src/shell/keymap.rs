@@ -97,6 +97,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
             vec![
                 k(&NewDiagram, tr("New diagram: an SVG file in the vault", "Nouveau schéma : un fichier SVG du coffre")),
                 t("R U O D C P N T", tr("Rectangle, rounded, ellipse, diamond, cylinder, person, note, text", "Rectangle, arrondi, ellipse, losange, cylindre, personnage, note, texte")),
+                t("G F W", tr("Package, frame, swimlane: they hold the shapes dropped on them, and move, copy and remove them together", "Paquetage, cadre, couloir : ils contiennent les formes déposées dessus, et les déplacent, copient et retirent avec eux")),
                 t("K", tr("Relationships: a letter picks one (A N X G C H Z D, U I S L E M for a dependency with its stereotype, K association class, B ball, Q socket, Y n-ary association); on selected arrows it changes them", "Relations : une lettre en choisit une (A N X G C H Z D, U I S L E M pour une dépendance avec son stéréotype, K classe d'association, B boule, Q prise, Y association n-aire) ; sur des flèches sélectionnées, elle les change")),
                 t("A / L / V", tr("Arrow / line, held by the shapes they join / select", "Flèche / trait, accrochés aux formes reliées / sélection")),
                 t(tr("Enter, double click", "Entrée, double-clic"), tr("Write in the shape or on the arrow; Esc when done", "Écrire dans la forme ou sur la flèche ; Échap pour finir")),
