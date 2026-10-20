@@ -662,6 +662,39 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         fs::remove_file(&lib).unwrap();
         fs::remove_file(&new).unwrap();
     }
+    // An elbowed arrow goes around the shape in its way, and follows when the shape moves.
+    {
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (way, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let drawn = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().clone());
+        for (from, to) in [((0., 100.), (100., 160.)), ((400., 100.), (500., 160.)), ((190., 0.), (250., 300.))] {
+            cx.simulate_input("r");
+            rows(cx, &canvas, from, to);
+        }
+        cx.simulate_input("a");
+        rows(cx, &canvas, (90., 130.), (410., 130.));
+        let d = drawn(cx);
+        let wall = d.shapes[2].clone();
+        let through = |d: &diagram::Diagram| {
+            let path = d.trace(&d.links[0]).unwrap().points;
+            path.windows(2).any(|w| {
+                let (x0, x1, y0, y1) = (w[0].0.min(w[1].0), w[0].0.max(w[1].0), w[0].1.min(w[1].1), w[0].1.max(w[1].1));
+                x0 < wall.x + wall.w && x1 > wall.x && y0 < wall.y + wall.h && y1 > wall.y
+            })
+        };
+        assert!(!through(&d) && d.trace(&d.links[0]).unwrap().points.len() >= 5, "{:?}", d.trace(&d.links[0]).unwrap().points);
+        // Take the wall away (drag it far below): the arrow is straight again.
+        cx.simulate_keystrokes("escape");
+        rows(cx, &canvas, (220., 150.), (220., 20.));
+        let up = drawn(cx);
+        assert!(up.shapes[2].y < wall.y);
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(drawn(cx).shapes[2].y, wall.y);
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&way).unwrap();
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

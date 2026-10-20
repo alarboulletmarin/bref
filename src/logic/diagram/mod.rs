@@ -11,6 +11,7 @@ use super::{
 
 mod file;
 mod hold;
+mod route;
 
 /// Stroke colors, as `0xrrggbb`: mid tones, readable on a light background
 /// as on a dark one. The first is the neutral; in the app, the
@@ -21,6 +22,8 @@ pub const GRID: f32 = 10.;
 /// Text size and line height.
 pub const FONT: f32 = 14.;
 pub const LINE: f32 = 18.;
+/// Distance between arrows that run side by side between the same two shapes.
+const SPREAD: f32 = 18.;
 /// Height of the header of a swimlane.
 pub const LANE: f32 = 26.;
 /// Text line that separates two compartments of a box (UML class, table).
@@ -574,6 +577,22 @@ impl Shape {
         around.map(|(fx, fy)| self.border((self.x + fx * self.w, self.y + fy * self.h))).collect()
     }
 
+    /// Where a line parallel to side `out` (a unit direction), `spread` away from the middle, meets the
+    /// outline: the arrow's way out when it shares the side with others. Never past the side's end.
+    pub fn border_beside(&self, out: (f32, f32), spread: f32) -> (f32, f32) {
+        let (cx, cy) = self.center();
+        let (a, b) = ((self.w / 2.).max(1.), (self.h / 2.).max(1.));
+        // Along the exit's axis: `depth` is the half size there, `wide` the half size across.
+        let (depth, wide) = if out.0 != 0. { (a, b) } else { (b, a) };
+        let off = spread.clamp(-(wide - 6.).max(0.), (wide - 6.).max(0.));
+        let reach = match self.form {
+            Form::Ellipse => depth * (1. - (off / wide).powi(2)).max(0.).sqrt(),
+            Form::Diamond | Form::Branch => depth * (1. - off.abs() / wide).max(0.),
+            _ => depth,
+        };
+        if out.0 != 0. { (cx + out.0 * reach, cy + off) } else { (cx + off, cy + out.1 * reach) }
+    }
+
     /// Point of the outline on the ray from the center toward `toward`.
     pub fn border(&self, toward: (f32, f32)) -> (f32, f32) {
         let (cx, cy) = self.center();
@@ -846,7 +865,7 @@ impl Diagram {
 
     /// Where an end leaves what it holds, and in which direction: toward
     /// `toward` for a straight stroke, otherwise through the side facing it.
-    fn leave(&self, end: End, toward: (f32, f32), straight: bool) -> Option<((f32, f32), (f32, f32))> {
+    fn leave(&self, end: End, toward: (f32, f32), straight: bool, spread: f32) -> Option<((f32, f32), (f32, f32))> {
         let side = |dx: f32, dy: f32, w: f32, h: f32| if dx.abs() * h >= dy.abs() * w { (dx.signum(), 0.) } else { (0., dy.signum()) };
         Some(match end {
             End::Point(x, y) => ((x, y), side(toward.0 - x, toward.1 - y, 1., 1.)),
@@ -858,6 +877,10 @@ impl Diagram {
                 let shape = self.shape(id)?;
                 let (cx, cy) = shape.center();
                 let out = side(toward.0 - cx, toward.1 - cy, shape.w, shape.h);
+                // One of several arrows between the same two shapes: it leaves beside the others.
+                if spread != 0. {
+                    return Some((shape.border_beside(out, spread), out));
+                }
                 let aim = if straight { toward } else { (cx + out.0 * 1e4, cy + out.1 * 1e4) };
                 (shape.border(aim), out)
             }
@@ -867,6 +890,32 @@ impl Diagram {
                 (shape.border((shape.x + fx * shape.w, shape.y + fy * shape.h)), out)
             }
         })
+    }
+
+    /// How far to one side an arrow leaves its shapes, when it is one of several between the same two
+    /// (joined shape to shape, not by a pin): the first goes to one side of the middle, the last to the
+    /// other, by order of making, so that they run side by side instead of stacked.
+    fn spread(&self, link: &Link) -> f32 {
+        let (End::Shape(a), End::Shape(b)) = (link.from, link.to) else { return 0. };
+        let pair = |l: &Link| match (l.from, l.to) {
+            (End::Shape(x), End::Shape(y)) if (x, y) == (a, b) || (x, y) == (b, a) => Some(x),
+            _ => None,
+        };
+        let twins: Vec<u32> = self.links.iter().filter(|l| pair(l).is_some()).map(|l| l.id).collect();
+        match (twins.len(), twins.iter().position(|id| *id == link.id)) {
+            (n, Some(i)) if n > 1 && a != b => (i as f32 - (n - 1) as f32 / 2.) * SPREAD,
+            _ => 0.,
+        }
+    }
+
+    /// The boxes a right-angled arrow goes around: those of the shapes that hold nothing (a frame is
+    /// crossed, what is in it is not), and apart, the boxes of the two shapes it links.
+    fn obstacles(&self, link: &Link) -> (Vec<route::Rect>, Vec<route::Rect>) {
+        let own = [link.from.shape(), link.to.shape()];
+        let boxed = |s: &Shape| (s.x, s.y, s.x + s.w, s.y + s.h);
+        let others = self.shapes.iter().filter(|s| !s.form.holds() && !own.contains(&Some(s.id))).map(boxed).collect();
+        let mine = self.shapes.iter().filter(|s| own.contains(&Some(s.id)) && !s.form.holds()).map(boxed).collect();
+        (others, mine)
     }
 
     /// Drawing of an arrow: its stroke along its route, its heads, its middle.
@@ -882,13 +931,17 @@ impl Diagram {
             End::Mid(id) => self.mid(id),
         };
         let straight = link.route == Route::Straight;
-        let (a, da) = self.leave(link.from, aim(link.to)?, straight)?;
-        let (b, db) = self.leave(link.to, aim(link.from)?, straight)?;
+        let spread = self.spread(link);
+        let (a, da) = self.leave(link.from, aim(link.to)?, straight, spread)?;
+        let (b, db) = self.leave(link.to, aim(link.from)?, straight, spread)?;
         let reach = ((b.0 - a.0).hypot(b.1 - a.1) * 0.4).max(30.);
         let (c1, c2) = ((a.0 + da.0 * reach, a.1 + da.1 * reach), (b.0 + db.0 * reach, b.1 + db.1 * reach));
         let mut points = match link.route {
             Route::Straight => vec![a, b],
-            Route::Elbow => elbow(a, da, b, db),
+            Route::Elbow => {
+                let (boxes, own) = self.obstacles(link);
+                route::route(a, da, b, db, &boxes, &own)
+            }
             Route::Curve => (0..=16)
                 .map(|i| {
                     let (t, u) = (i as f32 / 16., 1. - i as f32 / 16.);
@@ -1037,46 +1090,6 @@ impl Diagram {
     }
 }
 
-/// Right-angled stroke from `a` to `b`, leaving in direction `da` and
-/// arriving by `db` (the sides by which it leaves what it links).
-fn elbow(a: (f32, f32), da: (f32, f32), b: (f32, f32), db: (f32, f32)) -> Vec<(f32, f32)> {
-    const STUB: f32 = 20.;
-    let flat = |d: (f32, f32)| d.0 != 0.;
-    let (a1, b1) = ((a.0 + da.0 * STUB, a.1 + da.1 * STUB), (b.0 + db.0 * STUB, b.1 + db.1 * STUB));
-    let facing = da == (-db.0, -db.1) && (b.0 - a.0) * da.0 + (b.1 - a.1) * da.1 > 2. * STUB;
-    let mut points = match (flat(da), flat(db)) {
-        // Facing each other: a single jog, halfway.
-        (true, true) if facing => vec![a, ((a.0 + b.0) / 2., a.1), ((a.0 + b.0) / 2., b.1), b],
-        (false, false) if facing => vec![a, (a.0, (a.1 + b.1) / 2.), (b.0, (a.1 + b.1) / 2.), b],
-        // On the same side: the stroke goes wide of both.
-        (true, true) if da == db => {
-            let x = if da.0 > 0. { a1.0.max(b1.0) } else { a1.0.min(b1.0) };
-            vec![a, (x, a.1), (x, b.1), b]
-        }
-        (false, false) if da == db => {
-            let y = if da.1 > 0. { a1.1.max(b1.1) } else { a1.1.min(b1.1) };
-            vec![a, (a.0, y), (b.0, y), b]
-        }
-        // Back to back: it leaves, passes between the two, then comes back.
-        (true, true) => vec![a, a1, (a1.0, (a.1 + b.1) / 2.), (b1.0, (a.1 + b.1) / 2.), b1, b],
-        (false, false) => vec![a, a1, ((a.0 + b.0) / 2., a1.1), ((a.0 + b.0) / 2., b1.1), b1, b],
-        (true, false) => vec![a, (b.0, a.1), b],
-        (false, true) => vec![a, (a.0, b.1), b],
-    };
-    // A point aligned with its neighbors is useless.
-    points.dedup();
-    let mut i = 1;
-    while i + 1 < points.len() {
-        let (p, q, r) = (points[i - 1], points[i], points[i + 1]);
-        if ((q.0 - p.0) * (r.1 - q.1) - (q.1 - p.1) * (r.0 - q.0)).abs() < 1e-3 {
-            points.remove(i);
-        } else {
-            i += 1;
-        }
-    }
-    points
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1130,9 +1143,9 @@ mod tests {
         shape.form = Form::Rect;
         assert_eq!((shape.hook(50., 40.), shape.hook(97., 22.), shape.hook(30., 2.)), (End::Shape(1), End::Pin(1, 1., 0.25), End::Pin(1, 0.25, 0.)));
         // Elbow: facing each other, a jog halfway; otherwise a single corner.
-        assert_eq!(elbow((0., 0.), (1., 0.), (100., 50.), (-1., 0.)), [(0., 0.), (50., 0.), (50., 50.), (100., 50.)]);
-        assert_eq!(elbow((0., 0.), (1., 0.), (100., 0.), (-1., 0.)), [(0., 0.), (100., 0.)]);
-        assert_eq!(elbow((0., 0.), (1., 0.), (100., 50.), (0., -1.)), [(0., 0.), (100., 0.), (100., 50.)]);
+        assert_eq!(route::elbow((0., 0.), (1., 0.), (100., 50.), (-1., 0.)), [(0., 0.), (50., 0.), (50., 50.), (100., 50.)]);
+        assert_eq!(route::elbow((0., 0.), (1., 0.), (100., 0.), (-1., 0.)), [(0., 0.), (100., 0.)]);
+        assert_eq!(route::elbow((0., 0.), (1., 0.), (100., 50.), (0., -1.)), [(0., 0.), (100., 0.), (100., 50.)]);
         let mut d = Diagram::default();
         let (a, b) = (d.add_shape(Form::Rect, 0., 0., 100., 60.), d.add_shape(Form::Rect, 300., 200., 100., 60.));
         let link = d.add_link(End::Pin(a, 0.5, 1.), End::Shape(b), Head::Triangle, Route::Elbow);
