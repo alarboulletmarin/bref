@@ -99,12 +99,18 @@ impl Editor {
             }
         };
         self.sel = map(self.sel.start)..map(self.sel.end);
-        // The other cursors follow the text: this is where, and the only place where, it changes.
-        self.more.iter_mut().for_each(|(sel, _)| *sel = map(sel.start)..map(sel.end));
+        self.follow(map);
         self.changed(cx);
         if let Some((table, old)) = scopes {
             self.rename_scopes(table, old, cx);
         }
+    }
+
+    /// The other cursors follow a change of the text: `map` says where a byte of the old text
+    /// lands. Every change calls it (`splice`, or the rewrites of a whole block: a realigned
+    /// table, emptied cells, reindented lines), or the other cursors point into the wrong text.
+    pub(super) fn follow(&mut self, map: impl Fn(usize) -> usize) {
+        self.more.iter_mut().for_each(|(sel, _)| *sel = map(sel.start)..map(sel.end));
     }
 
     /// Makes each cursor do `act`: each in turn becomes the main cursor,
@@ -311,9 +317,23 @@ impl Editor {
             })
             .collect();
         self.push_undo(true);
+        let total: isize = deltas.iter().sum();
+        let old = self.content[block.clone()].to_string();
+        // A byte keeps its place in its line; one in the removed indent goes to the line's start.
+        self.follow(|p| {
+            if p < block.start {
+                return p;
+            }
+            if p > block.end {
+                return (p as isize + total) as usize;
+            }
+            let l = old[..p - block.start].matches('\n').count();
+            let start = block.start + old.split('\n').take(l).map(|x| x.len() + 1).sum::<usize>();
+            let shift: isize = deltas[..l].iter().sum();
+            ((start as isize + shift) + ((p - start) as isize + deltas[l]).max(0)) as usize
+        });
         self.damaged(&block);
         self.content.replace_range(block.clone(), &shifted.join("\n"));
-        let total: isize = deltas.iter().sum();
         let start = (sel.start as isize + deltas[0]).max(block.start as isize) as usize;
         let end = (sel.end as isize + total).max(start as isize) as usize;
         self.sel = start..end;

@@ -90,6 +90,19 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-shift-h");
     cx.simulate_keystrokes("secondary-shift-k");
     assert_eq!(flat(cx), "`x \\| y`|`é`/`日本`|`😀`", "{:?}", text(cx));
+    // Several cursors on the `==` of several cells (each signs pair taken by Ctrl+D), then Delete:
+    // each cursor removes its own signs, though the first one realigns the table under the others.
+    let signs = "| a | b |\n| --- | --- |\n| ==Léa== | ==31== |\n| ==Max== | 7 |";
+    j.load(cx, signs, signs.find("==").unwrap());
+    cx.run_until_parked();
+    cx.simulate_keystrokes("shift-right shift-right secondary-d secondary-d secondary-d secondary-d secondary-d delete");
+    assert_eq!(flat(cx), "a|b/Léa|31/Max|7", "{:?}", text(cx));
+    assert!(aligned(cx));
+    // The cursors stayed where the signs were: Backspace takes the last letter of each text, never a `|`.
+    cx.simulate_keystrokes("backspace");
+    assert_eq!(flat(cx), "a|b/Lé|3/Ma|7", "{:?}", text(cx));
+    cx.simulate_keystrokes("secondary-z secondary-z");
+    assert_eq!(text(cx), signs);
     // A selection that starts in a cell and ends in the text after the table: the table by cell, the text as usual.
     start(cx, grid);
     cx.simulate_keystrokes("shift-down shift-down shift-down shift-down shift-down shift-right shift-right");

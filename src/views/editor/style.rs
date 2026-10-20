@@ -35,6 +35,8 @@ impl Editor {
             block.start + new.len()
         };
         let sel = moved(sel.start)..moved(sel.end);
+        let shift = new.len() as isize - old.len() as isize;
+        self.follow(|p| if p > block.end { (p as isize + shift) as usize } else if p < block.start { p } else { moved(p) });
         self.push_undo(true);
         self.damaged(&block);
         self.content.replace_range(block, &new);

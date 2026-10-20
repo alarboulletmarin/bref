@@ -290,28 +290,11 @@ impl Editor {
         if text == old || old.matches('\n').count() + 1 != rows.len() {
             return;
         }
-        let start_of = |t: &str, l: usize| t.split('\n').take(l).map(|x| x.len() + 1).sum::<usize>();
-        let map = |p: usize| -> usize {
-            if p <= range.start {
-                return p;
-            }
-            if p >= range.end {
-                return p + text.len() - old.len();
-            }
-            let q = p - range.start;
-            let l = old[..q].matches('\n').count();
-            let (ol, nl) = (old.split('\n').nth(l).unwrap_or_default(), text.split('\n').nth(l).unwrap_or_default());
-            let (col, base) = (q - start_of(&old, l), range.start + start_of(&text, l));
-            let (oc, nc) = (md::cells(ol), md::cells(nl));
-            let Some(k) = oc.iter().rposition(|c| c.start <= col) else {
-                return base + col.min(nl.len());
-            };
-            let off = (col - oc[k].start).min(oc[k].len());
-            base + nc.get(k).map_or(nl.len(), |c| c.start + off.min(c.len()))
-        };
+        let map = realigned(&range, &old, &text);
         let sel = map(self.sel.start)..map(self.sel.end);
+        self.follow(&map);
         self.damaged(&range);
-        self.content.replace_range(range, &text);
+        self.content.replace_range(range.clone(), &text);
         self.sel = sel;
         self.changed(cx);
     }
@@ -326,6 +309,8 @@ impl Editor {
         let guard = self.name_guard(self.sel.start);
         if !ranges.is_empty() {
             self.push_undo(true);
+            // A byte moves back by what was removed before it; one in an emptied cell goes to its start.
+            self.follow(|p| p - ranges.iter().map(|r| p.min(r.end).saturating_sub(r.start)).sum::<usize>());
             for r in ranges.iter().rev() {
                 self.damaged(r);
                 self.content.replace_range(r.clone(), "");
@@ -541,6 +526,8 @@ impl Editor {
         // At the furthest, just before the `|` that closes the cell.
         let (start, end) = (md::cells(new)[col].start, md::bars(new)[col + 1]);
         let cursor = at + (start + c.saturating_sub(old)).min(end);
+        let was = self.content[range.clone()].to_string();
+        self.follow(realigned(&range, &was, &text));
         self.damaged(&range);
         self.content.replace_range(range, &text);
         self.sel = cursor..cursor;
@@ -819,5 +806,29 @@ impl Editor {
             self.rename_scopes(table, old, cx);
         }
         true
+    }
+}
+
+/// Where byte `p` lands once the table at `range` is rewritten from `old` to `text` (realigned):
+/// the same offset in the same cell, cut to the cell's new length.
+fn realigned<'a>(range: &'a Range<usize>, old: &'a str, text: &'a str) -> impl Fn(usize) -> usize + 'a {
+    let start_of = |t: &str, l: usize| t.split('\n').take(l).map(|x| x.len() + 1).sum::<usize>();
+    move |p| {
+        if p <= range.start {
+            return p;
+        }
+        if p >= range.end {
+            return p + text.len() - old.len();
+        }
+        let q = p - range.start;
+        let l = old[..q].matches('\n').count();
+        let (ol, nl) = (old.split('\n').nth(l).unwrap_or_default(), text.split('\n').nth(l).unwrap_or_default());
+        let (col, base) = (q - start_of(old, l), range.start + start_of(text, l));
+        let (oc, nc) = (md::cells(ol), md::cells(nl));
+        let Some(k) = oc.iter().rposition(|c| c.start <= col) else {
+            return base + col.min(nl.len());
+        };
+        let off = (col - oc[k].start).min(oc[k].len());
+        base + nc.get(k).map_or(nl.len(), |c| c.start + off.min(c.len()))
     }
 }
