@@ -102,7 +102,7 @@ impl Canvas {
                     let to = if close(b) { true } else if close(a) { false } else { return None };
                     Some(Drag::Tip { id: link.id, to })
                 });
-                let hit = self.diagram.shape_at(p.0, p.1).or_else(|| self.diagram.link_at(p.0, p.1, near));
+                let hit = self.diagram.hit(p.0, p.1, near);
                 let label = self.diagram.tip_label_hit(p.0, p.1).filter(|_| hit.is_none_or(|id| self.diagram.link(id).is_some()));
                 match (corner.or(tip), label, hit) {
                     (Some(drag), ..) => {
@@ -204,7 +204,7 @@ impl Canvas {
         {
             return CursorStyle::IBeam;
         }
-        match self.diagram.shape_at(p.0, p.1).or_else(|| self.diagram.link_at(p.0, p.1, near)).or_else(|| self.diagram.tip_label_hit(p.0, p.1).map(|(id, _)| id)) {
+        match self.diagram.hit(p.0, p.1, near).or_else(|| self.diagram.tip_label_hit(p.0, p.1).map(|(id, _)| id)) {
             Some(_) => CursorStyle::PointingHand,
             None => CursorStyle::Arrow,
         }
@@ -332,7 +332,12 @@ impl Canvas {
                 self.diagram.adopt(&moved);
                 self.changed(cx);
             }
-            Drag::Resize { .. } | Drag::Along { begun: true, .. } | Drag::Reorder { begun: true, .. } => self.changed(cx),
+            Drag::Reorder { id, begun: true } => {
+                // Let go inside a combined fragment, the message is in it; outside, it is not.
+                self.diagram.settle(id, self.world(e.position).1);
+                self.changed(cx);
+            }
+            Drag::Resize { .. } | Drag::Along { begun: true, .. } => self.changed(cx),
             Drag::Marquee { from, to } => {
                 let (x0, y0, x1, y1) = (from.0.min(to.0), from.1.min(to.1), from.0.max(to.0), from.1.max(to.1));
                 let inside = |p: (f32, f32)| (x0..=x1).contains(&p.0) && (y0..=y1).contains(&p.1);

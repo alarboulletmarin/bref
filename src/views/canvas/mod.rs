@@ -275,6 +275,12 @@ impl Canvas {
         self.selected.len()
     }
 
+    /// The selected shapes and arrows.
+    #[cfg(test)]
+    pub fn selected_ids(&self) -> Vec<u32> {
+        self.selected.clone()
+    }
+
     pub fn spot(&self, x: f32, y: f32) -> Point<Pixels> {
         let o = self.bounds.origin;
         point(o.x + px(self.pan.0 + x * self.zoom), o.y + px(self.pan.1 + y * self.zoom))
@@ -334,8 +340,21 @@ impl Canvas {
         cx.notify();
     }
 
-    /// A shape of the library picked: it is the tool that draws the next one.
+    /// A shape of the library picked: it is the tool that draws the next one; a combined fragment, with
+    /// messages selected, wraps them instead.
     pub(super) fn choose_preset(&mut self, preset: usize, cx: &mut Context<Self>) {
+        let wrapper = library::presets().into_iter().nth(preset).filter(|p| p.form == Form::Fragment);
+        let messages = self.diagram.messages();
+        let ids: Vec<u32> = self.selected.iter().copied().filter(|id| messages.contains(id)).collect();
+        if let (Some(wrapper), false, true) = (wrapper, ids.is_empty(), self.editing.is_none() && self.tool == Tool::Select) {
+            let mut next = self.diagram.clone();
+            if let Some(id) = next.wrap(&ids, wrapper.text) {
+                self.remember();
+                (self.diagram, self.selected) = (next, vec![id]);
+                return self.changed(cx);
+            }
+            // Across the border of another fragment: nothing to wrap, the fragment is drawn by hand.
+        }
         self.set_tool(Tool::Preset(preset), cx);
     }
 

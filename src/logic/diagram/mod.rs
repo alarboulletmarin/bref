@@ -39,7 +39,8 @@ pub const RULE: &str = "---";
 /// 5: the forms `package`, `frame`, `lane` and the `in` lines: what a shape holds.
 /// 6: the forms of state machines: `dot`, `final`, `terminate`, `bar`, `exit`, `composite`, `divider`.
 /// 7: sequence diagrams: the form `lifeline`, the heads `solidtriangle` and `dot`, the ends `l<id>`.
-pub const VERSION: u32 = 7;
+/// 8: combined fragments: the form `fragment`, the `held` lines of the messages in them.
+pub const VERSION: u32 = 8;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Form {
@@ -76,10 +77,13 @@ pub enum Form {
     /// A lifeline of a sequence diagram: a head with a name, and a dashed line down that the
     /// messages make as long as they need (`Diagram::fit_sequence`).
     Lifeline,
+    /// A combined fragment of a sequence diagram: an operator in a tab (`alt`, `loop`…), operands under
+    /// guards cut by dashed lines. The messages it holds give it its height (`Diagram::fit_sequence`).
+    Fragment,
 }
 
 impl Form {
-    pub const ALL: [(Form, &str); 20] = [
+    pub const ALL: [(Form, &str); 21] = [
         (Form::Rect, "rect"),
         (Form::Round, "round"),
         (Form::Ellipse, "ellipse"),
@@ -100,6 +104,7 @@ impl Form {
         (Form::Composite, "composite"),
         (Form::Divider, "divider"),
         (Form::Lifeline, "lifeline"),
+        (Form::Fragment, "fragment"),
     ];
 
     /// Whether shapes dropped on it belong to it.
@@ -114,6 +119,7 @@ impl Form {
             Form::Package | Form::Frame | Form::Lane => 5,
             Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Composite | Form::Divider => 6,
             Form::Lifeline => 7,
+            Form::Fragment => 8,
             _ => 1,
         }
     }
@@ -187,6 +193,8 @@ pub struct Shape {
     /// The shape that holds this one: it moves, is copied and removed with it. It comes first in
     /// `Diagram::shapes`, so it is drawn under.
     pub parent: Option<u32>,
+    /// Which operand of its holder (a combined fragment) it is in: a fragment inside an `alt`'s second branch.
+    pub operand: u32,
 }
 
 /// End of an arrow: attached to a shape, which it follows, or set at a place.
@@ -309,6 +317,9 @@ pub struct Link {
     pub end_along: f32,
     pub color: u8,
     pub dashed: bool,
+    /// The combined fragment a message is in, and which of its operands.
+    pub holder: Option<u32>,
+    pub operand: u32,
 }
 
 impl Link {
@@ -328,6 +339,8 @@ impl Link {
             end_along: 0.,
             color: 0,
             dashed: false,
+            holder: None,
+            operand: 0,
         }
     }
 
@@ -548,6 +561,10 @@ impl Shape {
             }
             Form::Composite => vec![rounded(x, y, w, h, 14.), vec![Cmd::Move(x, y + LANE), Cmd::Line(x + w, y + LANE)]],
             Form::Divider => vec![vec![Cmd::Move(x, cy), Cmd::Line(x + w, cy)]],
+            Form::Fragment => {
+                let tab = self.tab_width();
+                vec![rounded(x, y, w, h, 2.), vec![Cmd::Move(x, y), Cmd::Line(x + tab, y), Cmd::Line(x + tab, y + 11.), Cmd::Line(x + tab - 9., y + 20.), Cmd::Line(x, y + 20.), Cmd::Close]]
+            }
             Form::Lifeline => vec![rounded(x, y, w, sequence::HEAD.min(h), 2.), vec![Cmd::Move(cx, y + sequence::HEAD.min(h)), Cmd::Line(cx, y + h)]],
             Form::Lane => vec![rounded(x, y, w, h, 2.), vec![Cmd::Move(x, y + LANE), Cmd::Line(x + w, y + LANE)]],
             Form::Note => {
@@ -767,6 +784,10 @@ impl Diagram {
 
     /// Where each line of the text of `shape` is written, and its separators, as this diagram reads its texts.
     pub fn lines<'a>(&self, shape: &'a Shape) -> (Vec<TextLine<'a>>, Vec<f32>) {
+        // A combined fragment is laid out with its messages.
+        if shape.form == Form::Fragment {
+            return self.fragment_lines(shape);
+        }
         shape.text_lines_for(self.rich)
     }
 
@@ -806,9 +827,9 @@ impl Diagram {
         let links = self.links.iter().map(|l| {
             let mid = matches!(l.from, End::Mid(_)) || matches!(l.to, End::Mid(_));
             let life = matches!(l.from, End::Life(_)) || matches!(l.to, End::Life(_));
-            [l.start.since(), l.end.since(), if mid { 4 } else { 1 }, if life { 7 } else { 1 }, if l.has_end_texts() { 3 } else { 1 }].into_iter().max().unwrap_or(1)
+            [l.start.since(), l.end.since(), if mid { 4 } else { 1 }, if life { 7 } else { 1 }, if l.holder.is_some() { 8 } else { 1 }, if l.has_end_texts() { 3 } else { 1 }].into_iter().max().unwrap_or(1)
         });
-        let shapes = self.shapes.iter().map(|s| if s.parent.is_some() { 5 } else { s.form.since() }).max().unwrap_or(1);
+        let shapes = self.shapes.iter().map(|s| if s.operand != 0 { 8 } else if s.parent.is_some() { 5 } else { s.form.since() }).max().unwrap_or(1);
         links.max().unwrap_or(1).max(shapes).max(if self.rich { 2 } else { 1 }).max(if self.numbered { 7 } else { 1 })
     }
 
@@ -835,7 +856,7 @@ impl Diagram {
 
     pub fn add_shape(&mut self, form: Form, x: f32, y: f32, w: f32, h: f32) -> u32 {
         let id = self.fresh();
-        self.shapes.push(Shape { id, form, x, y, w, h, text: String::new(), color: 0, fill: false, dashed: false, parent: None });
+        self.shapes.push(Shape { id, form, x, y, w, h, text: String::new(), color: 0, fill: false, dashed: false, parent: None, operand: 0 });
         id
     }
 
@@ -897,7 +918,8 @@ impl Diagram {
                 let id = self.fresh();
                 made.push(id);
                 copies.push((link.id, id));
-                self.links.push(Link { id, from, to, ..link });
+                // A copy of a message is not in the fragment of the original: it comes last, after them.
+                self.links.push(Link { id, from, to, holder: None, operand: 0, ..link });
             }
         }
         made
@@ -922,11 +944,29 @@ impl Diagram {
             self.links.retain(|l| !dropped.contains(&l.id));
             gone.extend(dropped);
         }
+        // The messages of a fragment that is gone are no longer in it.
+        let shapes: Vec<u32> = self.shapes.iter().map(|s| s.id).collect();
+        for link in &mut self.links {
+            if link.holder.is_some_and(|h| !shapes.contains(&h)) {
+                (link.holder, link.operand) = (None, 0);
+            }
+        }
     }
 
     /// The topmost shape under this point.
     pub fn shape_at(&self, x: f32, y: f32) -> Option<u32> {
         self.shapes.iter().rev().find(|s| s.contains(x, y)).map(|s| s.id)
+    }
+
+    /// What a click at this point grabs: the shape on top, or the arrow when it passes within `reach`; a message
+    /// inside a combined fragment wins over it, so that it can be picked.
+    pub fn hit(&self, x: f32, y: f32, reach: f32) -> Option<u32> {
+        let shape = self.shape_at(x, y);
+        let held = shape.is_some_and(|id| self.shape(id).is_some_and(|s| s.form == Form::Fragment));
+        match shape {
+            Some(_) if !held => shape,
+            _ => self.link_at(x, y, reach).filter(|id| shape.is_none() || self.messages().contains(id)).or(shape),
+        }
     }
 
     /// The arrow passing within `reach` of this point.
@@ -1264,7 +1304,7 @@ mod tests {
 
     #[test]
     fn lays_out_text_and_borders() {
-        let mut shape = Shape { id: 1, form: Form::Rect, x: 0., y: 0., w: 100., h: 80., text: "A\nB".into(), color: 0, fill: false, dashed: false, parent: None };
+        let mut shape = Shape { id: 1, form: Form::Rect, x: 0., y: 0., w: 100., h: 80., text: "A\nB".into(), color: 0, fill: false, dashed: false, parent: None, operand: 0 };
         let (lines, rules) = shape.text_lines();
         assert!(rules.is_empty() && lines[0].centered && (lines[0].x, lines[0].y, lines[1].y) == (50., 22., 40.));
         shape.text = "Nom\n---\nchamp".into();
@@ -1430,7 +1470,7 @@ mod tests {
         for (w, h) in [(0., 0.), (1., 1.), (10., 10.), (47., 17.), (48., 18.), (100., 100.), (10_000., 10_000.)] {
             for form in [Form::Package, Form::Frame, Form::Lane] {
                 for text in ["", "a", "billing\npkg::billing\nthird", &"x".repeat(500), "日本語 😀"] {
-                    let shape = Shape { id: 1, form, x: 5., y: 5., w, h, text: text.into(), color: 0, fill: false, dashed: false, parent: None };
+                    let shape = Shape { id: 1, form, x: 5., y: 5., w, h, text: text.into(), color: 0, fill: false, dashed: false, parent: None, operand: 0 };
                     let (lines, rules) = shape.text_lines();
                     assert!(rules.is_empty() && lines.len() == text.split('\n').count() && !shape.outline().is_empty(), "{form:?} {w}x{h} {text:?}");
                     assert!(lines.iter().all(|l| l.x.is_finite() && l.y.is_finite()) && lines[0].bold && lines.iter().skip(1).all(|l| !l.bold));
@@ -1445,7 +1485,7 @@ mod tests {
 
     #[test]
     fn a_use_case_has_its_extension_points_under_its_name() {
-        let shape = Shape { id: 1, form: Form::Ellipse, x: 0., y: 0., w: 200., h: 100., text: "Pay\n---\nextension points\nby card".into(), color: 0, fill: false, dashed: false, parent: None };
+        let shape = Shape { id: 1, form: Form::Ellipse, x: 0., y: 0., w: 200., h: 100., text: "Pay\n---\nextension points\nby card".into(), color: 0, fill: false, dashed: false, parent: None, operand: 0 };
         // In a diagram that reads styles: a block in the middle, all centered, a separator in the chord.
         let (lines, rules) = shape.text_lines_for(true);
         assert_eq!(lines.iter().map(|l| (l.text, l.y, l.centered, l.bold)).collect::<Vec<_>>(), [("Pay", 19., true, false), ("extension points", 45., true, false), ("by card", 63., true, false)]);
@@ -1473,7 +1513,7 @@ mod tests {
         for (w, h) in [(0., 0.), (1., 1.), (8., 8.), (12., 12.), (26., 26.), (90., 8.), (300., 10.), (10_000., 3.)] {
             for form in [Form::Dot, Form::Final, Form::Terminate, Form::Bar, Form::Exit, Form::Composite, Form::Divider] {
                 for text in ["", "a", "a long name\nsecond line", "日本語 😀"] {
-                    let shape = Shape { id: 1, form, x: 5., y: 5., w, h, text: text.into(), color: 0, fill: false, dashed: false, parent: None };
+                    let shape = Shape { id: 1, form, x: 5., y: 5., w, h, text: text.into(), color: 0, fill: false, dashed: false, parent: None, operand: 0 };
                     let outline = shape.outline();
                     assert!(!outline.is_empty() && shape.solid().iter().all(|i| *i < outline.len()), "{form:?} {w}x{h}");
                     let finite = |p: &Vec<Cmd>| p.iter().all(|c| match *c { Cmd::Move(x, y) | Cmd::Line(x, y) => x.is_finite() && y.is_finite(), _ => true });
@@ -1487,11 +1527,11 @@ mod tests {
             }
         }
         // Filled solid: a dot, a bar, the dot of a final state; nothing else.
-        let solid = |form| Shape { id: 1, form, x: 0., y: 0., w: 20., h: 20., text: String::new(), color: 0, fill: false, dashed: false, parent: None }.solid().to_vec();
+        let solid = |form| Shape { id: 1, form, x: 0., y: 0., w: 20., h: 20., text: String::new(), color: 0, fill: false, dashed: false, parent: None, operand: 0 }.solid().to_vec();
         assert_eq!((solid(Form::Dot), solid(Form::Bar), solid(Form::Final), solid(Form::Rect), solid(Form::Exit)), (vec![0], vec![0], vec![1], vec![], vec![]));
         // A composite state holds shapes and has its name in a header, like a lane.
         assert!(Form::Composite.holds() && !Form::Dot.holds());
-        let composite = Shape { id: 1, form: Form::Composite, x: 0., y: 0., w: 200., h: 100., text: "Active".into(), color: 0, fill: false, dashed: false, parent: None };
+        let composite = Shape { id: 1, form: Form::Composite, x: 0., y: 0., w: 200., h: 100., text: "Active".into(), color: 0, fill: false, dashed: false, parent: None, operand: 0 };
         let (lines, _) = composite.text_lines();
         assert_eq!((lines[0].centered, lines[0].bold, lines[0].y), (true, true, 4.));
     }

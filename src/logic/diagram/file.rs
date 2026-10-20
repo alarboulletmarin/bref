@@ -46,7 +46,8 @@ impl Diagram {
             let (lines, rules) = self.lines(shape);
             for y in rules {
                 let (x0, x1) = shape.rule_span(y);
-                let _ = writeln!(out, "<path d=\"M{} {}H{}\" stroke=\"{ink}\"/>", num(x0), num(y), num(x1));
+                // Between the operands of a combined fragment: dashed.
+                let _ = writeln!(out, "<path d=\"M{} {}H{}\" stroke=\"{ink}\"{}/>", num(x0), num(y), num(x1), dash(shape.form == Form::Fragment));
             }
             for (line, spans) in lines.iter().zip(self.runs(shape, false)) {
                 label(&mut out, line.x, line.y, &spans, line.centered.into(), &ink);
@@ -111,7 +112,11 @@ impl Diagram {
         }
         // What holds what: a line of its own for each held shape.
         for s in self.shapes.iter().filter(|s| s.parent.is_some()) {
-            let _ = writeln!(out, "in {} {}", s.id, s.parent.unwrap_or(0));
+            let _ = writeln!(out, "in {} {}{}", s.id, s.parent.unwrap_or(0), if s.operand != 0 { format!(" {}", s.operand) } else { String::new() });
+        }
+        // The messages in a combined fragment, and the operand of each.
+        for l in self.links.iter().filter(|l| l.holder.is_some()) {
+            let _ = writeln!(out, "held {} {} {}", l.id, l.holder.unwrap_or(0), l.operand);
         }
         // The texts at the ends of arrows: a line of their own, so that a build that does not know
         // them leaves the arrow as it is. Fields are told apart by tabs.
@@ -179,6 +184,7 @@ impl Diagram {
         // Lines about the arrows' ends wait for the arrows.
         let mut ends: Vec<(&str, &str)> = Vec::new();
         let mut held: Vec<(&str, &str)> = Vec::new();
+        let mut in_fragments: Vec<(&str, &str)> = Vec::new();
         for line in body.lines() {
             // The first `version` line is the file's; a second one is just another unknown line.
             let version = !declared && is_version(line);
@@ -192,6 +198,10 @@ impl Diagram {
             }
             if let Some(rest) = line.strip_prefix("in ") {
                 held.push((line, rest));
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("held ") {
+                in_fragments.push((line, rest));
                 continue;
             }
             let mut read = || -> Option<()> {
@@ -210,6 +220,7 @@ impl Diagram {
                         dashed: *f.get(8)? == "1",
                         text: text(f.get(9).unwrap_or(&"")),
                         parent: None,
+                        operand: 0,
                     });
                     Some(())
                 } else if line == "rich 1" {
@@ -243,20 +254,36 @@ impl Diagram {
             }
         }
         for (line, rest) in held {
-            let read = || -> Option<(u32, u32)> {
-                let (id, parent) = rest.split_once(' ')?;
-                Some((id.parse().ok()?, parent.parse().ok()?)).filter(|(id, parent)| id != parent)
+            let read = || -> Option<(u32, u32, u32)> {
+                let mut f = rest.split(' ');
+                let (id, parent): (u32, u32) = (f.next()?.parse().ok()?, f.next()?.parse().ok()?);
+                let operand = f.next().map_or(Some(0), |o| o.parse().ok())?;
+                (id != parent && f.next().is_none()).then_some((id, parent, operand))
             };
-            match read().filter(|(id, parent)| diagram.shape(*id).is_some() && diagram.shape(*parent).is_some()) {
-                Some((id, parent)) => {
+            match read().filter(|(id, parent, _)| diagram.shape(*id).is_some() && diagram.shape(*parent).is_some()) {
+                Some((id, parent, operand)) => {
                     if let Some(shape) = diagram.shape_mut(id) {
-                        shape.parent = Some(parent);
+                        (shape.parent, shape.operand) = (Some(parent), operand);
                     }
                 }
                 None => diagram.kept.push(line.to_string()),
             }
         }
         diagram.arrange();
+        for (line, rest) in in_fragments {
+            let mut read = || -> Option<()> {
+                let f: Vec<&str> = rest.split(' ').collect();
+                let (id, fragment, operand): (u32, u32, u32) = (f.first()?.parse().ok()?, f.get(1)?.parse().ok()?, f.get(2)?.parse().ok()?);
+                (f.len() == 3).then_some(())?;
+                diagram.shape(fragment).filter(|s| s.form == Form::Fragment)?;
+                let link = diagram.links.iter_mut().find(|l| l.id == id)?;
+                (link.holder, link.operand) = (Some(fragment), operand);
+                Some(())
+            };
+            if read().is_none() {
+                diagram.kept.push(line.to_string());
+            }
+        }
         for (line, rest) in ends {
             let mut read = || -> Option<()> {
                 let (id, fields) = rest.split_once(' ')?;
@@ -601,5 +628,39 @@ mod tests {
         // A diagram of no message draws no bar and writes no sequence line.
         let plain = Diagram::blank();
         assert!(!plain.to_svg(COLORS[0]).contains("fill-opacity"));
+    }
+
+    #[test]
+    fn combined_fragments_are_written_nested_and_a_damaged_file_loses_only_the_line() {
+        let template = crate::logic::library::templates().into_iter().find(|t| t.name == crate::lang::tr("Sequence diagram", "Diagramme de séquence")).unwrap();
+        let mut d = (template.make)();
+        let m = d.messages();
+        let outer = d.wrap(&[m[1], m[2], m[3]], "alt\n[ok]\n[else]").unwrap();
+        let inner = d.wrap(&[m[1], m[2]], "loop\n[n]").unwrap();
+        d.link_mut(m[3]).unwrap().operand = 1;
+        let svg = d.to_svg(COLORS[0]);
+        let source = Diagram::source_of(&svg).unwrap();
+        // A diagram of fragments needs version 8; the lines are keyed by id, never new columns.
+        assert!(source.trim_start().starts_with("version 8\n"), "{source}");
+        assert!(source.contains(&format!("in {inner} {outer}\n")) && source.contains(&format!("held {} {inner} 0\n", m[1])) && source.contains(&format!("held {} {outer} 1\n", m[3])), "{source}");
+        let back = Diagram::from_svg(&svg).unwrap();
+        assert!(back == d && back.to_svg(COLORS[0]) == svg);
+        // The dashed line between the operands is drawn, the operator is in bold in the tab.
+        assert!(svg.contains(">alt</text>") && svg.lines().any(|l| l.starts_with("<path d=\"M") && l.contains("stroke-dasharray")), "{svg}");
+        // A file with no fragment is still version 7.
+        let plain = (template.make)();
+        assert!(Diagram::source_of(&plain.to_svg(COLORS[0])).unwrap().trim_start().starts_with("version 7\n"));
+        // Damaged: a message held by a shape that is no fragment, by a missing one, with a fourth field, a word as operand:
+        // each line is kept as it is, the arrow is not held, and nothing panics or is lost.
+        for bad in [format!("held {} {} 0", m[0], d.shapes.iter().find(|s| s.form == Form::Lifeline).unwrap().id), format!("held {} 999 0", m[0]), format!("held {} {outer} 0 7", m[0]), format!("held {} {outer} x", m[0]), format!("held 999 {outer} 0")] {
+            let damaged = svg.replacen("held ", &format!("{bad}\nheld "), 1);
+            let read = Diagram::from_svg(&damaged).unwrap_or_else(|| panic!("{bad}"));
+            assert!(read.link(m[0]).unwrap().holder.is_none(), "{bad}");
+            assert!(read.kept.contains(&bad) && read.to_svg(COLORS[0]).contains(&bad), "{bad}");
+        }
+        // Fragments held by each other in a loop: the messages are still laid out, once.
+        let looped = svg.replace(&format!("in {inner} {outer}"), &format!("in {inner} {outer}\nin {outer} {inner}"));
+        let read = Diagram::from_svg(&looped).unwrap();
+        assert_eq!(read.layout().ys.len(), read.messages().len());
     }
 }

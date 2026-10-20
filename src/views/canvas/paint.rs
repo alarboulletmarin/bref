@@ -162,7 +162,7 @@ impl Canvas {
             let (lines, rules) = self.diagram.lines(shape);
             for y in rules {
                 let (x0, x1) = shape.rule_span(y);
-                stroke(window, &[Cmd::Move(x0, y), Cmd::Line(x1, y)], false, ink);
+                stroke(window, &[Cmd::Move(x0, y), Cmd::Line(x1, y)], shape.form == Form::Fragment, ink);
             }
             // Separator strokes are not text lines: the cursor's line
             // is found by its place in the text.

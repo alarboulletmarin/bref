@@ -83,6 +83,14 @@ fn shapes() -> Vec<Preset> {
         p(state, tr("Region divider (dashed)", "Séparateur de régions (pointillés)"), "d-dash.svg", Form::Divider, (300., 10.), ""),
         p(sequence, tr("Lifeline", "Ligne de vie"), "d-seq-life.svg", Form::Lifeline, (110., 276.), tr("name : Type", "nom : Type")),
         p(sequence, tr("Actor", "Acteur"), "d-actor.svg", Form::Actor, (40., 80.), tr("Actor", "Acteur")),
+        p(sequence, tr("Fragment alt (choice)", "Fragment alt (choix)"), "d-seq-frag.svg", Form::Fragment, (300., 150.), tr("alt\n[condition]\n[else]", "alt\n[condition]\n[sinon]")),
+        p(sequence, tr("Fragment opt (optional)", "Fragment opt (facultatif)"), "d-seq-frag.svg", Form::Fragment, (300., 120.), tr("opt\n[condition]", "opt\n[condition]")),
+        p(sequence, tr("Fragment loop (repeat)", "Fragment loop (répétition)"), "d-seq-frag.svg", Form::Fragment, (300., 120.), tr("loop\n[while condition]", "loop\n[tant que condition]")),
+        p(sequence, tr("Fragment par (parallel)", "Fragment par (parallèle)"), "d-seq-frag.svg", Form::Fragment, (300., 150.), "par\n\n"),
+        p(sequence, tr("Fragment break (leave)", "Fragment break (sortie)"), "d-seq-frag.svg", Form::Fragment, (300., 120.), tr("break\n[condition]", "break\n[condition]")),
+        p(sequence, tr("Fragment critical (exclusive)", "Fragment critical (exclusif)"), "d-seq-frag.svg", Form::Fragment, (300., 120.), "critical\n"),
+        p(sequence, tr("Fragment neg (forbidden)", "Fragment neg (interdit)"), "d-seq-frag.svg", Form::Fragment, (300., 120.), "neg\n"),
+        p(sequence, tr("Fragment ref (reference)", "Fragment ref (référence)"), "d-seq-frag.svg", Form::Fragment, (240., 70.), tr("ref\nOther diagram", "ref\nUn autre diagramme")),
     ]
 }
 

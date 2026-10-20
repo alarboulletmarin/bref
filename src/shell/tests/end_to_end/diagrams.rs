@@ -818,6 +818,94 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         fs::remove_file(&sq).unwrap();
     }
+    // Combined fragments: choosing one in the library with messages selected wraps them; a message inside is picked
+    // through the fragment; let go inside or outside, it joins or leaves, in one step of undo; "else" is reached low.
+    {
+        use crate::logic::library;
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (fr, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let drawn = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().clone());
+        let life = library::presets().iter().position(|p| p.form == diagram::Form::Lifeline).unwrap();
+        for x in [100., 350., 600.] {
+            let at = canvas.read_with(cx, |c, _| c.spot(x, 150.));
+            canvas.update(cx, |c, cx| c.drop_preset(life, at, cx));
+        }
+        cx.simulate_keystrokes("escape");
+        for (from, to) in [(100., 350.), (350., 600.), (600., 350.), (350., 100.)] {
+            cx.simulate_input("k");
+            cx.simulate_input(if from < to { "f" } else { "d" });
+            rows(cx, &canvas, (from, 100.), (to, 100.));
+            cx.simulate_keystrokes("escape");
+        }
+        let plain = drawn(cx);
+        let m = plain.messages();
+        let ys0: Vec<f32> = m.iter().map(|id| plain.message_y(*id).unwrap()).collect();
+        assert_eq!(ys0, [82., 126., 170., 214.]);
+        let pick = |cx: &mut gpui::VisualTestContext, x: f32, y: f32, mods: gpui::Modifiers| {
+            let at = canvas.read_with(cx, |c, _| c.spot(x, y));
+            cx.simulate_click(at, mods);
+        };
+        let choose = |cx: &mut gpui::VisualTestContext, name: &str| {
+            cx.simulate_input("s");
+            cx.simulate_input(name);
+            cx.simulate_keystrokes("enter");
+        };
+        // Nothing selected: the fragment is a tool, drawn by hand, and nothing is wrapped.
+        choose(cx, "ref");
+        assert_eq!(canvas.read_with(cx, |c, _| c.tool()), canvas::Tool::Preset(library::presets().iter().position(|p| p.text.starts_with("ref")).unwrap()));
+        cx.simulate_keystrokes("escape");
+        assert!(drawn(cx).shapes.iter().all(|s| s.form != diagram::Form::Fragment));
+        // The second and third messages selected, "alt" wraps them: room above the first, the frame around both.
+        pick(cx, 475., 126., gpui::Modifiers::none());
+        pick(cx, 475., 170., gpui::Modifiers { shift: true, ..Default::default() });
+        assert_eq!(canvas.read_with(cx, |c, _| c.picked()), 2);
+        choose(cx, "alt");
+        let d = drawn(cx);
+        let frag = d.shapes.iter().find(|s| s.form == diagram::Form::Fragment).unwrap().clone();
+        assert_eq!(frag.text, tr("alt\n[condition]\n[else]", "alt\n[condition]\n[sinon]"));
+        assert_eq!(canvas.read_with(cx, |c, _| c.picked()), 1);
+        let ys: Vec<f32> = m.iter().map(|id| d.message_y(*id).unwrap()).collect();
+        assert_eq!(ys, [82., 172., 216., 274.]);
+        assert_eq!((frag.y, frag.y + frag.h), (132., 242.));
+        assert!(m[1..3].iter().all(|id| d.link(*id).unwrap().holder == Some(frag.id)) && d.link(m[0]).unwrap().holder.is_none() && d.link(m[3]).unwrap().holder.is_none());
+        // The lifelines go under the foot of the fragment and the last message.
+        assert!(d.shapes.iter().filter(|s| s.form == diagram::Form::Lifeline).all(|s| s.y + s.h >= 274. + 44.));
+        // A click on a message inside the fragment picks the message, not the fragment.
+        pick(cx, 475., 172., gpui::Modifiers::none());
+        assert_eq!((canvas.read_with(cx, |c, _| c.picked()), canvas.read_with(cx, |c, _| c.selected_ids())), (1, vec![m[1]]));
+        // The last message dragged up into the fragment joins it; one step of undo puts it back out.
+        rows(cx, &canvas, (225., 274.), (225., 205.));
+        let d = drawn(cx);
+        assert_eq!(d.messages(), [m[0], m[1], m[3], m[2]]);
+        assert_eq!(d.link(m[3]).unwrap().holder, Some(frag.id));
+        cx.simulate_keystrokes("secondary-z");
+        let d = drawn(cx);
+        assert!(d.messages() == m && d.link(m[3]).unwrap().holder.is_none());
+        // The first one dragged down between the two inside joins too; dragged down under everything, it leaves again.
+        rows(cx, &canvas, (225., 82.), (225., 216.));
+        let d = drawn(cx);
+        assert_eq!(d.link(m[0]).unwrap().holder, Some(frag.id), "{:?}", d.messages());
+        let at = d.message_y(m[0]).unwrap();
+        rows(cx, &canvas, (225., at), (225., 330.));
+        let d = drawn(cx);
+        assert_eq!((d.messages().last().copied(), d.link(m[0]).unwrap().holder), (Some(m[0]), None));
+        // The file carries it, and reads back the same.
+        let text = saved(&fr);
+        assert!(text.contains("version 8\n") && text.contains(&format!("held {} {} 0\n", m[1], frag.id)), "{text}");
+        assert!(Diagram::from_svg(&text).unwrap() == d);
+        // Removing the fragment lets its messages go; they stay, in order, in one step of undo.
+        pick(cx, 290., frag.y + 10., gpui::Modifiers::none());
+        assert_eq!(canvas.read_with(cx, |c, _| c.selected_ids()), vec![frag.id]);
+        cx.simulate_keystrokes("delete");
+        let gone = drawn(cx);
+        assert!(gone.shapes.iter().all(|s| s.form != diagram::Form::Fragment) && gone.messages().len() == 4 && gone.links.iter().all(|l| l.holder.is_none()));
+        cx.simulate_keystrokes("secondary-z");
+        assert!(drawn(cx).shapes.iter().any(|s| s.form == diagram::Form::Fragment));
+        cx.simulate_keystrokes("secondary-a delete escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&fr).unwrap();
+    }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
     cx.executor().advance_clock(Duration::from_millis(500));

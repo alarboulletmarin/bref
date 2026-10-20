@@ -194,6 +194,7 @@ impl AssetSource for Assets {
             "d-rel-lost.svg" => r#"<path d="M2.5 8H10"/><circle cx="12" cy="8" r="1.6" fill="black"/>"#,
             "d-seq-number.svg" => r#"<path d="M3.5 5L4.8 4V8.5M2.5 12.5H6.5M9 5.5H13.5M9 8H13.5M9 10.5H12"/>"#,
             "d-seq-life.svg" => r#"<rect x="3.5" y="2.5" width="9" height="4" rx="0.8"/><path d="M8 6.5V8M8 9.5V11M8 12.5V13.5"/>"#,
+            "d-seq-frag.svg" => r#"<rect x="2.5" y="3" width="11" height="10" rx="0.8"/><path d="M2.5 6H6.5L8 4.5V3"/><path d="M2.5 10H13.5" stroke-dasharray="2 1.6"/>"#,
             "d-fill.svg" => r#"<rect x="3" y="3" width="10" height="10" rx="1.5" fill="black" fill-opacity="0.35"/>"#,
             "d-dash.svg" => r#"<path d="M2.5 8H5M7 8H9M11 8H13.5"/>"#,
             "d-head-start.svg" => r#"<path d="M13.5 8H3M6.5 4.5L3 8L6.5 11.5"/>"#,
