@@ -41,7 +41,7 @@ impl Diagram {
                 } else {
                     String::new()
                 };
-                let _ = writeln!(out, "<path d=\"{}\" stroke=\"{ink}\"{fill}{}/>", path_d(path), dash(shape.dashed));
+                let _ = writeln!(out, "<path d=\"{}\" stroke=\"{ink}\"{fill}{}/>", path_d(path), dash(shape.dashed || shape.dashed_paths().contains(&i)));
             }
             let (lines, rules) = self.lines(shape);
             for y in rules {
@@ -52,6 +52,16 @@ impl Diagram {
                 label(&mut out, line.x, line.y, &spans, line.centered.into(), &ink);
             }
         }
+        // What the messages add: the bars of the lifelines that are busy, the cross of one that is destroyed.
+        let marks = self.marks();
+        for bar in &marks.bars {
+            let (x, y, w, h) = bar.rect();
+            let ink = color(self.shape(bar.life).map_or(0, |s| s.color));
+            let _ = writeln!(out, "<path d=\"M{} {}H{}V{}H{}Z\" stroke=\"{ink}\" fill=\"{ink}\" fill-opacity=\"0.15\"/>", num(x), num(y), num(x + w), num(y + h), num(x));
+        }
+        for (x, y) in &marks.crosses {
+            let _ = writeln!(out, "<path d=\"M{} {}L{} {}M{} {}L{} {}\" stroke=\"{}\"/>", num(x - 10.), num(y - 10.), num(x + 10.), num(y + 10.), num(x + 10.), num(y - 10.), num(x - 10.), num(y + 10.), color(0));
+        }
         for link in &self.links {
             let Some(trace) = self.trace(link) else { continue };
             let ink = color(link.color);
@@ -60,7 +70,8 @@ impl Diagram {
                 let fill = if *full { format!(" fill=\"{ink}\"") } else { String::new() };
                 let _ = writeln!(out, "<path d=\"{}\" stroke=\"{ink}\"{fill}/>", path_d(path));
             }
-            let lines: Vec<&str> = link.text.split('\n').collect();
+            let shown = self.shown_text(link);
+            let lines: Vec<&str> = if shown.is_empty() { vec![""] } else { shown.split('\n').collect() };
             for (i, text) in lines.iter().enumerate() {
                 let (x, y, centered) = Diagram::label_at(&trace, i, lines.len());
                 label(&mut out, x, y, &self.label_runs(text), centered.into(), &ink);
@@ -87,9 +98,10 @@ impl Diagram {
             End::Pin(id, fx, fy) => format!("s{id}@{fx},{fy}"),
             End::Point(x, y) => format!("p{},{}", num(x), num(y)),
             End::Mid(id) => format!("m{id}"),
+            End::Life(id) => format!("l{id}"),
         };
         let text = |text: &str| text.replace('\\', "\\\\").replace('\n', "\\n");
-        let mut out = format!("version {}\n{}", self.needed(), if self.rich { "rich 1\n" } else { "" });
+        let mut out = format!("version {}\n{}{}", self.needed(), if self.rich { "rich 1\n" } else { "" }, if self.numbered { "numbered 1\n" } else { "" });
         for s in &self.shapes {
             let _ = writeln!(out, "shape {} {} {} {} {} {} {} {} {} {}", s.id, name(s.form), num(s.x), num(s.y), num(s.w), num(s.h), s.color, s.fill as u8, s.dashed as u8, text(&s.text));
         }
@@ -158,6 +170,7 @@ impl Diagram {
             },
             ("p", at) => at.split_once(',').and_then(|(x, y)| Some(End::Point(x.parse().ok()?, y.parse().ok()?))),
             ("m", id) => Some(End::Mid(id.parse().ok()?)),
+            ("l", id) => Some(End::Life(id.parse().ok()?)),
             _ => None,
         };
         let mut diagram = Diagram::default();
@@ -201,6 +214,9 @@ impl Diagram {
                     Some(())
                 } else if line == "rich 1" {
                     diagram.rich = true;
+                    Some(())
+                } else if line == "numbered 1" {
+                    diagram.numbered = true;
                     Some(())
                 } else if let Some(rest) = line.strip_prefix("link ") {
                     let f: Vec<&str> = rest.splitn(9, ' ').collect();
@@ -556,5 +572,34 @@ mod tests {
         // A diagram from before keeps the label as typed.
         d.rich = false;
         assert!(d.to_svg(COLORS[0]).contains(">timer [clear] / go()</text>"));
+    }
+
+    #[test]
+    fn a_sequence_diagram_is_written_with_its_bars_and_its_numbers() {
+        let template = crate::logic::library::templates().into_iter().find(|t| t.name == crate::lang::tr("Sequence diagram", "Diagramme de séquence")).unwrap();
+        let mut d = (template.make)();
+        let svg = d.to_svg(COLORS[0]);
+        let source = Diagram::source_of(&svg).unwrap();
+        assert!(source.trim_start().starts_with("version 7\nrich 1\n") && source.contains(" l1 l2 ") && source.contains("shape 1 lifeline "), "{source}");
+        // The line of a lifeline is dashed, its head is not; a bar is drawn for each call that waits.
+        let paths: Vec<&str> = svg.lines().filter(|l| l.starts_with("<path")).collect();
+        assert_eq!(paths.iter().filter(|p| p.contains("stroke-dasharray") && p.contains("fill-opacity")).count(), 0);
+        assert!(paths.iter().filter(|p| p.contains("fill-opacity=\"0.15\"")).count() >= 3, "{svg}");
+        // Numbered, the messages show their place; unnumbered, they do not, and the file says so with a line.
+        assert!(!svg.contains(">1: login") && !source.contains("numbered"));
+        d.numbered = true;
+        let numbered = d.to_svg(COLORS[0]);
+        assert!(numbered.contains(">1: login(user, password)</text>") && numbered.contains(">5: token</text>"), "{numbered}");
+        assert!(Diagram::source_of(&numbered).unwrap().trim_start().starts_with("version 7\nrich 1\nnumbered 1\n"));
+        // What is typed is not changed: only what is shown.
+        assert_eq!(d.links[0].text, "login(user, password)");
+        let back = Diagram::from_svg(&numbered).unwrap();
+        assert!(back == d && back.to_svg(COLORS[0]) == numbered);
+        // A message with no text has only its number.
+        d.link_mut(d.links[1].id).unwrap().text.clear();
+        assert_eq!(d.shown_text(&d.links[1].clone()), "2");
+        // A diagram of no message draws no bar and writes no sequence line.
+        let plain = Diagram::blank();
+        assert!(!plain.to_svg(COLORS[0]).contains("fill-opacity"));
     }
 }

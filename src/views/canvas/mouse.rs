@@ -13,8 +13,10 @@ impl Canvas {
     /// edge if close to it; otherwise the snapped point. With `mid` (an association class), near
     /// the middle of another arrow than `except`, it holds on to that.
     pub(super) fn end_at(&self, p: (f32, f32), not: Option<u32>, mid: bool, except: Option<u32>) -> End {
-        let shape = self.diagram.shape_at(p.0, p.1).filter(|id| Some(*id) != not).and_then(|id| self.diagram.shape(id));
+        // A lifeline is joined whole, even by the arrow that began on it: a message to itself.
+        let shape = self.diagram.shape_at(p.0, p.1).and_then(|id| self.diagram.shape(id)).filter(|s| Some(s.id) != not || s.form == Form::Lifeline);
         match shape {
+            Some(shape) if shape.form == Form::Lifeline => End::Life(shape.id),
             Some(shape) => shape.hook(p.0, p.1),
             None => match self.diagram.mid_at(p.0, p.1, 16. / self.zoom, except).filter(|_| mid) {
                 Some(id) => End::Mid(id),
@@ -135,6 +137,9 @@ impl Canvas {
                             let slot = self.slot_near(id, p);
                             self.start_editing_slot(id, slot, cx);
                             Drag::None
+                        } else if self.diagram.messages().contains(&id) && self.selected == [id] {
+                            // A message goes up or down, among the others.
+                            Drag::Reorder { id, begun: false }
                         } else {
                             Drag::Move { last: p, begun: false }
                         }
@@ -173,8 +178,8 @@ impl Canvas {
     /// diagonally, an arrow end reattaches, the dragged view is held, a tool draws.
     pub(super) fn hand_at(&self, at: Point<Pixels>) -> CursorStyle {
         match self.drag {
-            Drag::Pan { .. } | Drag::Move { begun: true, .. } | Drag::Along { begun: true, .. } => return CursorStyle::ClosedHand,
-            Drag::Resize { .. } | Drag::Tip { .. } | Drag::Create { .. } | Drag::Marquee { .. } | Drag::Along { .. } => return self.hand,
+            Drag::Pan { .. } | Drag::Move { begun: true, .. } | Drag::Along { begun: true, .. } | Drag::Reorder { begun: true, .. } => return CursorStyle::ClosedHand,
+            Drag::Resize { .. } | Drag::Tip { .. } | Drag::Create { .. } | Drag::Marquee { .. } | Drag::Along { .. } | Drag::Reorder { .. } => return self.hand,
             _ => {}
         }
         if self.tool != Tool::Select {
@@ -240,6 +245,18 @@ impl Canvas {
                 if let Some(link) = self.diagram.link_mut(id) {
                     *(if to { &mut link.to } else { &mut link.from }) = end;
                 }
+            }
+            Drag::Reorder { id, begun } => {
+                let to = self.diagram.rank_at(p.1);
+                if self.diagram.messages().iter().position(|m| *m == id) == Some(to) {
+                    return;
+                }
+                if !begun {
+                    self.remember();
+                }
+                self.diagram.reorder(id, to);
+                self.diagram.fit_sequence();
+                self.drag = Drag::Reorder { id, begun: true };
             }
             Drag::Along { id, slot, begun } => {
                 let along = self.diagram.link(id).map_or(0., |l| self.diagram.along_to(l, slot, p.0, p.1).round());
@@ -315,7 +332,7 @@ impl Canvas {
                 self.diagram.adopt(&moved);
                 self.changed(cx);
             }
-            Drag::Resize { .. } | Drag::Along { begun: true, .. } => self.changed(cx),
+            Drag::Resize { .. } | Drag::Along { begun: true, .. } | Drag::Reorder { begun: true, .. } => self.changed(cx),
             Drag::Marquee { from, to } => {
                 let (x0, y0, x1, y1) = (from.0.min(to.0), from.1.min(to.1), from.0.max(to.0), from.1.max(to.1));
                 let inside = |p: (f32, f32)| (x0..=x1).contains(&p.0) && (y0..=y1).contains(&p.1);

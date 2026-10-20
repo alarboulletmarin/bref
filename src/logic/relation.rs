@@ -36,10 +36,20 @@ pub enum Relation {
     Ball,
     /// A socket at the end: a required interface.
     Socket,
+    /// A call that waits for its answer (a filled triangle), between two lifelines.
+    Sync,
+    /// The message that creates a lifeline (dashed, `«create»`).
+    Create,
+    /// The message that destroys one (`«destroy»`).
+    Destroy,
+    /// A message that comes from nowhere: a dot at its start.
+    Found,
+    /// A message that goes nowhere: a dot at its end.
+    Lost,
 }
 
 impl Relation {
-    pub const ALL: [Relation; 17] = [
+    pub const ALL: [Relation; 22] = [
         Relation::Association,
         Relation::Navigable,
         Relation::NonNavigable,
@@ -57,6 +67,11 @@ impl Relation {
         Relation::AssociationClass,
         Relation::Ball,
         Relation::Socket,
+        Relation::Sync,
+        Relation::Create,
+        Relation::Destroy,
+        Relation::Found,
+        Relation::Lost,
     ];
 
     /// The head at the start, the head at the end, and whether the stroke is dashed.
@@ -74,6 +89,10 @@ impl Relation {
             AssociationClass => (Head::None, Head::None, true),
             Ball => (Head::None, Head::Ball, false),
             Socket => (Head::None, Head::Socket, false),
+            Sync | Destroy => (Head::None, Head::TriangleFull, false),
+            Create => (Head::None, Head::Arrow, true),
+            Found => (Head::Dot, Head::TriangleFull, false),
+            Lost => (Head::None, Head::Dot, false),
         }
     }
 
@@ -86,6 +105,8 @@ impl Relation {
             Relation::Include => Some("include"),
             Relation::Extend => Some("extend"),
             Relation::Merge => Some("merge"),
+            Relation::Create => Some("create"),
+            Relation::Destroy => Some("destroy"),
             _ => None,
         }
     }
@@ -114,10 +135,11 @@ impl Relation {
     /// open arrow is a dependency, whatever its text; its stereotype tells which).
     pub fn of(link: &Link) -> Option<Relation> {
         let look = (link.start, link.end, link.dashed);
-        if look == Relation::Dependency.look() {
-            return Some(Relation::stereotyped(&link.text).unwrap_or(Relation::Dependency));
+        let same: Vec<Relation> = Relation::ALL.into_iter().filter(|r| r.look() == look).collect();
+        match Relation::stereotyped(&link.text) {
+            Some(named) if same.contains(&named) => Some(named),
+            _ => same.into_iter().find(|r| r.stereotype().is_none()),
         }
-        Relation::ALL.into_iter().filter(|r| r.stereotype().is_none()).find(|r| r.look() == look)
     }
 
     /// The letter that picks it in the menu of relationships.
@@ -141,6 +163,11 @@ impl Relation {
             AssociationClass => 'k',
             Ball => 'b',
             Socket => 'q',
+            Sync => 'f',
+            Create => 'o',
+            Destroy => 'w',
+            Found => 'p',
+            Lost => 't',
         }
     }
 
@@ -164,6 +191,11 @@ impl Relation {
             AssociationClass => tr("Association class (dotted line to the middle of an association)", "Classe d'association (pointillés vers le milieu d'une association)"),
             Ball => tr("Provided interface (ball)", "Interface fournie (boule)"),
             Socket => tr("Required interface (socket)", "Interface requise (prise)"),
+            Sync => tr("Synchronous call (filled triangle)", "Appel synchrone (triangle plein)"),
+            Create => "«create»",
+            Destroy => "«destroy»",
+            Found => tr("Found message (from nowhere)", "Message trouvé (venu de nulle part)"),
+            Lost => tr("Lost message (to nowhere)", "Message perdu (vers nulle part)"),
         }
     }
 
@@ -182,7 +214,10 @@ impl Relation {
             AssociationClass => "d-rel-assocclass.svg",
             Ball => "d-rel-ball.svg",
             Socket => "d-rel-socket.svg",
-            Use | Import | Access | Include | Extend | Merge => return None,
+            Sync => "d-rel-sync.svg",
+            Found => "d-rel-found.svg",
+            Lost => "d-rel-lost.svg",
+            Use | Import | Access | Include | Extend | Merge | Create | Destroy => return None,
         })
     }
 }
@@ -223,6 +258,11 @@ mod tests {
             (Relation::AssociationClass, true, 0, false),
             (Relation::Ball, false, 1, false),
             (Relation::Socket, false, 1, false),
+            (Relation::Sync, false, 1, true),
+            (Relation::Create, true, 1, false),
+            (Relation::Destroy, false, 1, true),
+            (Relation::Found, false, 2, true),
+            (Relation::Lost, false, 1, true),
         ];
         assert_eq!(table.len(), Relation::ALL.len());
         for (relation, dashed, heads, full) in table {

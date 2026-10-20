@@ -341,7 +341,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             cx.simulate_keystrokes("escape");
         }
         let svg = saved(&rel);
-        assert!(svg.contains("version 4\nrich 1\n") && svg.contains(" ball ") && svg.contains(" socket ") && svg.contains(" cross "), "{svg}");
+        assert!(svg.contains("version 7\nrich 1\n") && svg.contains(" ball ") && svg.contains(" socket ") && svg.contains(" cross "), "{svg}");
         // Escape closes the menu: the next letter is a tool, not a relationship.
         cx.simulate_input("k");
         cx.simulate_keystrokes("escape");
@@ -349,11 +349,11 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         assert_eq!(tool(cx), canvas::Tool::Link(Relation::Navigable));
         // A letter that is nowhere in the menu closes it, then acts as usual.
         cx.simulate_input("k");
-        cx.simulate_input("o");
-        assert_eq!(tool(cx), canvas::Tool::Shape(diagram::Form::Ellipse));
+        cx.simulate_input("r");
+        assert_eq!(tool(cx), canvas::Tool::Shape(diagram::Form::Rect));
         cx.simulate_input("k");
         cx.simulate_input("7");
-        assert_eq!(tool(cx), canvas::Tool::Shape(diagram::Form::Ellipse));
+        assert_eq!(tool(cx), canvas::Tool::Shape(diagram::Form::Rect));
         cx.simulate_keystrokes("escape");
         // The n-ary association: a small diamond.
         cx.simulate_input("k");
@@ -745,6 +745,78 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         // The starting point: a traffic light, with its loop.
         let (from, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned(), s.pane().drawing().cloned()));
         assert!(from.is_none() && canvas.is_none());
+    }
+    // A sequence diagram: lifelines from the library, messages drawn between them, placed by their order; one dragged up
+    // goes first, in one step of undo; a message to a lifeline itself loops; numbering is shown, not typed.
+    {
+        use crate::logic::{library, relation::Relation};
+        cx.simulate_keystrokes("secondary-shift-d");
+        cx.run_until_parked();
+        let (sq, canvas) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned().unwrap(), s.pane().drawing().cloned().unwrap()));
+        let drawn = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().clone());
+        let life = library::presets().iter().position(|p| p.form == diagram::Form::Lifeline).unwrap();
+        for x in [100., 350., 600.] {
+            let at = canvas.read_with(cx, |c, _| c.spot(x, 150.));
+            canvas.update(cx, |c, cx| c.drop_preset(life, at, cx));
+        }
+        cx.simulate_keystrokes("escape");
+        let d = drawn(cx);
+        assert_eq!(d.shapes.len(), 3);
+        let lives: Vec<u32> = d.shapes.iter().map(|s| s.id).collect();
+        let send = |cx: &mut gpui::VisualTestContext, keys: &str, from: f32, to: f32, text: &str| {
+            cx.simulate_input("k");
+            cx.simulate_input(keys);
+            rows(cx, &canvas, (from, 100.), (to, 100.));
+            if !text.is_empty() {
+                cx.simulate_keystrokes("enter");
+                cx.simulate_input(text);
+                cx.simulate_keystrokes("escape");
+            }
+            cx.simulate_keystrokes("escape");
+        };
+        send(cx, "f", 100., 350., "login()");
+        send(cx, "f", 350., 600., "find()");
+        send(cx, "d", 600., 350., "user");
+        send(cx, "d", 350., 100., "token");
+        let d = drawn(cx);
+        // They are between the lifelines, at 44 from each other from the first, under the heads (10 + 36).
+        let ys: Vec<f32> = d.messages().iter().map(|id| d.message_y(*id).unwrap()).collect();
+        assert_eq!(ys, [82., 126., 170., 214.]);
+        assert!(d.links.iter().all(|l| matches!((l.from, l.to), (diagram::End::Life(_), diagram::End::Life(_)))), "{:?}", d.links.iter().map(|l| (l.from, l.to)).collect::<Vec<_>>());
+        assert_eq!(d.links.iter().map(Relation::of).collect::<Vec<_>>(), [Some(Relation::Sync), Some(Relation::Sync), Some(Relation::Dependency), Some(Relation::Dependency)]);
+        // The lifelines go to the last message and a little more.
+        assert!(d.shapes.iter().all(|s| s.y == 10. && s.y + s.h >= 214. + 44.), "{:?}", d.shapes);
+        // The third message, dragged up above the first, takes the first place; one step of undo puts it back.
+        let third = d.messages()[2];
+        let at = (475., ys[2]);
+        rows(cx, &canvas, at, (475., ys[0] - 10.));
+        let moved = drawn(cx);
+        assert_eq!(moved.messages()[0], third);
+        assert_eq!(moved.message_y(third), Some(82.));
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(drawn(cx).messages(), d.messages());
+        // A message from a lifeline back to it is a loop on its right.
+        send(cx, "f", 350., 350., "check()");
+        let d = drawn(cx);
+        let own = d.links.last().unwrap();
+        assert_eq!((own.from, own.to), (diagram::End::Life(lives[1]), diagram::End::Life(lives[1])));
+        let path = d.trace(own).unwrap().points;
+        assert_eq!(path.len(), 4, "{path:?}");
+        // Numbered, the messages show their place and their text is untouched; the file says so.
+        let before = saved(&sq);
+        assert!(before.contains("version 7\n") && !before.contains("numbered") && !before.contains(">1: login()"));
+        canvas.update(cx, |c, cx| c.toggle_numbers(cx));
+        let numbered = saved(&sq);
+        assert!(numbered.contains("numbered 1\n") && numbered.contains(">1: login()</text>") && numbered.contains(">5: check()</text>"), "{numbered}");
+        assert_eq!(drawn(cx).links[0].text, "login()");
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(saved(&sq), before);
+        // Both lifelines of a message removed with their messages: nothing is left hanging.
+        cx.simulate_keystrokes("secondary-a delete");
+        assert_eq!((drawn(cx).shapes.len(), drawn(cx).links.len()), (0, 0));
+        cx.simulate_keystrokes("escape escape");
+        cx.run_until_parked();
+        fs::remove_file(&sq).unwrap();
     }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);

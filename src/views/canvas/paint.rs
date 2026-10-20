@@ -157,7 +157,7 @@ impl Canvas {
                 if shape.solid().contains(&i) {
                     flood(window, path, ink);
                 }
-                stroke(window, path, shape.dashed, ink);
+                stroke(window, path, shape.dashed || shape.dashed_paths().contains(&i), ink);
             }
             let (lines, rules) = self.diagram.lines(shape);
             for y in rules {
@@ -180,6 +180,20 @@ impl Canvas {
                 }
             }
         }
+        // What the messages add: the bars of the lifelines that are busy, the cross of one that is destroyed.
+        let marks = self.diagram.marks();
+        for bar in &marks.bars {
+            let (x, y, w, h) = bar.rect();
+            let ink = self.ink(self.diagram.shape(bar.life).map_or(0, |s| s.color));
+            let path = [Cmd::Move(x, y), Cmd::Line(x + w, y), Cmd::Line(x + w, y + h), Cmd::Line(x, y + h), Cmd::Close];
+            flood(window, &path, ink.opacity(0.15));
+            stroke(window, &path, false, ink);
+        }
+        for &(x, y) in &marks.crosses {
+            let ink = self.ink(0);
+            stroke(window, &[Cmd::Move(x - 10., y - 10.), Cmd::Line(x + 10., y + 10.)], false, ink);
+            stroke(window, &[Cmd::Move(x + 10., y - 10.), Cmd::Line(x - 10., y + 10.)], false, ink);
+        }
         for link in &self.diagram.links {
             let Some(drawn) = self.diagram.trace(link) else { continue };
             let ink = self.ink(link.color);
@@ -190,7 +204,10 @@ impl Canvas {
                 }
                 stroke(window, path, false, ink);
             }
-            let lines: Vec<&str> = link.text.split('\n').collect();
+            // Written, the text is as typed; otherwise a message of a numbered diagram has its number.
+            let writing = self.editing.is_some_and(|(id, _)| id == link.id) && self.slot == Slot::Middle;
+            let shown = if writing { link.text.clone() } else { self.diagram.shown_text(link) };
+            let lines: Vec<&str> = shown.split('\n').collect();
             for (i, text) in lines.iter().enumerate() {
                 let (x, y, centered) = Diagram::label_at(&drawn, i, lines.len());
                 write(self, window, cx, x, y, &self.spans_of(link.id, Slot::Middle, text, false), centered.into(), ink);

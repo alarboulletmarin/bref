@@ -192,6 +192,13 @@ impl Canvas {
         self.changed(cx);
     }
 
+    /// Shows the messages with their number, or not: one step of undo.
+    pub fn toggle_numbers(&mut self, cx: &mut Context<Self>) {
+        self.remember();
+        self.diagram.numbered = !self.diagram.numbered;
+        self.changed(cx);
+    }
+
     /// Makes the container selected fit what it holds.
     pub fn fit_container(&mut self, cx: &mut Context<Self>) {
         if let [id] = self.selected[..] {

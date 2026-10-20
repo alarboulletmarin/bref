@@ -232,6 +232,9 @@ impl Render for Canvas {
                         }
                     }))
             })
+            .when(!self.diagram.messages().is_empty(), |d| {
+                d.child(button("d-numbered", "d-seq-number.svg", self.diagram.numbered, t).tooltip(tip(tr("Number the messages", "Numéroter les messages"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| this.toggle_numbers(cx))))
+            })
             .when(alone, |d| {
                 d.child(button("d-self", "d-st-loop.svg", false, t).tooltip(tip(tr("Transition to itself: a loop", "Transition vers elle-même : une boucle"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| this.self_link(cx))))
             })

@@ -140,6 +140,8 @@ enum Drag {
     Create { id: u32, from: (f32, f32) },
     /// End of an arrow (`to`: its head) being dragged.
     Tip { id: u32, to: bool },
+    /// A message of a sequence diagram dragged up or down: it takes the place among the others its height gives it.
+    Reorder { id: u32, begun: bool },
     /// Text at an end of an arrow being dragged along its stroke; `begun` once it has moved.
     Along { id: u32, slot: Slot, begun: bool },
     Pan { last: Point<Pixels> },
@@ -302,6 +304,8 @@ impl Canvas {
     }
 
     fn changed(&mut self, cx: &mut Context<Self>) {
+        // The lifelines of a sequence diagram follow their messages.
+        self.diagram.fit_sequence();
         cx.emit(CanvasEvent::Changed);
         cx.notify();
     }

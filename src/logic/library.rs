@@ -2,7 +2,10 @@
 //! their text and size, and the starting points (a new diagram that already holds a few of them).
 //! Pure: the canvas shows them, this says what they are.
 
-use super::diagram::{Diagram, End, Form, Head, Route};
+use super::{
+    diagram::{Diagram, End, Form, Head, Route},
+    relation::Relation,
+};
 use crate::lang::{fold, tr};
 
 /// A shape of the library: what a click or a drop on the canvas makes.
@@ -51,6 +54,7 @@ pub fn presets() -> Vec<Preset> {
 fn shapes() -> Vec<Preset> {
     let class = tr("Class", "Classe");
     let state = tr("State machine", "Machine à états");
+    let sequence = tr("Sequence", "Séquence");
     let p = |family: &'static str, name: &'static str, icon: &'static str, form: Form, (w, h): (f32, f32), text: &'static str| Preset { family, name, icon, form, w, h, text, fill: false, dashed: false };
     vec![
         p(class, tr("Class", "Classe"), "d-rect.svg", Form::Rect, (160., 120.), tr("ClassName\n---\n+ attribute: Type\n---\n+ operation()", "NomDeClasse\n---\n+ attribut: Type\n---\n+ operation()")),
@@ -77,6 +81,8 @@ fn shapes() -> Vec<Preset> {
         p(state, tr("Entry point", "Point d'entrée"), "d-ellipse.svg", Form::Ellipse, (16., 16.), ""),
         p(state, tr("Exit point", "Point de sortie"), "d-st-exit.svg", Form::Exit, (16., 16.), ""),
         p(state, tr("Region divider (dashed)", "Séparateur de régions (pointillés)"), "d-dash.svg", Form::Divider, (300., 10.), ""),
+        p(sequence, tr("Lifeline", "Ligne de vie"), "d-seq-life.svg", Form::Lifeline, (110., 276.), tr("name : Type", "nom : Type")),
+        p(sequence, tr("Actor", "Acteur"), "d-actor.svg", Form::Actor, (40., 80.), tr("Actor", "Acteur")),
     ]
 }
 
@@ -92,6 +98,7 @@ pub fn templates() -> Vec<Template> {
         Template { name: tr("Use case diagram", "Diagramme de cas d'utilisation"), make: use_case_diagram },
         Template { name: tr("Package diagram", "Diagramme de paquetages"), make: package_diagram },
         Template { name: tr("State machine diagram", "Diagramme d'états"), make: state_machine },
+        Template { name: tr("Sequence diagram", "Diagramme de séquence"), make: sequence_diagram },
     ]
 }
 
@@ -164,6 +171,32 @@ fn state_machine() -> Diagram {
     go(&mut d, End::Pin(green, 0.5, 1.), End::Pin(yellow, 1., 0.5), "timer");
     go(&mut d, End::Pin(yellow, 0., 0.5), End::Pin(red, 0.5, 1.), "timer");
     go(&mut d, End::Shape(green), End::Shape(green), "sensor / extend()");
+    d
+}
+
+/// A login: three lifelines, a call that waits for its answer at each step, one the server makes to itself.
+fn sequence_diagram() -> Diagram {
+    let mut d = Diagram::blank();
+    let family = tr("Sequence", "Séquence");
+    let name = tr("Lifeline", "Ligne de vie");
+    let names = [tr("client : Client", "client : Client"), tr("server : Server", "serveur : Serveur"), tr("db : Database", "base : Base")];
+    let lives: Vec<u32> = (0..3).map(|i| put(&mut d, family, name, (60. + 220. * i as f32, 30.))).collect();
+    for (id, text) in lives.iter().zip(names) {
+        say(&mut d, *id, text);
+    }
+    let send = |d: &mut Diagram, from: usize, to: usize, relation: Relation, text: &str| {
+        let id = d.add_link(End::Life(lives[from]), End::Life(lives[to]), Head::None, Route::Straight);
+        if let Some(link) = d.link_mut(id) {
+            relation.apply(link);
+            link.text = text.to_string();
+        }
+    };
+    send(&mut d, 0, 1, Relation::Sync, "login(user, password)");
+    send(&mut d, 1, 2, Relation::Sync, "find(user)");
+    send(&mut d, 2, 1, Relation::Dependency, "user");
+    send(&mut d, 1, 1, Relation::Sync, tr("check(password)", "vérifier(mot de passe)"));
+    send(&mut d, 1, 0, Relation::Dependency, "token");
+    d.fit_sequence();
     d
 }
 

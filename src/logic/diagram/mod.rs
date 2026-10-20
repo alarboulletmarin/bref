@@ -12,6 +12,7 @@ use super::{
 mod file;
 mod hold;
 mod route;
+mod sequence;
 
 /// Stroke colors, as `0xrrggbb`: mid tones, readable on a light background
 /// as on a dark one. The first is the neutral; in the app, the
@@ -37,7 +38,8 @@ pub const RULE: &str = "---";
 /// 4: the heads `cross`, `ball`, `socket`, and an arrow held by another's middle (`m<id>`).
 /// 5: the forms `package`, `frame`, `lane` and the `in` lines: what a shape holds.
 /// 6: the forms of state machines: `dot`, `final`, `terminate`, `bar`, `exit`, `composite`, `divider`.
-pub const VERSION: u32 = 6;
+/// 7: sequence diagrams: the form `lifeline`, the heads `solidtriangle` and `dot`, the ends `l<id>`.
+pub const VERSION: u32 = 7;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Form {
@@ -71,10 +73,13 @@ pub enum Form {
     Composite,
     /// A dashed line across a composite state: the border of its regions.
     Divider,
+    /// A lifeline of a sequence diagram: a head with a name, and a dashed line down that the
+    /// messages make as long as they need (`Diagram::fit_sequence`).
+    Lifeline,
 }
 
 impl Form {
-    pub const ALL: [(Form, &str); 19] = [
+    pub const ALL: [(Form, &str); 20] = [
         (Form::Rect, "rect"),
         (Form::Round, "round"),
         (Form::Ellipse, "ellipse"),
@@ -94,6 +99,7 @@ impl Form {
         (Form::Exit, "exit"),
         (Form::Composite, "composite"),
         (Form::Divider, "divider"),
+        (Form::Lifeline, "lifeline"),
     ];
 
     /// Whether shapes dropped on it belong to it.
@@ -107,6 +113,7 @@ impl Form {
             Form::Branch => 4,
             Form::Package | Form::Frame | Form::Lane => 5,
             Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Composite | Form::Divider => 6,
+            Form::Lifeline => 7,
             _ => 1,
         }
     }
@@ -127,10 +134,14 @@ pub enum Head {
     Ball,
     /// A socket (`-(`): a required interface.
     Socket,
+    /// A filled triangle: a synchronous call.
+    TriangleFull,
+    /// A filled dot: the end of a message that is found or lost.
+    Dot,
 }
 
 impl Head {
-    pub const ALL: [(Head, &str); 8] = [
+    pub const ALL: [(Head, &str); 10] = [
         (Head::None, "none"),
         (Head::Arrow, "arrow"),
         (Head::Triangle, "triangle"),
@@ -139,12 +150,15 @@ impl Head {
         (Head::Cross, "cross"),
         (Head::Ball, "ball"),
         (Head::Socket, "socket"),
+        (Head::TriangleFull, "solidtriangle"),
+        (Head::Dot, "dot"),
     ];
 
     /// The version of the file that first had this head.
     pub fn since(self) -> u32 {
         match self {
             Head::Cross | Head::Ball | Head::Socket => 4,
+            Head::TriangleFull | Head::Dot => 7,
             _ => 1,
         }
     }
@@ -186,13 +200,15 @@ pub enum End {
     Point(f32, f32),
     /// The middle of another arrow, which it follows: the dotted line of an association class.
     Mid(u32),
+    /// A lifeline of a sequence diagram: the arrow is a message, at the height its order gives it.
+    Life(u32),
 }
 
 impl End {
     /// The shape this end is attached to.
     pub fn shape(self) -> Option<u32> {
         match self {
-            End::Shape(id) | End::Pin(id, ..) => Some(id),
+            End::Shape(id) | End::Pin(id, ..) | End::Life(id) => Some(id),
             End::Point(..) | End::Mid(_) => None,
         }
     }
@@ -345,6 +361,8 @@ pub struct Diagram {
     /// Texts are read for the marks of notes (`*italic*`, `<u>underline</u>`…). Off for a diagram
     /// made before they existed, whose texts keep their stars as they are.
     pub rich: bool,
+    /// The messages of a sequence diagram show their number: `3: call()`.
+    pub numbered: bool,
     next: u32,
     /// Source lines this build cannot read, kept as they were and written back after the elements.
     kept: Vec<String>,
@@ -407,6 +425,14 @@ fn rounded(x: f32, y: f32, w: f32, h: f32, r: f32) -> Vec<Cmd> {
 }
 
 impl Shape {
+    /// The paths of the outline that are always dashed: the line of a lifeline.
+    pub fn dashed_paths(&self) -> &'static [usize] {
+        match self.form {
+            Form::Lifeline => &[1],
+            _ => &[],
+        }
+    }
+
     /// The paths of the outline that are filled solid, in the stroke's color: a dot, a bar, the dot of a final state.
     pub fn solid(&self) -> &'static [usize] {
         match self.form {
@@ -522,6 +548,7 @@ impl Shape {
             }
             Form::Composite => vec![rounded(x, y, w, h, 14.), vec![Cmd::Move(x, y + LANE), Cmd::Line(x + w, y + LANE)]],
             Form::Divider => vec![vec![Cmd::Move(x, cy), Cmd::Line(x + w, cy)]],
+            Form::Lifeline => vec![rounded(x, y, w, sequence::HEAD.min(h), 2.), vec![Cmd::Move(cx, y + sequence::HEAD.min(h)), Cmd::Line(cx, y + h)]],
             Form::Lane => vec![rounded(x, y, w, h, 2.), vec![Cmd::Move(x, y + LANE), Cmd::Line(x + w, y + LANE)]],
             Form::Note => {
                 let fold = 12f32.min(w / 2.).min(h / 2.);
@@ -571,6 +598,13 @@ impl Shape {
                     y += LINE;
                 }
             }
+            return (out, rules);
+        }
+        // The name of a lifeline is in its head.
+        if self.form == Form::Lifeline {
+            let head = sequence::HEAD.min(self.h);
+            let top = self.y + (head - lines.len() as f32 * LINE) / 2.;
+            let out = lines.into_iter().enumerate().map(|(index, text)| TextLine { x: cx, y: top + LINE * index as f32, text, centered: true, bold: false, index }).collect();
             return (out, rules);
         }
         // What holds shapes has its title at the top: in the tab of a package, in the header of a lane.
@@ -659,6 +693,8 @@ fn head_reach(head: Head) -> f32 {
         Head::Cross => 0.,
         Head::Ball => 12.,
         Head::Socket => 8.,
+        Head::TriangleFull => 12.,
+        Head::Dot => 8.,
     }
 }
 
@@ -674,7 +710,8 @@ pub fn head(head: Head, tip: (f32, f32), u: (f32, f32)) -> (Vec<(f32, f32)>, boo
         Head::Triangle => (vec![tip, at(12., 6.), at(12., -6.)], true, false, 12.),
         Head::Diamond => (vec![tip, at(8., 5.), at(16., 0.), at(8., -5.)], true, false, 16.),
         Head::DiamondFull => (vec![tip, at(8., 5.), at(16., 0.), at(8., -5.)], true, true, 16.),
-        Head::Cross | Head::Ball | Head::Socket => (Vec::new(), false, false, 0.),
+        Head::TriangleFull => (vec![tip, at(12., 6.), at(12., -6.)], true, true, 12.),
+        Head::Cross | Head::Ball | Head::Socket | Head::Dot => (Vec::new(), false, false, 0.),
     }
 }
 
@@ -706,6 +743,8 @@ pub fn head_path(kind: Head, tip: (f32, f32), u: (f32, f32)) -> (Vec<Cmd>, bool,
         }
         // A circle touching the tip, the stroke stopping at its edge.
         Head::Ball => (path(&arc(at(6., 0.), 6., 0., std::f32::consts::TAU, 24), true), false, 12.),
+        // A filled dot touching the tip.
+        Head::Dot => (path(&arc(at(4., 0.), 4., 0., std::f32::consts::TAU, 16), true), true, 8.),
         // A half circle around the tip, its back toward the stroke's start: the stroke stops at its apex.
         Head::Socket => (path(&arc(tip, 8., -std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2, 12), false), false, 8.),
         other => {
@@ -731,6 +770,18 @@ impl Diagram {
         shape.text_lines_for(self.rich)
     }
 
+    /// The text in the middle of an arrow, as it is shown: a message of a numbered diagram begins with its number.
+    pub fn shown_text(&self, link: &Link) -> String {
+        if !self.numbered {
+            return link.text.clone();
+        }
+        match self.messages().iter().position(|m| *m == link.id) {
+            Some(rank) if link.text.is_empty() => format!("{}", rank + 1),
+            Some(rank) => format!("{}: {}", rank + 1, link.text),
+            None => link.text.clone(),
+        }
+    }
+
     /// The runs of a line of the text in the middle of an arrow: a transition's `[guard]` is in italics.
     pub fn label_runs(&self, text: &str) -> Vec<Span> {
         if self.rich { state::runs(text) } else { richtext::plain(text, false) }
@@ -754,10 +805,11 @@ impl Diagram {
     pub(super) fn needed(&self) -> u32 {
         let links = self.links.iter().map(|l| {
             let mid = matches!(l.from, End::Mid(_)) || matches!(l.to, End::Mid(_));
-            [l.start.since(), l.end.since(), if mid { 4 } else { 1 }, if l.has_end_texts() { 3 } else { 1 }].into_iter().max().unwrap_or(1)
+            let life = matches!(l.from, End::Life(_)) || matches!(l.to, End::Life(_));
+            [l.start.since(), l.end.since(), if mid { 4 } else { 1 }, if life { 7 } else { 1 }, if l.has_end_texts() { 3 } else { 1 }].into_iter().max().unwrap_or(1)
         });
         let shapes = self.shapes.iter().map(|s| if s.parent.is_some() { 5 } else { s.form.since() }).max().unwrap_or(1);
-        links.max().unwrap_or(1).max(shapes).max(if self.rich { 2 } else { 1 })
+        links.max().unwrap_or(1).max(shapes).max(if self.rich { 2 } else { 1 }).max(if self.numbered { 7 } else { 1 })
     }
 
     pub fn shape(&self, id: u32) -> Option<&Shape> {
@@ -839,6 +891,7 @@ impl Diagram {
                 End::Pin(id, fx, fy) => twin.iter().find(|(old, _)| *old == id).map(|(_, new)| End::Pin(*new, fx, fy)),
                 End::Point(x, y) => Some(End::Point(x + by, y + by)),
                 End::Mid(id) => copies.iter().find(|(old, _)| *old == id).map(|(_, new)| End::Mid(*new)),
+                End::Life(id) => twin.iter().find(|(old, _)| *old == id).map(|(_, new)| End::Life(*new)),
             };
             if let (Some(from), Some(to)) = (moved(link.from), moved(link.to)) {
                 let id = self.fresh();
@@ -920,6 +973,11 @@ impl Diagram {
                 let (x, y) = self.mid(id)?;
                 ((x, y), side(toward.0 - x, toward.1 - y, 1., 1.))
             }
+            // Messages have their own way (`message_path`); this is for an arrow that is not one.
+            End::Life(id) => {
+                let shape = self.shape(id)?;
+                (shape.border(toward), side(toward.0 - shape.center().0, toward.1 - shape.center().1, shape.w, shape.h))
+            }
             End::Shape(id) => {
                 let shape = self.shape(id)?;
                 let (cx, cy) = shape.center();
@@ -993,13 +1051,19 @@ impl Diagram {
             End::Pin(id, fx, fy) => self.shape(id).map(|s| (s.x + fx * s.w, s.y + fy * s.h)),
             End::Point(x, y) => Some((x, y)),
             End::Mid(id) => self.mid(id),
+            End::Life(id) => self.shape(id).map(Shape::center),
         };
         let straight = link.route == Route::Straight;
         let spread = self.spread(link);
-        let looped = self.self_loop(link);
+        // A loop, a message: the way is given, the ends are where it begins and ends.
+        let looped = self.self_loop(link).or_else(|| self.message_path(link));
         let (a, da, b, db);
         if let Some(path) = &looped {
-            (a, da, b, db) = (path[0], (1., 0.), path[path.len() - 1], (0., -1.));
+            let unit = |from: (f32, f32), to: (f32, f32)| {
+                let len = (to.0 - from.0).hypot(to.1 - from.1).max(1e-3);
+                ((to.0 - from.0) / len, (to.1 - from.1) / len)
+            };
+            (a, da, b, db) = (path[0], unit(path[0], path[1]), path[path.len() - 1], unit(path[path.len() - 1], path[path.len() - 2]));
         } else {
             (a, da) = self.leave(link.from, aim(link.to)?, straight, spread)?;
             (b, db) = self.leave(link.to, aim(link.from)?, straight, spread)?;
