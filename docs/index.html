@@ -30,9 +30,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 code, pre, kbd, .mono { font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: .86em; }
+h1, h2, h3 { text-wrap: balance; }
+p { text-wrap: pretty; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 3px; }
-.wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
 section { padding-top: 112px; }
 
 /* Markdown markers stay visible, faded, as in the editor. */
@@ -62,8 +64,8 @@ header.top nav a:hover { color: var(--text); text-decoration: none; }
 
 /* Hero */
 .hero { padding-top: 80px; }
-.hero h1 { margin: 0; max-width: 15ch; font-size: clamp(2.6rem, 6.5vw, 4.4rem); line-height: 1.05; letter-spacing: -.04em; font-weight: 700; }
-.hero .sub { margin: 24px 0 0; max-width: 48ch; font-size: 1.2rem; color: var(--soft); }
+.hero h1 { margin: 0; font-size: clamp(2.4rem, 5.2vw, 3.7rem); line-height: 1.05; letter-spacing: -.04em; font-weight: 700; }
+.hero .sub { margin: 24px 0 0; font-size: 1.2rem; color: var(--soft); }
 .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-top: 32px; }
 .cta .os { font-size: .85rem; color: var(--dim); }
 .shot { margin: 64px 0 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--panel); }
@@ -74,11 +76,11 @@ header.top nav a:hover { color: var(--text); text-decoration: none; }
 .stat { padding: 24px 24px 0 0; }
 .stat b { display: block; font-size: 1.9rem; line-height: 1.1; letter-spacing: -.03em; }
 .stat b small { font-size: .5em; font-weight: 600; color: var(--soft); margin-left: 3px; letter-spacing: 0; }
-.stat span { display: block; margin-top: 6px; font-size: .88rem; color: var(--soft); max-width: 22ch; }
+.stat span { display: block; margin-top: 6px; font-size: .88rem; color: var(--soft);}
 
 /* Section heads */
-.head h2 { margin: 0; font-size: clamp(1.8rem, 3.6vw, 2.4rem); line-height: 1.15; letter-spacing: -.03em; max-width: 20ch; }
-.head p { margin: 14px 0 0; max-width: 52ch; color: var(--soft); }
+.head h2 { margin: 0; font-size: clamp(1.8rem, 3.6vw, 2.4rem); line-height: 1.15; letter-spacing: -.03em; }
+.head p { margin: 14px 0 0; color: var(--soft); }
 
 /* Features: hairlines, no boxes */
 .feats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 48px; border-top: 1px solid var(--border); }
@@ -87,7 +89,7 @@ header.top nav a:hover { color: var(--text); text-decoration: none; }
 .feat h3 { margin: 0 0 8px; font-size: 1.05rem; letter-spacing: -.01em; }
 .feat p { margin: 0; font-size: .93rem; color: var(--soft); }
 .feat code { display: inline-block; margin-top: 14px; padding: 2px 8px; background: var(--code); border-radius: 4px; color: var(--text); font-size: .8rem; }
-.more { margin: 40px 0 0; font-size: .93rem; color: var(--soft); max-width: 70ch; }
+.more { margin: 40px 0 0; font-size: .93rem; color: var(--soft); }
 .more b { color: var(--text); font-weight: 600; }
 
 /* Install */
@@ -98,7 +100,7 @@ header.top nav a:hover { color: var(--text); text-decoration: none; }
 }
 .tab:hover { color: var(--text); }
 .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
-.panel { padding-top: 28px; max-width: 720px; }
+.panel { padding-top: 28px; }
 .panel[hidden], [data-distro-panel][hidden] { display: none; }
 .panel p { margin: 0 0 18px; color: var(--soft); }
 .panel p b { color: var(--text); }
@@ -111,7 +113,7 @@ header.top nav a:hover { color: var(--text); text-decoration: none; }
 button.copy { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; padding: 0; background: var(--code); border: 0; border-radius: 6px; color: var(--dim); cursor: pointer; }
 button.copy:hover { color: var(--text); }
 button.copy svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-.fine { margin: 24px 0 0; font-size: .88rem; color: var(--soft); max-width: 70ch; }
+.fine { margin: 24px 0 0; font-size: .88rem; color: var(--soft); }
 .panel .fine { margin-top: 0; }
 
 /* Releases */
@@ -181,8 +183,8 @@ footer a:hover { color: var(--text); }
 
     <div class="stats">
       <div class="stat"><b>75<small>ms</small></b><span>to put the window on screen</span></div>
-      <div class="stat"><b>1<small>ms</small></b><span>of work per keystroke, even in 5,000 lines</span></div>
-      <div class="stat"><b>4<small>ms</small></b><span>to open the palette on 5,000 notes</span></div>
+      <div class="stat"><b>1<small>ms</small></b><span>per keystroke, even in 5,000 lines</span></div>
+      <div class="stat"><b>4<small>ms</small></b><span>to open the palette, 5,000 notes</span></div>
       <div class="stat"><b>.md</b><span>plain files, nothing locked in</span></div>
     </div>
   </div>
