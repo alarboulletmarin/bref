@@ -123,6 +123,9 @@ impl Editor {
         /// What is clickable under the pointer takes over: a table handle (open, closed
         /// when dragged), a line to insert at, a checkbox, a link when `Ctrl` is held.
     pub(super) fn hand_at(&self, at: Point<Pixels>, held: gpui::Modifiers) -> Option<CursorStyle> {
+        if self.stale() {
+            return self.hand;
+        }
         if self.moving.is_some() {
             return Some(CursorStyle::ClosedHand);
         }

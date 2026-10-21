@@ -38,14 +38,25 @@ impl Editor {
         Some(self.origin + point(px(0.), row.y + row.pad + row.lh / 2.) + row.pos(i - row.start))
     }
 
-    /// The pointer's three entry points, called as they are: with the lines of the last paint, whatever the text became.
+    /// Every way the pointer reaches the text, called as they are: with the lines of the last paint, whatever the
+    /// text became. A key press on a modifier and a file dragged over the note come in the same way.
     #[cfg(test)]
-    pub fn pointer(&mut self, at: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn pointer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let none = gpui::Modifiers::none();
-        self.mouse_move(&MouseMoveEvent { position: at, pressed_button: None, modifiers: none }, window, cx);
-        for button in [MouseButton::Left, MouseButton::Right] {
-            let down = MouseDownEvent { button, position: at, modifiers: none, click_count: 1, first_mouse: false };
-            if button == MouseButton::Left { self.mouse_down(&down, window, cx) } else { self.menu_down(&down, window, cx) }
+        // A stripe of points inside the editor, from top to bottom, and one outside.
+        let view = self.viewport;
+        let stripe = (0..8).map(|k| point(view.left() + px(40.), view.top() + view.size.height * (k as f32 / 8.) + px(3.)));
+        for at in stripe.chain([point(px(-5.), px(-5.))]) {
+            self.mouse_move(&MouseMoveEvent { position: at, pressed_button: None, modifiers: none }, window, cx);
+            for button in [MouseButton::Left, MouseButton::Right] {
+                let down = MouseDownEvent { button, position: at, modifiers: none, click_count: 1, first_mouse: false };
+                if button == MouseButton::Left { self.mouse_down(&down, window, cx) } else { self.menu_down(&down, window, cx) }
+            }
+            self.mouse_up(&MouseUpEvent { button: MouseButton::Left, position: at, modifiers: none, click_count: 1 }, window, cx);
+            for modifiers in [none, gpui::Modifiers::secondary_key(), gpui::Modifiers::shift()] {
+                self.aim_hand(at, modifiers, cx);
+            }
+            self.drop_point(at);
         }
     }
 
@@ -58,6 +69,9 @@ impl Editor {
     /// in the lower half of its own. Never in a table, a code block or the front matter: at the
     /// edge of the block, downwards.
     pub fn drop_point(&self, at: Point<Pixels>) -> usize {
+        if self.stale() {
+            return self.line_range(self.cursor()).start;
+        }
         let y = at.y - self.origin.y;
         let Some(row) = self.rows.iter().find(|r| y < r.y + r.height).or(self.rows.last()) else {
             return 0;
@@ -237,6 +251,12 @@ impl Editor {
         }
     }
 
+    /// The text changed since the lines in `rows` were laid out (they are rebuilt at paint): their offsets
+    /// no longer fit `content`, so what looks at them must wait for the next frame.
+    pub(super) fn stale(&self) -> bool {
+        self.rows_revision != self.revision
+    }
+
     pub(super) fn copy_bounds(&self, row: &Row) -> Bounds<Pixels> {
         let at = point(self.width - COPY_SIZE, row.y + row.pad + (row.lh - COPY_SIZE) / 2.);
         Bounds::new(self.origin + at, size(COPY_SIZE, COPY_SIZE))
@@ -325,7 +345,7 @@ impl Editor {
     }
 
     pub(super) fn mouse_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.rows_revision != self.revision {
+        if self.stale() {
             return;
         }
         if let Some(find) = &mut self.find {
@@ -453,7 +473,7 @@ impl Editor {
     /// Right click: the note's menu. Outside the selection, the cursor first moves under
     /// the pointer, so that "Paste" and "Link" act where the click was.
     pub(super) fn menu_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.rows_revision != self.revision {
+        if self.stale() {
             return;
         }
         // On a table handle: it takes its row or column, and the menu speaks of it.
@@ -506,7 +526,7 @@ impl Editor {
         // ponytail: `rows` is rebuilt at paint, so right after an edit its offsets are those of the old text and
         // slicing `content` with them panics (a panic inside a window callback aborts the process on Windows).
         // The event is dropped; the next frame lays out again and the pointer's next move is handled.
-        if self.rows_revision != self.revision {
+        if self.stale() {
             return;
         }
         // A button released outside the window sends no `mouse_up`: we do not

@@ -299,7 +299,7 @@ fn pointer_events_between_an_edit_and_the_layout_do_not_panic(cx: &mut TestAppCo
     let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
     cx.run_until_parked();
     let page = Page { shell };
-    let long = "```mermaid\ngraph TD\nA-->B\n```\n\n".repeat(12) + "- [ ] tâche\n";
+    let long = "- [ ] première tâche\n".to_string() + &"```mermaid\ngraph TD\nA-->B\n```\n\n".repeat(12) + "- [ ] tâche\n";
     // The shorter text cuts nothing, falls inside no character, or leaves a lone multi-byte one.
     for short in ["", "x", "é", "日本", "```mermaid"] {
         page.load(cx, &long);
@@ -307,9 +307,7 @@ fn pointer_events_between_an_edit_and_the_layout_do_not_panic(cx: &mut TestAppCo
         page.shell.update_in(cx, |s, window, cx| {
             s.pane().editor.update(cx, |e, cx| {
                 e.load(short.to_string(), short.len(), cx);
-                for (x, y) in [(10., 10.), (300., 30.), (600., 200.), (700., 500.)] {
-                    e.pointer(point(px(x), px(y)), window, cx);
-                }
+                e.pointer(window, cx);
             })
         });
         page.settle(cx);
