@@ -322,6 +322,9 @@ pub struct Editor {
     version: u64,
     /// Counts text changes, and only them: an image that loads or a theme that changes does not move it.
     revision: u64,
+    /// The `revision` the lines in `rows` were laid out for: pointer events between an edit and the next
+    /// paint must not slice the text with their offsets.
+    rows_revision: u64,
     /// Footer counter, kept as long as the text and the selection do not move.
     counted: Option<(CountKey, String)>,
     /// The text counted last, its version and its counts: on a keystroke, only the changed
@@ -435,6 +438,7 @@ impl Editor {
             rows: Vec::new(),
             version: 0,
             revision: 0,
+            rows_revision: 0,
             counted: None,
             tally: None,
             corner: 1,

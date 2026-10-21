@@ -1226,6 +1226,7 @@ impl Editor {
         }
         embeds.sweep(&rows, frame as u64);
         self.rows = rows;
+        self.rows_revision = self.revision;
         loading |= embeds.loading(cx);
         self.embeds = embeds;
         // Reused very big tables: their lines are no longer the ones that were styled.

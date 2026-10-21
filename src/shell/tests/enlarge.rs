@@ -285,3 +285,34 @@ fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
     }
     let _ = fs::remove_dir_all(&root);
 }
+
+/// Between an edit and the next paint the lines still hold the old text's offsets: a pointer move or
+/// a click there used to slice the new text with them and panic (Windows: the process aborted).
+#[gpui::test]
+fn pointer_events_between_an_edit_and_the_layout_do_not_panic(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-stale-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let _config = isolated_config(&root);
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
+    cx.run_until_parked();
+    let page = Page { shell };
+    let long = "```mermaid\ngraph TD\nA-->B\n```\n\n".repeat(12) + "- [ ] tâche\n";
+    // The shorter text cuts nothing, falls inside no character, or leaves a lone multi-byte one.
+    for short in ["", "x", "é", "日本", "```mermaid"] {
+        page.load(cx, &long);
+        // In one go: no paint between the edit and the events.
+        page.shell.update_in(cx, |s, window, cx| {
+            s.pane().editor.update(cx, |e, cx| {
+                e.load(short.to_string(), short.len(), cx);
+                for (x, y) in [(10., 10.), (300., 30.), (600., 200.), (700., 500.)] {
+                    e.pointer(point(px(x), px(y)), window, cx);
+                }
+            })
+        });
+        page.settle(cx);
+    }
+    let _ = fs::remove_dir_all(&root);
+}

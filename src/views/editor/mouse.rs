@@ -38,6 +38,17 @@ impl Editor {
         Some(self.origin + point(px(0.), row.y + row.pad + row.lh / 2.) + row.pos(i - row.start))
     }
 
+    /// The pointer's three entry points, called as they are: with the lines of the last paint, whatever the text became.
+    #[cfg(test)]
+    pub fn pointer(&mut self, at: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        let none = gpui::Modifiers::none();
+        self.mouse_move(&MouseMoveEvent { position: at, pressed_button: None, modifiers: none }, window, cx);
+        for button in [MouseButton::Left, MouseButton::Right] {
+            let down = MouseDownEvent { button, position: at, modifiers: none, click_count: 1, first_mouse: false };
+            if button == MouseButton::Left { self.mouse_down(&down, window, cx) } else { self.menu_down(&down, window, cx) }
+        }
+    }
+
     #[cfg(test)]
     pub fn hand(&self) -> Option<CursorStyle> {
         self.hand
@@ -314,6 +325,9 @@ impl Editor {
     }
 
     pub(super) fn mouse_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.rows_revision != self.revision {
+            return;
+        }
         if let Some(find) = &mut self.find {
             find.active = false;
         }
@@ -439,6 +453,9 @@ impl Editor {
     /// Right click: the note's menu. Outside the selection, the cursor first moves under
     /// the pointer, so that "Paste" and "Link" act where the click was.
     pub(super) fn menu_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.rows_revision != self.revision {
+            return;
+        }
         // On a table handle: it takes its row or column, and the menu speaks of it.
         if let Some((table, part)) = self.part_at(e.position)
             && matches!(part, Part::Col(_) | Part::Row(_) | Part::Corner)
@@ -486,6 +503,12 @@ impl Editor {
     }
 
     pub(super) fn mouse_move(&mut self, e: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // ponytail: `rows` is rebuilt at paint, so right after an edit its offsets are those of the old text and
+        // slicing `content` with them panics (a panic inside a window callback aborts the process on Windows).
+        // The event is dropped; the next frame lays out again and the pointer's next move is handled.
+        if self.rows_revision != self.revision {
+            return;
+        }
         // A button released outside the window sends no `mouse_up`: we do not
         // keep selecting with the pointer free.
         if self.selecting && e.pressed_button != Some(MouseButton::Left) {
