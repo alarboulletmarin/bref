@@ -31,7 +31,7 @@ impl Capture {
                 Ok(_) => window.remove_window(),
                 // Nothing is lost: the line stays, with the reason.
                 Err(e) => {
-                    let label = format!("{} : {e}", tr("Not saved", "Non enregistré"));
+                    let label = format!("{} : {}", tr("Not saved", "Non enregistré"), crate::lang::io_reason(&e));
                     this.field = Self::ask(label, text, this.theme, window, cx);
                     cx.notify();
                 }

@@ -7,6 +7,7 @@ mod drops;
 mod editing;
 mod enlarge;
 mod end_to_end;
+mod feedback;
 mod keycaps;
 mod layout;
 mod window;

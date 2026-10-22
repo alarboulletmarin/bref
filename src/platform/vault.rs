@@ -408,7 +408,7 @@ pub fn rename_note(path: &Path, name: &str) -> io::Result<PathBuf> {
 
 /// Moves the note or folder to the vault's trash: the hidden folder
 /// `.trash`, which the index ignores. Nothing is destroyed.
-pub fn trash(root: &Path, path: &Path) -> io::Result<()> {
+pub fn trash(root: &Path, path: &Path) -> io::Result<PathBuf> {
     let bin = root.join(".trash");
     fs::create_dir_all(&bin)?;
     let name = path.file_name().unwrap_or_default().to_string_lossy();
@@ -419,7 +419,8 @@ pub fn trash(root: &Path, path: &Path) -> io::Result<()> {
         })
         .find(|p| !p.exists())
         .unwrap();
-    fs::rename(path, free)
+    fs::rename(path, &free)?;
+    Ok(free)
 }
 
 /// Vault file that keeps the icons: one `icon<tab>path` line per item,

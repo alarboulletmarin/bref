@@ -549,6 +549,19 @@ impl Palette {
         self.items.len()
     }
 
+    /// What the empty list says, under the input: that a single letter is too little for the text search, or that nothing
+    /// matches. An input field and an empty query have nothing to say.
+    fn nothing_to_show(&self) -> Option<&'static str> {
+        if !self.items.is_empty() || (self.prompt.is_some() && !self.choices) {
+            return None;
+        }
+        match (self.lines, self.query.text.trim().chars().count()) {
+            (_, 0) => None,
+            (true, 1) => Some(tr("Type at least two characters", "Tape au moins deux caractères")),
+            _ => Some(tr("No result", "Aucun résultat")),
+        }
+    }
+
     pub fn chosen(&self) -> Option<usize> {
         match self.items.get(self.selected) {
             Some(Item::Note(i)) if self.choices => Some(*i),
@@ -1119,6 +1132,9 @@ impl Render for Palette {
                             }),
                     )
                     .children(rows)
+                    .children(self.nothing_to_show().map(|said| {
+                        div().debug_selector(|| "palette-empty".into()).px_4().py_3().text_center().text_size(px(13.)).text_color(t.soft).child(said)
+                    }))
                     // The panel slides into place when opening.
                     .with_animation(
                         "palette-in",

@@ -213,6 +213,31 @@ impl Shell {
         }
         let more = match field_at(Slot::NewColumn) {
             Some(field) => div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().rounded(px(8.)).bg(t.panel).border_1().border_color(t.accent).flex().child(field).into_any_element(),
+            // No column at all: a lone « + » would float in the empty page, so the board says what it lacks.
+            None if all.is_empty() => div()
+                .debug_selector(|| "board-empty".into())
+                .flex_1()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap_2()
+                .text_center()
+                .text_color(t.soft)
+                .child(tr("This board has no column yet", "Ce tableau n'a pas encore de colonne"))
+                .child(
+                    div()
+                        .id("column-add")
+                        .px_3()
+                        .py_1()
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .text_color(t.accent)
+                        .hover(|s| s.bg(t.border))
+                        .child(format!("+ {}", tr("Add a column", "Ajouter une colonne")))
+                        .on_click(cx.listener(|this, _, window, cx| this.board_write(Slot::NewColumn, window, cx))),
+                )
+                .into_any_element(),
             None => crate::ui::widgets::button("column-add", "plus.svg", false, t)
                 .flex_none()
                 .on_click(cx.listener(|this, _, window, cx| this.board_write(Slot::NewColumn, window, cx)))

@@ -818,6 +818,20 @@ impl Shell {
                     .tooltip(tip(if full { tr("Back beside the note", "Revenir à côté de la note") } else { tr("Panel on the whole window", "Panneau en pleine fenêtre") }, keys(&ToggleFull), t))
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_full(window, cx))),
             );
+        // An empty list says so, in one soft line over it (the list keeps its drop and menu zones under it).
+        let nothing = self.nav.rows.is_empty().then(|| {
+            let said = match mode {
+                Mode::Tree => match keys(&crate::actions::NewNote) {
+                    key if key.is_empty() => tr("Nothing here yet", "Rien ici pour l'instant").to_string(),
+                    key => format!("{}\n{} {key}", tr("Nothing here yet", "Rien ici pour l'instant"), tr("New note:", "Nouvelle note :")),
+                },
+                Mode::Tags => tr("No tag yet: write #tag in a note", "Aucun tag pour l'instant : écris #tag dans une note").to_string(),
+                Mode::Links if self.nav.anchor.is_none() => tr("Open a note to see what links to it", "Ouvre une note pour voir ce qui renvoie vers elle").to_string(),
+                Mode::Links => tr("No note links here yet", "Aucune note ne renvoie ici pour l'instant").to_string(),
+                _ => tr("No recent note", "Aucune note récente").to_string(),
+            };
+            div().debug_selector(|| "nav-empty".into()).absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(px(13.)).text_color(t.soft).child(said)
+        });
         let list = uniform_list("nav-rows", self.nav.rows.len(), cx.processor(Self::render_rows))
             .track_scroll(self.nav.scroll.clone())
             .flex_1()
@@ -901,7 +915,7 @@ impl Shell {
             .map(|d| match mode {
                 Mode::Graph => d.child(div().flex_1().min_h_0().child(self.graph.clone())),
                 Mode::Calendar => d.child(self.render_calendar(cx)),
-                _ => d.child(list),
+                _ => d.child(div().flex_1().min_h_0().relative().flex().flex_col().child(list).children(nothing)),
             });
         // 5 px handle around a 1 px stroke; double-click: original width.
         let divider = div()

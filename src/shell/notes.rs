@@ -112,7 +112,7 @@ impl Shell {
             }
             Err(e) => {
                 let what = tr("Cannot open", "Impossible d'ouvrir");
-                self.say(Tone::Failed, format!("{what} {} : {e}", path.display()), cx);
+                self.say(Tone::Failed, format!("{what} {} : {}", path.display(), crate::lang::io_reason(&e)), cx);
                 false
             }
         }
@@ -386,7 +386,8 @@ impl Shell {
                 self.refresh_graph(cx);
             }
             Err(e) => {
-                self.say(Tone::Failed, format!("{} : {e}", tr("Note not saved", "Note non enregistrée")), cx)
+                let name = self.pane().path.as_deref().map_or_else(|| vault::title_of(&content), vault::stem);
+                self.say(Tone::Failed, format!("{} « {name} » : {}", tr("Note not saved", "Note non enregistrée"), crate::lang::io_reason(&e)), cx)
             }
         }
         cx.notify();

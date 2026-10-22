@@ -21,8 +21,10 @@ impl Shell {
         self.menu_do(Do::NewFolder, self.nav.sel.clone(), window, cx);
     }
 
-    pub(super) fn fail(&mut self, what: &str, e: std::io::Error, cx: &mut Context<Self>) {
-        self.say(Tone::Failed, format!("{what} : {e}"), cx);
+    /// A disk operation on `path` failed: what was tried, on which file, and why.
+    pub(super) fn fail(&mut self, what: &str, path: &Path, e: std::io::Error, cx: &mut Context<Self>) {
+        let name = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy();
+        self.say(Tone::Failed, format!("{what} « {name} » : {}", crate::lang::io_reason(&e)), cx);
     }
 
     /// Moves everything that was dragged into the folder `dir`.
@@ -47,7 +49,7 @@ impl Shell {
                 self.nav.open.insert(dir.to_path_buf());
                 self.relocate(from, &to, false, cx);
             }
-            Err(e) => self.fail(tr("Not moved", "Déplacement impossible"), e, cx),
+            Err(e) => self.fail(tr("Not moved", "Déplacement impossible"), from, e, cx),
         }
     }
 
@@ -93,9 +95,12 @@ impl Shell {
     /// Moves the note or folder to the vault's trash (`.trash`).
     pub(super) fn trash(&mut self, root: &Path, path: &Path, cx: &mut Context<Self>) {
         self.flush(cx);
-        if let Err(e) = vault::trash(root, path) {
-            return self.fail(tr("Not moved to the trash", "Mise à la corbeille impossible"), e, cx);
-        }
+        let trashed = match vault::trash(root, path) {
+            Ok(trashed) => trashed,
+            Err(e) => return self.fail(tr("Not moved to the trash", "Mise à la corbeille impossible"), path, e, cx),
+        };
+        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        self.say_undoable(Tone::Done, format!("{} « {name} »", tr("Moved to the trash:", "Mis à la corbeille :")), Some((trashed, path.to_path_buf())), cx);
         self.history.remove(path);
         let gone = |p: &PathBuf| p.starts_with(path);
         self.notes.retain(|n| !gone(&n.path));
@@ -113,6 +118,19 @@ impl Shell {
             }
         });
         self.files_changed(cx);
+    }
+
+    /// « Undo » of the trash: `from` (in the trash) goes back to `to`, in its folder, which is made again if it is gone. The
+    /// watcher finds it; nothing is overwritten (`vault::rename` refuses a name that is taken).
+    pub(super) fn put_back(&mut self, from: &Path, to: &Path, cx: &mut Context<Self>) {
+        let made = to.parent().map_or(Ok(()), std::fs::create_dir_all);
+        match made.and_then(|()| vault::rename(from, to)) {
+            Ok(()) => {
+                self.say(Tone::Done, format!("{} « {} »", tr("Put back:", "Remis en place :"), to.file_name().unwrap_or_default().to_string_lossy()), cx);
+                self.files_changed(cx);
+            }
+            Err(e) => self.fail(tr("Not put back", "Remise en place impossible"), to, e, cx),
+        }
     }
 
     /// After a move or a deletion: config, completion and graph up to date.

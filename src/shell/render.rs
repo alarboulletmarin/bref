@@ -262,6 +262,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &ToggleCommands, window, cx| this.open_commands(window, cx)))
             // Escape in the note, when it has nothing to close: the right-click menu.
             .on_action(cx.listener(|this, _: &editor::Cancel, _, cx| {
+                this.dismiss_failures();
                 this.icon_pick = None;
                 this.menu = None;
                 cx.notify();
@@ -421,6 +422,24 @@ impl Shell {
                             "Tes notes vivent dans un dossier de fichiers Markdown : le coffre.",
                         )),
                 )
+                // The vault of the last time is gone (moved, renamed, a disk that is not plugged in): say so.
+                .children(self.lost.as_ref().map(|gone| {
+                    div()
+                        .debug_selector(|| "welcome-lost".into())
+                        .max_w(px(520.))
+                        .px_3()
+                        .py_2()
+                        .rounded(px(8.))
+                        .border_1()
+                        .border_color(t.border)
+                        .bg(t.panel)
+                        .text_size(px(13.))
+                        .child(format!("{} « {} »", tr("The vault was not found:", "Le coffre est introuvable :"), vault::shown(gone)))
+                        .child(div().text_color(t.soft).child(tr(
+                            "Moved, renamed, or on a disk that is not plugged in? Open it again, or start another one.",
+                            "Déplacé, renommé, ou sur un disque qui n'est pas branché ? Rouvre-le, ou commence-en un autre.",
+                        )))
+                }))
                 // Shortest path first: a ready-made vault, in one click, without a picker
                 // window or a folder to create yourself.
                 .children(vault::default_vault().map(|place| {
@@ -764,9 +783,18 @@ impl Shell {
                 viewer.update(cx, |viewer, _| viewer.sync(t));
                 note.child(viewer)
             }
-            Some((path, FileKind::Image)) => note.p_6().flex().items_center().justify_center().child(
-                img(path).max_w_full().max_h_full().object_fit(ObjectFit::ScaleDown),
-            ),
+            Some((path, FileKind::Image)) => {
+                // A big picture takes a while: it says so after a moment; a file that is no picture says so too.
+                let said = move |text: &'static str| move || div().debug_selector(|| "image-said".into()).text_size(px(13.)).text_color(t.soft).child(text).into_any_element();
+                note.p_6().flex().items_center().justify_center().child(
+                    img(path)
+                        .max_w_full()
+                        .max_h_full()
+                        .object_fit(ObjectFit::ScaleDown)
+                        .with_loading(said(tr("Loading…", "Chargement…")))
+                        .with_fallback(said(tr("Unreadable image", "Image illisible"))),
+                )
+            }
             None => {
                 let empty = self.pane().editor.read(cx).text().is_empty().then(|| self.render_empty(cx));
                 note.child(self.pane().editor.clone()).children(empty).child(copy).children(talk).children(flip)

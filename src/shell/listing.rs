@@ -122,7 +122,7 @@ impl Shell {
             return;
         }
         if let Err(e) = vault::write(&path, &new) {
-            return self.say(super::Tone::Failed, format!("{} {} : {e}", tr("Not rewritten:", "Non réécrite :"), path.display()), cx);
+            return self.say(super::Tone::Failed, format!("{} {} : {}", tr("Not rewritten:", "Non réécrite :"), path.display(), crate::lang::io_reason(&e)), cx);
         }
         if let Some(note) = self.notes.iter_mut().find(|note| note.path == path) {
             (note.tags, note.links) = crate::logic::note::Note::index(&new);
@@ -246,6 +246,11 @@ impl Shell {
             .child(div().pb_3().px_2().child(filter_box))
             .child(div().h(ROW).flex().items_center().border_b_1().border_color(t.border).children(head))
             .children(lines)
+            // Nothing to list: the filter keeps no row, or the folder or tag holds no note.
+            .when(count == 0, |d| {
+                let said = if asked { tr("No note matches the filter", "Aucune note ne correspond au filtre") } else { tr("No notes here yet", "Aucune note ici pour l'instant") };
+                d.child(div().debug_selector(|| "list-empty".into()).py_6().text_center().text_color(t.soft).child(said))
+            })
             .into_any_element()
     }
 }

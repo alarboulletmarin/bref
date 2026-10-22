@@ -16,10 +16,14 @@ pub(super) struct Toast {
     pub(super) id: usize,
     pub(super) tone: Tone,
     pub(super) text: String,
+    /// What the « Undo » button of the message does: puts back where it was (`.0`, now in the trash) what went to `.1`.
+    pub(super) undo: Option<(PathBuf, PathBuf)>,
 }
 
 /// Display duration of a status message.
 pub(super) const TOAST: Duration = Duration::from_secs(4);
+/// A failure is read, not glanced at: it stays longer, and a click or Esc takes it away.
+pub(super) const FAILED: Duration = Duration::from_secs(12);
 
 impl Shell {
     /// Shows a status message, which goes on click or after `TOAST`. It replaces the
@@ -27,13 +31,21 @@ impl Shell {
     // ponytail: a single "in progress" operation at a time; return the message number to
     // the caller the day two long operations can overlap.
     pub(super) fn say(&mut self, tone: Tone, text: impl Into<String>, cx: &mut Context<Self>) {
+        self.say_undoable(tone, text, None, cx);
+    }
+
+    /// `say`, with an « Undo » button that puts `undo.0` back at `undo.1`.
+    pub(super) fn say_undoable(&mut self, tone: Tone, text: impl Into<String>, undo: Option<(PathBuf, PathBuf)>, cx: &mut Context<Self>) {
         self.toasts.retain(|t| t.tone != Tone::Busy);
         self.toasted += 1;
         let id = self.toasted;
-        self.toasts.push(Toast { id, tone, text: text.into() });
+        self.toasts.push(Toast { id, tone, text: text.into(), undo });
         if tone != Tone::Busy {
+            // A failure stays longest; a long message is given time to be read.
+            let text_len = self.toasts.last().map_or(0, |t| t.text.chars().count());
+            let lasts = if tone == Tone::Failed { FAILED } else { TOAST + Duration::from_millis(40 * text_len.saturating_sub(40) as u64) };
             cx.spawn(async move |this, cx| {
-                cx.background_executor().timer(TOAST).await;
+                cx.background_executor().timer(lasts).await;
                 this.update(cx, |this, cx| {
                     this.toasts.retain(|t| t.id != id);
                     cx.notify();
@@ -43,6 +55,11 @@ impl Shell {
             .detach();
         }
         cx.notify();
+    }
+
+    /// Esc: the failures still shown go away.
+    pub(super) fn dismiss_failures(&mut self) {
+        self.toasts.retain(|t| t.tone != Tone::Failed);
     }
 
     /// A success removes the errors still shown.
@@ -100,6 +117,25 @@ impl Shell {
                 .cursor_pointer()
                 .child(icon)
                 .child(div().min_w_0().child(toast.text.clone()))
+                .children(toast.undo.clone().map(|(from, to)| {
+                    div()
+                        .id(("toast-undo", id))
+                        .debug_selector(|| "toast-undo".into())
+                        .flex_none()
+                        .px_2()
+                        .rounded(px(4.))
+                        .text_color(t.accent)
+                        .hover(|s| s.bg(t.border))
+                        .child(tr("Undo", "Annuler"))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.toasts.retain(|t| t.id != id);
+                                this.put_back(&from, &to, cx);
+                                cx.stop_propagation();
+                            }),
+                        )
+                }))
                 .child(svg().path("close.svg").size(px(14.)).flex_none().text_color(t.soft))
                 .on_mouse_down(
                     MouseButton::Left,

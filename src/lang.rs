@@ -10,6 +10,28 @@ pub fn tr(en: &'static str, fr: &'static str) -> &'static str {
     if *FRENCH.get_or_init(|| cfg!(test) || system_is_french()) { fr } else { en }
 }
 
+/// Why a disk operation failed, in the interface's language. An error we worded ourselves keeps its text; a system
+/// one (`Permission denied (os error 13)`) is told by its kind, and the system's own words are only the last resort.
+pub fn io_reason(e: &std::io::Error) -> String {
+    use std::io::ErrorKind::*;
+    if e.get_ref().is_some() {
+        return e.to_string();
+    }
+    match e.kind() {
+        PermissionDenied => tr("permission denied", "permission refusée"),
+        NotFound => tr("not found", "introuvable"),
+        AlreadyExists => tr("this name is already taken", "ce nom est déjà pris"),
+        ReadOnlyFilesystem => tr("the disk is read-only", "le disque est en lecture seule"),
+        StorageFull => tr("the disk is full", "le disque est plein"),
+        InvalidFilename => tr("invalid name", "nom invalide"),
+        NotADirectory => tr("not a folder", "ce n'est pas un dossier"),
+        IsADirectory => tr("this is a folder", "c'est un dossier"),
+        DirectoryNotEmpty => tr("the folder is not empty", "le dossier n'est pas vide"),
+        _ => return e.to_string(),
+    }
+    .to_string()
+}
+
 /// Locale variables first (launched from a terminal), otherwise the system:
 /// an application launched from the Finder or the Start menu gets none.
 fn system_is_french() -> bool {
@@ -100,5 +122,20 @@ mod tests {
         assert_eq!(first_language("(\n    en,\n    fr\n)"), Some("en"));
         assert_eq!(first_language("(\n)"), None);
         assert_eq!(first_language(""), None);
+    }
+
+    #[test]
+    fn tells_why_a_disk_operation_failed() {
+        use std::io::{Error, ErrorKind};
+        let os = Error::from_raw_os_error(13);
+        assert_eq!(io_reason(&os), "permission refusée");
+        assert!(!io_reason(&os).contains("os error"));
+        for (kind, said) in [(ErrorKind::NotFound, "introuvable"), (ErrorKind::StorageFull, "le disque est plein"), (ErrorKind::ReadOnlyFilesystem, "le disque est en lecture seule")] {
+            assert_eq!(io_reason(&Error::from(kind)), said);
+        }
+        // Our own wording is kept; a kind we do not know falls back to the system's words.
+        assert_eq!(io_reason(&Error::new(ErrorKind::AlreadyExists, "déjà pris")), "déjà pris");
+        assert_eq!(io_reason(&Error::other("")), "");
+        assert!(!io_reason(&Error::from(ErrorKind::TimedOut)).is_empty());
     }
 }

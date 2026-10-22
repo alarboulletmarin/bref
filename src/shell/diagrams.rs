@@ -27,7 +27,7 @@ impl Shell {
         };
         match result {
             Ok(()) => self.calm(),
-            Err(e) => self.say(Tone::Failed, format!("{} : {e}", tr("Diagram not saved", "Schéma non enregistré")), cx),
+            Err(e) => self.say(Tone::Failed, format!("{} : {}", tr("Diagram not saved", "Schéma non enregistré"), crate::lang::io_reason(&e)), cx),
         }
         cx.notify();
     }
@@ -53,7 +53,7 @@ impl Shell {
                         this.refresh_graph(cx);
                         canvas.update(cx, |canvas, cx| canvas.exported(cx)).ok();
                     }
-                    Err(e) => this.say(Tone::Failed, format!("{} : {e}", tr("Picture not saved", "Image non enregistrée")), cx),
+                    Err(e) => this.say(Tone::Failed, format!("{} : {}", tr("Picture not saved", "Image non enregistrée"), crate::lang::io_reason(&e)), cx),
                 }
                 cx.notify();
             })
@@ -105,13 +105,20 @@ impl Shell {
 
     pub(super) fn import_file(&mut self, file: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let drawio = file.extension().is_some_and(|e| e == "drawio" || e == "xml");
-        let read = fs::read_to_string(file).map_err(|e| e.to_string()).and_then(|text| match drawio {
+        let read = fs::read_to_string(file).map_err(|e| crate::lang::io_reason(&e)).and_then(|text| match drawio {
             true => import::drawio(&text),
             false => import::excalidraw(&text),
         });
         match (read, self.diagram_dir()) {
-            (Ok(diagram), Some(dir)) => self.add_diagram(&dir, &vault::stem(file), diagram, window, cx),
-            (Err(e), _) => self.say(Tone::Failed, format!("{} : {e}", tr("Import failed", "Import impossible")), cx),
+            (Ok(imported), Some(dir)) => {
+                self.add_diagram(&dir, &vault::stem(file), imported.diagram, window, cx);
+                // Said after the diagram is shown: the message must not be taken for its failure.
+                if imported.skipped > 0 {
+                    let said = if imported.skipped == 1 { tr("item not imported", "élément non importé") } else { tr("items not imported", "éléments non importés") };
+                    self.say(Tone::Info, format!("{} {said}", imported.skipped), cx);
+                }
+            }
+            (Err(e), _) => self.say(Tone::Failed, format!("{} : {}", tr("Import failed", "Import impossible"), e), cx),
             _ => {}
         }
         cx.notify();
@@ -148,7 +155,7 @@ impl Shell {
     pub(super) fn add_diagram(&mut self, dir: &Path, name: &str, diagram: Diagram, window: &mut Window, cx: &mut Context<Self>) {
         let path = vault::free_path(dir, name, "svg");
         if let Err(e) = vault::write(&path, &diagram.to_svg(diagram::COLORS[0])) {
-            return self.say(Tone::Failed, format!("{} : {e}", tr("Diagram not saved", "Schéma non enregistré")), cx);
+            return self.say(Tone::Failed, format!("{} : {}", tr("Diagram not saved", "Schéma non enregistré"), crate::lang::io_reason(&e)), cx);
         }
         self.images.push(path.clone());
         self.push_names(cx);

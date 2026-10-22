@@ -222,6 +222,8 @@ pub(super) struct Row {
     pub(super) grid: Option<Rc<TableRow>>,
     /// The section of another note this line embeds, framed under it.
     pub(super) embed: Option<Rc<EmbedRow>>,
+    /// The figure or the picture of the line cannot be read: what is said under it, in place of the picture.
+    pub(super) broken: Option<&'static str>,
 }
 
 impl Row {
@@ -250,7 +252,11 @@ impl Row {
     }
 
     pub(super) fn image_height(&self) -> Pixels {
-        self.image.as_ref().map_or(px(0.), |(_, s)| s.height.max(COPY_SIZE) + IMAGE_GAP)
+        match (&self.image, self.broken) {
+            (Some((_, s)), _) => s.height.max(COPY_SIZE) + IMAGE_GAP,
+            (None, Some(_)) => BROKEN + IMAGE_GAP,
+            _ => px(0.),
+        }
     }
 
     /// Room taken under the line by its picture or its embedded section.
@@ -398,6 +404,11 @@ pub(super) fn cached(old: &mut Figures, kept: &mut Figures, (key, family): (u64,
     let entry = old.remove(&stale)?;
     kept.insert(stale, entry.clone());
     entry.1
+}
+
+/// The figure with this key was drawn, and it is invalid (not one that is still being drawn, which has no entry).
+fn failed(kept: &Figures, key: u64) -> bool {
+    kept.get(&key).is_some_and(|(_, drawing)| drawing.is_none())
 }
 
 /// What, in a line's style, comes from its nature rather than its text.
@@ -915,6 +926,7 @@ impl Editor {
                     dx: px(0.),
                     grid: None,
                     embed: None,
+                    broken: None,
                 });
                 y += height;
                 offset += line.len() + 1;
@@ -923,6 +935,7 @@ impl Editor {
             let (mut kind, mut marker) = if offset < meta { (Kind::Meta, 0) } else { md::classify(line, in_code) };
             let mut opens = false;
             let mut drawing = None;
+            let mut broken = None;
             let mut enlarge = None;
             if kind == Kind::Fence && orphan != Some(offset) {
                 opens = !in_code && fences > 1;
@@ -938,6 +951,7 @@ impl Editor {
                     drawing = cached(&mut old, &mut kept, k, editing, || {
                         drawn(job(k, Arc::new(move || figure::mermaid(&source, &look))), &before, &mut waiting, window, cx)
                     });
+                    broken = failed(&kept, k.0).then(|| tr("Unreadable figure", "Figure illisible"));
                 }
             }
             let code = matches!(kind, Kind::Code | Kind::Fence | Kind::Meta);
@@ -953,9 +967,11 @@ impl Editor {
                 dollars -= 1;
                 match block.take() {
                     Some((_, source)) => {
-                        drawing = cached(&mut old, &mut kept, key(1, &source), false, || {
+                        let k = key(1, &source);
+                        drawing = cached(&mut old, &mut kept, k, false, || {
                             vector(figure::latex(&source, true, rgb(t.text), t.size * MATH_SCALE))
                         });
+                        broken = failed(&kept, k.0).then(|| tr("Unreadable formula", "Formule illisible"));
                         enlarge = drawing.is_some().then_some(Source::Formula(source, true));
                     }
                     // As for ```: a `$$` without a closing one opens nothing.
@@ -1013,6 +1029,7 @@ impl Editor {
                             dx: px(0.),
                             grid: None,
                             embed: None,
+                            broken: None,
                         });
                         y += height;
                     }
@@ -1186,12 +1203,19 @@ impl Editor {
                     };
                     drawn(job((k, family), Arc::new(make)), &before, &mut waiting, window, cx)
                 });
+                broken = broken.or(failed(&kept, k).then(|| tr("Unreadable figure", "Figure illisible")));
                 drawing = own.or(drawing);
             }
             let image = file.filter(|_| drawing.is_none() && !svg).and_then(|file| {
                 let loaded = window.use_asset::<ImgResourceLoader>(&Resource::Path(file.into()), cx);
                 loading |= loaded.is_none();
-                let image = loaded?.ok()?;
+                let image = match loaded? {
+                    Ok(image) => image,
+                    Err(_) => {
+                        broken = Some(tr("Unreadable image", "Image illisible"));
+                        return None;
+                    }
+                };
                 let natural = |d: gpui::DevicePixels| d.0 as f32;
                 let (w, h) = (natural(image.size(0).width), natural(image.size(0).height));
                 let scale = (f32::from(width) / w.max(1.)).min(1.);
@@ -1239,6 +1263,7 @@ impl Editor {
                 dx: px(0.),
                 grid: grid_row,
                 embed: None,
+                broken,
             };
             let height = row.height + row.image_height() + embed.as_ref().map_or(px(0.), |e| e.height());
             rows.push(Row { height, embed, ..row });

@@ -46,7 +46,7 @@ impl Shell {
                 continue;
             };
             if let Err(e) = vault::write(&path, &text) {
-                self.say(Tone::Failed, format!("{} {} : {e}", tr("Not rewritten:", "Non réécrite :"), path.display()), cx);
+                self.say(Tone::Failed, format!("{} {} : {}", tr("Not rewritten:", "Non réécrite :"), path.display(), crate::lang::io_reason(&e)), cx);
                 continue;
             }
             count += hits;

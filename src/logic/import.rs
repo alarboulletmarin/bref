@@ -26,8 +26,15 @@ fn color(hex: &str) -> u8 {
     (1..COLORS.len()).min_by_key(|i| far(&COLORS[*i])).unwrap_or(0) as u8
 }
 
+/// A diagram read from a file, and how many of its items Bref cannot draw: free strokes, pictures, frames, arrows with
+/// no end to hold, cells it does not know.
+pub struct Imported {
+    pub diagram: Diagram,
+    pub skipped: usize,
+}
+
 /// A `.excalidraw` file.
-pub fn excalidraw(json: &str) -> Result<Diagram, String> {
+pub fn excalidraw(json: &str) -> Result<Imported, String> {
     let unreadable = || tr("not an Excalidraw file", "ce n'est pas un fichier Excalidraw").to_string();
     let file: Value = serde_json::from_str(json).map_err(|_| unreadable())?;
     let elements: Vec<&Value> = file["elements"].as_array().ok_or_else(unreadable)?.iter().filter(|e| e["isDeleted"] != true).collect();
@@ -35,6 +42,8 @@ pub fn excalidraw(json: &str) -> Result<Diagram, String> {
     let mut diagram = Diagram::default();
     // Excalidraw identifier → that of the created shape or arrow.
     let mut made: HashMap<&str, u32> = HashMap::new();
+    // Items turned into something: the rest is counted as left out.
+    let mut taken = 0;
     for e in &elements {
         let form = match e["type"].as_str() {
             Some("rectangle") if e["roundness"].is_null() => Form::Rect,
@@ -51,6 +60,7 @@ pub fn excalidraw(json: &str) -> Result<Diagram, String> {
         shape.dashed = e["strokeStyle"].as_str().is_some_and(|s| s != "solid");
         shape.text = e["text"].as_str().unwrap_or("").to_string();
         made.insert(e["id"].as_str().unwrap_or(""), id);
+        taken += 1;
     }
     for e in &elements {
         if !matches!(e["type"].as_str(), Some("arrow" | "line")) {
@@ -82,6 +92,7 @@ pub fn excalidraw(json: &str) -> Result<Diagram, String> {
         link.color = color(e["strokeColor"].as_str().unwrap_or(""));
         link.dashed = e["strokeStyle"].as_str().is_some_and(|s| s != "solid");
         made.insert(e["id"].as_str().unwrap_or(""), id);
+        taken += 1;
     }
     // A text held by a shape or an arrow becomes its text.
     for e in elements.iter().filter(|e| e["type"] == "text") {
@@ -89,11 +100,13 @@ pub fn excalidraw(json: &str) -> Result<Diagram, String> {
         let text = e["text"].as_str().unwrap_or("").to_string();
         if let Some(shape) = diagram.shape_mut(id) {
             shape.text = text;
+            taken += 1;
         } else if let Some(link) = diagram.link_mut(id) {
             link.text = text;
+            taken += 1;
         }
     }
-    Ok(diagram)
+    Ok(Imported { diagram, skipped: elements.len().saturating_sub(taken) })
 }
 
 /// The text of a draw.io label, which may be HTML.
@@ -127,7 +140,7 @@ fn geometry<'a, 'i>(cell: &roxmltree::Node<'a, 'i>) -> Option<roxmltree::Node<'a
 // ponytail: draw.io can also save the diagram compressed (deflate then
 // base64); we then ask to save it again without compression. Add
 // decompression (`flate2`, `base64`) if such files are common.
-pub fn drawio(xml: &str) -> Result<Diagram, String> {
+pub fn drawio(xml: &str) -> Result<Imported, String> {
     let file = roxmltree::Document::parse(xml).map_err(|_| tr("not a draw.io file", "ce n'est pas un fichier draw.io").to_string())?;
     let cells: Vec<roxmltree::Node> = file.descendants().filter(|n| n.has_tag_name("mxCell")).collect();
     if cells.is_empty() {
@@ -166,6 +179,7 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
     let boxed = |cell: &roxmltree::Node| style(cell, "swimlane").is_some();
     let mut diagram = Diagram::default();
     let mut made: HashMap<String, u32> = HashMap::new();
+    let mut taken = 0;
     for cell in cells.iter().filter(|c| c.attribute("vertex") == Some("1")) {
         // A line of a UML class: it is appended to its box's text.
         let holder = cell.attribute("parent").and_then(|id| by_id.get(id)).filter(|p| boxed(p));
@@ -175,6 +189,7 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
             let rule = if shape.text.contains(RULE) || line == RULE { String::new() } else { format!("{RULE}\n") };
             shape.text = format!("{}\n{rule}{line}", shape.text);
             made.insert(id_of(cell), *id);
+            taken += 1;
             continue;
         }
         let Some(g) = geometry(cell) else { continue };
@@ -204,6 +219,7 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
         shape.fill = style(cell, "fillColor").is_some_and(|c| c.starts_with('#') && !c.eq_ignore_ascii_case("#ffffff"));
         shape.dashed = style(cell, "dashed").as_deref() == Some("1");
         made.insert(id_of(cell), id);
+        taken += 1;
     }
     for cell in cells.iter().filter(|c| c.attribute("edge") == Some("1")) {
         let (ox, oy) = origin(cell);
@@ -235,6 +251,7 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
         link.color = color(&style(cell, "strokeColor").unwrap_or_default());
         link.dashed = style(cell, "dashed").as_deref() == Some("1");
         made.insert(id_of(cell), id);
+        taken += 1;
     }
     // An arrow's label is sometimes a separate cell, held by it.
     for cell in cells.iter().filter(|c| style(c, "edgeLabel").is_some()) {
@@ -242,7 +259,8 @@ pub fn drawio(xml: &str) -> Result<Diagram, String> {
             link.text = label(cell);
         }
     }
-    Ok(diagram)
+    let drawn = cells.iter().filter(|c| c.attribute("vertex") == Some("1") || c.attribute("edge") == Some("1")).count();
+    Ok(Imported { diagram, skipped: drawn.saturating_sub(taken) })
 }
 
 #[cfg(test)]
@@ -262,12 +280,48 @@ mod tests {
             ]}"##,
         )
         .unwrap();
+        // The item left out: none here. The deleted one is not counted.
+        assert_eq!(d.skipped, 0);
+        let d = d.diagram;
         let a = &d.shapes[0];
         assert_eq!((d.shapes.len(), a.form, a.text.as_str(), a.color, a.fill, a.dashed), (2, Form::Round, "Client", 1, true, true));
         assert_eq!((d.shapes[1].form, d.shapes[1].color), (Form::Ellipse, 0));
         let l = &d.links[0];
         assert_eq!((l.from, l.to, l.end, l.color, l.text.as_str()), (End::Shape(a.id), End::Point(300., 60.), Head::Triangle, 4, "appelle"));
         assert!(excalidraw("{}").is_err());
+    }
+
+    #[test]
+    fn counts_what_it_leaves_out() {
+        // A free stroke, a picture, a frame, a deleted one (not counted), an arrow with no end, a text with no container.
+        let json = r##"{"elements":[
+            {"id":"a","type":"rectangle","x":0,"y":0,"width":10,"height":10,"roundness":null},
+            {"id":"f","type":"freedraw","x":0,"y":0,"points":[[0,0],[1,1]]},
+            {"id":"i","type":"image","x":0,"y":0,"width":5,"height":5},
+            {"id":"fr","type":"frame","x":0,"y":0,"width":50,"height":50},
+            {"id":"d","type":"freedraw","isDeleted":true},
+            {"id":"l","type":"arrow","x":0,"y":0,"points":[],"startBinding":null,"endBinding":null},
+            {"id":"t","type":"text","x":0,"y":0,"text":"seul","containerId":"nulle part"}
+            ]}"##;
+        let got = excalidraw(json).unwrap();
+        assert_eq!((got.diagram.shapes.len(), got.skipped), (1, 5));
+        // Nothing but strokes: an empty diagram and every item counted; an empty file: nothing left out.
+        let strokes = format!(r##"{{"elements":[{}]}}"##, (0..1000).map(|i| format!(r##"{{"id":"s{i}","type":"freedraw"}}"##)).collect::<Vec<_>>().join(","));
+        let got = excalidraw(&strokes).unwrap();
+        assert_eq!((got.diagram.shapes.len(), got.skipped), (0, 1000));
+        assert_eq!(excalidraw(r#"{"elements":[]}"#).unwrap().skipped, 0);
+    }
+
+    #[test]
+    fn counts_the_drawio_cells_it_leaves_out() {
+        // A cell with no geometry, an arrow with no ends; the layer cells are not items.
+        let xml = r##"<mxfile><diagram><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+            <mxCell id="a" value="A" style="rounded=1;" vertex="1" parent="1"><mxGeometry x="0" y="0" width="40" height="20" as="geometry"/></mxCell>
+            <mxCell id="n" value="sans forme" vertex="1" parent="1"/>
+            <mxCell id="e" edge="1" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+            </root></mxGraphModel></diagram></mxfile>"##;
+        let got = drawio(xml).unwrap();
+        assert_eq!((got.diagram.shapes.len(), got.diagram.links.len(), got.skipped), (1, 0, 2));
     }
 
     #[test]
@@ -284,6 +338,8 @@ mod tests {
             </root></mxGraphModel></diagram></mxfile>"##,
         )
         .unwrap();
+        assert_eq!(d.skipped, 0);
+        let d = d.diagram;
         assert_eq!(d.shapes.len(), 2);
         assert_eq!((d.shapes[0].form, d.shapes[0].text.as_str()), (Form::Rect, "Compte\n---\n+ solde: f32\n---\n+ cr&eacute;diter()"));
         let db = &d.shapes[1];
@@ -292,7 +348,7 @@ mod tests {
         let e = &d.links[0];
         assert_eq!((e.from, e.to, e.end, e.dashed, e.text.as_str()), (End::Shape(d.shapes[0].id), End::Shape(db.id), Head::Triangle, true, "lit"));
         assert_eq!((d.links[1].from, d.links[1].end), (End::Point(10., 200.), Head::None));
-        assert!(drawio("<mxfile><diagram>dVHBcoMg</diagram></mxfile>").unwrap_err().contains("compress"));
+        assert!(drawio("<mxfile><diagram>dVHBcoMg</diagram></mxfile>").err().unwrap().contains("compress"));
         assert!(drawio("pas du xml").is_err());
     }
 }

@@ -110,7 +110,7 @@ impl Shell {
                             this.dirs.push(new.clone());
                             this.nav.reveal(&new);
                         }
-                        Err(e) => this.fail(tr("Folder not created", "Dossier non créé"), e, cx),
+                        Err(e) => this.fail(tr("Folder not created", "Dossier non créé"), &new, e, cx),
                     }
                 });
             }
@@ -148,7 +148,7 @@ impl Shell {
                                 this.reload(cx);
                             }
                         }
-                        Err(e) => this.fail(tr("Not renamed", "Renommage impossible"), e, cx),
+                        Err(e) => this.fail(tr("Not renamed", "Renommage impossible"), &path, e, cx),
                     }
                 });
             }
@@ -185,7 +185,7 @@ impl Shell {
                     let twin = vault::free_path(path.parent().unwrap_or(&root), &vault::stem(path), &extension);
                     match fs::copy(path, &twin) {
                         Ok(_) => last = Some(twin),
-                        Err(e) => return self.fail(tr("Not duplicated", "Duplication impossible"), e, cx),
+                        Err(e) => return self.fail(tr("Not duplicated", "Duplication impossible"), path, e, cx),
                     }
                 }
                 if let Some(twin) = last {

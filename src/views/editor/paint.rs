@@ -280,6 +280,8 @@ impl Editor {
             if let Some((image, s)) = &row.image {
                 let at = block(px(0.), o.y + row.image_top(), s.width, s.height);
                 window.paint_image(at, Corners::all(px(6.)), image.clone(), 0, false).ok();
+            } else if let Some(said) = row.broken {
+                label(said, t.soft, window).paint(point(o.x, o.y + row.image_top()), BROKEN, window, cx).ok();
             }
             if let Some(embed) = &row.embed {
                 self.paint_embed(row, embed, window, cx);

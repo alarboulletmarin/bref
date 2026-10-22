@@ -95,6 +95,8 @@ struct Shell {
     /// Test: keep the drop label without a real drag in progress.
     #[cfg(test)]
     keep_aim: bool,
+    /// The vault the config points to when it is no longer there: the welcome page says so, until a vault is opened.
+    lost: Option<PathBuf>,
     /// Test: the window buttons are drawn by the app, as on Linux, whatever the test platform says.
     #[cfg(test)]
     client: bool,
@@ -207,6 +209,7 @@ impl Shell {
             opened: Vec::new(),
             #[cfg(test)]
             keep_aim: false,
+            lost: None,
             #[cfg(test)]
             client: false,
             grab: false,
@@ -302,6 +305,7 @@ pub fn run() {
         cx.on_window_closed(|cx| cx.quit()).detach();
 
         let (vault, recent) = vault::load_config();
+        let lost = vault.clone().filter(|v| !v.is_dir());
         let vault = vault.filter(|v| v.is_dir());
         // `bref --capture`: the input line alone, in a small undecorated window.
         // Without a chosen vault, the app opens as usual to ask for one.
@@ -340,7 +344,13 @@ pub fn run() {
                 window_min_size: Some(size(px(360.), px(240.))),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| Shell::new(vault, recent, window, cx)),
+            |window, cx| {
+                cx.new(|cx| {
+                    let mut shell = Shell::new(vault, recent, window, cx);
+                    shell.lost = lost;
+                    shell
+                })
+            },
         )
         .unwrap();
         cx.activate(true);

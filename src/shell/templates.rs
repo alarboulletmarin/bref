@@ -76,7 +76,7 @@ impl Shell {
         let text = match fs::read_to_string(template) {
             Ok(text) => text,
             Err(e) => {
-                self.say(Tone::Failed, format!("{} : {e}", tr("Template not read", "Modèle illisible")), cx);
+                self.say(Tone::Failed, format!("{} : {}", tr("Template not read", "Modèle illisible"), crate::lang::io_reason(&e)), cx);
                 return None;
             }
         };
@@ -87,7 +87,7 @@ impl Shell {
         }
         let (body, cursor) = markdown::fill(&text, name, &date_name(today()), &time_name(clock()));
         if let Err(e) = vault::write(&path, &body) {
-            self.say(Tone::Failed, format!("{} : {e}", tr("Note not created", "Note non créée")), cx);
+            self.say(Tone::Failed, format!("{} : {}", tr("Note not created", "Note non créée"), crate::lang::io_reason(&e)), cx);
             return None;
         }
         self.rescan(&root, cx);
@@ -101,7 +101,7 @@ impl Shell {
     pub(super) fn insert_template(&mut self, template: &Path, cx: &mut Context<Self>) {
         let text = match fs::read_to_string(template) {
             Ok(text) => text,
-            Err(e) => return self.say(Tone::Failed, format!("{} : {e}", tr("Template not read", "Modèle illisible")), cx),
+            Err(e) => return self.say(Tone::Failed, format!("{} : {}", tr("Template not read", "Modèle illisible"), crate::lang::io_reason(&e)), cx),
         };
         let title = self.pane().path.as_deref().map(vault::stem).unwrap_or_default();
         let (body, cursor) = markdown::fill(&text, &title, &date_name(today()), &time_name(clock()));
@@ -129,7 +129,7 @@ impl Shell {
                     this.rescan(&root, cx);
                     this.say(Tone::Done, format!("{} {name}", tr("Template saved:", "Modèle enregistré :")), cx);
                 }
-                Err(e) => this.say(Tone::Failed, format!("{} : {e}", tr("Template not saved", "Modèle non enregistré")), cx),
+                Err(e) => this.say(Tone::Failed, format!("{} : {}", tr("Template not saved", "Modèle non enregistré"), crate::lang::io_reason(&e)), cx),
             }
         });
     }

@@ -162,6 +162,7 @@ impl Shell {
         self.panes.truncate(1);
         self.active = 0;
         self.vault = Some(root.clone());
+        self.lost = None;
         self.icons = vault::load_icons(&root);
         self.notes.clear();
         self.dirs.clear();
@@ -200,7 +201,7 @@ impl Shell {
             Ok(()) => self.set_vault(root, window, cx),
             Err(e) => {
                 let what = tr("Cannot create the vault", "Impossible de créer le coffre");
-                self.say(Tone::Failed, format!("{what} {} : {e}", root.display()), cx);
+                self.say(Tone::Failed, format!("{what} {} : {}", root.display(), crate::lang::io_reason(&e)), cx);
             }
         }
     }
@@ -286,7 +287,7 @@ impl Shell {
         if let Some(root) = &self.vault
             && let Err(e) = vault::save_icons(root, &self.icons)
         {
-            self.say(Tone::Failed, format!("{} : {e}", tr("Icons not saved", "Icônes non enregistrées")), cx);
+            self.say(Tone::Failed, format!("{} : {}", tr("Icons not saved", "Icônes non enregistrées"), crate::lang::io_reason(&e)), cx);
         }
         cx.notify();
     }
@@ -332,7 +333,7 @@ impl Shell {
             let done = cx.background_executor().spawn(async move { vault::backup(&root, &dir, &date) }).await;
             this.update(cx, |this, cx| match done {
                 Ok(to) => this.say(Tone::Done, format!("{} {}", tr("Backup saved:", "Sauvegarde enregistrée :"), to.display()), cx),
-                Err(e) => this.say(Tone::Failed, format!("{} : {e}", tr("Backup failed", "Sauvegarde impossible")), cx),
+                Err(e) => this.say(Tone::Failed, format!("{} : {}", tr("Backup failed", "Sauvegarde impossible"), crate::lang::io_reason(&e)), cx),
             })
             .ok();
         })
@@ -362,7 +363,7 @@ impl Shell {
                     let name = to.file_name().unwrap_or_default().to_string_lossy().into_owned();
                     this.say(Tone::Done, format!("{} {name}", tr("Restored:", "Restauré :")), cx);
                 }
-                Some(Err(e)) => this.say(Tone::Failed, format!("{} : {e}", tr("Not restored", "Restauration impossible")), cx),
+                Some(Err(e)) => this.say(Tone::Failed, format!("{} : {}", tr("Not restored", "Restauration impossible"), crate::lang::io_reason(&e)), cx),
                 None => {}
             }
             this.palette = None;

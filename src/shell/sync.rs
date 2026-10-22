@@ -90,9 +90,9 @@ impl Shell {
                         );
                         if conflicts > 0 {
                             let kept = if conflicts > 1 {
-                                tr("conflicts: both versions are kept, the other ones as « (conflict …) » notes", "conflits : les deux versions sont gardées, celles d'en face dans des notes « (conflict …) »")
+                                tr("conflicts, both versions kept (see « (conflict …) »)", "conflits, les deux versions gardées (voir « (conflict …) »)")
                             } else {
-                                tr("conflict: both versions are kept, the other one as a « (conflict …) » note", "conflit : les deux versions sont gardées, celle d'en face dans une note « (conflict …) »")
+                                tr("conflict, both versions kept (see « (conflict …) »)", "conflit, les deux versions gardées (voir « (conflict …) »)")
                             };
                             told.push_str(&format!(" · {conflicts} {kept}"));
                         }

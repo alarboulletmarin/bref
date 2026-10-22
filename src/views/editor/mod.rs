@@ -191,6 +191,8 @@ const COPY_SIZE: Pixels = px(22.);
 const MATH_SCALE: f32 = 1.2;
 /// Space between a line and the image it points to.
 const IMAGE_GAP: Pixels = px(8.);
+/// Height of the line that says a figure or a picture cannot be read.
+const BROKEN: Pixels = px(20.);
 /// `file` is inside `root`, once `..` and symbolic links are resolved: a received
 /// note must not display a file from the disk outside the vault.
 // ponytail: an image folder linked by a symbolic link outside the vault is
@@ -620,6 +622,12 @@ impl Editor {
     #[cfg(test)]
     pub fn kind_at(&self, i: usize) -> Option<Kind> {
         Some(self.rows[self.row_at(i)?].kind)
+    }
+
+    /// What the lines say about a figure or a picture they cannot read, in the last layout.
+    #[cfg(test)]
+    pub fn unreadable(&self) -> Vec<&'static str> {
+        self.rows.iter().filter_map(|r| r.broken).collect()
     }
 
     /// Top of the text in its pane, in the last layout.
