@@ -490,7 +490,7 @@ fn shape_flags(
     }
     let is_marked = |i: usize| marked.as_ref().is_some_and(|m| m.contains(&source(&subs, i)));
     let style = RunStyle { heading: false, italic: false, mono: false, tint: None };
-    let runs = text_runs(look.theme, &styles, is_marked, &style);
+    let runs = text_runs(look.theme, &shown_text, &styles, is_marked, &style);
     let line = text_system
         .shape_text(shown_text.into(), font_size(look.theme), &runs, wrap, None)
         .ok()

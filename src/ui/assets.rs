@@ -37,6 +37,12 @@ pub fn mono() -> &'static str {
     FONTS.read().unwrap().1
 }
 
+/// The app's fonts have no CJK glyphs, and gpui draws a box for them in an italic or monospace run (the
+/// regular and bold sans find a system font): such characters take the upright sans.
+pub fn needs_system_font(c: char) -> bool {
+    matches!(c, '\u{2E80}'..='\u{FFEF}' | '\u{20000}'..='\u{3FFFF}')
+}
+
 pub fn init_fonts(cx: &mut App) {
     cx.text_system().add_fonts(FONT_FILES.iter().map(|f| Cow::Borrowed(*f)).collect()).ok();
     FAMILIES.get_or_init(|| {

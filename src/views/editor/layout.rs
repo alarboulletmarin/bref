@@ -1,6 +1,7 @@
 //! Layout: lines shaped and placed, redone only where the text changed (`Damage`, `plan`).
 
 use super::*;
+use crate::ui::assets::needs_system_font;
 
 /// What the layout depends on, apart from the text: if nothing changed, it is kept.
 #[derive(PartialEq)]
@@ -408,9 +409,9 @@ pub struct RunStyle {
     pub tint: Option<Hsla>,
 }
 
-/// The styles of line `flags` (one flag word per byte), in one piece
+/// The styles of the line `text`, `flags` (one flag word per byte), in one piece
 /// as long as nothing changes; `marked`: the byte is in the text being composed.
-pub fn text_runs(t: &Theme, flags: &[u16], marked: impl Fn(usize) -> bool, style: &RunStyle) -> Vec<TextRun> {
+pub fn text_runs(t: &Theme, text: &str, flags: &[u16], marked: impl Fn(usize) -> bool, style: &RunStyle) -> Vec<TextRun> {
     // ponytail: strings and numbers take the accent color shifted in hue,
     // to match each theme without a dedicated palette; give each theme its own code
     // colors if one of them clashes.
@@ -437,25 +438,45 @@ pub fn text_runs(t: &Theme, flags: &[u16], marked: impl Fn(usize) -> bool, style
         } else {
             t.text
         };
-        runs.push(TextRun {
-            len: j - i,
-            font: Font {
-                weight: if style.heading || f & md::BOLD != 0 { FontWeight::BOLD } else { FontWeight::NORMAL },
-                style: if f & md::ITALIC != 0 || style.italic { FontStyle::Italic } else { FontStyle::Normal },
-                ..font(if style.mono || f & md::CODE != 0 { mono() } else { sans() })
-            },
-            color,
-            background_color: (f & md::CODE != 0).then_some(t.code_bg),
-            // A single underline for the whole link, brackets included: gpui 0.2 leaves
-            // a bit of underline in the margin if the underline changes style
-            // right at a wrap.
-            underline: (m || f & (md::LINK | md::UNDER) != 0).then_some(UnderlineStyle {
-                thickness: px(1.),
-                color: Some(if f & md::LINK != 0 { t.accent } else { color }.opacity(if f & md::UNDER != 0 { 1. } else { 0.5 })),
-                wavy: false,
-            }),
-            strikethrough: (f & md::STRIKE != 0).then_some(StrikethroughStyle { thickness: px(1.), color: Some(color) }),
+        let (code, slanted) = (style.mono || f & md::CODE != 0, f & md::ITALIC != 0 || style.italic);
+        let underline = (m || f & (md::LINK | md::UNDER) != 0).then_some(UnderlineStyle {
+            thickness: px(1.),
+            color: Some(if f & md::LINK != 0 { t.accent } else { color }.opacity(if f & md::UNDER != 0 { 1. } else { 0.5 })),
+            wavy: false,
         });
+        // `upright`: the characters the app's fonts lack, in the sans, not italic.
+        let run = |len: usize, upright: bool| {
+            let (code, slanted) = (code && !upright, slanted && !upright);
+            TextRun {
+                len,
+                font: Font {
+                    weight: if style.heading || f & md::BOLD != 0 { FontWeight::BOLD } else { FontWeight::NORMAL },
+                    style: if slanted { FontStyle::Italic } else { FontStyle::Normal },
+                    ..font(if code { mono() } else { sans() })
+                },
+                color,
+                background_color: (f & md::CODE != 0).then_some(t.code_bg),
+                // A single underline for the whole link, brackets included: gpui 0.2 leaves
+                // a bit of underline in the margin if the underline changes style
+                // right at a wrap.
+                underline,
+                strikethrough: (f & md::STRIKE != 0).then_some(StrikethroughStyle { thickness: px(1.), color: Some(color) }),
+            }
+        };
+        if (code || slanted) && text.get(i..j).is_some_and(|s| s.chars().any(needs_system_font)) {
+            // Cut into pieces of the same kind: with or without such characters.
+            let mut piece = (i, needs_system_font(text[i..].chars().next().unwrap_or(' ')));
+            for (k, c) in text[i..j].char_indices() {
+                let (k, upright) = (i + k, needs_system_font(c));
+                if upright != piece.1 {
+                    runs.push(run(k - piece.0, piece.1));
+                    piece = (k, upright);
+                }
+            }
+            runs.push(run(j - piece.0, piece.1));
+        } else {
+            runs.push(run(j - i, false));
+        }
         i = j;
     }
     runs
@@ -1116,7 +1137,7 @@ impl Editor {
                     mono: code || kind == Kind::Table,
                     tint: own_tint,
                 };
-                let runs = text_runs(&t, &flags, is_marked, &style);
+                let runs = text_runs(&t, &shown, &flags, is_marked, &style);
 
                 let line = window
                     .text_system()
@@ -1487,5 +1508,51 @@ impl Editor {
         self.handles.hitboxes = self
             .handle_bounds()
             .map(|(grip, plus)| (window.insert_hitbox(grip, HitboxBehavior::Normal), plus.map(|plus| window.insert_hitbox(plus, HitboxBehavior::Normal))));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::logic::prefs::Prefs;
+    use gpui::WindowAppearance;
+
+    /// The runs of `text` as `(piece, italic, mono)`, `flags` the same on every byte.
+    fn pieces(text: &str, flag: u16, style: RunStyle) -> Vec<(String, bool, bool)> {
+        let t = Theme::of(&Prefs::parse(""), WindowAppearance::Light);
+        let (mut at, flags) = (0, vec![flag; text.len()]);
+        text_runs(&t, text, &flags, |_| false, &style)
+            .iter()
+            .map(|r| {
+                let piece = text[at..at + r.len].to_string();
+                at += r.len;
+                (piece, r.font.style == FontStyle::Italic, r.font.family == mono())
+            })
+            .collect()
+    }
+
+    fn plain() -> RunStyle {
+        RunStyle { heading: false, italic: false, mono: false, tint: None }
+    }
+
+    #[test]
+    fn characters_missing_from_the_app_fonts_leave_the_italic_and_the_monospace() {
+        // Italic: the CJK pieces are upright, the Latin ones keep their slant; every byte is in one run.
+        let got = pieces("abc 中文 def", md::ITALIC, plain());
+        assert_eq!(got, [("abc ".into(), true, false), ("中文".into(), false, false), (" def".into(), true, false)]);
+        // Monospace (inline code, then a code block): the same, the piece in the sans.
+        for (flag, style) in [(md::CODE, plain()), (0, RunStyle { mono: true, ..plain() })] {
+            let got = pieces("a漢b", flag, style);
+            assert_eq!(got, [("a".into(), false, true), ("漢".into(), false, false), ("b".into(), false, true)]);
+        }
+        // Edges: one character, only CJK, CJK at both ends, a quote (italic by its kind), Japanese, Korean, a second plane.
+        assert_eq!(pieces("中", md::ITALIC, plain()), [("中".into(), false, false)]);
+        assert_eq!(pieces("中a日", md::ITALIC, plain()).len(), 3);
+        assert_eq!(pieces("かな한글𠀀", md::ITALIC, plain()), [("かな한글𠀀".into(), false, false)]);
+        assert_eq!(pieces("引用 中", 0, RunStyle { italic: true, ..plain() }), [("引用".into(), false, false), (" ".into(), true, false), ("中".into(), false, false)]);
+        // Nothing to cut: one run, unchanged; a plain run with CJK stays as it was.
+        assert_eq!(pieces("abc", md::ITALIC, plain()), [("abc".into(), true, false)]);
+        assert_eq!(pieces("中文 abc", 0, plain()), [("中文 abc".into(), false, false)]);
+        assert_eq!(pieces("", md::ITALIC, plain()), []);
     }
 }

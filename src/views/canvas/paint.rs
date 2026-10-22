@@ -61,7 +61,7 @@ impl Canvas {
                 let style = span.style;
                 let weight = if style.bold { FontWeight::BOLD } else { FontWeight::NORMAL };
                 // The italic fonts have no CJK glyphs, and gpui draws a box instead of falling back.
-                let cjk = span.text.chars().any(|c| ('\u{2E80}'..='\u{FFEF}').contains(&c));
+                let cjk = span.text.chars().any(crate::ui::assets::needs_system_font);
                 let slant = if style.italic && !cjk { FontStyle::Italic } else { FontStyle::Normal };
                 let run = TextRun {
                     len: span.text.len(),

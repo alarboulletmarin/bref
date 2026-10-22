@@ -60,6 +60,35 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         assert_eq!(j.kind(cx, here.find("x").unwrap()), Some(Code));
     }
 
+    // CJK in an italic, a code span, a code block, a heading, a quote and a table cell: the characters the app's fonts lack are
+    // drawn in a system font, upright (the glyph and its width are looked at in a capture: the test platform measures every
+    // character alike). The caret and the selection follow the characters: positions grow with each one, the run cut is invisible.
+    for (note, probe) in [
+        ("*ab中文cd*", "中"), ("`ab漢字cd`", "漢"), ("```\nab漢字cd\n```", "漢"), ("# ab中文cd", "中"), ("> ab中文cd", "中"),
+        ("| a |\n| - |\n| *ab한글cd* |", "한"), ("*かな😀*", "か"), ("***ab中文cd***", "中"),
+    ] {
+        j.load(cx, note, 0);
+        let x = |cx: &mut gpui::VisualTestContext, i: usize| shell.read_with(cx, |s, cx| f32::from(s.pane().editor.read(cx).point_of(i).unwrap().x));
+        let at = note.find(probe).unwrap();
+        let (letter, cjk) = (x(cx, at) - x(cx, at - 1), x(cx, at + probe.len()) - x(cx, at));
+        assert!(letter > 0. && cjk > 0., "{note:?}: a letter {letter}, a wide character {cjk}");
+        // The caret goes through the note a character at a time without a jump back.
+        let mut last = f32::MIN;
+        let end = note[at..].find('\n').map_or(note.len(), |n| at + n);
+        for (i, _) in note[..end].char_indices().skip_while(|(i, _)| *i < at - 1) {
+            let here = x(cx, i);
+            assert!(here >= last, "{note:?}: {i} at {here} after {last}");
+            last = here;
+        }
+        // A selection over them: the editor takes it whole, and a typed letter replaces it.
+        j.load(cx, note, at);
+        cx.simulate_keystrokes("shift-right");
+        assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).selected().to_string()), probe, "{note:?}");
+        cx.simulate_input("z");
+        assert!(text(cx).contains('z'), "{note:?} -> {:?}", text(cx));
+        assert!(!text(cx).contains(probe) || note.matches(probe).count() > 1, "{note:?} -> {:?}", text(cx));
+    }
+
         // Image: the line that names it carries the image, found next to the note.
         // Symbols (`->`) only display outside the cursor's line, without touching the text.
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20"/></svg>"#;
