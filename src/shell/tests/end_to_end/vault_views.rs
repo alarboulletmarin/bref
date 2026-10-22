@@ -245,13 +245,6 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     cx.run_until_parked();
     let saved = fs::read_dir(&out).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect::<Vec<_>>();
     let toasts = shell.read_with(cx, |s, _| s.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>());
-    if saved.is_empty() {
-        // Diagnosis of a failure seen on Windows runners: the same command again, verbose, and what is in the vault.
-        let parent = root.parent().unwrap();
-        let again = crate::platform::command(vault::tar()).current_dir(&out).args(["-czvf", "diag.tar.gz", "-C"]).arg(parent).arg(root.file_name().unwrap()).output();
-        let tree: Vec<String> = fs::read_dir(root).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
-        eprintln!("tar {:?}: {:?}\nstdout: {}\nstderr: {}\nvault: {tree:?}", vault::tar(), again.as_ref().map(|o| o.status), again.as_ref().map(|o| String::from_utf8_lossy(&o.stdout).lines().last().unwrap_or("").to_string()).unwrap_or_default(), again.as_ref().map(|o| String::from_utf8_lossy(&o.stderr).to_string()).unwrap_or_default());
-    }
     assert!(saved.len() == 1 && saved[0].ends_with(&format!(" {}.tar.gz", date_name(today()))), "{saved:?} {toasts:?}");
     assert!(shell.read_with(cx, |s, _| !s.told(Tone::Failed, "") && !s.told(Tone::Busy, "") && s.told(Tone::Done, "Sauvegarde enregistrée") && s.told(Tone::Done, &saved[0])));
     shell.update(cx, |s, cx| s.backup_to(root.join(".trash"), cx));

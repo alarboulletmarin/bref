@@ -622,6 +622,7 @@ name = "bref"
 version = "0.4.1"
 dependencies = [
  "embed-resource",
+ "flate2",
  "gpui",
  "latex-rust",
  "libc",
