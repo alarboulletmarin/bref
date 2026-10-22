@@ -244,7 +244,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     shell.update(cx, |s, cx| s.backup_to(out.clone(), cx));
     cx.run_until_parked();
     let saved = fs::read_dir(&out).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect::<Vec<_>>();
-    assert!(saved.len() == 1 && saved[0].ends_with(&format!(" {}.tar.gz", date_name(today()))), "{saved:?}");
+    let toasts = shell.read_with(cx, |s, _| s.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>());
+    assert!(saved.len() == 1 && saved[0].ends_with(&format!(" {}.tar.gz", date_name(today()))), "{saved:?} {toasts:?}");
     assert!(shell.read_with(cx, |s, _| !s.told(Tone::Failed, "") && !s.told(Tone::Busy, "") && s.told(Tone::Done, "Sauvegarde enregistrée") && s.told(Tone::Done, &saved[0])));
     shell.update(cx, |s, cx| s.backup_to(root.join(".trash"), cx));
     cx.run_until_parked();

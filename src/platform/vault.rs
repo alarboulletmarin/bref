@@ -597,15 +597,19 @@ pub fn backup(root: &Path, dir: &Path, date: &str) -> io::Result<PathBuf> {
         .arg(parent)
         .arg(name)
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+        .output();
     match status {
-        Ok(status) if status.success() => Ok(to),
+        Ok(out) if out.status.success() => Ok(to),
         failed => {
             // An incomplete archive must not pass for a backup.
             let _ = fs::remove_file(&to);
-            Err(failed.err().unwrap_or_else(|| io::Error::other(tr("tar failed", "tar a échoué"))))
+            // What `tar` said, its first line: the reason is the user's to read.
+            let said = failed.as_ref().ok().and_then(|out| String::from_utf8_lossy(&out.stderr).lines().next().map(str::to_string)).filter(|l| !l.is_empty());
+            Err(match (failed, said) {
+                (Err(e), _) => e,
+                (Ok(_), Some(line)) => io::Error::other(format!("{} ({line})", tr("tar failed", "tar a échoué"))),
+                (Ok(_), None) => io::Error::other(tr("tar failed", "tar a échoué")),
+            })
         }
     }
 }
