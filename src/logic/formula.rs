@@ -56,9 +56,10 @@ impl Error {
     }
 }
 
-/// A cell is a formula when its text starts with `=` and says something after it.
+/// A cell is a formula when its text starts with `=` and says something after it. `==` is never a formula:
+/// it opens a highlight (`==text==`).
 pub fn is_formula(cell: &str) -> bool {
-    cell.trim_start().strip_prefix('=').is_some_and(|body| !body.trim().is_empty())
+    cell.trim_start().strip_prefix('=').is_some_and(|body| !body.trim().is_empty() && !body.starts_with('='))
 }
 
 /// The number a cell's text writes, as a person writes it: `1 234,5`, `1,234.5`, `12.50 €`, `$3`, `15%`
@@ -703,6 +704,23 @@ mod tests {
 
     fn one(formula: &str) -> String {
         calc(&[&["h"], &[formula]])
+    }
+
+    #[test]
+    fn a_highlight_is_not_a_formula() {
+        for text in ["==faux==", "==a== b", "== a ==", "==", "===", "==faux", " ==x==", "<mark class=\"yellow\">x</mark>", "{==commentaire==}{>>note<<}", "abc==", "a == b", "", "="] {
+            assert!(!is_formula(text), "{text:?}");
+        }
+        for text in ["=A1", " =1+2", "= =1", "=sum(above)", "=1==1"] {
+            assert!(is_formula(text), "{text:?}");
+        }
+        assert_eq!(calc(&[&["h"], &["= =1"]]), "#ERR Syntax(\"=\")");
+        // Highlighted cells are text: the total ignores them and nothing in them is evaluated.
+        let rows = grid(&[&["h"], &["==x=="], &["=2*3"], &["=sum(above)"]]);
+        let out = evaluate(&rows);
+        assert_eq!(out[1][0], None);
+        assert_eq!(out[3][0], Some(Ok(Value::Num(6.))));
+        assert_eq!(display(&rows, '.')[1], ["==x=="]);
     }
 
     #[test]

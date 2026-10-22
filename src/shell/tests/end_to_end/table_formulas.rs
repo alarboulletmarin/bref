@@ -124,6 +124,19 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     j.load(cx, "/h", 2);
     assert!(!offered(cx).is_empty());
 
+    // A highlight in a cell is text, not a formula: no `#ERR`, with the cursor in it or not, in the header, among numbers.
+    let marked = "| ==titre== | b |\n| - | - |\n| ==faux== | ==a== b |\n| == a == | ==faux |\n| === | {==note==}{>>x<<} |\n| =2*3 | =sum(above) |";
+    j.load(cx, marked, 0);
+    assert_eq!(seen(cx), "==titre==|b/==faux==|==a== b/== a ==|==faux/===|{==note==}{>>x<<}/6|0", "{:?}", seen(cx));
+    assert_eq!(text(cx), marked);
+    j.load(cx, marked, marked.find("==faux==").unwrap() + 4);
+    assert!(!seen(cx).contains("#ERR"), "{:?}", seen(cx));
+    // Typing `=` then `=` again: a formula until the second sign, text after it; undo gives the formula back.
+    let typed = "| a |\n| - |\n| 1 |\n| = |";
+    j.load(cx, typed, typed.len() - 2);
+    cx.simulate_input("=faux==");
+    assert!(text(cx).contains("| ==faux== |") && !seen(cx).contains("#ERR"), "{:?} {:?}", text(cx), seen(cx));
+
     // Limits. Numbers from 0 to a huge one, negative, with the French sign; a lone `=` is text; a header can compute;
     // an indented table; text results with CJK and emoji; a note without a table is left alone.
     let values = "| v |\n| - |\n| =0 |\n| =1 |\n| =9 |\n| =10 |\n| =99 |\n| =100 |\n| =1000 |\n| =100000 |\n| =-5 |\n| =1e |\n| =2^60 |\n| =0.5 |\n| =-0.05 |\n| = |";
