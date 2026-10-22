@@ -21,6 +21,45 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_click(button, gpui::Modifiers::none());
     assert_eq!(clipboard(cx).as_deref(), Some("let x = 1;"));
 
+    // An unpaired ``` is the last one, or the one being typed: a cursor resting on a fence of a closed block
+    // leaves the pairing alone (the note ends with an unclosed block, the cursor on each fence in turn).
+    {
+        use markdown::Kind::Code;
+        let is_code = |cx: &mut gpui::VisualTestContext, note: &str, probe: &str| j.kind(cx, note.find(probe).unwrap()) == Some(Code);
+        let odd = "a\n```\nx\n```\nb\n```\ny\n```\nc\n```\nz";
+        let fences: Vec<usize> = odd.match_indices("```").map(|(i, _)| i).collect();
+        for cursor in fences.iter().copied().chain([0, odd.len()]) {
+            j.load(cx, odd, cursor);
+            let seen = [is_code(cx, odd, "x"), is_code(cx, odd, "b"), is_code(cx, odd, "y"), is_code(cx, odd, "c"), is_code(cx, odd, "z")];
+            assert_eq!(seen, [true, false, true, false, false], "cursor {cursor}");
+        }
+        // Even: every fence pairs, wherever the cursor is.
+        let even = "```\nx\n```\nb\n```\ny\n```";
+        for cursor in even.match_indices("```").map(|(i, _)| i) {
+            j.load(cx, even, cursor);
+            assert_eq!([is_code(cx, even, "x"), is_code(cx, even, "b"), is_code(cx, even, "y")], [true, false, true], "cursor {cursor}");
+        }
+        // One fence alone, with or without text after it; indented; in a quote or a list it is not a fence.
+        for (note, probe, want) in [("```", "```", false), ("```\nsuite", "suite", false), ("a\n  ```\nsuite", "suite", false), ("> ```\n> x\n> ```\ny", "y", false), ("- ```\n- x", "x", false)] {
+            for cursor in [0, note.find("```").unwrap(), note.len()] {
+                j.load(cx, note, cursor);
+                assert_eq!(is_code(cx, note, probe), want, "{note:?} at {cursor}");
+            }
+        }
+        // Typing a fence in front of a closed block: the new one waits for its partner, the block keeps its code.
+        let note = "a\n\n```\nx\n```\nb";
+        j.load(cx, note, 2);
+        cx.simulate_input("```");
+        assert_eq!(text(cx), "a\n```\n```\nx\n```\nb");
+        let here = text(cx);
+        assert_eq!(j.kind(cx, here.find("x").unwrap()), Some(Code), "the block under the typed fence stays code");
+        // Undo, and a note loaded again: no memory of the last edit.
+        cx.simulate_keystrokes("secondary-z");
+        assert_eq!(text(cx), note);
+        let here = text(cx);
+        assert_eq!(j.kind(cx, here.find("x").unwrap()), Some(Code));
+    }
+
         // Image: the line that names it carries the image, found next to the note.
         // Symbols (`->`) only display outside the cursor's line, without touching the text.
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20"/></svg>"#;

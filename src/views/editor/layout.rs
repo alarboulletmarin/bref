@@ -738,14 +738,20 @@ impl Editor {
         });
         // A ``` without a closing fence opens no block: otherwise each ``` typed would
         // switch the whole rest of the note to code, hence restyle it. If
-        // there is one too many, it is the one being typed, otherwise the last.
+        // there is one too many, it is the one being typed (the cursor is on the line of the
+        // last change), otherwise the last: a cursor merely resting on a fence of a closed
+        // block must not shift the pairing of the others.
         let (mut fences, mut dollars) = match &plan {
             Some(plan) => (plan.fences, plan.dollars),
             None => md::count_fences_and_dollars(&self.content),
         };
         let (fences0, dollars0) = (fences, dollars);
         let typed = self.line_range(cursor);
-        let orphan = (plan.is_none() && fences % 2 == 1 && md::is_fence(&self.content[typed.clone()]))
+        let orphan = (plan.is_none()
+            && fences % 2 == 1
+            && md::is_fence(&self.content[typed.clone()])
+            && self.content.is_char_boundary(self.edited_at)
+            && self.line_range(self.edited_at) == typed)
             .then_some(typed.start);
         fences -= orphan.is_some() as usize;
         // A font without `≠` composes it from a `=` and a misplaced bar: might as well

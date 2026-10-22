@@ -239,6 +239,8 @@ pub struct Editor {
     undo: History,
     redo: History,
     last_edit: Option<Instant>,
+    /// Where the last change started (`usize::MAX` after a load or an undo): the ``` there is the one being typed.
+    edited_at: usize,
     notes: Vec<String>,
     /// Folders to look for images in: the note's, then the vault.
     dirs: Vec<PathBuf>,
@@ -395,6 +397,7 @@ impl Editor {
             undo: History::default(),
             redo: History::default(),
             last_edit: None,
+            edited_at: usize::MAX,
             notes: Vec::new(),
             dirs: Vec::new(),
             images: HashMap::new(),
@@ -488,6 +491,7 @@ impl Editor {
         self.undo = History::default();
         self.redo = History::default();
         self.last_edit = None;
+        self.edited_at = usize::MAX;
         self.scroll_y = px(0.);
         self.table_x.clear();
         self.selecting = false;

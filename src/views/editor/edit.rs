@@ -63,6 +63,7 @@ impl Editor {
     pub(super) fn damaged(&mut self, range: &Range<usize>) {
         let len = self.content.len();
         let (prefix, suffix) = (range.start, len - range.end);
+        self.edited_at = range.start;
         self.dmg = Some(match self.dmg {
             None => Damage { old_len: len, prefix, suffix },
             Some(d) => Damage { prefix: d.prefix.min(prefix), suffix: d.suffix.min(suffix), ..d },
@@ -166,6 +167,7 @@ impl Editor {
         if let Some((text, cursor)) = md::renumber(&self.content, self.cursor()) {
             self.epoch += 1;
             self.content = text;
+            self.edited_at = usize::MAX;
             self.sel = cursor..cursor;
             self.reversed = false;
             self.more.clear();
@@ -188,6 +190,7 @@ impl Editor {
         self.reversed = false;
         self.more.clear();
         self.last_edit = None;
+        self.edited_at = usize::MAX;
         self.changed(cx);
     }
 
