@@ -775,7 +775,8 @@ impl Shell {
             .flex_none()
             .h(px(44.))
             .pl_2()
-            .pr_1()
+            // Over the whole window, the window buttons float over the right end of the header.
+            .pr(if full && !self.nav.native_bar { super::render::PILL_ROOM } else { px(4.) })
             .flex()
             .items_center()
             .child(
@@ -797,14 +798,14 @@ impl Shell {
             })
             .when(mode == Mode::Tree, |d| {
                 // A note at the vault root, whatever the selection.
-                d.child(button("nav-file", "file-plus.svg", false, t).tooltip(tip(tr("New note at the root", "Nouvelle note à la racine"), String::new(), t)).on_click(cx.listener(
+                d.child(button("nav-file", "file-plus.svg", false, t).debug_selector(|| "nav-file".into()).tooltip(tip(tr("New note at the root", "Nouvelle note à la racine"), String::new(), t)).on_click(cx.listener(
                     |this, _, window, cx| this.new_note_in(None, window, cx),
                 )))
-                .child(button("nav-folder", "folder-plus.svg", false, t).tooltip(tip(tr("New folder", "Nouveau dossier"), keys(&NewFolder), t)).on_click(cx.listener(
+                .child(button("nav-folder", "folder-plus.svg", false, t).debug_selector(|| "nav-folder".into()).tooltip(tip(tr("New folder", "Nouveau dossier"), keys(&NewFolder), t)).on_click(cx.listener(
                     |this, _, window, cx| this.menu_do(Do::NewFolder, this.nav.sel.clone(), window, cx),
                 )))
                 // Collapse all; if all already is, expand all.
-                .child(button("nav-fold", if folded { "unfold.svg" } else { "fold.svg" }, false, t).tooltip(tip(if folded { tr("Unfold every folder", "Déplier tous les dossiers") } else { tr("Fold every folder", "Replier tous les dossiers") }, String::new(), t)).on_click(
+                .child(button("nav-fold", if folded { "unfold.svg" } else { "fold.svg" }, false, t).debug_selector(|| "nav-fold".into()).tooltip(tip(if folded { tr("Unfold every folder", "Déplier tous les dossiers") } else { tr("Fold every folder", "Replier tous les dossiers") }, String::new(), t)).on_click(
                     cx.listener(|this, _, _, cx| {
                         this.fold_all();
                         cx.notify();
@@ -813,6 +814,7 @@ impl Shell {
             })
             .child(
                 button("nav-full", if full { "shrink.svg" } else { "expand.svg" }, false, t)
+                    .debug_selector(|| "nav-full".into())
                     .tooltip(tip(if full { tr("Back beside the note", "Revenir à côté de la note") } else { tr("Panel on the whole window", "Panneau en pleine fenêtre") }, keys(&ToggleFull), t))
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_full(window, cx))),
             );

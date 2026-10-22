@@ -9,6 +9,10 @@ pub(super) fn badge_label(count: usize) -> String {
 
 /// Transparent margin around the window when the app draws its decorations.
 pub(super) const SHADOW: Pixels = px(10.);
+/// The window buttons' pill: its width (padding, three buttons, gaps, border) and, from the window's edge, its width and margin
+/// with some air: what the panel header leaves free under it.
+const PILL_W: Pixels = px(94.);
+pub(super) const PILL_ROOM: Pixels = px(112.);
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -54,6 +58,8 @@ impl Render for Shell {
             Decorations::Client { tiling } => Some(tiling),
             Decorations::Server => None,
         };
+        #[cfg(test)]
+        let tiling = tiling.or(self.client.then(Default::default));
         let client = tiling.is_some();
         let framed = tiling.is_some_and(|t| !t.is_tiled())
             && !window.is_maximized()
@@ -372,6 +378,7 @@ impl Shell {
                 spread_radius: px(0.),
             }])
             .occlude()
+            .debug_selector(|| "window-pill".into())
             .map(drag_window)
             .when(controls.minimize, |d| {
                 d.child(icon_button("minimize", "minimize.svg", t).on_click(|_, window, _| window.minimize_window()))
@@ -631,9 +638,11 @@ impl Shell {
                 .occlude()
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });
+        let pill = client.then(|| window.viewport_size().width - self.nav.left - px(8.) - PILL_W);
         self.pane().editor.update(cx, |e, _| {
             e.corner = 1 + talk.is_some() as usize + boards as usize;
             e.bar_here = active;
+            e.pill = pill;
         });
         // The comments column takes what the panel and the note leave it, 270 px at
         // most; short of 140 px, it does not show (its button stays, a wider window brings it back).

@@ -1334,7 +1334,7 @@ impl Editor {
         let (cursor, t) = (self.cursor(), self.theme);
         let at = self.row_at(cursor);
         let look = grid::Look { theme: &t, style: self.big_style };
-        let (page, top) = (bounds.size.height, self.scroll_y - TOP);
+        let (page, top) = (bounds.size.height, self.scroll_y - self.top);
         let (lo, hi) = (top - page * 2., top + page * 3.);
         let text_system = window.text_system().clone();
         let mut cells = std::mem::take(&mut self.cells);
@@ -1382,11 +1382,17 @@ impl Editor {
     pub(super) fn place(&mut self, bounds: Bounds<Pixels>, window: &mut Window, _: &mut App) {
         let reveal = std::mem::take(&mut self.reveal);
         let to_top = std::mem::take(&mut self.reveal_top);
+        // A narrow note (the pane, not the page measure, sets its width) that reaches under the window buttons starts lower.
+        // Only the geometry counts, so the text never jumps while it is typed. ponytail: a long first line of a wide note
+        // can still pass under them; that is worth no gap at the top of every note.
+        let narrow = self.width + SIDE * 2. >= bounds.size.width;
+        let text_right = bounds.left() + (bounds.size.width + self.width) / 2.;
+        self.top = if narrow && self.pill.is_some_and(|left| text_right > left) { PILL_CLEAR } else { TOP };
         if reveal {
             let c = self.cursor();
             if let Some(r) = self.row_at(c) {
                 let row = &self.rows[r];
-                let top = TOP + row.y + row.pad + row.pos(c - row.start).y;
+                let top = self.top + row.y + row.pad + row.pos(c - row.start).y;
                 let margin = px(24.);
                 if to_top || top - self.scroll_y < margin {
                     self.scroll_y = top - margin;
@@ -1395,11 +1401,11 @@ impl Editor {
                 }
             }
         }
-        let max_scroll = (TOP + self.total_y - bounds.size.height * 0.4).max(px(0.));
+        let max_scroll = (self.top + self.total_y - bounds.size.height * 0.4).max(px(0.));
         self.scroll_y = self.scroll_y.max(px(0.)).min(max_scroll);
         self.origin = point(
             bounds.left() + (bounds.size.width - self.width) / 2.,
-            bounds.top() + TOP - self.scroll_y,
+            bounds.top() + self.top - self.scroll_y,
         );
         self.viewport = bounds;
         self.materialize(bounds, window);

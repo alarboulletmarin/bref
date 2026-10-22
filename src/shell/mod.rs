@@ -95,6 +95,9 @@ struct Shell {
     /// Test: keep the drop label without a real drag in progress.
     #[cfg(test)]
     keep_aim: bool,
+    /// Test: the window buttons are drawn by the app, as on Linux, whatever the test platform says.
+    #[cfg(test)]
+    client: bool,
     /// The active pane changed without input following: the next render gives it focus.
     grab: bool,
     /// A git sync is in progress: only one at a time.
@@ -204,6 +207,8 @@ impl Shell {
             opened: Vec::new(),
             #[cfg(test)]
             keep_aim: false,
+            #[cfg(test)]
+            client: false,
             grab: false,
             panes_saved: String::new(),
             syncing: false,

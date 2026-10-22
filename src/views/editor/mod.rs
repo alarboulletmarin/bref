@@ -179,6 +179,8 @@ actions!(
 /// the text scrolls behind it, and the cursor and the popups stay above it.
 pub(super) const FOOTER: Pixels = px(56.);
 const TOP: Pixels = px(20.);
+/// Top margin when the window buttons would cover the first line: under their bottom edge and shadow.
+const PILL_CLEAR: Pixels = px(48.);
 pub const MAX_WIDTH: Pixels = px(720.);
 /// Margin kept on each side of the page, narrow or full.
 const SIDE: Pixels = px(24.);
@@ -338,6 +340,11 @@ pub struct Editor {
     bar: BarState,
     /// The note is the active pane's: a single formatting bar for the whole window.
     pub bar_here: bool,
+    /// Left edge (in the window) of the window buttons floating over the top right corner, where the app draws them:
+    /// a first line reaching under it starts lower (`place`).
+    pub pill: Option<Pixels>,
+    /// Top margin of the text in the last `place`: `TOP`, or `PILL_CLEAR`.
+    top: Pixels,
     /// Changes when everything must be redone (other note, theme, images): nothing is reused.
     epoch: u64,
     dmg: Option<Damage>,
@@ -447,6 +454,8 @@ impl Editor {
             corner: 1,
             bar: BarState::default(),
             bar_here: true,
+            pill: None,
+            top: TOP,
             epoch: 0,
             dmg: None,
             laid: None,
@@ -611,6 +620,12 @@ impl Editor {
     #[cfg(test)]
     pub fn kind_at(&self, i: usize) -> Option<Kind> {
         Some(self.rows[self.row_at(i)?].kind)
+    }
+
+    /// Top of the text in its pane, in the last layout.
+    #[cfg(test)]
+    pub fn top_margin(&self) -> Pixels {
+        self.top
     }
 
     /// Cursor position in the text.

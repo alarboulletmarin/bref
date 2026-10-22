@@ -400,3 +400,83 @@ fn update_banner_stays_clear_of_the_formatting_bar(cx: &mut TestAppContext) {
     assert_eq!(checked, 2 * 2 * 7 * 4);
     let _ = fs::remove_dir_all(&root);
 }
+
+/// Where the app draws the window buttons (Linux), they float over the top right corner: the panel header, on the whole window,
+/// keeps its four buttons clear of them, and a narrow note starts under them, whatever the panel, the width or the language.
+#[gpui::test]
+fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-pill-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let _config = isolated_config(&root);
+    let note = root.join("Titre.md");
+    fs::write(&note, "# Un titre très très très long qui passe à la ligne dans une fenêtre étroite\n\nTexte\n").unwrap();
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (shell, cx) = cx.add_window_view(|window, cx| {
+        let mut shell = Shell::new(Some(root.clone()), vec![note.clone()], window, cx);
+        shell.client = true;
+        shell
+    });
+    cx.run_until_parked();
+    let settle = |cx: &mut gpui::VisualTestContext| {
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+    };
+    let top = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).top_margin());
+    // The panel on the whole window: its four buttons end where the window buttons begin, from a phone width to a very wide window.
+    shell.update(cx, |s, cx| {
+        s.nav.mode = nav::Mode::Tree;
+        s.nav.panel = nav::Panel::Full;
+        cx.notify();
+    });
+    for width in [320., 420., 860., 1600.] {
+        cx.simulate_resize(size(px(width), px(600.)));
+        settle(cx);
+        let pill = cx.debug_bounds("window-pill").expect("the window buttons are drawn");
+        let mut last = px(0.);
+        for button in ["nav-file", "nav-folder", "nav-fold", "nav-full"] {
+            let bounds = cx.debug_bounds(button).unwrap_or_else(|| panic!("{width}: {button} absent"));
+            assert!(bounds.right() <= pill.left(), "{width}: {button} {bounds:?} under the window buttons {pill:?}");
+            assert!(bounds.left() >= last, "{width}: {button} overlaps the one before");
+            last = bounds.right();
+        }
+    }
+    // The panel beside the note: a note narrowed by the panel (120, 260, 600 px) starts under the window buttons; in a window wide
+    // enough for the page, the note keeps its usual top margin.
+    shell.update(cx, |s, cx| {
+        s.nav.panel = nav::Panel::Split;
+        cx.notify();
+    });
+    let pill_bottom = |cx: &mut gpui::VisualTestContext| cx.debug_bounds("window-pill").unwrap().bottom();
+    for (window, panel) in [(860., 120.), (860., 260.), (860., 600.), (420., 120.), (1600., 260.), (1600., 600.)] {
+        cx.simulate_resize(size(px(window), px(600.)));
+        shell.update(cx, |s, cx| {
+            s.nav.list_w = px(panel);
+            cx.notify();
+        });
+        settle(cx);
+        let (pane, pill, top) = (cx.debug_bounds("pane-0").unwrap(), pill_bottom(cx), top(cx));
+        // Narrow: the pane, not the page measure, sets the width of the text.
+        let narrow = pane.size.width < editor::MAX_WIDTH + px(48.);
+        if narrow {
+            assert!(pane.top() + top >= pill, "{window}/{panel}: the text starts at {top:?}, the window buttons end at {pill:?}");
+        } else {
+            assert_eq!(top, px(20.), "{window}/{panel}: a note wide enough keeps its top margin");
+        }
+    }
+    // No panel, the page is as wide as the window lets it: the default window keeps its top margin, a narrow one gives room.
+    shell.update(cx, |s, cx| {
+        s.nav.panel = nav::Panel::Rail;
+        cx.notify();
+    });
+    for (window, narrow) in [(860., false), (1600., false), (420., true), (320., true)] {
+        cx.simulate_resize(size(px(window), px(600.)));
+        settle(cx);
+        let (pane, pill, top) = (cx.debug_bounds("pane-0").unwrap(), pill_bottom(cx), top(cx));
+        assert_eq!(pane.top() + top >= pill, narrow, "{window}: the text starts at {top:?}, the window buttons end at {pill:?}");
+    }
+    let _ = fs::remove_dir_all(&root);
+}
