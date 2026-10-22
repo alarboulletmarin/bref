@@ -127,10 +127,11 @@ mod tests {
     #[test]
     fn tells_why_a_disk_operation_failed() {
         use std::io::{Error, ErrorKind};
-        let os = Error::from_raw_os_error(13);
-        assert_eq!(io_reason(&os), "permission refusée");
+        // A real system error, whatever the system: a file that is not there.
+        let os = std::fs::read(std::env::temp_dir().join("bref-absent-ici/rien")).unwrap_err();
+        assert_eq!(io_reason(&os), "introuvable");
         assert!(!io_reason(&os).contains("os error"));
-        for (kind, said) in [(ErrorKind::NotFound, "introuvable"), (ErrorKind::StorageFull, "le disque est plein"), (ErrorKind::ReadOnlyFilesystem, "le disque est en lecture seule")] {
+        for (kind, said) in [(ErrorKind::PermissionDenied, "permission refusée"), (ErrorKind::NotFound, "introuvable"), (ErrorKind::StorageFull, "le disque est plein"), (ErrorKind::ReadOnlyFilesystem, "le disque est en lecture seule")] {
             assert_eq!(io_reason(&Error::from(kind)), said);
         }
         // Our own wording is kept; a kind we do not know falls back to the system's words.
