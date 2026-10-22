@@ -608,7 +608,7 @@ pub fn backup(root: &Path, dir: &Path, date: &str) -> io::Result<PathBuf> {
             Err(match (failed, said) {
                 (Err(e), _) => e,
                 (Ok(_), Some(line)) => io::Error::other(format!("{} ({line})", tr("tar failed", "tar a échoué"))),
-                (Ok(_), None) => io::Error::other(tr("tar failed", "tar a échoué")),
+                (Ok(out), None) => io::Error::other(format!("{} (code {})", tr("tar failed", "tar a échoué"), out.status.code().map_or("?".into(), |c| c.to_string()))),
             })
         }
     }
