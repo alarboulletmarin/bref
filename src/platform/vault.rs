@@ -573,6 +573,20 @@ fn spell_keys(keys: &str) -> String {
     parts.collect::<Vec<_>>().join("+")
 }
 
+/// The `tar` to run. On Windows, the one Windows ships (`System32\tar.exe`) rather than whichever comes first in the
+/// `PATH`: Git for Windows' own is an msys program that crashes now and then (access violation) when many processes
+/// run, and takes `C:\…` for a remote machine.
+pub fn tar() -> std::path::PathBuf {
+    #[cfg(windows)]
+    if let Some(root) = std::env::var_os("SystemRoot") {
+        let system = Path::new(&root).join("System32").join("tar.exe");
+        if system.is_file() {
+            return system;
+        }
+    }
+    "tar".into()
+}
+
 /// Backup: the whole vault (trash included) in a `<vault> <date>.tar.gz` archive
 /// in folder `dir`, numbered if the name is taken. Blocking: run off the UI thread.
 // ponytail: the system's `tar` (shipped with Linux, macOS and Windows 10) rather than an
@@ -589,7 +603,7 @@ pub fn backup(root: &Path, dir: &Path, date: &str) -> io::Result<PathBuf> {
     let to = free_path(dir, &format!("{} {date}", name.to_string_lossy()), "tar.gz");
     // The archive is named from `dir`: Git for Windows' `tar` would take `C:\…` for
     // a remote machine.
-    let status = crate::platform::command("tar")
+    let status = crate::platform::command(tar())
         .current_dir(dir)
         .arg("-czf")
         .arg(to.file_name().unwrap_or_default())
@@ -1073,7 +1087,7 @@ mod tests {
         assert_eq!(first, out.join("Mon coffre 2026-10-09.tar.gz"));
         // Same day: a second archive, the first one stays.
         assert_eq!(backup(&root, &out, "2026-10-09").unwrap(), out.join("Mon coffre 2026-10-09 2.tar.gz"));
-        let listed = crate::platform::command("tar").current_dir(&out).arg("-tzf").arg(first.file_name().unwrap()).output().unwrap();
+        let listed = crate::platform::command(tar()).current_dir(&out).arg("-tzf").arg(first.file_name().unwrap()).output().unwrap();
         let listed = String::from_utf8_lossy(&listed.stdout).replace('\\', "/");
         assert!(listed.contains("Mon coffre/A.md") && listed.contains("Mon coffre/.trash/Vieux.md"), "{listed}");
         // Inside the vault, the archive would contain itself: refused, nothing is written.
