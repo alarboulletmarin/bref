@@ -99,6 +99,11 @@ pub struct Theme {
     pub code_bg: Hsla,
     pub panel: Hsla,
     pub border: Hsla,
+    /// Strings and numbers of a code block.
+    pub string: Hsla,
+    pub number: Hsla,
+    /// Lines that are not text but must be seen (3:1): graph edges, diagram strokes.
+    pub line: Hsla,
     /// Size of the note's body text, in pixels.
     pub size: f32,
     pub page: Page,
@@ -132,19 +137,33 @@ impl Theme {
         let system = &THEMES[if dark { 0 } else { 1 }];
         let (_, colors) = THEMES.iter().find(|t| t.0 == prefs.theme).unwrap_or(system);
         let [bg, text, dim, accent, code_bg, panel, border] = colors.map(|c| Hsla::from(rgb(c)));
-        // The faintest grey between text and background that still reads on both backgrounds.
+        // The selection, as strong as the text over it allows.
+        let share = (0..=15)
+            .map(|i| if bg.l < 0.5 { 0.25 } else { 0.2 } - i as f32 * 0.01)
+            .find(|&a| [bg, panel].iter().all(|b| contrast(text, blend(accent, *b, a)) >= 4.5))
+            .unwrap_or(0.12);
+        let picked = [bg, panel, blend(accent, bg, share), blend(accent, panel, share)];
+        // Some themes' own text is under 4.5:1 on their code background or selected (Solarized).
+        let text = picked.iter().chain([&code_bg]).fold(text, |c, b| legible(c, *b));
+        // The faintest grey between text and background that still reads on the page, the panel and code.
         let soft = (0..=20)
             .map(|i| blend(text, bg, 0.5 + i as f32 * 0.025))
-            .find(|c| contrast(*c, bg) >= 4.5 && contrast(*c, panel) >= 4.5)
+            .find(|c| [bg, panel, code_bg].iter().all(|b| contrast(*c, *b) >= 4.5))
             .unwrap_or(text);
+        // Links and tags are written in the accent: it must read like text, selected too.
+        let accent_read = picked.iter().fold(accent, |c, b| legible(c, *b));
+        // Strings and numbers take the accent shifted in hue, to match each theme without a palette of their own.
+        let code = |by: f32| [bg, code_bg].iter().fold(Hsla { h: (accent_read.h + by).fract(), ..accent_read }, |c, b| legible(c, *b));
         Self {
             bg,
             text,
             dim,
             soft,
-            // Links and tags are written in the accent: it must read like text.
-            accent: legible(legible(accent, bg), panel),
-            selection: accent.opacity(if bg.l < 0.5 { 0.25 } else { 0.2 }),
+            accent: accent_read,
+            string: code(0.33),
+            number: code(0.6),
+            line: reach(reach(dim, bg, 3.), code_bg, 3.),
+            selection: accent.opacity(share),
             code_bg,
             panel,
             border,
@@ -155,6 +174,34 @@ impl Theme {
         }
     }
 }
+
+impl Theme {
+    /// Background of a highlight (`==text==`) of color `i` (see `md::MARKS`), opaque.
+    pub fn highlight(&self, i: usize) -> Hsla {
+        let tint = highlight_tint(i);
+        // As strong as the text over it allows.
+        (0..=30).map(|k| blend(tint, self.bg, 0.4 - k as f32 * 0.01)).find(|c| contrast(self.text, *c) >= 4.5).unwrap_or(self.bg)
+    }
+
+    /// One of the five hues of the recipe (`HUES`), readable on `under`: icons of the messages, pills.
+    pub fn hue(&self, h: f32, under: Hsla) -> Hsla {
+        legible(Hsla { h, s: 0.7, l: 0.5, a: 1. }, under)
+    }
+}
+
+/// The pure color of highlight `i`, for its badge in the formatting bar.
+pub fn highlight_tint(i: usize) -> Hsla {
+    Hsla { h: HIGHLIGHTS[i.min(HIGHLIGHTS.len() - 1)], s: 0.9, l: 0.55, a: 1. }
+}
+
+/// Hues of the highlights, in the order of `md::MARKS`: yellow, green, blue, pink, purple.
+const HIGHLIGHTS: [f32; 5] = [0.14, 0.36, 0.58, 0.93, 0.76];
+
+/// The five hues of the callout recipe: green, purple, orange, red, blue.
+#[cfg(test)]
+const HUES: [f32; 5] = [GREEN, 0.75, 0.09, RED, 0.58];
+pub const GREEN: f32 = 0.38;
+pub const RED: f32 = 0.;
 
 /// Relative luminance of a color, in the WCAG sense.
 fn luminance(color: Hsla) -> f32 {
@@ -172,9 +219,14 @@ pub fn contrast(a: Hsla, b: Hsla) -> f32 {
 /// `color`, darkened on a light background or lightened on a dark one, just enough to
 /// read on `bg`; it keeps its hue.
 pub fn legible(color: Hsla, bg: Hsla) -> Hsla {
+    reach(color, bg, 4.5)
+}
+
+/// `color`, moved like `legible` until its contrast with `bg` reaches `ratio`.
+pub fn reach(color: Hsla, bg: Hsla, ratio: f32) -> Hsla {
     let step = if luminance(bg) > 0.18 { -0.02 } else { 0.02 };
     let mut color = color;
-    while contrast(color, bg) < 4.5 && (0.0..=1.0).contains(&(color.l + step)) {
+    while contrast(color, bg) < ratio && (0.0..=1.0).contains(&(color.l + step)) {
         color.l += step;
     }
     color
@@ -200,12 +252,68 @@ mod tests {
             let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
             assert!(contrast(t.soft, t.bg) >= 4.5 && contrast(t.soft, t.panel) >= 4.5, "{name}: soft");
             assert!(contrast(t.accent, t.bg) >= 4.5, "{name}: accent");
-            for h in [0.38, 0.75, 0.09, 0., 0.58] {
+            for h in HUES {
                 let tint = Hsla { h, s: 0.7, l: 0.5, a: 1. };
                 let under = blend(tint, t.bg, 0.1);
                 assert!(contrast(legible(tint, under), under) >= 4.5, "{name}: panel {h}");
             }
         }
+    }
+
+    /// `color` with its opacity, laid over `under`.
+    fn over(color: Hsla, under: Hsla) -> Hsla {
+        blend(Hsla { a: 1., ..color }, under, color.a)
+    }
+
+    /// Every pair of colors the views draw one on the other reads, in each theme: text at 4.5:1,
+    /// lines that must be seen at 3:1. A view that puts a color on another background adds its pair here.
+    #[test]
+    fn every_pair_reads() {
+        let mut fails = Vec::new();
+        for (name, _) in THEMES {
+            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+            let (picked, picked_panel) = (over(t.selection, t.bg), over(t.selection, t.panel));
+            let mut pairs = vec![
+                // Secondary text, and content that steps back (front matter, addresses, comments) in a code block too.
+                ("soft/bg", t.soft, t.bg, 4.5),
+                ("soft/panel", t.soft, t.panel, 4.5),
+                ("soft/code", t.soft, t.code_bg, 4.5),
+                // A selected row, a found passage, a commented passage: their text, and a key cap on the row.
+                ("text/selection", t.text, picked, 4.5),
+                ("text/selection panel", t.text, picked_panel, 4.5),
+                ("text/key cap", t.text, over(t.panel.opacity(0.7), picked_panel), 4.5),
+                // Links, tags, active icons: on the page, the panel and the selection.
+                ("accent/bg", t.accent, t.bg, 4.5),
+                ("accent/panel", t.accent, t.panel, 4.5),
+                ("accent/selection", t.accent, picked, 4.5),
+                ("accent/selection panel", t.accent, picked_panel, 4.5),
+                // The selected row of the panel when it has not the focus.
+                ("text/selection half", t.text, over(t.selection.opacity(0.5), t.panel), 4.5),
+                ("accent/selection half", t.accent, over(t.selection.opacity(0.5), t.panel), 4.5),
+                ("string/bg", t.string, t.bg, 4.5),
+                ("string/code", t.string, t.code_bg, 4.5),
+                ("number/bg", t.number, t.bg, 4.5),
+                ("number/code", t.number, t.code_bg, 4.5),
+                ("line/bg", t.line, t.bg, 3.),
+                ("line/code", t.line, t.code_bg, 3.),
+            ];
+            for i in 0..HIGHLIGHTS.len() {
+                pairs.push(("text/highlight", t.text, t.highlight(i), 4.5));
+            }
+            for h in HUES {
+                pairs.push(("hue/panel", t.hue(h, t.panel), t.panel, 4.5));
+            }
+            for c in crate::logic::diagram::COLORS {
+                pairs.push(("diagram/bg", legible(rgb(c).into(), t.bg), t.bg, 4.5));
+            }
+            for (what, fg, bg, min) in pairs {
+                let got = contrast(fg, bg);
+                if got < min {
+                    fails.push(format!("{name}: {what} {got:.2}"));
+                }
+            }
+        }
+        assert!(fails.is_empty(), "{} pairs under the bar:\n{}", fails.len(), fails.join("\n"));
     }
 
     #[test]

@@ -497,7 +497,8 @@ impl Graph {
             line.move_to(a);
             line.line_to(b);
         }
-        let edge_color = t.dim.opacity(if focus.is_none() { 0.5 } else { 0.3 });
+        // Away from the focused note, the edges step back.
+        let edge_color = if focus.is_none() { t.line } else { t.line.opacity(0.4) };
         if any_plain && let Ok(path) = plain.build() {
             window.paint_path(path, edge_color);
         }

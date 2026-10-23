@@ -53,6 +53,9 @@ pub const MARK: u16 = 128;
 // Highlight `==text==` and underline `<u>text</u>` (Markdown has no underline: the HTML tag serves).
 pub const HIGHLIGHT: u16 = 2048;
 pub const UNDER: u16 = 4096;
+// Text that steps back but is still read (front matter, the address of a link, comments): `DIM` for the
+// rest of the code, drawn readable.
+pub const QUIET: u16 = 8192;
 // Code block coloring.
 pub const KEYWORD: u16 = 256;
 pub const STRING: u16 = 512;
@@ -357,9 +360,10 @@ fn links_and_comments(line: &str, from: usize, flags: &mut [u16]) {
             Link::Tag(_) => flags[r].iter_mut().for_each(|f| *f |= TAG),
                         // `[text](address)`: the text is the link, the rest fades.
             Link::Url(_) => match web_link(&line[r.start..]) {
-                Some((text, _)) => {
+                Some((text, address)) => {
                     flags[r.clone()].iter_mut().for_each(|f| *f |= DIM);
                     flags[r.start + text.start..r.start + text.end].iter_mut().for_each(|f| *f = *f & !DIM | LINK);
+                    flags[r.start + address.start..r.start + address.end].iter_mut().for_each(|f| *f |= QUIET);
                 }
                 None => flags[r].iter_mut().for_each(|f| *f |= LINK),
             },
@@ -377,7 +381,7 @@ fn links_and_comments(line: &str, from: usize, flags: &mut [u16]) {
         }
         flags[whole.start..noted.start].fill(DIM);
         flags[noted.end..whole.end].fill(DIM);
-        flags[said].fill(DIM | ITALIC);
+        flags[said].fill(DIM | ITALIC | QUIET);
     }
 }
 
@@ -520,7 +524,7 @@ pub fn code(line: &str, lang: &str, flags: &mut [u16]) {
     while i < line.len() {
         let rest = &line[i..];
         if rest.starts_with(comment) {
-            flags[i..].fill(DIM | ITALIC);
+            flags[i..].fill(DIM | ITALIC | QUIET);
             return;
         }
         let c = rest.chars().next().unwrap();
@@ -1012,7 +1016,7 @@ mod tests {
         let mut flags = vec![0u16; line.len()];
         inline(line, 0, &mut flags);
         assert!(flags[3..6].iter().all(|f| *f == DIM) && flags[6] == 0 && flags[12] == BOLD);
-        assert!(flags[18..24].iter().all(|f| *f == DIM) && flags[24..33].iter().all(|f| *f == DIM | ITALIC) && flags[36] == 0);
+        assert!(flags[18..24].iter().all(|f| *f == DIM) && flags[24..33].iter().all(|f| *f == DIM | ITALIC | QUIET) && flags[36] == 0);
                 // Dates after `@`. October 9, 2026 is a Friday.
         let today = (2026, 10, 9);
         assert_eq!((day_number((1970, 1, 1)), day_number((2000, 3, 1)), day_of(day_number((2024, 2, 29)))), (0, 11_017, (2024, 2, 29)));
@@ -1040,7 +1044,8 @@ mod tests {
         assert!(is_url("https://a.b") && !is_url("https://") && !is_url("https://a b") && !is_url("a.b"));
         let mut flags = vec![0u16; 31];
         inline("lire [la doc](https://a.b/c#d).", 0, &mut flags);
-        assert!(flags[5] == DIM && flags[6..12].iter().all(|f| *f == LINK) && flags[12..30].iter().all(|f| *f == DIM) && flags[30] == 0);
+        assert!(flags[5] == DIM && flags[6..12].iter().all(|f| *f == LINK) && flags[12..14] == [DIM; 2]
+            && flags[14..29].iter().all(|f| *f == DIM | QUIET) && flags[29] == DIM && flags[30] == 0);
         let (tags, wikis) = index("#A\n```\n#b [[z]]\n```\n#a #c [[X]] [[x|alias]] [[Y]]");
         assert_eq!(tags, vec!["a", "c"]);
         assert_eq!(wikis, vec!["x", "y"]);
@@ -1195,14 +1200,14 @@ mod tests {
         code(line, "rust", &mut f);
         assert_eq!((f[0], f[4], f[8]), (KEYWORD, 0, 0));
         assert!(f[10..18].iter().all(|&x| x == STRING));
-        assert_eq!((f[20], f[25]), (NUMBER, DIM | ITALIC));
+        assert_eq!((f[20], f[25]), (NUMBER, DIM | ITALIC | QUIET));
                 // A lifetime is not a string; `#` comments in Python, not in Rust.
         let line = "fn f<'a>(x: &'a str) # '\\n'";
         let mut f = vec![0u16; line.len()];
         code(line, "rust", &mut f);
         assert!(f[3..21].iter().all(|&x| x == 0) && f[23] == STRING);
         code(line, "python", &mut f);
-        assert_eq!(f[21], DIM | ITALIC);
+        assert_eq!(f[21], DIM | ITALIC | QUIET);
     }
 
     #[test]

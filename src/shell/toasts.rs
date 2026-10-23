@@ -98,8 +98,8 @@ impl Shell {
             let id = toast.id;
             let (icon, color) = match toast.tone {
                 Tone::Info => ("info.svg", t.soft),
-                Tone::Done => ("check.svg", rgb(0x3fa46a).into()),
-                Tone::Failed => ("alert.svg", rgb(0xd9483b).into()),
+                Tone::Done => ("check.svg", t.hue(ui::theme::GREEN, t.panel)),
+                Tone::Failed => ("alert.svg", t.hue(ui::theme::RED, t.panel)),
                 Tone::Busy => ("spinner.svg", t.soft),
             };
             let icon = svg().path(icon).size(px(14.)).flex_none().text_color(color);

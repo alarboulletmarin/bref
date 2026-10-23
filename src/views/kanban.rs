@@ -295,7 +295,7 @@ pub fn check_box(done: bool, t: Theme) -> Div {
 }
 
 pub fn card_text(text: &str, done: bool, t: Theme) -> Div {
-    div().flex_1().min_w_0().when(done, |d| d.text_color(t.dim).line_through()).child(text.to_string())
+    div().flex_1().min_w_0().when(done, |d| d.text_color(t.soft).line_through()).child(text.to_string())
 }
 
 /// Card being held: the card itself, lifted, following the pointer from where it was grabbed.

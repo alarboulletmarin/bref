@@ -423,10 +423,6 @@ pub struct RunStyle {
 /// The styles of the line `text`, `flags` (one flag word per byte), in one piece
 /// as long as nothing changes; `marked`: the byte is in the text being composed.
 pub fn text_runs(t: &Theme, text: &str, flags: &[u16], marked: impl Fn(usize) -> bool, style: &RunStyle) -> Vec<TextRun> {
-    // ponytail: strings and numbers take the accent color shifted in hue,
-    // to match each theme without a dedicated palette; give each theme its own code
-    // colors if one of them clashes.
-    let hue = |by: f32| Hsla { h: (t.accent.h + by).fract(), ..t.accent };
     let mut runs: Vec<TextRun> = Vec::new();
     let mut i = 0;
     while i < flags.len() {
@@ -435,12 +431,14 @@ pub fn text_runs(t: &Theme, text: &str, flags: &[u16], marked: impl Fn(usize) ->
         while j < flags.len() && flags[j] == f && marked(j) == m {
             j += 1;
         }
-        let color = if f & md::DIM != 0 {
+        let color = if f & md::QUIET != 0 {
+            t.soft
+        } else if f & md::DIM != 0 {
             t.dim
         } else if f & md::STRING != 0 {
-            hue(0.33)
+            t.string
         } else if f & md::NUMBER != 0 {
-            hue(0.6)
+            t.number
         } else if f & md::MARK != 0 && let Some(tint) = style.tint {
             // On the callout background, its tint at 10%: the title reads in every theme.
             crate::ui::theme::legible(tint, crate::ui::theme::blend(tint, t.bg, 0.1))
@@ -1076,7 +1074,7 @@ impl Editor {
                 let list = matches!(kind, Kind::Bullet | Kind::Ordered | Kind::Task(_));
                 flags[..marker].fill(if list { md::MARK } else { md::DIM });
                 if kind == Kind::Meta {
-                    flags.fill(md::DIM);
+                    flags.fill(md::DIM | md::QUIET);
                 } else if math {
                     flags.fill(if line.trim() == "$$" { md::DIM } else { md::CODE });
                 } else if kind == Kind::Code {

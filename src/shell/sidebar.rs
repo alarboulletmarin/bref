@@ -265,7 +265,7 @@ impl Shell {
                 .id(("day", day as usize))
                 .rounded(px(6.))
                 .cursor_pointer()
-                .text_color(if has { t.text } else { t.soft })
+                .text_color(if has || day == chosen { t.text } else { t.soft })
                 .when(has, |d| d.font_weight(gpui::FontWeight::BOLD))
                 .when(open.as_deref() == Some(name.as_str()), |d| d.text_color(t.accent))
                 .when(date == today, |d| d.border_1().border_color(t.accent.opacity(0.6)))
@@ -523,10 +523,10 @@ impl Shell {
                         .rounded(px(5.))
                         .text_size(px(13.))
                         .when(!selected, |d| d.hover(|s| s.bg(t.code_bg)))
-                        .when(selected, |d| d.bg(if focused { t.selection } else { t.border }))
+                        .when(selected, |d| d.bg(if focused { t.selection } else { t.selection.opacity(0.5) }))
                         .when(foldable, |d| {
                             d.child(div().size(px(14.)).flex_none().when(row.dir.is_some(), |d| {
-                                d.child(svg().path(chevron).size(px(14.)).text_color(t.soft))
+                                d.child(svg().path(chevron).size(px(14.)).text_color(if selected { t.text } else { t.soft }))
                             }))
                         })
                         .children(self.icons.get(&row.path).and_then(|name| crate::ui::assets::ICON_SET.iter().find(|(file, _)| file[2..file.len() - 4] == *name)).map(
@@ -546,7 +546,7 @@ impl Shell {
                                 .map(|d| if links { d.flex_1().min_w_0() } else { d.flex_none().max_w(px(110.)) })
                                 .truncate()
                                 .text_size(px(11.5))
-                                .text_color(t.soft)
+                                .text_color(if selected { t.text } else { t.soft })
                                 .child(detail),
                         );
                 let (path, name) = (row.path.clone(), row.name.clone());

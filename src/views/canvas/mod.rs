@@ -421,7 +421,8 @@ impl Canvas {
     fn ink(&self, color: u8) -> Hsla {
         match color {
             0 => self.theme.text,
-            i => rgb(diagram::COLORS[i as usize % diagram::COLORS.len()]).into(),
+            // Darkened on a light theme, lightened on a dark one, until it reads.
+            i => crate::ui::theme::legible(rgb(diagram::COLORS[i as usize % diagram::COLORS.len()]).into(), self.theme.bg),
         }
     }
 

@@ -213,12 +213,14 @@ impl Editor {
                     grid.paint_back(table_top, row.height - row.gap, &t, window);
                 }
                 // Background of a passage of text on this line: the selection, the found passages.
-                let mark = |range: &Range<usize>, color: Hsla, window: &mut Window| {
+                // `edge`: a 1 px outline around it, for the current found passage.
+                let mark_edged = |range: &Range<usize>, color: Hsla, edge: Option<Hsla>, window: &mut Window| {
                     let a = row.pos(range.start.max(row.start) - row.start);
                     let b = row.pos(range.end.min(end) - row.start);
                     let tail = if range.end > end { px(6.) } else { px(0.) };
-                    let mut rect = |x: Pixels, y: Pixels, w: Pixels, h: Pixels| {
-                        window.paint_quad(fill(block(x, text_top + y, w, h), color))
+                    let mut rect = |x: Pixels, y: Pixels, w: Pixels, h: Pixels| match edge {
+                        Some(edge) => window.paint_quad(quad(block(x, text_top + y, w, h), px(0.), color, px(1.), edge, BorderStyle::default())),
+                        None => window.paint_quad(fill(block(x, text_top + y, w, h), color)),
                     };
                     if let Some(grid) = &row.grid {
                         for (x, y, w) in grid.spans(range.start.max(row.start) - row.start, range.end.min(end) - row.start, row.lh) {
@@ -232,10 +234,11 @@ impl Editor {
                         rect(px(0.), b.y, b.x + tail, row.lh);
                     }
                 };
+                let mark = |range: &Range<usize>, color: Hsla, window: &mut Window| mark_edged(range, color, None, window);
                 // Highlighted text (`==text==`), under the selection; matches and comments go over it.
                 if !matches!(row.kind, Kind::Code | Kind::Fence | Kind::Meta | Kind::Rule) {
                     for (r, color) in md::highlights(&self.content[row.start..end], row.kind == Kind::Table) {
-                        mark(&(row.start + r.start..row.start + r.end), highlight(color), window);
+                        mark(&(row.start + r.start..row.start + r.end), t.highlight(color), window);
                     }
                 }
                 if !sel.is_empty() && sel.start <= end && sel.end > row.start {
@@ -247,13 +250,14 @@ impl Editor {
                 // Text that carries a comment is highlighted.
                 if !matches!(row.kind, Kind::Code | Kind::Fence) {
                     for (_, noted, _) in md::comments(&self.content[row.start..end]) {
-                        mark(&(row.start + noted.start..row.start + noted.end), t.accent.opacity(0.22), window);
+                        mark(&(row.start + noted.start..row.start + noted.end), t.selection, window);
                     }
                 }
                 if let Some(find) = &self.find {
                     let from = find.hits.partition_point(|hit| hit.end <= row.start);
                     for (i, hit) in find.hits.iter().enumerate().skip(from).take_while(|(_, hit)| hit.start < end) {
-                        mark(hit, t.accent.opacity(if i == find.at { 0.45 } else { 0.2 }), window);
+                        // The current one is outlined rather than darker: the text over it must read.
+                        mark_edged(hit, t.selection, (i == find.at).then_some(t.accent), window);
                     }
                 }
                 if let Some(grid) = &row.grid {

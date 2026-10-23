@@ -129,12 +129,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let system = look(cx);
     cx.dispatch_action(ChooseTheme);
     cx.simulate_input("drac");
-    assert_eq!(look(cx), ("Dracula".to_string(), Hsla::from(rgb(0x282a36))));
+    assert_eq!(look(cx), ("Dracula".to_string(), Hsla::from(gpui::rgb(0x282a36))));
     cx.simulate_keystrokes("escape");
     assert_eq!(look(cx), system);
     cx.dispatch_action(ChooseTheme);
     cx.simulate_keystrokes("down down enter");
-    assert_eq!(look(cx), ("Bref Light".to_string(), Hsla::from(rgb(0xfbfaf8))));
+    assert_eq!(look(cx), ("Bref Light".to_string(), Hsla::from(gpui::rgb(0xfbfaf8))));
     // Code font, from the palette; text size from the keyboard.
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("police du");

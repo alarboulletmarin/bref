@@ -59,7 +59,7 @@ use gpui::{
     MouseMoveEvent, ObjectFit, PathPromptOptions, Pixels, Point, ResizeEdge, Size, TitlebarOptions,
     Transformation,
     Window, WindowBounds, WindowBackgroundAppearance, WindowDecorations,
-    WindowOptions, div, ease_out_quint, hsla, img, percentage, point, prelude::*, px, rgb, size, svg,
+    WindowOptions, div, ease_out_quint, hsla, img, percentage, point, prelude::*, px, size, svg,
 };
 
 use canvas::{Canvas, CanvasEvent};

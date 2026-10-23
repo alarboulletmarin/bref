@@ -1040,7 +1040,7 @@ impl Render for Palette {
                     div()
                         .truncate()
                         .when(!matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none())
-                        .text_color(t.soft)
+                        .text_color(if i == self.selected { t.text } else { t.soft })
                         .text_size(px(12.))
                         .child(detail)
                 })

@@ -29,7 +29,7 @@ impl Look {
             bg: hex(t.bg),
             fill: hex(t.code_bg),
             text: hex(t.text),
-            line: hex(t.dim),
+            line: hex(t.line),
             font: crate::ui::assets::sans().to_string(),
         }
     }

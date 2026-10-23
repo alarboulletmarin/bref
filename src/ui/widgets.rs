@@ -45,7 +45,7 @@ pub fn keycaps(keys: &str, t: Theme, on: bool) -> Div {
             .justify_center()
             .bg(if on { t.panel.opacity(0.7) } else { t.code_bg })
             .text_size(px(11.5))
-            .text_color(t.soft)
+            .text_color(if on { t.text } else { t.soft })
             .child(key)
     });
     div().flex().items_center().gap(px(3.)).children(caps)

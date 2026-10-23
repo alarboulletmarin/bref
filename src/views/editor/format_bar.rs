@@ -45,13 +45,6 @@ pub(super) struct Tools {
     pub(super) table: bool,
 }
 
-/// Background of highlighted text, in color `color` (see `md::MARKS`): translucent, readable on light
-/// as on dark, and distinct from the accent tint of comments.
-pub fn highlight(color: usize) -> Hsla {
-    let hue = [0.14, 0.36, 0.58, 0.93, 0.76][color.min(md::MARKS.len() - 1)];
-    Hsla { h: hue, s: 0.9, l: 0.55, a: 0.4 }
-}
-
 impl Editor {
     /// The color badges are open.
     #[cfg(test)]
@@ -173,7 +166,7 @@ impl Editor {
                     .flex_none()
                     .rounded_full()
                     .cursor_pointer()
-                    .bg(highlight(i).opacity(2.))
+                    .bg(crate::ui::theme::highlight_tint(i).opacity(0.8))
                     .border_1()
                     .border_color(t.border)
                     .hover(|s| s.border_color(t.accent))
@@ -308,7 +301,7 @@ impl Editor {
             .child(styled(1, md::ITALIC, div().italic().child("I").into_any_element()))
             .child(styled(2, md::UNDER, div().underline().child("U").into_any_element()))
             .child(styled(3, md::STRIKE, div().line_through().child("S").into_any_element()))
-            .child(styled(4, md::HIGHLIGHT, div().px(px(4.)).rounded(px(3.)).bg(highlight(0)).text_color(t.text).child("H").into_any_element()))
+            .child(styled(4, md::HIGHLIGHT, div().px(px(4.)).rounded(px(3.)).bg(t.highlight(0)).text_color(t.text).child("H").into_any_element()))
             // Picking the color: badges above the bar.
             .child(
                 div()
