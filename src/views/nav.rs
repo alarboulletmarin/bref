@@ -25,8 +25,9 @@ actions!(nav, [ShowCalendar, PrevMonth, NextMonth, ShowTree, ShowRecent, ShowGra
 // The entries of a row's menu that have no other way, for the open file, from the palette.
 actions!(nav, [OpenAside, SetIcon, ShowFolder, CopyLink, CopyPath, CopyRelative, Reveal, MoveTo]);
 
-pub const RAIL: Pixels = px(40.);
-pub const ROW: Pixels = px(26.);
+/// Width of the rail and height of a row, at the interface's scale 1 (`Theme::px`).
+pub const RAIL: f32 = 40.;
+pub const ROW: f32 = 26.;
 pub const LIST_W: Pixels = px(260.);
 /// Width the panel and the comments column always leave to the note.
 pub const NOTE_MIN: Pixels = px(200.);

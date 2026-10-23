@@ -173,7 +173,7 @@ impl Shell {
                 let path = path.clone();
                 let one = match (c, writing) {
                     // The cell being written shows all its text: it wraps, its row grows.
-                    (_, Some((_, _, field))) => wide(false).py(px(3.)).rounded(px(4.)).border_1().border_color(t.accent).child(field.clone()).into_any_element(),
+                    (_, Some((_, _, field))) => wide(false).py(t.px(3.)).rounded(t.px(4.)).border_1().border_color(t.accent).child(field.clone()).into_any_element(),
                     (0, _) => cell(true)
                         .id(("list-name", i))
                         .cursor_pointer()
@@ -189,10 +189,10 @@ impl Shell {
                         cell(false)
                             .id(("list-cell", i * 1000 + c))
                             .debug_selector(|| format!("list-cell-{i}-{c}"))
-                            .h(ROW)
+                            .h(t.px(ROW))
                             .flex()
                             .items_center()
-                            .rounded(px(4.))
+                            .rounded(t.px(4.))
                             .cursor_text()
                             .text_color(t.soft)
                             .hover(|s| s.bg(t.bg))
@@ -203,17 +203,17 @@ impl Shell {
                 };
                 shown.push(one);
             }
-            lines.push(div().min_h(ROW).flex().items_center().rounded(px(5.)).hover(|s| s.bg(t.code_bg)).children(shown));
+            lines.push(div().min_h(t.px(ROW)).flex().items_center().rounded(t.px(5.)).hover(|s| s.bg(t.code_bg)).children(shown));
         }
         let asked = !filter.read(cx).line.text.is_empty();
-        let hint = div().absolute().left(px(6.)).top_0().text_color(t.soft).child(tr("Filter… (key:text for one column)", "Filtrer… (clé:texte pour une colonne)"));
+        let hint = div().absolute().left(t.px(6.)).top_0().text_color(t.soft).child(tr("Filter… (key:text for one column)", "Filtrer… (clé:texte pour une colonne)"));
         let filter_box = div()
             .id("list-filter")
-            .w(px(280.))
+            .w(t.px(280.))
             .max_w_full()
             .px_2()
             .py_1()
-            .rounded(px(6.))
+            .rounded(t.px(6.))
             .border_1()
             .border_color(t.border)
             .relative()
@@ -224,10 +224,10 @@ impl Shell {
         div()
             .id("listing")
             .size_full()
-            .pt(px(48.))
+            .pt(t.px(48.))
             .px_6()
             .pb_4()
-            .text_size(px(13.))
+            .text_size(t.px(13.))
             .flex()
             .flex_col()
             .overflow_scroll()
@@ -240,11 +240,11 @@ impl Shell {
                     .flex()
                     .items_baseline()
                     .gap_2()
-                    .child(div().text_size(px(20.)).font_weight(gpui::FontWeight::BOLD).child(title))
+                    .child(div().text_size(t.px(20.)).font_weight(gpui::FontWeight::BOLD).child(title))
                     .child(div().text_color(t.soft).child(count.to_string())),
             )
             .child(div().pb_3().px_2().child(filter_box))
-            .child(div().h(ROW).flex().items_center().border_b_1().border_color(t.border).children(head))
+            .child(div().h(t.px(ROW)).flex().items_center().border_b_1().border_color(t.border).children(head))
             .children(lines)
             // Nothing to list: the filter keeps no row, or the folder or tag holds no note.
             .when(count == 0, |d| {

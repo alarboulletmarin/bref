@@ -240,9 +240,12 @@ impl Shell {
                 .id(gpui::SharedString::from(id.clone()))
                 .debug_selector(move || id.clone())
                 .px_1()
-                .rounded(px(4.))
+                .h(t.px(24.))
+                .flex()
+                .items_center()
+                .rounded(t.px(4.))
                 .cursor_pointer()
-                .text_size(px(11.))
+                .text_size(t.px(11.))
                 .text_color(t.soft)
                 .hover(|s| s.bg(t.border).text_color(t.text))
                 .child(text)
@@ -257,7 +260,7 @@ impl Shell {
             .flex()
             .items_center()
             .gap_2()
-            .child(svg().path("search.svg").size(px(14.)).flex_none().text_color(t.soft))
+            .child(svg().path("search.svg").size(t.px(14.)).flex_none().text_color(t.soft))
             .child(
                 div()
                     .flex_1()
@@ -278,12 +281,12 @@ impl Shell {
         };
         let sections = rows.into_iter().map(|(title, rows)| {
             div()
-                .w(px(370.))
+                .w(t.px(370.))
                 .max_w_full()
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(div().mb_1().text_color(t.accent).text_size(px(12.)).child(title))
+                .child(div().mb_1().text_color(t.accent).text_size(t.px(12.)).child(title))
                 .children(rows.into_iter().map(|row| {
                     let edit = self.help.edit.as_ref().filter(|edit| Some(edit.action) == row.action);
                     let chosen = row.action.is_some() && row.action == self.help.sel;
@@ -291,14 +294,14 @@ impl Shell {
                     let keys = match row.action {
                         // Badges for real keys; a line of words ("Drag from the tree") or of
                         // alternatives ("F3 / Enter") stays text.
-                        None if row.keys.contains(' ') => div().w(px(156.)).flex_none().font_family(mono()).text_size(px(12.)).child(row.keys.clone()),
-                        None => div().w(px(156.)).flex_none().child(keycaps(&row.keys, t, false).flex_wrap()),
+                        None if row.keys.contains(' ') => div().w(t.px(156.)).flex_none().font_family(mono()).text_size(t.px(12.)).child(row.keys.clone()),
+                        None => div().w(t.px(156.)).flex_none().child(keycaps(&row.keys, t, false).flex_wrap()),
                         Some(action) => {
                             let color = if edit.is_some() || row.changed { t.accent } else { t.text };
                             let shown = if edit.is_some() {
-                                div().font_family(mono()).text_size(px(12.)).child(tr("Press the keys…", "Tape les touches…"))
+                                div().font_family(mono()).text_size(t.px(12.)).child(tr("Press the keys…", "Tape les touches…"))
                             } else if row.keys.is_empty() {
-                                div().font_family(mono()).text_size(px(12.)).child("—")
+                                div().font_family(mono()).text_size(t.px(12.)).child("—")
                             } else {
                                 keycaps(&row.keys, t, false).flex_wrap()
                             };
@@ -306,7 +309,7 @@ impl Shell {
                                 .id(gpui::SharedString::from(format!("key-{action}")))
                                 .debug_selector(move || format!("key-{action}"))
                                 .px_1()
-                                .rounded(px(4.))
+                                .rounded(t.px(4.))
                                 .bg(t.border.opacity(0.6))
                                 .cursor_pointer()
                                 .text_color(color)
@@ -317,7 +320,7 @@ impl Shell {
                                 .on_click(cx.listener(move |this, _, _, cx| this.key_reset(Some(action), cx)));
                             div()
                                 .debug_selector(move || format!("key-column-{action}"))
-                                .w(px(156.))
+                                .w(t.px(156.))
                                 .flex_none()
                                 .flex()
                                 .flex_wrap()
@@ -329,13 +332,13 @@ impl Shell {
                     };
                     // Under the row being typed: what to do, or what is wrong.
                     let note = edit.map(|edit| match &edit.issue {
-                        None => div().text_size(px(12.)).text_color(t.soft).child(tr(
+                        None => div().text_size(t.px(12.)).text_color(t.soft).child(tr(
                             "Backspace: no shortcut · Esc: cancel",
                             "Retour arrière : aucun raccourci · Échap : annuler",
                         )),
-                        Some(KeyIssue::Refused(why)) => div().text_size(px(12.)).child(format!("{} : {why}", keys::show(&edit.keys))),
+                        Some(KeyIssue::Refused(why)) => div().text_size(t.px(12.)).child(format!("{} : {why}", keys::show(&edit.keys))),
                         Some(KeyIssue::Taken(others)) => div()
-                            .text_size(px(12.))
+                            .text_size(t.px(12.))
                             .flex()
                             .flex_wrap()
                             .items_center()
@@ -360,7 +363,7 @@ impl Shell {
                         .flex()
                         .flex_col()
                         .gap_1()
-                        .rounded(px(4.))
+                        .rounded(t.px(4.))
                         .when(chosen, |d| d.bg(t.selection.opacity(0.5)))
                         .child(div().flex().gap_3().child(keys).child(div().flex_1().min_w_0().text_color(if chosen { t.text } else { t.soft }).child(row.effect)))
                         .children(note)
@@ -375,11 +378,11 @@ impl Shell {
                 .flex()
                 .items_center()
                 .gap_1p5()
-                .rounded(px(6.))
+                .rounded(t.px(6.))
                 .cursor_pointer()
                 .text_color(t.accent)
                 .hover(|s| s.bg(t.border))
-                .child(svg().path(icon).size(px(14.)).flex_none().text_color(t.accent))
+                .child(svg().path(icon).size(t.px(14.)).flex_none().text_color(t.accent))
                 .child(label)
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| cx.open_url(url))
         };
@@ -394,7 +397,7 @@ impl Shell {
             .gap_2()
             .child(logo(t))
             .child(format!("Bref {}", env!("CARGO_PKG_VERSION")))
-            .child(div().flex_1().min_w(px(200.)).text_color(t.soft).child(tr(
+            .child(div().flex_1().min_w(t.px(200.)).text_color(t.soft).child(tr(
                 "Fast, minimal Markdown notes, in plain files you own.",
                 "Des notes Markdown rapides et minimales, dans de simples fichiers qui t'appartiennent.",
             )))
@@ -418,7 +421,7 @@ impl Shell {
                 div()
                     .id("help")
                     // Two columns if the window is wide enough, one otherwise.
-                    .w(px(812.))
+                    .w(t.px(812.))
                     .max_w_full()
                     .max_h_full()
                     .flex()
@@ -426,9 +429,9 @@ impl Shell {
                     .bg(t.panel)
                     .border_1()
                     .border_color(t.border)
-                    .rounded(px(10.))
+                    .rounded(t.px(10.))
                     .shadow_lg()
-                    .text_size(px(13.))
+                    .text_size(t.px(13.))
                     // A click in the panel does not close it.
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_action(cx.listener(|this, _: &palette::Prev, _, cx| this.help_step(false, cx)))

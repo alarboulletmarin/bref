@@ -99,9 +99,11 @@ impl Editor {
         if !self.theme.bar || !self.bar_here || width == 0. {
             return None;
         }
-        let counts = self.counts().chars().count() as f32 * 7.4 + 16.;
-        let x = (width / 2. - BAR_WIDTH / 2.).min(width - (12. + 34. * self.corner as f32) - counts - 8. - BAR_WIDTH);
-        Some(if x >= 8. { Bar::Inline(x) } else { Bar::Compact })
+        // At the interface's scale, like the counter and the buttons around.
+        let (u, bar) = (self.theme.ui, BAR_WIDTH * self.theme.ui);
+        let counts = (self.counts().chars().count() as f32 * 7.4 + 16.) * u;
+        let x = (width / 2. - bar / 2.).min(width - (12. + 34. * self.corner as f32) * u - counts - 8. * u - bar);
+        Some(if x >= 8. * u { Bar::Inline(x) } else { Bar::Compact })
     }
 
     /// What the bar offers for the selection, recomputed only when the text or the selection change.
@@ -146,14 +148,14 @@ impl Editor {
         let names = [tr("Yellow", "Jaune"), tr("Green", "Vert"), tr("Blue", "Bleu"), tr("Pink", "Rose"), tr("Purple", "Violet")];
         div()
             .debug_selector(|| "format-swatches".into())
-            .ml(px(if aligned { 4. + 4. * 27. } else { 0. }))
+            .ml(t.px(if aligned { 4. + 4. * 27. } else { 0. }))
             .flex_none()
-            .h(px(30.))
-            .px(px(7.))
+            .h(t.px(30.))
+            .px(t.px(7.))
             .flex()
             .items_center()
-            .gap(px(5.))
-            .rounded(px(8.))
+            .gap(t.px(5.))
+            .rounded(t.px(8.))
             .border_1()
             .border_color(t.border)
             .bg(t.panel)
@@ -162,7 +164,7 @@ impl Editor {
                 div()
                     .id(("swatch", i))
                     .debug_selector(move || format!("swatch-{i}"))
-                    .size(px(18.))
+                    .size(t.px(18.))
                     .flex_none()
                     .rounded_full()
                     .cursor_pointer()
@@ -188,8 +190,8 @@ impl Editor {
         let tools = self.tools();
         let width = f32::from(self.viewport.size.width);
         let (left, wide, inline) = match mode {
-            Bar::Inline(x) => (x, BAR_WIDTH, true),
-            Bar::Compact => (8., BAR_WIDTH.min(width - 16.), false),
+            Bar::Inline(x) => (x, BAR_WIDTH * t.ui, true),
+            Bar::Compact => (8. * t.ui, (BAR_WIDTH * t.ui).min(width - 16. * t.ui), false),
         };
         let swatches = self.bar.swatches.then(|| self.swatches(inline, cx));
         let on = tools.styles;
@@ -220,14 +222,14 @@ impl Editor {
             div()
                 .id(("format", i))
                 .debug_selector(move || format!("format-{i}"))
-                .size(px(26.))
+                .size(t.px(26.))
                 .flex_none()
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(6.))
+                .rounded(t.px(6.))
                 .cursor_pointer()
-                .text_size(px(13.))
+                .text_size(t.px(13.))
                 .text_color(if lit { t.accent } else { t.soft })
                 .when(lit, |d| d.bg(t.selection))
                 .hover(|s| s.bg(t.border).text_color(t.text))
@@ -237,7 +239,7 @@ impl Editor {
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(face)
         };
-        let icon = |path: &'static str, lit: bool| gpui::svg().path(path).size(px(16.)).flex_none().text_color(if lit { t.accent } else { t.soft }).into_any_element();
+        let icon = |path: &'static str, lit: bool| gpui::svg().path(path).size(t.px(16.)).flex_none().text_color(if lit { t.accent } else { t.soft }).into_any_element();
         let lit = |flag: u16| on & flag != 0;
         let styled = |i: usize, flag: u16, face: gpui::AnyElement| {
             button(i, face, lit(flag)).on_click(cx.listener(move |this, _, window, cx| {
@@ -281,18 +283,18 @@ impl Editor {
                     .into_any_element(),
             ]
         };
-        let separator = || div().w(px(1.)).h(px(14.)).mx(px(3.)).bg(t.border);
+        let separator = || div().w(t.px(1.)).h(t.px(14.)).mx(t.px(3.)).bg(t.border);
         let bar = div()
             .debug_selector(|| "format-bar".into())
             .w_full()
-            .min_h(px(30.))
-            .px(px(3.))
+            .min_h(t.px(30.))
+            .px(t.px(3.))
             .flex_none()
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(px(1.))
-            .rounded(px(8.))
+            .gap(t.px(1.))
+            .rounded(t.px(8.))
             .border_1()
             .border_color(t.border)
             .bg(t.panel)
@@ -301,19 +303,19 @@ impl Editor {
             .child(styled(1, md::ITALIC, div().italic().child("I").into_any_element()))
             .child(styled(2, md::UNDER, div().underline().child("U").into_any_element()))
             .child(styled(3, md::STRIKE, div().line_through().child("S").into_any_element()))
-            .child(styled(4, md::HIGHLIGHT, div().px(px(4.)).rounded(px(3.)).bg(t.highlight(0)).text_color(t.text).child("H").into_any_element()))
+            .child(styled(4, md::HIGHLIGHT, div().px(t.px(4.)).rounded(t.px(3.)).bg(t.highlight(0)).text_color(t.text).child("H").into_any_element()))
             // Picking the color: badges above the bar.
             .child(
                 div()
                     .id("format-colors")
                     .debug_selector(|| "format-colors".into())
-                    .w(px(14.))
-                    .h(px(26.))
+                    .w(t.px(14.))
+                    .h(t.px(26.))
                     .flex_none()
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(6.))
+                    .rounded(t.px(6.))
                     .cursor_pointer()
                     .when(self.bar.swatches, |d| d.bg(t.selection))
                     .hover(|s| s.bg(t.border))
@@ -324,7 +326,7 @@ impl Editor {
                         this.bar.swatches = !this.bar.swatches;
                         cx.notify();
                     }))
-                    .child(gpui::svg().path("chevron-down.svg").size(px(10.)).flex_none().text_color(t.soft)),
+                    .child(gpui::svg().path("chevron-down.svg").size(t.px(10.)).flex_none().text_color(t.soft)),
             )
             .child(separator())
             .child(styled(5, md::CODE, icon("code.svg", lit(md::CODE))))
@@ -336,7 +338,7 @@ impl Editor {
             .children(last);
         // The color badges above the bar, all anchored to the bottom of the note.
         // Collapsed, the bar opens above the button (30 px, 16 px from the bottom, 6 px apart).
-        div().absolute().bottom(px(if inline { 16. } else { 52. })).left(px(left)).w(px(wide)).flex().flex_col().items_start().gap(px(6.)).children(swatches).child(bar)
+        div().absolute().bottom(t.px(if inline { 16. } else { 52. })).left(px(left)).w(px(wide)).flex().flex_col().items_start().gap(t.px(6.)).children(swatches).child(bar)
     }
 
     /// The button that collapses the bar: bottom left, it opens the bar above it and closes it.
@@ -349,11 +351,11 @@ impl Editor {
             .absolute()
             .bottom_4()
             .left_2()
-            .size(px(30.))
+            .size(t.px(30.))
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(8.))
+            .rounded(t.px(8.))
             .border_1()
             .border_color(t.border)
             .bg(bar_fill(&t, open))
@@ -368,6 +370,6 @@ impl Editor {
                 this.bar.swatches = false;
                 cx.notify();
             }))
-            .child(gpui::svg().path("format.svg").size(px(16.)).flex_none().text_color(if open { t.accent } else { t.soft }))
+            .child(gpui::svg().path("format.svg").size(t.px(16.)).flex_none().text_color(if open { t.accent } else { t.soft }))
     }
 }

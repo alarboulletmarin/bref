@@ -122,13 +122,19 @@ impl Shell {
                         ),
                 )
                 .child(
-                    svg()
-                        .path("close.svg")
-                        .size(px(14.))
+                    // A 24 px target around the 14 px cross.
+                    div()
+                        .id("update-close")
+                        .debug_selector(|| "update-close".into())
+                        .size(t.px(24.))
                         .flex_none()
-                        .text_color(t.soft)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(t.px(6.))
                         .cursor_pointer()
-                        .hover(|s| s.text_color(t.text))
+                        .hover(|s| s.bg(t.border))
+                        .child(svg().path("close.svg").size(t.px(14.)).text_color(t.soft))
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|this, _, _, cx| {

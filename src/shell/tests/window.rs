@@ -480,3 +480,78 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
     }
     let _ = fs::remove_dir_all(&root);
 }
+
+/// The interface follows the note's zoom, from 85 % to 150 % of its size at 16: the rail's buttons, the panel's
+/// rows, the menus and the palette grow with it, their text with them.
+#[gpui::test]
+fn interface_follows_the_zoom(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "scale");
+    fs::write(root.join("Alpha.md"), "# Alpha\n\nUn {==mot==}{>>remarque<<} et beaucoup de mots pour un long compteur.\n").unwrap();
+    shell.update(cx, |s, cx| {
+        s.rescan(&root, cx);
+        s.open_note(&root.join("Alpha.md"), cx);
+    });
+    cx.simulate_resize(size(px(1400.), px(900.)));
+    cx.simulate_keystrokes("secondary-e");
+    cx.run_until_parked();
+    // Sizes of a button, a row of the tree, the row's menu and an entry of the command palette.
+    let measure = |cx: &mut gpui::VisualTestContext| {
+        let button = cx.debug_bounds("nav-file").unwrap().size.width;
+        let row = cx.debug_bounds("nav-row-Alpha").unwrap().size.height;
+        cx.simulate_keystrokes("shift-f10");
+        cx.run_until_parked();
+        let menu = cx.debug_bounds("menu").unwrap().size;
+        cx.simulate_keystrokes("escape f10");
+        cx.simulate_input("note du jour");
+        cx.run_until_parked();
+        let command = cx.debug_bounds("command-app::Today").unwrap().size.height;
+        cx.simulate_keystrokes("escape secondary-e");
+        cx.run_until_parked();
+        [f32::from(button), f32::from(row), f32::from(menu.width), f32::from(menu.height), f32::from(command)]
+    };
+    let base = measure(cx);
+    for (keys, size, scale) in [("secondary-= ".repeat(8), 24., 1.5), ("secondary-= ".repeat(6), 30., 1.5), ("secondary-0 ".into(), 16., 1.), ("secondary-- ".repeat(5), 11., 0.85)] {
+        cx.simulate_keystrokes(keys.trim_end());
+        cx.run_until_parked();
+        assert_eq!(shell.read_with(cx, |s, _| s.theme.size), size);
+        let now = measure(cx);
+        // The note's foot: counter, comments button and copy button side by side, none over another.
+        let foot = ["counts", "comments-toggle", "copy-all"].map(|name| cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} at {size}")));
+        assert!(foot[0].right() <= foot[1].left() && foot[1].right() <= foot[2].left(), "at {size}: {foot:?}");
+        for (i, (got, was)) in now.iter().zip(base).enumerate() {
+            assert!((got / was - scale).abs() < 0.04, "at {size}: measure {i} is {got}, {was} at 16 (×{scale} expected)");
+        }
+    }
+}
+
+/// Every small target is at least 24 × 24 px: the window buttons, back and forward, the note's copy button, the
+/// update banner's cross, "Reset all" and "default" in the help.
+#[gpui::test]
+fn small_targets_are_24_px(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "targets");
+    fs::write(root.join("Alpha.md"), "# Alpha\n").unwrap();
+    fs::write(root.join("keys"), "").unwrap();
+    shell.update(cx, |s, cx| {
+        s.client = true;
+        s.rescan(&root, cx);
+        s.open_note(&root.join("Alpha.md"), cx);
+        s.update = Some(update::Release { version: "9.9.9".into(), ..Default::default() });
+    });
+    cx.simulate_resize(size(px(1400.), px(900.)));
+    cx.run_until_parked();
+    let mut seen = Vec::new();
+    for name in ["minimize", "maximize", "close", "nav-back", "nav-forward", "copy-all", "update-close"] {
+        let b = cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} is drawn"));
+        seen.push((name, b.size));
+    }
+    // The help: "Reset all", and the "default" of a changed shortcut.
+    shell.update(cx, |s, cx| s.key_set("app::OpenVault", "secondary-shift-k".into(), &[], cx));
+    cx.simulate_keystrokes("f1");
+    cx.run_until_parked();
+    for name in ["keys-reset", "key-reset-app::OpenVault"] {
+        let b = cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} is drawn"));
+        seen.push((name, b.size));
+    }
+    let small: Vec<_> = seen.iter().filter(|(_, s)| s.width < px(24.) || s.height < px(24.)).collect();
+    assert!(small.is_empty(), "under 24 px: {small:?}");
+}

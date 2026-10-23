@@ -80,11 +80,11 @@ pub(super) fn status_card(t: Theme) -> Div {
             .pl_3()
             .pr_2()
             .py_1p5()
-            .rounded(px(6.))
+            .rounded(t.px(6.))
             .bg(t.panel)
             .border_1()
             .border_color(t.border)
-            .text_size(px(13.))
+            .text_size(t.px(13.))
             .flex()
             .items_center()
             .gap_3()
@@ -102,7 +102,7 @@ impl Shell {
                 Tone::Failed => ("alert.svg", t.hue(ui::theme::RED, t.panel)),
                 Tone::Busy => ("spinner.svg", t.soft),
             };
-            let icon = svg().path(icon).size(px(14.)).flex_none().text_color(color);
+            let icon = svg().path(icon).size(t.px(14.)).flex_none().text_color(color);
             let icon = match toast.tone {
                 Tone::Busy => icon
                     .with_animation(("toast-spin", id), Animation::new(Duration::from_secs(1)).repeat(), |icon, delta| {
@@ -112,7 +112,7 @@ impl Shell {
                 _ => icon.into_any_element(),
             };
             status_card(t)
-                .max_w(px(440.))
+                .max_w(t.px(440.))
                 .shadow_lg()
                 .cursor_pointer()
                 .child(icon)
@@ -123,7 +123,7 @@ impl Shell {
                         .debug_selector(|| "toast-undo".into())
                         .flex_none()
                         .px_2()
-                        .rounded(px(4.))
+                        .rounded(t.px(4.))
                         .text_color(t.accent)
                         .hover(|s| s.bg(t.border))
                         .child(tr("Undo", "Annuler"))
@@ -136,7 +136,7 @@ impl Shell {
                             }),
                         )
                 }))
-                .child(svg().path("close.svg").size(px(14.)).flex_none().text_color(t.soft))
+                .child(svg().path("close.svg").size(t.px(14.)).flex_none().text_color(t.soft))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, _, cx| {

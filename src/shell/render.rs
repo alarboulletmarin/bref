@@ -11,12 +11,15 @@ pub(super) fn badge_label(count: usize) -> String {
 pub(super) const SHADOW: Pixels = px(10.);
 /// The window buttons' pill: its width (padding, three buttons, gaps, border) and, from the window's edge, its width and margin
 /// with some air: what the panel header leaves free under it.
-const PILL_W: Pixels = px(94.);
-pub(super) const PILL_ROOM: Pixels = px(112.);
+/// Width of the window buttons' pill at scale 1: three 24 px buttons, their gaps and margins.
+const PILL_W: f32 = 106.;
+pub(super) const PILL_ROOM: f32 = 124.;
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        // The spacings of the interface are in rems: they follow its scale.
+        window.set_rem_size(t.px(16.));
         // The pane holding the focus is the active one; when the code changed it without moving
         // input (a note already open in the other pane), it follows.
         if let Some(template) = self.template.take() {
@@ -421,7 +424,7 @@ impl Shell {
                 .text_center()
                 .child(
                     div()
-                        .text_size(px(26.))
+                        .text_size(t.px(26.))
                         .font_weight(gpui::FontWeight::BOLD)
                         .child("Bref"),
                 )
@@ -437,14 +440,14 @@ impl Shell {
                 .children(self.lost.as_ref().map(|gone| {
                     div()
                         .debug_selector(|| "welcome-lost".into())
-                        .max_w(px(520.))
+                        .max_w(t.px(520.))
                         .px_3()
                         .py_2()
-                        .rounded(px(8.))
+                        .rounded(t.px(8.))
                         .border_1()
                         .border_color(t.border)
                         .bg(t.panel)
-                        .text_size(px(13.))
+                        .text_size(t.px(13.))
                         .child(format!("{} « {} »", tr("The vault was not found:", "Le coffre est introuvable :"), vault::shown(gone)))
                         .child(div().text_color(t.soft).child(tr(
                             "Moved, renamed, or on a disk that is not plugged in? Open it again, or start another one.",
@@ -492,7 +495,7 @@ impl Shell {
                         .child(tr("Clone a vault from a git address…", "Cloner un coffre depuis une adresse git…"))
                         .on_click(cx.listener(|this, _, window, cx| this.ask_clone(window, cx))),
                 )
-                .child(div().text_size(px(12.)).text_color(t.soft).child(format!(
+                .child(div().text_size(t.px(12.)).text_color(t.soft).child(format!(
                     "{} · {}",
                     keys::of(cx, &OpenVault),
                     tr(
@@ -539,7 +542,7 @@ impl Shell {
             let cap = keycaps(&keys, t, false);
             (!keys.is_empty()).then(|| {
                 row(("empty-key", i), false)
-                    .gap(px(6.))
+                    .gap(t.px(6.))
                     .child(cap)
                     .child(what)
                     .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
@@ -555,18 +558,18 @@ impl Shell {
         let again = (!recalled.is_empty()).then(|| {
             let rows = recalled.into_iter().enumerate().map(|(i, note)| {
                 row(("empty-recall", i), true)
-                    .mx(px(-6.))
-                    .px(px(6.))
-                    .py(px(2.))
+                    .mx(t.px(-6.))
+                    .px(t.px(6.))
+                    .py(t.px(2.))
                     .child(div().flex_1().min_w_0().truncate().child(note.name))
-                    .child(div().flex_none().text_size(px(12.)).child(recall::ago(note.days)))
+                    .child(div().flex_none().text_size(t.px(12.)).child(recall::ago(note.days)))
                     .on_click(cx.listener(move |this, _, _, cx| this.open_note(&note.path, cx)))
             });
             div()
-                .max_w(px(380.))
+                .max_w(t.px(380.))
                 .flex()
                 .flex_col()
-                .child(div().mb_1().text_size(px(11.)).text_color(t.soft).child(tr("READ AGAIN", "À RELIRE")))
+                .child(div().mb_1().text_size(t.px(11.)).text_color(t.soft).child(tr("READ AGAIN", "À RELIRE")))
                 .children(rows)
         });
         // In the text column, under its first line.
@@ -574,11 +577,11 @@ impl Shell {
             div()
                 .w_full()
                 .max_w(self.theme.page.measure(self.theme.size) + px(48.))
-                .px(px(32.))
+                .px(t.px(32.))
                 .flex()
                 .flex_col()
                 .gap_4()
-                .text_size(px(13.))
+                .text_size(t.px(13.))
                 .children(day)
                 .child(div().flex().flex_wrap().gap_x_4().gap_y_1().children(keys))
                 .children(again),
@@ -605,27 +608,27 @@ impl Shell {
                 .tooltip(ui::widgets::tip(tr("Comments of the note", "Commentaires de la note"), String::new(), t))
                 .absolute()
                 .bottom_4()
-                .right(px(if kanban::is_board(self.pane().editor.read(cx).text()) { 84. } else { 50. }))
-                .size(px(30.))
-                .rounded(px(8.))
+                .right(t.px(if kanban::is_board(self.pane().editor.read(cx).text()) { 84. } else { 50. }))
+                .size(t.px(30.))
+                .rounded(t.px(8.))
                 .occlude()
                 // A badge and their number, whether the panel is open or closed.
                 .child(
                     div()
                         .debug_selector(|| "comments-badge".into())
                         .absolute()
-                        .top(px(-3.))
-                        .right(px(-3.))
-                        .min_w(px(15.))
-                        .h(px(15.))
-                        .px(px(4.))
+                        .top(t.px(-3.))
+                        .right(t.px(-3.))
+                        .min_w(t.px(15.))
+                        .h(t.px(15.))
+                        .px(t.px(4.))
                         .flex()
                         .items_center()
                         .justify_center()
                         .rounded_full()
                         .bg(t.accent)
                         .text_color(t.bg)
-                        .text_size(px(10.))
+                        .text_size(t.px(10.))
                         .font_weight(gpui::FontWeight::BOLD)
                         .child(badge_label(said.len())),
                 )
@@ -662,13 +665,13 @@ impl Shell {
                 .absolute()
                 .bottom_4()
                 // Always in the same place, board or text: left of the copy button.
-                .right(px(50.))
-                .size(px(30.))
-                .rounded(px(8.))
+                .right(t.px(50.))
+                .size(t.px(30.))
+                .rounded(t.px(8.))
                 .occlude()
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });
-        let pill = client.then(|| window.viewport_size().width - self.nav.left - px(8.) - PILL_W);
+        let pill = client.then(|| window.viewport_size().width - self.nav.left - px(8.) - t.px(PILL_W));
         self.pane().editor.update(cx, |e, _| {
             e.corner = 1 + talk.is_some() as usize + boards as usize;
             e.bar_here = active;
@@ -680,7 +683,7 @@ impl Shell {
             .then(|| {
                 self.nav.aside = px(270.);
                 let panel = if self.nav.panel == Panel::Split { self.split_width() + nav::DIVIDER } else { px(0.) };
-                (self.nav.total - nav::RAIL - panel - nav::NOTE_MIN).min(px(270.))
+                (self.nav.total - t.px(nav::RAIL) - panel - nav::NOTE_MIN).min(px(270.))
             })
             .filter(|width| *width >= px(140.));
         if active && column.is_none() {
@@ -701,7 +704,7 @@ impl Shell {
                 .cursor_pointer()
                 .hover(|s| s.border_color(t.accent.opacity(0.6)))
                 // Where it is, in a table: `Cell C2`, above the commented text.
-                .when(!scope.is_empty() && !noted.is_empty(), |d| d.child(div().px_1().text_size(px(11.)).text_color(t.soft).child(scope.to_string())))
+                .when(!scope.is_empty() && !noted.is_empty(), |d| d.child(div().px_1().text_size(t.px(11.)).text_color(t.soft).child(scope.to_string())))
                 .child(
                     div()
                         .flex()
@@ -749,7 +752,7 @@ impl Shell {
                 .border_l_1()
                 .border_color(t.border)
                 .bg(t.panel)
-                .text_size(px(13.))
+                .text_size(t.px(13.))
                 .flex()
                 .flex_col()
                 .gap_2()
@@ -762,8 +765,8 @@ impl Shell {
             .absolute()
             .bottom_4()
             .right_4()
-            .size(px(30.))
-            .rounded(px(8.))
+            .size(t.px(30.))
+            .rounded(t.px(8.))
             .occlude()
             .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
         // The image picked in the panel; it goes away as soon as the note takes over again.
@@ -796,7 +799,7 @@ impl Shell {
             }
             Some((path, FileKind::Image)) => {
                 // A big picture takes a while: it says so after a moment; a file that is no picture says so too.
-                let said = move |text: &'static str| move || div().debug_selector(|| "image-said".into()).text_size(px(13.)).text_color(t.soft).child(text).into_any_element();
+                let said = move |text: &'static str| move || div().debug_selector(|| "image-said".into()).text_size(t.px(13.)).text_color(t.soft).child(text).into_any_element();
                 note.p_6().flex().items_center().justify_center().child(
                     img(path)
                         .max_w_full()

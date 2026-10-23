@@ -881,7 +881,7 @@ impl Palette {
         let c = &self.commands[n];
         let on = i == self.selected;
         let title = header.then(|| {
-            div().px_4().pt(px(10.)).pb(px(4.)).text_size(px(11.5)).text_color(t.soft).child(c.group.title(n < self.here))
+            div().px_4().pt(t.px(10.)).pb(t.px(4.)).text_size(t.px(11.5)).text_color(t.soft).child(c.group.title(n < self.here))
         });
         let row = div()
             .id(("command", i))
@@ -891,15 +891,15 @@ impl Palette {
             })
             .mx_1()
             .px_3()
-            .h(px(34.))
-            .rounded(px(6.))
+            .h(t.px(34.))
+            .rounded(t.px(6.))
             .flex()
             .items_center()
-            .gap(px(11.))
+            .gap(t.px(11.))
             .cursor_pointer()
             .when(on, |d| d.bg(t.selection))
             .when(!on, |d| d.hover(|s| s.bg(t.code_bg)))
-            .child(svg().path(c.icon).size(px(16.)).flex_none().text_color(if on { t.accent } else { t.soft }))
+            .child(svg().path(c.icon).size(t.px(16.)).flex_none().text_color(if on { t.accent } else { t.soft }))
             .child(div().flex_1().min_w_0().truncate().child(c.label))
             .child(keycaps(&c.keys, t, on).flex_none())
             .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| this.confirm(i, cx)));
@@ -929,18 +929,18 @@ impl Render for Palette {
                 let Some(caret) = layout.position_for_index(at) else { return };
                 let frame = scroll.bounds();
                 // Enough to bring the cursor back into the frame; the next frame shows it.
-                let slide = if caret.x > frame.right() - px(2.) {
-                    frame.right() - px(2.) - caret.x
+                let slide = if caret.x > frame.right() - t.px(2.) {
+                    frame.right() - t.px(2.) - caret.x
                 } else if caret.x < frame.left() {
                     frame.left() - caret.x
                 } else {
-                    px(0.)
+                    t.px(0.)
                 };
                 seen.set(Some(caret.x));
                 // Bounded to what can scroll: at the end, nothing more is requested.
                 let mut offset = scroll.offset();
-                let to = (offset.x + slide).max(-scroll.max_offset().width).min(px(0.));
-                if (to - offset.x).abs() > px(0.5) {
+                let to = (offset.x + slide).max(-scroll.max_offset().width).min(t.px(0.));
+                if (to - offset.x).abs() > t.px(0.5) {
                     offset.x = to;
                     scroll.set_offset(offset);
                     // During drawing, `Window::refresh` has no effect: request the render afterwards.
@@ -1020,7 +1020,7 @@ impl Render for Palette {
                 .mx_1()
                 .px_3()
                 .py_1p5()
-                .rounded(px(6.))
+                .rounded(t.px(6.))
                 .flex()
                 .justify_between()
                 .gap_3()
@@ -1031,7 +1031,7 @@ impl Render for Palette {
                 .child(
                     div()
                         .truncate()
-                        .when(matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none().max_w(px(220.)))
+                        .when(matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none().max_w(t.px(220.)))
                         .child(label),
                 )
                 .child(if shortcut {
@@ -1041,7 +1041,7 @@ impl Render for Palette {
                         .truncate()
                         .when(!matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none())
                         .text_color(if i == self.selected { t.text } else { t.soft })
-                        .text_size(px(12.))
+                        .text_size(t.px(12.))
                         .child(detail)
                 })
                 .on_mouse_down(
@@ -1077,15 +1077,15 @@ impl Render for Palette {
                 div()
                     .debug_selector(|| "palette-panel".into())
                     .mt(self.top)
-                    .w(px(520.))
+                    .w(t.px(520.))
                     .max_w_full()
                     .pb_1()
                     .bg(t.panel)
                     .border_1()
                     .border_color(t.border)
-                    .rounded(px(10.))
+                    .rounded(t.px(10.))
                     .shadow_lg()
-                    .text_size(px(14.))
+                    .text_size(t.px(14.))
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .child(
                         div()
@@ -1096,13 +1096,13 @@ impl Render for Palette {
                             .border_color(t.border)
                             .flex()
                             .items_center()
-                            .text_size(px(15.))
+                            .text_size(t.px(15.))
                             // Neither the prompt nor a long pasted address overflows the frame.
                             .overflow_hidden()
                             .child(input)
-                            .when(self.commands_only, |d| d.child(svg().path("search.svg").size(px(16.)).flex_none().mr(px(10.)).text_color(t.soft)))
+                            .when(self.commands_only, |d| d.child(svg().path("search.svg").size(t.px(16.)).flex_none().mr(t.px(10.)).text_color(t.soft)))
                             // The cursor first, the prompt after it: one writes in its place.
-                            .child(div().id("palette-line").min_w_0().overflow_x_scroll().track_scroll(&self.scroll).flex().child(line.flex_none().pr(px(2.)).whitespace_nowrap()).child(follow))
+                            .child(div().id("palette-line").min_w_0().overflow_x_scroll().track_scroll(&self.scroll).flex().child(line.flex_none().pr(t.px(2.)).whitespace_nowrap()).child(follow))
                             .when(self.query.text.is_empty(), |d| {
                                 d.child(div().min_w_0().truncate().text_color(t.soft).child(self.prompt.clone().unwrap_or_else(|| match (self.lines, self.commands_only) {
                                     (true, _) => tr("Search in the text of the vault…", "Chercher dans le texte du coffre…").into(),
@@ -1112,7 +1112,7 @@ impl Render for Palette {
                             })
                             .when(!self.query.text.is_empty(), |d| {
                                 d.children(self.prompt.clone().map(|label| {
-                                    div().ml_auto().pl_3().flex_none().max_w(gpui::relative(0.45)).truncate().text_size(px(12.)).text_color(t.soft).child(label)
+                                    div().ml_auto().pl_3().flex_none().max_w(gpui::relative(0.45)).truncate().text_size(t.px(12.)).text_color(t.soft).child(label)
                                 }))
                             })
                             // What the commands target first: the note, a table, a diagram.
@@ -1121,11 +1121,11 @@ impl Render for Palette {
                                     div()
                                         .debug_selector(|| "palette-context".into())
                                         .flex_none()
-                                        .px(px(7.))
-                                        .py(px(1.))
-                                        .rounded(px(5.))
+                                        .px(t.px(7.))
+                                        .py(t.px(1.))
+                                        .rounded(t.px(5.))
                                         .bg(t.code_bg)
-                                        .text_size(px(11.5))
+                                        .text_size(t.px(11.5))
                                         .text_color(t.soft)
                                         .child(self.context),
                                 )
@@ -1133,13 +1133,13 @@ impl Render for Palette {
                     )
                     .children(rows)
                     .children(self.nothing_to_show().map(|said| {
-                        div().debug_selector(|| "palette-empty".into()).px_4().py_3().text_center().text_size(px(13.)).text_color(t.soft).child(said)
+                        div().debug_selector(|| "palette-empty".into()).px_4().py_3().text_center().text_size(t.px(13.)).text_color(t.soft).child(said)
                     }))
                     // The panel slides into place when opening.
                     .with_animation(
                         "palette-in",
                         Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
-                        move |panel, delta| panel.opacity(delta).mt(top - px(8.) * (1. - delta)),
+                        move |panel, delta| panel.opacity(delta).mt(top - t.px(8.) * (1. - delta)),
                     ),
             )
     }

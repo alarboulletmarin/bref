@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use gpui::{
     Action, App, Bounds, ClipboardItem, Context, HighlightStyle, InteractiveElement, StyledText, TextLayout, UTF16Selection,
-    actions, canvas, div, fill, prelude::*, px, size,
+    actions, canvas, div, fill, prelude::*, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -130,7 +130,7 @@ impl Line {
             let layout = layout.clone();
             move |_, _, window, _| {
                 if let Some(origin) = layout.position_for_index(at) {
-                    window.paint_quad(fill(Bounds::new(origin, size(px(1.5), layout.line_height())), t.accent));
+                    window.paint_quad(fill(Bounds::new(origin, size(t.px(1.5), layout.line_height())), t.accent));
                 }
             }
         });

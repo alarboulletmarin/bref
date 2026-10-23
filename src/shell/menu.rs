@@ -418,12 +418,12 @@ impl Shell {
             div()
                 .id(label)
                 .debug_selector(move || format!("menu-entry-{label}"))
-                .h(px(28.))
+                .h(t.px(28.))
                 .mx_1()
                 .px_2()
                 .flex()
                 .items_center()
-                .rounded(px(5.))
+                .rounded(t.px(5.))
                 .cursor_pointer()
                 .hover(|s| s.bg(t.selection))
                 .when(on, |d| d.bg(t.selection))
@@ -445,7 +445,7 @@ impl Shell {
         let mut i = 0;
         for (g, group) in groups.into_iter().enumerate() {
             if g > 0 {
-                rows.push(div().h(px(1.)).my(px(4.)).bg(t.border).into_any_element());
+                rows.push(div().h(t.px(1.)).my(t.px(4.)).bg(t.border).into_any_element());
             }
             for item in group {
                 rows.push(entry(i, item, cx));
@@ -462,7 +462,7 @@ impl Shell {
                 .on_mouse_down(MouseButton::Right, close())
                 // The menu is as wide as its longest label with its shortcut, whatever
                 // the font, and stays in the window, even opened near an edge.
-                .child(gpui::anchored().position(at).snap_to_window_with_margin(px(8.)).child(
+                .child(gpui::anchored().position(at).snap_to_window_with_margin(t.px(8.)).child(
                     div()
                         .debug_selector(|| "menu".into())
                         .track_focus(&self.menu_focus)
@@ -477,14 +477,14 @@ impl Shell {
                                 cx.stop_propagation();
                             }
                         }))
-                        .min_w(px(230.))
-                        .py(px(5.))
+                        .min_w(t.px(230.))
+                        .py(t.px(5.))
                         .bg(t.panel)
                         .border_1()
                         .border_color(t.border)
-                        .rounded(px(8.))
+                        .rounded(t.px(8.))
                         .shadow_lg()
-                        .text_size(px(13.))
+                        .text_size(t.px(13.))
                         .children(rows)
                         .with_animation(
                             "menu-in",

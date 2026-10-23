@@ -1,6 +1,6 @@
 //! Small widgets shared by the views: icon buttons, tooltips, and the window-drag handle.
 
-use gpui::{AnyView, App, Context, Div, InteractiveElement, MouseButton, Stateful, Window, div, prelude::*, px, svg};
+use gpui::{AnyView, App, Context, Div, InteractiveElement, MouseButton, Stateful, Window, div, prelude::*, svg};
 
 use crate::ui::theme::Theme;
 
@@ -16,12 +16,12 @@ pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, 
 pub fn button_turned(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, turned: bool, t: Theme) -> Stateful<Div> {
     div()
         .id(id)
-        .size(px(28.))
+        .size(t.px(28.))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(6.))
+        .rounded(t.px(6.))
         .cursor_pointer()
         .tab_index(0)
         .focus(|s| s.border_2().border_color(t.accent))
@@ -36,7 +36,7 @@ pub fn button_turned(id: impl Into<gpui::ElementId>, icon: &'static str, active:
         .child(
             svg()
                 .path(icon)
-                .size(px(16.))
+                .size(t.px(16.))
                 .flex_none()
                 .when(turned, |s| s.with_transformation(gpui::Transformation::rotate(gpui::radians(std::f32::consts::PI))))
                 .text_color(if active { t.accent } else { t.soft }),
@@ -48,17 +48,17 @@ pub fn button_turned(id: impl Into<gpui::ElementId>, icon: &'static str, active:
 pub fn keycaps(keys: &str, t: Theme, on: bool) -> Div {
     let caps = crate::logic::commands::keycaps(keys).into_iter().map(|key| {
         div()
-            .min_w(px(20.))
-            .px(px(6.))
-            .rounded(px(4.))
+            .min_w(t.px(20.))
+            .px(t.px(6.))
+            .rounded(t.px(4.))
             .flex()
             .justify_center()
             .bg(if on { t.panel.opacity(0.7) } else { t.code_bg })
-            .text_size(px(11.5))
+            .text_size(t.px(11.5))
             .text_color(if on { t.text } else { t.soft })
             .child(key)
     });
-    div().flex().items_center().gap(px(3.)).children(caps)
+    div().flex().items_center().gap(t.px(3.)).children(caps)
 }
 
 /// Tooltip of an icon button: what it does and, if it has one, its shortcut. Without it,
@@ -74,13 +74,13 @@ impl Render for Tip {
         let t = self.theme;
         div()
             .px_2()
-            .py(px(3.))
-            .rounded(px(6.))
+            .py(t.px(3.))
+            .rounded(t.px(6.))
             .bg(t.panel)
             .border_1()
             .border_color(t.border)
             .shadow_sm()
-            .text_size(px(12.))
+            .text_size(t.px(12.))
             .text_color(t.text)
             .flex()
             .items_center()
@@ -94,11 +94,12 @@ impl Render for Tip {
 pub fn tip(label: &'static str, keys: String, theme: Theme) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
     move |_, cx| cx.new(|_| Tip { label, keys: keys.clone(), theme }).into()
 }
-/// Round icon button: window controls, note copy.
+/// Round icon button: window controls, note copy; 24 px, the smallest target a finger or a shaky hand hits.
 pub fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
-        .size(px(20.))
+        .debug_selector(move || id.to_string())
+        .size(t.px(24.))
         .flex()
         .items_center()
         .justify_center()
@@ -107,7 +108,7 @@ pub fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stat
         .hover(|s| s.bg(t.border))
         .active(|s| s.bg(t.selection))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .child(svg().path(icon).size(px(16.)).flex_none().text_color(t.text))
+        .child(svg().path(icon).size(t.px(16.)).flex_none().text_color(t.text))
 }
 
 /// Turns an element into a window handle, where the app draws its title bar

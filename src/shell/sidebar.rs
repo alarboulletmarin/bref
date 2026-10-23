@@ -85,7 +85,7 @@ impl Shell {
     /// Width of the panel open beside the note: the one it was given, as long as the note
     /// (`NOTE_MIN`) and what is reserved to its right keep their room.
     pub(super) fn split_width(&self) -> Pixels {
-        let room = self.nav.total - RAIL - DIVIDER - self.nav.aside;
+        let room = self.nav.total - self.theme.px(RAIL) - DIVIDER - self.nav.aside;
         // The month can no longer be read below 170 px: its days touch.
         let floor = px(if self.nav.mode == Mode::Calendar { 170. } else { 120. });
         match if self.nav.mode == Mode::Graph { self.nav.graph_w } else { self.nav.list_w } {
@@ -96,8 +96,8 @@ impl Shell {
 
     /// The separator follows the pointer; at the ends, one side collapses.
     pub(super) fn drag_nav(&mut self, x: Pixels, cx: &mut Context<Self>) {
-        let x = x - self.nav.left - RAIL;
-        let room = self.nav.total - RAIL;
+        let x = x - self.nav.left - self.theme.px(RAIL);
+        let room = self.nav.total - self.theme.px(RAIL);
         self.nav.panel = if x < px(100.) {
             Panel::Rail
         } else if x > room - px(140.) {
@@ -254,9 +254,9 @@ impl Shell {
             .child(step("month-prev", "chevron-left.svg", -1, cx))
             .child(step("month-next", "chevron-right.svg", 1, cx));
         // Seven equal columns, which shrink with the panel instead of going under the note.
-        let cell = || div().h(px(30.)).flex().items_center().justify_center();
+        let cell = || div().h(t.px(30.)).flex().items_center().justify_center();
         let initials = if monday { tr("MTWTFSS", "LMMJVSD") } else { tr("SMTWTFS", "DLMMJVS") };
-        let week = initials.chars().map(|c| cell().text_color(t.soft).text_size(px(11.)).child(c.to_string()));
+        let week = initials.chars().map(|c| cell().text_color(t.soft).text_size(t.px(11.)).child(c.to_string()));
         let blanks = (0..lead).map(|_| cell().into_any_element());
         let cells = (1..=days).map(|day| {
             let date = (year, month, day);
@@ -264,7 +264,7 @@ impl Shell {
             let has = names.contains(name.as_str());
             cell()
                 .id(("day", day as usize))
-                .rounded(px(6.))
+                .rounded(t.px(6.))
                 .cursor_pointer()
                 .text_color(if has || day == chosen { t.text } else { t.soft })
                 .when(has, |d| d.font_weight(gpui::FontWeight::BOLD))
@@ -280,12 +280,12 @@ impl Shell {
             .flex_1()
             .min_h_0()
             .px_2()
-            .text_size(px(13.))
+            .text_size(t.px(13.))
             .flex()
             .flex_col()
             .gap_1()
             .child(head)
-            .child(div().debug_selector(|| "calendar".into()).w_full().max_w(px(224.)).grid().grid_cols(7).children(week).children(blanks).children(cells))
+            .child(div().debug_selector(|| "calendar".into()).w_full().max_w(t.px(224.)).grid().grid_cols(7).children(week).children(blanks).children(cells))
     }
 
     pub(super) fn nav_step(&mut self, down: bool, cx: &mut Context<Self>) {
@@ -467,8 +467,8 @@ impl Shell {
         let view = window.viewport_size();
         let (width, height) = (px(8. * 30. - 2. + 12.), px(cells.len().div_ceil(8) as f32 * 30. - 2. + 12.));
         let at = point(
-            (at.x - self.nav.left).min(view.width - self.nav.left * 2. - width - px(8.)),
-            (at.y - self.nav.left).min(view.height - self.nav.left * 2. - height - px(8.)),
+            (at.x - self.nav.left).min(view.width - self.nav.left * 2. - width - t.px(8.)),
+            (at.y - self.nav.left).min(view.height - self.nav.left * 2. - height - t.px(8.)),
         );
         let close = cx.listener(|this: &mut Self, _: &MouseDownEvent, window, cx| this.close_icons(window, cx));
         Some(
@@ -487,15 +487,15 @@ impl Shell {
                     .left(at.x)
                     .top(at.y)
                     .w(width)
-                    .p(px(5.))
+                    .p(t.px(5.))
                     .bg(t.panel)
                     .border_1()
                     .border_color(t.border)
-                    .rounded(px(8.))
+                    .rounded(t.px(8.))
                     .shadow_lg()
                     .flex()
                     .flex_wrap()
-                    .gap(px(2.))
+                    .gap(t.px(2.))
                     .children(cells),
             ),
         )
@@ -565,8 +565,8 @@ impl Shell {
                         .flex()
                         .items_center()
                         .gap_1()
-                        .rounded(px(5.))
-                        .text_size(px(13.))
+                        .rounded(t.px(5.))
+                        .text_size(t.px(13.))
                         .when(!selected, |d| d.hover(|s| s.bg(t.code_bg)))
                         .when(selected, |d| {
                             let at = self.nav.sel_at.clone();
@@ -575,12 +575,12 @@ impl Shell {
                                 .child(gpui::canvas(move |bounds, _, _| at.set(Some(bounds)), |_, _, _, _| {}).absolute().size_full())
                         })
                         .when(foldable, |d| {
-                            d.child(div().size(px(14.)).flex_none().when(row.dir.is_some(), |d| {
-                                d.child(svg().path(chevron).size(px(14.)).text_color(if selected { t.text } else { t.soft }))
+                            d.child(div().size(t.px(14.)).flex_none().when(row.dir.is_some(), |d| {
+                                d.child(svg().path(chevron).size(t.px(14.)).text_color(if selected { t.text } else { t.soft }))
                             }))
                         })
                         .children(self.icons.get(&row.path).and_then(|name| ICON_SET.iter().find(|(file, _)| file[2..file.len() - 4] == *name)).map(
-                            |(file, _)| svg().path(*file).size(px(14.)).flex_none().text_color(if current { t.accent } else { t.text }),
+                            |(file, _)| svg().path(*file).size(t.px(14.)).flex_none().text_color(if current { t.accent } else { t.text }),
                         ))
                         .child(
                             div()
@@ -593,9 +593,9 @@ impl Shell {
                         )
                         .child(
                             div()
-                                .map(|d| if links { d.flex_1().min_w_0() } else { d.flex_none().max_w(px(110.)) })
+                                .map(|d| if links { d.flex_1().min_w_0() } else { d.flex_none().max_w(t.px(110.)) })
                                 .truncate()
-                                .text_size(px(11.5))
+                                .text_size(t.px(11.5))
                                 .text_color(if selected { t.text } else { t.soft })
                                 .child(detail),
                         );
@@ -616,7 +616,7 @@ impl Shell {
                         .id(ix)
                         .debug_selector(move || selector.clone())
                         .w_full()
-                        .h(ROW)
+                        .h(t.px(ROW))
                         .px_1()
                         .cursor_pointer()
                         .child(line)
@@ -713,14 +713,14 @@ impl Shell {
             div()
                 .id(id)
                 .debug_selector(move || id.to_string())
-                .w(px(17.))
-                .h(px(24.))
+                .w(t.px(28.))
+                .h(t.px(24.))
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(5.))
+                .rounded(t.px(5.))
                 .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.border)).active(|s| s.bg(t.selection)))
-                .child(svg().path(icon).size(px(14.)).flex_none().text_color(t.soft).when(!on, |s| s.opacity(0.35)))
+                .child(svg().path(icon).size(t.px(14.)).flex_none().text_color(t.soft).when(!on, |s| s.opacity(0.35)))
         };
         let mode_button = |id, icon, m: Mode, label: &'static str, keys: String| {
             button(id, icon, unfolded && mode == m, t)
@@ -731,7 +731,7 @@ impl Shell {
         let rail = div()
             .id("rail")
             .flex_none()
-            .w(RAIL)
+            .w(t.px(RAIL))
             .h_full()
             // A short window: the rail scrolls, its last buttons stay reachable.
             .overflow_y_scroll()
@@ -749,11 +749,12 @@ impl Shell {
                     .tooltip(tip(tr("Commands", "Commandes"), keys(&crate::actions::ToggleCommands), t))
                     .on_click(cx.listener(|this, _, window, cx| this.open_commands(window, cx))),
             )
-            // Back and forward, side by side; dimmed when there is nowhere to go.
+            // Back and forward, one above the other (side by side, two 24 px targets do not fit the rail);
+            // dimmed when there is nowhere to go.
             .child(
                 div()
                     .flex()
-                    .gap(px(2.))
+                    .flex_col()
                     .child(
                         travel("nav-back", "chevron-left.svg", self.history.can_back())
                             .tooltip(tip(tr("Back", "Précédent"), keys(&crate::actions::GoBack), t))
@@ -771,7 +772,7 @@ impl Shell {
             .child(mode_button("nav-tags", "tag.svg", Mode::Tags, "Tags", keys(&ShowTags)))
             .child(mode_button("nav-links", "backlink.svg", Mode::Links, tr("Backlinks", "Rétroliens"), keys(&ShowLinks)))
             .child(mode_button("nav-calendar", "i-calendar.svg", Mode::Calendar, tr("Calendar", "Calendrier"), keys(&ShowCalendar)))
-            .child(div().w(px(16.)).h(px(1.)).my_1().bg(t.border))
+            .child(div().w(t.px(16.)).h(t.px(1.)).my_1().bg(t.border))
             .child(
                 button("nav-search", "search.svg", false, t)
                     .tooltip(tip(tr("Find or create a note", "Chercher ou créer une note"), keys(&crate::actions::OpenPalette), t))
@@ -823,10 +824,13 @@ impl Shell {
         };
         let header = div()
             .flex_none()
-            .h(px(44.))
+            .h(t.px(44.))
             .pl_2()
             // Over the whole window, the window buttons float over the right end of the header.
-            .pr(if full && !self.nav.native_bar { super::render::PILL_ROOM } else { px(4.) })
+            .pr(if full && !self.nav.native_bar { t.px(super::render::PILL_ROOM) } else { t.px(4.) })
+            // A narrow panel at a large scale: its buttons are cut at its edge, never drawn over the note
+            // (they are in the palette too).
+            .overflow_hidden()
             .flex()
             .items_center()
             .child(
@@ -836,7 +840,7 @@ impl Shell {
                     .flex()
                     .items_center()
                     .truncate()
-                    .text_size(px(12.))
+                    .text_size(t.px(12.))
                     .text_color(t.soft)
                     .when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window))
                     .child(title),
@@ -880,7 +884,7 @@ impl Shell {
                 Mode::Links => tr("No note links here yet", "Aucune note ne renvoie ici pour l'instant").to_string(),
                 _ => tr("No recent note", "Aucune note récente").to_string(),
             };
-            div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(px(13.)).text_color(t.soft).child(div().debug_selector(|| "nav-empty".into()).max_w_full().child(said))
+            div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(t.px(13.)).text_color(t.soft).child(div().debug_selector(|| "nav-empty".into()).max_w_full().child(said))
         });
         // Set again by the selected row if it is drawn.
         self.nav.sel_at.set(None);
@@ -983,7 +987,7 @@ impl Shell {
             .group("nav-divider")
             .child(
                 div()
-                    .w(px(1.))
+                    .w(t.px(1.))
                     .h_full()
                     .bg(if self.nav.dragging { t.accent } else { t.border })
                     .group_hover("nav-divider", |s| s.bg(t.accent)),

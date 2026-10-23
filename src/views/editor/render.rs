@@ -6,7 +6,8 @@ impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Left of the buttons the window puts in the corner (copy, comments).
         // The count is truncated in a narrow note, instead of going out on the left.
-        let after = 12. + 34. * self.corner as f32;
+        let t = self.theme;
+        let after = (12. + 34. * self.corner as f32) * t.ui;
         // The formatting bar, apart from the counter and in the middle of the page.
         self.bar.at = self.bar_place();
         let folded = self.bar.at == Some(Bar::Compact);
@@ -17,17 +18,17 @@ impl Render for Editor {
         };
         let toggle = folded.then(|| self.bar_toggle(cx));
         // Collapsed, the bar leaves room for its button: the counter is truncated before going under it.
-        let counts = div().absolute().bottom_4().left(px(if folded { 46. } else { 8. })).right(px(after)).flex().justify_end().child(
+        let counts = div().absolute().bottom_4().left(t.px(if folded { 46. } else { 8. })).right(px(after)).flex().justify_end().child(
             div()
                 .debug_selector(|| "counts".into())
-                .h(px(30.))
+                .h(t.px(30.))
                 .min_w_0()
                 .px_2()
-                .rounded(px(8.))
+                .rounded(t.px(8.))
                 .flex()
                 .items_center()
                 .bg(self.theme.bg)
-                .text_size(px(12.))
+                .text_size(t.px(12.))
                 .text_color(self.theme.soft)
                 .child(div().min_w_0().truncate().child(self.counts())),
         );

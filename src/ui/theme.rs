@@ -106,6 +106,9 @@ pub struct Theme {
     pub line: Hsla,
     /// Size of the note's body text, in pixels.
     pub size: f32,
+    /// Scale of the interface around the note (panel, menus, help, palette): it follows the note's size,
+    /// 1 at 16, from 0.85 to 1.5 so that the panel stays usable.
+    pub ui: f32,
     pub page: Page,
     pub wide: Wide,
     /// Formatting bar at the bottom of the note.
@@ -168,6 +171,7 @@ impl Theme {
             panel,
             border,
             size: prefs.size,
+            ui: (prefs.size / 16.).clamp(0.85, 1.5),
             page: Page::of(&prefs.page),
             wide: Wide::of(&prefs.wide),
             bar: prefs.bar != "off",
@@ -176,6 +180,11 @@ impl Theme {
 }
 
 impl Theme {
+    /// `v` pixels of the interface at its scale.
+    pub fn px(&self, v: f32) -> Pixels {
+        px(v * self.ui)
+    }
+
     /// Background of a highlight (`==text==`) of color `i` (see `md::MARKS`), opaque.
     pub fn highlight(&self, i: usize) -> Hsla {
         let tint = highlight_tint(i);
