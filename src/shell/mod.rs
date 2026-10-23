@@ -130,6 +130,9 @@ struct Shell {
     dirs: Vec<PathBuf>,
     /// Vault files that are not notes: images and tables (CSV, TSV).
     images: Vec<PathBuf>,
+    /// Folders of the vault that could not be read at the last scan, and why; the root itself
+    /// when the whole vault cannot be read.
+    unreadable: Vec<(PathBuf, std::io::ErrorKind)>,
     /// Tree context menu, if open.
     menu: Option<nav::Menu>,
     /// The open menu has the keys: arrows, Enter, Escape.
@@ -241,6 +244,7 @@ impl Shell {
             notes: Vec::new(),
             dirs: Vec::new(),
             images: Vec::new(),
+            unreadable: Vec::new(),
             menu: None,
             recent: Vec::new(),
             save_gen: 0,

@@ -451,7 +451,7 @@ impl Shell {
                         .child(format!("{} « {} »", tr("The vault was not found:", "Le coffre est introuvable :"), vault::shown(gone)))
                         .child(div().text_color(t.soft).child(tr(
                             "Moved, renamed, or on a disk that is not plugged in? Open it again, or start another one.",
-                            "Déplacé, renommé, ou sur un disque qui n'est pas branché ? Rouvre-le, ou commence-en un autre.",
+                            "Déplacé, renommé, ou sur un disque qui n'est pas branché ? Rouvrez-le, ou commencez-en un autre.",
                         )))
                 }))
                 // Shortest path first: a ready-made vault, in one click, without a picker

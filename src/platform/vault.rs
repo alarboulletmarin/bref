@@ -311,12 +311,21 @@ pub fn watch(root: &Path, changed: Arc<Signal>) -> Option<RecommendedWatcher> {
 
 /// All the vault's notes (recursive, hidden folders ignored), most recent
 /// first, all its folders, even empty, and its other files: images and tables.
+#[cfg(test)]
 pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
     rescan(root, &[])
 }
 
 /// Like `scan`, without rereading the notes of `known` whose date has not changed.
 pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
+    let (notes, dirs, images, _) = rescan_full(root, known);
+    (notes, dirs, images)
+}
+
+/// Like `rescan`, with the folders that could not be listed and why: the root itself when the whole
+/// vault cannot be read. A folder inside one of them is not reached, so not reported.
+pub fn rescan_full(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>, Vec<(PathBuf, io::ErrorKind)>) {
+    let mut unreadable = Vec::new();
     let known: HashMap<&Path, &Note> = known.iter().map(|n| (n.path.as_path(), n)).collect();
     let mut files = Vec::new();
     let mut images = Vec::new();
@@ -325,8 +334,12 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
     first_visit(&mut visited, root);
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                unreadable.push((dir, e.kind()));
+                continue;
+            }
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -363,7 +376,7 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
     };
     let mut notes: Vec<Note> = files.iter().map(note).collect();
     notes.sort_by_key(|note| std::cmp::Reverse(note.mtime));
-    (notes, found, images)
+    (notes, found, images, unreadable)
 }
 
 /// File or folder name stripped of what a file system or
@@ -1316,6 +1329,54 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         assert!(changed.take(), "no event in 10 s");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A folder that cannot be listed is reported, root or inner, with the reason; the rest is read as
+    /// usual, and the same folder read again once the permission is back.
+    #[cfg(unix)]
+    #[test]
+    fn reports_unreadable_folders() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("bref-unreadable-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let deep = root.join("a/b/c/d");
+        fs::create_dir_all(&deep).unwrap();
+        fs::create_dir_all(root.join("Fermé/Dedans")).unwrap();
+        fs::write(root.join("Note.md"), "# Note").unwrap();
+        fs::write(deep.join("Profonde.md"), "x").unwrap();
+        fs::write(root.join("Fermé/Cachée.md"), "x").unwrap();
+        let mode = |path: &Path, m: u32| fs::set_permissions(path, fs::Permissions::from_mode(m)).unwrap();
+        // Root (`chmod 0`) can read anything: nothing to see there. The folder inside first: closed, the
+        // outer one hides it.
+        mode(&root.join("Fermé/Dedans"), 0o000);
+        mode(&root.join("Fermé"), 0o000);
+        if fs::read_dir(root.join("Fermé")).is_ok() {
+            return eprintln!("permissions are not enforced here (root?): skipped");
+        }
+        // An inner folder at depth 1, one inside it, one at depth 4 (write and cross, no read: 311).
+        mode(&deep, 0o311);
+        let (notes, dirs, _, unreadable) = rescan_full(&root, &[]);
+        let names: Vec<_> = notes.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(names, ["Note"]);
+        assert!(dirs.contains(&root.join("Fermé")) && dirs.contains(&deep), "an unreadable folder is still a folder of the vault");
+        let mut got: Vec<_> = unreadable.iter().map(|(p, kind)| (p.strip_prefix(&root).unwrap().to_path_buf(), *kind)).collect();
+        got.sort();
+        // The folder inside the closed one is not reached: only the closed one is said.
+        assert_eq!(got, [(PathBuf::from("Fermé"), io::ErrorKind::PermissionDenied), (PathBuf::from("a/b/c/d"), io::ErrorKind::PermissionDenied)]);
+        // The root: nothing is read, and it says so; given back, everything is there.
+        mode(&root, 0o000);
+        let (notes, _, _, unreadable) = rescan_full(&root, &[]);
+        assert!(notes.is_empty() && unreadable == [(root.clone(), io::ErrorKind::PermissionDenied)]);
+        for dir in [&root, &root.join("Fermé"), &root.join("Fermé/Dedans"), &deep] {
+            mode(dir, 0o755);
+        }
+        let (notes, _, _, unreadable) = rescan_full(&root, &[]);
+        assert!(unreadable.is_empty() && notes.len() == 3, "{:?}", notes.iter().map(|n| &n.name).collect::<Vec<_>>());
+        // A readable but empty vault is empty, not unreadable.
+        let empty = root.join("vide");
+        fs::create_dir(&empty).unwrap();
+        assert!(rescan_full(&empty, &[]).3.is_empty());
         fs::remove_dir_all(&root).unwrap();
     }
 }

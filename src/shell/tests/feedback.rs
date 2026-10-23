@@ -371,3 +371,55 @@ fn a_filter_that_keeps_nothing_says_so(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("list-empty").is_some(), "the filter keeps no row");
     let _ = fs::remove_dir_all(&root);
 }
+
+/// A vault that cannot be read says so instead of looking empty, at every width, and offers another vault; given
+/// back, the notes come on the next scan. A folder inside that cannot be read is marked, the rest opens.
+#[cfg(unix)]
+#[gpui::test]
+fn an_unreadable_vault_or_folder_says_so(cx: &mut TestAppContext) {
+    use std::os::unix::fs::PermissionsExt;
+    let (root, shell, cx, _config) = start(cx, "unreadable");
+    let mode = |path: &Path, m: u32| fs::set_permissions(path, fs::Permissions::from_mode(m)).unwrap();
+    fs::write(root.join("Note.md"), "# Note\n").unwrap();
+    fs::create_dir(root.join("Interdit")).unwrap();
+    fs::write(root.join("Interdit/Cachée.md"), "x").unwrap();
+    mode(&root, 0o000);
+    if fs::read_dir(&root).is_ok() {
+        mode(&root, 0o755);
+        return eprintln!("permissions are not enforced here (root?): skipped");
+    }
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.simulate_keystrokes("secondary-e");
+    let reason = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.unreadable.clone());
+    assert_eq!(reason(cx), [(root.clone(), std::io::ErrorKind::PermissionDenied)]);
+    assert!(shell.read_with(cx, |s, _| s.nav.rows.is_empty()));
+    // The message stays inside the panel, a narrow window as a wide one.
+    for width in [420., 860., 1600.] {
+        cx.simulate_resize(size(px(width), px(720.)));
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let (said, panel) = (cx.debug_bounds("nav-unreadable").expect("the panel says it"), cx.debug_bounds("nav-panel").unwrap());
+        assert!(said.left() >= panel.left() && said.right() <= panel.right() && said.bottom() <= panel.bottom(), "{width}: {said:?} in {panel:?}");
+        let other = cx.debug_bounds("nav-other-vault").expect("another vault is offered");
+        assert!(other.top() >= said.top() && other.bottom() <= said.bottom());
+    }
+    // Given back: the next scan reads it, the message goes.
+    mode(&root, 0o755);
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    assert!(reason(cx).is_empty());
+    assert!(shell.read_with(cx, |s, _| s.nav.rows.iter().any(|r| r.name == "Note")));
+    // A folder inside: the vault opens, the folder is there, marked; taken away while open, given back.
+    mode(&root.join("Interdit"), 0o000);
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    assert_eq!(reason(cx), [(root.join("Interdit"), std::io::ErrorKind::PermissionDenied)]);
+    assert!(shell.read_with(cx, |s, _| s.nav.rows.iter().any(|r| r.name == "Interdit") && s.nav.rows.iter().any(|r| r.name == "Note")));
+    let row = cx.debug_bounds("nav-row-Interdit").expect("the folder's row");
+    let panel = cx.debug_bounds("nav-panel").unwrap();
+    assert!(row.right() <= panel.right());
+    mode(&root.join("Interdit"), 0o755);
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    assert!(reason(cx).is_empty());
+    let _ = fs::remove_dir_all(&root);
+}

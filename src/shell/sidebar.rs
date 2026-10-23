@@ -552,6 +552,13 @@ impl Shell {
                     }
                     None => detail,
                 };
+                // A folder of the tree that cannot be read says so and why, instead of looking empty.
+                let closed = self.unreadable.iter().find(|(dir, _)| tree && *dir == row.path);
+                let detail = match closed {
+                    Some((_, why)) => format!("{} {}", tr("cannot be read:", "illisible :"), crate::lang::io_reason(&std::io::Error::from(*why))),
+                    None => detail,
+                };
+                let wide = links || closed.is_some();
                 let foldable = !matches!(self.nav.mode, Mode::Recent | Mode::Links);
                 let chevron = match row.dir {
                     Some(true) => "chevron-down.svg",
@@ -585,15 +592,15 @@ impl Shell {
                         .child(
                             div()
                                 .truncate()
-                                // The name goes first, in full as long as it fits; the link's line
-                                // takes what is left.
-                                .map(|d| if links { d.flex_none().max_w(gpui::relative(0.7)) } else { d.flex_1() })
+                                // The name goes first, in full as long as it fits; the link's line, or the
+                                // reason a folder cannot be read, takes what is left.
+                                .map(|d| if wide { d.flex_none().max_w(gpui::relative(0.7)) } else { d.flex_1() })
                                 .when(current, |d| d.text_color(t.accent))
                                 .child(row.name.clone()),
                         )
                         .child(
                             div()
-                                .map(|d| if links { d.flex_1().min_w_0() } else { d.flex_none().max_w(t.px(110.)) })
+                                .map(|d| if wide { d.flex_1().min_w_0() } else { d.flex_none().max_w(t.px(110.)) })
                                 .truncate()
                                 .text_size(t.px(11.5))
                                 .text_color(if selected { t.text } else { t.soft })
@@ -890,8 +897,40 @@ impl Shell {
                     .tooltip(tip(if full { tr("Back beside the note", "Revenir à côté de la note") } else { tr("Panel on the whole window", "Panneau en pleine fenêtre") }, keys(&ToggleFull), t))
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_full(window, cx))),
             );
-        // An empty list says so, in one soft line over it (the list keeps its drop and menu zones under it).
+        // A vault that cannot be read is not an empty one: whatever the mode, the panel says so, why and
+        // where, and offers another vault rather than a note that could not be written.
+        let unreadable = self.vault.as_ref().and_then(|root| self.unreadable.iter().find(|(dir, _)| dir == root).map(|(_, why)| (root.clone(), *why)));
         let nothing = self.nav.rows.is_empty().then(|| {
+            if let Some((root, why)) = &unreadable {
+                return div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(t.px(13.)).text_color(t.soft).child(
+                    div()
+                        .debug_selector(|| "nav-unreadable".into())
+                        .max_w_full()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_1()
+                        .child(format!(
+                            "{} {}\n« {} »",
+                            tr("This vault cannot be read:", "Ce coffre ne peut pas être lu :"),
+                            crate::lang::io_reason(&std::io::Error::from(*why)),
+                            vault::shown(root)
+                        ))
+                        .child(
+                            div()
+                                .id("nav-other-vault")
+                                .debug_selector(|| "nav-other-vault".into())
+                                .px_2()
+                                .py_1()
+                                .rounded(t.px(6.))
+                                .cursor_pointer()
+                                .text_color(t.accent)
+                                .hover(|s| s.bg(t.border))
+                                .child(tr("Open another vault…", "Ouvrir un autre coffre…"))
+                                .on_click(cx.listener(|this, _, window, cx| this.choose_vault(window, cx))),
+                        ),
+                );
+            }
             let said = match mode {
                 Mode::Tree => match keys(&crate::actions::NewNote) {
                     key if key.is_empty() => tr("Nothing here yet", "Rien ici pour l'instant").to_string(),

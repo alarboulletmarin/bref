@@ -7,7 +7,8 @@ impl Shell {
     /// shows, each note keeping its cursor and scroll.
     pub(super) fn rescan(&mut self, root: &Path, cx: &mut Context<Self>) {
         let views: Vec<(usize, f32)> = self.panes.iter().map(|pane| pane.editor.read(cx).view()).collect();
-        let (notes, dirs, images) = vault::rescan(root, &self.notes);
+        let (notes, dirs, images, unreadable) = vault::rescan_full(root, &self.notes);
+        self.unreadable = unreadable;
         self.sync(notes, dirs, images, cx);
         for (pane, (at, scroll)) in self.panes.iter().zip(views) {
             if pane.editor.read(cx).view().0 != at {
@@ -89,14 +90,15 @@ impl Shell {
                     return;
                 };
                 let scan_root = root.clone();
-                let (notes, dirs, images) = cx
+                let (notes, dirs, images, unreadable) = cx
                     .background_executor()
-                    .spawn(async move { vault::rescan(&scan_root, &known) })
+                    .spawn(async move { vault::rescan_full(&scan_root, &known) })
                     .await;
                 let mut applied = false;
                 this.update(cx, |this, cx| {
                     // A keystroke or a save during the read: try again on the next round.
                     if this.vault.as_ref() == Some(&root) && this.save_gen == generation && !this.panes.iter().any(|pane| pane.dirty) {
+                        this.unreadable = unreadable;
                         this.sync(notes, dirs, images, cx);
                         last = Some((root, print));
                         applied = true;
@@ -174,12 +176,13 @@ impl Shell {
         // The index (names, tags) is built off the UI thread.
         cx.spawn(async move |this, cx| {
             let scan_root = root.clone();
-            let (notes, dirs, images) = cx
+            let (notes, dirs, images, unreadable) = cx
                 .background_executor()
-                .spawn(async move { vault::scan(&scan_root) })
+                .spawn(async move { vault::rescan_full(&scan_root, &[]) })
                 .await;
             this.update(cx, |this, cx| {
                 if this.vault.as_ref() == Some(&root) {
+                    this.unreadable = unreadable;
                     this.notes = notes;
                     this.dirs = dirs;
                     this.images = images;
