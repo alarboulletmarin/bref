@@ -78,6 +78,7 @@ impl Shell {
             }
             this.update(cx, |this, cx| {
                 this.syncing = false;
+                this.sync_broken = outcome.is_err();
                 match outcome {
                     Err(e) => this.sync_failed(&e, cx),
                     Ok(()) if sent + received + conflicts == 0 => this.say(Tone::Done, tr("Already up to date", "Déjà à jour"), cx),
@@ -107,6 +108,7 @@ impl Shell {
 
     pub(super) fn sync_failed(&mut self, why: &git::Fail, cx: &mut Context<Self>) {
         self.syncing = false;
+        self.sync_broken = true;
         self.say(Tone::Failed, format!("{} : {}", tr("Sync failed", "Synchronisation impossible"), why.text()), cx);
     }
 

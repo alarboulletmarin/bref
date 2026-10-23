@@ -23,7 +23,11 @@ impl Shell {
         if self.vault.is_none() {
             return;
         }
-        let default = tr("Default", "Par défaut");
+        // The theme's default is not one of the list: it follows the system, light or dark.
+        let default = match setting {
+            Setting::Theme => tr("Default: Bref, light or dark like the system", "Par défaut : Bref, clair ou sombre comme le système"),
+            _ => tr("Default", "Par défaut"),
+        };
         // Page width and big tables: a short fixed list, without "Default"; the
         // choice is stored under its key, its labels follow the language.
         let fixed: Option<Vec<(&'static str, &'static str)>> = match setting {

@@ -574,6 +574,12 @@ impl Palette {
         cx.notify();
     }
 
+    /// The label of the choice listed at `i`.
+    #[cfg(test)]
+    pub fn choice_at(&self, i: usize) -> Option<String> {
+        self.items.get(i).and_then(|item| self.choice(item)).map(str::to_string)
+    }
+
     fn choice(&self, item: &Item) -> Option<&str> {
         match item {
             Item::Note(i) if self.choices => Some(&self.entries[*i].name),

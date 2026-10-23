@@ -790,12 +790,30 @@ impl Shell {
                     .tooltip(tip(tr("Trash: restore a note", "Corbeille : restaurer une note"), String::new(), t))
                     .on_click(cx.listener(|this, _, window, cx| this.open_trash(window, cx))),
             )
+            // A vault kept in git: its sync, turning while it runs, with a mark when the last one failed.
+            .when(self.vault.as_ref().is_some_and(|root| root.join(".git").exists()), |d| {
+                let (busy, broken) = (self.syncing, self.sync_broken);
+                let said = if broken {
+                    tr("Sync the vault (the last sync failed)", "Synchroniser le coffre (la dernière synchronisation a échoué)")
+                } else {
+                    tr("Sync the vault with git", "Synchroniser le coffre par git")
+                };
+                let mut sync = button("nav-sync", if busy { "spinner.svg" } else { "sync.svg" }, busy, t)
+                    .debug_selector(|| "nav-sync".into())
+                    .relative()
+                    .tooltip(tip(said, keys(&crate::actions::SyncVault), t))
+                    .on_click(cx.listener(|this, _, window, cx| this.git_sync(window, cx)));
+                if broken && !busy {
+                    sync = sync.child(div().debug_selector(|| "nav-sync-broken".into()).absolute().top(t.px(3.)).right(t.px(3.)).size(t.px(7.)).rounded_full().bg(t.hue(crate::ui::theme::RED, t.panel)));
+                }
+                d.child(sync)
+            })
             .child(
                 button("nav-backup", "backup.svg", false, t)
                     .tooltip(tip(tr("Back up the vault", "Sauvegarder le coffre"), String::new(), t))
                     .on_click(cx.listener(|this, _, window, cx| this.choose_backup(window, cx))),
             )
-            .child(button("nav-theme", "theme.svg", false, t).tooltip(tip(tr("Theme", "Thème"), String::new(), t)).on_click(cx.listener(
+            .child(button("nav-theme", "theme.svg", false, t).tooltip(tip(tr("Choose a theme…", "Choisir un thème…"), String::new(), t)).on_click(cx.listener(
                 |this, _, window, cx| this.choose_setting(Setting::Theme, window, cx),
             )))
             .child(

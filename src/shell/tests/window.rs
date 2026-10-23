@@ -555,3 +555,58 @@ fn small_targets_are_24_px(cx: &mut TestAppContext) {
     let small: Vec<_> = seen.iter().filter(|(_, s)| s.width < px(24.) || s.height < px(24.)).collect();
     assert!(small.is_empty(), "under 24 px: {small:?}");
 }
+
+/// Small clarity fixes: the help's table of contents, the sync button of a git vault, the theme's default that
+/// says it follows the system, the line of the active pane.
+#[gpui::test]
+fn clear_at_a_glance(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "clarity");
+    fs::write(root.join("Alpha.md"), "# Alpha\n").unwrap();
+    shell.update(cx, |s, cx| {
+        s.rescan(&root, cx);
+        s.open_note(&root.join("Alpha.md"), cx);
+    });
+    cx.simulate_resize(size(px(1400.), px(900.)));
+    cx.run_until_parked();
+
+    // The help: a link per section, which scrolls the list to it.
+    cx.simulate_keystrokes("f1");
+    cx.run_until_parked();
+    let scroll = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.help.scroll.offset().y);
+    assert!(cx.debug_bounds("help-contents").is_some());
+    let last = shell.read_with(cx, |s, cx| s.help_rows(cx).len()) - 1;
+    let link = cx.debug_bounds(leak(format!("help-to-{last}"))).expect("a link to the last section");
+    assert!(link.size.height >= px(24.));
+    cx.simulate_click(link.center(), gpui::Modifiers::none());
+    cx.run_until_parked();
+    assert!(scroll(cx) < px(0.), "the list scrolled to the last section");
+    cx.simulate_keystrokes("escape escape");
+
+    // The sync button: only in a git vault; a mark while the last sync failed.
+    assert!(cx.debug_bounds("nav-sync").is_none());
+    fs::create_dir(root.join(".git")).unwrap();
+    shell.update(cx, |_, cx| cx.notify());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("nav-sync").is_some() && cx.debug_bounds("nav-sync-broken").is_none());
+    shell.update(cx, |s, cx| {
+        s.sync_broken = true;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("nav-sync-broken").is_some());
+
+    // The theme's default says what it is.
+    cx.dispatch_action(ChooseTheme);
+    cx.run_until_parked();
+    assert_eq!(shell.read_with(cx, |s, cx| s.palette.as_ref().and_then(|p| p.read(cx).choice_at(0))), Some("Par défaut : Bref, clair ou sombre comme le système".to_string()));
+    cx.simulate_keystrokes("escape");
+
+    // Two panes: one line marks the active one, across its top.
+    cx.simulate_keystrokes("secondary-\\");
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    let line = cx.debug_bounds("pane-active").expect("the active pane is marked");
+    let active = shell.read_with(cx, |s, _| s.active);
+    let pane = cx.debug_bounds(leak(format!("pane-{active}"))).unwrap();
+    assert!(line.top() == pane.top() && line.left() >= pane.left() && line.right() <= pane.right() && line.size.height >= px(3.), "{line:?} in {pane:?}");
+}

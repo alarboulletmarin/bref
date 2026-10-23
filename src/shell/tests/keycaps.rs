@@ -23,10 +23,6 @@ impl Render for Probe {
     }
 }
 
-/// Selectors are `&'static str`: the few built by the tests are leaked.
-fn leak(name: String) -> &'static str {
-    Box::leak(name.into_boxed_str())
-}
 
 fn bounds_of(cx: &mut gpui::VisualTestContext, name: &'static str) -> Bounds<Pixels> {
     cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} absent"))

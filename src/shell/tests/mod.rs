@@ -54,7 +54,7 @@ fn french_says_vous() {
         let entries = fs::read_dir(dir).unwrap().map(|entry| entry.unwrap().path());
         entries.flat_map(|path| if path.is_dir() { files(&path) } else { vec![path] }).collect()
     }
-    let tu = [" tes ", " ton ", " ta ", "Tes ", "Ton ", " tu ", "Tu ", "-toi", "réessaie", "vérifie ", "installe-le", "Tape ", "Écris ", " écris ", "Ouvre ", "Choisis ", " fais "];
+    let tu = [" tes ", " ton ", " ta ", "Tes ", "Ton ", " tu ", "Tu ", "-toi", " t'", "réessaie", "vérifie ", "installe-le", "Tape ", "Écris ", " écris ", "Ouvre ", "Choisis ", " fais "];
     for path in files(Path::new("src")).into_iter().filter(|p| !p.starts_with("src/shell/tests") && p.extension().is_some_and(|e| e == "rs")) {
         let code = fs::read_to_string(&path).unwrap();
         // The texts only: what is between quotes, outside comments and tests.
@@ -93,4 +93,9 @@ pub(super) fn start<'a>(cx: &'a mut TestAppContext, name: &str) -> (PathBuf, Ent
     });
     cx.run_until_parked();
     (root, shell, cx, config)
+}
+
+/// Selectors are `&'static str`: the few built by the tests are leaked.
+pub(super) fn leak(name: String) -> &'static str {
+    Box::leak(name.into_boxed_str())
 }

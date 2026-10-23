@@ -878,8 +878,8 @@ impl Shell {
                 }
             }))
             .child(note)
-            // With two panes, a thin rule marks the one that has input.
-            .when(two && active, |d| d.child(div().absolute().top_0().left_0().right_0().h(px(2.)).bg(t.accent.opacity(0.7))))
+            // The active pane of two: a line across its top, in the full accent (3:1 at least on the page).
+            .when(two && active, |d| d.child(div().debug_selector(|| "pane-active".into()).absolute().top_0().left_0().right_0().h(t.px(3.)).bg(t.accent)))
             .children(tint);
         (area.into_any_element(), comments.map(IntoElement::into_any_element))
     }

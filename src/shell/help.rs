@@ -14,6 +14,8 @@ pub(super) struct Help {
     pub(super) edit: Option<KeyEdit>,
     /// Receives each keystroke before shortcuts, for the one being awaited.
     pub(super) key_tap: Option<gpui::Subscription>,
+    /// The list of sections, for the table of contents to scroll it.
+    pub(super) scroll: gpui::ScrollHandle,
 }
 
 /// What prevents keys from becoming a shortcut as they are.
@@ -279,6 +281,32 @@ impl Shell {
         let label = |action: &str| {
             help_sections(&[], &keys::Changes::new()).into_iter().flat_map(|(_, rows)| rows).find(|row| row.action == Some(action)).map_or("", |row| row.effect)
         };
+        // Table of contents: one link per section, which scrolls the list to it; and how a shortcut is changed.
+        let titles: Vec<&'static str> = rows.iter().map(|(title, _)| *title).collect();
+        let contents = (!asked && !none).then(|| {
+            div()
+                .debug_selector(|| "help-contents".into())
+                .flex_none()
+                .px_5()
+                .py_2()
+                .border_b_1()
+                .border_color(t.border)
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_x_1()
+                .text_size(t.px(12.))
+                .children(titles.into_iter().enumerate().map(|(i, title)| {
+                    small(format!("help-to-{i}"), title).text_color(t.accent).on_click(cx.listener(move |this, _, _, cx| {
+                        this.help.scroll.scroll_to_item(i);
+                        cx.notify();
+                    }))
+                }))
+                .child(div().flex_1().min_w(t.px(200.)).text_right().text_color(t.soft).child(tr(
+                    "Click the keys of a line to change them",
+                    "Cliquez les touches d'une ligne pour les changer",
+                )))
+        });
         let sections = rows.into_iter().map(|(title, rows)| {
             div()
                 .w(t.px(370.))
@@ -399,7 +427,7 @@ impl Shell {
             .child(format!("Bref {}", env!("CARGO_PKG_VERSION")))
             .child(div().flex_1().min_w(t.px(200.)).text_color(t.soft).child(tr(
                 "Fast, minimal Markdown notes, in plain files you own.",
-                "Des notes Markdown rapides et minimales, dans de simples fichiers qui t'appartiennent.",
+                "Des notes Markdown rapides et minimales, dans de simples fichiers qui vous appartiennent.",
             )))
             .child(link("about-github", "code.svg", "GitHub", env!("CARGO_PKG_REPOSITORY")))
             .child(link("about-kofi", "heart.svg", tr("Support on Ko-fi", "Soutenir sur Ko-fi"), KOFI));
@@ -437,12 +465,14 @@ impl Shell {
                     .on_action(cx.listener(|this, _: &palette::Prev, _, cx| this.help_step(false, cx)))
                     .on_action(cx.listener(|this, _: &palette::Next, _, cx| this.help_step(true, cx)))
                     .child(find)
+                    .children(contents)
                     .child(
                         div()
                             .id("help-keys")
                             .flex_1()
                             .min_h_0()
                             .overflow_y_scroll()
+                            .track_scroll(&self.help.scroll)
                             .p_5()
                             .flex()
                             .flex_wrap()

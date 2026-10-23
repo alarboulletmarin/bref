@@ -139,7 +139,8 @@ impl AssetSource for Assets {
             "backup.svg" => {
                 r#"<path d="M8 2V8M5.5 5.5L8 8L10.5 5.5"/><rect x="2.5" y="9.5" width="11" height="4" rx="1"/><path d="M11 11.5H11.2"/>"#
             }
-            "backlink.svg" => r#"<path d="M13 4.5H8.5A3 3 0 0 0 5.5 7.5V11.5M3 9L5.5 11.5L8 9"/>"#,
+            // An arrow coming into a note: a curved arrow read as "undo" next to back and forward.
+            "backlink.svg" => r#"<path d="M7 4.5V3.5A1 1 0 0 1 8 2.5H11L13.5 5V12.5A1 1 0 0 1 12.5 13.5H8A1 1 0 0 1 7 12.5V11.5"/><path d="M2.5 8H10M7.5 5.5L10 8L7.5 10.5"/>"#,
             "code.svg" => r#"<path d="M5.5 4.5L2.5 8L5.5 11.5M10.5 4.5L13.5 8L10.5 11.5"/>"#,
             "list-bullet.svg" => r#"<path d="M6.5 4H13.5M6.5 8H13.5M6.5 12H13.5M3 4H3.1M3 8H3.1M3 12H3.1"/>"#,
             "list-number.svg" => r#"<path d="M7 4H13.5M7 8H13.5M7 12H13.5M2.7 3.6L3.8 3V5.4M2.7 8.4A1 1 0 0 1 4.4 9C4.4 9.7 3 10.4 2.7 11H4.5"/>"#,
@@ -227,6 +228,7 @@ impl AssetSource for Assets {
             "fold.svg" => r#"<path d="M4.5 3.5L8 6.5L11.5 3.5M4.5 12.5L8 9.5L11.5 12.5"/>"#,
             "expand.svg" => r#"<path d="M9.5 3.5H12.5V6.5M6.5 12.5H3.5V9.5M12.5 3.5L9 7M3.5 12.5L7 9"/>"#,
             "shrink.svg" => r#"<path d="M12.5 6.5H9.5V3.5M3.5 9.5H6.5V12.5M9.5 6.5L13 3M6.5 9.5L3 13"/>"#,
+            "sync.svg" => r#"<path d="M12.6 6.5A4.8 4.8 0 0 0 3.9 5.4M3.5 2.8V5.6H6.3M3.4 9.5A4.8 4.8 0 0 0 12.1 10.6M12.5 13.2V10.4H9.7"/>"#,
             "theme.svg" => {
                 r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="black"/>"#
             }

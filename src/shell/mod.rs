@@ -113,6 +113,9 @@ struct Shell {
     grab: bool,
     /// A git sync is in progress: only one at a time.
     syncing: bool,
+    /// The last sync failed: the rail's sync button says so until one succeeds.
+    sync_broken: bool,
+
     /// The pane arrangement as saved (file `panes`).
     panes_saved: String,
     focus: FocusHandle,
@@ -226,6 +229,8 @@ impl Shell {
             grab: false,
             panes_saved: String::new(),
             syncing: false,
+            sync_broken: false,
+
             focus: cx.focus_handle(),
             menu_focus: cx.focus_handle(),
             nav,
