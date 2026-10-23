@@ -322,9 +322,12 @@ pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<Path
     (notes, dirs, images)
 }
 
+/// Folders that could not be listed, and why.
+pub type Unreadable = Vec<(PathBuf, io::ErrorKind)>;
+
 /// Like `rescan`, with the folders that could not be listed and why: the root itself when the whole
 /// vault cannot be read. A folder inside one of them is not reached, so not reported.
-pub fn rescan_full(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>, Vec<(PathBuf, io::ErrorKind)>) {
+pub fn rescan_full(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>, Unreadable) {
     let mut unreadable = Vec::new();
     let known: HashMap<&Path, &Note> = known.iter().map(|n| (n.path.as_path(), n)).collect();
     let mut files = Vec::new();

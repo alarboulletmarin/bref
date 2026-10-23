@@ -132,7 +132,7 @@ struct Shell {
     images: Vec<PathBuf>,
     /// Folders of the vault that could not be read at the last scan, and why; the root itself
     /// when the whole vault cannot be read.
-    unreadable: Vec<(PathBuf, std::io::ErrorKind)>,
+    unreadable: vault::Unreadable,
     /// Tree context menu, if open.
     menu: Option<nav::Menu>,
     /// The open menu has the keys: arrows, Enter, Escape.
