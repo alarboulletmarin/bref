@@ -433,7 +433,7 @@ impl Shell {
                         .text_color(t.soft)
                         .child(tr(
                             "Your notes live in a folder of Markdown files: the vault.",
-                            "Tes notes vivent dans un dossier de fichiers Markdown : le coffre.",
+                            "Vos notes vivent dans un dossier de fichiers Markdown : le coffre.",
                         )),
                 )
                 // The vault of the last time is gone (moved, renamed, a disk that is not plugged in): say so.

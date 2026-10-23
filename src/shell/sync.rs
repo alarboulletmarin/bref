@@ -30,7 +30,7 @@ impl Shell {
             let (mut received, mut conflicts, mut sent) = (0, 0, 0);
             // Rejected because another machine pushed in the meantime: fetch again,
             // three times at most.
-            let busy = tr("the server keeps receiving from another machine: try again.", "le serveur reçoit sans cesse d'une autre machine : réessaie.");
+            let busy = tr("the server keeps receiving from another machine: try again.", "le serveur reçoit sans cesse d'une autre machine : réessayez.");
             let mut outcome = Err(git::Fail::Told(busy.to_string()));
             for _ in 0..3 {
                 let fetch_root = root.clone();

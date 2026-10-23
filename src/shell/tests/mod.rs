@@ -46,6 +46,29 @@ fn layers_only_depend_downwards() {
     }
 }
 
+/// The French interface speaks to the reader as « vous » (request of 2026-10-23): no « tu » form left in
+/// a text of the app. Action labels stay in the infinitive.
+#[test]
+fn french_says_vous() {
+    fn files(dir: &Path) -> Vec<PathBuf> {
+        let entries = fs::read_dir(dir).unwrap().map(|entry| entry.unwrap().path());
+        entries.flat_map(|path| if path.is_dir() { files(&path) } else { vec![path] }).collect()
+    }
+    let tu = [" tes ", " ton ", " ta ", "Tes ", "Ton ", " tu ", "Tu ", "-toi", "réessaie", "vérifie ", "installe-le", "Tape ", "Écris ", " écris ", "Ouvre ", "Choisis ", " fais "];
+    for path in files(Path::new("src")).into_iter().filter(|p| !p.starts_with("src/shell/tests") && p.extension().is_some_and(|e| e == "rs")) {
+        let code = fs::read_to_string(&path).unwrap();
+        // The texts only: what is between quotes, outside comments and tests.
+        let code = code.split("#[cfg(test)]\nmod tests").next().unwrap();
+        for line in code.lines().map(|l| l.split("//").next().unwrap()) {
+            for text in line.split('"').skip(1).step_by(2) {
+                if let Some(word) = tu.iter().find(|w| text.contains(*w)) {
+                    panic!("{}: « {text} » says « {} »", path.display(), word.trim());
+                }
+            }
+        }
+    }
+}
+
 /// The config folder is global to the process (environment variables): a test that moves it under
 /// `root` holds the lock until it ends, so that another does not move it while it uses it.
 fn isolated_config(root: &Path) -> std::sync::MutexGuard<'static, ()> {

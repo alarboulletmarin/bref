@@ -557,7 +557,7 @@ impl Palette {
         }
         match (self.lines, self.query.text.trim().chars().count()) {
             (_, 0) => None,
-            (true, 1) => Some(tr("Type at least two characters", "Tape au moins deux caractères")),
+            (true, 1) => Some(tr("Type at least two characters", "Tapez au moins deux caractères")),
             _ => Some(tr("No result", "Aucun résultat")),
         }
     }

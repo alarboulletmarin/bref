@@ -145,7 +145,7 @@ pub fn catalog() -> Vec<(&'static str, &'static str, &'static str, Group)> {
         ("nav::ShowCalendar", tr("Calendar", "Calendrier"), "c-calendar.svg", Go),
         ("app::GoBack", tr("Back", "Précédent"), "chevron-left.svg", Go),
         ("app::GoForward", tr("Forward", "Suivant"), "chevron-right.svg", Go),
-        ("app::SplitPane", tr("Second pane", "Second panneau"), "c-split.svg", Go),
+        ("app::SplitPane", tr("Second pane", "Second volet"), "c-split.svg", Go),
         ("nav::ToggleFull", tr("Panel on the whole window", "Panneau sur toute la fenêtre"), "expand.svg", Go),
         ("app::SyncVault", tr("Sync the vault", "Synchroniser le coffre"), "backup.svg", Vault),
         ("app::OpenVault", tr("Change vault", "Changer de coffre"), "tree.svg", Vault),

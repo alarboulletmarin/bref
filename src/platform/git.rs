@@ -37,7 +37,7 @@ impl Fail {
             Fail::Told(text) => return text.clone(),
             Fail::Missing => tr(
                 "git is not installed: install it (git-scm.com, or your package manager), then try again.",
-                "git n'est pas installé : installe-le (git-scm.com, ou ton gestionnaire de paquets), puis réessaie.",
+                "git n'est pas installé : installez-le (git-scm.com, ou votre gestionnaire de paquets), puis réessayez.",
             ),
             Fail::Odd(Odd::Merging) => tr(
                 "a merge or a rebase is in progress in this repository: finish it or abort it with git first.",
@@ -50,7 +50,7 @@ impl Fail {
             ),
             Fail::Odd(Odd::Locked) => tr(
                 "another git is working in this repository (index.lock): try again when it is done.",
-                "un autre git travaille dans ce dépôt (index.lock) : réessaie quand il a fini.",
+                "un autre git travaille dans ce dépôt (index.lock) : réessayez quand il a fini.",
             ),
             Fail::Odd(Odd::Inside) => tr(
                 "the vault is a folder of a larger git repository: syncing would commit the whole repository.",
@@ -134,12 +134,12 @@ pub fn explain(stderr: &str) -> String {
     if has(&["authentication failed", "permission denied", "could not read username", "terminal prompts disabled", "invalid username or password"]) {
         return tr(
             "the server refused the sign-in: check the key or the password git uses for this repository.",
-            "le serveur a refusé la connexion : vérifie la clé ou le mot de passe que git utilise pour ce dépôt.",
+            "le serveur a refusé la connexion : vérifiez la clé ou le mot de passe que git utilise pour ce dépôt.",
         )
         .to_string();
     }
     if has(&["could not resolve host", "unable to access", "timed out", "network is unreachable", "connection refused", "could not read from remote"]) {
-        return tr("the server cannot be reached: check the network.", "le serveur est injoignable : vérifie le réseau.").to_string();
+        return tr("the server cannot be reached: check the network.", "le serveur est injoignable : vérifiez le réseau.").to_string();
     }
     let last = stderr.lines().rev().map(str::trim).find(|line| !line.is_empty()).unwrap_or("git failed");
     last.trim_start_matches("fatal: ").trim_start_matches("error: ").to_string()

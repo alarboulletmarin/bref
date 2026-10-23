@@ -879,8 +879,8 @@ impl Shell {
                     key if key.is_empty() => tr("Nothing here yet", "Rien ici pour l'instant").to_string(),
                     key => format!("{}\n{} {key}", tr("Nothing here yet", "Rien ici pour l'instant"), tr("New note:", "Nouvelle note :")),
                 },
-                Mode::Tags => tr("No tag yet: write #tag in a note", "Aucun tag pour l'instant : écris #tag dans une note").to_string(),
-                Mode::Links if self.nav.anchor.is_none() => tr("Open a note to see what links to it", "Ouvre une note pour voir ce qui renvoie vers elle").to_string(),
+                Mode::Tags => tr("No tag yet: write #tag in a note", "Aucun tag pour l'instant : écrivez #tag dans une note").to_string(),
+                Mode::Links if self.nav.anchor.is_none() => tr("Open a note to see what links to it", "Ouvrez une note pour voir ce qui renvoie vers elle").to_string(),
                 Mode::Links => tr("No note links here yet", "Aucune note ne renvoie ici pour l'instant").to_string(),
                 _ => tr("No recent note", "Aucune note récente").to_string(),
             };

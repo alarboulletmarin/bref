@@ -299,7 +299,7 @@ impl Shell {
                         Some(action) => {
                             let color = if edit.is_some() || row.changed { t.accent } else { t.text };
                             let shown = if edit.is_some() {
-                                div().font_family(mono()).text_size(t.px(12.)).child(tr("Press the keys…", "Tape les touches…"))
+                                div().font_family(mono()).text_size(t.px(12.)).child(tr("Press the keys…", "Tapez les touches…"))
                             } else if row.keys.is_empty() {
                                 div().font_family(mono()).text_size(t.px(12.)).child("—")
                             } else {

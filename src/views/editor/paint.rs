@@ -331,7 +331,7 @@ impl Editor {
         }
         if self.content.is_empty() {
             // The rest of the empty page (date, keys, notes to reread) is in `Shell::render_empty`.
-            label(tr("Write here…", "Écris ici…"), t.soft, window)
+            label(tr("Write here…", "Écrivez ici…"), t.soft, window)
                 .paint(point(o.x + px(8.), o.y + px(3.)), px(22.), window, cx)
                 .ok();
         }
@@ -521,7 +521,7 @@ impl Editor {
             label(&size, t.text, window)
                 .paint(point(at.x + px(8.), panel.bottom() - px(24.)), px(20.), window, cx)
                 .ok();
-            let hint = label(tr("or type 12x5", "ou tape 12x5"), t.soft, window);
+            let hint = label(tr("or type 12x5", "ou tapez 12x5"), t.soft, window);
             hint.paint(point(panel.right() - px(8.) - hint.width, panel.bottom() - px(24.)), px(20.), window, cx).ok();
         }
         if focused && let Some((_, items)) = self.completion() {

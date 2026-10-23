@@ -398,7 +398,7 @@ impl Canvas {
         if self.diagram.shapes.is_empty() && self.diagram.links.is_empty() {
             let hint = tr(
                 "Pick a shape in the dock below, or press R, O, D, A, T… or S for the library, then drag. Double-click to write.",
-                "Choisis une forme dans le dock en bas, ou tape R, O, D, A, T… ou S pour la bibliothèque, puis fais glisser. Double-clic pour écrire.",
+                "Choisissez une forme dans le dock en bas, ou tapez R, O, D, A, T… ou S pour la bibliothèque, puis faites glisser. Double-clic pour écrire.",
             );
             // Word by word: the hint wraps in a narrow canvas.
             let room = bounds.size.width - px(32.);
