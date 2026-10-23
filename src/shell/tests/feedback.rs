@@ -266,9 +266,11 @@ fn an_empty_panel_says_so(cx: &mut TestAppContext) {
                 cx.notify();
             });
             settle(cx);
+            // The bounds of the text itself: a long French line wraps instead of running over the note.
             let said = cx.debug_bounds("nav-empty").unwrap_or_else(|| panic!("{width} {mode:?}: the panel says nothing"));
             let panel = cx.debug_bounds("nav-panel").unwrap();
             assert!(said.left() >= panel.left() && said.right() <= panel.right() && said.bottom() <= panel.bottom(), "{width} {mode:?}: {said:?} in {panel:?}");
+            assert!(said.size.width < panel.size.width, "{width} {mode:?}: the text has no margin in {panel:?}");
         }
     }
     let _ = fs::remove_dir_all(&root);

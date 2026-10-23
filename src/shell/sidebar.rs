@@ -830,7 +830,7 @@ impl Shell {
                 Mode::Links => tr("No note links here yet", "Aucune note ne renvoie ici pour l'instant").to_string(),
                 _ => tr("No recent note", "Aucune note récente").to_string(),
             };
-            div().debug_selector(|| "nav-empty".into()).absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(px(13.)).text_color(t.soft).child(said)
+            div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(px(13.)).text_color(t.soft).child(div().debug_selector(|| "nav-empty".into()).max_w_full().child(said))
         });
         let list = uniform_list("nav-rows", self.nav.rows.len(), cx.processor(Self::render_rows))
             .track_scroll(self.nav.scroll.clone())
