@@ -712,10 +712,10 @@ impl Shell {
                         .gap_1()
                         .child(match (noted.is_empty(), scope.is_empty()) {
                             // A row, a column, the table: what it is about is the chip.
-                            (true, false) => div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(scope.to_string()),
+                            (true, false) => div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.selection).line_clamp(2).child(scope.to_string()),
                             // A comment on its own, in the text: it takes the place.
                             (true, true) => div().flex_1().min_w_0().px_1().text_color(if said.is_empty() { t.soft } else { t.text }).child(if said.is_empty() { tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string() } else { said.to_string() }),
-                            (false, _) => div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.accent.opacity(0.22)).line_clamp(2).child(noted.to_string()),
+                            (false, _) => div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.selection).line_clamp(2).child(noted.to_string()),
                         })
                         .child(ui::widgets::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
