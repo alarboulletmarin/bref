@@ -88,6 +88,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 k(&nav::Trash, tr("Panel: move to the trash", "Panneau : mettre à la corbeille")),
                 t(&format!("{MOD}+{click} / {shift}+{click}"), tr("Select several rows: move, duplicate, trash them together", "Sélectionner plusieurs lignes : les déplacer, dupliquer, jeter ensemble")),
                 t(tr("Right click", "Clic droit"), tr("Copy the link or the path, set an icon, show a folder or a tag as a list…", "Copier le lien ou le chemin, donner une icône, afficher un dossier ou un tag en liste…")),
+                k(&ContextMenu, tr("The same menu from the keys, for the selected row or the cursor: arrows, Enter, Esc", "Le même menu au clavier, pour la ligne choisie ou le curseur : flèches, Entrée, Échap")),
                 t(tr("In a list", "Dans une liste"), tr("Type to filter (key:text for one column), click a cell to rewrite it", "Taper pour filtrer (clé:texte pour une colonne), cliquer une cellule pour la réécrire")),
                 t(tr("Drag a node", "Glisser un nœud"), tr("Move it in the graph, linked notes follow", "Le déplacer dans le graphe, les notes liées suivent")),
             ],
@@ -316,6 +317,10 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary-q", &Quit, None),
         // The command palette: F10, like the menu bar of a desktop app.
         b("f10", &ToggleCommands, None),
+        b("secondary-shift-p", &ToggleCommands, None),
+        // The context menu of the selected row or of the cursor, as on every desktop.
+        b("shift-f10", &ContextMenu, None),
+        b("menu", &ContextMenu, None),
         b("secondary-shift-d", &NewDiagram, Some("Shell")),
         b("secondary-=", &canvas::ZoomIn, c),
         b("secondary-+", &canvas::ZoomIn, c),

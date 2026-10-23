@@ -19,7 +19,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // An icon, chosen in the menu grid, follows the note being renamed; it is
     // remembered in a file of the vault.
     shell.update_in(cx, |s, window, cx| {
-        s.menu = Some(nav::Menu { at: point(px(300.), px(200.)), target: Some(root.join("Test.md")), text: None, commented: false, block: false });
+        s.menu = Some(nav::Menu { at: point(px(300.), px(200.)), target: Some(root.join("Test.md")), text: None, commented: false, block: false, ..Default::default() });
         s.menu_do(nav::Do::Icon, Some(root.join("Test.md")), window, cx)
     });
     cx.run_until_parked();

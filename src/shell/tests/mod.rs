@@ -8,6 +8,7 @@ mod editing;
 mod enlarge;
 mod end_to_end;
 mod feedback;
+mod keyboard;
 mod keycaps;
 mod layout;
 mod window;
@@ -53,4 +54,20 @@ fn isolated_config(root: &Path) -> std::sync::MutexGuard<'static, ()> {
         unsafe { std::env::set_var(key, root.join(".config")) };
     }
     guard
+}
+
+/// A shell on a fresh vault in a temporary folder.
+pub(super) fn start<'a>(cx: &'a mut TestAppContext, name: &str) -> (PathBuf, Entity<Shell>, &'a mut gpui::VisualTestContext, std::sync::MutexGuard<'static, ()>) {
+    let root = std::env::temp_dir().join(format!("bref-{name}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let config = isolated_config(&root);
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (shell, cx) = cx.add_window_view({
+        let root = root.clone();
+        |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+    });
+    cx.run_until_parked();
+    (root, shell, cx, config)
 }

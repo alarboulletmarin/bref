@@ -211,8 +211,8 @@ pub enum EditorEvent {
     OpenAside(Link),
     /// Replace across the whole vault what the search bar looks for.
     Swap(md::Swap),
-    /// Right click in the note: where, the link found there, and whether it targets a comment.
-    Menu(Point<Pixels>, Option<Link>, bool),
+    /// Right click in the note: where, the link found there, whether it targets a comment, and whether the keys opened it.
+    Menu(Point<Pixels>, Option<Link>, bool, bool),
     /// Click on a block handle: its menu, at that spot.
     BlockMenu(Point<Pixels>),
     /// A diagram, formula or picture to view large.

@@ -481,17 +481,29 @@ impl Editor {
             && matches!(part, Part::Col(_) | Part::Row(_) | Part::Corner)
         {
             self.pick_part(table, part, cx);
-            return cx.emit(EditorEvent::Menu(e.position, None, false));
+            return cx.emit(EditorEvent::Menu(e.position, None, false, false));
         }
         let i = self.index_at(e.position);
         if !(self.sel.start..=self.sel.end).contains(&i) {
             self.move_to(i, cx);
         }
+        self.menu_at(i, e.position, false, cx);
+    }
+
+    /// Shift+F10 or the Menu key: the note's menu, under the cursor.
+    pub fn menu_at_cursor(&mut self, cx: &mut Context<Self>) {
+        let i = self.sel.end;
+        let at = self.row_at(i).map(|r| &self.rows[r]).map_or(self.origin, |row| self.origin + point(px(0.), row.y + row.pad + row.lh) + row.pos(i - row.start));
+        self.menu_at(i, at, true, cx);
+    }
+
+    /// The note's menu at `at`, for what is around byte `i`: a link, a comment; `keys`: opened from the keys.
+    fn menu_at(&mut self, i: usize, at: Point<Pixels>, keys: bool, cx: &mut Context<Self>) {
         let lr = self.line_range(i);
         let link = md::links(&self.content[lr.clone()]).into_iter().find(|(r, _)| (r.start..=r.end).contains(&(i - lr.start)));
         let col = i - lr.start;
         let commented = md::comments(&self.content[lr]).iter().any(|(whole, ..)| (whole.start..=whole.end).contains(&col));
-        cx.emit(EditorEvent::Menu(e.position, link.map(|(_, link)| link), commented));
+        cx.emit(EditorEvent::Menu(at, link.map(|(_, link)| link), commented, keys));
     }
 
     /// Word (or whole line) around byte `i`.

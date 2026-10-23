@@ -2,22 +2,6 @@
 
 use super::*;
 
-/// A shell on a fresh vault in a temporary folder.
-fn start<'a>(cx: &'a mut TestAppContext, name: &str) -> (PathBuf, Entity<Shell>, &'a mut gpui::VisualTestContext, std::sync::MutexGuard<'static, ()>) {
-    let root = std::env::temp_dir().join(format!("bref-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
-    let config = isolated_config(&root);
-    cx.update(bind_keys);
-    cx.update(init_fonts);
-    let (shell, cx) = cx.add_window_view({
-        let root = root.clone();
-        |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
-    });
-    cx.run_until_parked();
-    (root, shell, cx, config)
-}
-
 /// A failure stays 12 s (a success goes after 4), Esc or a click takes it away, and it says which file and why, in words.
 #[gpui::test]
 fn failures_stay_and_name_the_file(cx: &mut TestAppContext) {

@@ -261,12 +261,20 @@ impl Render for Shell {
             }))
             .on_action(cx.listener(|this, _: &ToggleCommands, window, cx| this.open_commands(window, cx)))
             // Escape in the note, when it has nothing to close: the right-click menu.
-            .on_action(cx.listener(|this, _: &editor::Cancel, _, cx| {
+            .on_action(cx.listener(|this, _: &editor::Cancel, window, cx| {
                 this.dismiss_failures();
                 this.icon_pick = None;
-                this.menu = None;
-                cx.notify();
+                this.close_menu(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &ContextMenu, window, cx| this.menu_from_keys(window, cx)))
+            // The row menu's entries, from the palette, on the file of the active pane.
+            .on_action(cx.listener(|this, _: &nav::OpenAside, window, cx| this.file_do(nav::Do::OpenAside, window, cx)))
+            .on_action(cx.listener(|this, _: &nav::SetIcon, window, cx| this.file_do(nav::Do::Icon, window, cx)))
+            .on_action(cx.listener(|this, _: &nav::ShowFolder, window, cx| this.file_do(nav::Do::List, window, cx)))
+            .on_action(cx.listener(|this, _: &nav::CopyLink, window, cx| this.file_do(nav::Do::CopyLink, window, cx)))
+            .on_action(cx.listener(|this, _: &nav::CopyPath, window, cx| this.file_do(nav::Do::CopyPath, window, cx)))
+            .on_action(cx.listener(|this, _: &nav::CopyRelative, window, cx| this.file_do(nav::Do::CopyRelative, window, cx)))
+            .on_action(cx.listener(|this, _: &nav::Reveal, window, cx| this.file_do(nav::Do::Reveal, window, cx)))
             .on_action(cx.listener(|this, _: &CloseHelp, window, cx| {
                 if this.help.open {
                     this.set_help(false, window, cx)

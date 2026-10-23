@@ -440,13 +440,12 @@ impl Shell {
             },
             EditorEvent::OpenAt(target, aside) => self.open_at(target, *aside, window, cx),
             EditorEvent::Swap(swap) => self.replace_in_vault(swap.clone(), window, cx),
-            EditorEvent::Menu(at, link, commented) => {
-                self.menu = Some(nav::Menu { at: *at, target: None, text: Some(link.clone()), commented: *commented, block: false });
-                cx.notify();
+            EditorEvent::Menu(at, link, commented, keys) => {
+                let chosen = keys.then_some(0);
+                self.show_menu(nav::Menu { at: *at, text: Some(link.clone()), commented: *commented, chosen, ..Default::default() }, window, cx);
             }
             EditorEvent::BlockMenu(at) => {
-                self.menu = Some(nav::Menu { at: *at, target: None, text: Some(None), commented: false, block: true });
-                cx.notify();
+                self.show_menu(nav::Menu { at: *at, text: Some(None), block: true, ..Default::default() }, window, cx);
             }
             // The diagram, formula or picture takes the note's place; Escape returns to it.
             EditorEvent::View(source) => self.show_figure(source.clone(), window, cx),

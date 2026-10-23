@@ -3,4 +3,4 @@
 
 use gpui::actions;
 
-actions!(app, [ToggleCommands, SyncVault, SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewFromTemplate, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ZoomIn, ZoomOut, ZoomReset, Quit]);
+actions!(app, [ToggleCommands, SyncVault, SplitPane, FocusLeft, FocusRight, ClosePane, GoBack, GoForward, SearchVault, Today, Outline, OpenPalette, NewNote, NewFromTemplate, NewDiagram, OpenVault, CopyAll, ToggleHelp, CloseHelp, ChooseTheme, ContextMenu, ZoomIn, ZoomOut, ZoomReset, Quit]);

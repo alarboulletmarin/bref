@@ -120,6 +120,8 @@ struct Shell {
     images: Vec<PathBuf>,
     /// Tree context menu, if open.
     menu: Option<nav::Menu>,
+    /// The open menu has the keys: arrows, Enter, Escape.
+    menu_focus: FocusHandle,
     /// Open notes, most recent first.
     recent: Vec<PathBuf>,
     save_gen: usize,
@@ -216,6 +218,7 @@ impl Shell {
             panes_saved: String::new(),
             syncing: false,
             focus: cx.focus_handle(),
+            menu_focus: cx.focus_handle(),
             nav,
             graph,
             graph_stale: true,

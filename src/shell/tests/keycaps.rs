@@ -140,7 +140,7 @@ fn keycaps_in_menu(cx: &mut TestAppContext) {
     for (width, at) in [(1200., 300.), (420., 300.), (420., 0.)] {
         cx.simulate_resize(size(px(width), px(720.)));
         shell.update(cx, |s, cx| {
-            s.menu = Some(nav::Menu { at: point(px(at), px(120.)), target: Some(root.join("Note.md")), text: None, commented: false, block: false });
+            s.menu = Some(nav::Menu { at: point(px(at), px(120.)), target: Some(root.join("Note.md")), text: None, commented: false, block: false, ..Default::default() });
             cx.notify();
         });
         cx.run_until_parked();

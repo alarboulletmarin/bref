@@ -22,6 +22,8 @@ use crate::{
 };
 
 actions!(nav, [ShowCalendar, PrevMonth, NextMonth, ShowTree, ShowRecent, ShowGraph, ShowTags, ShowLinks, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Duplicate, Trash]);
+// The entries of a row's menu that have no other way, for the open file, from the palette.
+actions!(nav, [OpenAside, SetIcon, ShowFolder, CopyLink, CopyPath, CopyRelative, Reveal]);
 
 pub const RAIL: Pixels = px(40.);
 pub const ROW: Pixels = px(26.);
@@ -61,6 +63,7 @@ pub struct Row {
 }
 
 /// Context menu: where it opens and the targeted row (`None`: the vault itself).
+#[derive(Default)]
 pub struct Menu {
     pub at: Point<Pixels>,
     pub target: Option<PathBuf>,
@@ -70,6 +73,10 @@ pub struct Menu {
     pub commented: bool,
     /// Opened by a block's handle: the block's gestures.
     pub block: bool,
+    /// The entry the arrow keys are on.
+    pub chosen: Option<usize>,
+    /// What had the focus before it opened, to give it back.
+    pub back: Option<FocusHandle>,
 }
 
 #[derive(Clone, Copy)]
@@ -193,6 +200,8 @@ pub struct Nav {
     /// Multiple selection (Ctrl+click, Shift+click); empty as long as a single row
     /// is chosen. `sel` is then the row Shift+click extends from.
     pub marked: HashSet<PathBuf>,
+    /// Where the selected row was drawn: the menu opened from the keys opens under it.
+    pub sel_at: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<Pixels>>>>,
     /// Note whose backlinks the panel shows: the last opened one, not the one being
     /// browsed in preview, otherwise the list would change under the selection.
     pub anchor: Option<PathBuf>,
@@ -241,6 +250,7 @@ impl Nav {
             dragging: false,
             sel: None,
             marked: HashSet::new(),
+            sel_at: Default::default(),
             anchor: None,
             day: crate::platform::clock::today(),
             open: HashSet::new(),
@@ -415,16 +425,7 @@ pub fn tag_rows(notes: &[Note], open: &HashSet<PathBuf>) -> Vec<Row> {
     rows
 }
 
-/// The menu entry that shows a file in the file manager, under its name on each system.
-pub fn reveal_label() -> &'static str {
-    if cfg!(target_os = "macos") {
-        tr("Reveal in Finder", "Afficher dans le Finder")
-    } else if cfg!(windows) {
-        tr("Show in Explorer", "Afficher dans l'Explorateur")
-    } else {
-        tr("Show in the file manager", "Afficher dans le gestionnaire de fichiers")
-    }
-}
+pub use crate::logic::commands::reveal_label;
 
 #[cfg(test)]
 mod tests {

@@ -40,7 +40,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(text(cx).contains(" !") && text(cx).replace(" !", "") == "voir [la doc](https://a.b/c) ici");
     let link = Link::Url("https://a.b/c".into());
     shell.update_in(cx, |s, window, cx| {
-        s.menu = Some(nav::Menu { at: point(px(0.), px(0.)), target: None, text: Some(Some(link)), commented: false, block: false });
+        s.menu = Some(nav::Menu { at: point(px(0.), px(0.)), target: None, text: Some(Some(link)), commented: false, block: false, ..Default::default() });
         s.menu_do(nav::Do::CopyAddress, None, window, cx)
     });
     assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("https://a.b/c"));

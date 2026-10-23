@@ -62,8 +62,8 @@ impl Row {
 /// Help panel sections: (title, lines).
 pub type Sections = Vec<(&'static str, Vec<Row>)>;
 
-const NAMED: [&str; 15] =
-    ["enter", "tab", "escape", "space", "backspace", "delete", "insert", "home", "end", "pageup", "pagedown", "left", "right", "up", "down"];
+const NAMED: [&str; 16] =
+    ["enter", "tab", "escape", "space", "backspace", "delete", "insert", "home", "end", "pageup", "pagedown", "left", "right", "up", "down", "menu"];
 
 fn parse(keys: &str) -> Option<Keystroke> {
     let stroke = Keystroke::parse(keys).ok()?;
@@ -121,6 +121,7 @@ pub fn show(keys: &str) -> String {
         "up" => tr("Up", "Haut").into(),
         "down" => tr("Down", "Bas").into(),
         "tab" => "Tab".into(),
+        "menu" => "Menu".into(),
         key => key.to_uppercase(),
     });
     parts.join("+")

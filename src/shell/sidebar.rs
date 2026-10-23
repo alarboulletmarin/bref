@@ -523,7 +523,12 @@ impl Shell {
                         .rounded(px(5.))
                         .text_size(px(13.))
                         .when(!selected, |d| d.hover(|s| s.bg(t.code_bg)))
-                        .when(selected, |d| d.bg(if focused { t.selection } else { t.selection.opacity(0.5) }))
+                        .when(selected, |d| {
+                            let at = self.nav.sel_at.clone();
+                            d.bg(if focused { t.selection } else { t.selection.opacity(0.5) })
+                                .relative()
+                                .child(gpui::canvas(move |bounds, _, _| at.set(Some(bounds)), |_, _, _, _| {}).absolute().size_full())
+                        })
                         .when(foldable, |d| {
                             d.child(div().size(px(14.)).flex_none().when(row.dir.is_some(), |d| {
                                 d.child(svg().path(chevron).size(px(14.)).text_color(if selected { t.text } else { t.soft }))
@@ -591,10 +596,10 @@ impl Shell {
                                     this.nav.sel = Some(target.clone());
                                 }
                                 // A tag has only one entry: the list of its notes.
-                                if this.vault.as_ref().is_some_and(|root| target.starts_with(root)) || tag_of(&target).is_some() {
-                                    this.menu = Some(Menu { at: e.position, target: Some(target.clone()), text: None, commented: false, block: false });
-                                }
                                 window.focus(&this.nav.focus);
+                                if this.vault.as_ref().is_some_and(|root| target.starts_with(root)) || tag_of(&target).is_some() {
+                                    this.show_menu(Menu { at: e.position, target: Some(target.clone()), ..Default::default() }, window, cx);
+                                }
                                 cx.stop_propagation();
                                 cx.notify();
                             }),
@@ -832,6 +837,8 @@ impl Shell {
             };
             div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(px(13.)).text_color(t.soft).child(div().debug_selector(|| "nav-empty".into()).max_w_full().child(said))
         });
+        // Set again by the selected row if it is drawn.
+        self.nav.sel_at.set(None);
         let list = uniform_list("nav-rows", self.nav.rows.len(), cx.processor(Self::render_rows))
             .track_scroll(self.nav.scroll.clone())
             .flex_1()
@@ -860,9 +867,8 @@ impl Shell {
                 }))
                 .on_mouse_down(
                     MouseButton::Right,
-                    cx.listener(|this, e: &MouseDownEvent, _, cx| {
-                        this.menu = Some(Menu { at: e.position, target: None, text: None, commented: false, block: false });
-                        cx.notify();
+                    cx.listener(|this, e: &MouseDownEvent, window, cx| {
+                        this.show_menu(Menu { at: e.position, ..Default::default() }, window, cx);
                     }),
                 )
             });
@@ -902,7 +908,10 @@ impl Shell {
                 }))
             })
             .on_action(cx.listener(|this, _: &Close, window, cx| {
-                if this.menu.take().is_some() || this.icon_pick.take().is_some() {
+                if this.menu.is_some() {
+                    return this.close_menu(window, cx);
+                }
+                if this.icon_pick.take().is_some() {
                     return cx.notify();
                 }
                 if this.nav.panel == Panel::Full {

@@ -22,7 +22,11 @@ impl Shell {
     /// Runs a context menu entry on `target` (`None`: the vault).
     pub(super) fn menu_do(&mut self, what: Do, target: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         let menu = self.menu.take();
-        let at = menu.as_ref().map(|menu| menu.at).unwrap_or_default();
+        if let Some(back) = menu.as_ref().and_then(|menu| menu.back.as_ref()) {
+            window.focus(back);
+        }
+        // Without a menu (from the palette), the icon grid opens near the top of the note.
+        let at = menu.as_ref().map_or(point(px(80.), px(80.)), |menu| menu.at);
         let link = menu.and_then(|menu| menu.text).flatten();
         cx.notify();
         if let (Do::Icon, Some(path)) = (what, &target) {
@@ -199,10 +203,72 @@ impl Shell {
         }
     }
 
-    /// Context menu, over the whole window: a click elsewhere closes it.
-    pub(super) fn render_menu(&self, _: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        let menu = self.menu.as_ref()?;
-        let t = self.theme;
+    /// A row menu's entry on the file of the active pane; "Show as a list" lists its folder.
+    pub(super) fn file_do(&mut self, what: Do, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(path) = self.pane().path.clone() else { return };
+        let target = if matches!(what, Do::List) { path.parent().map(Path::to_path_buf) } else { Some(path) };
+        self.menu_do(what, target, window, cx)
+    }
+
+    /// Opens `menu`; it takes the keys until it closes.
+    pub(super) fn show_menu(&mut self, menu: Menu, window: &mut Window, cx: &mut Context<Self>) {
+        let back = self.menu.take().and_then(|old| old.back).or_else(|| window.focused(cx));
+        self.menu = Some(Menu { back, ..menu });
+        window.focus(&self.menu_focus);
+        cx.notify();
+    }
+
+    /// Closes the menu, if one is open, and gives the focus back to what had it.
+    pub(super) fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(back) = self.menu.take().and_then(|menu| menu.back) {
+            window.focus(&back);
+        }
+        cx.notify();
+    }
+
+    /// Shift+F10 or the Menu key: the menu of the selected row in the panel, or of the cursor in the note.
+    pub(super) fn menu_from_keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.nav.focus.is_focused(window) {
+            let Some(target) = self.nav.sel.clone() else { return };
+            let at = self.nav.sel_at.get().map_or(point(px(60.), px(60.)), |row| row.bottom_left() + point(px(24.), px(0.)));
+            if self.vault.as_ref().is_some_and(|root| target.starts_with(root)) || tag_of(&target).is_some() {
+                self.show_menu(Menu { at, target: Some(target), chosen: Some(0), ..Default::default() }, window, cx);
+            }
+        } else if self.pane().editor.focus_handle(cx).is_focused(window) {
+            self.pane().editor.clone().update(cx, |editor, cx| editor.menu_at_cursor(cx));
+        }
+    }
+
+    /// Arrows, Home, End, Enter and Escape in the open menu.
+    fn menu_key(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let entries: Vec<Do> = self.menu_groups(cx).into_iter().flatten().map(|(_, what)| what).collect();
+        let (Some(menu), n) = (self.menu.as_mut(), entries.len()) else { return false };
+        let at = menu.chosen;
+        menu.chosen = match key {
+            "down" => Some(at.map_or(0, |i| (i + 1) % n)),
+            "up" => Some(at.map_or(n - 1, |i| (i + n - 1) % n)),
+            "home" | "pageup" => Some(0),
+            "end" | "pagedown" => Some(n - 1),
+            "enter" | "space" => {
+                if let Some(what) = at.and_then(|i| entries.get(i)) {
+                    let target = menu.target.clone();
+                    self.menu_do(*what, target, window, cx);
+                }
+                return true;
+            }
+            "escape" => {
+                self.close_menu(window, cx);
+                return true;
+            }
+            _ => return false,
+        };
+        cx.notify();
+        true
+    }
+
+    /// The entries of the open menu, by group; a line separates the groups.
+    pub(super) fn menu_groups(&self, cx: &App) -> Vec<Vec<(&'static str, Do)>> {
+        let Some(menu) = self.menu.as_ref() else { return Vec::new() };
         let is_dir = menu.target.as_ref().is_none_or(|p| self.dirs.contains(p));
         let tree = self.nav.mode == Mode::Tree;
         let many = menu.target.as_ref().is_some_and(|p| self.nav.marked.contains(p)) && self.nav.marked.len() > 1;
@@ -295,10 +361,20 @@ impl Shell {
             }
         }
         groups.retain(|g| !g.is_empty());
+        groups
+    }
+
+    /// Context menu, over the whole window: a click elsewhere closes it.
+    pub(super) fn render_menu(&self, _: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let menu = self.menu.as_ref()?;
+        let t = self.theme;
+        let groups = self.menu_groups(cx);
+        let chosen = menu.chosen;
         let at = menu.at;
         let target = menu.target.clone();
-        let entry = |(label, what): (&'static str, Do), cx: &mut Context<Self>| {
+        let entry = |i: usize, (label, what): (&'static str, Do), cx: &mut Context<Self>| {
             let target = target.clone();
+            let on = chosen == Some(i);
             div()
                 .id(label)
                 .debug_selector(move || format!("menu-entry-{label}"))
@@ -310,11 +386,12 @@ impl Shell {
                 .rounded(px(5.))
                 .cursor_pointer()
                 .hover(|s| s.bg(t.selection))
+                .when(on, |d| d.bg(t.selection))
                 .when(matches!(what, Do::Trash), |d| d.text_color(t.accent))
                 // The whole label, then its shortcut, dimmer, pinned to the right: the
                 // menu takes the width they need.
                 .child(div().flex_1().whitespace_nowrap().child(label))
-                .child(keycaps(&what.keys(cx), t, false).debug_selector(move || format!("menu-keys-{label}")).flex_none().ml_4())
+                .child(keycaps(&what.keys(cx), t, on).debug_selector(move || format!("menu-keys-{label}")).flex_none().ml_4())
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {
@@ -325,18 +402,17 @@ impl Shell {
                 .into_any_element()
         };
         let mut rows = Vec::new();
-        for (i, group) in groups.into_iter().enumerate() {
-            if i > 0 {
+        let mut i = 0;
+        for (g, group) in groups.into_iter().enumerate() {
+            if g > 0 {
                 rows.push(div().h(px(1.)).my(px(4.)).bg(t.border).into_any_element());
             }
-            rows.extend(group.into_iter().map(|item| entry(item, cx)));
+            for item in group {
+                rows.push(entry(i, item, cx));
+                i += 1;
+            }
         }
-        let close = || {
-            cx.listener(|this: &mut Self, _: &MouseDownEvent, _, cx| {
-                this.menu = None;
-                cx.notify();
-            })
-        };
+        let close = || cx.listener(|this: &mut Self, _: &MouseDownEvent, window, cx| this.close_menu(window, cx));
         Some(
             div()
                 .absolute()
@@ -348,6 +424,19 @@ impl Shell {
                 // the font, and stays in the window, even opened near an edge.
                 .child(gpui::anchored().position(at).snap_to_window_with_margin(px(8.)).child(
                     div()
+                        .debug_selector(|| "menu".into())
+                        .track_focus(&self.menu_focus)
+                        .key_context("Menu")
+                        // Escape is the window's `CloseHelp` before it is a key.
+                        .on_action(cx.listener(|this, _: &CloseHelp, window, cx| this.close_menu(window, cx)))
+                        .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, window, cx| {
+                            if e.keystroke.modifiers.modified() {
+                                return;
+                            }
+                            if this.menu_key(&e.keystroke.key, window, cx) {
+                                cx.stop_propagation();
+                            }
+                        }))
                         .min_w(px(230.))
                         .py(px(5.))
                         .bg(t.panel)

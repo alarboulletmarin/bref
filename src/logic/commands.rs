@@ -120,6 +120,13 @@ pub fn catalog() -> Vec<(&'static str, &'static str, &'static str, Group)> {
         ("editor::FindReplace", tr("Replace in the note", "Remplacer dans la note"), "search.svg", Note),
         ("app::Outline", tr("Outline of the note", "Plan de la note"), "c-outline.svg", Note),
         ("app::CopyAll", tr("Copy the whole note", "Copier toute la note"), "copy.svg", Note),
+        ("nav::OpenAside", tr("Open in the other pane", "Ouvrir dans l'autre volet"), "c-split.svg", Note),
+        ("nav::CopyLink", tr("Copy the [[link]] of the note", "Copier le [[lien]] de la note"), "link.svg", Note),
+        ("nav::CopyPath", tr("Copy the path of the note", "Copier le chemin de la note"), "copy.svg", Note),
+        ("nav::CopyRelative", tr("Copy the relative path of the note", "Copier le chemin relatif de la note"), "copy.svg", Note),
+        ("nav::Reveal", reveal_label(), "export.svg", Note),
+        ("nav::SetIcon", tr("Icon of the note…", "Icône de la note…"), "heart.svg", Note),
+        ("nav::ShowFolder", tr("Show the note's folder as a list", "Afficher le dossier de la note en liste"), "list-bullet.svg", Note),
         ("editor::Undo", tr("Undo", "Annuler"), "c-undo.svg", Note),
         ("editor::Redo", tr("Redo", "Rétablir"), "c-redo.svg", Note),
         ("app::NewNote", tr("New note", "Nouvelle note"), "file-plus.svg", Create),
@@ -193,6 +200,17 @@ pub fn keycaps(keys: &str) -> Vec<String> {
         *key = sign.to_string();
     }
     out
+}
+
+/// The menu entry that shows a file in the file manager, under its name on each system.
+pub fn reveal_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        tr("Reveal in Finder", "Afficher dans le Finder")
+    } else if cfg!(windows) {
+        tr("Show in Explorer", "Afficher dans l'Explorateur")
+    } else {
+        tr("Show in the file manager", "Afficher dans le gestionnaire de fichiers")
+    }
 }
 
 #[cfg(test)]
