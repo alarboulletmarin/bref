@@ -16,6 +16,7 @@ use crate::{
     platform::vault,
 };
 use super::*;
+use crate::ui::assets::ICON_SET;
 use crate::views::nav::*;
 
 impl Shell {
@@ -30,7 +31,10 @@ impl Shell {
         let link = menu.and_then(|menu| menu.text).flatten();
         cx.notify();
         if let (Do::Icon, Some(path)) = (what, &target) {
-            self.icon_pick = Some((at, path.clone()));
+            // On the item's icon if it has one, else on "no icon".
+            let chosen = self.icons.get(path).and_then(|mine| ICON_SET.iter().position(|(file, _)| file[2..file.len() - 4] == *mine)).map_or(0, |i| i + 1);
+            self.icon_pick = Some(IconPick { at, path: path.clone(), chosen, back: window.focused(cx) });
+            window.focus(&self.menu_focus);
             return;
         }
         // Note menu: the editor's gestures, as with the keyboard, and the targeted link.
@@ -83,6 +87,7 @@ impl Shell {
             cx.write_to_clipboard(ClipboardItem::new_string(lines.join("\n")));
         };
         match (what, target) {
+            (Do::MoveTo, Some(_)) => self.ask_move(all, window, cx),
             (Do::Open, Some(path)) => self.open_from_nav(&path, window, cx),
             (Do::OpenAside, Some(path)) => self.open_aside(&path, window, cx),
             (Do::NewNote, _) => {
@@ -208,6 +213,40 @@ impl Shell {
         let Some(path) = self.pane().path.clone() else { return };
         let target = if matches!(what, Do::List) { path.parent().map(Path::to_path_buf) } else { Some(path) };
         self.menu_do(what, target, window, cx)
+    }
+
+    /// The folders of the vault in a list, the vault first; the one chosen receives `items`. A folder is
+    /// not offered for itself, nor what is inside it.
+    fn ask_move(&mut self, items: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.vault.clone() else { return };
+        let mut dirs: Vec<PathBuf> = self.dirs.iter().filter(|d| !items.iter().any(|item| d.starts_with(item))).cloned().collect();
+        dirs.sort();
+        dirs.insert(0, root.clone());
+        let names = dirs.iter().map(|d| match d.strip_prefix(&root) {
+            Ok(rel) if !rel.as_os_str().is_empty() => rel.to_string_lossy().into_owned(),
+            _ => format!("{} ({})", vault::shown(&root), tr("the vault", "le coffre")),
+        }).collect();
+        let back = window.focused(cx);
+        let theme = self.theme;
+        let palette = cx.new(|cx| Palette::choose(tr("Move to", "Déplacer vers"), names, "", theme, cx));
+        cx.subscribe_in(&palette, window, move |this, palette, event, window, cx| {
+            if matches!(event, PaletteEvent::Preview(_)) {
+                return;
+            }
+            let chosen = palette.read(cx).chosen().and_then(|i| dirs.get(i)).cloned().filter(|_| matches!(event, PaletteEvent::Submit(_)));
+            this.palette = None;
+            if let Some(back) = &back {
+                window.focus(back);
+            }
+            if let Some(dir) = chosen {
+                this.move_all(&items, &dir, cx);
+            }
+            cx.notify();
+        })
+        .detach();
+        window.focus(&palette.focus_handle(cx));
+        self.palette = Some(palette);
+        cx.notify();
     }
 
     /// Opens `menu`; it takes the keys until it closes.
@@ -355,6 +394,7 @@ impl Shell {
                 }
                 if !many {
                     groups[3].push((tr("Rename", "Renommer"), Do::Rename));
+                    groups[3].push((tr("Move to…", "Déplacer vers…"), Do::MoveTo));
                     groups[3].push((tr("Icon…", "Icône…"), Do::Icon));
                 }
                 groups[3].push((tr("Move to the trash", "Mettre à la corbeille"), Do::Trash));

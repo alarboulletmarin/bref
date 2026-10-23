@@ -74,6 +74,15 @@ use sheet::{Pick, Sheet, SheetEvent};
 use table::{Encoding, Format, Style};
 use logic::note::Note;
 
+/// The icon grid: where it opens, for which item, the cell the keys are on (0: no icon), and what
+/// had the focus before it.
+struct IconPick {
+    at: Point<Pixels>,
+    path: PathBuf,
+    chosen: usize,
+    back: Option<FocusHandle>,
+}
+
 struct Shell {
     /// One pane, or two side by side; `active` is the one that last got focus.
     panes: Vec<Pane>,
@@ -130,8 +139,8 @@ struct Shell {
     swapped: Vec<(PathBuf, Arc<str>, String)>,
     /// Icons of the vault's notes, files and folders (see `vault::load_icons`).
     icons: std::collections::HashMap<PathBuf, String>,
-    /// Icon picker grid: where it opens, and for which item.
-    icon_pick: Option<(Point<Pixels>, PathBuf)>,
+    /// Icon picker grid, if open.
+    icon_pick: Option<IconPick>,
     /// The comments panel was closed: it waits to be asked for again.
     comments_shut: bool,
     /// Status messages shown, oldest to newest.

@@ -23,7 +23,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         s.menu_do(nav::Do::Icon, Some(root.join("Test.md")), window, cx)
     });
     cx.run_until_parked();
-    let grid = shell.read_with(cx, |s, _| s.icon_pick.clone().unwrap().0 - point(s.nav.left, s.nav.left));
+    let grid = shell.read_with(cx, |s, _| s.icon_pick.as_ref().unwrap().at - point(s.nav.left, s.nav.left));
     cx.simulate_click(grid + point(px(5. + 30. + 14.), px(5. + 14.)), gpui::Modifiers::none());
     assert!(shell.read_with(cx, |s, _| s.icon_pick.is_none() && s.icons.get(&root.join("Test.md")).map(String::as_str) == Some("star")));
     shell.update(cx, |s, _| s.nav.sel = Some(root.join("Test.md")));

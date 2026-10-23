@@ -125,6 +125,7 @@ pub fn catalog() -> Vec<(&'static str, &'static str, &'static str, Group)> {
         ("nav::CopyPath", tr("Copy the path of the note", "Copier le chemin de la note"), "copy.svg", Note),
         ("nav::CopyRelative", tr("Copy the relative path of the note", "Copier le chemin relatif de la note"), "copy.svg", Note),
         ("nav::Reveal", reveal_label(), "export.svg", Note),
+        ("nav::MoveTo", tr("Move the note to a folder…", "Déplacer la note vers un dossier…"), "folder-plus.svg", Note),
         ("nav::SetIcon", tr("Icon of the note…", "Icône de la note…"), "heart.svg", Note),
         ("nav::ShowFolder", tr("Show the note's folder as a list", "Afficher le dossier de la note en liste"), "list-bullet.svg", Note),
         ("editor::Undo", tr("Undo", "Annuler"), "c-undo.svg", Note),

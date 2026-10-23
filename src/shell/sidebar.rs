@@ -20,6 +20,7 @@ use crate::{
 };
 
 use super::*;
+use crate::ui::assets::ICON_SET;
 use crate::views::nav::*;
 
 impl Shell {
@@ -404,26 +405,64 @@ impl Shell {
         cx.notify();
     }
 
-    /// Icon grid, opened from the menu: a click gives the icon, the cross removes it,
-    /// a click elsewhere closes it.
-    // ponytail: mouse only; a list in the palette if the keyboard asks for it.
+    /// Closes the icon grid, if it is open, and gives the focus back.
+    pub(super) fn close_icons(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(back) = self.icon_pick.take().and_then(|pick| pick.back) {
+            window.focus(&back);
+        }
+        cx.notify();
+    }
+
+    /// Gives cell `i` of the grid (0: no icon) to the item, and closes the grid.
+    fn pick_icon(&mut self, i: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(path) = self.icon_pick.as_ref().map(|pick| pick.path.clone()) else { return };
+        self.close_icons(window, cx);
+        let name = i.checked_sub(1).and_then(|i| ICON_SET.get(i)).map(|(file, _)| &file[2..file.len() - 4]);
+        self.set_icon(path, name, cx)
+    }
+
+    /// Arrows (eight cells a row), Home, End, Enter and Space in the icon grid.
+    fn icons_key(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let n = ICON_SET.len() + 1;
+        let Some(pick) = self.icon_pick.as_mut() else { return false };
+        let at = pick.chosen;
+        pick.chosen = match key {
+            "right" => (at + 1) % n,
+            "left" => (at + n - 1) % n,
+            "down" => (at + 8).min(n - 1),
+            "up" => at.saturating_sub(8),
+            "home" => 0,
+            "end" => n - 1,
+            "enter" | "space" => {
+                self.pick_icon(at, window, cx);
+                return true;
+            }
+            _ => return false,
+        };
+        cx.notify();
+        true
+    }
+
+    /// Icon grid, opened from the menu: a click or Enter gives the icon, the cross removes it,
+    /// a click elsewhere or Esc closes it.
     pub(super) fn render_icons(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        let (at, path) = self.icon_pick.clone()?;
+        let IconPick { at, path, chosen, .. } = self.icon_pick.as_ref()?;
+        let (at, chosen) = (*at, *chosen);
         let t = self.theme;
-        let mine = self.icons.get(&path).cloned();
+        let mine = self.icons.get(path).cloned();
         let pick = |i: usize, file: &'static str, name: Option<&'static str>, cx: &mut Context<Self>| {
-            let path = path.clone();
-            button(("icon", i), file, name.is_some() && name == mine.as_deref(), t).on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    this.icon_pick = None;
-                    this.set_icon(path.clone(), name, cx)
-                }),
-            )
+            button(("icon", i), file, name.is_some() && name == mine.as_deref(), t)
+                .when(i == chosen, |d| d.border_2().border_color(t.accent))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.pick_icon(i, window, cx)
+                    }),
+                )
         };
         let mut cells = vec![pick(0, "close.svg", None, cx)];
-        cells.extend(crate::ui::assets::ICON_SET.iter().enumerate().map(|(i, (file, _))| pick(i + 1, file, Some(&file[2..file.len() - 4]), cx)));
+        cells.extend(ICON_SET.iter().enumerate().map(|(i, (file, _))| pick(i + 1, file, Some(&file[2..file.len() - 4]), cx)));
         // Eight per row; the grid stays in the window, like the menu.
         let view = window.viewport_size();
         let (width, height) = (px(8. * 30. - 2. + 12.), px(cells.len().div_ceil(8) as f32 * 30. - 2. + 12.));
@@ -431,13 +470,19 @@ impl Shell {
             (at.x - self.nav.left).min(view.width - self.nav.left * 2. - width - px(8.)),
             (at.y - self.nav.left).min(view.height - self.nav.left * 2. - height - px(8.)),
         );
-        let close = cx.listener(|this: &mut Self, _: &MouseDownEvent, _, cx| {
-            this.icon_pick = None;
-            cx.notify();
-        });
+        let close = cx.listener(|this: &mut Self, _: &MouseDownEvent, window, cx| this.close_icons(window, cx));
         Some(
             div().absolute().inset_0().occlude().on_mouse_down(MouseButton::Left, close).child(
                 div()
+                    .debug_selector(|| "icons".into())
+                    .track_focus(&self.menu_focus)
+                    .key_context("Menu")
+                    .on_action(cx.listener(|this, _: &CloseHelp, window, cx| this.close_icons(window, cx)))
+                    .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, window, cx| {
+                        if !e.keystroke.modifiers.modified() && this.icons_key(&e.keystroke.key, window, cx) {
+                            cx.stop_propagation();
+                        }
+                    }))
                     .absolute()
                     .left(at.x)
                     .top(at.y)
@@ -534,7 +579,7 @@ impl Shell {
                                 d.child(svg().path(chevron).size(px(14.)).text_color(if selected { t.text } else { t.soft }))
                             }))
                         })
-                        .children(self.icons.get(&row.path).and_then(|name| crate::ui::assets::ICON_SET.iter().find(|(file, _)| file[2..file.len() - 4] == *name)).map(
+                        .children(self.icons.get(&row.path).and_then(|name| ICON_SET.iter().find(|(file, _)| file[2..file.len() - 4] == *name)).map(
                             |(file, _)| svg().path(*file).size(px(14.)).flex_none().text_color(if current { t.accent } else { t.text }),
                         ))
                         .child(
@@ -911,8 +956,8 @@ impl Shell {
                 if this.menu.is_some() {
                     return this.close_menu(window, cx);
                 }
-                if this.icon_pick.take().is_some() {
-                    return cx.notify();
+                if this.icon_pick.is_some() {
+                    return this.close_icons(window, cx);
                 }
                 if this.nav.panel == Panel::Full {
                     this.nav.panel = Panel::Split;

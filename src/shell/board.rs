@@ -94,13 +94,72 @@ impl Shell {
         cx.notify();
     }
 
+    /// An arrow on the board: the keys go from spot to spot, and the board scrolls to it.
+    fn board_walk(&mut self, by: (isize, isize), cx: &mut Context<Self>) {
+        if self.pane().board.field.is_some() {
+            return;
+        }
+        let counts: Vec<usize> = columns(self.pane().editor.read(cx).text()).iter().map(|c| c.cards.len()).collect();
+        // The first arrow lands on the first card, or the first title.
+        let at = match self.pane().board.at {
+            Some(at) => walk(&counts, at, by),
+            None => walk(&counts, (0, 1), (0, 0)),
+        };
+        self.pane().board.scroll.scroll_to_item(at.0);
+        self.pane_mut().board.at = Some(at);
+        cx.notify();
+    }
+
+    /// Alt+arrow: the card the keys are on goes along, and the keys with it.
+    fn board_carry(&mut self, by: (isize, isize), cx: &mut Context<Self>) {
+        let Some(at) = self.pane().board.at.filter(|_| self.pane().board.field.is_none()) else { return };
+        if let Some((text, spot)) = carry(self.pane().editor.read(cx).text(), at, by) {
+            self.pane().editor.update(cx, |e, cx| e.rewrite(&text, cx));
+            self.pane().board.scroll.scroll_to_item(spot.0);
+            self.pane_mut().board.at = Some(spot);
+            cx.notify();
+        }
+    }
+
+    /// What the spot the keys are on is: a title, a card, "Add a card", "Add a column".
+    fn board_slot(&self, cx: &App) -> Option<Slot> {
+        let (c, r) = self.pane().board.at.filter(|_| self.pane().board.field.is_none())?;
+        let all = columns(self.pane().editor.read(cx).text());
+        let Some(column) = all.get(c) else { return Some(Slot::NewColumn) };
+        Some(match r {
+            0 => Slot::Column(c),
+            r if r <= column.cards.len() => Slot::Card(c, r - 1),
+            _ => Slot::New(c),
+        })
+    }
+
+    /// Delete: the card the keys are on, or the column whose title they are on, with its cards.
+    /// Undone like any gesture of the board.
+    fn board_remove(&mut self, cx: &mut Context<Self>) {
+        match self.board_slot(cx) {
+            Some(Slot::Card(c, i)) => self.board_edit(|text| retitle(text, (c, i), ""), cx),
+            Some(Slot::Column(c)) => self.board_edit(|text| remove_column(text, c), cx),
+            _ => return,
+        }
+        // The keys stay where they were, inside what is left.
+        let counts: Vec<usize> = columns(self.pane().editor.read(cx).text()).iter().map(|c| c.cards.len()).collect();
+        let at = self.pane().board.at.map(|at| walk(&counts, at, (0, 0)));
+        self.pane_mut().board.at = at;
+        cx.notify();
+    }
+
+    /// Space on a card: checks it, or unchecks it.
+    fn board_tick(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(Slot::Card(c, i)) = self.board_slot(cx) else { return false };
+        self.board_edit(|text| tick(text, (c, i)), cx);
+        true
+    }
+
     /// The board, in place of the note. A grabbed card leaves its place and follows the
     /// pointer; a dotted slot opens where it would land, between two cards or
     /// at the bottom of a column. A click on its checkbox ticks it, a double-click rewrites it in place
-    /// (emptied, it is removed). "+" adds a card, or a column.
-    // ponytail: mouse only; keyboard card selection (arrows, Ctrl+arrows to
-    // move it) if the board is used daily. The board does not scroll by itself when
-    // a card is held near an edge: add it if columns often overflow the window.
+    /// (emptied, it is removed). "+" adds a card, or a column. The keys do the same: arrows go from
+    /// spot to spot, Alt+arrows carry the card, Enter writes, Space ticks, Delete removes.
     pub(super) fn render_board(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         // The pane this board occupies: gestures starting from it, later, target it.
         let pane = self.active;
@@ -110,6 +169,9 @@ impl Shell {
         let field_at = |slot: Slot| writing.as_ref().filter(|(open, _)| *open == slot).map(|(_, field)| field.clone());
         let all = columns(&text);
         let drag = self.pane().board.drag.filter(|_| cx.has_active_drag());
+        // The spot the keys are on: the same look as a chosen row elsewhere.
+        let keys = self.pane().board.at;
+        let lit = |spot: (usize, usize)| keys == Some(spot);
         // The slot the held card would take: its exact size, empty.
         let held = drag.and_then(|(from, _)| all.get(from.0)?.cards.get(from.1)).map(|card| (card.text.to_string(), card.done));
         let place = || {
@@ -151,6 +213,7 @@ impl Shell {
                     .debug_selector(|| format!("card-{c}-{i}"))
                     .cursor_grab()
                     .hover(|s| s.border_color(t.dim))
+                    .when(lit((c, i + 1)), |d| d.bg(t.selection).border_color(t.accent))
                     .child(check)
                     .child(card_text(card.text, card.done, t))
                     .on_click(twice(Slot::Card(c, i), cx))
@@ -166,8 +229,12 @@ impl Shell {
                 Some(field) => div().flex_1().min_w_0().flex().child(field).into_any_element(),
                 None => div()
                     .id(("column-title", c))
+                    .debug_selector(move || format!("column-title-{c}"))
                     .flex_1()
                     .min_w_0()
+                    .px_1()
+                    .rounded(px(4.))
+                    .when(lit((c, 0)), |d| d.bg(t.selection))
                     .truncate()
                     .font_weight(gpui::FontWeight::BOLD)
                     .child(column.title.to_string())
@@ -185,6 +252,7 @@ impl Shell {
                     .cursor_pointer()
                     .text_color(t.soft)
                     .hover(|s| s.bg(t.bg).text_color(t.text))
+                    .when(lit((c, count + 1)), |d| d.bg(t.selection).text_color(t.text))
                     .child(format!("+ {}", tr("Add a card", "Ajouter une carte")))
                     .on_click(cx.listener(move |this, _, window, cx| this.board_write(Slot::New(c), window, cx)))
                     .into_any_element(),
@@ -238,7 +306,7 @@ impl Shell {
                         .on_click(cx.listener(|this, _, window, cx| this.board_write(Slot::NewColumn, window, cx))),
                 )
                 .into_any_element(),
-            None => crate::ui::widgets::button("column-add", "plus.svg", false, t)
+            None => crate::ui::widgets::button("column-add", "plus.svg", lit((all.len(), 0)), t)
                 .flex_none()
                 .on_click(cx.listener(|this, _, window, cx| this.board_write(Slot::NewColumn, window, cx)))
                 .into_any_element(),
@@ -249,6 +317,26 @@ impl Shell {
             .track_focus(&self.pane().board.focus)
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.pane().editor.update(cx, |e, cx| e.restore(false, cx))))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.pane().editor.update(cx, |e, cx| e.restore(true, cx))))
+            .on_action(cx.listener(|this, _: &CardUp, _, cx| this.board_walk((0, -1), cx)))
+            .on_action(cx.listener(|this, _: &CardDown, _, cx| this.board_walk((0, 1), cx)))
+            .on_action(cx.listener(|this, _: &CardLeft, _, cx| this.board_walk((-1, 0), cx)))
+            .on_action(cx.listener(|this, _: &CardRight, _, cx| this.board_walk((1, 0), cx)))
+            .on_action(cx.listener(|this, _: &CarryUp, _, cx| this.board_carry((0, -1), cx)))
+            .on_action(cx.listener(|this, _: &CarryDown, _, cx| this.board_carry((0, 1), cx)))
+            .on_action(cx.listener(|this, _: &CarryLeft, _, cx| this.board_carry((-1, 0), cx)))
+            .on_action(cx.listener(|this, _: &CarryRight, _, cx| this.board_carry((1, 0), cx)))
+            .on_action(cx.listener(|this, _: &CardEdit, window, cx| {
+                if let Some(slot) = this.board_slot(cx) {
+                    this.board_write(slot, window, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &CardRemove, _, cx| this.board_remove(cx)))
+            // Space is a key, not a shortcut: typed in a card being written, it is a space.
+            .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, window, cx| {
+                if e.keystroke.key == "space" && !e.keystroke.modifiers.modified() && this.pane().board.focus.is_focused(window) && this.board_tick(cx) {
+                    cx.stop_propagation();
+                }
+            }))
             // The held card is out of the board: its slot goes back where it came from, and dropping it
             // there moves nothing.
             .on_drag_move(cx.listener(move |this, e: &DragMoveEvent<Dragged>, _, cx| {
@@ -258,6 +346,18 @@ impl Shell {
                 }
                 if !e.bounds.contains(&e.event.position) && this.panes[pane].board.drag != Some((from, from)) {
                     this.panes[pane].board.drag = Some((from, from));
+                    cx.notify();
+                }
+                // Held near the left or right edge, the board scrolls toward it, faster closer to it.
+                // ponytail: it scrolls as the pointer moves; held still at the edge, it waits for the
+                // next move. A timer would keep it going.
+                let (x, edge) = (e.event.position.x, px(48.));
+                let step = if x < e.bounds.left() + edge { (e.bounds.left() + edge - x).min(edge) } else if x > e.bounds.right() - edge { -(x - e.bounds.right() + edge).min(edge) } else { px(0.) };
+                if step != px(0.) && e.bounds.contains(&e.event.position) {
+                    let scroll = &this.panes[pane].board.scroll;
+                    let max = scroll.max_offset().width;
+                    let offset = scroll.offset();
+                    scroll.set_offset(gpui::point((offset.x + step / 4.).clamp(-max, px(0.)), offset.y));
                     cx.notify();
                 }
             }))
@@ -270,8 +370,11 @@ impl Shell {
             .gap_3()
             .overflow_scroll()
             .track_scroll(&self.pane().board.scroll)
-            // A click elsewhere confirms what was being written.
-            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| this.board_commit(false, window, cx)))
+            // A click elsewhere confirms what was being written; the keys' spot goes with the mouse.
+            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                this.pane_mut().board.at = None;
+                this.board_commit(false, window, cx)
+            }))
             // The dropped card, wherever on the board, goes to the slot opened for it.
             .on_drop(cx.listener(move |this, dragged: &Dragged, _, cx| {
                 if dragged.pane == pane && pane < this.panes.len() {

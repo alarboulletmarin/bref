@@ -23,7 +23,7 @@ use crate::{
 
 actions!(nav, [ShowCalendar, PrevMonth, NextMonth, ShowTree, ShowRecent, ShowGraph, ShowTags, ShowLinks, ToggleFull, Prev, Next, Fold, Unfold, Open, Close, NewFolder, Rename, Duplicate, Trash]);
 // The entries of a row's menu that have no other way, for the open file, from the palette.
-actions!(nav, [OpenAside, SetIcon, ShowFolder, CopyLink, CopyPath, CopyRelative, Reveal]);
+actions!(nav, [OpenAside, SetIcon, ShowFolder, CopyLink, CopyPath, CopyRelative, Reveal, MoveTo]);
 
 pub const RAIL: Pixels = px(40.);
 pub const ROW: Pixels = px(26.);
@@ -89,6 +89,8 @@ pub enum Do {
     /// A note born from a template, in the targeted folder.
     FromTemplate,
     Rename,
+    /// Into a folder chosen in a list: what dragging does, from the keys.
+    MoveTo,
     Duplicate,
     Trash,
     CopyLink,

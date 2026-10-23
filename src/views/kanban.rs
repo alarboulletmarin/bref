@@ -4,6 +4,8 @@
 
 use std::ops::Range;
 
+gpui::actions!(kanban, [CardUp, CardDown, CardLeft, CardRight, CarryUp, CarryDown, CarryLeft, CarryRight, CardEdit, CardRemove]);
+
 use gpui::{
     App, Bounds, Context, Div, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Pixels,
     Point, UTF16Selection, Window, canvas, div, prelude::*, px, svg,
@@ -51,11 +53,13 @@ pub struct Board {
     pub field: Option<(Slot, Entity<Field>)>,
         /// The board receives input in place of the note it hides.
     pub focus: FocusHandle,
+    /// The spot the keys are on (see `walk`); `None` until an arrow is pressed, and after a click.
+    pub at: Option<(usize, usize)>,
 }
 
 impl Board {
     pub fn new(cx: &mut App) -> Self {
-        Board { text: false, was: false, drag: None, card: Default::default(), scroll: Default::default(), field: None, focus: cx.focus_handle() }
+        Board { text: false, was: false, drag: None, card: Default::default(), scroll: Default::default(), field: None, focus: cx.focus_handle(), at: None }
     }
 }
 
@@ -159,6 +163,45 @@ pub fn rename_column(text: &str, column: usize, title: &str) -> Option<String> {
 pub fn add_column(text: &str, title: &str) -> Option<String> {
     let lead = if text.is_empty() || text.ends_with("\n\n") { "" } else if text.ends_with('\n') { "\n" } else { "\n\n" };
     (!title.trim().is_empty()).then(|| format!("{text}{lead}## {}\n", title.trim()))
+}
+
+/// The note without the column, its cards and what is under its heading.
+pub fn remove_column(text: &str, column: usize) -> Option<String> {
+    let all = columns(text);
+    let start = all.get(column)?.line.start;
+    let end = all.get(column + 1).map_or(text.len(), |next| next.line.start);
+    Some(format!("{}{}", &text[..start], &text[end..]))
+}
+
+/// Where the keys are on the board, moved by `by` (columns, rows): a spot is (column, row), row 0
+/// the column's title, then its cards, then "Add a card"; the column after the last is "Add a column".
+/// `counts`: the cards of each column.
+pub fn walk(counts: &[usize], at: (usize, usize), by: (isize, isize)) -> (usize, usize) {
+    let n = counts.len();
+    let c = (at.0.min(n) as isize + by.0).clamp(0, n as isize) as usize;
+    let last = counts.get(c).map_or(0, |k| k + 1);
+    let r = (at.1.min(last) as isize + by.1).clamp(0, last as isize) as usize;
+    (c, r)
+}
+
+/// The note once the card on spot `at` is carried one step along `by` (up, down: in its column;
+/// sideways: into the next column, at the same rank or at its end), and the card's new spot.
+pub fn carry(text: &str, at: (usize, usize), by: (isize, isize)) -> Option<(String, (usize, usize))> {
+    let all = columns(text);
+    let (c, r) = at;
+    let len = all.get(c)?.cards.len();
+    let i = r.checked_sub(1).filter(|&i| i < len)?;
+    let (to, spot) = match by {
+        (0, -1) => ((c, i.checked_sub(1)?), (c, r - 1)),
+        (0, 1) if i + 1 < len => ((c, i + 2), (c, r + 1)),
+        (dx, 0) if dx != 0 => {
+            let next = c.checked_add_signed(dx)?;
+            let k = i.min(all.get(next)?.cards.len());
+            ((next, k), (next, k + 1))
+        }
+        _ => return None,
+    };
+    Some((move_card(text, (c, i), to)?, spot))
 }
 
 /// The text of a new board: its three columns, and the key that makes it open as a board.
@@ -358,7 +401,42 @@ mod tests {
         assert_eq!(titles(&retitle(BOARD, (0, 0), " ").unwrap())[0], ["Relire"]);
         assert!(rename_column(BOARD, 1, "En route").unwrap().contains("\n## En route\n\n## Fait") && rename_column(BOARD, 1, "").is_none());
         assert!(add_column(BOARD, "Plus tard").unwrap().ends_with("- [x] Planifier\n\n## Plus tard\n") && add_column(BOARD, " ").is_none());
+        // A column goes with its cards and what is under its heading; the last one too.
+        assert_eq!(titles(&remove_column(BOARD, 0).unwrap()), [vec![], vec!["Planifier"]]);
+        assert!(remove_column(BOARD, 0).unwrap().starts_with("---\nkanban: true\n---\n# Projet\n\n## En cours"));
+        assert!(remove_column(BOARD, 2).unwrap().ends_with("## En cours\n\n") && remove_column(BOARD, 3).is_none());
         let fresh = new_board();
         assert!(is_board(&fresh) && columns(&fresh).iter().map(|c| c.title).collect::<Vec<_>>() == ["À faire", "En cours", "Fait"] && fresh.ends_with("## Fait\n"));
+    }
+
+    /// Spots are (column, row): row 0 the title, then the cards, then "Add a card"; the column after the
+    /// last is "Add a column", alone on its row.
+    #[test]
+    fn walks_the_board() {
+        let counts = [2, 0, 1];
+        let go = |at, by| walk(&counts, at, by);
+        assert_eq!((go((0, 0), (0, 1)), go((0, 3), (0, 1)), go((0, 0), (0, -1))), ((0, 1), (0, 3), (0, 0)));
+        // Sideways, the row stays when it can, else the nearest one; then "Add a column", then nothing more.
+        assert_eq!((go((0, 2), (1, 0)), go((0, 3), (1, 0)), go((1, 1), (1, 0))), ((1, 1), (1, 1), (2, 1)));
+        assert_eq!((go((2, 2), (1, 0)), go((3, 0), (1, 0)), go((3, 0), (0, 1)), go((3, 0), (-1, 0))), ((3, 0), (3, 0), (3, 0), (2, 0)));
+        assert_eq!(go((0, 1), (-1, 0)), (0, 1));
+        // A board without columns: only "Add a column"; a spot left behind by a removed card comes back inside.
+        assert_eq!((walk(&[], (0, 0), (1, 0)), walk(&[], (2, 5), (0, 1))), ((0, 0), (0, 0)));
+        assert_eq!(walk(&counts, (1, 7), (0, 0)), (1, 1));
+    }
+
+    /// Alt+arrows carry the card on a spot: up and down in its column, sideways at the same rank.
+    #[test]
+    fn carries_cards() {
+        let titles = |text: &str| columns(text).iter().map(|c| c.cards.iter().map(|k| k.text.to_string()).collect::<Vec<_>>()).collect::<Vec<_>>();
+        let (text, at) = carry(BOARD, (0, 1), (0, 1)).unwrap();
+        assert_eq!((titles(&text)[0].clone(), at), (vec!["Relire".to_string(), "Écrire".to_string()], (0, 2)));
+        let (text, at) = carry(&text, (0, 2), (1, 0)).unwrap();
+        assert_eq!((titles(&text), at), (vec![vec!["Relire".to_string()], vec!["Écrire".to_string()], vec!["Planifier".to_string()]], (1, 1)));
+        let (text, at) = carry(&text, (1, 1), (1, 0)).unwrap();
+        assert_eq!((titles(&text)[2].clone(), at), (vec!["Écrire".to_string(), "Planifier".to_string()], (2, 1)));
+        // At an edge, on a title or on "Add a card": nothing moves.
+        assert!(carry(BOARD, (0, 1), (0, -1)).is_none() && carry(BOARD, (0, 2), (0, 1)).is_none() && carry(BOARD, (2, 1), (1, 0)).is_none());
+        assert!(carry(BOARD, (0, 1), (-1, 0)).is_none() && carry(BOARD, (0, 0), (0, 1)).is_none() && carry(BOARD, (0, 3), (1, 0)).is_none());
     }
 }

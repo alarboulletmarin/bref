@@ -4,7 +4,10 @@ use gpui::{AnyView, App, Context, Div, InteractiveElement, MouseButton, Stateful
 
 use crate::ui::theme::Theme;
 
-/// Icon button of the rail and of panel headers.
+gpui::actions!(widgets, [Press]);
+
+/// Icon button of the rail and of panel headers. Tab reaches it, a ring shows it has the keys, Enter
+/// or Space presses it; a click does not take the focus from the note.
 pub fn button(id: impl Into<gpui::ElementId>, icon: &'static str, active: bool, t: Theme) -> Stateful<Div> {
     button_turned(id, icon, active, false, t)
 }
@@ -20,6 +23,13 @@ pub fn button_turned(id: impl Into<gpui::ElementId>, icon: &'static str, active:
         .justify_center()
         .rounded(px(6.))
         .cursor_pointer()
+        .tab_index(0)
+        .focus(|s| s.border_2().border_color(t.accent))
+        // Enter belongs to the button that has the keys, not to the panel around it: gpui presses
+        // it when the key comes up.
+        .key_context("Button")
+        .on_action(|_: &Press, _, _| {})
+        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
         .hover(|s| s.bg(t.border))
         .active(|s| s.bg(t.selection))
         .when(active, |d| d.bg(t.selection))
