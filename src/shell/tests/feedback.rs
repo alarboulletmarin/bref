@@ -384,7 +384,7 @@ fn an_unreadable_vault_or_folder_says_so(cx: &mut TestAppContext) {
     struct GiveBack(PathBuf);
     impl Drop for GiveBack {
         fn drop(&mut self) {
-            for dir in [self.0.clone(), self.0.join("Interdit")] {
+            for dir in [self.0.clone(), self.0.join("Interdit"), self.0.join("Comptes rendus des réunions de l'année")] {
                 let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o755));
             }
         }
@@ -398,11 +398,23 @@ fn an_unreadable_vault_or_folder_says_so(cx: &mut TestAppContext) {
         mode(&root, 0o755);
         return eprintln!("permissions are not enforced here (root?): skipped");
     }
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let page = |cx: &mut gpui::VisualTestContext| ["empty-key-0", "empty-key-1", "empty-key-2"].map(|key| cx.debug_bounds(key).unwrap().origin);
+    let readable = page(cx);
     shell.update(cx, |s, cx| s.rescan(&root, cx));
     cx.simulate_keystrokes("secondary-e");
     let reason = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.unreadable.clone());
     assert_eq!(reason(cx), [(root.clone(), std::io::ErrorKind::PermissionDenied)]);
     assert!(shell.read_with(cx, |s, _| s.nav.rows.is_empty()));
+    // The empty page offers no note to write there: neither a new one nor the day's.
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    // (Bounds of a previous frame stay known: the keys that remain are measured.) The day's line is gone, the
+    // keys come up; « shortcuts » takes the place of « new note ».
+    let closed = page(cx);
+    assert!(closed[0].y < readable[0].y, "{closed:?} after {readable:?}");
+    assert_eq!(closed[2].x - closed[0].x, readable[1].x - readable[0].x);
     // The message stays inside the panel, a narrow window as a wide one.
     for width in [420., 860., 1600.] {
         cx.simulate_resize(size(px(width), px(720.)));
@@ -421,15 +433,33 @@ fn an_unreadable_vault_or_folder_says_so(cx: &mut TestAppContext) {
     assert!(reason(cx).is_empty());
     assert!(shell.read_with(cx, |s, _| s.nav.rows.iter().any(|r| r.name == "Note")));
     // A folder inside: the vault opens, the folder is there, marked; taken away while open, given back.
+    let long = "Comptes rendus des réunions de l'année";
+    fs::create_dir(root.join(long)).unwrap();
     mode(&root.join("Interdit"), 0o000);
+    mode(&root.join(long), 0o000);
     shell.update(cx, |s, cx| s.rescan(&root, cx));
     cx.run_until_parked();
-    assert_eq!(reason(cx), [(root.join("Interdit"), std::io::ErrorKind::PermissionDenied)]);
+    let mut closed = reason(cx);
+    closed.sort();
+    assert_eq!(closed, [(root.join(long), std::io::ErrorKind::PermissionDenied), (root.join("Interdit"), std::io::ErrorKind::PermissionDenied)]);
     assert!(shell.read_with(cx, |s, _| s.nav.rows.iter().any(|r| r.name == "Interdit") && s.nav.rows.iter().any(|r| r.name == "Note")));
-    let row = cx.debug_bounds("nav-row-Interdit").expect("the folder's row");
-    let panel = cx.debug_bounds("nav-panel").unwrap();
-    assert!(row.right() <= panel.right());
+    // The reason is said in full at every width: the name gives way, not the reason.
+    let mut full = None;
+    for width in [1600., 860., 420.] {
+        cx.simulate_resize(size(px(width), px(720.)));
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let panel = cx.debug_bounds("nav-panel").unwrap();
+        for name in ["Interdit", long] {
+            let (row, why) = (cx.debug_bounds(leak(format!("nav-row-{name}"))).expect("the folder's row"), cx.debug_bounds(leak(format!("nav-why-{name}"))).unwrap());
+            assert!(row.right() <= panel.right() && why.right() <= row.right(), "{width}: {why:?} in {row:?}");
+            // In full where the panel has room for it, beside a long name too; cut last, in a panel of 175 px.
+            let full = *full.get_or_insert(why.size.width);
+            assert!(width < 860. || why.size.width == full, "{width} {name}: the reason is cut to {:?} from {full:?}", why.size.width);
+        }
+    }
     mode(&root.join("Interdit"), 0o755);
+    mode(&root.join(long), 0o755);
     shell.update(cx, |s, cx| s.rescan(&root, cx));
     assert!(reason(cx).is_empty());
     let _ = fs::remove_dir_all(&root);

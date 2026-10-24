@@ -1,6 +1,6 @@
 //! Small widgets shared by the views: icon buttons, tooltips, and the window-drag handle.
 
-use gpui::{AnyView, App, Context, Div, InteractiveElement, MouseButton, Stateful, Window, div, prelude::*, svg};
+use gpui::{AnyView, App, Context, Div, InteractiveElement, MouseButton, SharedString, Stateful, Window, div, prelude::*, svg};
 
 use crate::ui::theme::Theme;
 
@@ -64,7 +64,7 @@ pub fn keycaps(keys: &str, t: Theme, on: bool) -> Div {
 /// Tooltip of an icon button: what it does and, if it has one, its shortcut. Without it,
 /// a bare icon forces you to know the documentation to know where to click.
 pub struct Tip {
-    label: &'static str,
+    label: SharedString,
     keys: String,
     theme: Theme,
 }
@@ -85,14 +85,15 @@ impl Render for Tip {
             .flex()
             .items_center()
             .gap_2()
-            .child(self.label)
+            .child(self.label.clone())
             .child(keycaps(&self.keys, t, false))
     }
 }
 
 /// To put on a button: `.tooltip(tip(label, keys, theme))`.
-pub fn tip(label: &'static str, keys: String, theme: Theme) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
-    move |_, cx| cx.new(|_| Tip { label, keys: keys.clone(), theme }).into()
+pub fn tip(label: impl Into<SharedString>, keys: String, theme: Theme) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    let label = label.into();
+    move |_, cx| cx.new(|_| Tip { label: label.clone(), keys: keys.clone(), theme }).into()
 }
 /// Round icon button: window controls, note copy; 24 px, the smallest target a finger or a shaky hand hits.
 pub fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stateful<gpui::Div> {

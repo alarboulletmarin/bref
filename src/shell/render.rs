@@ -537,7 +537,9 @@ impl Shell {
             (Box::new(NewNote), tr("new note", "nouvelle note")),
             (Box::new(ToggleHelp), tr("shortcuts", "raccourcis")),
         ];
-        let keys = actions.into_iter().enumerate().filter_map(|(i, (action, what))| {
+        // A vault that cannot be read takes no note: neither a new one nor the day's.
+        let closed = self.vault.as_ref().is_some_and(|root| self.unreadable.iter().any(|(dir, _)| dir == root));
+        let keys = actions.into_iter().enumerate().filter(|(i, _)| !(closed && *i == 1)).filter_map(|(i, (action, what))| {
             let keys = keys::of(cx, action.as_ref());
             let cap = keycaps(&keys, t, false);
             (!keys.is_empty()).then(|| {
@@ -548,7 +550,7 @@ impl Shell {
                     .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
             })
         });
-        let day = self.vault.is_some().then(|| {
+        let day = (self.vault.is_some() && !closed).then(|| {
             row(("empty-today", 0), false)
                 .child(logo(t))
                 .child(recall::long_date(today()))

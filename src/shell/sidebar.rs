@@ -555,10 +555,11 @@ impl Shell {
                 // A folder of the tree that cannot be read says so and why, instead of looking empty.
                 let closed = self.unreadable.iter().find(|(dir, _)| tree && *dir == row.path);
                 let detail = match closed {
-                    Some((_, why)) => format!("{} {}", tr("cannot be read:", "illisible :"), crate::lang::io_reason(&std::io::Error::from(*why))),
+                    Some((_, why)) => format!("{} {}", tr("unreadable:", "illisible :"), crate::lang::io_reason(&std::io::Error::from(*why))),
                     None => detail,
                 };
                 let wide = links || closed.is_some();
+                let said = closed.map(|_| detail.clone());
                 let foldable = !matches!(self.nav.mode, Mode::Recent | Mode::Links);
                 let chevron = match row.dir {
                     Some(true) => "chevron-down.svg",
@@ -594,13 +595,27 @@ impl Shell {
                                 .truncate()
                                 // The name goes first, in full as long as it fits; the link's line, or the
                                 // reason a folder cannot be read, takes what is left.
-                                .map(|d| if wide { d.flex_none().max_w(gpui::relative(0.7)) } else { d.flex_1() })
+                                .map(|d| match (closed.is_some(), wide) {
+                                    // The reason a folder cannot be read is said in full; its name gives way.
+                                    (true, _) => d.flex_1().min_w(t.px(40.)),
+                                    (_, true) => d.flex_none().max_w(gpui::relative(0.7)),
+                                    _ => d.flex_1(),
+                                })
                                 .when(current, |d| d.text_color(t.accent))
                                 .child(row.name.clone()),
                         )
                         .child(
                             div()
-                                .map(|d| if wide { d.flex_1().min_w_0() } else { d.flex_none().max_w(t.px(110.)) })
+                                .debug_selector({
+                                    let why = format!("nav-why-{}", row.name);
+                                    move || why.clone()
+                                })
+                                .map(|d| match (closed.is_some(), wide) {
+                                    // ponytail: in a panel too narrow for it, the reason is cut last, in full in the row's tooltip.
+                                    (true, _) => d.flex_initial().min_w_0(),
+                                    (_, true) => d.flex_1().min_w_0(),
+                                    _ => d.flex_none().max_w(t.px(110.)),
+                                })
                                 .truncate()
                                 .text_size(t.px(11.5))
                                 .text_color(if selected { t.text } else { t.soft })
@@ -627,6 +642,7 @@ impl Shell {
                         .px_1()
                         .cursor_pointer()
                         .child(line)
+                        .when_some(said, |d, said| d.tooltip(tip(said, String::new(), t)))
                         .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
                             let held = e.modifiers();
                             if held.secondary() || held.shift {
