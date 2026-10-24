@@ -378,8 +378,18 @@ fn a_filter_that_keeps_nothing_says_so(cx: &mut TestAppContext) {
 #[gpui::test]
 fn an_unreadable_vault_or_folder_says_so(cx: &mut TestAppContext) {
     use std::os::unix::fs::PermissionsExt;
-    let (root, shell, cx, _config) = start(cx, "unreadable");
+    let (root, shell, cx, _config) = start(cx, "unreadable-vault");
     let mode = |path: &Path, m: u32| fs::set_permissions(path, fs::Permissions::from_mode(m)).unwrap();
+    // A failed assertion gives the rights back, so the next run can clear the folder.
+    struct GiveBack(PathBuf);
+    impl Drop for GiveBack {
+        fn drop(&mut self) {
+            for dir in [self.0.clone(), self.0.join("Interdit")] {
+                let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o755));
+            }
+        }
+    }
+    let _give_back = GiveBack(root.clone());
     fs::write(root.join("Note.md"), "# Note\n").unwrap();
     fs::create_dir(root.join("Interdit")).unwrap();
     fs::write(root.join("Interdit/Cachée.md"), "x").unwrap();
@@ -401,7 +411,8 @@ fn an_unreadable_vault_or_folder_says_so(cx: &mut TestAppContext) {
         let (said, panel) = (cx.debug_bounds("nav-unreadable").expect("the panel says it"), cx.debug_bounds("nav-panel").unwrap());
         assert!(said.left() >= panel.left() && said.right() <= panel.right() && said.bottom() <= panel.bottom(), "{width}: {said:?} in {panel:?}");
         let other = cx.debug_bounds("nav-other-vault").expect("another vault is offered");
-        assert!(other.top() >= said.top() && other.bottom() <= said.bottom());
+        // Centring rounds to the half pixel.
+        assert!(other.top() >= said.top() && other.bottom() <= said.bottom() + px(1.), "{width}: {other:?} in {said:?}");
     }
     // Given back: the next scan reads it, the message goes.
     mode(&root, 0o755);
