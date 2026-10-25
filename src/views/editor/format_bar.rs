@@ -286,7 +286,9 @@ impl Editor {
         let separator = || div().w(t.px(1.)).h(t.px(14.)).mx(t.px(3.)).bg(t.border);
         let bar = div()
             .debug_selector(|| "format-bar".into())
-            .w_full()
+            // In the page, as wide as its buttons: a width computed ahead loses to rounding at some zooms, and the
+            // bar wrapped. Folded in a narrow note, the width it has, its buttons wrapping.
+            .when(!inline, |d| d.w_full())
             .min_h(t.px(30.))
             .px(t.px(3.))
             .flex_none()
@@ -338,7 +340,7 @@ impl Editor {
             .children(last);
         // The color badges above the bar, all anchored to the bottom of the note.
         // Collapsed, the bar opens above the button (30 px, 16 px from the bottom, 6 px apart).
-        div().absolute().bottom(t.px(if inline { 16. } else { 52. })).left(px(left)).w(px(wide)).flex().flex_col().items_start().gap(t.px(6.)).children(swatches).child(bar)
+        div().absolute().bottom(t.px(if inline { 16. } else { 52. })).left(px(left)).when(!inline, |d| d.w(px(wide))).flex().flex_col().items_start().gap(t.px(6.)).children(swatches).child(bar)
     }
 
     /// The button that collapses the bar: bottom left, it opens the bar above it and closes it.

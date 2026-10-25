@@ -510,6 +510,22 @@ fn formatting_journey(cx: &mut TestAppContext) {
     let all = buttons(cx);
     assert!(all.iter().all(|b| b.size == all[0].size && b.top() == all[0].top() && bar.contains(&b.center())), "{all:?}");
     assert!(all.windows(2).all(|w| w[0].right() <= w[1].left()), "{all:?}");
+    // On one line at every step of the zoom, from 11 to 32, going down then up.
+    let mut zooms = vec!["secondary--"; 5];
+    zooms.extend(["secondary-="; 21]);
+    for key in zooms {
+        cx.simulate_keystrokes(key);
+        pick(cx, "un mot ici", 3, 3);
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let zoom = shell.read_with(cx, |s, _| s.theme.size);
+        let all = buttons(cx);
+        assert!(all.iter().all(|b| b.top() == all[0].top()), "zoom {zoom}: the bar wraps {all:?}");
+    }
+    cx.simulate_keystrokes("secondary-0");
+    pick(cx, "un mot ici", 3, 3);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
     // A click: the style is applied to the selection, which stays, and the button lights up; a second click removes it.
     let click = |cx: &mut gpui::VisualTestContext, i: usize| {
         let at = cx.debug_bounds(NAMES[i]).unwrap().center();
