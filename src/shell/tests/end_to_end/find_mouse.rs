@@ -9,7 +9,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Shift+Enter cycle, Alt+C matches case, Alt+W whole words.
     j.load(cx, "Été, été.\n\n| a | étés |\n| - | ---- |\n| b | ÉTÉ  |\n", 0);
     let finding = |cx: &mut gpui::VisualTestContext| {
-        shell.read_with(cx, |s, cx| s.pane().editor.read(cx).finding().map(|(query, at, n)| (query.to_string(), at, n)))
+        shell.read_with(cx, |s, cx| s.pane().editor.read(cx).finding(cx).map(|(query, at, n)| (query.to_string(), at, n)))
     };
     let span = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).span());
     cx.simulate_keystrokes("secondary-f");
@@ -27,9 +27,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!((finding(cx), span(cx)), (Some(("été".into(), 1, 1)), "Été, ".len().."Été, été".len()));
     cx.simulate_keystrokes("alt-c alt-w");
     assert_eq!(finding(cx), Some(("été".into(), 2, 4)));
-    // Replace: Ctrl+H opens the second field, Tab moves to it, Enter replaces the current
+    // Replace: Ctrl+R opens the second field, Enter replaces the current
     // passage, Ctrl+Enter all the others; Escape closes, and a single Ctrl+Z brings them all back.
-    cx.simulate_keystrokes("secondary-h tab");
+    cx.simulate_keystrokes("secondary-r");
     cx.simulate_input("hiver");
     cx.simulate_keystrokes("enter");
     assert!(text(cx).starts_with("Été, hiver.\n"));
@@ -49,6 +49,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("hiver");
     assert_eq!(finding(cx), Some(("hiver".into(), 1, 1)));
     shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load("hiver hiver".into(), 0, cx)));
+    // What a click in the note does: the keys go back to it, the bar stays.
+    shell.update_in(cx, |s, window, cx| window.focus(&s.pane().editor.focus_handle(cx)));
     cx.run_until_parked();
     assert_eq!(finding(cx), Some(("hiver".into(), 1, 2)));
     cx.simulate_input("x");
@@ -67,7 +69,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(finding(cx), None);
     // Regular expression: Alt+R; the replacement reuses its groups.
     j.load(cx, "le chat, le chien", 0);
-    cx.simulate_keystrokes("secondary-h");
+    cx.simulate_keystrokes("secondary-r");
     cx.simulate_input(r"le (\w+)");
     assert_eq!(finding(cx), Some((r"le (\w+)".into(), 0, 0)));
     cx.simulate_keystrokes("alt-r");

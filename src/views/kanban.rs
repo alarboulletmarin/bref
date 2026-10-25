@@ -6,16 +6,12 @@ use std::ops::Range;
 
 gpui::actions!(kanban, [CardUp, CardDown, CardLeft, CardRight, CarryUp, CarryDown, CarryLeft, CarryRight, CardEdit, CardRemove]);
 
-use gpui::{
-    App, Bounds, Context, Div, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Pixels,
-    Point, UTF16Selection, Window, canvas, div, prelude::*, px, svg,
-};
+use gpui::{App, Context, Div, Entity, FocusHandle, Pixels, Window, div, prelude::*, px, svg};
 
 use crate::{
     ui::theme::Theme,
     logic::markdown::{self, Kind},
-    ui::line::{self, Line},
-    views::palette::{Confirm, Dismiss},
+    views::field::Field,
     lang::tr,
 };
 
@@ -219,97 +215,6 @@ pub enum Slot {
     Column(usize),
         /// One more column.
     NewColumn,
-}
-
-pub enum FieldEvent {
-        /// Enter: the text is confirmed.
-    Done,
-    Cancel,
-}
-
-/// Input field placed in the board, in place of what it rewrites.
-pub struct Field {
-    focus: FocusHandle,
-    pub line: Line,
-    theme: Theme,
-}
-
-impl EventEmitter<FieldEvent> for Field {}
-
-impl Field {
-    pub fn new(text: &str, theme: Theme, cx: &mut Context<Self>) -> Self {
-        Self { focus: cx.focus_handle(), line: Line::new(text), theme }
-    }
-}
-
-impl Focusable for Field {
-    fn focus_handle(&self, _: &App) -> FocusHandle {
-        self.focus.clone()
-    }
-}
-
-impl EntityInputHandler for Field {
-    fn text_for_range(&mut self, _: Range<usize>, _: &mut Option<Range<usize>>, _: &mut Window, _: &mut Context<Self>) -> Option<String> {
-        None
-    }
-
-    fn selected_text_range(&mut self, _: bool, _: &mut Window, _: &mut Context<Self>) -> Option<UTF16Selection> {
-        Some(self.line.utf16())
-    }
-
-    fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        None
-    }
-
-    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {}
-
-    fn replace_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
-        self.line.insert(text);
-        cx.notify();
-    }
-
-    fn replace_and_mark_text_in_range(&mut self, range: Option<Range<usize>>, text: &str, _: Option<Range<usize>>, window: &mut Window, cx: &mut Context<Self>) {
-        self.replace_text_in_range(range, text, window, cx)
-    }
-
-    fn bounds_for_range(&mut self, _: Range<usize>, _: Bounds<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<Bounds<Pixels>> {
-        None
-    }
-
-    fn character_index_for_point(&mut self, _: Point<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
-        None
-    }
-}
-
-impl Render for Field {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = self.theme;
-        let (focus, entity) = (self.focus.clone(), cx.entity());
-        let input = canvas(|_, _, _| (), move |bounds, _, window, cx| window.handle_input(&focus, ElementInputHandler::new(bounds, entity), cx)).size_0();
-        let (shown, layout) = self.line.shown(t);
-        let field = div()
-                        // The palette's keys (Enter confirms, Escape gives up) and those of a line.
-            .key_context("Palette Line")
-            .track_focus(&self.focus)
-            .on_action(cx.listener(|_, _: &Confirm, _, cx| cx.emit(FieldEvent::Done)))
-            .on_action(cx.listener(|_, _: &Dismiss, _, cx| cx.emit(FieldEvent::Cancel)))
-                        // A click in the text puts the cursor there.
-            .on_mouse_down(
-                gpui::MouseButton::Left,
-                cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
-                    cx.stop_propagation();
-                    let (Ok(at) | Err(at)) = layout.index_for_position(e.position);
-                    this.line.place(at);
-                    cx.notify();
-                }),
-            );
-        line::keys(field, cx, |this| Some(&mut this.line), |_, _| ())
-            .flex_1()
-            .min_w_0()
-            .cursor_text()
-            .child(input)
-            .child(shown)
-    }
 }
 
 /// Width of a column when the window has room; they shrink down to `NARROW` to

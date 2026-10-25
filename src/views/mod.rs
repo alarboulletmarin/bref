@@ -4,6 +4,7 @@
 
 pub mod canvas;
 pub mod editor;
+pub mod field;
 pub mod graph;
 pub mod kanban;
 pub mod nav;

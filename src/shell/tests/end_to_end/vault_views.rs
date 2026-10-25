@@ -125,7 +125,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     fs::write(root.join("Zoo B.md"), "# Zoo B\n\nun zèbre, deux Zèbres").unwrap();
     j.settle(cx);
     shell.update(cx, |s, cx| s.open_note(&root.join("Zoo A.md"), cx));
-    cx.simulate_keystrokes("secondary-h");
+    cx.simulate_keystrokes("secondary-r");
     cx.simulate_input("zèbre");
     cx.simulate_keystrokes("tab");
     cx.simulate_input("okapi");

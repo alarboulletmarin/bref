@@ -189,12 +189,12 @@ The bottom right of the note shows its number of words and characters; with a se
 | Key | Action |
 |---|---|
 | `Ctrl + P` | palette: find a note by name or text, create one, filter by `#tag` |
-| `Ctrl + F`, `Ctrl + H` | [find in the note](#find-and-replace), find and replace |
+| `Ctrl + F`, `Ctrl + R` | [find in the note](#find-and-replace), find and replace |
 | `Ctrl + Shift + O` | outline: the headings of the note, to jump to one (also `Outline of the note` in the palette) |
 | `Ctrl + Shift + F` | search the text of the whole vault: every line that holds what you type, whatever its case; `Enter` opens the note with the match selected |
 | `Ctrl + N` | new note |
 | `Ctrl + J` | today's note: `2026-10-09.md`, opened wherever it is in the vault, or created with the date as its title (also `Today's note` in the palette) |
-| `Ctrl + E`, `Ctrl + R`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |
+| `Ctrl + E`, `Ctrl + Shift + T`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |
 | `Ctrl + M` | navigation panel on the whole window, and back |
 | `Ctrl + Shift + D` | new [diagram](#diagrams) |
 | `Ctrl + O` | change vault |
@@ -266,7 +266,7 @@ If Bref is open on today's note, the line appears there a moment later. Without 
 
 ### Find and replace
 
-`Ctrl + F` opens a search bar at the top right of the note. Matches are highlighted as you type, the current one more strongly, with its rank (`3 / 12`). The search runs on the text of the file, so Markdown markers (`**`, `[[`) can be searched too, and it works inside tables and code blocks. A selection held on one line becomes the search; the first key typed replaces it.
+`Ctrl + F` opens a search bar at the top right of the note. Matches are highlighted as you type, the current one more strongly, with its rank (`3 / 12`). The search runs on the text of the file, so Markdown markers (`**`, `[[`) can be searched too, and it works inside tables and code blocks. A selection held on one line becomes the search; the first key typed replaces it. A selection over several lines keeps the search to those lines, as long as the `in the selected lines` button is on. The search and the replacement are kept when the bar closes, and come back selected. Both fields edit like any other: cursor, selection, word moves, paste, and the input method of your language (Japanese, dead keys); a long search scrolls in its field.
 
 | Key | In the search bar |
 |---|---|
@@ -274,12 +274,12 @@ If Bref is open on today's note, the line appears there a moment later. Without 
 | `Alt + C`, `Alt + W` | match case, whole words (also the `Aa` and `“ab”` buttons) |
 | `Ctrl + Shift + Enter` | replace across the whole vault (also the `Vault…` button), with the same options: Bref first shows how many matches in how many notes, and writes nothing until you accept. `Undo the replacement in the vault` in the palette puts every note back, except those changed since |
 | `Alt + R` | regular expression (also the `.*` button): `^` and `$` are the ends of each line, and the replacement can reuse the groups, `$1` |
-| `Ctrl + H` | show the *Replace with* field; `Tab` moves between the two fields |
-| `Enter` in *Replace with* | replace the current match and go to the next |
-| `Ctrl + Enter` | replace every match; a single `Ctrl + Z` in the note brings them all back |
+| `Ctrl + R` | show the *Replace with* line (also the chevron on the left of the bar); with the bar open, `Ctrl + R` and `Ctrl + F` switch modes and the keys go to the matching field, the search and its options kept. `Tab` moves between the two fields |
+| `Enter` in *Replace with* | replace the current match and go to the next (also the first button beside the field) |
+| `Ctrl + Enter` | replace every match (also the second button); a single `Ctrl + Z` in the note brings them all back |
 | `Esc` | close; the cursor stays on the current match |
 
-Click in the note to edit it while the bar stays open: the matches follow the text, `F3`, `Alt + C` and `Alt + W` still work, and `Esc` closes the bar. With no bar, `F3` opens it.
+A regular expression that does not compile says « Invalid expression » in the bar. Click in the note to edit it while the bar stays open: the matches follow the text, `F3`, `Alt + C` and `Alt + W` still work, and `Esc` closes the bar. With no bar, `F3` opens it.
 
 ## Navigation
 
@@ -288,7 +288,7 @@ A rail of icons stays on the left of the window. It opens a panel beside the not
 | View | Key | Shows |
 |---|---|---|
 | Tree | `Ctrl + E` | the vault and its folders; the open note is highlighted |
-| Recent | `Ctrl + R` | every note, from the most to the least recently opened |
+| Recent | `Ctrl + Shift + T` | every note, from the most to the least recently opened |
 | Graph | `Ctrl + G` | one dot per note, one line per `[[link]]` between two notes |
 | Tags | `Ctrl + T` | every `#tag` of the vault with its number of notes; unfold a tag to see them |
 | Backlinks | `Ctrl + L` | the notes that link to the open note, each with the line that holds the link |

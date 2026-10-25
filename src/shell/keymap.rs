@@ -327,10 +327,11 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         // The command palette: F10, like the menu bar of a desktop app.
         b("f10", &ToggleCommands, None),
         b("secondary-shift-p", &ToggleCommands, None),
-        // From button to button, where Tab has no other use (the note indents with it).
-        b("tab", &FocusNext, None),
+        // From button to button, where Tab has no other use (the note indents with it). In the window's own
+        // context: a binding with none counts as the deepest and would take Tab from the views that use it.
+        b("tab", &FocusNext, Some("Shell")),
         b("enter", &ui::widgets::Press, Some("Button")),
-        b("shift-tab", &FocusPrev, None),
+        b("shift-tab", &FocusPrev, Some("Shell")),
         // The context menu of the selected row or of the cursor, as on every desktop.
         b("shift-f10", &ContextMenu, None),
         b("menu", &ContextMenu, None),
@@ -392,7 +393,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("ctrl-space", &sheet::SelectCol, sh),
         b("secondary-shift-backspace", &TableDeleteSpan, sh),
         b("secondary-e", &nav::ShowTree, Some("Shell")),
-        b("secondary-r", &nav::ShowRecent, Some("Shell")),
+        b("secondary-shift-t", &nav::ShowRecent, Some("Shell")),
         b("secondary-g", &nav::ShowGraph, Some("Shell")),
         b("secondary-t", &nav::ShowTags, Some("Shell")),
         b("secondary-l", &nav::ShowLinks, Some("Shell")),
@@ -446,8 +447,8 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         // Search in the note: the bar has its own context as long as it receives input.
         b("secondary-f", &Find, e),
         b("secondary-f", &Find, f),
-        b("secondary-h", &FindReplace, e),
-        b("secondary-h", &FindReplace, f),
+        b("secondary-r", &FindReplace, e),
+        b("secondary-r", &FindReplace, f),
         b("f3", &FindNext, e),
         b("shift-f3", &FindPrev, e),
         b("f3", &FindNext, f),
@@ -456,9 +457,8 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("shift-enter", &FindPrev, f),
         b("secondary-enter", &ReplaceAll, f),
         b("secondary-shift-enter", &ReplaceInVault, f),
-        b("escape", &FindClose, f),
-        b("backspace", &FindErase, f),
         b("tab", &FindSwitch, f),
+        b("shift-tab", &FindSwitch, f),
         // Also when the bar is open but input has gone back to the note.
         b("alt-c", &FindCase, f),
         b("alt-w", &FindWord, f),
@@ -466,7 +466,6 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("alt-r", &FindRegex, e),
         b("alt-c", &FindCase, e),
         b("alt-w", &FindWord, e),
-        b("secondary-v", &FindPaste, f),
         b("enter", &Newline, e),
         b("tab", &Indent, e),
         b("shift-tab", &Outdent, e),

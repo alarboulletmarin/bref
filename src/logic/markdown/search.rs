@@ -61,6 +61,12 @@ pub fn replacements(text: &str, query: &str, with: &str, case: bool, word: bool,
         .collect()
 }
 
+/// The search is a regular expression that does not compile: the bar says so rather than finding nothing.
+pub fn broken(query: &str, word: bool, regex: bool) -> bool {
+    let pattern = if word { format!(r"\b(?:{query})\b") } else { query.to_string() };
+    regex && !query.is_empty() && regex::Regex::new(&pattern).is_err()
+}
+
 /// What is searched and what replaces it, with the find bar's settings.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Swap {

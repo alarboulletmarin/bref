@@ -8,7 +8,7 @@ use gpui::{
     App, Context, Focusable, MouseButton, Window, div, prelude::*, px,
 };
 use crate::{
-    views::kanban::{Field, FieldEvent},
+    views::field::{Field, FieldEvent},
     ui::line::Line,
     logic::markdown::{self},
     lang::tr,
@@ -86,6 +86,7 @@ impl Shell {
         cx.subscribe_in(&field, window, |this, _, event: &FieldEvent, window, cx| match event {
             FieldEvent::Done => this.list_commit(window, cx),
             FieldEvent::Cancel => this.list_close(window, cx),
+            FieldEvent::Changed => {}
         })
         .detach();
         window.focus(&field.focus_handle(cx));

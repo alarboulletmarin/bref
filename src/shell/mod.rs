@@ -44,7 +44,7 @@ use crate::ui::{self,
     theme::{Page, THEMES, Theme, Wide},
     widgets::{drag_window, icon_button, keycaps},
 };
-use crate::views::{canvas, editor, graph, kanban, nav, palette, sheet, viewer};
+use crate::views::{canvas, editor, field, graph, kanban, nav, palette, sheet, viewer};
 
 use std::{
     fs,

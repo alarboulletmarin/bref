@@ -8,6 +8,7 @@ mod editing;
 mod enlarge;
 mod end_to_end;
 mod feedback;
+mod find_bar;
 mod keyboard;
 mod keycaps;
 mod layout;

@@ -10,6 +10,7 @@ use crate::{
 
 use super::*;
 use crate::views::kanban::*;
+use crate::views::field::{Field, FieldEvent};
 
 impl Shell {
     /// The open note is shown as a board: it is one, and its text was not asked for.
@@ -58,6 +59,7 @@ impl Shell {
                 window.focus(&this.pane().board.focus);
                 cx.notify();
             }
+            FieldEvent::Changed => {}
         })
         .detach();
         window.focus(&field.focus_handle(cx));

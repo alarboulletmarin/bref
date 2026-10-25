@@ -228,6 +228,9 @@ impl AssetSource for Assets {
             "fold.svg" => r#"<path d="M4.5 3.5L8 6.5L11.5 3.5M4.5 12.5L8 9.5L11.5 12.5"/>"#,
             "expand.svg" => r#"<path d="M9.5 3.5H12.5V6.5M6.5 12.5H3.5V9.5M12.5 3.5L9 7M3.5 12.5L7 9"/>"#,
             "shrink.svg" => r#"<path d="M12.5 6.5H9.5V3.5M3.5 9.5H6.5V12.5M9.5 6.5L13 3M6.5 9.5L3 13"/>"#,
+            "replace-one.svg" => r#"<path d="M2.5 5H7.5"/><path d="M9 3.5H10.5A2.5 2.5 0 0 1 13 6V12M10.8 10L13 12.2L15.2 10"/><path d="M2.5 9.5H7.5" stroke-dasharray="1.5 1.5"/>"#,
+            "replace-all.svg" => r#"<path d="M2.5 3.5H7.5M2.5 7H7.5M2.5 10.5H7.5"/><path d="M9 3.5H10.5A2.5 2.5 0 0 1 13 6V12M10.8 10L13 12.2L15.2 10"/>"#,
+            "in-selection.svg" => r#"<path d="M5 3H3.5V13H5M11 3H12.5V13H11"/><path d="M6 6.5H10M6 9.5H9"/>"#,
             "sync.svg" => r#"<path d="M12.6 6.5A4.8 4.8 0 0 0 3.9 5.4M3.5 2.8V5.6H6.3M3.4 9.5A4.8 4.8 0 0 0 12.1 10.6M12.5 13.2V10.4H9.7"/>"#,
             "theme.svg" => {
                 r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="black"/>"#

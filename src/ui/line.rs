@@ -38,13 +38,68 @@ pub struct Line {
     /// The cursor, and the other end of the selection (the same byte if there is none).
     at: usize,
     anchor: usize,
+    /// What an input method is composing (pre-edit), shown underlined until it is committed.
+    marked: Option<Range<usize>>,
 }
 
 impl Line {
     /// The text, cursor at the end.
     pub fn new(text: impl Into<String>) -> Self {
         let text = text.into();
-        Self { at: text.len(), anchor: text.len(), text }
+        Self { at: text.len(), anchor: text.len(), text, marked: None }
+    }
+
+    /// The byte at `units` UTF-16 units from the start (the system counts in them).
+    fn byte(&self, units: usize) -> usize {
+        let mut count = 0;
+        for (i, c) in self.text.char_indices() {
+            if count >= units {
+                return i;
+            }
+            count += c.len_utf16();
+        }
+        self.text.len()
+    }
+
+    fn units(&self, bytes: usize) -> usize {
+        self.text[..bytes].encode_utf16().count()
+    }
+
+    /// The text being composed, in UTF-16 units.
+    pub fn marked_utf16(&self) -> Option<Range<usize>> {
+        self.marked.clone().map(|r| self.units(r.start)..self.units(r.end))
+    }
+
+    /// The text of a UTF-16 range, as an input method asks for it.
+    pub fn text_utf16(&self, range: Range<usize>) -> String {
+        self.text[self.byte(range.start)..self.byte(range.end)].to_string()
+    }
+
+    /// Where the system's text goes: its range (UTF-16), else what is being composed, else the selection.
+    fn aimed(&self, range: Option<Range<usize>>) -> Range<usize> {
+        range.map(|r| self.byte(r.start)..self.byte(r.end)).or(self.marked.clone()).unwrap_or(self.selection())
+    }
+
+    /// One step of a composition: `text` replaces the previous step and stays marked; `selected`
+    /// (UTF-16, inside `text`) is where the cursor goes, else at its end. Empty, the composition is given up.
+    pub fn compose(&mut self, range: Option<Range<usize>>, text: &str, selected: Option<Range<usize>>) {
+        let aimed = self.aimed(range);
+        self.text.replace_range(aimed.clone(), text);
+        self.marked = (!text.is_empty()).then(|| aimed.start..aimed.start + text.len());
+        // `selected` counts UTF-16 units inside `text`: the byte where that many are passed.
+        let inside = |units: usize| {
+            let mut passed = 0;
+            text.char_indices().find(|(_, c)| (passed >= units, passed += c.len_utf16()).0).map_or(text.len(), |(i, _)| i)
+        };
+        self.at = aimed.start + selected.map_or(text.len(), |r| inside(r.end));
+        self.anchor = self.at;
+    }
+
+    /// The composition is done (or text arrives without one): `text` takes the place aimed at.
+    pub fn commit(&mut self, range: Option<Range<usize>>, text: &str) {
+        let aimed = self.aimed(range);
+        (self.anchor, self.at) = (aimed.start, aimed.end);
+        self.insert(text);
     }
 
     pub fn cursor(&self) -> usize {
@@ -94,6 +149,7 @@ impl Line {
     /// Writes in place of the selection; a one-line field has no newline.
     pub fn insert(&mut self, text: &str) {
         let text = text.replace("\r\n", " ").replace(['\n', '\r'], " ");
+        self.marked = None;
         let chosen = self.selection();
         self.text.replace_range(chosen.clone(), &text);
         self.at = chosen.start + text.len();
@@ -124,7 +180,12 @@ impl Line {
         // An empty line keeps its height, and something to place the cursor.
         let text = if self.text.is_empty() { " ".to_string() } else { self.text.clone() };
         let chosen = Some(self.selection()).filter(|chosen| !chosen.is_empty());
-        let styled = StyledText::new(text).with_highlights(chosen.map(|chosen| (chosen, HighlightStyle { background_color: Some(t.selection), ..Default::default() })));
+        // What is being composed is underlined; the selection, if any, beside it.
+        let composing = self.marked.clone().map(|r| (r, HighlightStyle { underline: Some(gpui::UnderlineStyle { thickness: t.px(1.), color: Some(t.text), wavy: false }), ..Default::default() }));
+        let picked = chosen.filter(|c| self.marked.as_ref().is_none_or(|m| c.end <= m.start || c.start >= m.end)).map(|c| (c, HighlightStyle { background_color: Some(t.selection), ..Default::default() }));
+        let mut highlights: Vec<_> = composing.into_iter().chain(picked).collect();
+        highlights.sort_by_key(|(r, _)| r.start);
+        let styled = StyledText::new(text).with_highlights(highlights);
         let (layout, at) = (styled.layout().clone(), self.at);
         let caret = canvas(|_, _, _| (), {
             let layout = layout.clone();
@@ -244,5 +305,32 @@ mod tests {
         let mut accent = Line::new("é");
         accent.place(1);
         assert_eq!(accent.cursor(), 0);
+    }
+
+    /// An input method composes: its text shows in place, marked, and each step replaces the previous
+    /// one; the last one stays. UTF-16 offsets, as the system gives them.
+    #[test]
+    fn composes_with_an_input_method() {
+        let mut line = Line::new("a ");
+        // Japanese: か, then かな, then 仮名 chosen.
+        line.compose(None, "k", None);
+        line.compose(None, "か", None);
+        assert_eq!((line.text.as_str(), line.marked_utf16()), ("a か", Some(2..3)));
+        line.compose(None, "かな", Some(2..2));
+        assert_eq!((line.text.as_str(), line.marked_utf16(), line.cursor()), ("a かな", Some(2..4), 8));
+        line.commit(None, "仮名");
+        assert_eq!((line.text.as_str(), line.marked_utf16(), line.cursor()), ("a 仮名", None, 8));
+        // A dead key: ^ then e gives ê; given up (empty), nothing is left.
+        line.compose(None, "^", None);
+        line.commit(None, "ê");
+        assert_eq!(line.text, "a 仮名ê");
+        line.compose(None, "^", None);
+        line.compose(None, "", None);
+        assert_eq!((line.text.as_str(), line.marked_utf16()), ("a 仮名ê", None));
+        // A range given by the system (emoji: two UTF-16 units) replaces exactly that.
+        let mut line = Line::new("x😀y");
+        line.commit(Some(1..3), "z");
+        assert_eq!(line.text, "xzy");
+        assert_eq!(line.text_utf16(0..2), "xz");
     }
 }

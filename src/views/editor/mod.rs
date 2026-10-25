@@ -163,14 +163,11 @@ actions!(
         FindNext,
         FindPrev,
         FindEnter,
-        FindClose,
-        FindErase,
         FindSwitch,
         FindCase,
         FindWord,
         FindRegex,
         ReplaceInVault,
-        FindPaste,
         ReplaceAll,
     ]
 );
@@ -380,6 +377,8 @@ pub struct Editor {
     /// With `reveal`: the cursor's line goes to the top of the view (jump to a heading).
     reveal_top: bool,
     find: Option<Finder>,
+    /// The find bar once closed: Ctrl+F opens it again on the same search.
+    found: Option<Finder>,
 }
 
 impl EventEmitter<EditorEvent> for Editor {}
@@ -481,6 +480,7 @@ impl Editor {
             reveal: false,
             reveal_top: false,
             find: None,
+            found: None,
         }
     }
 
@@ -507,10 +507,6 @@ impl Editor {
         self.table_x.clear();
         self.selecting = false;
         self.reveal = true;
-        // Another note: the bar stays, input goes back to the text.
-        if let Some(find) = &mut self.find {
-            find.active = false;
-        }
         cx.notify();
     }
 

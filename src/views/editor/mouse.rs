@@ -348,9 +348,6 @@ impl Editor {
         if self.stale() {
             return;
         }
-        if let Some(find) = &mut self.find {
-            find.active = false;
-        }
         // Picture, formula or figure enlarged, in the viewer.
         if let Some(source) = self.big_source(e.position) {
             return cx.emit(EditorEvent::View(source));

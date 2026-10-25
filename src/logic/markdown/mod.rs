@@ -975,6 +975,11 @@ mod tests {
         assert_eq!(put("ch|ra", "", true, true), []);
         assert!(put("(", "", false, true).is_empty() && put("x*", "", false, true).is_empty());
         assert_eq!(replacements("A a", "a", "b", true, false, true), [(2..3, "b".to_string())]);
+        // A regular expression that does not compile is said; text is never one, nor an empty search.
+        assert!(broken("(", false, true) && broken("[a", true, true) && !broken("a*", false, true) && !broken("(", false, false) && !broken("", false, true));
+        // Replacing with what contains the search does not loop; `$1` without a group is empty.
+        assert_eq!(put("le", "lele", true, false).len(), 3);
+        assert_eq!(put("le", "${1}x", true, true)[0].1, "x");
         let all = Swap { query: "le".into(), with: "un".into(), case: false, word: true, regex: false };
         assert_eq!(swap("Le chat, le chien.", &all), Some(("un chat, un chien.".into(), 2)));
         assert_eq!(swap("rien", &all), None);

@@ -8,7 +8,7 @@ use super::*;
 pub(super) struct Help {
     pub(super) open: bool,
     /// Search field of the help panel, while it is open.
-    pub(super) find: Option<Entity<kanban::Field>>,
+    pub(super) find: Option<Entity<field::Field>>,
     /// The help row picked with the keyboard, and the shortcut being typed.
     pub(super) sel: Option<&'static str>,
     pub(super) edit: Option<KeyEdit>,
@@ -44,16 +44,16 @@ impl Shell {
         self.help.edit = None;
         if open {
             let theme = self.theme;
-            let find = cx.new(|cx| kanban::Field::new("", theme, cx));
+            let find = cx.new(|cx| field::Field::new("", theme, cx));
             cx.observe(&find, |_, _, cx| cx.notify()).detach();
             // Escape clears the field, then closes the panel.
-            cx.subscribe_in(&find, window, |this, find, event: &kanban::FieldEvent, window, cx| {
-                if let kanban::FieldEvent::Done = event {
+            cx.subscribe_in(&find, window, |this, find, event: &field::FieldEvent, window, cx| {
+                if let field::FieldEvent::Done = event {
                     // Enter on the picked row: its keys are awaited.
                     if let Some(action) = this.help.sel.filter(|sel| this.help_actions(cx).contains(sel)) {
                         this.key_edit(action, cx);
                     }
-                } else if let kanban::FieldEvent::Cancel = event {
+                } else if let field::FieldEvent::Cancel = event {
                     if find.read(cx).line.text.is_empty() {
                         this.set_help(false, window, cx);
                     } else {

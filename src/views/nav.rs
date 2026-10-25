@@ -14,7 +14,7 @@ use gpui::{
 
 use crate::{
     ui::theme::Theme, views::editor, views::graph,
-    views::kanban::Field,
+    views::field::Field,
     logic::markdown::{Date, Link},
     lang::tr,
     platform::vault,

@@ -45,13 +45,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(shell.read_with(cx, |s, _| s.nav.panel), Panel::Rail);
 
     // Recent notes, full screen (Ctrl+M), then Escape gives back the room and focus to the note.
-    cx.simulate_keystrokes("secondary-r secondary-m");
+    cx.simulate_keystrokes("secondary-shift-t secondary-m");
     assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (Mode::Recent, Panel::Full));
     cx.simulate_keystrokes("down escape");
     assert_eq!(shell.read_with(cx, |s, _| s.nav.panel), Panel::Split);
     assert_eq!(text(cx), "# Sous");
     // Asking again for the shown mode: first focus, then collapsing to the rail.
-    cx.simulate_keystrokes("secondary-r secondary-r");
+    cx.simulate_keystrokes("secondary-shift-t secondary-shift-t");
     assert_eq!(vault::load_layout(), "recent rail 410 0\n");
 
     // Graph: one edge per resolved wikilink. Tab walks the notes linked to the

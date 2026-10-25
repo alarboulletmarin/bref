@@ -3,7 +3,7 @@
 use super::*;
 
 impl Render for Editor {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Left of the buttons the window puts in the corner (copy, comments).
         // The count is truncated in a narrow note, instead of going out on the left.
         let t = self.theme;
@@ -44,9 +44,8 @@ impl Render for Editor {
             .h(FOOTER)
             .bg(gpui::linear_gradient(0., gpui::linear_color_stop(t.bg, 0.7), gpui::linear_color_stop(t.bg.opacity(0.), 1.)));
         // Before drawing: matches follow a note changed while the bar is open.
-        self.refresh_find();
-        let finding = self.find.as_ref().is_some_and(|find| find.active);
-        let find_bar = self.find_bar(cx);
+        self.refresh_find(cx);
+        let find_bar = self.find_bar(window, cx);
         macro_rules! motions {
             ($el:expr, $($action:ident => $motion:ident, $select:expr;)*) => {
                 $el$(.on_action(cx.listener(|this, _: &$action, _, cx| {
@@ -57,11 +56,10 @@ impl Render for Editor {
         let el = div()
             .size_full()
             .relative()
-            // Search bar being typed in: its keys, not the text's.
-            .key_context(if finding { "Find" } else { "Editor" })
+            .key_context("Editor")
             .track_focus(&self.focus)
             .cursor(CursorStyle::IBeam);
-        motions!(el,
+        let el = motions!(el,
             Left => Left, false; Right => Right, false; Up => Up, false; Down => Down, false;
             WordLeft => WordLeft, false; WordRight => WordRight, false;
             Home => Home, false; End => End, false;
@@ -141,54 +139,22 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &Paste, _, cx| this.each(cx, |this, cx| this.paste(cx))))
         .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
         .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
-        .on_action(cx.listener(|this, _: &Find, _, cx| this.open_find(false, cx)))
-        .on_action(cx.listener(|this, _: &FindReplace, _, cx| this.open_find(true, cx)))
-        .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_step(true, cx)))
-        .on_action(cx.listener(|this, _: &FindEnter, _, cx| this.find_enter(cx)))
-        .on_action(cx.listener(|this, _: &FindPrev, _, cx| this.find_step(false, cx)))
-        .on_action(cx.listener(|this, _: &FindClose, _, cx| {
-            this.find = None;
-            cx.notify();
-        }))
-        .on_action(cx.listener(|this, _: &FindErase, _, cx| this.find_erase(cx)))
-        .on_action(cx.listener(|this, _: &FindSwitch, _, cx| {
-            if let Some(find) = &mut this.find {
-                find.on_with = !find.on_with && find.with.is_some();
-            }
-            cx.notify();
-        }))
-        .on_action(cx.listener(|this, _: &FindCase, _, cx| {
-            if let Some(find) = &mut this.find {
-                find.case ^= true;
-            }
-            this.find_changed(cx);
-        }))
-        .on_action(cx.listener(|this, _: &FindWord, _, cx| {
-            if let Some(find) = &mut this.find {
-                find.word ^= true;
-            }
-            this.find_changed(cx);
-        }))
-        .on_action(cx.listener(|this, _: &FindRegex, _, cx| {
-            if let Some(find) = &mut this.find {
-                find.regex ^= true;
-            }
-            this.find_changed(cx);
-        }))
-        .on_action(cx.listener(|this, _: &FindPaste, _, cx| {
-            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                this.find_type(text.lines().next().unwrap_or_default(), cx);
-            }
-        }))
-        .on_action(cx.listener(|this, _: &ReplaceAll, _, cx| this.replace_all(cx)))
-        .on_action(cx.listener(|this, _: &ReplaceInVault, _, cx| this.replace_in_vault(cx)))
+        // The bar's keys that also work from the note while it is open; its others are on the bar.
+        .on_action(cx.listener(|this, _: &Find, window, cx| this.open_find(false, window, cx)))
+        .on_action(cx.listener(|this, _: &FindReplace, window, cx| this.open_find(true, window, cx)))
+        .on_action(cx.listener(|this, _: &FindNext, window, cx| this.find_step(true, window, cx)))
+        .on_action(cx.listener(|this, _: &FindPrev, window, cx| this.find_step(false, window, cx)))
+        .on_action(cx.listener(|this, _: &FindCase, _, cx| this.find_flip(0, cx)))
+        .on_action(cx.listener(|this, _: &FindWord, _, cx| this.find_flip(1, cx)))
+        .on_action(cx.listener(|this, _: &FindRegex, _, cx| this.find_flip(2, cx)))
         .on_action(cx.listener(|this, _: &Cancel, _, cx| {
             // The color badges close first.
             if std::mem::take(&mut this.bar.swatches) || std::mem::take(&mut this.bar.open) {
                 return cx.notify();
             }
-            // Bar open but typing in the note: Escape closes it first.
-            if this.find.take().is_some() {
+            // Bar open but typing in the note: Escape closes it first, keeping its search.
+            if let Some(find) = this.find.take() {
+                this.found = Some(find);
                 return cx.notify();
             }
             // Several cursors: Escape goes back to one.
@@ -225,7 +191,8 @@ impl Render for Editor {
         .child(band)
         .child(counts)
         .children(toggle)
-        .children(bar)
-        .children(find_bar)
+        .children(bar);
+        // The find bar beside the note, not inside it: typing a search never reaches the note's keys.
+        div().size_full().relative().child(el).children(find_bar)
     }
 }
