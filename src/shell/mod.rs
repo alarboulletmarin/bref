@@ -21,6 +21,7 @@ mod settings;
 mod sidebar;
 mod sync;
 mod tables;
+mod tabs;
 mod templates;
 mod toasts;
 mod travel;
@@ -56,7 +57,7 @@ use std::{
 use gpui::{
     Animation, AnimationExt, App, Application, Bounds, BoxShadow, ClipboardItem, Context,
     CursorStyle, Decorations, Div, Entity, FocusHandle, Focusable, KeyBinding, MouseButton,
-    MouseMoveEvent, ObjectFit, PathPromptOptions, Pixels, Point, ResizeEdge, Size, TitlebarOptions,
+    MouseMoveEvent, ObjectFit, Stateful, PathPromptOptions, Pixels, Point, ResizeEdge, Size, TitlebarOptions,
     Transformation,
     Window, WindowBounds, WindowBackgroundAppearance, WindowDecorations,
     WindowOptions, div, ease_out_quint, hsla, img, percentage, point, prelude::*, px, size, svg,
@@ -84,9 +85,15 @@ struct IconPick {
 }
 
 struct Shell {
-    /// One pane, or two side by side; `active` is the one that last got focus.
+    /// Every tab of the window, shown or not; `active` is the one that last got focus.
     panes: Vec<Pane>,
     active: usize,
+    /// The panes as the user sees them: one, or two side by side, each with its tabs.
+    groups: Vec<Group>,
+    /// Files of the tabs closed, to reopen them (most recent last).
+    closed: Vec<PathBuf>,
+    /// The tab under the pointer: it shows its cross.
+    tab_hover: Option<usize>,
     /// Share of the width the left pane takes when there are two.
     pane_ratio: f32,
     /// The border between the two panes follows the pointer.
@@ -211,7 +218,7 @@ impl Shell {
         // The graph shares the panel's focus: the same keys navigate it.
         let graph = cx.new(|_| Graph::new(nav.focus.clone(), theme));
         cx.subscribe_in(&graph, window, |this, _, event, window, cx| match event {
-            GraphEvent::Select(path) => this.select_from_graph(path, cx),
+            GraphEvent::Select(path) => this.select_from_graph(path, window, cx),
             GraphEvent::Open(path) => this.open_from_nav(path, window, cx),
         })
         .detach();
@@ -219,6 +226,9 @@ impl Shell {
         let mut this = Self {
             panes: vec![pane],
             active: 0,
+            groups: vec![Group::of(0)],
+            closed: Vec::new(),
+            tab_hover: None,
             pane_ratio: 0.5,
             pane_drag: false,
             pane_box: Default::default(),
@@ -274,19 +284,11 @@ impl Shell {
             Some(root) => {
                 this.set_vault(root.clone(), window, cx);
                 this.recent = recent.into_iter().filter(|p| p.is_file()).collect();
-                // The previous second pane, if there was one and its file still exists.
-                let saved = vault::load_file("panes");
-                let mut lines = saved.lines();
-                let ratio = lines.next().and_then(|ratio| ratio.parse::<f32>().ok()).filter(|ratio| PANE_RATIO.contains(ratio));
+                // The tabs of last time, those whose file is still there; the older formats left
+                // the first pane to the most recent note.
+                let (ratio, saved) = read_panes(&vault::load_file("panes"));
                 this.pane_ratio = ratio.unwrap_or(0.5);
-                let aside = lines.next().map(PathBuf::from).filter(|path| path.is_file() && path.starts_with(&root));
-                if let Some(last) = this.recent.iter().find(|path| Some(*path) != aside.as_ref()).cloned() {
-                    this.open_note(&last, cx);
-                }
-                if let Some(aside) = aside {
-                    this.open_aside(&aside, window, cx);
-                    this.focus_pane(0, window, cx);
-                }
+                this.restore_panes(saved, &root, window, cx);
                 this.panes_saved = this.panes_state();
                 if this.nav.panel == Panel::Full {
                     window.focus(&this.nav.focus);

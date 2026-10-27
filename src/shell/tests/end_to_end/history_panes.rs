@@ -61,7 +61,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         // "forward" still leads to the table.
     shell.update_in(cx, |s, window, cx| {
         window.focus(&s.nav.focus);
-        s.preview_note(&hist_b, cx);
+        s.preview_note(&hist_b, window, cx);
     });
     assert_eq!(seen(cx), on_note(&hist_b));
     cx.simulate_keystrokes(back);
@@ -118,6 +118,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let open = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| (s.active, s.panes.iter().map(|pane| pane.path.clone()).collect::<Vec<_>>()));
     let both = |active: usize, left: &str, right: &str| (active, vec![Some(pane(left)), Some(pane(right))]);
     let pane_text = |cx: &mut gpui::VisualTestContext, pane: usize| shell.read_with(cx, |s, cx| s.panes[pane].editor.read(cx).text().to_string());
+        // The tabs opened by the chapters before go: the panes start from a single tab.
+    shell.update_in(cx, |s, window, cx| {
+        while s.panes.len() > 1 {
+            s.close_tab(0, window, cx);
+        }
+    });
     shell.update_in(cx, |s, window, cx| s.open_from_nav(&pane("A"), window, cx));
     assert_eq!(open(cx), (0, vec![Some(pane("A"))]));
         // From the keyboard: the second pane opens on the palette, to choose what goes there.
@@ -142,21 +148,30 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(open(cx), both(1, "A", "B"));
     cx.simulate_input("!");
     assert_eq!(pane_text(cx, 1), "# Pane B\n\ndroite!");
-        // Ctrl+Enter in the palette: the chosen note opens in the other pane.
+        // From here, what each pane shows: the pane with input, then the note shown on each side.
+    let shown = |cx: &mut gpui::VisualTestContext| {
+        shell.read_with(cx, |s, _| (s.group(), s.groups.iter().map(|g| s.panes[g.shown].path.clone()).collect::<Vec<_>>()))
+    };
+    let sides = |active: usize, names: &[&str]| (active, names.iter().map(|n| Some(pane(n))).collect::<Vec<_>>());
+        // Ctrl+Enter in the palette: the chosen note opens in the other pane, in a tab of its own.
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("pane c");
     cx.simulate_keystrokes("secondary-enter");
-    assert_eq!(open(cx), both(0, "C", "B"));
+    assert_eq!(shown(cx), sides(0, &["C", "B"]));
+    assert_eq!(shell.read_with(cx, |s, _| s.groups[0].tabs.len()), 2);
         // Ctrl+Shift+click on a link: the linked note opens beside.
+    fs::write(pane("E"), "# Pane E\n\n").unwrap();
+    fs::write(pane("C"), "# Pane C\n\n[[Pane E]]\n").unwrap();
+    j.settle(cx);
     let link = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of("# Pane C\n\n[[Pa".len()).unwrap());
     cx.simulate_click(link, gpui::Modifiers { shift: true, ..gpui::Modifiers::secondary_key() });
-    assert_eq!(open(cx), both(1, "C", "A"));
+    assert_eq!(shown(cx), sides(1, &["C", "E"]));
         // « Ouvrir à côté » in the tree menu.
     shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::OpenAside, Some(pane("D")), window, cx));
-    assert_eq!(open(cx), both(0, "D", "A"));
-        // Renaming or moving the other pane's note: it follows.
+    assert_eq!(shown(cx), sides(0, &["D", "E"]));
+        // Moving a note open in a tab out of sight: its tab follows.
     shell.update(cx, |s, cx| s.move_into(&pane("A"), &shelf, cx));
-    assert_eq!(open(cx), (0, vec![Some(pane("D")), Some(shelf.join("Pane A.md"))]));
+    assert!(shell.read_with(cx, |s, _| s.pane_showing(&shelf.join("Pane A.md")).is_some() && s.pane_showing(&pane("A")).is_none()));
         // Dragging a note from the tree onto a pane opens it there; the targeted half is tinted.
     shell.update(cx, |s, cx| {
         (s.nav.mode, s.nav.panel) = (nav::Mode::Tree, nav::Panel::Split);
@@ -170,19 +185,29 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_mouse_move(right, Some(MouseButton::Left), gpui::Modifiers::none());
     assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), Some((1, false)));
     cx.simulate_mouse_up(right, MouseButton::Left, gpui::Modifiers::none());
-    assert_eq!(open(cx), both(1, "D", "B"));
+    assert_eq!(shown(cx), sides(1, &["D", "B"]));
     assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), None);
-        // Ctrl+W closes the pane that has input; what was written there is saved.
+        // Ctrl+W closes the tab that has input, saved first; the pane goes with its last tab.
     cx.simulate_keystrokes("secondary-end");
     cx.simulate_input("?");
     cx.simulate_keystrokes("secondary-w");
-    assert_eq!(open(cx), (0, vec![Some(pane("D"))]));
+    assert_eq!(shown(cx), sides(1, &["D", "E"]));
     assert_eq!(fs::read_to_string(pane("B")).unwrap(), "# Pane B\n\ndroite!?");
+    cx.simulate_keystrokes("secondary-w");
+    assert_eq!(shown(cx), sides(0, &["D"]));
     cx.simulate_keystrokes("secondary-end");
     cx.simulate_input("seul");
     assert_eq!(text(cx), "# Pane D\n\nseul");
+        // Down to one tab, the last one does not close.
+    shell.update_in(cx, |s, window, cx| {
+        while s.panes.len() > 1 {
+            let other = s.groups[0].tabs.iter().copied().find(|&t| t != s.active).unwrap();
+            s.close_tab(other, window, cx);
+        }
+    });
     cx.simulate_keystrokes("secondary-w");
-    assert_eq!(open(cx).1.len(), 1, "the last pane does not close");
+    assert_eq!(shown(cx), sides(0, &["D"]));
+    assert_eq!(shell.read_with(cx, |s, _| s.panes.len()), 1, "the last tab does not close");
         // With a single pane, dropping a note on the right half opens the second.
     let whole = cx.debug_bounds("pane-0").unwrap();
     let half = gpui::point(whole.right() - px(40.), whole.center().y);
@@ -191,9 +216,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_mouse_move(half, Some(MouseButton::Left), gpui::Modifiers::none());
     assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), Some((0, true)));
     cx.simulate_mouse_up(half, MouseButton::Left, gpui::Modifiers::none());
-    assert_eq!(open(cx), both(1, "D", "B"));
-        // The layout is remembered: the width, and what the second pane shows.
-    assert_eq!(vault::load_file("panes"), format!("0.5\n{}\n", pane("B").display()));
+    assert_eq!(shown(cx), sides(1, &["D", "B"]));
+        // The layout is remembered: the width, and what each pane shows.
+    assert_eq!(vault::load_file("panes"), format!("v2 0.5\n*{}\n*{}\n", pane("D").display(), pane("B").display()));
     cx.simulate_keystrokes("secondary-w");
-    assert_eq!(vault::load_file("panes"), "0.5\n\n");
+    assert_eq!(vault::load_file("panes"), format!("v2 0.5\n*{}\n", pane("D").display()));
 }

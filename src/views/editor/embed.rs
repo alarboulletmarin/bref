@@ -192,8 +192,8 @@ impl Embeds {
 impl Editor {
     /// Tells the editor the notes it can show in embeds (name in lowercase, aliases too → file) and
     /// the name of the one it shows, which an embed may not lead back to.
-    pub fn set_sources(&mut self, sources: HashMap<String, PathBuf>, me: Option<String>) {
-        self.embeds.sources = Rc::new(sources);
+    pub fn set_sources(&mut self, sources: Rc<HashMap<String, PathBuf>>, me: Option<String>) {
+        self.embeds.sources = sources;
         self.embeds.trail = me.into_iter().map(|m| m.to_lowercase()).collect();
         self.embeds.recheck = true;
         self.epoch += 1;

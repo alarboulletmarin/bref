@@ -36,7 +36,8 @@ each, all `impl Shell`:
 
 | File | Subject |
 |---|---|
-| `pane.rs` | the one or two panes, which is active, the file a pane shows (`FileView`) |
+| `pane.rs` | the panes and their tabs, which one is active, the file a tab shows (`FileView`), the saved layout |
+| `tabs.rs` | the tab bar of a pane |
 | `notes.rs` | opening, previewing, creating, saving notes; links and wikilinks |
 | `library.rs` | the vault: choosing, scanning, watching, icons, backup, trash |
 | `sync.rs` | git sync and cloning |
@@ -48,7 +49,14 @@ each, all `impl Shell`:
 | `settings.rs`, `toasts.rs`, `updates.rs` | settings, status messages, new versions |
 | `render.rs` | drawing the window |
 
-The active pane is `self.pane()` / `self.pane_mut()`; `each_pane` and `in_pane` reach the others.
+A `Pane` is what **one tab** holds (a note, or a file in its place); `Shell::panes` lists every
+tab of the window, shown or not, so what must reach every open note (saving, renames, the watcher,
+the theme) loops over it. A `Group` is a pane as the user sees it: its tabs in order and the one it
+shows. A tab out of sight calls `Editor::rest` and keeps its text, cursor and undo only.
+What the user opens goes through `Shell::open`: the tab that already shows the file, otherwise a
+new tab (a preview or an empty tab is used in place); `open_note` loads into the active tab and
+is for code that has already chosen it (restoring, the history).
+The active tab is `self.pane()` / `self.pane_mut()`; `each_pane` and `in_pane` reach the others.
 A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, `CanvasEvent`…).
 
 ## Where to look

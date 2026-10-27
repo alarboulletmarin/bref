@@ -25,6 +25,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Backlinks**: the notes that link to the open one, each with the line that holds the link.
 - **Sync in one action**: `Ctrl + Shift + S` commits, receives, merges and sends a vault kept in git, in the background; a real conflict keeps both versions as two notes, never as markers in your text. A vault can also simply live in a cloud folder.
 - **Two panes side by side**: `Ctrl + \` opens a second pane, to write a note while reading another, or to keep a table next to a note. Each pane shows anything Bref can show; a file dragged from the tree opens in the pane you drop it on.
+- **Tabs**: a pane holds as many files as you like, as in a code editor. A click on a file in the tree, a note chosen in the palette, a link followed, a new note: each opens in a tab of its own, right of the one shown, and if the file is already open its tab comes to the front instead (a note is open once). Browsing the tree with the arrows previews notes in a single tab, in italics, which the next note browsed replaces; opening it for good keeps it. A bar of tabs appears at the top of the pane as soon as it holds two: a click shows a tab, its cross or the middle button closes it, `Ctrl + Tab` and `Ctrl + Shift + Tab` go round them, `Ctrl + Shift + Page Up` and `Page Down` move the tab along the bar. `Ctrl + W` closes the tab, what it holds saved first (the pane goes with its last tab), and `Ctrl + Alt + T` reopens the last one closed. Back and forward go from tab to tab, and bring a closed file back in a tab. Tabs come back at the next start. A tab out of sight keeps its text, cursor and undo, but lets go of what it drew, so a hundred tabs cost little memory.
 - **Back and forward**: `Alt + Left` and `Alt + Right` (`Cmd + [` and `Cmd + ]` on macOS), the side buttons of the mouse or the two arrows at the top of the rail walk through what you opened, notes, pictures, diagrams, tables and list pages alike, and land where you were: same line, same scroll.
 - **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons.
 - **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas. Each diagram is an SVG file in your vault, shown in your notes.
@@ -307,8 +308,8 @@ The same keys work in every view (the calendar has its own arrows, see above):
 
 | Key | Action |
 |---|---|
-| `↑` `↓`, or a click | select a note and preview it beside the panel |
-| `Enter`, or a double click | open the note and start typing |
+| `↑` `↓` | select a note and preview it beside the panel, in a single tab in italics (in the graph, a click too) |
+| `Enter`, or a click | open the note in its tab and start typing |
 | `←` `→` | tree and tags: fold or unfold a folder or a tag; graph: move to the nearest note on that side |
 | `Tab` | graph: walk through the notes linked to the selected one |
 | `Esc` | back to the note |
@@ -316,7 +317,7 @@ The same keys work in every view (the calendar has its own arrows, see above):
 | `F2`, `Delete` | tree, recent and tags: rename the selected note or folder, move it to the trash |
 | `Ctrl + Shift + N` | new folder, next to the selected line of the tree |
 
-A previewed note only counts as opened, and moves to the top of the recent list, once you click or type in it.
+A previewed note only counts as opened, and moves to the top of the recent list, once you click or type in it: its tab then stays.
 
 - **Sizes**: drag the line between the panel and the note. Dragged all the way left, the panel folds back to its rail; all the way right, it takes the whole window. Double-click the line for the default width. `Ctrl + M`, or the arrows button at the top of the panel, also switches to the whole window and back.
 - **Folding**: pressing the key of the view on display, or clicking its icon, folds the panel. The rail stays: back and forward, the six views, search and new note at the top; the trash, the sync of a vault kept in git (it turns while it runs, a red dot says the last one failed), backup, theme and help at the bottom.

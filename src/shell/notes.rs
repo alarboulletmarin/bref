@@ -127,7 +127,23 @@ impl Shell {
     }
 
     /// Shows the note without counting it as opened.
-    pub(super) fn preview_note(&mut self, path: &Path, cx: &mut Context<Self>) {
+    pub(super) fn preview_note(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        // Already open: its tab is shown, input stays where it is, and the history does not count it.
+        if let Some(tab) = self.pane_showing(path) {
+            self.active = tab;
+            self.show_active(cx);
+            self.pane_mut().peek = true;
+            return cx.notify();
+        }
+        // One preview tab per pane: each note browsed takes the place of the last one.
+        let group = self.group();
+        match self.groups[group].tabs.iter().copied().find(|&tab| self.panes[tab].preview) {
+            Some(tab) => {
+                self.active = tab;
+                self.show_active(cx);
+            }
+            None => self.fresh_tab(window, cx),
+        }
         self.pane_mut().peek = true;
         // The note already loaded, hidden by a picture: removing the picture is enough.
         if self.pane().path.as_deref() == Some(path) {
@@ -160,6 +176,7 @@ impl Shell {
         if self.vault.is_none() {
             return;
         }
+        self.fresh_tab(window, cx);
         self.new_note(String::new(), cx);
         self.pane_mut().new_dir = dir;
         if self.nav.panel == Panel::Full {
@@ -195,11 +212,18 @@ impl Shell {
     pub(super) fn leave(&mut self, cx: &mut Context<Self>) {
         self.mark_place(cx);
         self.flush(cx);
+        self.follow_title(cx);
+        self.drop_if_empty(cx);
+    }
+
+    /// The links to the note follow the name its title gave it since it was opened.
+    pub(super) fn follow_title(&mut self, cx: &mut Context<Self>) {
         if let (Some(old), Some(path)) = (self.pane_mut().origin.take(), &self.pane_mut().path) {
             let new = vault::stem(path);
             self.relink(&old, &new, cx);
+            // Still open in its tab: a later title follows from this name.
+            self.pane_mut().origin = Some(new);
         }
-        self.drop_if_empty(cx);
     }
 
     /// A note created here then emptied leaves no empty file behind, nor in the
@@ -460,9 +484,9 @@ impl Shell {
             // A folder reads as a list page, when no note bears its name.
             Link::Wiki(name) if self.wiki_path(name).is_none() && self.wiki_file(name).is_none() => match self.wiki_dir(name) {
                 Some(dir) => self.open_listing(dir, window, cx),
-                None => self.open_wiki(name, cx),
+                None => self.open_wiki(name, window, cx),
             },
-            Link::Wiki(name) => self.open_wiki(name, cx),
+            Link::Wiki(name) => self.open_wiki(name, window, cx),
         }
     }
 
@@ -471,7 +495,7 @@ impl Shell {
     pub(super) fn open_at(&mut self, target: &embed::Target, aside: bool, window: &mut Window, cx: &mut Context<Self>) {
         match (aside, self.wiki_path(&target.note)) {
             (true, Some(path)) => self.open_aside(&path, window, cx),
-            _ => self.open_wiki(&target.note, cx),
+            _ => self.open_wiki(&target.note, window, cx),
         }
         let anchor = target.anchor.clone();
         let at = self.pane().editor.read(cx).text();
@@ -495,7 +519,7 @@ impl Shell {
 
     /// Daily note: the note named after the local date, wherever it is in the
     /// vault; created with that date as title if it does not exist yet.
-    pub(super) fn open_today(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn open_today(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.vault.clone() else {
             return;
         };
@@ -503,11 +527,11 @@ impl Shell {
         // No daily note yet, and a `Daily` or `Journal` template: it is born from it.
         if self.wiki_path(&name).is_none()
             && let Some(template) = self.daily_template()
-            && self.create_from(&template, &name, &root, cx).is_some()
+            && self.create_from(&template, &name, &root, window, cx).is_some()
         {
             return;
         }
-        self.open_wiki(&name, cx);
+        self.open_wiki(&name, window, cx);
     }
 
     /// The note a `[[link]]` points to: by its name first, otherwise by an alias in its
@@ -520,10 +544,14 @@ impl Shell {
         named.or_else(|| notes.find(|n| n.answers(&wanted))).map(|note| note.path.clone())
     }
 
-    pub(super) fn open_wiki(&mut self, name: &str, cx: &mut Context<Self>) {
+    pub(super) fn open_wiki(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
         match self.wiki_path(name).or_else(|| self.wiki_file(name)) {
-            Some(path) => self.open_note(&path, cx),
-            None => self.new_note(format!("# {name}\n\n"), cx),
+            Some(path) => self.open(&path, window, cx),
+            None => {
+                self.fresh_tab(window, cx);
+                self.new_note(format!("# {name}\n\n"), cx);
+                window.focus(&self.pane().editor.focus_handle(cx));
+            }
         }
     }
 }

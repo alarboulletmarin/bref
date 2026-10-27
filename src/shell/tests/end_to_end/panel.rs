@@ -5,13 +5,14 @@ use super::*;
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let (shell, root) = (&j.shell, &j.root);
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
-    // Tree: Ctrl+E opens it and gives it focus; the arrows show a preview,
-    // which does not count as an opening.
+    // Tree: Ctrl+E opens it and gives it focus; the arrows show a preview (or the tab of a note
+    // already open), which does not count as an opening.
     cx.executor().advance_clock(Duration::from_millis(500));
     cx.simulate_keystrokes("secondary-e up");
     assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (Mode::Tree, Panel::Split));
     assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[Test]]");
-    assert!(shell.read_with(cx, |s, _| s.pane().preview && s.recent[0] == root.join("Idées.md")));
+    // Courses is open in a tab already: that tab is shown, without counting as an opening.
+    assert!(shell.read_with(cx, |s, _| !s.pane().preview && s.recent[0] == root.join("Idées.md")));
     // The folder expands with Right; Enter opens the note and hands control back to the editor.
     cx.simulate_keystrokes("up right down");
     // The collapse button collapses the whole tree, then expands it entirely.
@@ -76,7 +77,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     for _ in 0..2 {
         cx.simulate_keystrokes("tab");
         linked.push(shell.read_with(cx, |s, _| vault::stem(s.pane().path.as_ref().unwrap())));
-        assert!(shell.read_with(cx, |s, _| s.pane().preview && s.recent[0] == root.join("Courses.md")));
+        // A preview, or the tab of a note already open: neither counts as an opening.
+        assert!(shell.read_with(cx, |s, _| s.recent[0] == root.join("Courses.md")));
     }
     linked.sort();
     assert_eq!(linked, ["Plan", "Test"]);

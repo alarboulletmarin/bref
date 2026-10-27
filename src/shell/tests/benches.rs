@@ -515,3 +515,48 @@ fn embed_scale(cx: &mut TestAppContext) {
     }
     fs::remove_dir_all(&root).unwrap();
 }
+
+/// A hundred tabs of 20 KB notes, each shown once: time to open, to switch, a keystroke, and the
+/// memory they hold (resident set, Linux only).
+/// `cargo test --release --locked hundred_tabs -- --ignored --nocapture`.
+#[gpui::test]
+#[ignore]
+fn hundred_tabs(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "hundred-tabs");
+    let body: String = (0..400).map(|n| format!("Ligne {n} d'une note assez longue, avec du **gras** et un [[lien]].\n")).collect();
+    for n in 0..100 {
+        fs::write(root.join(format!("Note {n:03}.md")), format!("# Note {n}\n\n{body}")).unwrap();
+    }
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    let rss = || fs::read_to_string("/proc/self/statm").ok().and_then(|s| s.split(' ').nth(1)?.parse::<usize>().ok()).unwrap_or(0) * 4 / 1024;
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&root.join("Note 000.md"), window, cx));
+    cx.run_until_parked();
+    let start = Instant::now();
+    for _ in 0..50 {
+        cx.simulate_input("a");
+        cx.run_until_parked();
+    }
+    println!("keystroke with 1 tab: {:?}", start.elapsed() / 50);
+    let before = rss();
+    let start = Instant::now();
+    for n in 1..100 {
+        let path = root.join(format!("Note {n:03}.md"));
+        shell.update_in(cx, |s, window, cx| s.open(&path, window, cx));
+        cx.run_until_parked();
+    }
+    println!("open 100 tabs, each drawn: {:?}; memory +{} MB", start.elapsed(), rss() - before);
+    let start = Instant::now();
+    for _ in 0..100 {
+        cx.simulate_keystrokes("ctrl-tab");
+        cx.run_until_parked();
+    }
+    println!("switch: {:?} per tab", start.elapsed() / 100);
+    let start = Instant::now();
+    for _ in 0..50 {
+        cx.simulate_input("a");
+        cx.run_until_parked();
+    }
+    println!("keystroke with 100 tabs: {:?}; memory now +{} MB", start.elapsed() / 50, rss() - before);
+    let _ = fs::remove_dir_all(&root);
+}

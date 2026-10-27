@@ -242,7 +242,7 @@ pub struct Editor {
     last_edit: Option<Instant>,
     /// Where the last change started (`usize::MAX` after a load or an undo): the ``` there is the one being typed.
     edited_at: usize,
-    notes: Vec<String>,
+    notes: Rc<[String]>,
     /// Folders to look for images in: the note's, then the vault.
     dirs: Vec<PathBuf>,
     /// Vault images by file name (lowercase): wherever they are
@@ -406,7 +406,7 @@ impl Editor {
             redo: History::default(),
             last_edit: None,
             edited_at: usize::MAX,
-            notes: Vec::new(),
+            notes: Rc::from([]),
             dirs: Vec::new(),
             images: HashMap::new(),
             copied: None,
@@ -517,8 +517,21 @@ impl Editor {
         cx.notify();
     }
 
+    /// The note goes out of sight (a tab that is not shown): what was laid out for the screen is let
+    /// go, and is redone in full when it shows again. The text, the cursor and the undo stay.
+    pub fn rest(&mut self) {
+        self.shaped = FastMap::default();
+        self.rows = Vec::new();
+        self.geos = Vec::new();
+        self.figures = FastMap::default();
+        self.laid = None;
+        self.laid_out = None;
+        self.epoch += 1;
+    }
+
     /// Names of the vault's notes, to complete `[[wikilinks]]`.
-    pub fn set_notes(&mut self, notes: Vec<String>) {
+    /// Shared by every editor of the window: one list, however many tabs are open.
+    pub fn set_notes(&mut self, notes: Rc<[String]>) {
         self.notes = notes;
     }
 

@@ -151,20 +151,24 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
     }
     assert_eq!(shell.read_with(cx, |s, cx| s.graph.read(cx).size().0), notes + 3);
-    shell.update(cx, |s, cx| s.preview_note(&root.join("carré.svg"), cx));
-    assert_eq!(shell.read_with(cx, |s, _| s.pane().file_path().cloned()), Some(root.join("carré.svg")));
-    assert!(text(cx).ends_with("fin"));
-        // Going back from an image to the note it hid takes one selection, as
-        // from one note to another.
-    shell.update(cx, |s, cx| {
-        let note = s.pane().path.clone().unwrap();
-        s.preview_note(&note, cx);
+        // Browsed, an image shows in the preview tab; the note keeps its own tab.
+    let note = shell.read_with(cx, |s, _| s.pane().path.clone().unwrap());
+    shell.update_in(cx, |s, window, cx| s.preview_note(&root.join("carré.svg"), window, cx));
+    assert_eq!(shell.read_with(cx, |s, _| (s.pane().file_path().cloned(), s.pane().path.clone())), (Some(root.join("carré.svg")), None));
+        // Going back to the note, then to the image: one selection each, their tabs are shown.
+    shell.update_in(cx, |s, window, cx| {
+        s.preview_note(&note, window, cx);
         assert_eq!(s.pane().file_path(), None);
-        s.preview_note(&root.join("carré.svg"), cx);
+        s.preview_note(&root.join("carré.svg"), window, cx);
+        s.focus_pane(s.active, window, cx);
     });
+        // No note under the image: Escape leaves it shown, never an empty tab in its place.
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert_eq!(shell.read_with(cx, |s, _| s.pane().file_path().cloned()), None);
+    assert_eq!(shell.read_with(cx, |s, _| s.pane().file_path().cloned()), Some(root.join("carré.svg")));
+    cx.simulate_keystrokes("secondary-w");
+    assert_eq!(shell.read_with(cx, |s, _| (s.pane().file_path().cloned(), s.pane().path.clone())), (None, Some(note)));
+    assert!(text(cx).ends_with("fin"));
 
         // A foreign SVG (draw.io: HTML text, `light-dark()` colors) shows in the
         // note, drawn in the background. Switching theme, even fast and several times, keeps the
@@ -204,11 +208,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(seen(cx), (Some((400., 120.)), None, (count, 0)), "no extra figure or drawing");
 
         // The same SVG, opened, shows in the viewer: fitted to its width, zoomed from the
-        // keyboard, and Escape returns to the note. An unreadable SVG says so, without breaking anything.
-        // Opened from the tree, it takes input: the note does not keep it.
+        // keyboard, in a tab of its own that closes back to the note. An unreadable SVG says so,
+        // without breaking anything. Opened from the tree, it takes input: the note does not keep it.
+    let note = shell.read_with(cx, |s, _| s.pane().path.clone().unwrap());
     shell.update_in(cx, |s, window, cx| {
-        s.preview_note(&root.join("drawio.svg"), cx);
-        s.focus_pane(0, window, cx);
+        s.preview_note(&root.join("drawio.svg"), window, cx);
+        s.focus_pane(s.active, window, cx);
     });
         // The test platform does not redraw by itself when a background drawing completes.
     let settle = |cx: &mut gpui::VisualTestContext| {
@@ -227,9 +232,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-0");
     settle(cx);
     assert_eq!(viewer(cx).unwrap().2, fit);
-    cx.simulate_keystrokes("escape");
+    cx.simulate_keystrokes("secondary-w");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.pane().file.is_none() && s.pane().viewer().is_none()));
+    assert!(shell.read_with(cx, |s, _| s.pane().file.is_none() && s.pane().viewer().is_none() && s.pane().path.as_ref() == Some(&note)));
         // A Mermaid block's magnifier shows the diagram large, in place of the note; + and -
         // zoom; Escape returns to the note.
     let button = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view_button("```mermaid")).unwrap();
@@ -248,14 +253,11 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, _| s.pane().figure.is_none()));
     shell.update_in(cx, |s, window, cx| {
-        s.preview_note(&root.join("cassé.svg"), cx);
-        s.focus_pane(0, window, cx);
+        s.preview_note(&root.join("cassé.svg"), window, cx);
+        s.focus_pane(s.active, window, cx);
     });
     settle(cx);
     assert_eq!(viewer(cx).map(|v| (v.0, v.1)), Some((false, true)));
-    shell.update(cx, |s, cx| {
-        let note = s.pane().path.clone().unwrap();
-        s.preview_note(&note, cx);
-    });
+    shell.update_in(cx, |s, window, cx| s.preview_note(&note, window, cx));
     cx.run_until_parked();
 }

@@ -163,6 +163,8 @@ impl Shell {
         // Another vault: a single pane, on a new note.
         self.panes.truncate(1);
         self.active = 0;
+        self.groups = vec![Group::of(0)];
+        self.closed.clear();
         self.vault = Some(root.clone());
         self.lost = None;
         self.icons = vault::load_icons(&root);
@@ -228,15 +230,20 @@ impl Shell {
     }
 
     pub(super) fn push_names(&mut self, cx: &mut Context<Self>) {
+        self.push_names_to(0..self.panes.len(), cx);
+    }
+
+    /// The same, to some tabs only: a new tab gets them without the others laying out again.
+    pub(super) fn push_names_to(&mut self, tabs: std::ops::Range<usize>, cx: &mut Context<Self>) {
         // Aliases are offered after `[[` like names.
         let notes: Vec<&Note> = self.notes.iter().filter(|n| !self.is_template(n)).collect();
-        let names: Vec<String> = notes.iter().map(|n| n.name.clone()).chain(notes.iter().flat_map(|n| n.aliases.iter().cloned())).collect();
+        let names: std::rc::Rc<[String]> = notes.iter().map(|n| n.name.clone()).chain(notes.iter().flat_map(|n| n.aliases.iter().cloned())).collect();
         let pictures = vault::pictures(&self.images);
         // Notes and their aliases, for the sections embedded from them.
-        let sources: std::collections::HashMap<String, PathBuf> =
-            notes.iter().flat_map(|n| std::iter::once(n.name.as_str()).chain(n.aliases.iter().map(String::as_str)).map(|name| (name.to_lowercase(), n.path.clone()))).collect();
+        let sources: std::rc::Rc<std::collections::HashMap<String, PathBuf>> =
+            notes.iter().flat_map(|n| std::iter::once(n.name.as_str()).chain(n.aliases.iter().map(String::as_str)).map(|name| (name.to_lowercase(), n.path.clone()))).collect::<std::collections::HashMap<_, _>>().into();
         let me = |pane: &Pane| pane.path.as_deref().and_then(Path::file_stem).map(|s| s.to_string_lossy().to_string());
-        for pane in &self.panes {
+        for pane in &self.panes[tabs] {
             let me = me(pane);
             pane.editor.update(cx, |e, _| {
                 e.set_notes(names.clone());

@@ -233,7 +233,7 @@ impl Shell {
                 if !path.is_file() {
                     return self.say(Tone::Failed, format!("{} {}", tr("This note is no longer there:", "Cette note n'est plus là :"), vault::shown(&path)), cx);
                 }
-                self.open_note(&path, cx);
+                self.open(&path, window, cx);
                 self.pane().editor.clone().update(cx, |editor, cx| editor.show_match(&swap, at, window, cx));
             }
         }

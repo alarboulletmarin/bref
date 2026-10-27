@@ -27,9 +27,14 @@ impl Render for Shell {
         }
         if std::mem::take(&mut self.grab) {
             self.focus_pane(self.active, window, cx);
-        } else if let Some(pane) = (0..self.panes.len()).find(|&pane| self.panes[pane].zone.contains_focused(window, cx)) {
+        } else if let Some(pane) = self.groups.iter().map(|group| group.shown).find(|&pane| self.panes[pane].zone.contains_focused(window, cx)) {
             self.active = pane;
+        } else if (0..self.panes.len()).any(|tab| !self.groups.iter().any(|group| group.shown == tab) && self.tab_has_focus(tab, window, cx)) {
+            // Input was in a tab now out of sight, where no key would reach anything: the tab shown
+            // takes it.
+            self.focus_pane(self.active, window, cx);
         }
+        self.show_active(cx);
         #[cfg(test)]
         let dragging = cx.has_active_drag() || self.keep_aim;
         #[cfg(not(test))]
@@ -79,20 +84,34 @@ impl Render for Shell {
         let body = if self.vault.is_none() {
             self.render_welcome(body, cx)
         } else {
-            // One pane, or two side by side: each draws itself as if it were the active one. The comments
-            // panel, right of everything, is the active pane's.
-            let (two, active) = (self.panes.len() == 2, self.active);
+            // One pane, or two side by side: each draws the tab it shows as if it were the active one,
+            // under its tab bar. The comments panel, right of everything, is the active tab's.
+            let active = self.active;
             let (mut areas, mut comments) = (Vec::new(), None);
-            for pane in 0..self.panes.len() {
-                let (area, said) = self.in_pane(pane, |this| this.render_pane(pane, pane == active, client, window, cx));
-                areas.push(area);
+            for group in 0..self.groups.len() {
+                let pane = self.groups[group].shown;
+                let (area, said) = self.in_pane(pane, |this| this.render_pane(pane, group, pane == active, client, window, cx));
+                let bar = self.render_tabs(group, client, cx);
+                let two = self.groups.len() == 2;
+                let ratio = self.pane_ratio;
+                areas.push(
+                    div()
+                        .h_full()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .map(|d| if two && group == 0 { d.flex_none().w(gpui::relative(ratio)) } else { d.flex_1() })
+                        .children(bar)
+                        .child(area)
+                        .into_any_element(),
+                );
                 if pane == active {
                     comments = said;
                 }
             }
             let mut areas = areas.into_iter();
             // The border between the two can be dragged; a double click puts it back in the middle.
-            let divider = two.then(|| {
+            let divider = (self.groups.len() == 2).then(|| {
                 div()
                     .id("pane-divider")
                     .group("pane-divider")
@@ -171,10 +190,13 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &NewNote, window, cx| this.new_note_here(window, cx)))
             .on_action(cx.listener(|this, _: &NewFromTemplate, window, cx| this.open_templates(TemplateAct::New, window, cx)))
             .on_action(cx.listener(|this, _: &NewDiagram, window, cx| this.new_diagram(window, cx)))
-            // Escape in a diagram where nothing is in progress anymore: back to the note.
+            // Escape in a diagram where nothing is in progress anymore: back to the note, if its
+            // tab has one under it.
             .on_action(cx.listener(|this, _: &canvas::Cancel, window, cx| {
-                window.focus(&this.pane().editor.focus_handle(cx));
-                cx.notify();
+                if this.has_note(cx) {
+                    window.focus(&this.pane().editor.focus_handle(cx));
+                    cx.notify();
+                }
             }))
             .on_action(cx.listener(|this, _: &nav::ShowTree, window, cx| {
                 this.show_nav(Mode::Tree, false, window, cx)
@@ -235,12 +257,17 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
             .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
-            .on_action(cx.listener(|this, _: &Today, _, cx| this.open_today(cx)))
+            .on_action(cx.listener(|this, _: &Today, window, cx| this.open_today(window, cx)))
             .on_action(cx.listener(|this, _: &SyncVault, window, cx| this.git_sync(window, cx)))
             .on_action(cx.listener(|this, _: &SplitPane, window, cx| this.split(window, cx)))
-            .on_action(cx.listener(|this, _: &FocusLeft, window, cx| this.focus_pane(0, window, cx)))
-            .on_action(cx.listener(|this, _: &FocusRight, window, cx| this.focus_pane(1, window, cx)))
+            .on_action(cx.listener(|this, _: &FocusLeft, window, cx| this.focus_group(0, window, cx)))
+            .on_action(cx.listener(|this, _: &FocusRight, window, cx| this.focus_group(1, window, cx)))
             .on_action(cx.listener(|this, _: &ClosePane, window, cx| this.close_pane(window, cx)))
+            .on_action(cx.listener(|this, _: &ReopenTab, window, cx| this.reopen_tab(window, cx)))
+            .on_action(cx.listener(|this, _: &NextTab, window, cx| this.cycle_tab(true, window, cx)))
+            .on_action(cx.listener(|this, _: &PrevTab, window, cx| this.cycle_tab(false, window, cx)))
+            .on_action(cx.listener(|this, _: &MoveTabLeft, _, cx| this.move_tab(false, cx)))
+            .on_action(cx.listener(|this, _: &MoveTabRight, _, cx| this.move_tab(true, cx)))
             .on_action(cx.listener(|this, _: &GoBack, window, cx| this.travel(false, window, cx)))
             .on_action(cx.listener(|this, _: &GoForward, window, cx| this.travel(true, window, cx)))
             // The mouse back and forward buttons.
@@ -284,7 +311,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &CloseHelp, window, cx| {
                 if this.help.open {
                     this.set_help(false, window, cx)
-                } else if this.pane().zone.is_focused(window) {
+                } else if this.pane().zone.is_focused(window) && this.has_note(cx) {
                     // A pane that only shows an image: Escape goes back to its note.
                     window.focus(&this.pane().editor.focus_handle(cx));
                 }
@@ -554,7 +581,7 @@ impl Shell {
             row(("empty-today", 0), false)
                 .child(logo(t))
                 .child(recall::long_date(today()))
-                .on_click(cx.listener(|this, _, _, cx| this.open_today(cx)))
+                .on_click(cx.listener(|this, _, window, cx| this.open_today(window, cx)))
         });
         let recalled = if self.vault.is_some() { self.recalled() } else { Vec::new() };
         let again = (!recalled.is_empty()).then(|| {
@@ -565,7 +592,7 @@ impl Shell {
                     .py(t.px(2.))
                     .child(div().flex_1().min_w_0().truncate().child(note.name))
                     .child(div().flex_none().text_size(t.px(12.)).child(recall::ago(note.days)))
-                    .on_click(cx.listener(move |this, _, _, cx| this.open_note(&note.path, cx)))
+                    .on_click(cx.listener(move |this, _, window, cx| this.open(&note.path, window, cx)))
             });
             div()
                 .max_w(t.px(380.))
@@ -590,9 +617,11 @@ impl Shell {
         )
     }
 
-    pub(super) fn render_pane(&mut self, pane: usize, active: bool, client: bool, window: &mut Window, cx: &mut Context<Self>) -> (gpui::AnyElement, Option<gpui::AnyElement>) {
+    pub(super) fn render_pane(&mut self, pane: usize, group: usize, active: bool, client: bool, window: &mut Window, cx: &mut Context<Self>) -> (gpui::AnyElement, Option<gpui::AnyElement>) {
         let t = self.theme;
-        let two = self.panes.len() == 2;
+        let two = self.groups.len() == 2;
+        // Its tab bar shows which pane is active; without one, a line across its top does.
+        let barred = self.groups[group].tabs.len() > 1;
         // Copy of the whole note: a plain floating icon, outside the title bar.
         // Comments of the note, on its right: the commented text, then what is said about it. A
         // click leads to the comment, ready to be edited; the check mark resolves it.
@@ -673,7 +702,8 @@ impl Shell {
                 .occlude()
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });
-        let pill = client.then(|| window.viewport_size().width - self.nav.left - px(8.) - t.px(PILL_W));
+        // A tab bar puts the note below the window buttons: its text no longer steps down for them.
+        let pill = (client && !barred).then(|| window.viewport_size().width - self.nav.left - px(8.) - t.px(PILL_W));
         self.pane().editor.update(cx, |e, _| {
             e.corner = 1 + talk.is_some() as usize + boards as usize;
             e.bar_here = active;
@@ -817,7 +847,7 @@ impl Shell {
             }
         };
         // While a file is dragged from the tree, the area that would receive it is tinted.
-        let tint = self.pane_aim.filter(|(over, _)| *over == pane).map(|(_, half)| {
+        let tint = self.pane_aim.filter(|(over, _)| *over == group).map(|(_, half)| {
             div()
                 .absolute()
                 .top_0()
@@ -828,18 +858,17 @@ impl Shell {
                 .border_1()
                 .border_color(t.accent.opacity(0.5))
         });
-        let ratio = self.pane_ratio;
         let area = div()
             .id(("pane", pane))
-            .debug_selector(move || format!("pane-{pane}"))
+            .debug_selector(move || format!("pane-{group}"))
             .track_focus(&self.pane().zone)
             .relative()
-            .h_full()
+            .flex_1()
+            .min_h_0()
             .min_w_0()
             // Nothing of a pane is drawn in its neighbour, however narrow.
             .overflow_hidden()
             .flex()
-            .map(|d| if two && pane == 0 { d.flex_none().w(gpui::relative(ratio)) } else { d.flex_1() })
             // A mouse gesture in a pane counts for it, before its views receive it.
             .capture_any_mouse_down(cx.listener(move |this, _, _, cx| {
                 if this.active != pane && pane < this.panes.len() {
@@ -866,8 +895,8 @@ impl Shell {
             }))
             .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<nav::Dragged>, _, cx| {
                 let at = e.event.position;
-                let aim = e.bounds.contains(&at).then(|| (pane, this.panes.len() == 1 && at.x > e.bounds.center().x));
-                let was = this.pane_aim.filter(|(over, _)| *over == pane);
+                let aim = e.bounds.contains(&at).then(|| (group, this.groups.len() == 1 && at.x > e.bounds.center().x));
+                let was = this.pane_aim.filter(|(over, _)| *over == group);
                 if aim != was {
                     this.pane_aim = aim;
                     cx.notify();
@@ -876,12 +905,12 @@ impl Shell {
             .on_drop(cx.listener(move |this, dragged: &nav::Dragged, window, cx| {
                 let aside = this.pane_aim.take().is_some_and(|(_, half)| half);
                 if let Some(path) = dragged.paths.first().cloned() {
-                    this.drop_on_pane(pane, aside, &path, window, cx);
+                    this.drop_on_pane(group, aside, &path, window, cx);
                 }
             }))
             .child(note)
             // The active pane of two: a line across its top, in the full accent (3:1 at least on the page).
-            .when(two && active, |d| d.child(div().debug_selector(|| "pane-active".into()).absolute().top_0().left_0().right_0().h(t.px(3.)).bg(t.accent)))
+            .when(two && active && !barred, |d| d.child(div().debug_selector(|| "pane-active".into()).absolute().top_0().left_0().right_0().h(t.px(3.)).bg(t.accent)))
             .children(tint);
         (area.into_any_element(), comments.map(IntoElement::into_any_element))
     }

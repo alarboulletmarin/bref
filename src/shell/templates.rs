@@ -53,7 +53,7 @@ impl Shell {
                     let dir = this.nav.target_dir().filter(|dir| !vault::in_templates(&root, &dir.join("x.md"))).unwrap_or(root);
                     this.ask(tr("Name of the note", "Nom de la note"), "", window, cx, move |this, name, window, cx| {
                         // Note born, we write: the cursor is at its mark, focus in the editor.
-                        if this.create_from(&template, &name, &dir, cx).is_some() {
+                        if this.create_from(&template, &name, &dir, window, cx).is_some() {
                             window.focus(&this.pane().editor.focus_handle(cx));
                         }
                     });
@@ -71,7 +71,7 @@ impl Shell {
 
     /// Note `name` in `dir`, written from the template, opened, the cursor at its mark. Nothing is
     /// overwritten: a taken name is refused. `None` if it could not be born.
-    pub(super) fn create_from(&mut self, template: &Path, name: &str, dir: &Path, cx: &mut Context<Self>) -> Option<PathBuf> {
+    pub(super) fn create_from(&mut self, template: &Path, name: &str, dir: &Path, window: &mut Window, cx: &mut Context<Self>) -> Option<PathBuf> {
         let root = self.vault.clone()?;
         let text = match fs::read_to_string(template) {
             Ok(text) => text,
@@ -92,7 +92,7 @@ impl Shell {
         }
         self.rescan(&root, cx);
         self.nav.reveal(&path);
-        self.open_note(&path, cx);
+        self.open(&path, window, cx);
         self.pane().editor.update(cx, |editor, cx| editor.jump(cursor, false, cx));
         Some(path)
     }

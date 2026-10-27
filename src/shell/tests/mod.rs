@@ -13,6 +13,7 @@ mod vault_find;
 mod keyboard;
 mod keycaps;
 mod layout;
+mod tabs;
 mod window;
 
 use super::*;

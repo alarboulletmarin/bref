@@ -82,6 +82,13 @@ impl Shell {
     /// Shows a history entry, where it was left.
     pub(super) fn show(&mut self, entry: history::Entry, window: &mut Window, cx: &mut Context<Self>) {
         self.pane_mut().peek = false;
+        // A file closed since comes back in a tab of its own, never in place of the shown one; an
+        // open one is found in its tab (`load_note`).
+        if let Shown::Note(path) | Shown::File(path) = &entry.shown
+            && self.pane_showing(path).is_none()
+        {
+            self.fresh_tab(window, cx);
+        }
         if self.nav.panel == nav::Panel::Full {
             self.nav.panel = nav::Panel::Split;
         }

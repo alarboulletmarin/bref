@@ -140,12 +140,8 @@ impl Shell {
             let aside = palette.read(cx).aside;
             match event {
                 PaletteEvent::Open(path) if aside => this.open_aside(path, window, cx),
-                PaletteEvent::Open(path) => {
-                    this.open_note(path, cx);
-                    // A table, an image or a diagram takes input: given back to the note, it would erase them.
-                    this.focus_pane(this.active, window, cx);
-                }
-                PaletteEvent::Create(name) => this.open_wiki(name, cx),
+                PaletteEvent::Open(path) => this.open(path, window, cx),
+                PaletteEvent::Create(name) => this.open_wiki(name, window, cx),
                 PaletteEvent::ChangeVault => this.choose_vault(window, cx),
                 PaletteEvent::Help => this.set_help(true, window, cx),
                 PaletteEvent::NewDiagram => this.new_diagram(window, cx),
@@ -181,8 +177,11 @@ impl Shell {
                     this.pane().editor.update(cx, |e, cx| e.restyle(*style, cx));
                 }
                 PaletteEvent::UndoSwap => this.undo_swap(cx),
-                PaletteEvent::NewBoard => this.new_note(kanban::new_board(), cx),
-                PaletteEvent::Today => this.open_today(cx),
+                PaletteEvent::NewBoard => {
+                    this.fresh_tab(window, cx);
+                    this.new_note(kanban::new_board(), cx);
+                }
+                PaletteEvent::Today => this.open_today(window, cx),
                 PaletteEvent::Travel(forward) => this.travel(*forward, window, cx),
                 PaletteEvent::Trash => this.open_trash(window, cx),
                 PaletteEvent::Backup => this.choose_backup(window, cx),

@@ -87,7 +87,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     cx.simulate_input("[[bref a");
     cx.simulate_keystrokes("enter");
     assert!(text(cx).ends_with("[[Bref app]]"));
-    shell.update(cx, |s, cx| s.open_wiki("bref APP", cx));
+    shell.update_in(cx, |s, window, cx| s.open_wiki("bref APP", window, cx));
     j.settle(cx);
     assert!(shell.read_with(cx, |s, _| s.pane().path.as_deref() == Some(&*root.join("Appli.md")) && s.notes.len() == count));
     fs::remove_file(root.join("Appli.md")).unwrap();

@@ -52,9 +52,9 @@ impl Shell {
     }
 
     /// A graph node is selected: preview of the note if it has room.
-    pub(super) fn select_from_graph(&mut self, path: &Path, cx: &mut Context<Self>) {
+    pub(super) fn select_from_graph(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         if self.nav.panel == Panel::Split {
-            self.preview_note(path, cx);
+            self.preview_note(path, window, cx);
         }
         self.nav.sel = Some(path.to_path_buf());
         cx.notify();
@@ -164,7 +164,7 @@ impl Shell {
     }
 
     /// Selects the row; a note shows as a preview if it has room.
-    pub(super) fn nav_select(&mut self, ix: usize, cx: &mut Context<Self>) {
+    pub(super) fn nav_select(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(row) = self.nav.rows.get(ix) else {
             return;
         };
@@ -172,7 +172,7 @@ impl Shell {
         self.nav.marked.clear();
         self.nav.scroll.scroll_to_item(ix, ScrollStrategy::Center);
         if is_note && self.nav.panel == Panel::Split {
-            self.preview_note(&path, cx);
+            self.preview_note(&path, window, cx);
         }
         self.nav.sel = Some(path);
         self.nav.reveal = false;
@@ -227,9 +227,9 @@ impl Shell {
     }
 
     /// Opens the daily note for `day`, or creates it: the one `@` and Ctrl+J point to.
-    pub(super) fn open_day(&mut self, day: Date, cx: &mut Context<Self>) {
+    pub(super) fn open_day(&mut self, day: Date, window: &mut Window, cx: &mut Context<Self>) {
         self.nav.day = day;
-        self.open_wiki(&crate::lang::date_name(day), cx);
+        self.open_wiki(&crate::lang::date_name(day), window, cx);
         cx.notify();
     }
 
@@ -273,7 +273,7 @@ impl Shell {
                 .when(day == chosen, |d| d.bg(t.selection))
                 .hover(|s| s.bg(t.code_bg))
                 .child(day.to_string())
-                .on_click(cx.listener(move |this, _, _, cx| this.open_day(date, cx)))
+                .on_click(cx.listener(move |this, _, window, cx| this.open_day(date, window, cx)))
                 .into_any_element()
         });
         div()
@@ -288,7 +288,7 @@ impl Shell {
             .child(div().debug_selector(|| "calendar".into()).w_full().max_w(t.px(224.)).grid().grid_cols(7).children(week).children(blanks).children(cells))
     }
 
-    pub(super) fn nav_step(&mut self, down: bool, cx: &mut Context<Self>) {
+    pub(super) fn nav_step(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.nav.mode == Mode::Calendar {
             return self.day_step(if down { 7 } else { -7 }, 0, cx);
         }
@@ -298,7 +298,7 @@ impl Shell {
             Some(ix) => ix.saturating_sub(1),
             None => 0,
         };
-        self.nav_select(ix, cx);
+        self.nav_select(ix, window, cx);
     }
 
     /// Enter or double-click: opens the note for good, or toggles the folder.
@@ -322,7 +322,7 @@ impl Shell {
     /// Opens the note and puts focus in it; the note gets its place back if the
     /// panel took the whole window.
     pub(super) fn open_from_nav(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_note(path, cx);
+        self.open(path, window, cx);
         if self.nav.panel == Panel::Full {
             self.nav.panel = Panel::Split;
         }
@@ -337,12 +337,12 @@ impl Shell {
     }
 
     /// Left/right in the tree: collapse or expand, otherwise go up or down.
-    pub(super) fn nav_fold(&mut self, unfold: bool, cx: &mut Context<Self>) {
+    pub(super) fn nav_fold(&mut self, unfold: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.nav.mode == Mode::Calendar {
             return self.day_step(if unfold { 1 } else { -1 }, 0, cx);
         }
         let Some(ix) = self.selected_row() else {
-            return self.nav_step(true, cx);
+            return self.nav_step(true, window, cx);
         };
         let row = self.nav.rows[ix].clone();
         match (row.dir, unfold) {
@@ -352,11 +352,11 @@ impl Shell {
             (Some(true), false) => {
                 self.nav.open.remove(&row.path);
             }
-            (_, true) => return self.nav_step(true, cx),
+            (_, true) => return self.nav_step(true, window, cx),
             (_, false) => {
                 let parent = row.path.parent();
                 if let Some(up) = self.nav.rows.iter().position(|r| Some(r.path.as_path()) == parent) {
-                    return self.nav_select(up, cx);
+                    return self.nav_select(up, window, cx);
                 }
             }
         }
@@ -648,12 +648,8 @@ impl Shell {
                             if held.secondary() || held.shift {
                                 return this.nav_mark(ix, held.shift, cx);
                             }
-                            let folder = this.nav.rows.get(ix).is_some_and(|r| r.dir.is_some());
-                            if folder || e.click_count() >= 2 {
-                                this.nav_activate(ix, window, cx)
-                            } else {
-                                this.nav_select(ix, cx)
-                            }
+                            // A click opens the note, in its tab; a second click finds it there.
+                            this.nav_activate(ix, window, cx)
                         }))
                         .on_mouse_down(
                             MouseButton::Right,
@@ -1014,15 +1010,15 @@ impl Shell {
             .map(|d| if full { d.flex_1() } else { d.flex_none().w(width) })
             .key_context("Nav")
             .track_focus(&self.nav.focus)
-            .on_action(cx.listener(|this, _: &Prev, _, cx| this.nav_step(false, cx)))
-            .on_action(cx.listener(|this, _: &Next, _, cx| this.nav_step(true, cx)))
-            .on_action(cx.listener(|this, _: &Fold, _, cx| this.nav_fold(false, cx)))
-            .on_action(cx.listener(|this, _: &Unfold, _, cx| this.nav_fold(true, cx)))
+            .on_action(cx.listener(|this, _: &Prev, window, cx| this.nav_step(false, window, cx)))
+            .on_action(cx.listener(|this, _: &Next, window, cx| this.nav_step(true, window, cx)))
+            .on_action(cx.listener(|this, _: &Fold, window, cx| this.nav_fold(false, window, cx)))
+            .on_action(cx.listener(|this, _: &Unfold, window, cx| this.nav_fold(true, window, cx)))
             .on_action(cx.listener(|this, _: &PrevMonth, _, cx| this.day_step(0, -1, cx)))
             .on_action(cx.listener(|this, _: &NextMonth, _, cx| this.day_step(0, 1, cx)))
             .on_action(cx.listener(|this, _: &Open, window, cx| {
                 if this.nav.mode == Mode::Calendar {
-                    return this.open_day(this.nav.day, cx);
+                    return this.open_day(this.nav.day, window, cx);
                 }
                 if let Some(ix) = this.selected_row() {
                     this.nav_activate(ix, window, cx)
