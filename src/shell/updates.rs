@@ -131,9 +131,9 @@ impl Shell {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .rounded(t.px(6.))
+                        .rounded(t.small())
                         .cursor_pointer()
-                        .hover(|s| s.bg(t.border))
+                        .hover(|s| s.bg(t.hover))
                         .child(svg().path("close.svg").size(t.px(14.)).text_color(t.soft))
                         .on_mouse_down(
                             MouseButton::Left,

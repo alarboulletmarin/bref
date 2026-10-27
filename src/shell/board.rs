@@ -235,7 +235,7 @@ impl Shell {
                     .flex_1()
                     .min_w_0()
                     .px_1()
-                    .rounded(px(4.))
+                    .rounded(t.small())
                     .when(lit((c, 0)), |d| d.bg(t.selection))
                     .truncate()
                     .font_weight(gpui::FontWeight::BOLD)
@@ -250,10 +250,10 @@ impl Shell {
                     .id(("card-add", c))
                     .px_2()
                     .py_1()
-                    .rounded(px(6.))
+                    .rounded(t.small())
                     .cursor_pointer()
                     .text_color(t.soft)
-                    .hover(|s| s.bg(t.bg).text_color(t.text))
+                    .hover(|s| s.bg(t.hover).text_color(t.text))
                     .when(lit((c, count + 1)), |d| d.bg(t.selection).text_color(t.text))
                     .child(format!("+ {}", tr("Add a card", "Ajouter une carte")))
                     .on_click(cx.listener(move |this, _, window, cx| this.board_write(Slot::New(c), window, cx)))
@@ -267,7 +267,7 @@ impl Shell {
                 .relative()
                 .when(c == 0, |d| d.child(measure))
                 .p_2()
-                .rounded(px(8.))
+                .rounded(t.large())
                 .bg(t.panel)
                 .flex()
                 .flex_col()
@@ -282,7 +282,7 @@ impl Shell {
             shown.push(div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).flex().flex_col().child(column).child(rest));
         }
         let more = match field_at(Slot::NewColumn) {
-            Some(field) => div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().rounded(px(8.)).bg(t.panel).border_1().border_color(t.accent).flex().child(field).into_any_element(),
+            Some(field) => div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().rounded(t.large()).bg(t.panel).border_1().border_color(t.accent).flex().child(field).into_any_element(),
             // No column at all: a lone « + » would float in the empty page, so the board says what it lacks.
             None if all.is_empty() => div()
                 .debug_selector(|| "board-empty".into())
@@ -300,10 +300,10 @@ impl Shell {
                         .id("column-add")
                         .px_3()
                         .py_1()
-                        .rounded(px(6.))
+                        .rounded(t.small())
                         .cursor_pointer()
                         .text_color(t.accent)
-                        .hover(|s| s.bg(t.border))
+                        .hover(|s| s.bg(t.hover))
                         .child(format!("+ {}", tr("Add a column", "Ajouter une colonne")))
                         .on_click(cx.listener(|this, _, window, cx| this.board_write(Slot::NewColumn, window, cx))),
                 )

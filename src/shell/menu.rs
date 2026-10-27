@@ -423,9 +423,9 @@ impl Shell {
                 .px_2()
                 .flex()
                 .items_center()
-                .rounded(t.px(5.))
+                .rounded(t.small())
                 .cursor_pointer()
-                .hover(|s| s.bg(t.selection))
+                .hover(|s| s.bg(t.hover))
                 .when(on, |d| d.bg(t.selection))
                 .when(matches!(what, Do::Trash), |d| d.text_color(t.accent))
                 // The whole label, then its shortcut, dimmer, pinned to the right: the
@@ -482,8 +482,8 @@ impl Shell {
                         .bg(t.panel)
                         .border_1()
                         .border_color(t.border)
-                        .rounded(t.px(8.))
-                        .shadow_lg()
+                        .rounded(t.large())
+                        .shadow(t.floating())
                         .text_size(t.px(13.))
                         .children(rows)
                         .with_animation(

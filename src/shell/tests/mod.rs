@@ -51,6 +51,29 @@ fn layers_only_depend_downwards() {
     }
 }
 
+/// The shapes come from the theme (`t.small()`, `t.large()`, `t.lifted()`, `t.floating()`, `t.hover`): a view that
+/// writes a raw radius, a raw shadow or a hover in the colour of the lines brings back the drift of seven radii.
+#[test]
+fn shapes_come_from_the_theme() {
+    fn files(dir: &Path) -> Vec<PathBuf> {
+        let entries = fs::read_dir(dir).unwrap().map(|entry| entry.unwrap().path());
+        entries.flat_map(|path| if path.is_dir() { files(&path) } else { vec![path] }).collect()
+    }
+    let banned = [".rounded(px(", ".rounded(t.px(", "BoxShadow", ".shadow_sm", ".shadow_md", ".shadow_lg", ".shadow_xs", ".shadow_2xs", ".shadow_none", "s.bg(t.border)"];
+    for path in files(Path::new("src/views")).into_iter().chain(files(Path::new("src/shell"))).chain(files(Path::new("src/ui"))) {
+        if path.starts_with("src/shell/tests") || path.ends_with("theme.rs") || path.extension().is_none_or(|e| e != "rs") {
+            continue;
+        }
+        let code = fs::read_to_string(&path).unwrap();
+        let code = code.split("#[cfg(test)]\nmod tests").next().unwrap();
+        for (n, line) in code.lines().map(|l| l.split("//").next().unwrap()).enumerate() {
+            for word in banned {
+                assert!(!line.contains(word), "{}:{}: `{word}`, use the theme's shapes", path.display(), n + 1);
+            }
+        }
+    }
+}
+
 /// The French interface speaks to the reader as « vous » (request of 2026-10-23): no « tu » form left in
 /// a text of the app. Action labels stay in the infinitive.
 #[test]

@@ -174,7 +174,7 @@ impl Shell {
                 let path = path.clone();
                 let one = match (c, writing) {
                     // The cell being written shows all its text: it wraps, its row grows.
-                    (_, Some((_, _, field))) => wide(false).py(t.px(3.)).rounded(t.px(4.)).border_1().border_color(t.accent).child(field.clone()).into_any_element(),
+                    (_, Some((_, _, field))) => wide(false).py(t.px(3.)).rounded(t.small()).border_1().border_color(t.accent).child(field.clone()).into_any_element(),
                     (0, _) => cell(true)
                         .id(("list-name", i))
                         .cursor_pointer()
@@ -193,10 +193,10 @@ impl Shell {
                             .h(t.px(ROW))
                             .flex()
                             .items_center()
-                            .rounded(t.px(4.))
+                            .rounded(t.small())
                             .cursor_text()
                             .text_color(t.soft)
-                            .hover(|s| s.bg(t.bg))
+                            .hover(|s| s.bg(t.hover))
                             .child(div().flex_1().min_w_0().truncate().child(text))
                             .on_click(cx.listener(move |this, _, window, cx| this.list_write(path.clone(), key.clone(), window, cx)))
                             .into_any_element()
@@ -204,7 +204,7 @@ impl Shell {
                 };
                 shown.push(one);
             }
-            lines.push(div().min_h(t.px(ROW)).flex().items_center().rounded(t.px(5.)).hover(|s| s.bg(t.code_bg)).children(shown));
+            lines.push(div().min_h(t.px(ROW)).flex().items_center().rounded(t.small()).hover(|s| s.bg(t.hover)).children(shown));
         }
         let asked = !filter.read(cx).line.text.is_empty();
         let hint = div().absolute().left(t.px(6.)).top_0().text_color(t.soft).child(tr("Filter… (key:text for one column)", "Filtrer… (clé:texte pour une colonne)"));
@@ -214,7 +214,7 @@ impl Shell {
             .max_w_full()
             .px_2()
             .py_1()
-            .rounded(t.px(6.))
+            .rounded(t.small())
             .border_1()
             .border_color(t.border)
             .relative()

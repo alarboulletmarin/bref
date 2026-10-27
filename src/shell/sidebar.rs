@@ -265,14 +265,14 @@ impl Shell {
             let has = names.contains(name.as_str());
             cell()
                 .id(("day", day as usize))
-                .rounded(t.px(6.))
+                .rounded(t.small())
                 .cursor_pointer()
                 .text_color(if has || day == chosen { t.text } else { t.soft })
                 .when(has, |d| d.font_weight(gpui::FontWeight::BOLD))
                 .when(open.as_deref() == Some(name.as_str()), |d| d.text_color(t.accent))
                 .when(date == today, |d| d.border_1().border_color(t.accent.opacity(0.6)))
                 .when(day == chosen, |d| d.bg(t.selection))
-                .hover(|s| s.bg(t.code_bg))
+                .hover(|s| s.bg(t.hover))
                 .child(day.to_string())
                 .on_click(cx.listener(move |this, _, window, cx| this.open_day(date, window, cx)))
                 .into_any_element()
@@ -492,8 +492,8 @@ impl Shell {
                     .bg(t.panel)
                     .border_1()
                     .border_color(t.border)
-                    .rounded(t.px(8.))
-                    .shadow_lg()
+                    .rounded(t.large())
+                    .shadow(t.floating())
                     .flex()
                     .flex_wrap()
                     .gap(t.px(2.))
@@ -574,9 +574,9 @@ impl Shell {
                         .flex()
                         .items_center()
                         .gap_1()
-                        .rounded(t.px(5.))
+                        .rounded(t.small())
                         .text_size(t.px(13.))
-                        .when(!selected, |d| d.hover(|s| s.bg(t.code_bg)))
+                        .when(!selected, |d| d.hover(|s| s.bg(t.hover)))
                         .when(selected, |d| {
                             let at = self.nav.sel_at.clone();
                             d.bg(if focused { t.selection } else { t.selection.opacity(0.5) })
@@ -735,8 +735,8 @@ impl Shell {
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(t.px(5.))
-                .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.border)).active(|s| s.bg(t.selection)))
+                .rounded(t.small())
+                .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.hover)).active(|s| s.bg(t.pressed)))
                 .child(svg().path(icon).size(t.px(14.)).flex_none().text_color(t.soft).when(!on, |s| s.opacity(0.35)))
         };
         let shown: Vec<Mode> = Mode::ALL.into_iter().filter(|m| self.tool_shown(*m)).collect();
@@ -1191,10 +1191,10 @@ impl Shell {
                                 .debug_selector(|| "nav-other-vault".into())
                                 .px_2()
                                 .py_1()
-                                .rounded(t.px(6.))
+                                .rounded(t.small())
                                 .cursor_pointer()
                                 .text_color(t.accent)
-                                .hover(|s| s.bg(t.border))
+                                .hover(|s| s.bg(t.hover))
                                 .child(tr("Open another vault…", "Ouvrir un autre coffre…"))
                                 .on_click(cx.listener(|this, _, window, cx| this.choose_vault(window, cx))),
                         ),

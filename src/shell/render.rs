@@ -158,12 +158,7 @@ impl Render for Shell {
             .text_color(t.text)
             .font_family(sans())
             .when(framed, |d| {
-                d.rounded(px(12.)).border_1().border_color(t.border).shadow(vec![BoxShadow {
-                    color: hsla(0., 0., 0., 0.35),
-                    offset: point(px(0.), px(2.)),
-                    blur_radius: SHADOW / 2.,
-                    spread_radius: px(0.),
-                }])
+                d.rounded(crate::ui::theme::frame_radius()).border_1().border_color(t.border).shadow(crate::ui::theme::frame_shadow(SHADOW / 2.))
             })
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &OpenPalette, window, cx| {
@@ -420,16 +415,11 @@ impl Shell {
             .gap_2()
             .px_2()
             .py_1()
-            .rounded(px(10.))
+            .rounded(t.large())
             .bg(t.panel)
             .border_1()
             .border_color(t.border)
-            .shadow(vec![BoxShadow {
-                color: hsla(0., 0., 0., 0.18),
-                offset: point(px(0.), px(1.)),
-                blur_radius: px(6.),
-                spread_radius: px(0.),
-            }])
+            .shadow(t.lifted())
             .occlude()
             .debug_selector(|| "window-pill".into())
             .map(drag_window)
@@ -481,7 +471,7 @@ impl Shell {
                         .max_w(t.px(520.))
                         .px_3()
                         .py_2()
-                        .rounded(t.px(8.))
+                        .rounded(t.large())
                         .border_1()
                         .border_color(t.border)
                         .bg(t.panel)
@@ -501,7 +491,7 @@ impl Shell {
                         .mt_4()
                         .px_4()
                         .py_2()
-                        .rounded(px(8.))
+                        .rounded(t.large())
                         .bg(t.accent)
                         .text_color(t.bg)
                         .cursor_pointer()
@@ -514,10 +504,10 @@ impl Shell {
                         .id("welcome-open")
                         .px_3()
                         .py_1()
-                        .rounded(px(6.))
+                        .rounded(t.small())
                         .cursor_pointer()
                         .text_color(t.accent)
-                        .hover(|s| s.bg(t.border))
+                        .hover(|s| s.bg(t.hover))
                         .child(tr("Open another folder…", "Ouvrir un autre dossier…"))
                         .on_click(cx.listener(|this, _, window, cx| this.choose_vault(window, cx))),
                 )
@@ -526,10 +516,10 @@ impl Shell {
                         .id("welcome-clone")
                         .px_3()
                         .py_1()
-                        .rounded(px(6.))
+                        .rounded(t.small())
                         .cursor_pointer()
                         .text_color(t.accent)
-                        .hover(|s| s.bg(t.border))
+                        .hover(|s| s.bg(t.hover))
                         .child(tr("Clone a vault from a git address…", "Cloner un coffre depuis une adresse git…"))
                         .on_click(cx.listener(|this, _, window, cx| this.ask_clone(window, cx))),
                 )
@@ -563,10 +553,10 @@ impl Shell {
                 .flex()
                 .items_center()
                 .gap_2()
-                .rounded(px(6.))
+                .rounded(t.small())
                 .cursor_pointer()
                 .text_color(t.soft)
-                .hover(|s| if fill { s.text_color(t.text).bg(t.border) } else { s.text_color(t.text) })
+                .hover(|s| if fill { s.text_color(t.text).bg(t.hover) } else { s.text_color(t.text) })
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         };
         // The keys in effect; an action left without a shortcut is not announced.
@@ -652,7 +642,7 @@ impl Shell {
                 .bottom_4()
                 .right(t.px(if kanban::is_board(self.pane().editor.read(cx).text()) { 84. } else { 50. }))
                 .size(t.px(30.))
-                .rounded(t.px(8.))
+                .rounded(t.large())
                 .occlude()
                 // A badge and their number, whether the panel is open or closed.
                 .child(
@@ -709,7 +699,7 @@ impl Shell {
                 // Always in the same place, board or text: left of the copy button.
                 .right(t.px(50.))
                 .size(t.px(30.))
-                .rounded(t.px(8.))
+                .rounded(t.large())
                 .occlude()
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });
@@ -737,7 +727,7 @@ impl Shell {
             div()
                 .id(("comment", i))
                 .p_2()
-                .rounded(px(6.))
+                .rounded(t.small())
                 .border_1()
                 .border_color(t.border)
                 .bg(t.bg)
@@ -755,10 +745,10 @@ impl Shell {
                         .gap_1()
                         .child(match (noted.is_empty(), scope.is_empty()) {
                             // A row, a column, the table: what it is about is the chip.
-                            (true, false) => div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.selection).line_clamp(2).child(scope.to_string()),
+                            (true, false) => div().flex_1().min_w_0().px_1().rounded(t.small()).bg(t.selection).line_clamp(2).child(scope.to_string()),
                             // A comment on its own, in the text: it takes the place.
                             (true, true) => div().flex_1().min_w_0().px_1().text_color(if said.is_empty() { t.soft } else { t.text }).child(if said.is_empty() { tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string() } else { said.to_string() }),
-                            (false, _) => div().flex_1().min_w_0().px_1().rounded(px(3.)).bg(t.selection).line_clamp(2).child(noted.to_string()),
+                            (false, _) => div().flex_1().min_w_0().px_1().rounded(t.small()).bg(t.selection).line_clamp(2).child(noted.to_string()),
                         })
                         .child(ui::widgets::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
@@ -809,7 +799,7 @@ impl Shell {
             .bottom_4()
             .right_4()
             .size(t.px(30.))
-            .rounded(t.px(8.))
+            .rounded(t.large())
             .occlude()
             .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
         // The image picked in the panel; it goes away as soon as the note takes over again.

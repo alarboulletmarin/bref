@@ -1,7 +1,7 @@
 //! Colours and page geometry: the themes, how one is picked from the preferences and the system
 //! appearance, and the contrast rules (WCAG) that keep text readable.
 
-use gpui::{Hsla, Pixels, WindowAppearance, px, rgb};
+use gpui::{BoxShadow, Hsla, Pixels, WindowAppearance, hsla, point, px, rgb};
 
 use crate::{lang::tr, logic::prefs::Prefs};
 
@@ -104,6 +104,11 @@ pub struct Theme {
     pub number: Hsla,
     /// Lines that are not text but must be seen (3:1): graph edges, diagram strokes.
     pub line: Hsla,
+    /// The surface of a hovered button or row: a little of the text over what is under it, so that it
+    /// reads on `bg`, `panel`, `code_bg` and `selection` alike, and is never the colour of a line.
+    pub hover: Hsla,
+    /// The same, a little stronger, while the pointer is down (`.active`).
+    pub pressed: Hsla,
     /// Size of the note's body text, in pixels.
     pub size: f32,
     /// Scale of the interface around the note (panel, menus, help, palette): it follows the note's size,
@@ -167,6 +172,8 @@ impl Theme {
             number: code(0.6),
             line: reach(reach(dim, bg, 3.), code_bg, 3.),
             selection: accent.opacity(share),
+            hover: text.opacity(0.07),
+            pressed: text.opacity(0.13),
             code_bg,
             panel,
             border,
@@ -185,6 +192,26 @@ impl Theme {
         px(v * self.ui)
     }
 
+    /// The small radius of the interface: fields, buttons, pills, rows.
+    pub fn small(&self) -> Pixels {
+        self.px(6.)
+    }
+
+    /// The large radius: cards, bars, panels, blocks of the note.
+    pub fn large(&self) -> Pixels {
+        self.px(8.)
+    }
+
+    /// What sits on the page: tooltips, the dragged card, the bars over a canvas.
+    pub fn lifted(&self) -> Vec<BoxShadow> {
+        vec![BoxShadow { color: hsla(0., 0., 0., 0.18), offset: point(px(0.), self.px(1.)), blur_radius: self.px(6.), spread_radius: px(0.) }]
+    }
+
+    /// What covers the page: palette, menus, help, toasts.
+    pub fn floating(&self) -> Vec<BoxShadow> {
+        vec![BoxShadow { color: hsla(0., 0., 0., 0.28), offset: point(px(0.), self.px(6.)), blur_radius: self.px(20.), spread_radius: px(0.) }]
+    }
+
     /// Background of a highlight (`==text==`) of color `i` (see `md::MARKS`), opaque.
     pub fn highlight(&self, i: usize) -> Hsla {
         let tint = highlight_tint(i);
@@ -196,6 +223,17 @@ impl Theme {
     pub fn hue(&self, h: f32, under: Hsla) -> Hsla {
         legible(Hsla { h, s: 0.7, l: 0.5, a: 1. }, under)
     }
+}
+
+/// Radius of the window itself when the app draws its frame (Linux): it matches the system's corners, so it is
+/// no part of the two radii of the interface.
+pub fn frame_radius() -> Pixels {
+    px(12.)
+}
+
+/// The shadow around the framed window, inside the transparent margin.
+pub fn frame_shadow(blur: Pixels) -> Vec<BoxShadow> {
+    vec![BoxShadow { color: hsla(0., 0., 0., 0.35), offset: point(px(0.), px(2.)), blur_radius: blur, spread_radius: px(0.) }]
 }
 
 /// The pure color of highlight `i`, for its badge in the formatting bar.
@@ -323,6 +361,27 @@ mod tests {
             }
         }
         assert!(fails.is_empty(), "{} pairs under the bar:\n{}", fails.len(), fails.join("\n"));
+    }
+
+    /// In each theme, a hovered surface shows on every background it can be over, is never the colour of a
+    /// 1 px line, and a selected row hovered then pressed shows three different states.
+    #[test]
+    fn hover_and_pressed_show() {
+        let mut fails = Vec::new();
+        for (name, _) in THEMES {
+            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+            let picked = over(t.selection, t.panel);
+            for (what, under) in [("bg", t.bg), ("panel", t.panel), ("code", t.code_bg), ("selection", picked)] {
+                let (hover, pressed) = (over(t.hover, under), over(t.pressed, under));
+                if contrast(hover, under) < 1.05 || contrast(pressed, hover) < 1.03 {
+                    fails.push(format!("{name}: hover or pressed invisible on {what}"));
+                }
+                if hover == t.border || pressed == t.border {
+                    fails.push(format!("{name}: hover is the colour of a line on {what}"));
+                }
+            }
+        }
+        assert!(fails.is_empty(), "{}", fails.join("\n"));
     }
 
     #[test]

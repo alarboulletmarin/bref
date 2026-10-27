@@ -220,7 +220,7 @@ impl Render for Dragged {
         div()
             .px_2()
             .py_1()
-            .rounded(px(5.))
+            .rounded(t.small())
             .bg(t.panel)
             .border_1()
             .border_color(t.border)

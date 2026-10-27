@@ -354,7 +354,7 @@ impl Editor {
             .w(t.px(400.))
             .max_w_full()
             .p_1p5()
-            .rounded(t.px(8.))
+            .rounded(t.large())
             .bg(t.panel)
             .border_1()
             .border_color(t.border)

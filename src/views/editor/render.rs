@@ -24,7 +24,7 @@ impl Render for Editor {
                 .h(t.px(30.))
                 .min_w_0()
                 .px_2()
-                .rounded(t.px(8.))
+                .rounded(t.large())
                 .flex()
                 .items_center()
                 .bg(self.theme.bg)

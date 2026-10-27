@@ -153,7 +153,7 @@ impl Shell {
                 .truncate()
                 .px_2()
                 .py_1()
-                .rounded(px(8.))
+                .rounded(t.large())
                 .bg(t.panel)
                 .border_1()
                 .border_color(t.accent.opacity(0.6))

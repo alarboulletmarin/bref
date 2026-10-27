@@ -80,7 +80,7 @@ pub(super) fn status_card(t: Theme) -> Div {
             .pl_3()
             .pr_2()
             .py_1p5()
-            .rounded(t.px(6.))
+            .rounded(t.small())
             .bg(t.panel)
             .border_1()
             .border_color(t.border)
@@ -113,7 +113,7 @@ impl Shell {
             };
             status_card(t)
                 .max_w(t.px(440.))
-                .shadow_lg()
+                .shadow(t.floating())
                 .cursor_pointer()
                 .child(icon)
                 .child(div().min_w_0().child(toast.text.clone()))
@@ -123,9 +123,9 @@ impl Shell {
                         .debug_selector(|| "toast-undo".into())
                         .flex_none()
                         .px_2()
-                        .rounded(t.px(4.))
+                        .rounded(t.small())
                         .text_color(t.accent)
-                        .hover(|s| s.bg(t.border))
+                        .hover(|s| s.bg(t.hover))
                         .child(tr("Undo", "Annuler"))
                         .on_mouse_down(
                             MouseButton::Left,

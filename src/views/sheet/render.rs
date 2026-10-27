@@ -219,10 +219,10 @@ impl Sheet {
             .id(id)
             .px_2()
             .py_0p5()
-            .rounded(px(6.))
+            .rounded(t.small())
             .cursor_pointer()
             .text_color(if on { t.accent } else { t.soft })
-            .hover(|s| s.bg(t.border))
+            .hover(|s| s.bg(t.hover))
             .child(text)
             .on_click(move |_, window, cx| window.dispatch_action(pick.action(), cx))
     }
@@ -420,11 +420,11 @@ impl Sheet {
         div()
             .when(my > 0., |d| {
                 let (at, len) = thumb(h - ROW, self.scroll.1, my, self.view().1);
-                d.child(div().absolute().right(px(2.)).top(px(ROW + at)).w(px(6.)).h(px(len)).rounded(px(3.)).cursor_pointer().bg(t.dim.opacity(0.45)))
+                d.child(div().absolute().right(px(2.)).top(px(ROW + at)).w(px(6.)).h(px(len)).rounded_full().cursor_pointer().bg(t.dim.opacity(0.45)))
             })
             .when(mx > 0., |d| {
                 let (at, len) = thumb(w - GUTTER, self.scroll.0, mx, self.view().0);
-                d.child(div().absolute().bottom(px(2.)).left(px(GUTTER + at)).h(px(6.)).w(px(len)).rounded(px(3.)).cursor_pointer().bg(t.dim.opacity(0.45)))
+                d.child(div().absolute().bottom(px(2.)).left(px(GUTTER + at)).h(px(6.)).w(px(len)).rounded_full().cursor_pointer().bg(t.dim.opacity(0.45)))
             })
     }
 }

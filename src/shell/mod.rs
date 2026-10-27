@@ -56,12 +56,12 @@ use std::{
 };
 
 use gpui::{
-    Animation, AnimationExt, App, Application, Bounds, BoxShadow, ClipboardItem, Context,
+    Animation, AnimationExt, App, Application, Bounds, ClipboardItem, Context,
     CursorStyle, Decorations, Div, Entity, FocusHandle, Focusable, KeyBinding, MouseButton,
     MouseMoveEvent, ObjectFit, Stateful, PathPromptOptions, Pixels, Point, ResizeEdge, Size, TitlebarOptions,
     Transformation,
     Window, WindowBounds, WindowBackgroundAppearance, WindowDecorations,
-    WindowOptions, div, ease_out_quint, hsla, img, percentage, point, prelude::*, px, size, svg,
+    WindowOptions, div, ease_out_quint, img, percentage, point, prelude::*, px, size, svg,
 };
 
 use canvas::{Canvas, CanvasEvent};

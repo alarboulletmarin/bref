@@ -225,7 +225,7 @@ pub const NARROW: f32 = 140.;
 /// A card's frame, its checkbox and its text: the same for the placed card, the one being held
 /// and the place it would take.
 pub fn card_box(t: Theme) -> Div {
-    div().p_2().rounded(px(6.)).bg(t.bg).border_1().border_color(t.border).flex().items_start().gap_2()
+    div().p_2().rounded(t.small()).bg(t.bg).border_1().border_color(t.border).flex().items_start().gap_2()
 }
 
 pub fn check_box(done: bool, t: Theme) -> Div {
@@ -233,7 +233,7 @@ pub fn check_box(done: bool, t: Theme) -> Div {
         .size(px(16.))
         .flex_none()
         .mt(px(1.))
-        .rounded(px(4.))
+        .rounded(t.small())
         .border_1()
         .border_color(if done { t.accent } else { t.soft })
         .flex()
@@ -265,7 +265,7 @@ impl Render for Dragged {
         card_box(t)
             .w(self.width)
             .border_color(t.accent)
-            .shadow_lg()
+            .shadow(t.lifted())
             .text_size(px(13.))
             .text_color(t.text)
             .child(check_box(self.done, t))
