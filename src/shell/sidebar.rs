@@ -582,6 +582,7 @@ impl Shell {
                 };
                 // Name and detail share the row by measure: a text is cut with an ellipsis only when it
                 // is given its width, so the shares are worked out here.
+                let (stem, ext) = row.split();
                 let shown = {
                     let used = 8. + 14. * row.depth as f32 + 8. + 8.;
                     let has_icon = tree || self.icons.contains_key(&row.path);
@@ -597,8 +598,10 @@ impl Shell {
                     };
                     let (name_w, detail_w) = (measure(&row.name, 13.), measure(&detail, 11.5));
                     let (name_room, detail_room) = nav::share(avail, name_w, detail_w, f32::from(t.px(4.)), f32::from(t.px(nav::DETAIL_MIN)));
+                    // The ellipsis goes into the name; its extension stays whole.
+                    let stem_room = if name_w <= name_room { f32::MAX } else { name_room - measure(ext, 13.) };
                     (
-                        nav::ellipsize(&row.name, name_room, |s| measure(s, 13.)),
+                        nav::ellipsize(stem, stem_room, |s| measure(s, 13.)),
                         nav::ellipsize(&detail, detail_room, |s| measure(s, 11.5)),
                     )
                 };
@@ -641,16 +644,21 @@ impl Shell {
                                     move || name.clone()
                                 })
                                 .overflow_hidden()
+                                .flex()
                                 // The name goes first, in full as long as it fits; the link's line, or the
                                 // reason a folder cannot be read, takes what is left.
                                 .map(|d| match (closed.is_some(), wide) {
                                     // The reason a folder cannot be read is said in full; its name gives way.
-                                    (true, _) => d.flex_1().min_w(t.px(40.)).truncate(),
-                                    (_, true) => d.flex_none().max_w(gpui::relative(0.7)).truncate(),
-                                    _ => d.flex_none().whitespace_nowrap().child(shown.0.clone()),
+                                    (true, _) => d.flex_1().min_w(t.px(40.)),
+                                    (_, true) => d.flex_none().max_w(gpui::relative(0.7)),
+                                    _ => d.flex_none().whitespace_nowrap(),
                                 })
                                 .when(current, |d| d.text_color(t.accent))
-                                .when(wide, |d| d.child(row.name.clone())),
+                                .child(div().when(wide, |d| d.min_w_0().truncate()).child(if wide { stem.to_string() } else { shown.0.clone() }))
+                                .when(!ext.is_empty(), |d| {
+                                    let selector = format!("nav-ext-{}", row.name);
+                                    d.child(div().debug_selector(move || selector.clone()).flex_none().text_color(t.soft).child(ext.to_string()))
+                                }),
                         )
                         .when(!wide, |d| d.child(div().flex_1().min_w_0()))
                         .child(

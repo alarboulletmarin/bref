@@ -135,3 +135,42 @@ fn the_vault_search_field_has_its_own_line(cx: &mut TestAppContext) {
     }
     let _ = fs::remove_dir_all(&root);
 }
+
+/// Other files than notes carry their extension next to the name: whole and on the name's line at every panel
+/// width and zoom, the ellipsis in the name; notes and folders have none.
+#[gpui::test]
+fn a_file_keeps_its_extension_whole_when_its_name_is_cut(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "panel-ext");
+    fs::create_dir_all(root.join("Dossier.v2")).unwrap();
+    let long = "Très longue note de réunion ".repeat(8) + ".pdf";
+    let files = ["a.csv", "photo.PNG", "archive.tar.gz", "é 漢字 🎉.pdf", "x.svg", long.as_str()];
+    for file in files {
+        fs::write(root.join(file), "x").unwrap();
+    }
+    fs::write(root.join("note.v2.md"), "x").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    shell.update_in(cx, |s, window, cx| s.show_nav(Mode::Tree, false, window, cx));
+    cx.simulate_resize(size(px(1000.), px(720.)));
+    for zoom in ["secondary-0", "secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-="] {
+        cx.simulate_keystrokes(zoom);
+        for width in [180., 260., 600.] {
+            shell.update(cx, |s, cx| {
+                s.nav.list_w = px(width);
+                cx.notify();
+            });
+            let panel = bounds(cx, "nav-panel".into()).unwrap();
+            for file in files {
+                let (name, ext) = (bounds(cx, format!("nav-name-{file}")).unwrap(), bounds(cx, format!("nav-ext-{file}")).unwrap());
+                let dot = file.rfind('.').unwrap();
+                assert_eq!(ext.size.height, name.size.height, "{file} at {width}");
+                assert!(ext.right() <= panel.right() + px(0.5) && ext.right() <= name.right() + px(0.5), "{file} at {width}: {name:?} {ext:?} {panel:?}");
+                assert!(ext.left() > name.left(), "{file} at {width}: the extension comes after the name");
+                // As wide as the extension alone: never cut.
+                let alone = file[dot..].chars().count() as f32;
+                assert!(ext.size.width >= px(alone * 3.), "{file} at {width}: {ext:?}");
+            }
+            assert!(bounds(cx, "nav-ext-note.v2".into()).is_none() && bounds(cx, "nav-ext-Dossier.v2".into()).is_none());
+        }
+    }
+    let _ = fs::remove_dir_all(&root);
+}

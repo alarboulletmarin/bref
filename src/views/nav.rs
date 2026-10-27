@@ -128,7 +128,8 @@ pub fn ellipsize(text: &str, room: f32, width: impl Fn(&str) -> f32) -> String {
     if width(text) <= room {
         return text.to_string();
     }
-    let ends: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
+    let mut ends: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
+    ends.push(text.len());
     // The longest prefix that fits with the ellipsis (width grows with the prefix: bisection).
     let (mut low, mut high) = (0, ends.len());
     while low < high {
@@ -138,14 +139,31 @@ pub fn ellipsize(text: &str, room: f32, width: impl Fn(&str) -> f32) -> String {
             false => high = mid - 1,
         }
     }
-    let cut = text[..ends.get(low).copied().unwrap_or(0)].trim_end();
+    let cut = text[..ends[low]].trim_end();
     match width("…") <= room {
         true => format!("{cut}…"),
         false => String::new(),
     }
 }
 
+/// A file's name cut into the name and its extension (`contacts` + `.csv`, the dot with the extension); only
+/// the last dot counts, and a leading or trailing dot is not an extension.
+pub fn split_ext(name: &str) -> (&str, &str) {
+    match name.rfind('.') {
+        Some(dot) if dot > 0 && dot + 1 < name.len() => name.split_at(dot),
+        _ => (name, ""),
+    }
+}
+
 impl Row {
+    /// The name as shown and its extension: a note (its name has no `.md`) and a folder are never split.
+    pub fn split(&self) -> (&str, &str) {
+        match self.dir.is_some() || self.path.extension().is_some_and(|e| e == "md") {
+            true => (&self.name, ""),
+            false => split_ext(&self.name),
+        }
+    }
+
     /// The icon that says what the row is: a folder (shut or open), a note, a table, a diagram, a picture,
     /// any other file.
     pub fn icon(&self) -> &'static str {
@@ -637,6 +655,10 @@ mod tests {
         assert_eq!(ellipsize("abcdef", 1., width), "…");
         assert_eq!(ellipsize("abcdef", 0.5, width), "");
         assert_eq!(ellipsize("", 0., width), "");
+        // One letter that does not fit (a stem next to a long extension).
+        assert_eq!(ellipsize("a", 0.5, width), "");
+        assert_eq!(ellipsize("a", -3., width), "");
+        assert_eq!(ellipsize("ab", 1., width), "…");
         // Never inside an accent, an emoji or a wide letter; a trailing space goes.
         assert_eq!(ellipsize("é🎉 漢字 x", 4., width), "é🎉…");
         assert_eq!(ellipsize("aa  bbbb", 5., width), "aa…");
@@ -644,6 +666,29 @@ mod tests {
             let cut = ellipsize("Profonde note à é🎉漢", room as f32, width);
             assert!(width(&cut) <= room as f32, "{room}: {cut}");
         }
+    }
+
+    #[test]
+    fn an_extension_is_split_off_a_file_name_only() {
+        assert_eq!(split_ext("a.csv"), ("a", ".csv"));
+        assert_eq!(split_ext("photo.PNG"), ("photo", ".PNG"));
+        assert_eq!(split_ext("archive.tar.gz"), ("archive.tar", ".gz"));
+        assert_eq!(split_ext(".gitignore"), (".gitignore", ""));
+        assert_eq!(split_ext("sans extension"), ("sans extension", ""));
+        assert_eq!(split_ext("fin."), ("fin.", ""));
+        assert_eq!(split_ext(""), ("", ""));
+        assert_eq!(split_ext("é 漢字 🎉.pdf"), ("é 漢字 🎉", ".pdf"));
+        let row = |file: &str, name: &str, dir| Row { path: PathBuf::from(file), name: name.into(), depth: 0, dir };
+        // A note's name has no `.md` (its dot is part of the name); a folder is never split.
+        assert_eq!(row("n.v2.md", "n.v2", None).split(), ("n.v2", ""));
+        assert_eq!(row("Dossier.v2", "Dossier.v2", Some(false)).split(), ("Dossier.v2", ""));
+        assert_eq!(row("t/a.csv", "a.csv", None).split(), ("a", ".csv"));
+        // The ellipsis goes into the name, the extension stays whole.
+        let width = |t: &str| t.chars().count() as f32;
+        let (stem, ext) = split_ext("Très longue note de réunion.pdf");
+        let cut = ellipsize(stem, 16. - width(ext), width);
+        assert_eq!(format!("{cut}{ext}"), "Très longue….pdf");
+        assert!(width(&format!("{cut}{ext}")) <= 16.);
     }
 
     #[test]
