@@ -660,3 +660,40 @@ fn clear_at_a_glance(cx: &mut TestAppContext) {
     let pane = cx.debug_bounds(leak(format!("pane-{active}"))).unwrap();
     assert!(line.top() == pane.top() && line.left() >= pane.left() && line.right() <= pane.right() && line.size.height >= px(3.), "{line:?} in {pane:?}");
 }
+
+/// The rail reads as three groups (navigation, views, actions) then the bottom ones: in a 900, 720 and
+/// 480 px high window the buttons come in that order, none overlaps the next, and the groups are a
+/// button apart (at 480 px the rail scrolls, so the layout is the same).
+#[gpui::test]
+fn rail_groups_keep_their_order_and_room(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-rail-groups-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let _config = isolated_config(&root);
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (_shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
+    cx.run_until_parked();
+    let order = [
+        "nav-commands", "nav-back", "nav-forward", "nav-tree", "nav-recent", "nav-graph", "nav-tags", "nav-links", "nav-calendar", "nav-find", "nav-search", "nav-new", "nav-trash", "nav-help",
+    ];
+    for height in [900., 720., 480.] {
+        cx.simulate_resize(size(px(860.), px(height)));
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+        let b: Vec<_> = order.iter().map(|id| cx.debug_bounds(id).unwrap_or_else(|| panic!("{id} is drawn at {height}"))).collect();
+        for (pair, ids) in b.windows(2).zip(order.windows(2)) {
+            assert!(pair[0].bottom() <= pair[1].top(), "{} overlaps {} at {height}", ids[0], ids[1]);
+        }
+        let gap = |from: &str, to: &str| {
+            let at = |id: &str| b[order.iter().position(|o| *o == id).unwrap()];
+            at(to).top() - at(from).bottom()
+        };
+        for (from, to) in [("nav-commands", "nav-back"), ("nav-forward", "nav-tree"), ("nav-find", "nav-search")] {
+            assert!(gap(from, to) >= px(24.), "{from} and {to} are not set apart at {height}");
+        }
+        assert!(gap("nav-tree", "nav-recent") < px(8.), "views stay one list at {height}");
+    }
+}

@@ -737,7 +737,7 @@ impl Shell {
                 .justify_center()
                 .rounded(t.small())
                 .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.hover)).active(|s| s.bg(t.pressed)))
-                .child(svg().path(icon).size(t.px(14.)).flex_none().text_color(t.soft).when(!on, |s| s.opacity(0.35)))
+                .child(svg().path(icon).size(t.px(14.)).flex_none().text_color(if on { t.soft } else { t.dim }))
         };
         let shown: Vec<Mode> = Mode::ALL.into_iter().filter(|m| self.tool_shown(*m)).collect();
         let mode_button = |id: &'static str, icon, m: Mode, label: &'static str, keys: String| {
@@ -763,18 +763,30 @@ impl Shell {
             .flex_col()
             .items_center()
             .gap_1()
-            // The app logo, at the top of the rail on every system.
-            .child(div().debug_selector(|| "rail-logo".into()).mb_1().child(crate::ui::assets::logo(t)))
+            // The app logo is the commands button, at the top of the rail on every system.
             .child(
-                button("nav-commands", "menu.svg", false, t)
+                div()
+                    .id("nav-commands")
                     .debug_selector(|| "nav-commands".into())
+                    .size(t.px(28.))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(t.small())
+                    .cursor_pointer()
+                    .tab_index(0)
+                    .focus(|s| s.border_2().border_color(t.accent))
+                    .hover(|s| s.bg(t.hover))
+                    .active(|s| s.bg(t.pressed))
+                    .child(div().debug_selector(|| "rail-logo".into()).child(crate::ui::assets::logo(t)))
                     .tooltip(tip(tr("Commands", "Commandes"), keys(&crate::actions::ToggleCommands), t))
                     .on_click(cx.listener(|this, _, window, cx| this.open_commands(window, cx))),
             )
-            // Back and forward, one above the other (side by side, two 24 px targets do not fit the rail);
-            // dimmed when there is nowhere to go.
+            // Three groups, one button's height apart: navigation, the panel's views, actions.
             .child(
                 div()
+                    .mt(t.px(28.))
                     .flex()
                     .flex_col()
                     .child(
@@ -788,6 +800,13 @@ impl Shell {
                             .on_click(cx.listener(|this, _, window, cx| this.travel(true, window, cx))),
                     ),
             )
+            .child(
+                div()
+                    .mt(t.px(28.))
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_1()
             .child(mode_button("nav-tree", "tree.svg", Mode::Tree, tr("Vault tree", "Arbre du coffre"), keys(&ShowTree)))
             .child(mode_button("nav-recent", "clock.svg", Mode::Recent, tr("Recent notes", "Notes récentes"), keys(&ShowRecent)))
             .child(mode_button("nav-graph", "graph.svg", Mode::Graph, tr("Graph of the notes", "Graphe des notes"), keys(&ShowGraph)))
@@ -802,22 +821,25 @@ impl Shell {
                         true => this.show_nav(Mode::Search, true, window, cx),
                         false => this.open_vault_find(window, cx),
                     })),
-            )
-            .child(div().w(t.px(16.)).h(t.px(1.)).my_1().bg(t.border))
+            ))
             .child(
+                div().mt(t.px(28.)).flex().flex_col().items_center().gap_1().child(
                 button("nav-search", "search.svg", false, t)
+                    .debug_selector(|| "nav-search".into())
                     .tooltip(tip(tr("Find or create a note", "Chercher ou créer une note"), keys(&crate::actions::OpenPalette), t))
                     .on_click(cx.listener(|this, _, window, cx| this.open_palette("", window, cx))),
             )
             .child(
                 button("nav-new", "plus.svg", false, t)
+                    .debug_selector(|| "nav-new".into())
                     .tooltip(tip(tr("New note", "Nouvelle note"), keys(&crate::actions::NewNote), t))
                     .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
-            )
+            ))
             .child(div().flex_1().w_full().when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window)))
             // Vault trash (what it holds, to take it back) and backup.
             .child(
                 button("nav-trash", "trash.svg", false, t)
+                    .debug_selector(|| "nav-trash".into())
                     .tooltip(tip(tr("Trash: restore a note", "Corbeille : restaurer une note"), String::new(), t))
                     .on_click(cx.listener(|this, _, window, cx| this.open_trash(window, cx))),
             )
@@ -849,6 +871,7 @@ impl Shell {
             )))
             .child(
                 button("nav-help", "help.svg", false, t)
+                    .debug_selector(|| "nav-help".into())
                     .tooltip(tip(tr("Shortcuts and help", "Raccourcis et aide"), keys(&crate::actions::ToggleHelp), t))
                     .on_click(cx.listener(|this, _, window, cx| this.set_help(true, window, cx))),
             );
