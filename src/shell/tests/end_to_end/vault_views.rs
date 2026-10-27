@@ -253,13 +253,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     shell.update(cx, |s, _| s.toasts.clear());
     fs::remove_dir_all(&out).unwrap();
 
-    // Search in the vault: Ctrl+Shift+F lists each line containing the typed text, ignoring
-    // case; Enter opens the note, the passage selected.
+    // Search in the vault: Ctrl+Shift+F lists in the panel each match of the typed text, note by
+    // note, ignoring case; Enter on a match opens its note, the passage selected.
     fs::write(root.join("Recette.md"), "# Recette\n\nfarine\n\ndu Quinoa rouge, quinoa\n").unwrap();
     fs::write(root.join("Liste.md"), "# Liste\n- quinoa\n").unwrap();
     j.settle(cx);
     cx.simulate_keystrokes("secondary-shift-f");
     cx.simulate_input("QUINOA");
+    cx.run_until_parked();
     cx.simulate_keystrokes("down enter");
     j.settle(cx);
     let found = shell.read_with(cx, |s, cx| (s.pane().path.clone().unwrap(), s.pane().editor.read(cx).selected().to_lowercase()));
@@ -267,7 +268,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     assert_eq!(found.1, "quinoa");
     cx.simulate_keystrokes("secondary-shift-f");
     cx.simulate_input("quinoa r");
-    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("down enter");
     j.settle(cx);
     assert_eq!(shell.read_with(cx, |s, cx| (s.pane().path.clone().unwrap(), s.pane().editor.read(cx).selected().to_string())), (root.join("Recette.md"), "Quinoa r".to_string()));
     shell.update(cx, |s, cx| s.open_note(&was, cx));

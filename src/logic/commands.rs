@@ -136,7 +136,7 @@ pub fn catalog() -> Vec<(&'static str, &'static str, &'static str, Group)> {
         ("nav::NewFolder", tr("New folder", "Nouveau dossier"), "folder-plus.svg", Create),
         ("editor::OpenEmbed", tr("Open the embedded note (on its line)", "Ouvrir la note incorporée (sur sa ligne)"), "link.svg", Go),
         ("app::Today", tr("Today's note", "Note du jour"), "c-calendar.svg", Go),
-        ("app::SearchVault", tr("Search the whole vault", "Chercher dans tout le coffre"), "search.svg", Go),
+        ("app::SearchVault", tr("Search the whole vault", "Chercher dans tout le coffre"), "find-text.svg", Go),
         ("nav::ShowTree", tr("Vault tree", "Arbre du coffre"), "tree.svg", Go),
         ("nav::ShowRecent", tr("Recent notes", "Notes récentes"), "clock.svg", Go),
         ("nav::ShowGraph", tr("Graph of the notes", "Graphe des notes"), "graph.svg", Go),

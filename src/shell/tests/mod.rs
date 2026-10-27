@@ -9,6 +9,7 @@ mod enlarge;
 mod end_to_end;
 mod feedback;
 mod find_bar;
+mod vault_find;
 mod keyboard;
 mod keycaps;
 mod layout;

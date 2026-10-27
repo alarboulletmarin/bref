@@ -3,6 +3,10 @@
 use super::*;
 use crate::views::field::{Field, FieldEvent};
 
+/// What the matches were found for: the text's version, the search, case, whole words, regular expression, and
+/// the lines it keeps to.
+type Asked = (u64, String, bool, bool, bool, Option<Range<usize>>);
+
 /// Find in the note: its two fields, its settings and the matches found. Kept when the bar closes:
 /// it opens again on the same search.
 pub(super) struct Finder {
@@ -21,7 +25,7 @@ pub(super) struct Finder {
     /// Current match in `hits`.
     pub(super) at: usize,
     /// Text and settings for which `hits` was computed.
-    key: Option<(u64, String, bool, bool, bool, Option<Range<usize>>)>,
+    key: Option<Asked>,
     _fields: [gpui::Subscription; 2],
 }
 
@@ -62,6 +66,29 @@ impl Editor {
     #[cfg(test)]
     pub fn find_fields(&self) -> Option<(Entity<Field>, Entity<Field>)> {
         self.find.as_ref().map(|find| (find.query.clone(), find.with.clone()))
+    }
+
+    /// The bar's search, open or kept: what the vault search starts from.
+    pub fn search(&self, cx: &App) -> Option<md::Swap> {
+        let find = self.find.as_ref().or(self.found.as_ref())?;
+        let with = find.with.read(cx).line.text.clone();
+        Some(md::Swap { query: find.query(cx), with, case: find.case, word: find.word, regex: find.regex })
+    }
+
+    /// A result of the vault search: the bar opens on its search, the current match the one at byte `at`, and
+    /// the note has the keys.
+    pub fn show_match(&mut self, swap: &md::Swap, at: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let mut find = match self.find.take().or_else(|| self.found.take()) {
+            Some(find) => find,
+            None => self.new_finder(window, cx),
+        };
+        find.query.update(cx, |field, cx| field.set(&swap.query, cx));
+        find.with.update(cx, |field, cx| field.set(&swap.with, cx));
+        (find.case, find.word, find.regex, find.span, find.inside, find.key) = (swap.case, swap.word, swap.regex, None, false, None);
+        self.find = Some(find);
+        self.sel = at.min(self.content.len())..at.min(self.content.len());
+        self.find_changed(cx);
+        window.focus(&self.focus);
     }
 
     fn new_finder(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Finder {
@@ -274,42 +301,9 @@ impl Editor {
         let keys = |action: &dyn gpui::Action| crate::ui::keys::of(cx, action);
         let field = |id: &'static str, field: &Entity<Field>, hint: &'static str| {
             let (on, empty) = (field.focus_handle(cx).is_focused(window), field.read(cx).line.text.is_empty());
-            div()
-                .debug_selector(move || id.to_string())
-                .flex_1()
-                .min_w(t.px(80.))
-                .h(t.px(26.))
-                .px_2()
-                .rounded(t.px(6.))
-                .border_1()
-                .bg(t.bg)
-                .border_color(if on { t.accent } else { t.border })
-                .relative()
-                .flex()
-                .items_center()
-                .overflow_hidden()
-                .child(field.clone())
-                .when(empty, |d| d.child(div().absolute().left_2().text_color(t.soft).child(hint)))
+            crate::ui::widgets::field_frame(id, field.clone(), on, empty, hint, t)
         };
-        let toggle = |id: &'static str, label: &'static str, on: bool, tip: &'static str, keys: String| {
-            div()
-                .id(id)
-                .debug_selector(move || id.to_string())
-                .flex_none()
-                .h(t.px(26.))
-                .min_w(t.px(26.))
-                .px_1p5()
-                .rounded(t.px(6.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .cursor_pointer()
-                .text_color(if on { t.accent } else { t.soft })
-                .when(on, |d| d.bg(t.selection))
-                .hover(|s| s.bg(t.border))
-                .tooltip(crate::ui::widgets::tip(tip, keys, t))
-                .child(label)
-        };
+        let toggle = |id, label, on, name, keys| crate::ui::widgets::toggle(id, label, on, name, keys, t);
         let icon = |id: &'static str, icon: &'static str, on: bool, tip: &'static str, keys: String| {
             crate::ui::widgets::button(id, icon, on, t).debug_selector(move || id.to_string()).tooltip(crate::ui::widgets::tip(tip, keys, t))
         };

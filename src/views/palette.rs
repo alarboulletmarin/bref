@@ -206,8 +206,6 @@ pub enum PaletteEvent {
     UndoSwap,
     /// Creates a note that opens as a kanban board.
     NewBoard,
-    /// Line chosen in the vault search: the note, the line's index, the searched text.
-    OpenAt(PathBuf, usize, String),
     /// Opens or creates the daily note.
     Today,
     /// Back (`false`) or forward (`true`) in what has been shown.
@@ -236,8 +234,6 @@ enum Item {
     Note(usize),
     /// Note whose text, not name, matches the search.
     Text(usize),
-    /// Vault search: a line of a note (its index) where the searched text appears.
-    Line(usize, usize),
     Create,
     Vault,
     Help,
@@ -284,7 +280,6 @@ pub struct Palette {
     /// Choice list: `entries` are the options, without creation or commands.
     choices: bool,
     /// Search in the vault's text: one found line per choice, no note by name nor command.
-    lines: bool,
     /// The new-version check is on: `None` outside the main palette.
     updates: Option<bool>,
     /// Number of the new version the app can install by itself.
@@ -352,19 +347,6 @@ fn snippet_at(body: &str, lower: &str, row: usize, word: &str) -> String {
     )
 }
 
-/// Index of each line of the text (lowercase) where `query` appears, once per line.
-fn rows_with(lower: &str, query: &str) -> Vec<usize> {
-    let (mut rows, mut row, mut seen) = (Vec::new(), 0, 0);
-    for (at, _) in lower.match_indices(query) {
-        row += lower[seen..at].matches('\n').count();
-        seen = at;
-        if rows.last() != Some(&row) {
-            rows.push(row);
-        }
-    }
-    rows
-}
-
 /// The text in lowercase, without its accents: « thème » is found by typing « theme ».
 fn fold(text: &str) -> String {
     text.to_lowercase()
@@ -418,7 +400,6 @@ impl Palette {
             aside: false,
             prompt: None,
             choices: false,
-            lines: false,
             updates: None,
             installable: None,
             table: false,
@@ -511,12 +492,6 @@ impl Palette {
         this
     }
 
-    /// Search in the vault's text (`Ctrl+Shift+F`): each line where
-    /// the typed text appears, ignoring case; Enter opens the note at that line.
-    pub fn search(entries: Vec<Entry>, theme: Theme, cx: &mut Context<Self>) -> Self {
-        Self { lines: true, ..Self::new(entries, "", theme, cx) }
-    }
-
     /// Preselects the choice at index `index` (two choices can bear the same name).
     pub fn select(mut self, index: usize) -> Self {
         self.selected = index.min(self.items.len().saturating_sub(1));
@@ -549,17 +524,13 @@ impl Palette {
         self.items.len()
     }
 
-    /// What the empty list says, under the input: that a single letter is too little for the text search, or that nothing
-    /// matches. An input field and an empty query have nothing to say.
+    /// What the empty list says, under the input: that nothing matches. An input field and an empty query have
+    /// nothing to say.
     fn nothing_to_show(&self) -> Option<&'static str> {
         if !self.items.is_empty() || (self.prompt.is_some() && !self.choices) {
             return None;
         }
-        match (self.lines, self.query.text.trim().chars().count()) {
-            (_, 0) => None,
-            (true, 1) => Some(tr("Type at least two characters", "Tapez au moins deux caractères")),
-            _ => Some(tr("No result", "Aucun résultat")),
-        }
+        (!self.query.text.trim().is_empty()).then(|| tr("No result", "Aucun résultat"))
     }
 
     pub fn chosen(&self) -> Option<usize> {
@@ -599,16 +570,6 @@ impl Palette {
             return self.items.clear();
         }
         let q = self.query.text.trim().to_lowercase();
-        if self.lines {
-            // ponytail: the first 200 lines found, recent notes first, searched on
-            // every keystroke in the whole vault text; a background search and a
-            // full list if vaults grow. A single letter would bring up everything.
-            let found = (0..self.entries.len()).filter(|_| q.chars().count() >= 2);
-            let found = found.flat_map(|i| rows_with(&self.entries[i].lower, &q).into_iter().map(move |row| Item::Line(i, row)));
-            self.items = found.take(200).collect();
-            self.selected = 0;
-            return;
-        }
         // ">" first: the palette shows only the commands, and the ">"
         // is cleared from the field.
         if !self.commands_only && !self.choices && self.prompt.is_none() && self.query.text.starts_with('>') {
@@ -769,7 +730,6 @@ impl Palette {
         }
         cx.emit(match self.items.get(index) {
             Some(Item::Note(i) | Item::Text(i)) => PaletteEvent::Open(self.entries[*i].path.clone()),
-            Some(&Item::Line(i, row)) => PaletteEvent::OpenAt(self.entries[i].path.clone(), row, self.query.text.trim().to_string()),
             Some(Item::Create) => PaletteEvent::Create(self.query.text.trim().to_string()),
             Some(Item::Vault) => PaletteEvent::ChangeVault,
             Some(Item::Help) => PaletteEvent::Help,
@@ -980,10 +940,6 @@ impl Render for Palette {
                     let word = word.split_whitespace().next().unwrap_or_default().to_string();
                     (e.name.clone(), snippet(&e.body, &e.lower, &word))
                 }
-                Item::Line(n, row) => {
-                    let e = &self.entries[*n];
-                    (e.name.clone(), snippet_at(&e.body, &e.lower, *row, &self.query.text.trim().to_lowercase()))
-                }
                 Item::Create => (
                     format!("{} « {} »", tr("Create", "Créer"), self.query.text.trim()),
                     tr("new note", "nouvelle note").into(),
@@ -1037,7 +993,7 @@ impl Render for Palette {
                 .child(
                     div()
                         .truncate()
-                        .when(matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none().max_w(t.px(220.)))
+                        .when(matches!(item, Item::Text(_)), |d| d.flex_none().max_w(t.px(220.)))
                         .child(label),
                 )
                 .child(if shortcut {
@@ -1045,7 +1001,7 @@ impl Render for Palette {
                 } else {
                     div()
                         .truncate()
-                        .when(!matches!(item, Item::Text(_) | Item::Line(..)), |d| d.flex_none())
+                        .when(!matches!(item, Item::Text(_)), |d| d.flex_none())
                         .text_color(if i == self.selected { t.text } else { t.soft })
                         .text_size(t.px(12.))
                         .child(detail)
@@ -1110,10 +1066,9 @@ impl Render for Palette {
                             // The cursor first, the prompt after it: one writes in its place.
                             .child(div().id("palette-line").min_w_0().overflow_x_scroll().track_scroll(&self.scroll).flex().child(line.flex_none().pr(t.px(2.)).whitespace_nowrap()).child(follow))
                             .when(self.query.text.is_empty(), |d| {
-                                d.child(div().min_w_0().truncate().text_color(t.soft).child(self.prompt.clone().unwrap_or_else(|| match (self.lines, self.commands_only) {
-                                    (true, _) => tr("Search in the text of the vault…", "Chercher dans le texte du coffre…").into(),
-                                    (_, true) => tr("Search a command…", "Rechercher une commande…").into(),
-                                    _ => tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into(),
+                                d.child(div().min_w_0().truncate().text_color(t.soft).child(self.prompt.clone().unwrap_or_else(|| match self.commands_only {
+                                    true => tr("Search a command…", "Rechercher une commande…").into(),
+                                    false => tr("Search or create a note, #tag…", "Chercher ou créer une note, #tag…").into(),
                                 })))
                             })
                             .when(!self.query.text.is_empty(), |d| {
@@ -1153,7 +1108,7 @@ impl Render for Palette {
 
 #[cfg(test)]
 mod tests {
-    use super::{command, contains_all, fuzzy, rows_with, snippet, snippet_at};
+    use super::{command, contains_all, fuzzy, snippet, snippet_at};
 
     #[test]
     fn finds_text_with_all_the_words() {
@@ -1166,8 +1121,6 @@ mod tests {
     fn lists_each_line_once() {
         let body = "Lait, lait\n\nrien\nau LAIT cru\n";
         let lower = body.to_lowercase();
-        assert_eq!(rows_with(&lower, "lait"), [0, 3]);
-        assert!(rows_with(&lower, "absent").is_empty());
         assert_eq!(snippet_at(body, &lower, 3, "lait"), "au LAIT cru");
     }
 

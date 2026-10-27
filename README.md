@@ -191,7 +191,7 @@ The bottom right of the note shows its number of words and characters; with a se
 | `Ctrl + P` | palette: find a note by name or text, create one, filter by `#tag` |
 | `Ctrl + F`, `Ctrl + R` | [find in the note](#find-and-replace), find and replace |
 | `Ctrl + Shift + O` | outline: the headings of the note, to jump to one (also `Outline of the note` in the palette) |
-| `Ctrl + Shift + F` | search the text of the whole vault: every line that holds what you type, whatever its case; `Enter` opens the note with the match selected |
+| `Ctrl + Shift + F` | [search the text of the whole vault](#search-the-vault) in the panel, and replace there |
 | `Ctrl + N` | new note |
 | `Ctrl + J` | today's note: `2026-10-09.md`, opened wherever it is in the vault, or created with the date as its title (also `Today's note` in the palette) |
 | `Ctrl + E`, `Ctrl + Shift + T`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |
@@ -281,9 +281,15 @@ If Bref is open on today's note, the line appears there a moment later. Without 
 
 A regular expression that does not compile says « Invalid expression » in the bar. Click in the note to edit it while the bar stays open: the matches follow the text, `F3`, `Alt + C` and `Alt + W` still work, and `Esc` closes the bar. With no bar, `F3` opens it.
 
+### Search the vault
+
+`Ctrl + Shift + F` (or the rail's icon with lines and a magnifier) shows the search of the whole vault in the panel, on the search of the note's bar when it is open. It takes the same options as the bar (`Alt + C`, `Alt + W`, `Alt + R`, or `Aa`, `“ab”`, `.*`). Under the count of matches and notes, each note that has the search lists its matches, one line each, with its line number and the match marked; a note's header folds its matches. `↑` `↓` walk the list, `Enter` or a click opens the note on that match, with its bar on the same search; `Esc` gives the keys back to the note. The search runs in the background as you type, and follows the notes as they change, from outside the app too.
+
+`Ctrl + R` (or the chevron) shows the *Replace with* line. Its button, `Ctrl + Enter` or `Enter` in the field replaces in every note, after showing how many matches in how many notes, and writes nothing until you accept; `Undo the replacement in the vault` in the palette puts every note back, except those changed since. The button on a note's header replaces in that note only. The cross at the end of a match sets it aside: neither listed nor replaced. A note that cannot be written is said, the others are replaced.
+
 ## Navigation
 
-A rail of icons stays on the left of the window. It opens a panel beside the note, in one of six views:
+A rail of icons stays on the left of the window. It opens a panel beside the note, in one of seven views:
 
 | View | Key | Shows |
 |---|---|---|
@@ -293,6 +299,7 @@ A rail of icons stays on the left of the window. It opens a panel beside the not
 | Tags | `Ctrl + T` | every `#tag` of the vault with its number of notes; unfold a tag to see them |
 | Backlinks | `Ctrl + L` | the notes that link to the open note, each with the line that holds the link |
 | Calendar | `Ctrl + Shift + J` | one month; the days that have their daily note stand out. Arrows change the day, `Page Up` and `Page Down` the month, `Enter` or a click opens the note of the day, or creates it. The week starts on Monday in French, on Sunday in English |
+| Search | `Ctrl + Shift + F` | every match of a search in the text of the vault, note by note (see [Search the vault](#search-the-vault)) |
 
 Backlinks follow the note you open, not the one you preview while moving through the list, so you can look at each linking note in turn. Links written with an alias (`[[Note|alias]]`) and links inside tables count.
 

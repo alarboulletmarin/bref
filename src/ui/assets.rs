@@ -121,6 +121,8 @@ impl AssetSource for Assets {
             "tree.svg" => r#"<path d="M3 3.5H10M3 3.5V12H6M3 7.75H6M8.5 7.75H13M8.5 12H13"/>"#,
             "clock.svg" => r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 5V8L10 9.5"/>"#,
             "search.svg" => r#"<circle cx="7" cy="7" r="3.5"/><path d="M9.7 9.7L12.5 12.5"/>"#,
+            // Lines of text and a magnifier: searching in the notes' text.
+            "find-text.svg" => r#"<path d="M2.5 3.5H12.5M2.5 6.5H7M2.5 9.5H5.5"/><circle cx="10.5" cy="9.5" r="2.5"/><path d="M12.3 11.3L14 13"/>"#,
             "plus.svg" => r#"<path d="M8 3.5V12.5M3.5 8H12.5"/>"#,
             // Six dots: a block's handle.
             "grip.svg" => r#"<path d="M6 3.5V3.6M10 3.5V3.6M6 8V8.1M10 8V8.1M6 12.5V12.6M10 12.5V12.6" stroke-width="2.2"/>"#,

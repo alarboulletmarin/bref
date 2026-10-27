@@ -141,7 +141,7 @@ impl Render for Shell {
             let toasts = self.render_toasts(cx);
             let toasts = div().absolute().bottom(px(54.)).left_4().right_4().flex().flex_col().items_end().gap_2().children(toasts);
             body.flex()
-                .child(self.render_nav(cx))
+                .child(self.render_nav(window, cx))
                 .when(self.nav.panel != Panel::Full, |d| d.child(note).children(comments))
                 .children(self.palette.clone())
                 .child(toasts)
@@ -252,7 +252,7 @@ impl Render for Shell {
                 MouseButton::Navigate(gpui::NavigationDirection::Forward),
                 cx.listener(|this, _, window, cx| this.travel(true, window, cx)),
             )
-            .on_action(cx.listener(|this, _: &SearchVault, window, cx| this.open_search(window, cx)))
+            .on_action(cx.listener(|this, _: &SearchVault, window, cx| this.open_vault_find(window, cx)))
             .on_action(cx.listener(|this, _: &ChooseTheme, window, cx| {
                 this.choose_setting(Setting::Theme, window, cx)
             }))

@@ -981,8 +981,8 @@ mod tests {
         assert_eq!(put("le", "lele", true, false).len(), 3);
         assert_eq!(put("le", "${1}x", true, true)[0].1, "x");
         let all = Swap { query: "le".into(), with: "un".into(), case: false, word: true, regex: false };
-        assert_eq!(swap("Le chat, le chien.", &all), Some(("un chat, un chien.".into(), 2)));
-        assert_eq!(swap("rien", &all), None);
+        assert_eq!(swap_except("Le chat, le chien.", &all, &[]), Some(("un chat, un chien.".into(), 2)));
+        assert_eq!(swap_except("rien", &all, &[]), None);
                 // Comment names: by content, numbered when the first cells are alike, by position when empty.
         let grid = |rows: &[&[&str]]| rows.iter().map(|r| r.iter().map(|c| c.to_string()).collect::<Vec<_>>()).collect::<Vec<_>>();
         let rows = grid(&[&["Nom", "", "Âge"], &["---", "---", "---"], &["Léa", "", "1"], &["Léa", "", "2"], &["", "", ""]]);

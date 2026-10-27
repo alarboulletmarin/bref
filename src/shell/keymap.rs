@@ -31,7 +31,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 k(&ToggleCommands, tr("Command palette: every command, found by what it does (also the first button of the rail, or > in the palette)", "Palette des commandes : toutes les commandes, trouvées par ce qu'elles font (aussi le premier bouton du rail, ou > dans la palette)")),
                 k(&editor::Find, tr("Find in the note", "Chercher dans la note")),
                 k(&editor::FindReplace, tr("Find and replace in the note", "Chercher et remplacer dans la note")),
-                k(&SearchVault, tr("Search the text of the whole vault, line by line", "Chercher dans le texte de tout le coffre, ligne par ligne")),
+                k(&SearchVault, tr("Search the text of the whole vault, in the panel: matches note by note, replace", "Chercher dans le texte de tout le coffre, dans le panneau : passages note par note, remplacer")),
                 k(&editor::FindNext, tr("Search bar: next match (Enter too)", "Barre de recherche : passage suivant (Entrée aussi)")),
                 k(&editor::FindPrev, tr("Search bar: previous match", "Barre de recherche : passage précédent")),
                 k(&editor::FindCase, tr("Search bar: match case", "Barre de recherche : respecter la casse")),

@@ -77,9 +77,11 @@ pub struct Swap {
     pub regex: bool,
 }
 
-/// `text` once all its matches are replaced, and their number; `None` if there are none.
-pub fn swap(text: &str, swap: &Swap) -> Option<(String, usize)> {
+/// `text` once its matches are replaced, except those that start at a byte of `skip` (dismissed from the
+/// vault search), and how many were; `None` if none was.
+pub fn swap_except(text: &str, swap: &Swap, skip: &[usize]) -> Option<(String, usize)> {
     let hits = replacements(text, &swap.query, &swap.with, swap.case, swap.word, swap.regex);
+    let hits: Vec<_> = hits.into_iter().filter(|(hit, _)| !skip.contains(&hit.start)).collect();
     let (mut put, mut done) = (String::with_capacity(text.len()), 0);
     for (hit, with) in &hits {
         put.push_str(&text[done..hit.start]);
@@ -88,6 +90,44 @@ pub fn swap(text: &str, swap: &Swap) -> Option<(String, usize)> {
     }
     put.push_str(&text[done..]);
     (!hits.is_empty()).then_some((put, hits.len()))
+}
+
+/// A match of the vault search: its line (from 1), that line (without its ending) and the match, in bytes of
+/// the note.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Hit {
+    pub line: usize,
+    pub span: Range<usize>,
+    pub at: Range<usize>,
+}
+
+/// The matches of `swap` in `text`, each with its line.
+pub fn hits(text: &str, swap: &Swap) -> Vec<Hit> {
+    let (mut line, mut from) = (1, 0);
+    let mut out = Vec::new();
+    for (at, _) in replacements(text, &swap.query, "", swap.case, swap.word, swap.regex) {
+        // Lines counted from the previous match on: one pass over the note.
+        line += text[from..at.start].matches('\n').count();
+        from = at.start;
+        let start = text[..at.start].rfind('\n').map_or(0, |i| i + 1);
+        let end = text[at.start..].find('\n').map_or(text.len(), |i| at.start + i);
+        out.push(Hit { line, span: start..end, at });
+    }
+    out
+}
+
+/// The line of `hit` as the vault search shows it: from its first letter, or cut to `before` characters ahead
+/// of the match (« … » says so); the match's place in it. A match over several lines is shown on its first.
+pub fn excerpt(text: &str, hit: &Hit, before: usize) -> (String, Range<usize>) {
+    let ahead = text[hit.span.start..hit.at.start].trim_start();
+    let cut = ahead.char_indices().rev().nth(before.saturating_sub(1)).filter(|_| ahead.chars().count() > before).map(|(i, _)| i);
+    let ahead = match cut {
+        Some(i) => format!("…{}", &ahead[i..]),
+        None => ahead.to_string(),
+    };
+    let end = hit.at.end.min(hit.span.end);
+    let shown = format!("{ahead}{}", &text[hit.at.start..hit.span.end]);
+    (shown, ahead.len()..ahead.len() + end - hit.at.start)
 }
 
 /// Number of words and characters of the text, as written: Markdown marks
@@ -114,4 +154,61 @@ pub fn recount(old: &str, was: (usize, usize), new: &str) -> (usize, usize) {
     let tail = a[a.len() - tail..].iter().position(|&c| c == b'\n').map_or(0, |i| tail - i - 1);
     let (gone, come) = (counts(&old[head..old.len() - tail]), counts(&new[head..new.len() - tail]));
     (was.0 + come.0 - gone.0, was.1 + come.1 - gone.1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn swap(query: &str, with: &str, regex: bool) -> Swap {
+        Swap { query: query.into(), with: with.into(), case: false, word: false, regex }
+    }
+
+    #[test]
+    fn lists_each_match_with_its_line() {
+        let text = "# Été\n\nUn été chaud.\n\n| a | été |\nfin";
+        let found = hits(text, &swap("été", "", false));
+        assert_eq!(found.iter().map(|h| h.line).collect::<Vec<_>>(), [1, 3, 5]);
+        for hit in &found {
+            assert_eq!(text[hit.at.clone()].to_lowercase(), "été");
+            assert!(hit.span.start <= hit.at.start && hit.at.end <= hit.span.end && !text[hit.span.clone()].contains('\n'));
+        }
+        // Two on a line, the last line without a line ending, none, an empty match.
+        assert_eq!(hits("a a\nb", &swap("a", "", false)).iter().map(|h| (h.line, h.span.clone())).collect::<Vec<_>>(), [(1, 0..3), (1, 0..3)]);
+        assert_eq!(hits("x\nfin", &swap("fin", "", false))[0].span, 2..5);
+        assert!(hits("abc", &swap("z", "", false)).is_empty() && hits("abc", &swap("^", "", true)).is_empty());
+        // A match over two lines keeps to its first line.
+        let over = hits("un\ndeux", &swap("n\nd", "", true));
+        assert_eq!((over[0].line, over[0].span.clone(), over[0].at.clone()), (1, 0..2, 1..4));
+    }
+
+    #[test]
+    fn an_excerpt_shows_the_match_in_its_line() {
+        let text = "  - un très long début de ligne avant le mot cherché ici";
+        let hit = &hits(text, &swap("cherché", "", false))[0];
+        let (shown, at) = excerpt(text, hit, 12);
+        assert_eq!(&shown[at.clone()], "cherché");
+        assert!(shown.starts_with('…') && shown.ends_with(" ici"), "{shown}");
+        assert_eq!(shown.chars().take_while(|&c| c != 'c').count(), 13, "{shown}");
+        // Near the start: the line from its first letter, its indentation dropped.
+        let (shown, at) = excerpt("\t\tbonjour", &hits("\t\tbonjour", &swap("jour", "", false))[0], 12);
+        assert_eq!((shown.as_str(), at), ("bonjour", 3..7));
+        // CJK and emoji: cut on a character, never inside one.
+        let text = "東京都の🎉とても長い文章の中に検索語があります";
+        let hit = &hits(text, &swap("検索語", "", false))[0];
+        let (shown, at) = excerpt(text, hit, 3);
+        assert_eq!((shown.as_str(), &shown[at]), ("…の中に検索語があります", "検索語"));
+        // A match over two lines: shown up to the end of the first.
+        let (shown, at) = excerpt("un\ndeux", &hits("un\ndeux", &swap("n\nd", "", true))[0], 12);
+        assert_eq!((shown.as_str(), at), ("un", 1..2));
+    }
+
+    #[test]
+    fn replaces_all_but_the_dismissed() {
+        let text = "a b a b a";
+        assert_eq!(swap_except(text, &swap("a", "x", false), &[]), Some(("x b x b x".into(), 3)));
+        assert_eq!(swap_except(text, &swap("a", "x", false), &[4]), Some(("x b a b x".into(), 2)));
+        assert_eq!(swap_except(text, &swap("a", "x", false), &[0, 4, 8]), None);
+        assert_eq!(swap_except(text, &swap("(a) (b)", "$2$1", true), &[]), Some(("ba ba a".into(), 2)));
+    }
 }

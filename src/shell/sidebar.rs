@@ -139,7 +139,7 @@ impl Shell {
         };
         match self.nav.mode {
             Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.images, &self.nav.open),
-            Mode::Graph | Mode::Calendar => Vec::new(),
+            Mode::Graph | Mode::Calendar | Mode::Search => Vec::new(),
             Mode::Tags => tag_rows(&self.notes, &self.nav.open),
             Mode::Links => (self.nav.anchor.iter())
                 .flat_map(|target| graph::backlinks(&self.notes, target))
@@ -712,7 +712,7 @@ impl Shell {
     }
 
     /// Rail, then panel and separator if they are expanded.
-    pub(super) fn render_nav(&mut self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    pub(super) fn render_nav(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let (mode, panel) = (self.nav.mode, self.nav.panel);
         let unfolded = panel != Panel::Rail;
@@ -795,6 +795,15 @@ impl Shell {
             .child(mode_button("nav-tags", "tag.svg", Mode::Tags, "Tags", keys(&ShowTags)))
             .child(mode_button("nav-links", "backlink.svg", Mode::Links, tr("Backlinks", "Rétroliens"), keys(&ShowLinks)))
             .child(mode_button("nav-calendar", "i-calendar.svg", Mode::Calendar, tr("Calendar", "Calendrier"), keys(&ShowCalendar)))
+            .child(
+                button("nav-find", "find-text.svg", unfolded && mode == Mode::Search, t)
+                    .debug_selector(|| "nav-find".into())
+                    .tooltip(tip(tr("Search the text of the vault", "Chercher dans le texte du coffre"), keys(&crate::actions::SearchVault), t))
+                    .on_click(cx.listener(|this, _, window, cx| match this.nav.panel != Panel::Rail && this.nav.mode == Mode::Search {
+                        true => this.show_nav(Mode::Search, true, window, cx),
+                        false => this.open_vault_find(window, cx),
+                    })),
+            )
             .child(div().w(t.px(16.)).h(t.px(1.)).my_1().bg(t.border))
             .child(
                 button("nav-search", "search.svg", false, t)
@@ -857,6 +866,7 @@ impl Shell {
             (Mode::Graph, _) => tr("Graph", "Graphe").to_string(),
             (Mode::Tags, _) => "Tags".to_string(),
             (Mode::Calendar, _) => tr("Calendar", "Calendrier").to_string(),
+            (Mode::Search, _) => tr("Search", "Recherche").to_string(),
             (Mode::Links, _) => {
                 let name = self.nav.anchor.as_deref().map(vault::stem).unwrap_or_default();
                 format!("{} {name}", tr("Links to", "Liens vers"))
@@ -1046,6 +1056,7 @@ impl Shell {
             .map(|d| match mode {
                 Mode::Graph => d.child(div().flex_1().min_h_0().child(self.graph.clone())),
                 Mode::Calendar => d.child(self.render_calendar(cx)),
+                Mode::Search => d.child(self.render_vault_find(window, cx)),
                 _ => d.child(div().flex_1().min_h_0().relative().flex().flex_col().child(list).children(nothing)),
             });
         // 5 px handle around a 1 px stroke; double-click: original width.

@@ -39,17 +39,6 @@ impl Editor {
         self.reveal_top = top;
     }
 
-    /// Vault search result: on the line of rank `row`, selects the first
-    /// passage equal to `query` (ignoring case); failing that, the cursor goes to the line start.
-    pub fn select_in_row(&mut self, row: usize, query: &str, cx: &mut Context<Self>) {
-        let start: usize = self.content.split_inclusive('\n').take(row).map(str::len).sum();
-        let line = self.line_range(start);
-        self.jump(line.start, false, cx);
-        if let Some(hit) = md::find(&self.content[line.clone()], query, false, false).first() {
-            self.sel = line.start + hit.start..line.start + hit.end;
-        }
-    }
-
     pub(super) fn cursor(&self) -> usize {
         if self.reversed { self.sel.start } else { self.sel.end }
     }

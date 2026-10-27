@@ -89,15 +89,10 @@ impl Shell {
     }
 
     pub(super) fn open_palette(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_palette(query, false, window, cx)
+        self.show_palette(query, window, cx)
     }
 
-    /// Search in the text of the whole vault: the palette, where each choice is a line.
-    pub(super) fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_palette("", true, window, cx)
-    }
-
-    pub(super) fn show_palette(&mut self, query: &str, lines: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn show_palette(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() {
             return;
         }
@@ -128,15 +123,14 @@ impl Shell {
         let swap = !self.swapped.is_empty();
         let (commands, here) = self.palette_commands(window, cx);
         let context = self.here_group(cx).1;
-        let palette = cx.new(|cx| match lines {
-            true => Palette::search(entries, theme, cx),
-            false => Palette::new(entries, query, theme, cx)
+        let palette = cx.new(|cx| {
+            Palette::new(entries, query, theme, cx)
                 .with_updates(updates, installable)
                 .with_table(table)
                 .with_lists(lists)
                 .with_cells(cells)
                 .with_undo_swap(swap)
-                .with_commands(commands, here, context),
+                .with_commands(commands, here, context)
         });
         // A command chosen in the palette goes to what had input before it.
         let back = window.focused(cx);
@@ -150,10 +144,6 @@ impl Shell {
                     this.open_note(path, cx);
                     // A table, an image or a diagram takes input: given back to the note, it would erase them.
                     this.focus_pane(this.active, window, cx);
-                }
-                PaletteEvent::OpenAt(path, row, query) => {
-                    this.open_note(path, cx);
-                    this.pane().editor.update(cx, |e, cx| e.select_in_row(*row, query, cx));
                 }
                 PaletteEvent::Create(name) => this.open_wiki(name, cx),
                 PaletteEvent::ChangeVault => this.choose_vault(window, cx),
@@ -237,6 +227,6 @@ impl Shell {
         if self.palette.is_some() {
             return;
         }
-        self.show_palette(">", false, window, cx)
+        self.show_palette(">", window, cx)
     }
 }

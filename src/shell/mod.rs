@@ -143,6 +143,8 @@ struct Shell {
     /// Last replace across the vault, to undo it: each rewritten note, its text
     /// before and after.
     swapped: Vec<(PathBuf, Arc<str>, String)>,
+    /// The vault search of the panel, once opened.
+    vault_find: Option<search::VaultFind>,
     /// Icons of the vault's notes, files and folders (see `vault::load_icons`).
     icons: std::collections::HashMap<PathBuf, String>,
     /// Icon picker grid, if open.
@@ -249,6 +251,7 @@ impl Shell {
             recent: Vec::new(),
             save_gen: 0,
             swapped: Vec::new(),
+            vault_find: None,
             icons: Default::default(),
             icon_pick: None,
             comments_shut: false,

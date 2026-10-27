@@ -44,6 +44,8 @@ pub enum Mode {
     Links,
     /// Calendar: a month, showing the days that have their note.
     Calendar,
+    /// The vault search: the matches of a search, note by note.
+    Search,
 }
 
 /// Place of the panel: collapsed onto its rail, next to the note, or alone.
@@ -241,6 +243,7 @@ impl Nav {
                 Some("tags") => Mode::Tags,
                 Some("links") => Mode::Links,
                 Some("calendar") => Mode::Calendar,
+                Some("search") => Mode::Search,
                 _ => Mode::Tree,
             },
             panel: match words.next() {
@@ -276,6 +279,7 @@ impl Nav {
             Mode::Tags => "tags",
             Mode::Links => "links",
             Mode::Calendar => "calendar",
+            Mode::Search => "search",
         };
         let panel = match self.panel {
             Panel::Rail => "rail",

@@ -285,7 +285,7 @@ fn a_panel_with_notes_says_nothing(cx: &mut TestAppContext) {
     let _ = fs::remove_dir_all(&root);
 }
 
-/// The palette says when nothing matches, and that one letter is too little to search the text; a result list says nothing.
+/// The palette says when nothing matches; a result list says nothing.
 #[gpui::test]
 fn the_palette_says_when_nothing_matches(cx: &mut TestAppContext) {
     let (root, shell, cx, _config) = start(cx, "palette-empty");
@@ -295,26 +295,15 @@ fn the_palette_says_when_nothing_matches(cx: &mut TestAppContext) {
         cx.executor().advance_clock(Duration::from_secs(3));
         cx.run_until_parked();
     }
-    // Text search: nothing typed says nothing; one letter is too little; two that match nothing; two that match.
-    cx.simulate_keystrokes("secondary-shift-f");
-    cx.run_until_parked();
-    assert!(cx.debug_bounds("palette-panel").is_some());
-    assert!(cx.debug_bounds("palette-empty").is_none(), "nothing typed, nothing said");
-    cx.simulate_input("l");
-    cx.run_until_parked();
-    let panel = cx.debug_bounds("palette-panel").unwrap();
-    let said = cx.debug_bounds("palette-empty").expect("one letter is said to be too little");
-    assert!(said.left() >= panel.left() && said.right() <= panel.right(), "{said:?} in {panel:?}");
-    cx.simulate_keystrokes("backspace");
-    cx.simulate_input("zzzz");
-    cx.run_until_parked();
-    assert!(cx.debug_bounds("palette-empty").is_some(), "no result is said");
-    cx.simulate_keystrokes("escape");
-    // A command search that matches nothing.
+    // Nothing typed says nothing; a command search that matches nothing is said, inside the palette.
     cx.simulate_keystrokes("secondary-p");
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("palette-empty").is_none(), "nothing typed, nothing said");
     cx.simulate_input(">qqqqzzzz");
     cx.run_until_parked();
-    assert!(cx.debug_bounds("palette-empty").is_some());
+    let panel = cx.debug_bounds("palette-panel").unwrap();
+    let said = cx.debug_bounds("palette-empty").expect("no result is said");
+    assert!(said.left() >= panel.left() && said.right() <= panel.right(), "{said:?} in {panel:?}");
     cx.simulate_keystrokes("escape");
     let _ = fs::remove_dir_all(&root);
 }
