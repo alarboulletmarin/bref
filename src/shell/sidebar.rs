@@ -332,7 +332,7 @@ impl Shell {
         self.nav.marked.clear();
         if row.dir.is_some() {
             if !self.nav.open.remove(&path) {
-                self.nav.open.insert(path.clone());
+                self.nav.unfold(path.clone());
             }
             self.nav.sel = Some(path);
             cx.notify();
@@ -369,7 +369,7 @@ impl Shell {
         let row = self.nav.rows[ix].clone();
         match (row.dir, unfold) {
             (Some(false), true) => {
-                self.nav.open.insert(row.path);
+                self.nav.unfold(row.path);
             }
             (Some(true), false) => {
                 self.nav.open.remove(&row.path);
@@ -719,7 +719,10 @@ impl Shell {
                         .h(t.px(ROW))
                         .px_1()
                         .cursor_pointer()
-                        .child(line)
+                        .child(match self.nav.fading(&row.path).filter(|_| tree && t.motion) {
+                            Some(seq) => crate::ui::widgets::fade_in(line, (gpui::SharedString::from(format!("row-in-{seq}")), ix), &t),
+                            None => line.into_any_element(),
+                        })
                         .when_some(said, |d, said| d.tooltip(tip(said, String::new(), t)))
                         .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
                             let held = e.modifiers();
@@ -1014,7 +1017,7 @@ impl Shell {
         wrapper
             .map(|d| if full { d.flex_1() } else { d.flex_none() })
             .child(rail)
-            .child(content)
+            .child(crate::ui::widgets::fade_in(content, "nav-in", &t))
             .child(divider)
     }
 
@@ -1076,7 +1079,7 @@ impl Shell {
                     cx.stop_propagation();
                 }),
             );
-        Some(div().h_full().flex().flex_none().bg(t.panel).child(divider).child(content).into_any_element())
+        Some(div().h_full().flex().flex_none().bg(t.panel).child(divider).child(crate::ui::widgets::fade_in(content, "dock-in", &t)).into_any_element())
     }
 
     /// The tool is drawn in a dock this frame.

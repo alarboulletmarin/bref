@@ -192,3 +192,18 @@ pub fn group_header(id: impl Into<gpui::ElementId>, name: impl Into<SharedString
         .child(div().flex_1().min_w_0().truncate().text_color(t.text).child(name.into()))
         .child(div().flex_none().text_size(t.px(11.5)).text_color(t.soft).child(count.to_string()))
 }
+
+/// How long a fade lasts: under a key repeat, so a new gesture never waits for the last one.
+pub const FADE: std::time::Duration = std::time::Duration::from_millis(130);
+
+/// `element` fades in when it first appears under `id` (the state lives as long as it is drawn);
+/// with `motion=off` it is drawn as is. Opacity only, so the layout never moves.
+pub fn fade_in(element: impl IntoElement + Styled + 'static, id: impl Into<gpui::ElementId>, t: &Theme) -> gpui::AnyElement {
+    use gpui::{Animation, AnimationExt, ease_out_quint};
+    match t.motion {
+        true => element
+            .with_animation(id, Animation::new(FADE).with_easing(ease_out_quint()), |e, delta| e.opacity(delta))
+            .into_any_element(),
+        false => element.into_any_element(),
+    }
+}

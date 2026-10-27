@@ -560,3 +560,59 @@ fn hundred_tabs(cx: &mut TestAppContext) {
     println!("keystroke with 100 tabs: {:?}; memory now +{} MB", start.elapsed() / 50, rss() - before);
     let _ = fs::remove_dir_all(&root);
 }
+
+/// Fades cost nothing on typing: a keystroke right after the panel toggled (fading in), and the
+/// key repeat of a folder's unfold key in 5,000 notes, with fades on and off.
+/// `cargo test --release --locked motion_cost -- --ignored --nocapture`.
+#[gpui::test]
+#[ignore]
+fn motion_cost(cx: &mut TestAppContext) {
+    unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
+    let root = std::env::temp_dir().join(format!("bref-motion-{}", std::process::id()));
+    synthetic_vault(&root, 5000);
+    let _config = isolated_config(&root);
+    vault::save_layout("tree split 260 0");
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (shell, cx) = cx.add_window_view({
+        let root = root.clone();
+        |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
+    });
+    cx.run_until_parked();
+    shell.update(cx, |s, cx| s.open_note(&root.join("Grosse.md"), cx));
+    cx.run_until_parked();
+    for motion in ["off", "on", "off", "on"] {
+        shell.update_in(cx, |s, window, cx| {
+            s.prefs.motion = motion.into();
+            s.restyle(window, cx);
+        });
+        cx.run_until_parked();
+        let start = Instant::now();
+        for _ in 0..50 {
+            cx.simulate_input("a");
+            cx.run_until_parked();
+        }
+        println!("motion {motion}: keystroke {:?}", start.elapsed() / 50);
+        let mut worst = std::time::Duration::ZERO;
+        for _ in 0..50 {
+            shell.update_in(cx, |s, window, cx| s.show_nav(Mode::Tree, true, window, cx));
+            let start = Instant::now();
+            cx.simulate_input("a");
+            worst = worst.max(start.elapsed());
+            cx.run_until_parked();
+        }
+        println!("motion {motion}: keystroke during the panel's fade, worst {worst:?}");
+        shell.update_in(cx, |s, window, cx| s.show_nav(Mode::Tree, false, window, cx));
+        cx.run_until_parked();
+        let start = Instant::now();
+        for _ in 0..100 {
+            shell.update_in(cx, |s, window, cx| {
+                s.nav_fold(true, window, cx);
+                s.nav_fold(false, window, cx);
+            });
+            cx.run_until_parked();
+        }
+        println!("motion {motion}: unfold then fold {:?}", start.elapsed() / 100);
+    }
+    fs::remove_dir_all(&root).unwrap();
+}

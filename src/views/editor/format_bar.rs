@@ -185,7 +185,7 @@ impl Editor {
     /// The formatting bar: bold, italic, underline, strikethrough, highlight, code, link, then lists
     /// and table insertion, or, in a table, its rows and columns. A button lights up
     /// when the selection already has the style, and then removes it.
-    pub(super) fn format_bar(&mut self, mode: Bar, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    pub(super) fn format_bar(&mut self, mode: Bar, cx: &mut Context<Self>) -> gpui::Div {
         let t = self.theme;
         let tools = self.tools();
         let width = f32::from(self.viewport.size.width);

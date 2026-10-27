@@ -130,6 +130,8 @@ pub enum Setting {
     Wide,
     /// Formatting bar at the bottom of the note.
     Bar,
+    /// Fades when something opens.
+    Motion,
 }
 
 impl Setting {
@@ -141,6 +143,7 @@ impl Setting {
             Setting::Page => tr("Page width…", "Largeur de page…"),
             Setting::Wide => tr("Wide tables…", "Grands tableaux…"),
             Setting::Bar => tr("Formatting bar…", "Barre de mise en forme…"),
+            Setting::Motion => tr("Animations…", "Animations…"),
         }
     }
 }
@@ -701,7 +704,7 @@ impl Palette {
             items.extend(found.take(8).map(Item::Command));
         }
         // The settings do not clutter the list until searched for.
-        for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar] {
+        for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar, Setting::Motion] {
             if !q.is_empty() && command(&q, setting.label()) {
                 items.push(Item::Setting(setting));
             }

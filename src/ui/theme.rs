@@ -118,6 +118,8 @@ pub struct Theme {
     pub wide: Wide,
     /// Formatting bar at the bottom of the note.
     pub bar: bool,
+    /// Short fades when a panel, the format bar or a folder opens; off: everything is instant.
+    pub motion: bool,
 }
 
 /// Offered themes: (name, [background, text, faint, accent, code background, panel, border]).
@@ -182,6 +184,7 @@ impl Theme {
             page: Page::of(&prefs.page),
             wide: Wide::of(&prefs.wide),
             bar: prefs.bar != "off",
+            motion: prefs.motion != "off",
         }
     }
 }

@@ -34,12 +34,14 @@ impl Shell {
             Setting::Page => Some(Page::ALL.map(|p| (p.key(), p.label())).into()),
             Setting::Wide => Some(Wide::ALL.map(|w| (w.key(), w.label())).into()),
             Setting::Bar => Some(vec![("on", tr("Shown", "Affichée")), ("off", tr("Hidden", "Masquée"))]),
+            Setting::Motion => Some(vec![("on", tr("On", "Activées")), ("off", tr("Off", "Désactivées"))]),
             _ => None,
         };
         let (mut options, current): (Vec<String>, &str) = match (setting, &fixed) {
             (Setting::Page, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), Page::of(&self.prefs.page).label()),
             (Setting::Wide, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), Wide::of(&self.prefs.wide).label()),
             (Setting::Bar, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), if self.prefs.bar == "off" { list[1].1 } else { list[0].1 }),
+            (Setting::Motion, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), if self.prefs.motion == "off" { list[1].1 } else { list[0].1 }),
             (Setting::Theme, _) => (THEMES.iter().map(|t| t.0.to_string()).collect(), &self.prefs.theme),
             _ => (
                 FAMILIES.get().into_iter().flatten().map(|f| f.to_string()).collect(),
@@ -72,6 +74,7 @@ impl Shell {
                         Setting::Page => this.prefs.page = key,
                         Setting::Wide => this.prefs.wide = key,
                         Setting::Bar => this.prefs.bar = key,
+                        Setting::Motion => this.prefs.motion = key,
                     }
                 }
                 _ => this.prefs = before.clone(),

@@ -335,6 +335,8 @@ pub struct Nav {
     pub scroll: UniformListScrollHandle,
     /// Bring the selection on screen at the next frame.
     pub reveal: bool,
+    /// The folder unfolded last, when, and which unfolding it was: its rows fade in for `FADE`.
+    pub unfolded: Option<(PathBuf, std::time::Instant, u32)>,
     /// The system draws the title bar (macOS, Windows): the rail does not have to serve as a
     /// handle to move the window.
     pub native_bar: bool,
@@ -413,6 +415,7 @@ impl Nav {
             rows_from: 0,
             scroll: UniformListScrollHandle::new(),
             reveal: false,
+            unfolded: None,
             native_bar: false,
             left: px(0.),
             total: px(0.),
@@ -506,6 +509,21 @@ impl Nav {
 
 /// The folder a new file goes in when `sel` is selected in the tree: itself if it is a folder, otherwise the
 /// folder it is in (a note, a picture, a diagram, a table: none of them can hold a file).
+impl Nav {
+    /// Opens a folder of the tree and remembers it, so that its rows fade in.
+    pub fn unfold(&mut self, dir: PathBuf) {
+        let seq = self.unfolded.as_ref().map_or(0, |u| u.2.wrapping_add(1));
+        self.unfolded = Some((dir.clone(), std::time::Instant::now(), seq));
+        self.open.insert(dir);
+    }
+
+    /// Whether the row at `path` came with the last unfolding and is still fading in: the id of its fade.
+    pub fn fading(&self, path: &Path) -> Option<u32> {
+        let (dir, at, seq) = self.unfolded.as_ref()?;
+        (at.elapsed() < crate::ui::widgets::FADE && path.starts_with(dir) && path != dir).then_some(*seq)
+    }
+}
+
 pub fn folder_of(sel: &Path) -> Option<PathBuf> {
     if sel.is_dir() { Some(sel.to_path_buf()) } else { sel.parent().map(Path::to_path_buf) }
 }

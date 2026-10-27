@@ -16,6 +16,8 @@ pub struct Prefs {
     pub wide: String,
     /// Formatting bar at the bottom of the note: `off` hides it, anything else shows it.
     pub bar: String,
+    /// Short fades when something opens: `off` makes everything instant, anything else keeps them.
+    pub motion: String,
 }
 
 impl Prefs {
@@ -23,7 +25,7 @@ impl Prefs {
 
     pub fn parse(text: &str) -> Self {
         let mut prefs =
-            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true, page: String::new(), wide: String::new(), bar: String::new() };
+            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true, page: String::new(), wide: String::new(), bar: String::new(), motion: String::new() };
         for (key, value) in text.lines().filter_map(|line| line.split_once('=')) {
             match key {
                 "theme" => prefs.theme = value.into(),
@@ -34,6 +36,7 @@ impl Prefs {
                 "page" => prefs.page = value.into(),
                 "wide" => prefs.wide = value.into(),
                 "bar" => prefs.bar = value.into(),
+                "motion" => prefs.motion = value.into(),
                 _ => {}
             }
         }
@@ -47,7 +50,7 @@ impl Prefs {
         if !self.updates {
             text.push_str("updates=off\n");
         }
-        for (key, value) in [("page", &self.page), ("wide", &self.wide), ("bar", &self.bar)] {
+        for (key, value) in [("page", &self.page), ("wide", &self.wide), ("bar", &self.bar), ("motion", &self.motion)] {
             if !value.is_empty() {
                 text.push_str(&format!("{key}={value}\n"));
             }
@@ -74,6 +77,11 @@ mod tests {
         let wide = Prefs::parse("page=wide\nwide=column\n");
         assert_eq!((wide.page.as_str(), wide.wide.as_str()), ("wide", "column"));
         assert_eq!(Prefs::parse(&wide.to_text()), wide);
+        // Motion: absent until chosen, anything but `off` keeps the fades.
+        let still = Prefs::parse("motion=off\n");
+        assert_eq!(still.motion, "off");
+        assert_eq!(Prefs::parse(&still.to_text()), still);
+        assert!(!prefs.to_text().contains("motion="));
         assert!(!prefs.to_text().contains("page=") && !prefs.to_text().contains("wide="));
     }
 }

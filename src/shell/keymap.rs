@@ -178,6 +178,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 p(tr("font", "police"), tr("Font of the app / of the code", "Police de l'app / du code")),
                 p(tr("page width", "largeur de page"), tr("Width of the text column: narrow, normal, wide, full", "Largeur de la colonne de texte : étroite, normale, large, pleine")),
                 p(tr("wide tables", "grands tableaux"), tr("A table wider than the text: in the column, or centered and wider", "Un tableau plus large que le texte : dans la colonne, ou centré et plus large")),
+                p(tr("animations", "animations"), tr("Short fades (about 0.13 s) when the panel, the formatting bar or a folder opens; none on typing, scrolling or hover. Off: everything is instant (motion=off in settings)", "Courts fondus (environ 0,13 s) à l'ouverture du panneau, de la barre de mise en forme ou d'un dossier ; rien à la frappe, au défilement ni au survol. Désactivées : tout est instantané (motion=off dans settings)")),
                 k(&ZoomIn, tr("Bigger text; the panel, menus and help follow, up to 150 %", "Texte plus grand ; le panneau, les menus et l'aide suivent, jusqu'à 150 %")),
                 k(&ZoomOut, tr("Smaller text; the interface follows, down to 85 %", "Texte plus petit ; l'interface suit, jusqu'à 85 %")),
                 k(&ZoomReset, tr("Default text size", "Taille du texte d'origine")),

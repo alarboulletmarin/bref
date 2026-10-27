@@ -13,7 +13,7 @@ impl Render for Editor {
         let folded = self.bar.at == Some(Bar::Compact);
         let bar = match self.bar.at {
             Some(Bar::Inline) => self.bar.at.map(|mode| self.format_bar(mode, cx).into_any_element()),
-            Some(Bar::Compact) if self.bar.open => Some(self.format_bar(Bar::Compact, cx).into_any_element()),
+            Some(Bar::Compact) if self.bar.open => Some(crate::ui::widgets::fade_in(self.format_bar(Bar::Compact, cx), "bar-in", &t)),
             _ => None,
         };
         let toggle = folded.then(|| self.bar_toggle(cx));

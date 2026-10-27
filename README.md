@@ -343,6 +343,7 @@ Bref reopens with the panel as you left it.
 - **Page width**: `page width` in the palette sets how wide the text column is (narrow, normal, wide, or the full window), kept in `settings` as `page=narrow|normal|wide|full`. A table wider than the text does not have to scroll inside it: `wide tables` in the palette chooses between staying in the column, where it scrolls sideways, and spilling out on both sides, centered on the window (the default; `wide=column|center`). A small table keeps its own size, and nothing goes past the window.
 
 - **Formatting bar**: `formatting bar` in the palette shows or hides the bar under the note (`bar=on|off` in `settings`). It sits at the bottom left, the word count and the copy button at the right on the same strip; when the note is too narrow for both, it folds into one button at the bottom left (a letter with an underline) that opens it above the text, its buttons wrapping onto several lines in a very narrow window. `Esc` or a click in the text closes it.
+- **Animations**: `animations` in the palette turns the short fades off (`motion=on|off` in `settings`). When on, the panel, the formatting bar and a folder of the tree fade in over about 0.13 s as they open; nothing moves on typing, scrolling or the caret, and no fade delays a result. Hovers and closing are instant.
 
 These choices are kept in a file named `settings`, next to the [config file](#notes-and-vault).
 
