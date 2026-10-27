@@ -223,6 +223,12 @@ impl Theme {
     pub fn hue(&self, h: f32, under: Hsla) -> Hsla {
         legible(Hsla { h, s: 0.7, l: 0.5, a: 1. }, under)
     }
+
+    /// The label of a callout of hue `tint`: legible on the callout's tint (10 % over the page), then drawn
+    /// a fifth of the way toward the text so that it does not outshine the body text. The bar carries the full hue.
+    pub fn callout_label(&self, tint: Hsla) -> Hsla {
+        blend(legible(tint, blend(tint, self.bg, 0.1)), self.text, 0.2)
+    }
 }
 
 /// Radius of the window itself when the app draws its frame (Linux): it matches the system's corners, so it is
@@ -303,6 +309,9 @@ mod tests {
                 let tint = Hsla { h, s: 0.7, l: 0.5, a: 1. };
                 let under = blend(tint, t.bg, 0.1);
                 assert!(contrast(legible(tint, under), under) >= 4.5, "{name}: panel {h}");
+                // The label of a callout reads, and stays within a step of the body text.
+                let label = contrast(t.callout_label(tint), under);
+                assert!(label >= 4.5 && label <= contrast(t.text, under).max(4.5) + 1., "{name}: callout label {h} {label:.2}");
             }
         }
     }

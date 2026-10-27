@@ -443,8 +443,7 @@ pub fn text_runs(t: &Theme, text: &str, flags: &[u16], marked: impl Fn(usize) ->
         } else if f & md::NUMBER != 0 {
             t.number
         } else if f & md::MARK != 0 && let Some(tint) = style.tint {
-            // On the callout background, its tint at 10%: the title reads in every theme.
-            crate::ui::theme::legible(tint, crate::ui::theme::blend(tint, t.bg, 0.1))
+            t.callout_label(tint)
         } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
             t.accent
         } else {
@@ -1108,7 +1107,10 @@ impl Editor {
                     }
                 }
                 if let Some(label) = md::callout(line).filter(|_| own_tint.is_some()) {
-                    flags[label].fill(md::BOLD | md::MARK);
+                    // The type is tinted, its `[!` and `]` are markers like any other.
+                    let (open, close) = (label.start + 2, label.end - 1);
+                    flags[label.clone()].fill(md::DIM);
+                    flags[open..close].fill(md::MARK);
                 }
                 // Table: header in bold, `|` and dashes dimmed.
                 // A line never wraps, which would break the grid: a
