@@ -304,6 +304,8 @@ mod tests {
     fn every_theme_reads() {
         for (name, _) in THEMES {
             let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+            // The window is cut into zones by `bg` and `panel` alone, with no line between them.
+            assert!(contrast(t.bg, t.panel) >= 1.03, "{name}: bg and panel too close to tell the zones apart");
             assert!(contrast(t.soft, t.bg) >= 4.5 && contrast(t.soft, t.panel) >= 4.5, "{name}: soft");
             assert!(contrast(t.accent, t.bg) >= 4.5, "{name}: accent");
             for h in HUES {

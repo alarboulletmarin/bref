@@ -763,7 +763,6 @@ impl Shell {
             .flex_col()
             .items_center()
             .gap_1()
-            .when(!unfolded, |d| d.border_r_1().border_color(t.border))
             // The app logo, at the top of the rail on every system.
             .child(div().debug_selector(|| "rail-logo".into()).mb_1().child(crate::ui::assets::logo(t)))
             .child(
@@ -854,7 +853,7 @@ impl Shell {
                     .on_click(cx.listener(|this, _, window, cx| this.set_help(true, window, cx))),
             );
 
-        let wrapper = div().h_full().flex().min_w_0();
+        let wrapper = div().h_full().flex().min_w_0().bg(t.panel);
         // A header dragged from the right dock: the rail of a folded panel takes it.
         let rail = rail
             .on_drag_move(cx.listener(|this, e: &gpui::DragMoveEvent<docks::ToolDragged>, _, cx| {
@@ -881,9 +880,10 @@ impl Shell {
         }
         let full = panel == Panel::Full;
         let content = self.render_stack(false, window, cx);
-        // 5 px handle around a 1 px stroke; double-click: original width.
+        // 5 px handle, invisible until the pointer is over it; double-click: original width.
         let divider = div()
             .id("nav-divider")
+            .debug_selector(|| "nav-divider".into())
             .flex_none()
             .w(DIVIDER)
             .h_full()
@@ -893,10 +893,10 @@ impl Shell {
             .group("nav-divider")
             .child(
                 div()
-                    .w(t.px(1.))
+                    .w_full()
                     .h_full()
-                    .bg(if self.nav.dragging { t.accent } else { t.border })
-                    .group_hover("nav-divider", |s| s.bg(t.accent)),
+                    .when(self.nav.dragging, |d| d.bg(t.hover))
+                    .group_hover("nav-divider", |s| s.bg(t.hover)),
             )
             .on_mouse_down(
                 MouseButton::Left,
@@ -955,6 +955,7 @@ impl Shell {
         let content = self.render_stack(true, window, cx);
         let divider = div()
             .id("dock-divider")
+            .debug_selector(|| "dock-divider".into())
             .flex_none()
             .w(DIVIDER)
             .h_full()
@@ -962,7 +963,7 @@ impl Shell {
             .justify_center()
             .cursor(CursorStyle::ResizeLeftRight)
             .group("dock-divider")
-            .child(div().w(t.px(1.)).h_full().bg(if self.nav.right_dragging { t.accent } else { t.border }).group_hover("dock-divider", |s| s.bg(t.accent)))
+            .child(div().w_full().h_full().when(self.nav.right_dragging, |d| d.bg(t.hover)).group_hover("dock-divider", |s| s.bg(t.hover)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, e: &MouseDownEvent, window, cx| {
@@ -975,7 +976,7 @@ impl Shell {
                     cx.stop_propagation();
                 }),
             );
-        Some(div().h_full().flex().flex_none().child(divider).child(content).into_any_element())
+        Some(div().h_full().flex().flex_none().bg(t.panel).child(divider).child(content).into_any_element())
     }
 
     /// The tool is drawn in a dock this frame.

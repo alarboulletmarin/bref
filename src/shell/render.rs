@@ -782,8 +782,6 @@ impl Shell {
                 .pt(px(48.))
                 .px_3()
                 .pb_3()
-                .border_l_1()
-                .border_color(t.border)
                 .bg(t.panel)
                 .text_size(t.px(13.))
                 .flex()
