@@ -15,6 +15,7 @@ use gpui::{
 };
 
 use crate::{
+    lang::tr,
     ui::theme::Theme,
     views::nav::{Fold, Next, Open, Prev, Unfold},
     ui::assets::sans,
@@ -26,6 +27,10 @@ actions!(graph, [Cycle]);
 
 /// Pixels per layout unit below which names are hidden.
 const LABEL_ZOOM: f32 = 30.;
+/// Links from which a note is a hub: its name is always shown.
+const HUB: usize = 6;
+/// Room (layout units) each note without links takes on the outer ring.
+const ORPHAN_GAP: f32 = 0.5;
 /// Frames during which dragged-along nodes finish settling after a drag.
 const SETTLE: u32 = 60;
 
@@ -147,6 +152,51 @@ pub fn layout(seed: &[Option<(f32, f32)>], edges: &[(usize, usize)]) -> Vec<(f32
     pos
 }
 
+/// Size of a node (px at the reference zoom) by its number of links: a few steps, not a curve.
+pub fn node_size(links: usize) -> f32 {
+    match links {
+        0 => 3.5,
+        1..=2 => 4.5,
+        3..=5 => 6.,
+        6..=11 => 8.,
+        _ => 10.,
+    }
+}
+
+/// `count` places evenly spaced on a ring of at least `inner` units, from the top, clockwise.
+// ponytail: a single ring, so a vault of thousands of notes without links makes a huge
+// circle; concentric rings if that gets in the way.
+pub fn ring(count: usize, inner: f32) -> Vec<(f32, f32)> {
+    let radius = inner.max(count as f32 * ORPHAN_GAP / std::f32::consts::TAU);
+    (0..count)
+        .map(|k| {
+            let angle = k as f32 / count as f32 * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+            (radius * angle.cos(), radius * angle.sin())
+        })
+        .collect()
+}
+
+/// Places the notes: linked ones by `layout`, the others on a ring around them.
+pub fn arrange(seed: &[Option<(f32, f32)>], edges: &[(usize, usize)]) -> Vec<(f32, f32)> {
+    let mut linked = vec![false; seed.len()];
+    for &(i, j) in edges {
+        (linked[i], linked[j]) = (true, true);
+    }
+    let mut slot = vec![0; seed.len()];
+    let mut inner_seed = Vec::new();
+    for (i, s) in seed.iter().enumerate() {
+        if linked[i] {
+            slot[i] = inner_seed.len();
+            inner_seed.push(*s);
+        }
+    }
+    let inner_edges: Vec<(usize, usize)> = edges.iter().map(|&(i, j)| (slot[i], slot[j])).collect();
+    let placed = layout(&inner_seed, &inner_edges);
+    let reach = placed.iter().map(|p| p.0.hypot(p.1)).fold(0., f32::max);
+    let mut outer = ring(seed.len() - placed.len(), reach + 1.5).into_iter();
+    (0..seed.len()).map(|i| if linked[i] { placed[slot[i]] } else { outer.next().unwrap_or_default() }).collect()
+}
+
 /// One drag step: the held node's move propagates along links.
 /// Each linked node follows the mean move of its neighbors and returns
 /// a little toward its `rest` place; the farther from the held node, the less it moves.
@@ -258,7 +308,7 @@ impl Graph {
         self.generation += 1;
         let (generation, edges) = (self.generation, self.edges.clone());
         cx.spawn(async move |this, cx| {
-            let pos = cx.background_executor().spawn(async move { layout(&seed, &edges) }).await;
+            let pos = cx.background_executor().spawn(async move { arrange(&seed, &edges) }).await;
             this.update(cx, |this, cx| {
                 if this.generation == generation {
                     this.pos = pos;
@@ -307,7 +357,7 @@ impl Graph {
 
     fn radius(&self, i: usize) -> f32 {
         let grown = if self.hover == Some(i) || self.drag == Some(i) { 1.5 } else { 0. };
-        (3. + 1.5 * (self.near[i].len() as f32).sqrt()) * (self.zoom / 40.).clamp(0.6, 1.5) + grown
+        node_size(self.near[i].len()) * (self.zoom / 40.).clamp(0.6, 1.5) + grown
     }
 
     /// Offset and zoom that show the whole graph.
@@ -479,6 +529,9 @@ impl Graph {
         let lit = |i: usize| focus.is_none_or(|f| f == i || self.near[f].contains(&i));
         let fade = |color: Hsla, on: bool| if on { color } else { t.bg.blend(color.opacity(0.4)) };
 
+        // The open note and its neighbors stand out; everything else stays quiet.
+        let open = self.current;
+        let near_open = |i: usize| open.is_some_and(|c| c == i || self.near[c].contains(&i));
         let mut plain = PathBuilder::stroke(px(1.));
         let mut strong = PathBuilder::stroke(px(1.5));
         let (mut any_plain, mut any_strong) = (false, false);
@@ -487,7 +540,7 @@ impl Graph {
             if !bounds.contains(&a) && !bounds.contains(&b) {
                 continue;
             }
-            let line = if focus == Some(i) || focus == Some(j) {
+            let line = if focus == Some(i) || focus == Some(j) || open == Some(i) || open == Some(j) {
                 any_strong = true;
                 &mut strong
             } else {
@@ -498,12 +551,12 @@ impl Graph {
             line.line_to(b);
         }
         // Away from the focused note, the edges step back.
-        let edge_color = if focus.is_none() { t.line } else { t.line.opacity(0.4) };
+        let edge_color = if focus.is_none() { t.border } else { t.border.opacity(0.4) };
         if any_plain && let Ok(path) = plain.build() {
             window.paint_path(path, edge_color);
         }
         if any_strong && let Ok(path) = strong.build() {
-            window.paint_path(path, t.accent.opacity(0.8));
+            window.paint_path(path, t.text.opacity(0.8));
         }
 
         let disc = |c: Point<Pixels>, r: f32| Bounds::new(point(c.x - px(r), c.y - px(r)), size(px(r * 2.), px(r * 2.)));
@@ -513,20 +566,34 @@ impl Graph {
                 continue;
             }
             let on = lit(i);
-            let color = if self.current == Some(i) { t.accent } else { t.bg.blend(t.text.opacity(0.7)) };
+            let color = if self.current == Some(i) {
+                t.accent
+            } else if near_open(i) {
+                t.text
+            } else {
+                t.soft
+            };
             if self.selected == Some(i) {
                 let ring = disc(c, r + 4.);
                 window.paint_quad(quad(ring, px(r + 4.), t.selection, px(1.5), t.accent, BorderStyle::default()));
             }
-            // An image: a square, to tell it from a note.
-            let corner = if vault::is_image(&self.nodes[i].0) { r * 0.3 } else { r };
+            // An image: a rounded square, to tell it from a note (the hovered name says so).
+            let image = vault::is_image(&self.nodes[i].0);
+            let corner = if image { r * 0.3 } else { r };
             window.paint_quad(quad(disc(c, r), px(corner), fade(color, on), px(0.), t.bg, BorderStyle::default()));
 
-            let named = self.zoom >= LABEL_ZOOM || focus.is_some_and(|_| on) || self.current == Some(i);
+            let named = self.zoom >= LABEL_ZOOM
+                || focus.is_some_and(|_| on)
+                || near_open(i)
+                || self.near[i].len() >= HUB;
             if !named {
                 continue;
             }
-            let name = self.nodes[i].1.clone();
+            let name = if image && self.hover == Some(i) {
+                SharedString::from(format!("{} · {}", self.nodes[i].1, tr("attachment", "pièce jointe")))
+            } else {
+                self.nodes[i].1.clone()
+            };
             let run = TextRun {
                 len: name.len(),
                 font: font(sans()),
@@ -535,7 +602,7 @@ impl Graph {
                 underline: None,
                 strikethrough: None,
             };
-            let label = window.text_system().shape_line(name, px(11.5), &[run], None);
+            let label = window.text_system().shape_line(name, px(12.), &[run], None);
             let origin = point(c.x - label.width / 2., c.y + px(r + 3.));
             label.paint(origin, px(15.), window, cx).ok();
         }
@@ -643,6 +710,35 @@ mod tests {
         // No node overlaps another, and the result is reproducible.
         assert!((0..6).all(|i| (i + 1..6).all(|j| dist(&pos, i, j) > 0.3)));
         assert_eq!(pos, layout(&[None; 6], &[(0, 1), (1, 2)]));
+    }
+
+    #[test]
+    fn sizes_grow_by_steps_with_links() {
+        let sizes: Vec<f32> = (0..=40).map(node_size).collect();
+        assert!(sizes.windows(2).all(|w| w[0] <= w[1]));
+        // A few steps: 0 | 1-2 | 3-5 | 6-11 | 12+.
+        let mut steps = sizes.clone();
+        steps.dedup();
+        assert_eq!(steps.len(), 5);
+        assert!(node_size(HUB - 1) < node_size(HUB));
+    }
+
+    #[test]
+    fn notes_without_links_sit_on_an_even_outer_ring() {
+        // 0-1-2 linked, 3..=202 alone (also the empty and one-note vaults).
+        assert!(arrange(&[], &[]).is_empty());
+        assert_eq!(arrange(&[None], &[]).len(), 1);
+        let n = 203;
+        let pos = arrange(&vec![None; n], &[(0, 1), (1, 2)]);
+        let r = |i: usize| pos[i].0.hypot(pos[i].1);
+        let reach = (0..3).map(r).fold(0., f32::max);
+        let ring: Vec<f32> = (3..n).map(r).collect();
+        assert!(ring.iter().all(|&d| d > reach && (d - ring[0]).abs() < 1e-3));
+        // Evenly spaced: every neighbour at the same distance, none on top of another.
+        let gap = |i: usize, j: usize| (pos[i].0 - pos[j].0).hypot(pos[i].1 - pos[j].1);
+        let first = gap(3, 4);
+        assert!((3..n - 1).all(|i| (gap(i, i + 1) - first).abs() < 1e-3) && first >= ORPHAN_GAP * 0.99);
+        assert_eq!(pos, arrange(&vec![None; n], &[(0, 1), (1, 2)]));
     }
 
     #[test]
