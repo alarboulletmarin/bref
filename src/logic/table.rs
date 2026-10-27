@@ -497,6 +497,23 @@ impl Table {
         }
     }
 
+    /// Which columns hold only codes (numbers, dates, times, IDs) in the `sample` rows from `first`:
+    /// those are drawn in monospace so that they align, the others in the note's font. Empty cells
+    /// say nothing; a column with no value at all is text.
+    pub fn code_columns(&self, first: usize, sample: usize) -> Vec<bool> {
+        let mut seen = vec![false; self.cols];
+        let mut codes = vec![true; self.cols];
+        for r in first..self.rows().min(first.saturating_add(sample)) {
+            for (c, field) in self.row(r).iter().enumerate() {
+                if !field.trim().is_empty() {
+                    seen[c] = true;
+                    codes[c] &= is_code(field.trim());
+                }
+            }
+        }
+        codes.iter().zip(&seen).map(|(&code, &any)| code && any).collect()
+    }
+
     /// Fields of the row; may be shorter than `cols()`.
     /// The `cols` cells of the row, empty where the row is shorter: in a single pass,
     /// whereas `cell` column by column would be quadratic on a very wide row.
@@ -860,6 +877,14 @@ pub fn parse_grid(text: &str) -> Vec<Vec<String>> {
     (0..table.rows())
         .map(|r| table.row(r).into_iter().map(Cow::into_owned).collect())
         .collect()
+}
+
+/// A value made to align: no space, only letters, digits and `- _ . , : / # + %`, and a digit
+/// somewhere (`-12`, `1,5`, `2026-01-31`, `08:30`, `A-1001`, `12%`; not `Paris`, `a@b.c`).
+// ponytail: `1 000` and `+33 6 12…` have a space, so their column stays text.
+fn is_code(value: &str) -> bool {
+    value.chars().any(|c| c.is_ascii_digit())
+        && value.chars().all(|c| c.is_ascii_alphanumeric() || "-_.,:/#+%".contains(c))
 }
 
 #[cfg(test)]
@@ -1290,6 +1315,34 @@ special
         assert_eq!(cells(9, 0, 2), ["", ""]);
         for c in 0..5 {
             assert_eq!(cells(0, c, c + 1)[0], t.cell(0, c));
+        }
+    }
+
+    #[test]
+    fn a_column_of_codes_is_monospace_the_rest_is_text() {
+        let t = table(
+            "id,name,amount,mixed,date,mail,empty,one\nA-1,Léa,\"-1,5\",12,2026-01-31,a@b.c,,x\nA-2,Zoé,3.25,mot,08:30,b@b.c,,\n,李雷,1000000,3,2026/2/3,c@b.c,,\n",
+            b',',
+        );
+        let codes = t.code_columns(1, 200);
+        // The header names are words: they are skipped, not judged.
+        assert_eq!(codes, [true, false, true, false, true, false, false, false]);
+        // With the header counted as a row, every column of words stays text.
+        assert_eq!(t.code_columns(0, 200), [false; 8]);
+        // Only the sampled rows count: a word further down does not change the column.
+        assert!(!t.code_columns(1, 2)[3]);
+        let long: String = (0..300).map(|i| format!("{i}\n")).chain(["mot\n".to_string()]).collect();
+        assert_eq!(table(&long, b',').code_columns(0, 200), [true]);
+        assert_eq!(table(&long, b',').code_columns(0, 301), [false]);
+        // No data row, no table at all, one cell, an empty cell, spaces.
+        assert_eq!(table("a,b\n", b',').code_columns(1, 200), [false, false]);
+        assert!(table("", b',').code_columns(0, 200).is_empty());
+        assert_eq!(table("7", b',').code_columns(0, 200), [true]);
+        assert_eq!(table(" 7 \n\n", b',').code_columns(0, 200), [true]);
+        assert_eq!(table("1 000\n", b',').code_columns(0, 200), [false]);
+        // Accents, fullwidth digits, emoji, `|`, `\`, a line break, words, a dash alone, nothing.
+        for (value, code) in [("-12", true), ("+3", true), ("12%", true), ("v1.2.3", true), ("a/b/1", true), ("#42", true), ("0", true), ("é1", false), ("１２", false), ("🎉1", false), ("a|1", false), ("\\1", false), ("1\n2", false), ("abc", false), ("-", false), ("", false)] {
+            assert_eq!(is_code(value), code, "{value:?}");
         }
     }
 }

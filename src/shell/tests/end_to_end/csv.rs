@@ -237,6 +237,28 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let delimiter = shell.read_with(cx, |s, cx| s.shown_sheet().unwrap().read(cx).format().delimiter);
     assert_eq!(delimiter, b',');
 
+    // Cells are in the note's font; a column of numbers, dates or IDs is monospace. Editing a number into
+    // a word leaves the column as it was until the table is measured again (a column inserted, a reopening).
+    let fonts = root.join("fonts.csv");
+    fs::write(&fonts, "id,ville,age\nA-1,Saint-Rémy-de-Provence,30\nA-2,Lyon,-4\n").unwrap();
+    shell.update(cx, |s, cx| {
+        let (notes, dirs, images) = vault::scan(root);
+        s.sync(notes, dirs, images, cx);
+        s.open_note(&fonts, cx);
+    });
+    cx.run_until_parked();
+    let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
+    let mono = |cx: &mut gpui::VisualTestContext| sheet.read_with(cx, |sheet, _| (0..4).map(|c| sheet.is_mono(c)).collect::<Vec<_>>());
+    assert_eq!(mono(cx), [true, false, true, false]);
+    shell.update_in(cx, |s, window, cx| window.focus(&s.shown_sheet().unwrap().focus_handle(cx)));
+    cx.simulate_keystrokes("down right right");
+    cx.simulate_input("trente");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(sheet.read_with(cx, |sheet, _| sheet.table().cell(1, 2).to_string()), "trente");
+    assert_eq!(mono(cx), [true, false, true, false]);
+    sheet.update(cx, |sheet, cx| sheet.table_op(editor::TableOp::ColRight, cx));
+    assert_eq!(mono(cx), [true, false, false, false]);
+
     // In a note, selected table cells copy as a Markdown table, which pastes as a table in another note.
     shell.update_in(cx, |s, window, cx| {
         s.new_note("| a | b |\n| --- | --- |\n| 1 | 2 |\n".into(), cx);

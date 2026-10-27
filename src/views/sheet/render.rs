@@ -85,6 +85,7 @@ impl Render for Sheet {
             // A click there takes a whole row, as a click on a header takes its column.
             .cursor_pointer()
             .bg(t.bg)
+            .font_family(mono())
             .text_size(px(self.text_px()))
             .children((r0..r1).map(|r| number(r, self.y_of(r))))
             .child(div().absolute().top(px(0.)).left(px(0.)).w(px(GUTTER)).h(px(ROW)).border_r_1().border_b_1().border_color(t.border).bg(t.code_bg))
@@ -95,7 +96,7 @@ impl Render for Sheet {
             .min_h_0()
             .relative()
             .overflow_hidden()
-            .font_family(mono())
+            .font_family(sans())
             .child(measure)
             .child(grid)
             .child(gutter)
@@ -378,6 +379,7 @@ impl Sheet {
                     .border_r_1()
                     .border_b_1()
                     .border_color(t.border)
+                    .when(self.mono.get(c) == Some(&true) && !head, |d| d.font_family(mono()))
                     .when(head, |d| d.bg(t.code_bg).font_weight(FontWeight::SEMIBOLD))
                     .when(inside, |d| d.bg(t.selection))
                     .child(div().min_w_0().truncate().child(text))
@@ -406,6 +408,7 @@ impl Sheet {
             .border_2()
             .border_color(t.accent)
             .text_size(px(self.text_px()))
+            .when(self.mono.get(col) == Some(&true), |d| d.font_family(mono()))
             .child(edit.shown(t).0)
     }
 

@@ -34,7 +34,7 @@ use crate::{
     ui::theme::Theme,
     views::editor::{self, TableOp},
     ui::line::{self, Line},
-    logic::markdown, ui::assets::mono,
+    logic::markdown, ui::assets::{mono, sans},
     ui::widgets::{button, tip},
     logic::table::{self, Encoding, Format, Style, Table, WriteError},
     lang::tr, platform::vault,
@@ -143,6 +143,9 @@ pub struct Sheet {
     /// Width of each column, and x of its left edge (one more, for the total).
     widths: Vec<f32>,
     xs: Vec<f32>,
+    /// Columns of numbers, dates, IDs (monospace), decided from the sample rows when measured: an edit
+    /// does not change it, a new measure (opening, a column inserted or moved) does.
+    mono: Vec<bool>,
     /// View offset, in pixels (x, y).
     scroll: (f32, f32),
     body: Bounds<Pixels>,
@@ -180,6 +183,7 @@ impl Sheet {
             edit: None,
             widths: Vec::new(),
             xs: Vec::new(),
+            mono: Vec::new(),
             scroll: (0., 0.),
             body: Bounds::default(),
             drag: Drag::None,
@@ -238,6 +242,7 @@ impl Sheet {
             }
         }
         let em = self.text_px() * 0.6;
+        self.mono = self.table.code_columns(self.first(), SAMPLE);
         self.widths = chars.iter().map(|&n| n.clamp(MIN_CHARS, MAX_CHARS) as f32 * em + 2. * PAD).collect();
         self.place();
     }

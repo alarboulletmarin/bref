@@ -37,6 +37,12 @@ impl Sheet {
         .detach();
     }
 
+    /// Whether the column is drawn in monospace (numbers, dates, IDs).
+    #[cfg(test)]
+    pub fn is_mono(&self, col: usize) -> bool {
+        self.mono.get(col).copied().unwrap_or(false)
+    }
+
     /// Number of gestures that can be undone.
     #[cfg(test)]
     pub fn undo_len(&self) -> usize {
