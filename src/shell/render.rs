@@ -810,7 +810,8 @@ impl Shell {
                 .child(div().flex().items_center().pb_2().child(div().flex_1().text_color(t.soft).child(title)).child(shut))
                 .children(cards)
         });
-        let copy = icon_button("copy-all", if self.copied { "check.svg" } else { "copy.svg" }, t)
+        let copy = ui::widgets::button("copy-all", if self.copied { "check.svg" } else { "copy.svg" }, false, t)
+            .debug_selector(|| "copy-all".into())
             .tooltip(ui::widgets::tip(tr("Copy the note", "Copier la note"), keys::of(cx, &CopyAll), t))
             .absolute()
             .bottom_4()

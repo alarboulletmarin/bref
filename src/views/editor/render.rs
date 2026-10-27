@@ -8,11 +8,11 @@ impl Render for Editor {
         // The count is truncated in a narrow note, instead of going out on the left.
         let t = self.theme;
         let after = (12. + 34. * self.corner as f32) * t.ui;
-        // The formatting bar, apart from the counter and in the middle of the page.
+        // The formatting bar, at the left of the strip, the counter at the right.
         self.bar.at = self.bar_place();
         let folded = self.bar.at == Some(Bar::Compact);
         let bar = match self.bar.at {
-            Some(Bar::Inline(_)) => self.bar.at.map(|mode| self.format_bar(mode, cx).into_any_element()),
+            Some(Bar::Inline) => self.bar.at.map(|mode| self.format_bar(mode, cx).into_any_element()),
             Some(Bar::Compact) if self.bar.open => Some(self.format_bar(Bar::Compact, cx).into_any_element()),
             _ => None,
         };

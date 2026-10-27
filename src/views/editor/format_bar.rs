@@ -7,7 +7,7 @@ use super::*;
 pub(super) struct BarState {
     /// What the formatting bar offers, with the version and selection it was computed for.
     pub(super) tools: Option<((u64, Range<usize>), Tools)>,
-    /// Left edge of the bar, when it shows (see `bar_place`).
+    /// How the bar shows (see `bar_place`).
     pub(super) at: Option<Bar>,
     /// Bar collapsed into a button (narrow note): its buttons are open above it.
     pub(super) open: bool,
@@ -28,8 +28,8 @@ pub fn bar_fill(t: &Theme, open: bool) -> Hsla {
 /// Where and how the formatting bar shows.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(super) enum Bar {
-    /// In the bottom row, its left edge at this x.
-    Inline(f32),
+    /// In the bottom row, at the left edge of the note.
+    Inline,
     /// Collapsed into a button, bottom left, which opens the bar above it.
     Compact,
 }
@@ -78,7 +78,7 @@ impl Editor {
     /// The formatting bar's buttons are on screen: in the bottom row, or open above the button that collapses it.
     pub fn bar_shown(&self) -> bool {
         match self.bar.at {
-            Some(Bar::Inline(_)) => true,
+            Some(Bar::Inline) => true,
             Some(Bar::Compact) => self.bar.open,
             None => false,
         }
@@ -90,8 +90,8 @@ impl Editor {
         self.bar.at == Some(Bar::Compact)
     }
 
-    /// Where to put the bar: in the middle of the page, further left when the counter and the corner buttons
-    /// would push it, collapsed into a button when it no longer has room; `None` if it is off or
+    /// Where to put the bar: at the left edge of the note, where its button sits when it is collapsed
+    /// because the counter and the corner buttons leave it no room; `None` if it is off or
     /// this is not the active pane, or as long as the note's width is not known.
     // ponytail: the counter's room is estimated (7.4 px per character at 12 px, spaces and middle dots count more than letters) rather than measured.
     pub(super) fn bar_place(&mut self) -> Option<Bar> {
@@ -102,8 +102,8 @@ impl Editor {
         // At the interface's scale, like the counter and the buttons around.
         let (u, bar) = (self.theme.ui, BAR_WIDTH * self.theme.ui);
         let counts = (self.counts().chars().count() as f32 * 7.4 + 16.) * u;
-        let x = (width / 2. - bar / 2.).min(width - (12. + 34. * self.corner as f32) * u - counts - 8. * u - bar);
-        Some(if x >= 8. * u { Bar::Inline(x) } else { Bar::Compact })
+        let room = width - (12. + 34. * self.corner as f32) * u - counts - 8. * u - bar;
+        Some(if room >= 8. * u { Bar::Inline } else { Bar::Compact })
     }
 
     /// What the bar offers for the selection, recomputed only when the text or the selection change.
@@ -189,9 +189,9 @@ impl Editor {
         let t = self.theme;
         let tools = self.tools();
         let width = f32::from(self.viewport.size.width);
-        let (left, wide, inline) = match mode {
-            Bar::Inline(x) => (x, BAR_WIDTH * t.ui, true),
-            Bar::Compact => (8. * t.ui, (BAR_WIDTH * t.ui).min(width - 16. * t.ui), false),
+        let (wide, inline) = match mode {
+            Bar::Inline => (BAR_WIDTH * t.ui, true),
+            Bar::Compact => ((BAR_WIDTH * t.ui).min(width - 16. * t.ui), false),
         };
         let swatches = self.bar.swatches.then(|| self.swatches(inline, cx));
         let on = tools.styles;
@@ -340,7 +340,7 @@ impl Editor {
             .children(last);
         // The color badges above the bar, all anchored to the bottom of the note.
         // Collapsed, the bar opens above the button (30 px, 16 px from the bottom, 6 px apart).
-        div().absolute().bottom(t.px(if inline { 16. } else { 52. })).left(px(left)).when(!inline, |d| d.w(px(wide))).flex().flex_col().items_start().gap(t.px(6.)).children(swatches).child(bar)
+        div().absolute().bottom(if inline { px(16.) } else { px(16.) + t.px(36.) }).left(t.px(8.)).when(!inline, |d| d.w(px(wide))).flex().flex_col().items_start().gap(t.px(6.)).children(swatches).child(bar)
     }
 
     /// The button that collapses the bar: bottom left, it opens the bar above it and closes it.
@@ -352,7 +352,7 @@ impl Editor {
             .debug_selector(|| "format-toggle".into())
             .absolute()
             .bottom_4()
-            .left_2()
+            .left(t.px(8.))
             .size(t.px(30.))
             .flex()
             .items_center()

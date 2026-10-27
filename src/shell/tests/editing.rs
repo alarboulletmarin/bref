@@ -498,12 +498,12 @@ fn formatting_journey(cx: &mut TestAppContext) {
     assert_eq!(text(cx), "un chat\nun chien");
     cx.simulate_keystrokes("escape");
 
-    // The bottom bar: in the middle of the page, left of the counter, eleven buttons of the same size.
+    // The bottom bar: at the left of the page, left of the counter, eleven buttons of the same size.
     pick(cx, "un mot ici", 3, 3);
     let (bar, counts, pane) = (cx.debug_bounds("format-bar").unwrap(), cx.debug_bounds("counts").unwrap(), cx.debug_bounds("pane-0").unwrap());
     assert!(bar.right() <= counts.left() && bar.left() >= pane.left() && bar.bottom() <= pane.bottom(), "{bar:?} {counts:?} {pane:?}");
-    // In the middle of the page, or a bit to the left when the counter (long, with a selection) pushes it.
-    assert!(bar.center().x <= pane.center().x + px(1.) && bar.center().x >= pane.center().x - px(60.), "{bar:?} {pane:?}");
+    // At the left edge, on the counter's strip.
+    assert_eq!((bar.left(), bar.bottom()), (pane.left() + px(8.), counts.bottom()), "{bar:?} {counts:?} {pane:?}");
     assert_eq!((bar.size.height, bar.size.width), (counts.size.height, px(335.)));
     const NAMES: [&str; 11] = ["format-0", "format-1", "format-2", "format-3", "format-4", "format-5", "format-6", "format-7", "format-8", "format-9", "format-10"];
     let buttons = |cx: &mut gpui::VisualTestContext| NAMES.iter().map(|name| cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} absent"))).collect::<Vec<_>>();
@@ -659,14 +659,13 @@ fn formatting_journey(cx: &mut TestAppContext) {
         if shown {
             let bar = cx.debug_bounds("format-bar").unwrap();
             assert!(bar.right() <= counts.left() && bar.left() >= pane.left() + px(8.) - px(0.5), "{width}: {bar:?} {counts:?} {pane:?}");
-            if width >= 1400. {
-                assert!((bar.center().x - pane.center().x).abs() <= px(1.), "{width}: in the middle of the page {bar:?} {pane:?}");
-            }
+            assert_eq!((bar.left(), bar.bottom()), (pane.left() + px(8.), counts.bottom()), "{width}: the bar is at the left of the counter's strip {bar:?} {counts:?} {pane:?}");
         } else {
             // Folded: the button is in the note, at the left edge, and the counter does not go under it.
             let toggle = cx.debug_bounds("format-toggle").unwrap();
             assert!(toggle.left() >= pane.left() && toggle.right() <= counts.left().max(toggle.right()) && toggle.bottom() <= pane.bottom(), "{width}: {toggle:?} {counts:?} {pane:?}");
             assert!(counts.left() >= toggle.right() || counts.size.width == px(0.), "{width}: the counter goes under the button {toggle:?} {counts:?}");
+            assert_eq!((toggle.left(), toggle.bottom(), toggle.size.height), (pane.left() + px(8.), counts.bottom(), counts.size.height), "{width}: the button is on the strip {toggle:?} {counts:?}");
             // Open: all buttons are in the note, wrapped if it is narrow, above the button; a click acts.
             pick(cx, "un mot ici", 3, 3);
             let at = cx.debug_bounds("format-toggle").unwrap().center();
@@ -678,6 +677,7 @@ fn formatting_journey(cx: &mut TestAppContext) {
             }
             assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_shown()), "{width}: the button opens the bar");
             let (bar, toggle) = (cx.debug_bounds("format-bar").unwrap(), cx.debug_bounds("format-toggle").unwrap());
+            assert_eq!(bar.left(), toggle.left(), "{width}: the bar unfolds from its button");
             assert!(bar.left() >= pane.left() && bar.right() <= pane.right() && bar.bottom() <= toggle.top() && bar.top() >= pane.top(), "{width}: {bar:?} {toggle:?} {pane:?}");
             for name in NAMES {
                 let button = cx.debug_bounds(name).unwrap();
