@@ -225,9 +225,10 @@ impl Theme {
     }
 
     /// The label of a callout of hue `tint`: legible on the callout's tint (10 % over the page), then drawn
-    /// a fifth of the way toward the text so that it does not outshine the body text. The bar carries the full hue.
+    /// a tenth of the way toward the text so that it does not outshine the body text. With no side band, the
+    /// label and the tint alone say the type.
     pub fn callout_label(&self, tint: Hsla) -> Hsla {
-        blend(legible(tint, blend(tint, self.bg, 0.1)), self.text, 0.2)
+        blend(legible(tint, blend(tint, self.bg, 0.1)), self.text, 0.1)
     }
 }
 

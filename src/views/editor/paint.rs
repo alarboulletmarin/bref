@@ -190,14 +190,13 @@ impl Editor {
                     window.paint_quad(fill(block(px(-12.), y, w + px(24.), h), t.code_bg).corner_radii(corners(t.large(), row)))
                 }
                 Kind::Quote => {
-                    let (y, h) = if row.tint.is_some() { shape_span(row, top, clear) } else { (top, row.height) };
+                    // A callout is its tinted shape alone, lined up with the code blocks; a plain quote keeps a thin neutral bar.
                     if let Some(tint) = row.tint {
-                        window.paint_quad(fill(block(px(-14.), y, w + px(28.), h), tint.opacity(0.1)).corner_radii(corners(t.large(), row)));
+                        let (y, h) = shape_span(row, top, clear);
+                        window.paint_quad(fill(block(px(-12.), y, w + px(24.), h), tint.opacity(0.1)).corner_radii(corners(t.large(), row)));
+                    } else {
+                        window.paint_quad(fill(block(px(-14.), top, px(3.), row.height), t.border).corner_radii(corners(px(1.5), row)))
                     }
-                    // The bar, rounded at its two ends; in a callout it stays clear of the shape's corners.
-                    let end = if row.tint.is_some() { t.px(6.) } else { px(0.) };
-                    let (y0, y1) = (y + if row.head { end } else { px(0.) }, y + h - if row.foot { end } else { px(0.) });
-                    window.paint_quad(fill(block(px(-14.), y0, px(3.), y1 - y0), row.tint.unwrap_or(t.border)).corner_radii(corners(px(1.5), row)))
                 }
                 Kind::Rule if !has_cursor => {
                     let mid = top + row.height / 2.;
