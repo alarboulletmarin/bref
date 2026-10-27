@@ -212,8 +212,11 @@ pub(super) struct Row {
     pub(super) enlarge: Option<Source>,
     /// The line opens a code block: it carries the copy button.
     pub(super) opens: bool,
-    /// Room left under the last line of a table.
+    /// Room left under the last line of a table, or inside the fill of a code block or callout.
     pub(super) gap: Pixels,
+    /// The line starts / ends a code block, a callout or a quote: its shape is rounded there.
+    pub(super) head: bool,
+    pub(super) foot: bool,
     /// Color of the `> [!TYPE]` callout the line is part of.
     pub(super) tint: Option<Hsla>,
     /// Table line wider than the page: how far its text is shifted to the left.
@@ -267,7 +270,7 @@ impl Row {
     /// Top of the picture's band: at least as tall as the enlarge button, so that a tiny
     /// picture's button never lands on the next line.
     pub(super) fn image_top(&self) -> Pixels {
-        self.y + self.height - self.image_height() + IMAGE_GAP
+        self.y + self.height - self.gap - self.image_height() + IMAGE_GAP
     }
 
     pub(super) fn index_at(&self, p: Point<Pixels>) -> usize {
@@ -618,15 +621,14 @@ impl Editor {
                     return None;
                 }
                 let text = &self.content[start..stop];
-                let (first, last) = (text.split('\n').next().unwrap_or(""), text.rsplit('\n').next().unwrap_or(""));
+                let last = text.rsplit('\n').next().unwrap_or("");
                 if r.end < n && rows[r.end].kind == Kind::Table && md::is_table_line(last) && !inside(r.end - 1, r.end) {
                     whole(r, block_of(r.end));
                 }
-                let quote = |l: &str| md::classify(l, false).0 == Kind::Quote;
-                if r.start > 0 && rows[r.start - 1].kind == Kind::Quote && quote(first) {
+                if r.start > 0 && rows[r.start - 1].kind == Kind::Quote {
                     r.start -= 1;
                 }
-                if r.end < n && rows[r.end].kind == Kind::Quote && quote(last) {
+                if r.end < n && rows[r.end].kind == Kind::Quote {
                     r.end += 1;
                 }
                 while r.start > 0 && rows[r.start].kind == Kind::Quote && rows[r.start - 1].kind == Kind::Quote {
@@ -678,9 +680,9 @@ impl Editor {
     /// What describes each laid out line, to compare two layouts.
     #[cfg(test)]
     #[allow(clippy::type_complexity)]
-    pub(super) fn signature(&self) -> Vec<(usize, usize, i64, i64, i64, bool, Kind, i64)> {
+    pub(super) fn signature(&self) -> Vec<(usize, usize, i64, i64, i64, bool, Kind, i64, (bool, bool))> {
         let px = |v: Pixels| (f32::from(v) * 100.).round() as i64;
-        self.rows.iter().map(|r| (r.start, r.len, px(r.y), px(r.height), px(r.pad), r.opens, r.kind, px(r.gap))).collect()
+        self.rows.iter().map(|r| (r.start, r.len, px(r.y), px(r.height), px(r.pad), r.opens, r.kind, px(r.gap), (r.head, r.foot))).collect()
     }
 
     /// Each frame: the heavy layout is only redone if the text, the width, the theme
@@ -725,7 +727,7 @@ impl Editor {
                 let near = |a: i64, b: i64| (a - b).abs() <= 20;
                 for (i, (a, b)) in reused.iter().zip(self.signature()).enumerate() {
                     assert!(
-                        a.0 == b.0 && a.1 == b.1 && near(a.2, b.2) && near(a.3, b.3) && near(a.4, b.4) && a.5 == b.5 && a.6 == b.6 && near(a.7, b.7),
+                        a.0 == b.0 && a.1 == b.1 && near(a.2, b.2) && near(a.3, b.3) && near(a.4, b.4) && a.5 == b.5 && a.6 == b.6 && near(a.7, b.7) && a.8 == b.8,
                         "line {i}: {a:?} against {b:?}"
                     );
                 }
@@ -920,6 +922,8 @@ impl Editor {
                     enlarge: None,
                     opens: false,
                     gap: px(0.),
+                    head: false,
+                    foot: false,
                     tint: None,
                     dx: px(0.),
                     grid: None,
@@ -935,6 +939,7 @@ impl Editor {
             let mut drawing = None;
             let mut broken = None;
             let mut enlarge = None;
+            let was_in_code = in_code;
             if kind == Kind::Fence && orphan != Some(offset) {
                 opens = !in_code && fences > 1;
                 in_code = opens;
@@ -1023,6 +1028,8 @@ impl Editor {
                             enlarge: None,
                             opens: false,
                             gap: px(0.),
+                            head: false,
+                            foot: false,
                             tint: None,
                             dx: px(0.),
                             grid: None,
@@ -1237,12 +1244,23 @@ impl Editor {
                 .map(|target| Rc::new(embeds.row(&target, width, self, frame as u64, window, cx)));
 
             let text_height = made.line.as_ref().map_or(lh, |l| l.size(lh).height);
+            // A code block and a callout have room inside their fill, above the first line and under the last.
+            let (head, foot) = match kind {
+                Kind::Fence => (!was_in_code, was_in_code || !opens),
+                Kind::Quote => {
+                    let next = self.content.get(offset + line.len() + 1..).and_then(|rest| rest.split('\n').next()).unwrap_or("");
+                    (own_tint.is_some() || !rows.last().is_some_and(|r| r.kind == Kind::Quote), md::classify(next, false).0 != Kind::Quote || md::callout(next).is_some())
+                }
+                _ => (false, false),
+            };
+            let room = if matches!(kind, Kind::Code | Kind::Fence) || tinted { BLOCK_ROOM * (t.size / 16.) } else { px(0.) };
+            let (above, below) = (if head { room } else { px(0.) }, if foot { room } else { px(0.) });
             let (pad, lh, height) = match &grid_row {
                 Some(grid) => {
                     let lh = grid::line_height(&t);
                     (grid.pad(), lh, grid.height(lh))
                 }
-                None => (pad, lh, pad + text_height),
+                None => (pad + above, lh, pad + above + text_height),
             };
             let row = Row {
                 start: offset,
@@ -1256,14 +1274,16 @@ impl Editor {
                 image,
                 enlarge,
                 opens,
-                gap: px(0.),
+                gap: below,
+                head,
+                foot,
                 tint,
                 dx: px(0.),
                 grid: grid_row,
                 embed: None,
                 broken,
             };
-            let height = row.height + row.image_height() + embed.as_ref().map_or(px(0.), |e| e.height());
+            let height = row.height + row.image_height() + embed.as_ref().map_or(px(0.), |e| e.height()) + row.gap;
             rows.push(Row { height, embed, ..row });
             y += height;
             offset += line.len() + 1;

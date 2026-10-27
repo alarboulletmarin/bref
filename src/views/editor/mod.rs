@@ -188,6 +188,8 @@ const COPY_SIZE: Pixels = px(22.);
 const MATH_SCALE: f32 = 1.2;
 /// Space between a line and the image it points to.
 const IMAGE_GAP: Pixels = px(8.);
+/// Room inside the fill of a code block or callout, above its first line and under its last (at 16 px text).
+const BLOCK_ROOM: Pixels = px(9.);
 /// Height of the line that says a figure or a picture cannot be read.
 const BROKEN: Pixels = px(20.);
 /// `file` is inside `root`, once `..` and symbolic links are resolved: a received
@@ -662,6 +664,13 @@ impl Editor {
         self.move_to(self.clamp(at), cx);
         self.scroll_y = px(scroll);
         self.reveal = false;
+    }
+
+    /// The lines of code blocks, callouts and quotes: `(start, head, foot, room above, room under)`.
+    #[cfg(test)]
+    pub fn block_lines(&self) -> Vec<(usize, bool, bool, f32, f32)> {
+        let lines = self.rows.iter().filter(|r| matches!(r.kind, Kind::Code | Kind::Fence | Kind::Quote));
+        lines.map(|r| (r.start, r.head, r.foot, f32::from(r.pad), f32::from(r.gap))).collect()
     }
 
     /// Table dash lines that are not shown.

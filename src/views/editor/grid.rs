@@ -378,11 +378,13 @@ impl TableRow {
         found
     }
 
-    /// Header background, drawn under the text. `at`: corner of the line on screen;
-    /// `height`: its height, without the space left under the table.
-    pub fn paint_back(&self, at: Point<Pixels>, height: Pixels, theme: &Theme, window: &mut Window) {
+    /// Header background, drawn under the text, over `area` (the visible width of the table, from
+    /// the top of the line), its corners following the table's frame: the bottom ones too when `ends` (it is the only line).
+    pub fn paint_back(&self, area: Bounds<Pixels>, radius: Pixels, ends: bool, theme: &Theme, window: &mut Window) {
         if self.header {
-            window.paint_quad(fill(Bounds::new(at, size(self.total(), height)), theme.code_bg));
+            let low = if ends { radius } else { px(0.) };
+            let corners = gpui::Corners { top_left: radius, top_right: radius, bottom_right: low, bottom_left: low };
+            window.paint_quad(fill(area, theme.code_bg).corner_radii(corners));
         }
     }
 
@@ -407,11 +409,12 @@ impl TableRow {
         let mut rule = |x: Pixels, y: Pixels, w: Pixels, h: Pixels| {
             window.paint_quad(fill(Bounds::new(at + point(x, y), size(w, h)), theme.border));
         };
-        rule(px(0.), px(0.), self.total(), self.top);
-        if self.bottom > px(0.) {
-            rule(px(0.), height - self.bottom, self.total(), self.bottom);
+        // The table's outer edge is one rounded stroke, drawn over the lines (`Editor::paint`).
+        if !self.header {
+            rule(px(0.), px(0.), self.total(), self.top);
         }
-        for x in self.xs.iter() {
+        let inner = self.xs.len().saturating_sub(1);
+        for x in self.xs.iter().take(inner).skip(1) {
             rule(*x, px(0.), LINE, height);
         }
     }

@@ -9,6 +9,7 @@ mod media;
 mod vault_views;
 mod diagrams;
 mod md_tables;
+mod blocks;
 mod outline;
 mod boards;
 mod cursors_comments;
@@ -92,6 +93,7 @@ fn end_to_end(cx: &mut TestAppContext) {
     let here = vault_views::run(&j, cx);
     diagrams::run(&j, cx);
     md_tables::run(&j, cx);
+    blocks::run(&j, cx);
     outline::run(&j, cx);
     boards::run(&j, cx, &here);
     cursors_comments::run(&j, cx);

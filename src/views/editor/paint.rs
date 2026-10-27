@@ -172,7 +172,7 @@ impl Editor {
                 .text_system()
                 .shape_line(SharedString::from(text.to_string()), px(14.), &[run], None)
         };
-        for row in &self.rows {
+        for (i, row) in self.rows.iter().enumerate() {
             let top = o.y + row.y;
             if top + row.height < self.viewport.top() || top > self.viewport.bottom() {
                 continue;
@@ -180,18 +180,24 @@ impl Editor {
             let text_top = top + row.pad;
             let end = row.start + row.len;
             let has_cursor = (row.start..=end).contains(&cursor);
+            let clear = t.px(3.);
             let block = |x: Pixels, y: Pixels, w: Pixels, h: Pixels| {
                 Bounds::new(point(o.x + x, y), size(w, h))
             };
             match row.kind {
                 Kind::Code | Kind::Fence => {
-                    window.paint_quad(fill(block(px(-12.), top, w + px(24.), row.height), t.code_bg))
+                    let (y, h) = shape_span(row, top, clear);
+                    window.paint_quad(fill(block(px(-12.), y, w + px(24.), h), t.code_bg).corner_radii(corners(t.large(), row)))
                 }
                 Kind::Quote => {
+                    let (y, h) = if row.tint.is_some() { shape_span(row, top, clear) } else { (top, row.height) };
                     if let Some(tint) = row.tint {
-                        window.paint_quad(fill(block(px(-14.), top, w + px(28.), row.height), tint.opacity(0.1)));
+                        window.paint_quad(fill(block(px(-14.), y, w + px(28.), h), tint.opacity(0.1)).corner_radii(corners(t.large(), row)));
                     }
-                    window.paint_quad(fill(block(px(-14.), top, px(3.), row.height), row.tint.unwrap_or(t.border)))
+                    // The bar, rounded at its two ends; in a callout it stays clear of the shape's corners.
+                    let end = if row.tint.is_some() { t.px(6.) } else { px(0.) };
+                    let (y0, y1) = (y + if row.head { end } else { px(0.) }, y + h - if row.foot { end } else { px(0.) });
+                    window.paint_quad(fill(block(px(-14.), y0, px(3.), y1 - y0), row.tint.unwrap_or(t.border)).corner_radii(corners(px(1.5), row)))
                 }
                 Kind::Rule if !has_cursor => {
                     let mid = top + row.height / 2.;
@@ -201,11 +207,9 @@ impl Editor {
                 _ => {}
             }
             // A table wider than the page is cut at its edges.
-            let mask = (row.kind == Kind::Table).then(|| {
-                let frame = self.tables.iter().find(|(range, _)| range.contains(&row.start)).map(|(_, frame)| *frame);
-                let (left, wide) = frame.map_or((o.x, w), |f| (f.left(), f.size.width));
-                ContentMask { bounds: Bounds::new(point(left - px(2.), top), size(wide + px(4.), row.height)) }
-            });
+            let frame = (row.kind == Kind::Table).then(|| self.tables.iter().find(|(range, _)| range.contains(&row.start)).map(|(_, frame)| *frame)).flatten();
+            let (left, wide) = frame.map_or((o.x, w), |f| (f.left(), f.size.width));
+            let mask = (row.kind == Kind::Table).then(|| ContentMask { bounds: Bounds::new(point(left - px(2.), top), size(wide + px(4.), row.height)) });
             if row.hidden() {
                 continue;
             }
@@ -213,7 +217,9 @@ impl Editor {
                 // In a table, the header background goes under the selection.
                 let table_top = point(o.x - row.dx, top);
                 if let Some(grid) = &row.grid {
-                    grid.paint_back(table_top, row.height - row.gap, &t, window);
+                    // The table ends here when nothing but dash lines follows.
+                    let ends = self.rows[i + 1..].iter().take_while(|r| r.kind == Kind::Table).all(Row::hidden);
+                    grid.paint_back(Bounds::new(point(left, top), size(wide, row.height - row.gap)), t.large(), ends, &t, window);
                 }
                 // Background of a passage of text on this line: the selection, the found passages.
                 // `edge`: a 1 px outline around it, for the current found passage.
@@ -221,20 +227,24 @@ impl Editor {
                     let a = row.pos(range.start.max(row.start) - row.start);
                     let b = row.pos(range.end.min(end) - row.start);
                     let tail = if range.end > end { px(6.) } else { px(0.) };
-                    let mut rect = |x: Pixels, y: Pixels, w: Pixels, h: Pixels| match edge {
-                        Some(edge) => window.paint_quad(quad(block(x, text_top + y, w, h), px(0.), color, px(1.), edge, BorderStyle::default())),
-                        None => window.paint_quad(fill(block(x, text_top + y, w, h), color)),
+                    // Rounded at the ends of the passage only: the lines of a passage over several lines join.
+                    let r = t.small();
+                    let (none, all) = (px(0.), Corners::all(r));
+                    let (first, last) = (Corners { bottom_left: none, bottom_right: none, ..all }, Corners { top_left: none, top_right: none, ..all });
+                    let mut rect = |x: Pixels, y: Pixels, w: Pixels, h: Pixels, round: Corners<Pixels>| match edge {
+                        Some(edge) => window.paint_quad(quad(block(x, text_top + y, w, h), round, color, px(1.), edge, BorderStyle::default())),
+                        None => window.paint_quad(fill(block(x, text_top + y, w, h), color).corner_radii(round)),
                     };
                     if let Some(grid) = &row.grid {
                         for (x, y, w) in grid.spans(range.start.max(row.start) - row.start, range.end.min(end) - row.start, row.lh) {
-                            rect(x - row.dx, y, w, row.lh);
+                            rect(x - row.dx, y, w, row.lh, all);
                         }
                     } else if a.y == b.y {
-                        rect(a.x, a.y, b.x - a.x + tail, row.lh);
+                        rect(a.x, a.y, b.x - a.x + tail, row.lh, all);
                     } else {
-                        rect(a.x, a.y, w - a.x, row.lh);
-                        rect(px(0.), a.y + row.lh, w, b.y - a.y - row.lh);
-                        rect(px(0.), b.y, b.x + tail, row.lh);
+                        rect(a.x, a.y, w - a.x, row.lh, first);
+                        rect(px(0.), a.y + row.lh, w, b.y - a.y - row.lh, Corners::default());
+                        rect(px(0.), b.y, b.x + tail, row.lh, last);
                     }
                 };
                 let mark = |range: &Range<usize>, color: Hsla, window: &mut Window| mark_edged(range, color, None, window);
@@ -342,6 +352,16 @@ impl Editor {
             window.paint_quad(fill(*thumb, t.dim.opacity(0.5)).corner_radii(px(1.5)));
         }
         // The line where files dragged onto the note would land.
+        // The frame of each table: one rounded stroke, over the header and the lines.
+        for (meta, (_, frame)) in self.table_meta.iter().zip(&self.tables) {
+            let (Some(first), Some(last)) = (self.rows.get(meta.rows.start), self.rows.get(meta.rows.end - 1)) else { continue };
+            let (top, bottom) = (o.y + first.y, o.y + last.y + last.height - last.gap);
+            if first.grid.is_none() || bottom < self.viewport.top() || top > self.viewport.bottom() {
+                continue;
+            }
+            let area = Bounds::new(point(frame.left(), top), size(frame.size.width, bottom - top));
+            window.paint_quad(quad(area, t.large(), Hsla::transparent_black(), px(1.), t.border, BorderStyle::default()));
+        }
         if let Some(mark) = self.drop_mark
             && let Some(last) = self.rows.last()
         {
@@ -568,4 +588,17 @@ impl Editor {
             }
         }
     }
+}
+
+/// The corners a line of a block rounds: the top ones if it starts the block, the bottom ones if it ends it.
+fn corners(radius: Pixels, row: &Row) -> Corners<Pixels> {
+    let (top, bottom) = (if row.head { radius } else { px(0.) }, if row.foot { radius } else { px(0.) });
+    Corners { top_left: top, top_right: top, bottom_right: bottom, bottom_left: bottom }
+}
+
+/// Where a line of a filled block is drawn, from the top of the line and for its height: the first and last
+/// lines stay `clear` of their edge, so that two blocks one after the other do not touch.
+fn shape_span(row: &Row, top: Pixels, clear: Pixels) -> (Pixels, Pixels) {
+    let (above, below) = (if row.head { clear } else { px(0.) }, if row.foot { clear } else { px(0.) });
+    (top + above, row.height - above - below)
 }
