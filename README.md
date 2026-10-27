@@ -568,6 +568,7 @@ The check is the only network request the app makes until you press Update. It r
 - **Linux** needs a working Vulkan driver (Mesa or the vendor one). Bref draws its own title bar: GNOME under Wayland draws none for applications. Drag the window by the pill at the top right, by the title of the panel, by the empty part of the rail or of a table's bar (a double click maximizes it), or hold `Alt` and drag from anywhere. On macOS and Windows the system title bar is used.
 - **Language**: French if the system language is French, English otherwise. Bref asks the system (Windows, macOS) or reads `LC_ALL`, `LC_MESSAGES` and `LANG` (Linux, or any system when started from a terminal).
 - **Fonts**: IBM Plex Sans and Plex Mono, built into the app.
+- **Accessibility**: every view can be reached from the keys, and every color pair stays readable in the 13 themes. A screen reader cannot read the window yet: the toolkit Bref is drawn with exposes no accessibility tree. Composing text with an input method (Chinese, Japanese, Korean, dead keys) works in notes, but in a table cell or a diagram shape the text is inserted as it is typed.
 
 ## Troubleshooting
 
