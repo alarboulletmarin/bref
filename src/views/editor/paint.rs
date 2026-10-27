@@ -119,14 +119,17 @@ impl Element for EditorElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        self.0.update(cx, |editor, cx| {
+        let resized = self.0.update(cx, |editor, cx| {
             let before = editor.viewport.size.width;
             editor.layout(bounds, window, cx);
-            // The formatting bar's place follows the note's width: the next frame moves it.
-            if before != editor.viewport.size.width {
-                cx.notify();
-            }
+            before != editor.viewport.size.width
         });
+        // The formatting bar's place follows the note's width: the next frame moves it. Asked for once this one
+        // is drawn, since gpui forgets a view notified while it draws.
+        if resized {
+            let editor = self.0.clone();
+            cx.defer(move |cx| editor.update(cx, |_, cx| cx.notify()));
+        }
     }
 
     fn paint(

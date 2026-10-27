@@ -522,6 +522,16 @@ fn formatting_journey(cx: &mut TestAppContext) {
         let all = buttons(cx);
         assert!(all.iter().all(|b| b.top() == all[0].top()), "zoom {zoom}: the bar wraps {all:?}");
     }
+    // At zoom 23 the bar does not fit beside the counter in 900 px, it does in 1 400: resized with no key
+    // pressed, it unfolds then folds by itself.
+    cx.simulate_keystrokes("secondary-0 secondary-= secondary-= secondary-= secondary-= secondary-= secondary-= secondary-=");
+    let folded = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_folded());
+    for (width, fold) in [(900., true), (1400., false), (900., true)] {
+        cx.simulate_resize(size(px(width), px(600.)));
+        cx.run_until_parked();
+        assert_eq!(folded(cx), fold, "{width} px at zoom 23");
+    }
+    cx.simulate_resize(size(px(900.), px(600.)));
     cx.simulate_keystrokes("secondary-0");
     pick(cx, "un mot ici", 3, 3);
     cx.update(|window, _| window.refresh());
