@@ -224,6 +224,11 @@ impl Theme {
         legible(Hsla { h, s: 0.7, l: 0.5, a: 1. }, under)
     }
 
+    /// Hover of the close button: the red of the callout recipe, translucent like `hover`, so it lies on any surface.
+    pub fn danger_hover(&self) -> Hsla {
+        Hsla { a: 0.2, ..Hsla { h: RED, s: 0.7, l: 0.5, a: 1. } }
+    }
+
     /// The label of a callout of hue `tint`: legible on the callout's tint (10 % over the page), then drawn
     /// a tenth of the way toward the text so that it does not outshine the body text. With no side band, the
     /// label and the tint alone say the type.

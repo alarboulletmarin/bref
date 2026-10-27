@@ -227,6 +227,7 @@ impl Shell {
                 .child(
                     div()
                         .id(("tabs-row", group))
+                        .debug_selector(move || format!("tabs-row-{group}"))
                         .flex_1()
                         .min_w_0()
                         .h_full()

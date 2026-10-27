@@ -483,6 +483,54 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
     let _ = fs::remove_dir_all(&root);
 }
 
+/// Where the app draws the window buttons, no tab and no comment column goes under them: in a window of 420, 860
+/// and 1 600 px, with eight tabs of long titles and a note that has comments, the tabs' row and the column's header
+/// end before the buttons or start below them.
+#[gpui::test]
+fn window_buttons_have_the_top_row_to_themselves(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-pill-row-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let _config = isolated_config(&root);
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let notes: Vec<_> = (0..8).map(|i| root.join(format!("Une note au titre très très long numéro {i}.md"))).collect();
+    for note in &notes {
+        fs::write(note, "# Titre\n\nUn {==mot==}{>>remarque<<} et du texte.\n").unwrap();
+    }
+    let (shell, cx) = cx.add_window_view(|window, cx| {
+        let mut shell = Shell::new(Some(root.clone()), vec![notes[0].clone()], window, cx);
+        shell.client = true;
+        shell
+    });
+    cx.run_until_parked();
+    shell.update_in(cx, |s, window, cx| {
+        for note in &notes[1..] {
+            s.add_tab(window, cx);
+            s.open_note(note, cx);
+        }
+    });
+    let mut seen = 0;
+    for width in [420., 860., 1600.] {
+        cx.simulate_resize(size(px(width), px(600.)));
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+        let pill = cx.debug_bounds("window-pill").expect("the window buttons are drawn");
+        // The tabs scroll inside their row, which ends where the buttons begin.
+        let row = cx.debug_bounds("tabs-row-0").expect("the tabs' row is drawn");
+        assert!(row.right() <= pill.left(), "{width}: the tabs' row {row:?} runs under the window buttons {pill:?}");
+        assert!(row.size.width > px(0.), "{width}: no room left for a tab");
+        if let Some(shut) = cx.debug_bounds("comments-shut") {
+            assert!(shut.top() >= pill.bottom() || shut.right() <= pill.left(), "{width}: the comments' header {shut:?} under the window buttons {pill:?}");
+            seen += 1;
+        }
+    }
+    assert!(seen > 0, "the comments column was never open");
+    let _ = fs::remove_dir_all(&root);
+}
+
 /// The interface follows the note's zoom, from 85 % to 150 % of its size at 16: the rail's buttons, the panel's
 /// rows, the menus and the palette grow with it, their text with them.
 #[gpui::test]

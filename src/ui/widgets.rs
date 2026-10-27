@@ -97,6 +97,11 @@ pub fn tip(label: impl Into<SharedString>, keys: String, theme: Theme) -> impl F
 }
 /// Round icon button: window controls, note copy; 24 px, the smallest target a finger or a shaky hand hits.
 pub fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stateful<gpui::Div> {
+    icon_button_over(id, icon, t.hover, t)
+}
+
+/// The same, with its own colour under the pointer (the close button's red).
+pub fn icon_button_over(id: &'static str, icon: &'static str, over: gpui::Hsla, t: Theme) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .debug_selector(move || id.to_string())
@@ -106,7 +111,7 @@ pub fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stat
         .justify_center()
         .rounded_full()
         .cursor_pointer()
-        .hover(|s| s.bg(t.hover))
+        .hover(|s| s.bg(over))
         .active(|s| s.bg(t.pressed))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .child(svg().path(icon).size(t.px(16.)).flex_none().text_color(t.text))

@@ -9,9 +9,8 @@ pub(super) fn badge_label(count: usize) -> String {
 
 /// Transparent margin around the window when the app draws its decorations.
 pub(super) const SHADOW: Pixels = px(10.);
-/// The window buttons' pill: its width (padding, three buttons, gaps, border) and, from the window's edge, its width and margin
-/// with some air: what the panel header leaves free under it.
-/// Width of the window buttons' pill at scale 1: three 24 px buttons, their gaps and margins.
+/// Width of the window buttons' group at scale 1: three 24 px buttons, their gaps and padding (a little over, for a border-less group).
+/// `PILL_ROOM` adds its margin to the window's edge and some air: what every top row leaves free under it.
 const PILL_W: f32 = 106.;
 pub(super) const PILL_ROOM: f32 = 124.;
 
@@ -398,28 +397,25 @@ pub(super) fn resize_edge(pos: Point<Pixels>, size: Size<Pixels>) -> Option<Resi
 }
 
 impl Shell {
-    // Floating badge at the top right of the note: a thin background and border set it
-    // apart from the text, neither blur nor transparency. It also serves as a move
-    // handle, like the panel header, the empty part of the rail and the board bar;
-    // Alt + drag moves from anywhere. ponytail: no transparent strip
-    // over the top of the note, it would get in the way of the first lines.
+    // The window's buttons, a bare group at the top right: no background, border or shadow of
+    // their own, so they sit on the surface of whatever row is under them. Every top row
+    // (tab bar, panel header, board bar, CSV bar) stops `PILL_ROOM` short of them and a narrow
+    // note starts under them. The group is also a move handle, like the panel header, the
+    // empty part of the rail and the board bar; Alt + drag moves from anywhere.
     pub(super) fn render_window_controls(&self, window: &Window) -> Div {
         let t = self.theme;
         let controls = window.window_controls();
         div()
             .absolute()
-            .top_2()
+            .top_0()
             .right_2()
+            // As high as the CSV bar, between the tab bar (34) and the panel header (44): the buttons
+            // sit on the middle of whichever row is under them.
+            .h(t.px(40.))
             .flex()
             .items_center()
             .gap_2()
             .px_2()
-            .py_1()
-            .rounded(t.large())
-            .bg(t.panel)
-            .border_1()
-            .border_color(t.border)
-            .shadow(t.lifted())
             .occlude()
             .debug_selector(|| "window-pill".into())
             .map(drag_window)
@@ -430,7 +426,11 @@ impl Shell {
                 let icon = if window.is_maximized() { "restore.svg" } else { "maximize.svg" };
                 d.child(icon_button("maximize", icon, t).on_click(|_, window, _| window.zoom_window()))
             })
-            .child(icon_button("close", "close.svg", t).on_click(|_, window, _| window.remove_window()))
+            // Closing is the one button that warns: its hover is the red of the callout recipe.
+            .child(
+                icon_button_over("close", "close.svg", t.danger_hover(), t)
+                    .on_click(|_, window, _| window.remove_window()),
+            )
     }
 
     /// Without a vault: the welcome page, which offers a ready-made one, opens one or clones one.
@@ -769,7 +769,7 @@ impl Shell {
         });
         let comments = column.map(|column| {
             let title = format!("{} ({})", tr("Comments", "Commentaires"), said.len());
-            let shut = ui::widgets::button("comments-shut", "close.svg", false, t).tooltip(ui::widgets::tip(tr("Close", "Fermer"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {
+            let shut = ui::widgets::button("comments-shut", "close.svg", false, t).debug_selector(|| "comments-shut".into()).tooltip(ui::widgets::tip(tr("Close", "Fermer"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| {
                 this.comments_shut = true;
                 cx.notify();
             }));
@@ -779,7 +779,8 @@ impl Shell {
                 .w(column)
                 .flex_none()
                 .h_full()
-                .pt(px(48.))
+                // Under the window buttons, whatever the zoom.
+                .pt(t.px(48.))
                 .px_3()
                 .pb_3()
                 .bg(t.panel)
