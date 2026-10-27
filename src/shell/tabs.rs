@@ -5,6 +5,33 @@ use super::*;
 /// Height of the tab bar, at scale 1: a row of the side panel.
 const TAB_BAR: f32 = 34.;
 
+/// A tab being dragged: a small card with its name follows the pointer.
+#[derive(Clone)]
+pub(super) struct TabDragged {
+    pub tab: usize,
+    name: String,
+    theme: Theme,
+}
+
+impl Render for TabDragged {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let t = self.theme;
+        div()
+            .px(t.px(10.))
+            .py(t.px(5.))
+            .max_w(t.px(220.))
+            .truncate()
+            .rounded(t.px(8.))
+            .bg(t.panel)
+            .border_1()
+            .border_color(t.border)
+            .shadow_md()
+            .text_size(t.px(13.))
+            .text_color(t.text)
+            .child(self.name.clone())
+    }
+}
+
 impl Shell {
     /// What a tab is called: its file, its list page, or a new note's first line.
     pub(super) fn tab_name(&self, tab: usize, cx: &App) -> String {
@@ -41,6 +68,17 @@ impl Shell {
                 }
             })
             .collect()
+    }
+
+    /// Where a dragged tab would land in a bar; the pane under it is not aimed at meanwhile.
+    fn aim_tab(&mut self, aim: Option<(usize, usize)>, cx: &mut Context<Self>) {
+        if aim != self.tab_aim {
+            self.tab_aim = aim;
+            if aim.is_some() {
+                self.pane_aim = None;
+            }
+            cx.notify();
+        }
     }
 
     /// Ctrl+W or the cross of a tab: that tab closes; input stays where it was unless it was there.
@@ -83,7 +121,11 @@ impl Shell {
         // ponytail: every tab is laid out at each frame (about 20 µs a tab: 2 ms for a hundred, measured
         // by `hundred_tabs`); draw only those in view, or cache the bar as its own view, if that matters.
         let hovered = self.tab_hover;
-        let cells = tabs.iter().zip(labels).map(|(&tab, label)| {
+        // While a tab is dragged over this bar: a line where it would land.
+        let aim = self.tab_aim.filter(|(over, _)| *over == group).map(|(_, at)| at);
+        let count = tabs.len();
+        let line = move || div().absolute().top_0().bottom_0().w(t.px(2.)).bg(t.accent).debug_selector(|| "tab-aim".into());
+        let cells = tabs.iter().zip(labels).enumerate().map(|(at, (&tab, label))| {
             let pane = &self.panes[tab];
             let (on, over) = (tab == shown, hovered == Some(tab));
             let slot = div().size(t.px(16.)).flex_none().flex().items_center().justify_center();
@@ -123,8 +165,19 @@ impl Shell {
                 .cursor_pointer()
                 .text_color(if on || over { t.text } else { t.soft })
                 .when(pane.preview, |d| d.italic())
-                .child(div().min_w_0().truncate().child(label))
+                .child(div().min_w_0().truncate().child(label.clone()))
                 .child(slot)
+                .when(aim == Some(at), |d| d.child(line().left_0()))
+                .when(aim == Some(count) && at + 1 == count, |d| d.child(line().right_0()))
+                // Taken, it follows the pointer; over a tab, the half under the pointer says on
+                // which side of it it would land.
+                .on_drag(TabDragged { tab, name: label, theme: t }, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
+                .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<TabDragged>, _, cx| {
+                    let p = e.event.position;
+                    if e.bounds.contains(&p) {
+                        this.aim_tab(Some((group, at + usize::from(p.x > e.bounds.center().x))), cx);
+                    }
+                }))
                 // Under the tab shown: the accent in the active pane, quieter in the other.
                 .when(on, |d| d.child(div().absolute().left_0().right_0().bottom_0().h(t.px(2.)).bg(if active { t.accent } else { t.soft })))
                 .on_hover(cx.listener(move |this, hover: &bool, _, cx| {
@@ -152,6 +205,20 @@ impl Shell {
                 .border_color(t.border)
                 .text_size(t.px(13.))
                 .when(corner, |d| d.pr(t.px(render::PILL_ROOM)))
+                // Past the last tab, it lands at the end; out of the bar, nowhere in it.
+                .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<TabDragged>, _, cx| {
+                    let mine = this.tab_aim.is_some_and(|(over, _)| over == group);
+                    match e.bounds.contains(&e.event.position) {
+                        true if !mine => this.aim_tab(Some((group, count)), cx),
+                        false if mine => this.aim_tab(None, cx),
+                        _ => {}
+                    }
+                }))
+                .on_drop(cx.listener(move |this, dragged: &TabDragged, window, cx| {
+                    if let Some((_, at)) = this.tab_aim.take().filter(|(over, _)| *over == group) {
+                        this.place_tab(dragged.tab, pane::Place::Bar(group, at), window, cx);
+                    }
+                }))
                 .child(
                     div()
                         .id(("tabs-row", group))

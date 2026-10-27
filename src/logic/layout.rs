@@ -341,6 +341,27 @@ fn parse(text: &str) -> Option<(Node, &str)> {
     Some((Node::Pane(text[..end].parse().ok()?), &text[end..]))
 }
 
+/// Where something dropped on a pane goes: into it, or into a new pane split off on a side.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Zone {
+    Center,
+    Edge(Side),
+}
+
+/// The zone under the pointer at (`x`, `y`) in a pane of `w` × `h`: the nearest edge when the
+/// pointer is in its band (a quarter of the pane, at most `band`), the centre otherwise.
+pub fn zone(x: f32, y: f32, w: f32, h: f32, band: f32) -> Zone {
+    if w <= 0. || h <= 0. {
+        return Zone::Center;
+    }
+    let (bx, by) = ((w / 4.).min(band), (h / 4.).min(band));
+    let near = [(x / bx, Side::Left), ((w - x) / bx, Side::Right), (y / by, Side::Up), ((h - y) / by, Side::Down)];
+    match near.into_iter().filter(|(d, _)| *d < 1.).min_by(|a, b| a.0.total_cmp(&b.0)) {
+        Some((_, side)) => Zone::Edge(side),
+        None => Zone::Center,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -504,5 +525,29 @@ mod tests {
                 assert!((area - 1.).abs() < 1e-3);
             }
         }
+    }
+
+    #[test]
+    fn zones_of_a_pane() {
+        let z = |x, y| zone(x, y, 800., 400., 80.);
+        assert_eq!(z(400., 200.), Zone::Center);
+        assert_eq!(z(10., 200.), Zone::Edge(Side::Left));
+        assert_eq!(z(79., 200.), Zone::Edge(Side::Left));
+        assert_eq!(z(81., 200.), Zone::Center);
+        assert_eq!(z(795., 200.), Zone::Edge(Side::Right));
+        assert_eq!(z(400., 5.), Zone::Edge(Side::Up));
+        assert_eq!(z(400., 399.), Zone::Edge(Side::Down));
+        // In a corner, the nearer edge for its band.
+        assert_eq!(z(5., 60.), Zone::Edge(Side::Left));
+        assert_eq!(z(60., 5.), Zone::Edge(Side::Up));
+        // A small pane: the band is a quarter of it, never the whole.
+        let small = |x, y| zone(x, y, 200., 100., 80.);
+        assert_eq!(small(100., 50.), Zone::Center);
+        assert_eq!(small(49., 50.), Zone::Edge(Side::Left));
+        assert_eq!(small(51., 50.), Zone::Center);
+        assert_eq!(small(100., 24.), Zone::Edge(Side::Up));
+        // Outside or degenerate: an edge, never a panic.
+        assert_eq!(zone(-5., 50., 200., 100., 80.), Zone::Edge(Side::Left));
+        assert_eq!(zone(0., 0., 0., 0., 80.), Zone::Center);
     }
 }

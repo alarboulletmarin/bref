@@ -183,7 +183,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_mouse_down(row, MouseButton::Left, gpui::Modifiers::none());
     cx.simulate_mouse_move(row + gpui::point(px(12.), px(4.)), Some(MouseButton::Left), gpui::Modifiers::none());
     cx.simulate_mouse_move(right, Some(MouseButton::Left), gpui::Modifiers::none());
-    assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), Some((1, false)));
+    assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), Some((1, Zone::Center)));
     cx.simulate_mouse_up(right, MouseButton::Left, gpui::Modifiers::none());
     assert_eq!(shown(cx), sides(1, &["D", "B"]));
     assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), None);
@@ -208,13 +208,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-w");
     assert_eq!(shown(cx), sides(0, &["D"]));
     assert_eq!(shell.read_with(cx, |s, _| s.panes.len()), 1, "the last tab does not close");
-        // With a single pane, dropping a note on the right half opens the second.
+        // Dropped near the right edge of a pane, a note opens in a new pane split off there.
     let whole = cx.debug_bounds("pane-0").unwrap();
     let half = gpui::point(whole.right() - px(40.), whole.center().y);
     cx.simulate_mouse_down(row, MouseButton::Left, gpui::Modifiers::none());
     cx.simulate_mouse_move(row + gpui::point(px(12.), px(4.)), Some(MouseButton::Left), gpui::Modifiers::none());
     cx.simulate_mouse_move(half, Some(MouseButton::Left), gpui::Modifiers::none());
-    assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), Some((0, true)));
+    assert_eq!(shell.read_with(cx, |s, _| s.pane_aim), Some((0, Zone::Edge(Side::Right))));
     cx.simulate_mouse_up(half, MouseButton::Left, gpui::Modifiers::none());
     assert_eq!(shown(cx), sides(1, &["D", "B"]));
         // The layout is remembered: the width, and what each pane shows.

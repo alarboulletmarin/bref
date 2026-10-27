@@ -13,6 +13,13 @@ pub(super) const MIN_PANE: Pixels = px(300.);
 /// No pane is made lower: room for its tab bar and five lines of text.
 pub(super) const MIN_PANE_H: Pixels = px(200.);
 
+/// Where a tab goes: at a place in the bar of a pane, or into a new pane split off a side of one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Place {
+    Bar(usize, usize),
+    Split(usize, Side),
+}
+
 /// Whether `many` panes at `rects` (shares of `area`) leave one less than half its minimum size;
 /// not measured yet (at startup), they are not.
 pub(super) fn crowded(many: bool, rects: &[layout::Rect], area: Size<Pixels>) -> bool {
@@ -288,20 +295,30 @@ impl Shell {
         self.active = tab;
     }
 
-    /// Whether `group` can be split on `side`, both halves keeping their minimum; if not, the
-    /// message says why. The first split folds the panel onto its rail when only that makes room.
-    fn room_beside(&mut self, group: usize, side: Side, cx: &mut Context<Self>) -> bool {
+    /// Whether `group` split on `side` keeps both halves at their minimum size.
+    fn fits(&self, group: usize, side: Side) -> bool {
         let area = self.pane_box.get().size;
         // Not drawn yet (at startup): nothing to measure.
         if area.width <= px(0.) {
             return true;
         }
         let rect = self.layout.rects().into_iter().find(|(g, _)| *g == group).map_or_else(Default::default, |(_, r)| r);
-        let fits = match side.axis() {
+        match side.axis() {
             layout::Axis::Row => area.width * rect.w / 2. >= MIN_PANE,
             layout::Axis::Column => area.height * rect.h / 2. >= MIN_PANE_H,
-        };
-        if !fits && side.axis() == layout::Axis::Row && self.groups.len() == 1 && self.nav.panel == Panel::Split {
+        }
+    }
+
+    /// The panel can fold onto its rail to make room for the first split.
+    fn may_fold(&self, side: Side) -> bool {
+        side.axis() == layout::Axis::Row && self.groups.len() == 1 && self.nav.panel == Panel::Split
+    }
+
+    /// Whether `group` can be split on `side`, both halves keeping their minimum; if not, the
+    /// message says why. The first split folds the panel onto its rail when only that makes room.
+    fn room_beside(&mut self, group: usize, side: Side, cx: &mut Context<Self>) -> bool {
+        let fits = self.fits(group, side);
+        if !fits && self.may_fold(side) {
             self.nav.panel = Panel::Rail;
             self.nav.save();
             return true;
@@ -325,33 +342,94 @@ impl Shell {
     /// left without tabs goes.
     pub(super) fn tab_to_side(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
         let (from, tab) = (self.group(), self.active);
-        let to = self.layout.neighbour(from, side).filter(|_| self.zoomed.is_none());
-        // Alone in its pane, a tab has nowhere new to go.
-        if to.is_none() && (self.groups[from].tabs.len() < 2 || !self.room_beside(from, side, cx)) {
+        let to = match self.layout.neighbour(from, side).filter(|_| self.zoomed.is_none()) {
+            // Right of the tab it shows.
+            Some(to) => Place::Bar(to, self.groups[to].tabs.iter().position(|t| *t == self.groups[to].shown).map_or(0, |at| at + 1)),
+            None => Place::Split(from, side),
+        };
+        self.place_tab(tab, to, window, cx);
+    }
+
+    /// Whether `tab` can go to `to`: not into a pane split off its own when it is alone there (the
+    /// pane would be left empty), nor into a split without room (`quiet`: without saying so).
+    pub(super) fn can_place(&mut self, tab: usize, to: Place, quiet: bool, cx: &mut Context<Self>) -> bool {
+        match to {
+            Place::Bar(group, _) => group < self.groups.len(),
+            Place::Split(group, side) => {
+                (group != self.group_of(tab) || self.groups[group].tabs.len() > 1)
+                    && match quiet {
+                        true => self.fits(group, side) || self.may_fold(side),
+                        false => self.room_beside(group, side, cx),
+                    }
+            }
+        }
+    }
+
+    /// A tab dropped on `group`: in its middle, it joins it (right of the tab shown; on its own
+    /// pane, nothing changes); near an edge, a new pane split off there takes it.
+    pub(super) fn drop_tab_on_pane(&mut self, tab: usize, group: usize, zone: Zone, window: &mut Window, cx: &mut Context<Self>) {
+        let to = match zone {
+            Zone::Center if self.group_of(tab) == group => return,
+            Zone::Center => Place::Bar(group, self.groups[group].tabs.iter().position(|t| *t == self.groups[group].shown).map_or(0, |at| at + 1)),
+            Zone::Edge(side) => Place::Split(group, side),
+        };
+        self.place_tab(tab, to, window, cx);
+    }
+
+    /// Follows a drag over `group` (`tab` dragged, or a file from the tree): the zone under the
+    /// pointer, none where the drop would be refused; redrawn only when it changes.
+    pub(super) fn aim_pane(&mut self, group: usize, tab: Option<usize>, bounds: Bounds<Pixels>, at: Point<Pixels>, cx: &mut Context<Self>) {
+        let inside = bounds.contains(&at);
+        let zone = inside.then(|| {
+            let p = at - bounds.origin;
+            layout::zone(f32::from(p.x), f32::from(p.y), f32::from(bounds.size.width), f32::from(bounds.size.height), 80.)
+        });
+        let aim = zone
+            .filter(|zone| match (*zone, tab) {
+                (Zone::Center, Some(tab)) => self.group_of(tab) != group,
+                (Zone::Center, None) => true,
+                (Zone::Edge(side), Some(tab)) => self.can_place(tab, Place::Split(group, side), true, cx),
+                (Zone::Edge(side), None) => self.fits(group, side) || self.may_fold(side),
+            })
+            .map(|zone| (group, zone));
+        // Over this pane, or leaving it: other panes keep their own aim.
+        if (inside || self.pane_aim.is_some_and(|(over, _)| over == group)) && aim != self.pane_aim {
+            self.pane_aim = aim;
+            cx.notify();
+        }
+    }
+
+    /// Moves `tab` to `to`, by a drag or the keys: along a bar, into another pane, or into a new
+    /// pane split off a side. A pane left without tabs goes; the tab moved gets input.
+    pub(super) fn place_tab(&mut self, tab: usize, to: Place, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.can_place(tab, to, false, cx) {
             return;
         }
         // Out of its pane, which shows its neighbour.
+        let from = self.group_of(tab);
         let group = &mut self.groups[from];
-        let at = group.tabs.iter().position(|t| *t == tab).unwrap_or(0);
-        group.tabs.remove(at);
-        if let Some(&next) = group.tabs.get(at.min(group.tabs.len().saturating_sub(1))) {
+        let was = group.tabs.iter().position(|t| *t == tab).unwrap_or(0);
+        group.tabs.remove(was);
+        if let Some(&next) = group.tabs.get(was.min(group.tabs.len().saturating_sub(1))) {
             group.shown = next;
         }
         match to {
-            Some(to) => {
-                let group = &mut self.groups[to];
-                let at = group.tabs.iter().position(|t| *t == group.shown).map_or(group.tabs.len(), |at| at + 1);
-                group.tabs.insert(at, tab);
-                self.show_tab(to, tab, cx);
-                if self.groups[from].tabs.is_empty() {
-                    self.groups.remove(from);
-                    self.layout.remove(from);
-                    self.zoomed = None;
-                }
+            Place::Bar(into, at) => {
+                // Along its own bar, the places after it moved down by one.
+                let at = if into == from && at > was { at - 1 } else { at };
+                let tabs = &mut self.groups[into].tabs;
+                tabs.insert(at.min(tabs.len()), tab);
+                self.show_tab(into, tab, cx);
             }
-            None => self.split_off(from, side, tab),
+            Place::Split(group, side) => self.split_off(group, side, tab),
+        }
+        if self.groups[from].tabs.is_empty() {
+            self.groups.remove(from);
+            self.layout.remove(from);
+            self.zoomed = None;
         }
         self.focus_pane(tab, window, cx);
+        cx.notify();
     }
 
     /// The active pane on the whole window, or back to all the panes.
@@ -523,18 +601,21 @@ impl Shell {
 
     /// A file from the tree dropped on a pane: it opens there (a folder: its list page), or
     /// in a second pane if it is dropped on the right half of the only pane.
-    pub(super) fn drop_on_pane(&mut self, group: usize, aside: bool, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn drop_on_pane(&mut self, group: usize, zone: Zone, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let Some(shown) = self.groups.get(group).map(|group| group.shown) else { return };
-        if path.is_dir() {
-            if !(aside && self.add_pane(Side::Right, window, cx)) {
-                self.active = shown;
-            }
-            self.open_listing(path.to_path_buf(), window, cx);
-        } else if aside {
-            self.open_aside(path, window, cx);
-        } else {
-            self.active = shown;
-            self.open_from_nav(path, window, cx);
+        // Already open: its tab gets input, wherever it is (a note is open once).
+        if !path.is_dir()
+            && let Some(tab) = self.pane_showing(path)
+        {
+            return self.focus_pane(tab, window, cx);
+        }
+        self.active = shown;
+        if let Zone::Edge(side) = zone {
+            self.add_pane(side, window, cx);
+        }
+        match path.is_dir() {
+            true => self.open_listing(path.to_path_buf(), window, cx),
+            false => self.open_from_nav(path, window, cx),
         }
     }
 

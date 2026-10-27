@@ -37,7 +37,7 @@ use toasts::*;
 use crate::actions::*;
 use crate::ui::keys::{self, MOD};
 use crate::lang::{self, date_name, time_name, tr};
-use crate::logic::{self, commands, diagram, embed, history, import, layout::{self, Node, Side}, markdown, prefs::Prefs, recall, table};
+use crate::logic::{self, commands, diagram, embed, history, import, layout::{self, Node, Side, Zone}, markdown, prefs::Prefs, recall, table};
 use crate::platform::{self, clock::{clock, today}, git, update, vault};
 use crate::ui::{self,
     assets::{Assets, FAMILIES, init_fonts, apply_fonts, logo, mono, sans},
@@ -102,9 +102,10 @@ struct Shell {
     zoomed: Option<usize>,
     /// Space the panes take, recorded when they are drawn.
     pane_box: std::rc::Rc<std::cell::Cell<Bounds<Pixels>>>,
-    /// While a file from the tree is dragged: the hovered pane, and whether it is its right
-    /// half (single pane: dropping the file there opens the second).
-    pane_aim: Option<(usize, bool)>,
+    /// While a tab or a file from the tree is dragged over a pane: that pane, and where in it.
+    pane_aim: Option<(usize, Zone)>,
+    /// While a tab is dragged over a tab bar: that pane, and the place it would take.
+    tab_aim: Option<(usize, usize)>,
     /// System files hover over the window: where they would go.
     drop_aim: Option<DropAim>,
     /// Test: the attachments the system was asked to open.
@@ -236,6 +237,7 @@ impl Shell {
             zoomed: None,
             pane_box: Default::default(),
             pane_aim: None,
+            tab_aim: None,
             drop_aim: None,
             #[cfg(test)]
             opened: Vec::new(),
@@ -301,7 +303,16 @@ impl Shell {
         this.watch(cx);
         this.check_updates(cx);
         let weak = cx.weak_entity();
-        this.help.key_tap = Some(cx.intercept_keystrokes(move |event, _, cx| {
+        this.help.key_tap = Some(cx.intercept_keystrokes(move |event, window, cx| {
+            // Escape in the middle of a drag: nothing moves (before any binding takes the key).
+            if event.keystroke.key == "escape" && cx.has_active_drag() {
+                cx.stop_active_drag(window);
+                let _ = weak.update(cx, |this, cx| {
+                    (this.pane_aim, this.tab_aim) = (None, None);
+                    cx.notify();
+                });
+                return cx.stop_propagation();
+            }
             if weak.update(cx, |this, cx| this.key_pressed(&event.keystroke, cx)).unwrap_or(false) {
                 cx.stop_propagation();
             }

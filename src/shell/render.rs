@@ -40,7 +40,7 @@ impl Render for Shell {
         #[cfg(not(test))]
         let dragging = cx.has_active_drag();
         if !dragging {
-            self.pane_aim = None;
+            (self.pane_aim, self.tab_aim) = (None, None);
             // The drag is over (dropped, or out of the window): no more label or line.
             if self.drop_aim.is_some() {
                 self.aim_drop(None, cx);
@@ -845,14 +845,20 @@ impl Shell {
                 note.child(self.pane().editor.clone()).children(empty).child(copy).children(talk).children(flip)
             }
         };
-        // While a file is dragged from the tree, the area that would receive it is tinted.
-        let tint = self.pane_aim.filter(|(over, _)| *over == group).map(|(_, half)| {
+        // While a tab or a file from the tree is dragged, the area that would receive it is tinted:
+        // the whole pane, or the half a new pane would take.
+        let tint = self.pane_aim.filter(|(over, _)| *over == group).map(|(_, zone)| {
+            let half = gpui::relative(0.5);
             div()
                 .absolute()
-                .top_0()
-                .bottom_0()
-                .right_0()
-                .map(|d| if half { d.w(gpui::relative(0.5)) } else { d.left_0() })
+                .debug_selector(|| "pane-tint".into())
+                .map(|d| match zone {
+                    Zone::Center => d.inset_0(),
+                    Zone::Edge(Side::Left) => d.top_0().bottom_0().left_0().w(half),
+                    Zone::Edge(Side::Right) => d.top_0().bottom_0().right_0().w(half),
+                    Zone::Edge(Side::Up) => d.left_0().right_0().top_0().h(half),
+                    Zone::Edge(Side::Down) => d.left_0().right_0().bottom_0().h(half),
+                })
                 .bg(t.accent.opacity(0.12))
                 .border_1()
                 .border_color(t.accent.opacity(0.5))
@@ -892,19 +898,19 @@ impl Shell {
                     this.drop_paths(paths.paths().to_vec(), aim, cx);
                 }
             }))
-            .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<nav::Dragged>, _, cx| {
-                let at = e.event.position;
-                let aim = e.bounds.contains(&at).then(|| (group, this.groups.len() == 1 && at.x > e.bounds.center().x));
-                let was = this.pane_aim.filter(|(over, _)| *over == group);
-                if aim != was {
-                    this.pane_aim = aim;
-                    cx.notify();
+            .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<nav::Dragged>, _, cx| this.aim_pane(group, None, e.bounds, e.event.position, cx)))
+            .on_drop(cx.listener(move |this, dragged: &nav::Dragged, window, cx| {
+                if let Some(((_, zone), path)) = this.pane_aim.take().zip(dragged.paths.first().cloned()) {
+                    this.drop_on_pane(group, zone, &path, window, cx);
                 }
             }))
-            .on_drop(cx.listener(move |this, dragged: &nav::Dragged, window, cx| {
-                let aside = this.pane_aim.take().is_some_and(|(_, half)| half);
-                if let Some(path) = dragged.paths.first().cloned() {
-                    this.drop_on_pane(group, aside, &path, window, cx);
+            .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<tabs::TabDragged>, _, cx| {
+                let tab = e.drag(cx).tab;
+                this.aim_pane(group, Some(tab), e.bounds, e.event.position, cx)
+            }))
+            .on_drop(cx.listener(move |this, dragged: &tabs::TabDragged, window, cx| {
+                if let Some((_, zone)) = this.pane_aim.take() {
+                    this.drop_tab_on_pane(dragged.tab, group, zone, window, cx);
                 }
             }))
             .child(note)
