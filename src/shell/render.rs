@@ -138,9 +138,10 @@ impl Render for Shell {
             }
             let toasts = self.render_toasts(cx);
             let toasts = div().absolute().bottom(px(54.)).left_4().right_4().flex().flex_col().items_end().gap_2().children(toasts);
+            let docked = self.render_right_dock(window, cx);
             body.flex()
                 .child(self.render_nav(window, cx))
-                .when(self.nav.panel != Panel::Full, |d| d.child(note).children(comments))
+                .when(self.nav.panel != Panel::Full, |d| d.child(note).children(comments).children(docked))
                 .children(self.palette.clone())
                 .child(toasts)
         };
@@ -207,6 +208,13 @@ impl Render for Shell {
                     }
                     cx.notify();
                 }
+                // The right dock's border too.
+                if this.nav.right_dragging {
+                    match e.pressed_button == Some(MouseButton::Left) {
+                        true => this.drag_right(e.position.x, cx),
+                        false => this.settle_nav(window, cx),
+                    }
+                }
                 if !this.nav.dragging {
                 } else if e.pressed_button == Some(MouseButton::Left) {
                     this.drag_nav(e.position.x, cx)
@@ -220,7 +228,7 @@ impl Render for Shell {
                     if this.pane_drag.take().is_some() {
                         cx.notify();
                     }
-                    if this.nav.dragging {
+                    if this.nav.dragging || this.nav.right_dragging {
                         this.settle_nav(window, cx)
                     }
                 }),
@@ -256,6 +264,8 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &TabToRight, window, cx| this.tab_to_side(Side::Right, window, cx)))
             .on_action(cx.listener(|this, _: &TabToUp, window, cx| this.tab_to_side(Side::Up, window, cx)))
             .on_action(cx.listener(|this, _: &TabToDown, window, cx| this.tab_to_side(Side::Down, window, cx)))
+            .on_action(cx.listener(|this, _: &MoveTool, window, cx| this.move_tool(window, cx)))
+            .on_action(cx.listener(|this, _: &ToolAsTab, window, cx| this.tool_as_tab(window, cx)))
             .on_action(cx.listener(|this, _: &EvenPanes, _, cx| {
                 this.layout.even();
                 cx.notify();
@@ -809,7 +819,16 @@ impl Shell {
         let note = div().flex_1().min_w_0().h_full().relative();
         let listing = self.pane().listing.is_some().then(|| self.render_listing(cx));
         let file = self.pane().file.as_ref().map(|file| (file.path.clone(), file.kind.clone()));
+        // A tool of the panel as this tab: it holds the input itself, never the hidden note under it.
+        let tool = self.pane().tool;
+        if tool.is_some() && self.pane().editor.focus_handle(cx).is_focused(window) {
+            window.focus(&self.pane().zone);
+        }
         let note = match file {
+            _ if let Some(tool) = tool => note.flex().flex_col().child(match tool {
+                nav::Mode::Graph => div().flex_1().min_h_0().child(self.graph.clone()).into_any_element(),
+                _ => div().flex_1().min_h_0().pt(t.px(12.)).child(self.render_calendar(cx)).into_any_element(),
+            }),
             _ if listing.is_some() => note.children(listing),
             _ if let Some(figure) = self.pane().figure.clone() => {
                 figure.update(cx, |figure, _| figure.sync(t));

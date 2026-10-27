@@ -26,15 +26,24 @@ use crate::views::nav::*;
 impl Shell {
     /// Shows the panel in this mode and gives it focus. Asking again for the mode
     /// shown collapses the panel (from the keyboard: only if it already has focus).
+    /// The tool is shown where it lives: its dock, or its tab.
     pub(super) fn show_nav(&mut self, mode: Mode, toggle: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let shown = self.nav.panel != Panel::Rail && self.nav.mode == mode;
+        if let Some(tab) = self.tool_tab(mode) {
+            return self.focus_pane(tab, window, cx);
+        }
+        let shown = self.tool_shown(mode);
+        let right = self.nav.right.contains(&mode);
+        self.nav.activate(right);
         if shown && (toggle || self.nav.focus.contains_focused(window, cx)) {
-            self.nav.panel = Panel::Rail;
-        } else {
-            self.nav.mode = mode;
-            if self.nav.panel == Panel::Rail {
-                self.nav.panel = Panel::Split;
+            match right {
+                true => self.nav.right_open = false,
+                false => self.nav.panel = Panel::Rail,
             }
+            if right || self.nav.focus.contains_focused(window, cx) {
+                window.focus(&self.pane().editor.focus_handle(cx));
+            }
+        } else {
+            self.put_tool(mode);
             self.nav.reveal = true;
             window.focus(&self.nav.focus);
             self.refresh_graph(cx);
@@ -44,7 +53,7 @@ impl Shell {
 
     /// Updates the graph if it is shown and the notes or their links changed.
     pub(super) fn refresh_graph(&mut self, cx: &mut Context<Self>) {
-        if self.graph_stale && self.nav.panel != Panel::Rail && self.nav.mode == Mode::Graph {
+        if self.graph_stale && self.tool_shown(Mode::Graph) {
             self.graph_stale = false;
             let notes: Vec<Note> = self.notes.iter().filter(|n| !self.is_template(n)).cloned().collect();
             self.graph.update(cx, |graph, cx| graph.set_notes(&notes, &vault::pictures(&self.images), cx));
@@ -71,7 +80,7 @@ impl Shell {
     /// After a panel change: focus leaves what is no longer
     /// shown, and the layout is saved.
     pub(super) fn settle_nav(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.nav.dragging = false;
+        (self.nav.dragging, self.nav.right_dragging) = (false, false);
         let editor = self.pane().editor.focus_handle(cx);
         match self.nav.panel {
             Panel::Rail if self.nav.focus.contains_focused(window, cx) => window.focus(&editor),
@@ -87,8 +96,9 @@ impl Shell {
     pub(super) fn split_width(&self) -> Pixels {
         let room = self.nav.total - self.theme.px(RAIL) - DIVIDER - self.nav.aside;
         // The month can no longer be read below 170 px: its days touch.
-        let floor = px(if self.nav.mode == Mode::Calendar { 170. } else { 120. });
-        match if self.nav.mode == Mode::Graph { self.nav.graph_w } else { self.nav.list_w } {
+        let mode = self.nav.left_mode();
+        let floor = px(if mode == Mode::Calendar { 170. } else { 120. });
+        match if mode == Mode::Graph { self.nav.graph_w } else { self.nav.list_w } {
             w if w == px(0.) => room / 2.,
             w => w.min(room - NOTE_MIN).max(floor),
         }
@@ -708,25 +718,19 @@ impl Shell {
     }
 
     /// Rail, then panel and separator if they are expanded.
+    /// The rail and the left dock. The left dock's view is brought into `Nav` to draw it.
     pub(super) fn render_nav(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
-        let (mode, panel) = (self.nav.mode, self.nav.panel);
-        let unfolded = panel != Panel::Rail;
-        if !self.pane().preview {
+        let right = self.nav.right_active;
+        self.nav.activate(false);
+        let panel = self.nav.panel;
+        let unfolded = self.left_open();
+        // A tool's tab is no note: the backlinks stay on the last one.
+        if !self.pane().preview && self.pane().tool.is_none() {
             self.nav.anchor = self.pane().path.clone();
         }
-        let source = self.rows_source();
-        if source != self.nav.rows_from {
-            self.nav.rows = if unfolded { self.nav_rows() } else { Vec::new() };
-            self.nav.rows_from = source;
-        }
-        let (current, selected) = (self.pane().path.clone(), self.nav.sel.clone());
+        let (current, selected) = (self.pane().path.clone(), if right { self.nav.parked.sel.clone() } else { self.nav.sel.clone() });
         self.graph.update(cx, |graph, _| graph.sync(t, current.as_deref(), selected.as_deref()));
-        if std::mem::take(&mut self.nav.reveal)
-            && let Some(ix) = self.selected_row()
-        {
-            self.nav.scroll.scroll_to_item(ix, ScrollStrategy::Center);
-        }
 
         let travel = |id: &'static str, icon: &'static str, on: bool| {
             div()
@@ -741,8 +745,9 @@ impl Shell {
                 .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.border)).active(|s| s.bg(t.selection)))
                 .child(svg().path(icon).size(t.px(14.)).flex_none().text_color(t.soft).when(!on, |s| s.opacity(0.35)))
         };
+        let shown: Vec<Mode> = Mode::ALL.into_iter().filter(|m| self.tool_shown(*m)).collect();
         let mode_button = |id, icon, m: Mode, label: &'static str, keys: String| {
-            button(id, icon, unfolded && mode == m, t)
+            button(id, icon, shown.contains(&m), t)
                 .tooltip(tip(label, keys, t))
                 .on_click(cx.listener(move |this, _, window, cx| this.show_nav(m, true, window, cx)))
         };
@@ -792,10 +797,10 @@ impl Shell {
             .child(mode_button("nav-links", "backlink.svg", Mode::Links, tr("Backlinks", "Rétroliens"), keys(&ShowLinks)))
             .child(mode_button("nav-calendar", "i-calendar.svg", Mode::Calendar, tr("Calendar", "Calendrier"), keys(&ShowCalendar)))
             .child(
-                button("nav-find", "find-text.svg", unfolded && mode == Mode::Search, t)
+                button("nav-find", "find-text.svg", shown.contains(&Mode::Search), t)
                     .debug_selector(|| "nav-find".into())
                     .tooltip(tip(tr("Search the text of the vault", "Chercher dans le texte du coffre"), keys(&crate::actions::SearchVault), t))
-                    .on_click(cx.listener(|this, _, window, cx| match this.nav.panel != Panel::Rail && this.nav.mode == Mode::Search {
+                    .on_click(cx.listener(|this, _, window, cx| match this.tool_shown(Mode::Search) {
                         true => this.show_nav(Mode::Search, true, window, cx),
                         false => this.open_vault_find(window, cx),
                     })),
@@ -852,10 +857,103 @@ impl Shell {
 
         let wrapper = div().h_full().flex().min_w_0();
         if !unfolded {
+            self.nav.activate(right);
             return wrapper.flex_none().child(rail);
         }
-
         let full = panel == Panel::Full;
+        let content = self.render_dock(window, cx);
+        self.nav.activate(right);
+        // 5 px handle around a 1 px stroke; double-click: original width.
+        let divider = div()
+            .id("nav-divider")
+            .flex_none()
+            .w(DIVIDER)
+            .h_full()
+            .flex()
+            .justify_center()
+            .cursor(CursorStyle::ResizeLeftRight)
+            .group("nav-divider")
+            .child(
+                div()
+                    .w(t.px(1.))
+                    .h_full()
+                    .bg(if self.nav.dragging { t.accent } else { t.border })
+                    .group_hover("nav-divider", |s| s.bg(t.accent)),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, e: &MouseDownEvent, window, cx| {
+                    this.nav.activate(false);
+                    if e.click_count >= 2 {
+                        *this.nav.width() = if this.nav.mode == Mode::Graph { px(0.) } else { LIST_W };
+                        this.nav.panel = Panel::Split;
+                        this.settle_nav(window, cx);
+                    } else {
+                        this.nav.dragging = true;
+                    }
+                    cx.stop_propagation();
+                }),
+            );
+        wrapper
+            .map(|d| if full { d.flex_1() } else { d.flex_none() })
+            .child(rail)
+            .child(content)
+            .child(divider)
+    }
+
+    /// The right dock, if it is open and the window leaves the note its room: its view is
+    /// brought into `Nav` to draw it, and a press in it makes it the active one.
+    pub(super) fn render_right_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Div> {
+        if !self.right_open() || self.right_width() <= px(0.) {
+            return None;
+        }
+        let t = self.theme;
+        let left = !self.nav.right_active;
+        self.nav.activate(true);
+        let content = self.render_dock(window, cx);
+        self.nav.activate(!left);
+        let divider = div()
+            .id("dock-divider")
+            .flex_none()
+            .w(DIVIDER)
+            .h_full()
+            .flex()
+            .justify_center()
+            .cursor(CursorStyle::ResizeLeftRight)
+            .group("dock-divider")
+            .child(div().w(t.px(1.)).h_full().bg(if self.nav.right_dragging { t.accent } else { t.border }).group_hover("dock-divider", |s| s.bg(t.accent)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, e: &MouseDownEvent, window, cx| {
+                    if e.click_count >= 2 {
+                        this.nav.right_w = LIST_W;
+                        this.settle_nav(window, cx);
+                    } else {
+                        this.nav.right_dragging = true;
+                    }
+                    cx.stop_propagation();
+                }),
+            );
+        Some(div().h_full().flex().flex_none().child(divider).child(content))
+    }
+
+    /// Header and content of the dock whose view is in `Nav`.
+    fn render_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
+        let t = self.theme;
+        let right = self.nav.right_active;
+        let (mode, panel) = (self.nav.mode, self.nav.panel);
+        let keys = |action: &dyn Action| crate::ui::keys::of(cx, action);
+        let source = self.rows_source();
+        if source != self.nav.rows_from {
+            self.nav.rows = self.nav_rows();
+            self.nav.rows_from = source;
+        }
+        if std::mem::take(&mut self.nav.reveal)
+            && let Some(ix) = self.selected_row()
+        {
+            self.nav.scroll.scroll_to_item(ix, ScrollStrategy::Center);
+        }
+        let full = !right && panel == Panel::Full;
         let folded = self.all_folded();
         let title = match (mode, &self.vault) {
             (Mode::Tree, Some(root)) => vault::stem(root),
@@ -874,7 +972,7 @@ impl Shell {
             .h(t.px(44.))
             .pl_2()
             // Over the whole window, the window buttons float over the right end of the header.
-            .pr(if full && !self.nav.native_bar { t.px(super::render::PILL_ROOM) } else { t.px(4.) })
+            .pr(if (full || right) && !self.nav.native_bar { t.px(super::render::PILL_ROOM) } else { t.px(4.) })
             // A narrow panel at a large scale: its buttons are cut at its edge, never drawn over the note
             // (they are in the palette too).
             .overflow_hidden()
@@ -913,12 +1011,36 @@ impl Shell {
                     }),
                 ))
             })
-            .child(
-                button("nav-full", if full { "shrink.svg" } else { "expand.svg" }, false, t)
-                    .debug_selector(|| "nav-full".into())
-                    .tooltip(tip(if full { tr("Back beside the note", "Revenir à côté de la note") } else { tr("Panel on the whole window", "Panneau en pleine fenêtre") }, keys(&ToggleFull), t))
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_full(window, cx))),
-            );
+            // The tool elsewhere: as a tab (the graph, the calendar), in the other dock. Not from the
+            // panel on the whole window, where neither is in sight.
+            .when(mode.tabs() && !full, |d| {
+                d.child(
+                    button(if right { "dock-tab-right" } else { "dock-tab" }, "c-split.svg", false, t)
+                        .debug_selector(move || if right { "dock-tab-right".into() } else { "dock-tab".into() })
+                        .tooltip(tip(tr("Open as a tab", "Ouvrir dans un onglet"), keys(&crate::actions::ToolAsTab), t))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.nav.activate(right);
+                            this.tool_as_tab(window, cx)
+                        })),
+                )
+            })
+            .when(!full, |d| d.child(
+                button(if right { "dock-move-right" } else { "dock-move" }, if right { "c-left.svg" } else { "c-right.svg" }, false, t)
+                    .debug_selector(move || if right { "dock-move-right".into() } else { "dock-move".into() })
+                    .tooltip(tip(if right { tr("Move to the left dock", "Déplacer dans le dock de gauche") } else { tr("Move to the right dock", "Déplacer dans le dock de droite") }, keys(&crate::actions::MoveTool), t))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.nav.activate(right);
+                        this.move_tool(window, cx)
+                    })),
+            ))
+            .when(!right, |d| {
+                d.child(
+                    button("nav-full", if full { "shrink.svg" } else { "expand.svg" }, false, t)
+                        .debug_selector(|| "nav-full".into())
+                        .tooltip(tip(if full { tr("Back beside the note", "Revenir à côté de la note") } else { tr("Panel on the whole window", "Panneau en pleine fenêtre") }, keys(&ToggleFull), t))
+                        .on_click(cx.listener(|this, _, window, cx| this.toggle_full(window, cx))),
+                )
+            });
         // A vault that cannot be read is not an empty one: whatever the mode, the panel says so, why and
         // where, and offers another vault rather than a note that could not be written.
         let unreadable = self.vault.as_ref().and_then(|root| self.unreadable.iter().find(|(dir, _)| dir == root).map(|(_, why)| (root.clone(), *why)));
@@ -967,7 +1089,15 @@ impl Shell {
         });
         // Set again by the selected row if it is drawn.
         self.nav.sel_at.set(None);
-        let list = uniform_list("nav-rows", self.nav.rows.len(), cx.processor(Self::render_rows))
+        // The rows are drawn later, at layout: they bring their dock's view back for that time.
+        let rows = cx.processor(move |this, range, window, cx| {
+            let was = this.nav.right_active;
+            this.nav.activate(right);
+            let rows = this.render_rows(range, window, cx);
+            this.nav.activate(was);
+            rows
+        });
+        let list = uniform_list(if right { "nav-rows-right" } else { "nav-rows" }, self.nav.rows.len(), rows)
             .track_scroll(self.nav.scroll.clone())
             .flex_1()
             .min_h_0()
@@ -1000,16 +1130,25 @@ impl Shell {
                     }),
                 )
             });
-        let width = self.split_width();
-        let content = div()
-            .debug_selector(|| "nav-panel".into())
+        let width = if right { self.right_width() } else { self.split_width() };
+        let active = self.nav.right_active == right;
+        div()
+            .debug_selector(move || if right { "dock-right".into() } else { "nav-panel".into() })
+            .id(if right { "dock-right" } else { "nav-panel" })
             .h_full()
             .min_w_0()
             .flex()
             .flex_col()
             .map(|d| if full { d.flex_1() } else { d.flex_none().w(width) })
+            // A press in a dock brings its view into `Nav` before any of its gestures read it.
+            .capture_any_mouse_down(cx.listener(move |this, _, _, cx| {
+                if this.nav.right_active != right {
+                    this.nav.activate(right);
+                    cx.notify();
+                }
+            }))
             .key_context("Nav")
-            .track_focus(&self.nav.focus)
+            .when(active, |d| d.track_focus(&self.nav.focus))
             .on_action(cx.listener(|this, _: &Prev, window, cx| this.nav_step(false, window, cx)))
             .on_action(cx.listener(|this, _: &Next, window, cx| this.nav_step(true, window, cx)))
             .on_action(cx.listener(|this, _: &Fold, window, cx| this.nav_fold(false, window, cx)))
@@ -1054,41 +1193,6 @@ impl Shell {
                 Mode::Calendar => d.child(self.render_calendar(cx)),
                 Mode::Search => d.child(self.render_vault_find(window, cx)),
                 _ => d.child(div().flex_1().min_h_0().relative().flex().flex_col().child(list).children(nothing)),
-            });
-        // 5 px handle around a 1 px stroke; double-click: original width.
-        let divider = div()
-            .id("nav-divider")
-            .flex_none()
-            .w(DIVIDER)
-            .h_full()
-            .flex()
-            .justify_center()
-            .cursor(CursorStyle::ResizeLeftRight)
-            .group("nav-divider")
-            .child(
-                div()
-                    .w(t.px(1.))
-                    .h_full()
-                    .bg(if self.nav.dragging { t.accent } else { t.border })
-                    .group_hover("nav-divider", |s| s.bg(t.accent)),
-            )
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, e: &MouseDownEvent, window, cx| {
-                    if e.click_count >= 2 {
-                        *this.nav.width() = if this.nav.mode == Mode::Graph { px(0.) } else { LIST_W };
-                        this.nav.panel = Panel::Split;
-                        this.settle_nav(window, cx);
-                    } else {
-                        this.nav.dragging = true;
-                    }
-                    cx.stop_propagation();
-                }),
-            );
-        wrapper
-            .map(|d| if full { d.flex_1() } else { d.flex_none() })
-            .child(rail)
-            .child(content)
-            .child(divider)
+            })
     }
 }

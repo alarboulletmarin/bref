@@ -5,6 +5,7 @@
 mod board;
 mod capture;
 mod diagrams;
+mod docks;
 mod drops;
 mod files;
 mod help;

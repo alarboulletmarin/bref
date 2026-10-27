@@ -152,6 +152,8 @@ pub fn catalog() -> Vec<(&'static str, &'static str, &'static str, Group)> {
         ("app::TabToUp", tr("Move the tab to the pane above", "Déplacer l'onglet vers le volet du dessus"), "c-up.svg", Go),
         ("app::TabToDown", tr("Move the tab to the pane below", "Déplacer l'onglet vers le volet du dessous"), "c-down.svg", Go),
         ("app::EvenPanes", tr("Even out the panes", "Égaliser les volets"), "c-split.svg", Go),
+        ("app::MoveTool", tr("Move the panel's view to the other dock", "Déplacer la vue du panneau dans l'autre dock"), "c-right.svg", Go),
+        ("app::ToolAsTab", tr("Open the graph or the calendar as a tab", "Ouvrir le graphe ou le calendrier dans un onglet"), "c-split.svg", Go),
         ("app::MaximizePane", tr("Pane on the whole window, and back", "Volet sur toute la fenêtre, et retour"), "expand.svg", Go),
         ("nav::ToggleFull", tr("Panel on the whole window", "Panneau sur toute la fenêtre"), "expand.svg", Go),
         ("app::SyncVault", tr("Sync the vault", "Synchroniser le coffre"), "backup.svg", Vault),

@@ -34,8 +34,9 @@ pub const NOTE_MIN: Pixels = px(200.);
 /// Handle between the panel and the note.
 pub const DIVIDER: Pixels = px(5.);
 
-#[derive(Clone, Copy, PartialEq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Hash, Debug, Default)]
 pub enum Mode {
+    #[default]
     Tree,
     Recent,
     Graph,
@@ -46,6 +47,45 @@ pub enum Mode {
     Calendar,
     /// The vault search: the matches of a search, note by note.
     Search,
+}
+
+impl Mode {
+    pub const ALL: [Mode; 7] = [Mode::Tree, Mode::Recent, Mode::Graph, Mode::Tags, Mode::Links, Mode::Calendar, Mode::Search];
+
+    /// As written in the `layout` file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Mode::Tree => "tree",
+            Mode::Recent => "recent",
+            Mode::Graph => "graph",
+            Mode::Tags => "tags",
+            Mode::Links => "links",
+            Mode::Calendar => "calendar",
+            Mode::Search => "search",
+        }
+    }
+
+    pub fn named(name: &str) -> Option<Mode> {
+        Mode::ALL.into_iter().find(|m| m.name() == name)
+    }
+
+    /// Only the graph and the calendar open as a tab: they need room, the lists do not.
+    pub fn tabs(self) -> bool {
+        matches!(self, Mode::Graph | Mode::Calendar)
+    }
+}
+
+/// What a dock shows, and where its list stands. The active dock's view lives in `Nav` itself,
+/// where every gesture of the panel finds it; the other dock's waits here (`Nav::swap_dock`).
+#[derive(Default)]
+pub struct View {
+    pub mode: Mode,
+    pub rows: Vec<Row>,
+    pub rows_from: u64,
+    pub scroll: UniformListScrollHandle,
+    pub sel: Option<PathBuf>,
+    pub marked: HashSet<PathBuf>,
+    pub reveal: bool,
 }
 
 /// Place of the panel: collapsed onto its rail, next to the note, or alone.
@@ -228,6 +268,14 @@ pub struct Nav {
     pub total: Pixels,
     /// Width reserved to the right of the note (the comments column): the panel leaves it free.
     pub aside: Pixels,
+    /// The other dock's view; `right_active`: the view in `Nav` is the right dock's.
+    pub parked: View,
+    pub right_active: bool,
+    /// The tools that live in the right dock (none at first), whether it is open, its width.
+    pub right: Vec<Mode>,
+    pub right_open: bool,
+    pub right_w: Pixels,
+    pub right_dragging: bool,
 }
 
 impl Nav {
@@ -235,17 +283,23 @@ impl Nav {
     pub fn new(focus: FocusHandle) -> Self {
         let saved = vault::load_layout();
         let mut words = saved.split_whitespace();
+        let mode = words.next().and_then(Mode::named).unwrap_or_default();
+        // Then, in any order, what an older file does not have: the right dock.
+        let (positional, keyed): (Vec<&str>, Vec<&str>) = words.partition(|w| !w.contains('='));
+        let key = |name: &str| keyed.iter().find_map(|w| w.strip_prefix(name)?.strip_prefix('='));
+        let mut right: Vec<Mode> = key("right").map(|list| list.split(',').filter_map(Mode::named).filter(|m| *m != mode).collect()).unwrap_or_default();
+        right.dedup();
+        let shown = key("show").and_then(Mode::named).filter(|m| right.contains(m));
+        let mut words = positional.into_iter();
         Self {
             focus,
-            mode: match words.next() {
-                Some("recent") => Mode::Recent,
-                Some("graph") => Mode::Graph,
-                Some("tags") => Mode::Tags,
-                Some("links") => Mode::Links,
-                Some("calendar") => Mode::Calendar,
-                Some("search") => Mode::Search,
-                _ => Mode::Tree,
-            },
+            mode,
+            parked: View { mode: shown.or(right.first().copied()).unwrap_or_default(), ..View::default() },
+            right_active: false,
+            right_open: shown.is_some(),
+            right_w: key("width").and_then(|w| w.parse().ok()).map_or(LIST_W, px),
+            right,
+            right_dragging: false,
             panel: match words.next() {
                 Some("split") => Panel::Split,
                 Some("full") => Panel::Full,
@@ -272,22 +326,50 @@ impl Nav {
     }
 
     pub fn save(&self) {
-        let mode = match self.mode {
-            Mode::Tree => "tree",
-            Mode::Recent => "recent",
-            Mode::Graph => "graph",
-            Mode::Tags => "tags",
-            Mode::Links => "links",
-            Mode::Calendar => "calendar",
-            Mode::Search => "search",
-        };
         let panel = match self.panel {
             Panel::Rail => "rail",
             Panel::Split => "split",
             Panel::Full => "full",
         };
         let (list, graph) = (f32::from(self.list_w), f32::from(self.graph_w));
-        vault::save_layout(&format!("{mode} {panel} {list} {graph}\n"));
+        let mut line = format!("{} {panel} {list} {graph}", self.left_mode().name());
+        if !self.right.is_empty() {
+            let right: Vec<&str> = self.right.iter().map(|m| m.name()).collect();
+            line += &format!(" right={} width={}", right.join(","), f32::from(self.right_w));
+            if self.right_open {
+                line += &format!(" show={}", self.right_mode().name());
+            }
+        }
+        vault::save_layout(&format!("{line}\n"));
+    }
+
+    /// The other dock's view comes into `Nav`, this one's goes to wait.
+    pub fn swap_dock(&mut self) {
+        let p = &mut self.parked;
+        std::mem::swap(&mut self.mode, &mut p.mode);
+        std::mem::swap(&mut self.rows, &mut p.rows);
+        std::mem::swap(&mut self.rows_from, &mut p.rows_from);
+        std::mem::swap(&mut self.scroll, &mut p.scroll);
+        std::mem::swap(&mut self.sel, &mut p.sel);
+        std::mem::swap(&mut self.marked, &mut p.marked);
+        std::mem::swap(&mut self.reveal, &mut p.reveal);
+        self.right_active = !self.right_active;
+    }
+
+    /// The view of the right dock (`true`) or the left one comes into `Nav`.
+    pub fn activate(&mut self, right: bool) {
+        if self.right_active != right {
+            self.swap_dock();
+        }
+    }
+
+    /// The tool of each dock.
+    pub fn left_mode(&self) -> Mode {
+        if self.right_active { self.parked.mode } else { self.mode }
+    }
+
+    pub fn right_mode(&self) -> Mode {
+        if self.right_active { self.mode } else { self.parked.mode }
     }
 
     /// Selects the note and expands the folders leading to it.

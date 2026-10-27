@@ -111,10 +111,7 @@ impl Shell {
             (find.case, find.word, find.regex) = (seed.case, seed.word, seed.regex);
         }
         window.focus(&find.query.focus_handle(cx));
-        self.nav.mode = Mode::Search;
-        if self.nav.panel == Panel::Rail {
-            self.nav.panel = Panel::Split;
-        }
+        self.put_tool(Mode::Search);
         self.vault_search(cx);
         self.settle_nav(window, cx);
     }

@@ -13,6 +13,11 @@ pub(super) const MIN_PANE: Pixels = px(300.);
 /// No pane is made lower: room for its tab bar and five lines of text.
 pub(super) const MIN_PANE_H: Pixels = px(200.);
 
+/// The tool a saved tab names (`@graph`), if it is one that opens as a tab.
+fn tool_of(path: &Path) -> Option<Mode> {
+    path.to_str()?.strip_prefix('@').and_then(Mode::named).filter(|m| m.tabs())
+}
+
 /// Where a tab goes: at a place in the bar of a pane, or into a new pane split off a side of one.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Place {
@@ -32,6 +37,8 @@ pub(super) const PANE_RATIO: std::ops::RangeInclusive<f32> = 0.2..=0.8;
 /// What one tab holds: a note and its editor, what is shown in its place (image, diagram,
 /// table, list page), and the note's kanban view.
 pub(super) struct Pane {
+    /// A tool of the side panel shown as this tab (the graph, the calendar) instead of a file.
+    pub(super) tool: Option<Mode>,
     /// Holds the focus as soon as one of the pane's views has it: that is what makes it active. It
     /// holds it itself when the pane only shows an image.
     pub(super) zone: FocusHandle,
@@ -179,6 +186,7 @@ impl Shell {
             h1: None,
             origin: None,
             preview: false,
+            tool: None,
             new_dir: None,
             fresh: false,
             dirty: false,
@@ -453,8 +461,11 @@ impl Shell {
         crowded(self.groups.len() > 1, &rects, area)
     }
 
-    /// The pane at the top right, under the window buttons.
+    /// The pane at the top right, under the window buttons (none when the right dock is there).
     pub(super) fn corner_group(&self) -> usize {
+        if self.right_open() && self.right_width() > px(0.) {
+            return usize::MAX;
+        }
         match self.alone() {
             Some(group) => group,
             None => self.layout.rects().into_iter().filter(|(_, r)| r.y < 1e-3).max_by(|a, b| a.1.right().total_cmp(&b.1.right())).map_or(0, |(g, _)| g),
@@ -480,7 +491,7 @@ impl Shell {
     /// what opens next takes its place instead of a tab of its own, and an emptied note's file goes.
     pub(super) fn spare_tab(&self, cx: &App) -> bool {
         let pane = self.pane();
-        pane.preview || (pane.path.is_none() || pane.fresh) && pane.file.is_none() && pane.listing.is_none() && pane.editor.read(cx).text().is_empty()
+        pane.tool.is_none() && (pane.preview || (pane.path.is_none() || pane.fresh) && pane.file.is_none() && pane.listing.is_none() && pane.editor.read(cx).text().is_empty())
     }
 
     /// A tab for what is about to open: the active one if it is spare, otherwise a new one.
@@ -656,7 +667,7 @@ impl Shell {
             .map(|(tabs, shown)| {
                 let want = tabs.get(shown).cloned();
                 // A file open twice (edited by hand) keeps its first tab: a note is open once.
-                let tabs: Vec<PathBuf> = tabs.into_iter().filter(|p| p.is_file() && p.starts_with(root) && seen.insert(p.clone())).collect();
+                let tabs: Vec<PathBuf> = tabs.into_iter().filter(|p| (p.is_file() && p.starts_with(root) || tool_of(p).is_some()) && seen.insert(p.clone())).collect();
                 let shown = want.and_then(|want| tabs.iter().position(|p| *p == want)).unwrap_or(0);
                 (tabs, shown)
             })
@@ -689,7 +700,10 @@ impl Shell {
                 if i > 0 {
                     self.add_tab(window, cx);
                 }
-                self.open_note(path, cx);
+                match tool_of(path) {
+                    Some(tool) => self.pane_mut().tool = Some(tool),
+                    None => self.open_note(path, cx),
+                }
                 opened.push(self.active);
             }
             if let Some(&tab) = opened.get(shown) {
@@ -712,8 +726,12 @@ impl Shell {
                 .iter()
                 .filter_map(|&tab| {
                     let pane = &self.panes[tab];
-                    let path = pane.file_path().or(pane.path.as_ref())?;
-                    Some(format!("{}{}", if tab == group.shown { "*" } else { "" }, path.display()))
+                    // A tool's tab is written `@graph`, `@calendar`.
+                    let path = match pane.tool {
+                        Some(tool) => format!("@{}", tool.name()),
+                        None => pane.file_path().or(pane.path.as_ref())?.display().to_string(),
+                    };
+                    Some(format!("{}{path}", if tab == group.shown { "*" } else { "" }))
                 })
                 .collect();
             state.push_str(&tabs.join("\t"));

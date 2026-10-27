@@ -3,6 +3,7 @@
 //! modules instead.
 
 mod benches;
+mod docks;
 mod drops;
 mod editing;
 mod enlarge;
