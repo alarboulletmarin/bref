@@ -182,8 +182,9 @@ impl Shell {
             return cx.notify();
         }
         let mut notes: Vec<(PathBuf, String, Arc<str>)> = self.notes.iter().map(|note| (note.path.clone(), note.name.clone(), note.body.clone())).collect();
-        notes.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()).then_with(|| a.0.cmp(&b.0)));
+        // Sorted in the background too: the keystroke only copies the list.
         let work = cx.background_executor().spawn(async move {
+            notes.sort_by_cached_key(|(path, name, _)| (name.to_lowercase(), path.clone()));
             let found = notes.into_iter().map(|(path, name, body)| (markdown::hits(&body, &swap), path, name, body));
             found.filter(|(hits, ..)| !hits.is_empty()).map(|(hits, path, name, body)| Group { path, name, body, hits }).collect::<Vec<_>>()
         });
