@@ -234,12 +234,14 @@ impl Row {
     pub(super) fn pos(&self, i: usize) -> Point<Pixels> {
         let p = match &self.grid {
             Some(grid) => grid.pos(i.min(self.len), self.lh),
-            None => self
-                .shaped
-                .line
-                .as_ref()
-                .and_then(|l| l.position_for_index(self.shown(i.min(self.len)), self.lh))
-                .unwrap_or_default(),
+            None => match &self.shaped.lead {
+                Some(lead) if i < lead.len => lead.line.position_for_index(i, self.lh).unwrap_or_default(),
+                lead => {
+                    let (skip, at) = lead.as_ref().map_or((0, px(0.)), |l| (l.len, l.width));
+                    let p = self.shaped.line.as_ref().and_then(|l| l.position_for_index(self.shown(i.min(self.len)) - skip, self.lh));
+                    p.map_or_else(Default::default, |p| point(p.x + at, p.y))
+                }
+            },
         };
         point(p.x - self.dx, p.y)
     }
@@ -278,6 +280,17 @@ impl Row {
         if let Some(grid) = &self.grid {
             return grid.index_at(p, self.lh);
         }
+        if let Some(lead) = &self.shaped.lead {
+            // On the marker (first visual line, left of the title), or in the title shifted by it.
+            if p.y < self.lh && p.x < lead.width {
+                return lead.line.closest_index_for_position(p, self.lh).unwrap_or_else(|i| i).min(lead.len);
+            }
+            let p = point(p.x - lead.width, p.y);
+            return match self.shaped.line.as_ref().map(|l| l.closest_index_for_position(p, self.lh)) {
+                Some(Ok(i) | Err(i)) => self.source(i + lead.len),
+                None => lead.len,
+            };
+        }
         match &self.shaped.line {
             Some(l) => match l.closest_index_for_position(p, self.lh) {
                 Ok(i) | Err(i) => self.source(i),
@@ -307,7 +320,7 @@ impl Row {
     pub(super) fn content_width(&self) -> Pixels {
         match &self.grid {
             Some(grid) => grid.total(),
-            None => self.shaped.line.as_ref().map_or(px(0.), |l| l.width()),
+            None => self.shaped.line.as_ref().map_or(px(0.), |l| l.width()) + self.shaped.lead.as_ref().map_or(px(0.), |l| l.width),
         }
     }
 }
@@ -369,9 +382,21 @@ pub(super) fn cached_shape(
 
 pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<Fast>>;
 
+/// The marker of a heading, drawn before its title.
+pub(super) struct Lead {
+    pub(super) line: WrappedLine,
+    /// Bytes of the line it covers, and the room it takes (the title starts after it).
+    pub(super) len: usize,
+    pub(super) width: Pixels,
+    /// How far down it is drawn so that its baseline is the title's.
+    pub(super) dy: Pixels,
+}
+
 /// What a line displays, as long as neither it nor its context change.
 pub(super) struct Shaped {
     pub(super) line: Option<WrappedLine>,
+    /// A heading's `#` marker: shaped on its own at the body size, since a line has a single font size.
+    pub(super) lead: Option<Lead>,
     /// Signs displayed in place of their ASCII spelling: (start byte,
     /// length in the text, displayed length).
     pub(super) subs: Vec<(usize, usize, usize)>,
@@ -417,6 +442,8 @@ fn failed(kept: &Figures, key: u64) -> bool {
 /// What, in a line's style, comes from its nature rather than its text.
 pub struct RunStyle {
     pub heading: bool,
+    /// The text is `soft` (a level 6 heading).
+    pub soft: bool,
     pub italic: bool,
     pub mono: bool,
     /// Color of the callout the line is part of.
@@ -446,6 +473,8 @@ pub fn text_runs(t: &Theme, text: &str, flags: &[u16], marked: impl Fn(usize) ->
             t.callout_label(tint)
         } else if f & (md::LINK | md::TAG | md::MARK | md::KEYWORD) != 0 {
             t.accent
+        } else if style.soft {
+            t.soft
         } else {
             t.text
         };
@@ -827,7 +856,7 @@ impl Editor {
         let mut embeds = std::mem::take(&mut self.embeds);
         // Lines of a table already laid out, waiting for their turn in the loop.
         let mut pending: VecDeque<Option<Rc<TableRow>>> = VecDeque::new();
-        let empty = Rc::new(Shaped { line: None, subs: Vec::new(), formula: None, picture: None });
+        let empty = Rc::new(Shaped { line: None, lead: None, subs: Vec::new(), formula: None, picture: None });
         let mut shaped = std::mem::take(&mut self.shaped);
         self.frame = self.frame.wrapping_add(1);
         let frame = self.frame;
@@ -1050,16 +1079,20 @@ impl Editor {
                 last.height += TABLE_GAP;
                 y += TABLE_GAP;
             }
+            // Titles: a scale of about 1.2, about one body line of room above the first two levels
+            // and two thirds of it above the others.
             let (font_size, pad) = match kind {
-                Kind::Heading(1) => (px(27.), px(14.)),
-                Kind::Heading(2) => (px(21.), px(10.)),
-                Kind::Heading(_) => (px(17.5), px(6.)),
+                Kind::Heading(1) => (px(27.), px(24.)),
+                Kind::Heading(2) => (px(22.), px(24.)),
+                Kind::Heading(3) => (px(19.), px(16.)),
+                Kind::Heading(4) => (px(17.), px(16.)),
+                Kind::Heading(_) => (px(16.), px(16.)),
                 Kind::Code | Kind::Fence | Kind::Table | Kind::Meta => (px(14.), px(0.)),
                 _ => (px(16.), px(0.)),
             };
             // The sizes above hold for a 16 px body text.
             let font_size = font_size * (t.size / 16.);
-            let pad = if offset == 0 { px(0.) } else { pad };
+            let pad = if offset == 0 { px(0.) } else { pad * (t.size / 16.) };
 
             // An unchanged line, in the same context, reuses its styling from
             // the previous frame: typing only reprocesses the touched line.
@@ -1073,7 +1106,8 @@ impl Editor {
                     .hash(&mut hasher);
                 hasher.finish()
             };
-            let lh = (font_size * 1.65).round();
+            // A title's lines are closer than the body's, so that it belongs to what follows.
+            let lh = (font_size * if matches!(kind, Kind::Heading(_)) { 1.35 } else { 1.65 }).round();
             let made = if grid_row.is_some() { empty.clone() } else { cached_shape(&mut shaped, id, frame, || {
                 let mut formula = None;
                 let mut flags = vec![0u16; line.len()];
@@ -1157,18 +1191,33 @@ impl Editor {
 
                 let style = RunStyle {
                     heading: matches!(kind, Kind::Heading(_)),
+                    soft: kind == Kind::Heading(6),
                     italic: kind == Kind::Quote && !tinted,
                     mono: code || kind == Kind::Table,
                     tint: own_tint,
                 };
-                let runs = text_runs(&t, &shown, &flags, is_marked, &style);
-
-                let line = window
-                    .text_system()
-                    .shape_text(shown.into_owned().into(), font_size, &runs, (kind != Kind::Table).then_some(width), None)
-                    .ok()
-                    .and_then(|lines| lines.into_iter().next());
-                Rc::new(Shaped { line, subs, formula, picture })
+                // A title's `#` marker is at the body size, `dim`, on the title's baseline.
+                let cut = if matches!(kind, Kind::Heading(_)) { marker } else { 0 };
+                let runs = text_runs(&t, &shown[cut..], &flags[cut..], |i| is_marked(i + cut), &style);
+                let shape = |text: &str, size: Pixels, runs: &[TextRun], wrap: Option<Pixels>| {
+                    window.text_system().shape_text(text.to_string().into(), size, runs, wrap, None).ok().and_then(|lines| lines.into_iter().next())
+                };
+                let marker_style = RunStyle { heading: false, soft: false, italic: false, mono: false, tint: None };
+                let mut lead = (cut > 0)
+                    .then(|| shape(&shown[..cut], px(t.size), &text_runs(&t, &shown[..cut], &flags[..cut], is_marked, &marker_style), None))
+                    .flatten()
+                    .map(|line| Lead { width: line.position_for_index(cut, lh).map_or(px(0.), |p| p.x), line, len: cut, dy: px(0.) });
+                let wrap = (kind != Kind::Table).then(|| width - lead.as_ref().map_or(px(0.), |l| l.width));
+                let line = shape(&shown[cut..], font_size, &runs, wrap);
+                if let Some(lead) = &mut lead {
+                    // An empty title has no metrics of its own: those of a letter will do.
+                    let probe = if shown[cut..].is_empty() { shape("x", font_size, &text_runs(&t, "x", &[0], |_| false, &style), None) } else { None };
+                    if let Some(title) = probe.as_ref().or(line.as_ref()) {
+                        let baseline = |l: &WrappedLine| (lh - (l.ascent() + l.descent())) / 2. + l.ascent();
+                        lead.dy = baseline(title) - baseline(&lead.line);
+                    }
+                }
+                Rc::new(Shaped { line, lead, subs, formula, picture })
             }) };
             if let Some((source, display)) = &made.formula {
                 drawing = cached(&mut old, &mut kept, key(1 + *display as u8, source), false, || {
@@ -1583,7 +1632,7 @@ mod tests {
     }
 
     fn plain() -> RunStyle {
-        RunStyle { heading: false, italic: false, mono: false, tint: None }
+        RunStyle { heading: false, soft: false, italic: false, mono: false, tint: None }
     }
 
     #[test]

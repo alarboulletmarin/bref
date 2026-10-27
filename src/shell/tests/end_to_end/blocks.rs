@@ -1,4 +1,4 @@
-//! Code blocks, callouts and quotes: where each one starts and ends, the room inside its fill, and the
+//! Headings, then code blocks, callouts and quotes: where each one starts and ends, the room inside its fill, and the
 //! caret and the clicks on its first and last lines.
 
 use super::*;
@@ -53,5 +53,35 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             let caret = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).position());
             assert_eq!(caret, target, "inside {inside}, click on byte {target}");
         }
+    }
+}
+
+/// The six heading levels: a scale, room above (none on the first line), `#` markers that are no title when there
+/// are seven or no space, and a caret and clicks that agree on the marker and on the title.
+pub(super) fn headings(j: &Journey, cx: &mut gpui::VisualTestContext) {
+    let shell = &j.shell;
+    let note = "# un\n\n## deux\n### trois\n#### quatre\n##### cinq\n###### six\n####### sept\n#tag\n## \n# Éa\n";
+    j.load(cx, note, 0);
+    let rows = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).heading_rows());
+    let at = |s: &str| note.find(s).unwrap();
+    // `#######` and `#tag` are no title; an empty `## ` and a one letter title are.
+    let found: Vec<(usize, u8)> = rows.iter().map(|r| (r.0, r.1)).collect();
+    assert_eq!(found, [(0, 1), (at("## deux"), 2), (at("### trois"), 3), (at("#### quatre"), 4), (at("##### cinq"), 5), (at("###### six"), 6), (at("## \n"), 2), (at("# Éa"), 1)]);
+    let lh = |n: u8| rows.iter().find(|r| r.1 == n).unwrap().3;
+    // Line heights fall with the level (H5 and H6 share the body size), room above: none on the first line, then a
+    // body line for H1 and H2, two thirds of it for the rest.
+    assert!(lh(1) > lh(2) && lh(2) > lh(3) && lh(3) > lh(4) && lh(4) > lh(5) && lh(5) == lh(6), "{rows:?}");
+    let pad = |n: u8| rows.iter().filter(|r| r.1 == n).last().unwrap().2;
+    assert_eq!(rows[0].2, 0.);
+    assert!(pad(1) == pad(2) && pad(2) > pad(3) && pad(3) == pad(6) && pad(6) > 0., "{rows:?}");
+    // Caret and click land on the same byte: on the marker and on the first letter of each title.
+    shell.update_in(cx, |s, window, cx| window.focus(&s.pane().editor.focus_handle(cx)));
+    cx.run_until_parked();
+    for target in ["# un", "un", "## deux", "deux", "### trois", "trois", "#### quatre", "quatre", "##### cinq", "cinq", "###### six", "six", "Éa"] {
+        let start = if target.starts_with('#') { at(target) } else { note[..].rfind(target).unwrap() };
+        let p = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(start).unwrap());
+        cx.simulate_click(p + point(px(1.), px(1.)), gpui::Modifiers::none());
+        let caret = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).position());
+        assert_eq!(caret, start, "click on {target:?}");
     }
 }

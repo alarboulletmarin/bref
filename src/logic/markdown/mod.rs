@@ -112,7 +112,7 @@ pub fn classify(line: &str, in_code: bool) -> (Kind, usize) {
     }
     let hashes = rest.bytes().take_while(|&b| b == b'#').count();
     if (1..=6).contains(&hashes) && rest[hashes..].starts_with(' ') {
-        return (Kind::Heading(hashes.min(3) as u8), indent + hashes + 1);
+        return (Kind::Heading(hashes as u8), indent + hashes + 1);
     }
     let t = rest.trim_end();
     if t.len() >= 3 && ['-', '*', '_'].iter().any(|&c| t.chars().all(|x| x == c)) {

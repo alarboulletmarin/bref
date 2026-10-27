@@ -275,7 +275,12 @@ impl Editor {
                 if let Some(grid) = &row.grid {
                     grid.paint_front(table_top, row.height - row.gap, row.lh, &t, window, cx);
                 } else if let Some(line) = &row.shaped.line {
-                    line.paint(point(o.x - row.dx, text_top), row.lh, TextAlign::Left, None, window, cx)
+                    let lead = row.shaped.lead.as_ref();
+                    if let Some(lead) = lead {
+                        lead.line.paint(point(o.x - row.dx, text_top + lead.dy), row.lh, TextAlign::Left, None, window, cx).ok();
+                    }
+                    let at = lead.map_or(px(0.), |l| l.width);
+                    line.paint(point(o.x - row.dx + at, text_top), row.lh, TextAlign::Left, None, window, cx)
                         .ok();
                 }
                 if focused && sel.is_empty() && has_cursor {

@@ -673,6 +673,13 @@ impl Editor {
         lines.map(|r| (r.start, r.head, r.foot, f32::from(r.pad), f32::from(r.gap))).collect()
     }
 
+    /// The headings: `(start, level, room above, line height)`.
+    #[cfg(test)]
+    pub fn heading_rows(&self) -> Vec<(usize, u8, f32, f32)> {
+        let found = self.rows.iter().filter_map(|r| if let Kind::Heading(n) = r.kind { Some((r.start, n, f32::from(r.pad), f32::from(r.lh))) } else { None });
+        found.collect()
+    }
+
     /// Table dash lines that are not shown.
     #[cfg(test)]
     pub fn hidden_rows(&self) -> usize {
