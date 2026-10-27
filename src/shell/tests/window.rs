@@ -75,8 +75,8 @@ fn panes_come_back(cx: &mut TestAppContext) {
     let recent = vec![right.clone(), left.clone()];
     let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), recent, window, cx));
     cx.run_until_parked();
-    let open = shell.read_with(cx, |s, _| (s.active, s.pane_ratio, s.panes.iter().map(|pane| pane.path.clone()).collect::<Vec<_>>()));
-    assert_eq!(open, (0, 0.4, vec![Some(left.clone()), Some(right.clone())]));
+    let open = shell.read_with(cx, |s, _| (s.active, s.layout.write(), s.panes.iter().map(|pane| pane.path.clone()).collect::<Vec<_>>()));
+    assert_eq!(open, (0, "row(0.4 0, 0.6 1)".to_string(), vec![Some(left.clone()), Some(right.clone())]));
     cx.simulate_input("x");
     assert_eq!(shell.read_with(cx, |s, cx| s.panes[0].editor.read(cx).text().to_string()), "# Gauche\nx");
     let _ = fs::remove_dir_all(&root);
@@ -369,7 +369,9 @@ fn update_banner_stays_clear_of_the_formatting_bar(cx: &mut TestAppContext) {
                     settle(cx);
                 }
                 let what = format!("{panel:?} two panes {second_pane} {width} {version:?} updating {updating} folded {folded}");
-                let window = cx.debug_bounds("pane-0").unwrap();
+                // The pane with input: a window too small for two shows it alone.
+                let group = shell.read_with(cx, |s, _| s.group());
+                let window = cx.debug_bounds(leak(format!("pane-{group}"))).unwrap();
                 let mut footer = vec![cx.debug_bounds("counts").unwrap(), cx.debug_bounds(if folded { "format-toggle" } else { "format-bar" }).unwrap()];
                 if folded {
                     footer.extend(["format-bar", "format-swatches"].map(|name| cx.debug_bounds(name).unwrap()));

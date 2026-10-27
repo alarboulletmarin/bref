@@ -164,6 +164,7 @@ impl Shell {
         self.panes.truncate(1);
         self.active = 0;
         self.groups = vec![Group::of(0)];
+        (self.layout, self.zoomed) = (Node::default(), None);
         self.closed.clear();
         self.vault = Some(root.clone());
         self.lost = None;

@@ -64,16 +64,16 @@ impl Shell {
         let shown = self.groups[group].shown;
         // Brought into view once when it changes, so the wheel stays free afterwards. gpui scrolls with
         // the places of the last frame: a bar not drawn yet (at startup) asks for one more frame.
-        if self.groups[group].seen != Some(shown) {
-            if let Some(at) = tabs.iter().position(|tab| *tab == shown) {
-                let scroll = &self.groups[group].scroll;
-                scroll.scroll_to_item(at);
-                if scroll.bounds_for_item(at).is_some() {
-                    self.groups[group].seen = Some(shown);
-                } else {
-                    let me = cx.entity();
-                    cx.defer(move |cx| me.update(cx, |_, cx| cx.notify()));
-                }
+        if self.groups[group].seen != Some(shown)
+            && let Some(at) = tabs.iter().position(|tab| *tab == shown)
+        {
+            let scroll = &self.groups[group].scroll;
+            scroll.scroll_to_item(at);
+            if scroll.bounds_for_item(at).is_some() {
+                self.groups[group].seen = Some(shown);
+            } else {
+                let me = cx.entity();
+                cx.defer(move |cx| me.update(cx, |_, cx| cx.notify()));
             }
         }
         let active = self.group() == group;
@@ -139,7 +139,7 @@ impl Shell {
         });
         // The window buttons sit over the top right corner: the right pane's bar stops before them,
         // so that no tab scrolls under them.
-        let corner = client && group == self.groups.len() - 1;
+        let corner = client && group == self.corner_group();
         Some(
             div()
                 .id(("tabs", group))

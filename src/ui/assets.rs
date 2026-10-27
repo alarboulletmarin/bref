@@ -109,6 +109,7 @@ impl AssetSource for Assets {
             "c-outline.svg" => r#"<path d="M3 4H13M5.5 8H13M8 12H13"/>"#,
             "c-calendar.svg" => r#"<rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5H13.5M5.5 2.5V4.5M10.5 2.5V4.5"/>"#,
             "c-split.svg" => r#"<rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M8 3V13"/>"#,
+            "c-split-down.svg" => r#"<rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M2.5 8H13.5"/>"#,
             "c-zoom-in.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.3 7H8.7M7 5.3V8.7"/>"#,
             "c-zoom-out.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.3 7H8.7"/>"#,
             "c-zoom-reset.svg" => r#"<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13 13M5.5 7H8.5M5.5 7.01"/>"#,

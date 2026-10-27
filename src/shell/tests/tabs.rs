@@ -140,7 +140,7 @@ fn tabs_open_switch_close_and_come_back(cx: &mut TestAppContext) {
     // The tabs come back at the next start, in their order, the shown one shown; a file gone
     // since is dropped without a word.
     let saved = vault::load_file("panes");
-    assert!(saved.starts_with("v2 0.5\n") && saved.contains(&format!("{}\t{}", note("Alpha").display(), root.join("Ici/Plan.md").display())), "{saved}");
+    assert!(saved.starts_with("v3 0\n") && saved.contains(&format!("{}\t{}", note("Alpha").display(), root.join("Ici/Plan.md").display())), "{saved}");
     fs::remove_file(root.join("Ici/Plan.md")).unwrap();
     let recent = vec![note("Gamma")];
     let (again, cx2) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), recent, window, cx));

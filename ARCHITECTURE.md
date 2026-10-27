@@ -36,7 +36,7 @@ each, all `impl Shell`:
 
 | File | Subject |
 |---|---|
-| `pane.rs` | the panes and their tabs, which one is active, the file a tab shows (`FileView`), the saved layout |
+| `pane.rs` | the panes and their tabs, which one is active, the file a tab shows (`FileView`), splitting, moving a tab between panes, the saved layout; the panes are placed by the tree `logic/layout.rs` (`Node`, leaves = groups), drawn by `render_layout` |
 | `tabs.rs` | the tab bar of a pane |
 | `notes.rs` | opening, previewing, creating, saving notes; links and wikilinks |
 | `library.rs` | the vault: choosing, scanning, watching, icons, backup, trash |

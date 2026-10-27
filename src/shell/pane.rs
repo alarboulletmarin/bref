@@ -7,8 +7,17 @@
 
 use super::*;
 
-/// Width below which two panes do not fit next to the panel: it folds.
+/// Width below which two panes do not fit next to the panel: it folds. No pane is made narrower.
 pub(super) const MIN_PANE: Pixels = px(300.);
+
+/// No pane is made lower: room for its tab bar and five lines of text.
+pub(super) const MIN_PANE_H: Pixels = px(200.);
+
+/// Whether `many` panes at `rects` (shares of `area`) leave one less than half its minimum size;
+/// not measured yet (at startup), they are not.
+pub(super) fn crowded(many: bool, rects: &[layout::Rect], area: Size<Pixels>) -> bool {
+    many && area.width > px(0.) && rects.iter().any(|r| area.width * r.w < MIN_PANE / 2. || area.height * r.h < MIN_PANE_H / 2.)
+}
 
 /// Share of the width the left pane can take.
 pub(super) const PANE_RATIO: std::ops::RangeInclusive<f32> = 0.2..=0.8;
@@ -92,23 +101,32 @@ pub(super) enum FileKind {
 /// The saved layout (file `panes`): the left pane's share, then each pane's tabs and the position
 /// of the one it shows. Reads the two older formats too: a share then the second pane's file
 /// (empty: one pane), where the first pane showed the most recent note.
-pub(super) fn read_panes(text: &str) -> (Option<f32>, Vec<(Vec<PathBuf>, usize)>) {
+pub(super) fn read_panes(text: &str) -> (Option<Node>, Vec<(Vec<PathBuf>, usize)>) {
     let mut lines = text.lines();
     let first = lines.next().unwrap_or_default();
-    let ratio = |s: &str| s.trim().parse::<f32>().ok().filter(|ratio| PANE_RATIO.contains(ratio));
-    let Some(share) = first.strip_prefix("v2 ") else {
-        // Older: the first pane is left to the recent notes, the second is the line after.
-        let aside = lines.next().map(str::trim).filter(|line| !line.is_empty());
-        return (ratio(first), aside.map(|path| vec![(Vec::new(), 0), (vec![PathBuf::from(path)], 0)]).unwrap_or_default());
+    let ratio = |s: &str| s.trim().parse::<f32>().ok().filter(|ratio| PANE_RATIO.contains(ratio)).unwrap_or(0.5);
+    let (tree, v2) = match (first.strip_prefix("v3 "), first.strip_prefix("v2 ")) {
+        (Some(tree), _) => (Some(tree), None),
+        (None, Some(share)) => (None, Some(ratio(share))),
+        (None, None) => {
+            // Older: the first pane is left to the recent notes, the second is the line after.
+            let aside = lines.next().map(str::trim).filter(|line| !line.is_empty());
+            let groups: Vec<_> = aside.map(|path| vec![(Vec::new(), 0), (vec![PathBuf::from(path)], 0)]).unwrap_or_default();
+            return (Some(Node::row(groups.len(), ratio(first))), groups);
+        }
     };
-    let groups = lines
+    let groups: Vec<(Vec<PathBuf>, usize)> = lines
         .map(|line| {
             let tabs: Vec<&str> = line.split('\t').filter(|tab| !tab.is_empty()).collect();
             let shown = tabs.iter().position(|tab| tab.starts_with('*')).unwrap_or(0);
             (tabs.iter().map(|tab| PathBuf::from(tab.trim_start_matches('*'))).collect(), shown)
         })
         .collect();
-    (ratio(share), groups)
+    let node = match (tree, v2) {
+        (Some(tree), _) => Node::read(tree, groups.len()),
+        (None, share) => Some(Node::row(groups.len(), share.unwrap_or(0.5))),
+    };
+    (node, groups)
 }
 
 impl Pane {
@@ -242,25 +260,127 @@ impl Shell {
         }
     }
 
-    /// Opens the second pane, on a new note, and gives it input.
-    pub(super) fn add_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Too narrow for two panes: the panel folds onto its rail.
-        let width = self.pane_box.get().size.width;
-        if self.nav.panel == Panel::Split && width > px(0.) && width < MIN_PANE * 2. {
-            self.nav.panel = Panel::Rail;
-            self.nav.save();
+    /// Splits the active pane on `side`: a new pane, on a new note, gets input. Refused, with a
+    /// message, when one of the two would be narrower than `MIN_PANE` or lower than `MIN_PANE_H`.
+    pub(super) fn add_pane(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if !self.room_beside(self.group(), side, cx) {
+            return false;
         }
         if self.nav.panel == Panel::Full {
             self.nav.panel = Panel::Split;
         }
-        let pane = Self::new_pane(self.theme, window, cx);
+        let (group, pane) = (self.group(), Self::new_pane(self.theme, window, cx));
         self.panes.push(pane);
-        self.active = self.panes.len() - 1;
-        self.groups.push(Group::of(self.active));
-        self.push_names_to(self.active..self.active + 1, cx);
+        let tab = self.panes.len() - 1;
+        self.split_off(group, side, tab);
+        self.push_names_to(tab..tab + 1, cx);
         self.push_dirs(cx);
         window.focus(&self.pane().editor.focus_handle(cx));
         cx.notify();
+        true
+    }
+
+    /// A new pane on `side` of `group`, holding `tab` (already in `panes`, in no group).
+    fn split_off(&mut self, group: usize, side: Side, tab: usize) {
+        self.layout.split(group, side, self.groups.len());
+        self.groups.push(Group::of(tab));
+        self.zoomed = None;
+        self.active = tab;
+    }
+
+    /// Whether `group` can be split on `side`, both halves keeping their minimum; if not, the
+    /// message says why. The first split folds the panel onto its rail when only that makes room.
+    fn room_beside(&mut self, group: usize, side: Side, cx: &mut Context<Self>) -> bool {
+        let area = self.pane_box.get().size;
+        // Not drawn yet (at startup): nothing to measure.
+        if area.width <= px(0.) {
+            return true;
+        }
+        let rect = self.layout.rects().into_iter().find(|(g, _)| *g == group).map_or_else(Default::default, |(_, r)| r);
+        let fits = match side.axis() {
+            layout::Axis::Row => area.width * rect.w / 2. >= MIN_PANE,
+            layout::Axis::Column => area.height * rect.h / 2. >= MIN_PANE_H,
+        };
+        if !fits && side.axis() == layout::Axis::Row && self.groups.len() == 1 && self.nav.panel == Panel::Split {
+            self.nav.panel = Panel::Rail;
+            self.nav.save();
+            return true;
+        }
+        if !fits {
+            self.say(Tone::Info, tr("No room for another pane there: make the window bigger, or close a pane", "Pas de place pour un volet de plus ici : agrandissez la fenêtre, ou fermez un volet"), cx);
+        }
+        fits
+    }
+
+    /// Input goes to the pane on `side` of the active one, if there is one.
+    pub(super) fn focus_side(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
+        if self.zoomed.is_none()
+            && let Some(group) = self.layout.neighbour(self.group(), side)
+        {
+            self.focus_group(group, window, cx);
+        }
+    }
+
+    /// The active tab goes to the pane on `side`, which is split off when there is none; a pane
+    /// left without tabs goes.
+    pub(super) fn tab_to_side(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
+        let (from, tab) = (self.group(), self.active);
+        let to = self.layout.neighbour(from, side).filter(|_| self.zoomed.is_none());
+        // Alone in its pane, a tab has nowhere new to go.
+        if to.is_none() && (self.groups[from].tabs.len() < 2 || !self.room_beside(from, side, cx)) {
+            return;
+        }
+        // Out of its pane, which shows its neighbour.
+        let group = &mut self.groups[from];
+        let at = group.tabs.iter().position(|t| *t == tab).unwrap_or(0);
+        group.tabs.remove(at);
+        if let Some(&next) = group.tabs.get(at.min(group.tabs.len().saturating_sub(1))) {
+            group.shown = next;
+        }
+        match to {
+            Some(to) => {
+                let group = &mut self.groups[to];
+                let at = group.tabs.iter().position(|t| *t == group.shown).map_or(group.tabs.len(), |at| at + 1);
+                group.tabs.insert(at, tab);
+                self.show_tab(to, tab, cx);
+                if self.groups[from].tabs.is_empty() {
+                    self.groups.remove(from);
+                    self.layout.remove(from);
+                    self.zoomed = None;
+                }
+            }
+            None => self.split_off(from, side, tab),
+        }
+        self.focus_pane(tab, window, cx);
+    }
+
+    /// The active pane on the whole window, or back to all the panes.
+    pub(super) fn toggle_zoom(&mut self, cx: &mut Context<Self>) {
+        self.zoomed = match self.zoomed {
+            None if self.groups.len() > 1 => Some(self.group()),
+            _ => None,
+        };
+        cx.notify();
+    }
+
+    /// The pane drawn alone: the one put on the whole window, or the active one when the window
+    /// leaves a pane less than half its minimum size (the layout stays for a bigger window).
+    pub(super) fn alone(&self) -> Option<usize> {
+        self.zoomed.or_else(|| self.crowded_in(self.pane_box.get().size).then(|| self.group()))
+    }
+
+    /// Whether the panes, laid out in `area`, leave one of them less than half its minimum size.
+    pub(super) fn crowded_in(&self, area: Size<Pixels>) -> bool {
+        let rects: Vec<_> = self.layout.rects().into_iter().map(|(_, r)| r).collect();
+        crowded(self.groups.len() > 1, &rects, area)
+    }
+
+    /// The pane at the top right, under the window buttons.
+    pub(super) fn corner_group(&self) -> usize {
+        match self.alone() {
+            Some(group) => group,
+            None => self.layout.rects().into_iter().filter(|(_, r)| r.y < 1e-3).max_by(|a, b| a.1.right().total_cmp(&b.1.right())).map_or(0, |(g, _)| g),
+        }
     }
 
     /// A new tab in the active pane, right of the one shown, on a new note; it gets input.
@@ -348,6 +468,14 @@ impl Shell {
     /// tab goes away, and a group that showed it shows its neighbour (the next one, else the last).
     pub(super) fn remove_tab(&mut self, tab: usize) {
         let (group, was_active) = (self.group_of(tab), self.active == tab);
+        // Its last tab gone, the pane goes: the neighbour that takes its room gets input.
+        let mut group = group;
+        if self.groups[group].tabs.len() == 1 && self.groups.len() > 1 {
+            let heir = [Side::Left, Side::Right, Side::Up, Side::Down].into_iter().find_map(|side| self.layout.neighbour(group, side));
+            self.layout.remove(group);
+            self.zoomed = None;
+            group = heir.map_or(0, |heir| if heir > group { heir - 1 } else { heir });
+        }
         self.panes.remove(tab);
         let fix = |t: usize| if t > tab { t - 1 } else { t };
         for each in &mut self.groups {
@@ -363,7 +491,7 @@ impl Shell {
         }
         self.groups.retain(|each| !each.tabs.is_empty());
         self.active = match was_active {
-            // Its group shows the neighbour now; gone with it, the pane that took its place does.
+            // Its group shows the neighbour now; gone with it, the pane that took its room does.
             true => self.groups[group.min(self.groups.len() - 1)].shown,
             false => fix(self.active),
         };
@@ -371,25 +499,24 @@ impl Shell {
 
     /// Ctrl+\: a second pane, opened on the palette to choose what goes there. A note is not
     /// shown twice, so it cannot take the one being left.
-    pub(super) fn split(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.vault.is_none() {
-            return;
+    pub(super) fn split(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault.is_some() && self.add_pane(side, window, cx) {
+            self.open_palette("", window, cx);
         }
-        if self.groups.len() > 1 {
-            return self.focus_group(1, window, cx);
-        }
-        self.add_pane(window, cx);
-        self.open_palette("", window, cx);
     }
 
-    /// Opens the file in the other pane, created if needed; already shown, it receives input.
+    /// Opens the file beside the active pane: in the pane on its right or its left, split off
+    /// if there is none; already open, its tab receives input.
     pub(super) fn open_aside(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(pane) = self.pane_showing(path) {
             return self.focus_pane(pane, window, cx);
         }
-        match self.groups.len() {
-            1 => self.add_pane(window, cx),
-            _ => self.active = self.groups[1 - self.group()].shown,
+        self.zoomed = None;
+        let group = self.group();
+        // A pane beside (right, then left) before a new one: splitting is the last resort.
+        match self.layout.neighbour(group, Side::Right).or_else(|| self.layout.neighbour(group, Side::Left)) {
+            Some(beside) => self.active = self.groups[beside].shown,
+            None => _ = self.add_pane(Side::Right, window, cx),
         }
         self.open_from_nav(path, window, cx);
     }
@@ -399,9 +526,8 @@ impl Shell {
     pub(super) fn drop_on_pane(&mut self, group: usize, aside: bool, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let Some(shown) = self.groups.get(group).map(|group| group.shown) else { return };
         if path.is_dir() {
-            match aside {
-                true => self.add_pane(window, cx),
-                false => self.active = shown,
+            if !(aside && self.add_pane(Side::Right, window, cx)) {
+                self.active = shown;
             }
             self.open_listing(path.to_path_buf(), window, cx);
         } else if aside {
@@ -442,7 +568,7 @@ impl Shell {
 
     /// Opens the tabs saved last time (`read_panes`), those whose file is still in the vault; a
     /// first pane left without any shows the most recent note, as before tabs.
-    pub(super) fn restore_panes(&mut self, saved: Vec<(Vec<PathBuf>, usize)>, root: &Path, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn restore_panes(&mut self, tree: Option<Node>, saved: Vec<(Vec<PathBuf>, usize)>, root: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let mut seen = std::collections::HashSet::new();
         let mut groups: Vec<(Vec<PathBuf>, usize)> = saved
             .into_iter()
@@ -460,13 +586,23 @@ impl Shell {
         if groups[0].0.is_empty() {
             groups[0].0.extend(self.recent.iter().find(|p| !seen.contains(*p)).cloned());
         }
+        // A tree that does not match the panes (edited by hand) gives way to a row of them.
+        let mut tree = tree.filter(|tree| tree.panes().len() == groups.len()).unwrap_or_else(|| Node::row(groups.len(), 0.5));
+        let mut kept = 0;
         for (n, (tabs, shown)) in groups.into_iter().enumerate() {
             if n > 0 {
+                // Nothing left to show: the pane goes, its neighbours take its room.
                 if tabs.is_empty() {
+                    tree.remove(kept);
                     continue;
                 }
-                self.add_pane(window, cx);
+                let pane = Self::new_pane(self.theme, window, cx);
+                self.panes.push(pane);
+                self.active = self.panes.len() - 1;
+                self.groups.push(Group::of(self.active));
+                self.push_names_to(self.active..self.active + 1, cx);
             }
+            kept += 1;
             let mut opened = Vec::new();
             for (i, path) in tabs.iter().enumerate() {
                 if i > 0 {
@@ -480,14 +616,15 @@ impl Shell {
                 self.show_active(cx);
             }
         }
+        self.layout = tree;
         self.focus_group(0, window, cx);
     }
 
-    /// The pane layout, as it is saved: a version line with the left pane's share, then one line
-    /// per pane, its tabs separated by tabulations, the shown one marked with `*`. New notes not
-    /// saved yet have no file and are left out.
+    /// The pane layout, as it is saved: a version line with the tree (`Node::write`), then one
+    /// line per pane, its tabs separated by tabulations, the shown one marked with `*`. New notes
+    /// not saved yet have no file and are left out.
     pub(super) fn panes_state(&self) -> String {
-        let mut state = format!("v2 {}\n", self.pane_ratio);
+        let mut state = format!("v3 {}\n", self.layout.write());
         for group in &self.groups {
             let tabs: Vec<String> = group
                 .tabs
@@ -552,12 +689,25 @@ mod tests {
 
     #[test]
     fn saved_panes_read_in_every_format() {
-        assert_eq!(read_panes(""), (None, vec![]));
-        assert_eq!(read_panes("0.4\n\n"), (Some(0.4), vec![]));
-        assert_eq!(read_panes("0.4\n/v/B.md\n"), (Some(0.4), vec![(vec![], 0), (vec![PathBuf::from("/v/B.md")], 0)]));
-        // A share out of range is dropped, the tabs stay.
-        assert_eq!(read_panes("v2 7\n/v/A.md\t*/v/B c.md\n*/v/D.md\n"), (None, vec![(vec![PathBuf::from("/v/A.md"), PathBuf::from("/v/B c.md")], 1), (vec![PathBuf::from("/v/D.md")], 0)]));
+        let read = |text: &str| {
+            let (tree, groups) = read_panes(text);
+            (tree.map(|tree| tree.write()), groups)
+        };
+        let one = |path: &str| (vec![PathBuf::from(path)], 0);
+        assert_eq!(read(""), (Some("0".into()), vec![]));
+        // Before tabs: a share, then the second pane's note.
+        assert_eq!(read("0.4\n\n"), (Some("0".into()), vec![]));
+        assert_eq!(read("0.4\n/v/B.md\n"), (Some("row(0.4 0, 0.6 1)".into()), vec![(vec![], 0), one("/v/B.md")]));
+        // Tabs in a row of panes: a share out of range gives way to halves, the tabs stay.
+        assert_eq!(read("v2 7\n/v/A.md\t*/v/B c.md\n*/v/D.md\n"), (Some("row(0.5 0, 0.5 1)".into()), vec![(vec![PathBuf::from("/v/A.md"), PathBuf::from("/v/B c.md")], 1), one("/v/D.md")]));
         // No mark: the first tab is shown; an empty line is a pane whose notes were all new.
-        assert_eq!(read_panes("v2 0.5\n/v/A.md\n\n"), (Some(0.5), vec![(vec![PathBuf::from("/v/A.md")], 0), (vec![], 0)]));
+        assert_eq!(read("v2 0.5\n/v/A.md\n\n"), (Some("row(0.5 0, 0.5 1)".into()), vec![one("/v/A.md"), (vec![], 0)]));
+        // The tree: read as written; one that does not match the panes, or does not read, is none.
+        let three = "/v/A.md\n/v/B.md\n/v/C.md\n";
+        assert_eq!(read(&format!("v3 row(0.5 0, 0.5 col(0.3 1, 0.7 2))\n{three}")).0, Some("row(0.5 0, 0.5 col(0.3 1, 0.7 2))".into()));
+        assert_eq!(read(&format!("v3 row(0.5 0, 0.5 1)\n{three}")).0, None);
+        assert_eq!(read(&format!("v3 grid(0.5 0, 0.5 1, 2)\n{three}")), (None, vec![one("/v/A.md"), one("/v/B.md"), one("/v/C.md")]));
+        // Shares that do not sum to one are brought back.
+        assert_eq!(read("v3 row(0.3 0, 0.1 1)\n/v/A.md\n/v/B.md\n").0, Some("row(0.75 0, 0.25 1)".into()));
     }
 }

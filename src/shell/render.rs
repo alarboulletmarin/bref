@@ -84,73 +84,52 @@ impl Render for Shell {
         let body = if self.vault.is_none() {
             self.render_welcome(body, cx)
         } else {
-            // One pane, or two side by side: each draws the tab it shows as if it were the active one,
-            // under its tab bar. The comments panel, right of everything, is the active tab's.
+            // The panes as the layout arranges them: each draws the tab it shows as if it were the
+            // active one, under its tab bar. The comments panel, right of everything, is the active tab's.
             let active = self.active;
-            let (mut areas, mut comments) = (Vec::new(), None);
+            let (mut areas, mut comments, alone) = (Vec::new(), None, self.alone());
             for group in 0..self.groups.len() {
+                if alone.is_some_and(|alone| alone != group) {
+                    areas.push(None);
+                    continue;
+                }
                 let pane = self.groups[group].shown;
                 let (area, said) = self.in_pane(pane, |this| this.render_pane(pane, group, pane == active, client, window, cx));
                 let bar = self.render_tabs(group, client, cx);
-                let two = self.groups.len() == 2;
-                let ratio = self.pane_ratio;
-                areas.push(
-                    div()
-                        .h_full()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .map(|d| if two && group == 0 { d.flex_none().w(gpui::relative(ratio)) } else { d.flex_1() })
-                        .children(bar)
-                        .child(area)
-                        .into_any_element(),
-                );
+                areas.push(Some(div().size_full().min_w_0().min_h_0().flex().flex_col().children(bar).child(area).into_any_element()));
                 if pane == active {
                     comments = said;
                 }
             }
-            let mut areas = areas.into_iter();
-            // The border between the two can be dragged; a double click puts it back in the middle.
-            let divider = (self.groups.len() == 2).then(|| {
-                div()
-                    .id("pane-divider")
-                    .group("pane-divider")
-                    .w(px(5.))
-                    .h_full()
-                    .flex_none()
-                    .cursor(CursorStyle::ResizeLeftRight)
-                    .flex()
-                    .justify_center()
-                    .child(
-                        div()
-                            .w(px(1.))
-                            .h_full()
-                            .bg(if self.pane_drag { t.accent } else { t.border })
-                            .group_hover("pane-divider", |s| s.bg(t.accent)),
-                    )
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, e: &gpui::MouseDownEvent, _, cx| {
-                            match e.click_count >= 2 {
-                                true => this.pane_ratio = 0.5,
-                                false => this.pane_drag = true,
-                            }
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
-                    )
-            });
-            let area = self.pane_box.clone();
+            let tree = match alone {
+                Some(group) => Node::Pane(group),
+                None => self.layout.clone(),
+            };
+            let panes = self.render_layout(&tree, &mut Vec::new(), &mut areas, cx);
+            // Measured while drawing: a new size that crowds the panes, or no longer does, asks for
+            // one more frame (gpui forgets a notify sent while drawing).
+            let (area, me, crowded) = (self.pane_box.clone(), cx.entity(), self.crowded_in(self.pane_box.get().size));
+            let (many, rects): (_, Vec<_>) = (self.groups.len() > 1, self.layout.rects().into_iter().map(|(_, r)| r).collect());
             let note = div()
                 .flex_1()
                 .min_w_0()
                 .h_full()
                 .relative()
                 .flex()
-                .child(gpui::canvas(move |bounds, _, _| area.set(bounds), |_, _, _, _| ()).absolute().size_full())
-                .children(areas.next())
-                .children(divider)
-                .children(areas.next());
+                .child(
+                    gpui::canvas(
+                        move |bounds, _, cx| {
+                            area.set(bounds);
+                            if pane::crowded(many, &rects, bounds.size) != crowded {
+                                cx.defer(move |cx| me.update(cx, |_, cx| cx.notify()));
+                            }
+                        },
+                        |_, _, _, _| (),
+                    )
+                    .absolute()
+                    .size_full(),
+                )
+                .child(panes);
             // The pane layout is saved as soon as it changes.
             let state = self.panes_state();
             if state != self.panes_saved {
@@ -220,14 +199,11 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &nav::ToggleFull, window, cx| this.toggle_full(window, cx)))
             // Panel separator: it follows the pointer as long as the button is held.
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
-                // The border between the two panes, likewise.
-                if this.pane_drag {
-                    let area = this.pane_box.get();
-                    if e.pressed_button == Some(MouseButton::Left) && area.size.width > px(0.) {
-                        let ratio = (e.position.x - area.left()) / area.size.width;
-                        this.pane_ratio = ratio.clamp(*PANE_RATIO.start(), *PANE_RATIO.end());
-                    } else {
-                        this.pane_drag = false;
+                // A border between panes, likewise.
+                if let Some((path, border)) = this.pane_drag.clone() {
+                    match e.pressed_button == Some(MouseButton::Left) {
+                        true => this.drag_border(&path, border, e.position),
+                        false => this.pane_drag = None,
                     }
                     cx.notify();
                 }
@@ -241,7 +217,7 @@ impl Render for Shell {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| {
-                    if std::mem::take(&mut this.pane_drag) {
+                    if this.pane_drag.take().is_some() {
                         cx.notify();
                     }
                     if this.nav.dragging {
@@ -259,9 +235,32 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
             .on_action(cx.listener(|this, _: &Today, window, cx| this.open_today(window, cx)))
             .on_action(cx.listener(|this, _: &SyncVault, window, cx| this.git_sync(window, cx)))
-            .on_action(cx.listener(|this, _: &SplitPane, window, cx| this.split(window, cx)))
-            .on_action(cx.listener(|this, _: &FocusLeft, window, cx| this.focus_group(0, window, cx)))
-            .on_action(cx.listener(|this, _: &FocusRight, window, cx| this.focus_group(1, window, cx)))
+            .on_action(cx.listener(|this, _: &SplitPane, window, cx| this.split(Side::Right, window, cx)))
+            .on_action(cx.listener(|this, _: &SplitDown, window, cx| this.split(Side::Down, window, cx)))
+            // Ctrl+1 and Ctrl+2: the first and second panes, in reading order.
+            .on_action(cx.listener(|this, _: &FocusLeft, window, cx| {
+                let first = this.layout.panes()[0];
+                this.focus_group(first, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FocusRight, window, cx| {
+                if let Some(&second) = this.layout.panes().get(1) {
+                    this.zoomed = None;
+                    this.focus_group(second, window, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &PaneLeft, window, cx| this.focus_side(Side::Left, window, cx)))
+            .on_action(cx.listener(|this, _: &PaneRight, window, cx| this.focus_side(Side::Right, window, cx)))
+            .on_action(cx.listener(|this, _: &PaneUp, window, cx| this.focus_side(Side::Up, window, cx)))
+            .on_action(cx.listener(|this, _: &PaneDown, window, cx| this.focus_side(Side::Down, window, cx)))
+            .on_action(cx.listener(|this, _: &TabToLeft, window, cx| this.tab_to_side(Side::Left, window, cx)))
+            .on_action(cx.listener(|this, _: &TabToRight, window, cx| this.tab_to_side(Side::Right, window, cx)))
+            .on_action(cx.listener(|this, _: &TabToUp, window, cx| this.tab_to_side(Side::Up, window, cx)))
+            .on_action(cx.listener(|this, _: &TabToDown, window, cx| this.tab_to_side(Side::Down, window, cx)))
+            .on_action(cx.listener(|this, _: &EvenPanes, _, cx| {
+                this.layout.even();
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &MaximizePane, _, cx| this.toggle_zoom(cx)))
             .on_action(cx.listener(|this, _: &ClosePane, window, cx| this.close_pane(window, cx)))
             .on_action(cx.listener(|this, _: &ReopenTab, window, cx| this.reopen_tab(window, cx)))
             .on_action(cx.listener(|this, _: &NextTab, window, cx| this.cycle_tab(true, window, cx)))
@@ -619,7 +618,7 @@ impl Shell {
 
     pub(super) fn render_pane(&mut self, pane: usize, group: usize, active: bool, client: bool, window: &mut Window, cx: &mut Context<Self>) -> (gpui::AnyElement, Option<gpui::AnyElement>) {
         let t = self.theme;
-        let two = self.groups.len() == 2;
+        let many = self.alone().is_none() && self.groups.len() > 1;
         // Its tab bar shows which pane is active; without one, a line across its top does.
         let barred = self.groups[group].tabs.len() > 1;
         // Copy of the whole note: a plain floating icon, outside the title bar.
@@ -703,7 +702,7 @@ impl Shell {
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });
         // A tab bar puts the note below the window buttons: its text no longer steps down for them.
-        let pill = (client && !barred).then(|| window.viewport_size().width - self.nav.left - px(8.) - t.px(PILL_W));
+        let pill = (client && !barred && group == self.corner_group()).then(|| window.viewport_size().width - self.nav.left - px(8.) - t.px(PILL_W));
         self.pane().editor.update(cx, |e, _| {
             e.corner = 1 + talk.is_some() as usize + boards as usize;
             e.bar_here = active;
@@ -909,9 +908,81 @@ impl Shell {
                 }
             }))
             .child(note)
-            // The active pane of two: a line across its top, in the full accent (3:1 at least on the page).
-            .when(two && active && !barred, |d| d.child(div().debug_selector(|| "pane-active".into()).absolute().top_0().left_0().right_0().h(t.px(3.)).bg(t.accent)))
+            // The active pane of several: a line across its top, in the full accent (3:1 at least on the page).
+            .when(many && active && !barred, |d| d.child(div().debug_selector(|| "pane-active".into()).absolute().top_0().left_0().right_0().h(t.px(3.)).bg(t.accent)))
             .children(tint);
         (area.into_any_element(), comments.map(IntoElement::into_any_element))
+    }
+
+    /// The panes of `node`, each area taken from `areas` (by pane), with a border to drag between
+    /// two neighbours. `path` is the node's place in the tree, as `Node::rect_of` reads it.
+    fn render_layout(&self, node: &Node, path: &mut Vec<usize>, areas: &mut [Option<gpui::AnyElement>], cx: &mut Context<Self>) -> gpui::AnyElement {
+        let t = self.theme;
+        let (axis, children) = match node {
+            Node::Pane(group) => return areas.get_mut(*group).and_then(Option::take).unwrap_or_else(|| div().into_any_element()),
+            Node::Split(axis, children) => (*axis, children),
+        };
+        let row = axis == layout::Axis::Row;
+        let mut split = div().size_full().min_w_0().min_h_0().flex().when(!row, |d| d.flex_col());
+        for (at, (share, child)) in children.iter().enumerate() {
+            if at > 0 {
+                let (here, border) = (path.clone(), at - 1);
+                let dragged = self.pane_drag.as_ref().is_some_and(|(p, b)| *p == here && *b == border);
+                let id = format!("pane-border-{}-{border}", here.iter().map(usize::to_string).collect::<Vec<_>>().join("."));
+                let line = div().bg(if dragged { t.accent } else { t.border }).group_hover("pane-border", |s| s.bg(t.accent));
+                split = split.child(
+                    div()
+                        .id(gpui::SharedString::from(id.clone()))
+                        .debug_selector(move || id.clone())
+                        .group("pane-border")
+                        .flex_none()
+                        .flex()
+                        .justify_center()
+                        .map(|d| match row {
+                            true => d.w(px(5.)).h_full().cursor(CursorStyle::ResizeLeftRight).child(line.w(px(1.)).h_full()),
+                            false => d.h(px(5.)).w_full().flex_col().cursor(CursorStyle::ResizeUpDown).child(line.h(px(1.)).w_full()),
+                        })
+                        // Held, it follows the pointer; a double click shares this split evenly.
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
+                                match e.click_count >= 2 {
+                                    true => {
+                                        if let Some(node) = this.layout.at_mut(&here) {
+                                            node.even();
+                                        }
+                                    }
+                                    false => this.pane_drag = Some((here.clone(), border)),
+                                }
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        ),
+                );
+            }
+            path.push(at);
+            let mut cell = div().flex_basis(px(0.)).min_w_0().min_h_0().flex().child(self.render_layout(child, path, areas, cx));
+            cell.style().flex_grow = Some(*share);
+            path.pop();
+            split = split.child(cell);
+        }
+        split.into_any_element()
+    }
+
+    /// Moves the border after child `border` of the split at `path` to the pointer, each side
+    /// keeping its minimum size.
+    pub(super) fn drag_border(&mut self, path: &[usize], border: usize, at: Point<Pixels>) {
+        let area = self.pane_box.get();
+        let Some(Node::Split(axis, _)) = self.layout.at(path) else { return };
+        let rect = self.layout.rect_of(path);
+        let (from, size, min) = match axis {
+            layout::Axis::Row => (area.left() + area.size.width * rect.x, area.size.width * rect.w, MIN_PANE),
+            layout::Axis::Column => (area.top() + area.size.height * rect.y, area.size.height * rect.h, MIN_PANE_H),
+        };
+        if size <= px(0.) {
+            return;
+        }
+        let pointer = if *axis == layout::Axis::Row { at.x } else { at.y };
+        self.layout.drag(path, border, (pointer - from) / size, min / size);
     }
 }

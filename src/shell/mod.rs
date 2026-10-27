@@ -37,7 +37,7 @@ use toasts::*;
 use crate::actions::*;
 use crate::ui::keys::{self, MOD};
 use crate::lang::{self, date_name, time_name, tr};
-use crate::logic::{self, commands, diagram, embed, history, import, markdown, prefs::Prefs, recall, table};
+use crate::logic::{self, commands, diagram, embed, history, import, layout::{self, Node, Side}, markdown, prefs::Prefs, recall, table};
 use crate::platform::{self, clock::{clock, today}, git, update, vault};
 use crate::ui::{self,
     assets::{Assets, FAMILIES, init_fonts, apply_fonts, logo, mono, sans},
@@ -94,10 +94,12 @@ struct Shell {
     closed: Vec<PathBuf>,
     /// The tab under the pointer: it shows its cross.
     tab_hover: Option<usize>,
-    /// Share of the width the left pane takes when there are two.
-    pane_ratio: f32,
-    /// The border between the two panes follows the pointer.
-    pane_drag: bool,
+    /// How the panes (`groups`, by index) are arranged: rows and columns with their shares.
+    layout: Node,
+    /// The border being dragged: the split (its path in `layout`) and the child it follows.
+    pane_drag: Option<(Vec<usize>, usize)>,
+    /// The pane on the whole window; the others keep what they hold, out of sight.
+    zoomed: Option<usize>,
     /// Space the panes take, recorded when they are drawn.
     pane_box: std::rc::Rc<std::cell::Cell<Bounds<Pixels>>>,
     /// While a file from the tree is dragged: the hovered pane, and whether it is its right
@@ -229,8 +231,9 @@ impl Shell {
             groups: vec![Group::of(0)],
             closed: Vec::new(),
             tab_hover: None,
-            pane_ratio: 0.5,
-            pane_drag: false,
+            layout: Node::default(),
+            pane_drag: None,
+            zoomed: None,
             pane_box: Default::default(),
             pane_aim: None,
             drop_aim: None,
@@ -286,9 +289,8 @@ impl Shell {
                 this.recent = recent.into_iter().filter(|p| p.is_file()).collect();
                 // The tabs of last time, those whose file is still there; the older formats left
                 // the first pane to the most recent note.
-                let (ratio, saved) = read_panes(&vault::load_file("panes"));
-                this.pane_ratio = ratio.unwrap_or(0.5);
-                this.restore_panes(saved, &root, window, cx);
+                let (tree, saved) = read_panes(&vault::load_file("panes"));
+                this.restore_panes(tree, saved, &root, window, cx);
                 this.panes_saved = this.panes_state();
                 if this.nav.panel == Panel::Full {
                     window.focus(&this.nav.focus);
