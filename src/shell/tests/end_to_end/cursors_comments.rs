@@ -100,7 +100,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let lay = |cx: &mut gpui::VisualTestContext, width: f32, mode: Mode, panel: Panel, list: f32| {
         cx.simulate_resize(size(px(width), px(600.)));
         shell.update(cx, |s, cx| {
-            (s.nav.mode, s.nav.panel, s.nav.list_w) = (mode, panel, px(list));
+            s.nav.show_alone(mode);
+            (s.nav.panel, s.nav.list_w) = (panel, px(list));
             cx.notify();
         });
         cx.run_until_parked();
@@ -133,7 +134,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     within(cx, "calendar", "nav-panel");
     cx.simulate_resize(whole);
     shell.update(cx, |s, cx| {
-        (s.nav.mode, s.nav.panel, s.nav.list_w) = before;
+        s.nav.show_alone(before.0);
+        (s.nav.panel, s.nav.list_w) = (before.1, before.2);
         cx.notify();
     });
     cx.run_until_parked();

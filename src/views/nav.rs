@@ -34,7 +34,7 @@ pub const NOTE_MIN: Pixels = px(200.);
 /// Handle between the panel and the note.
 pub const DIVIDER: Pixels = px(5.);
 
-#[derive(Clone, Copy, PartialEq, Hash, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub enum Mode {
     #[default]
     Tree,
@@ -75,16 +75,14 @@ impl Mode {
     }
 }
 
-/// What a dock shows, and where its list stands. The active dock's view lives in `Nav` itself,
-/// where every gesture of the panel finds it; the other dock's waits here (`Nav::swap_dock`).
+/// Where a tool's list stands. The active tool's view lives in `Nav` itself, where every gesture
+/// of the panel finds it; the others wait in `Nav::parked` (`Nav::activate`).
 #[derive(Default)]
 pub struct View {
     pub mode: Mode,
     pub rows: Vec<Row>,
     pub rows_from: u64,
     pub scroll: UniformListScrollHandle,
-    pub sel: Option<PathBuf>,
-    pub marked: HashSet<PathBuf>,
     pub reveal: bool,
 }
 
@@ -268,14 +266,19 @@ pub struct Nav {
     pub total: Pixels,
     /// Width reserved to the right of the note (the comments column): the panel leaves it free.
     pub aside: Pixels,
-    /// The other dock's view; `right_active`: the view in `Nav` is the right dock's.
-    pub parked: View,
-    pub right_active: bool,
-    /// The tools that live in the right dock (none at first), whether it is open, its width.
+    /// The views of the tools other than the active one (`mode`).
+    pub parked: HashMap<Mode, View>,
+    /// The tools shown in the left dock, top to bottom (one, as the panel always was, unless more
+    /// are stacked).
+    pub left_shown: Vec<Mode>,
+    /// The tools that live in the right dock (none at first), those shown there top to bottom,
+    /// and its width.
     pub right: Vec<Mode>,
-    pub right_open: bool,
+    pub right_shown: Vec<Mode>,
     pub right_w: Pixels,
     pub right_dragging: bool,
+    /// Tools stacked in a dock and folded down to their header.
+    pub folded: HashSet<Mode>,
 }
 
 impl Nav {
@@ -287,19 +290,34 @@ impl Nav {
         // Then, in any order, what an older file does not have: the right dock.
         let (positional, keyed): (Vec<&str>, Vec<&str>) = words.partition(|w| !w.contains('='));
         let key = |name: &str| keyed.iter().find_map(|w| w.strip_prefix(name)?.strip_prefix('='));
-        let mut right: Vec<Mode> = key("right").map(|list| list.split(',').filter_map(Mode::named).filter(|m| *m != mode).collect()).unwrap_or_default();
-        right.dedup();
-        let shown = key("show").and_then(Mode::named).filter(|m| right.contains(m));
+        let list = |name: &str| {
+            let mut tools: Vec<Mode> = Vec::new();
+            for tool in key(name).unwrap_or_default().split(',').filter_map(Mode::named) {
+                if !tools.contains(&tool) {
+                    tools.push(tool);
+                }
+            }
+            tools
+        };
+        // A tool on both sides stays on the left, where it always was.
+        let mut left_shown = list("left");
+        if !left_shown.contains(&mode) {
+            left_shown.insert(0, mode);
+        }
+        let right: Vec<Mode> = list("right").into_iter().filter(|m| !left_shown.contains(m)).collect();
+        let right_shown = list("show").into_iter().filter(|m| right.contains(m)).collect();
+        let folded = list("fold").into_iter().collect();
         let mut words = positional.into_iter();
         Self {
             focus,
             mode,
-            parked: View { mode: shown.or(right.first().copied()).unwrap_or_default(), ..View::default() },
-            right_active: false,
-            right_open: shown.is_some(),
+            parked: HashMap::new(),
+            left_shown,
             right_w: key("width").and_then(|w| w.parse().ok()).map_or(LIST_W, px),
             right,
+            right_shown,
             right_dragging: false,
+            folded,
             panel: match words.next() {
                 Some("split") => Panel::Split,
                 Some("full") => Panel::Full,
@@ -332,44 +350,57 @@ impl Nav {
             Panel::Full => "full",
         };
         let (list, graph) = (f32::from(self.list_w), f32::from(self.graph_w));
+        let names = |tools: &mut dyn Iterator<Item = &Mode>| tools.map(|m| m.name()).collect::<Vec<_>>().join(",");
         let mut line = format!("{} {panel} {list} {graph}", self.left_mode().name());
+        if self.left_shown.len() > 1 {
+            line += &format!(" left={}", names(&mut self.left_shown.iter()));
+        }
         if !self.right.is_empty() {
-            let right: Vec<&str> = self.right.iter().map(|m| m.name()).collect();
-            line += &format!(" right={} width={}", right.join(","), f32::from(self.right_w));
-            if self.right_open {
-                line += &format!(" show={}", self.right_mode().name());
+            line += &format!(" right={} width={}", names(&mut self.right.iter()), f32::from(self.right_w));
+            if !self.right_shown.is_empty() {
+                line += &format!(" show={}", names(&mut self.right_shown.iter()));
             }
+        }
+        if !self.folded.is_empty() {
+            let mut folded: Vec<&Mode> = self.folded.iter().collect();
+            folded.sort_by_key(|m| m.name());
+            line += &format!(" fold={}", names(&mut folded.into_iter()));
         }
         vault::save_layout(&format!("{line}\n"));
     }
 
-    /// The other dock's view comes into `Nav`, this one's goes to wait.
-    pub fn swap_dock(&mut self) {
-        let p = &mut self.parked;
-        std::mem::swap(&mut self.mode, &mut p.mode);
-        std::mem::swap(&mut self.rows, &mut p.rows);
-        std::mem::swap(&mut self.rows_from, &mut p.rows_from);
-        std::mem::swap(&mut self.scroll, &mut p.scroll);
-        std::mem::swap(&mut self.sel, &mut p.sel);
-        std::mem::swap(&mut self.marked, &mut p.marked);
-        std::mem::swap(&mut self.reveal, &mut p.reveal);
-        self.right_active = !self.right_active;
-    }
-
-    /// The view of the right dock (`true`) or the left one comes into `Nav`.
-    pub fn activate(&mut self, right: bool) {
-        if self.right_active != right {
-            self.swap_dock();
+    /// The tool's view comes into `Nav`, the active one's goes to wait.
+    pub fn activate(&mut self, mode: Mode) {
+        if self.mode == mode {
+            return;
         }
+        let mut view = self.parked.remove(&mode).unwrap_or_else(|| View { mode, ..View::default() });
+        std::mem::swap(&mut self.mode, &mut view.mode);
+        std::mem::swap(&mut self.rows, &mut view.rows);
+        std::mem::swap(&mut self.rows_from, &mut view.rows_from);
+        std::mem::swap(&mut self.scroll, &mut view.scroll);
+        std::mem::swap(&mut self.reveal, &mut view.reveal);
+        self.parked.insert(view.mode, view);
     }
 
-    /// The tool of each dock.
+    /// The tool alone in the left dock, its view in `Nav` (tests set the panel this way).
+    #[cfg(test)]
+    pub fn show_alone(&mut self, mode: Mode) {
+        self.activate(mode);
+        self.left_shown = vec![mode];
+    }
+
+    /// The first tool of the left dock: the panel's mode, as older files say it.
     pub fn left_mode(&self) -> Mode {
-        if self.right_active { self.parked.mode } else { self.mode }
+        self.left_shown.first().copied().unwrap_or(self.mode)
     }
 
-    pub fn right_mode(&self) -> Mode {
-        if self.right_active { self.mode } else { self.parked.mode }
+    /// The tool that sets the left dock's width: the graph alone takes its own.
+    pub fn width_mode(&self) -> Mode {
+        match self.left_shown.as_slice() {
+            [only] => *only,
+            _ => Mode::Tree,
+        }
     }
 
     /// Selects the note and expands the folders leading to it.
@@ -381,7 +412,7 @@ impl Nav {
 
     /// Width of the panel next to the note, in the shown mode.
     pub fn width(&mut self) -> &mut Pixels {
-        match self.mode {
+        match self.width_mode() {
             Mode::Graph => &mut self.graph_w,
             _ => &mut self.list_w,
         }

@@ -24,30 +24,21 @@ use crate::ui::assets::ICON_SET;
 use crate::views::nav::*;
 
 impl Shell {
-    /// Shows the panel in this mode and gives it focus. Asking again for the mode
-    /// shown collapses the panel (from the keyboard: only if it already has focus).
-    /// The tool is shown where it lives: its dock, or its tab.
+    /// Shows the tool where it lives (its dock, alone unless it is stacked there already, or its
+    /// tab) and gives it the keys. Asking again for a tool in sight hides it (from the keyboard:
+    /// only if it already has the keys); the last one of the left dock folds the panel.
     pub(super) fn show_nav(&mut self, mode: Mode, toggle: bool, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(tab) = self.tool_tab(mode) {
             return self.focus_pane(tab, window, cx);
         }
-        let shown = self.tool_shown(mode);
-        let right = self.nav.right.contains(&mode);
-        self.nav.activate(right);
-        if shown && (toggle || self.nav.focus.contains_focused(window, cx)) {
-            match right {
-                true => self.nav.right_open = false,
-                false => self.nav.panel = Panel::Rail,
-            }
-            if right || self.nav.focus.contains_focused(window, cx) {
-                window.focus(&self.pane().editor.focus_handle(cx));
-            }
-        } else {
-            self.put_tool(mode);
-            self.nav.reveal = true;
-            window.focus(&self.nav.focus);
-            self.refresh_graph(cx);
+        let keys = self.nav.focus.contains_focused(window, cx) && self.nav.mode == mode;
+        if self.tool_shown(mode) && (toggle || keys) {
+            return self.hide_tool(mode, window, cx);
         }
+        self.put_tool(mode);
+        self.nav.reveal = true;
+        window.focus(&self.nav.focus);
+        self.refresh_graph(cx);
         self.settle_nav(window, cx);
     }
 
@@ -96,8 +87,8 @@ impl Shell {
     pub(super) fn split_width(&self) -> Pixels {
         let room = self.nav.total - self.theme.px(RAIL) - DIVIDER - self.nav.aside;
         // The month can no longer be read below 170 px: its days touch.
-        let mode = self.nav.left_mode();
-        let floor = px(if mode == Mode::Calendar { 170. } else { 120. });
+        let mode = self.nav.width_mode();
+        let floor = px(if self.dock_tools(false).contains(&Mode::Calendar) { 170. } else { 120. });
         match if mode == Mode::Graph { self.nav.graph_w } else { self.nav.list_w } {
             w if w == px(0.) => room / 2.,
             w => w.min(room - NOTE_MIN).max(floor),
@@ -717,19 +708,22 @@ impl Shell {
             .collect()
     }
 
-    /// Rail, then panel and separator if they are expanded.
-    /// The rail and the left dock. The left dock's view is brought into `Nav` to draw it.
+    /// The rail, then the left dock and its separator if it is open.
     pub(super) fn render_nav(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
-        let right = self.nav.right_active;
-        self.nav.activate(false);
+        // The keys stay with a tool in sight: the active one hidden, the first one shown takes them.
+        if !self.docked_now(self.nav.mode)
+            && let Some(first) = self.dock_tools(false).into_iter().filter(|_| self.left_open()).chain(self.dock_tools(true).into_iter().filter(|_| self.right_open())).next()
+        {
+            self.nav.activate(first);
+        }
         let panel = self.nav.panel;
         let unfolded = self.left_open();
         // A tool's tab is no note: the backlinks stay on the last one.
         if !self.pane().preview && self.pane().tool.is_none() {
             self.nav.anchor = self.pane().path.clone();
         }
-        let (current, selected) = (self.pane().path.clone(), if right { self.nav.parked.sel.clone() } else { self.nav.sel.clone() });
+        let (current, selected) = (self.pane().path.clone(), self.nav.sel.clone());
         self.graph.update(cx, |graph, _| graph.sync(t, current.as_deref(), selected.as_deref()));
 
         let travel = |id: &'static str, icon: &'static str, on: bool| {
@@ -746,10 +740,15 @@ impl Shell {
                 .child(svg().path(icon).size(t.px(14.)).flex_none().text_color(t.soft).when(!on, |s| s.opacity(0.35)))
         };
         let shown: Vec<Mode> = Mode::ALL.into_iter().filter(|m| self.tool_shown(*m)).collect();
-        let mode_button = |id, icon, m: Mode, label: &'static str, keys: String| {
+        let mode_button = |id: &'static str, icon, m: Mode, label: &'static str, keys: String| {
             button(id, icon, shown.contains(&m), t)
+                .debug_selector(move || id.to_string())
                 .tooltip(tip(label, keys, t))
-                .on_click(cx.listener(move |this, _, window, cx| this.show_nav(m, true, window, cx)))
+                // Shift+click: with the others of its dock, one above the other.
+                .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| match e.modifiers().shift {
+                    true => this.stack_tool(m, window, cx),
+                    false => this.show_nav(m, true, window, cx),
+                }))
         };
         let keys = |action: &dyn Action| crate::ui::keys::of(cx, action);
         let rail = div()
@@ -856,13 +855,32 @@ impl Shell {
             );
 
         let wrapper = div().h_full().flex().min_w_0();
+        // A header dragged from the right dock: the rail of a folded panel takes it.
+        let rail = rail
+            .on_drag_move(cx.listener(|this, e: &gpui::DragMoveEvent<docks::ToolDragged>, _, cx| {
+                this.tool_drag = true;
+                if !this.left_open() {
+                    let inside = e.bounds.contains(&e.event.position);
+                    match inside {
+                        true => this.aim_tool(Some((false, 0)), cx),
+                        false if this.tool_aim == Some((false, 0)) => this.aim_tool(None, cx),
+                        false => {}
+                    }
+                }
+            }))
+            .when(!unfolded, |d| {
+                d.on_drop(cx.listener(|this, dragged: &docks::ToolDragged, window, cx| {
+                    if this.tool_aim.take() == Some((false, 0)) {
+                        this.place_tool(dragged.mode, false, 0, window, cx);
+                    }
+                }))
+                .when(self.tool_aim == Some((false, 0)), |d| d.bg(t.accent.opacity(0.12)))
+            });
         if !unfolded {
-            self.nav.activate(right);
             return wrapper.flex_none().child(rail);
         }
         let full = panel == Panel::Full;
-        let content = self.render_dock(window, cx);
-        self.nav.activate(right);
+        let content = self.render_stack(false, window, cx);
         // 5 px handle around a 1 px stroke; double-click: original width.
         let divider = div()
             .id("nav-divider")
@@ -883,9 +901,8 @@ impl Shell {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, e: &MouseDownEvent, window, cx| {
-                    this.nav.activate(false);
                     if e.click_count >= 2 {
-                        *this.nav.width() = if this.nav.mode == Mode::Graph { px(0.) } else { LIST_W };
+                        *this.nav.width() = if this.nav.width_mode() == Mode::Graph { px(0.) } else { LIST_W };
                         this.nav.panel = Panel::Split;
                         this.settle_nav(window, cx);
                     } else {
@@ -901,17 +918,41 @@ impl Shell {
             .child(divider)
     }
 
-    /// The right dock, if it is open and the window leaves the note its room: its view is
-    /// brought into `Nav` to draw it, and a press in it makes it the active one.
-    pub(super) fn render_right_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Div> {
-        if !self.right_open() || self.right_width() <= px(0.) {
-            return None;
-        }
+    /// The right dock, if it is open and the window leaves the note its room; while a tool's
+    /// header is dragged and it is closed, a strip on the right edge to drop it there.
+    pub(super) fn render_right_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let t = self.theme;
-        let left = !self.nav.right_active;
-        self.nav.activate(true);
-        let content = self.render_dock(window, cx);
-        self.nav.activate(!left);
+        if !self.right_open() || self.right_width() <= px(0.) {
+            if !self.tool_drag || self.nav.panel == Panel::Full {
+                return None;
+            }
+            let aimed = self.tool_aim == Some((true, 0));
+            return Some(
+                div()
+                    .id("dock-right-drop")
+                    .debug_selector(|| "dock-right-drop".into())
+                    .flex_none()
+                    .w(t.px(48.))
+                    .h_full()
+                    .border_l_1()
+                    .border_color(if aimed { t.accent } else { t.border })
+                    .bg(if aimed { t.accent.opacity(0.12) } else { t.panel })
+                    .on_drag_move(cx.listener(|this, e: &gpui::DragMoveEvent<docks::ToolDragged>, _, cx| {
+                        match e.bounds.contains(&e.event.position) {
+                            true => this.aim_tool(Some((true, 0)), cx),
+                            false if this.tool_aim == Some((true, 0)) => this.aim_tool(None, cx),
+                            false => {}
+                        }
+                    }))
+                    .on_drop(cx.listener(|this, dragged: &docks::ToolDragged, window, cx| {
+                        if this.tool_aim.take() == Some((true, 0)) {
+                            this.place_tool(dragged.mode, true, 0, window, cx);
+                        }
+                    }))
+                    .into_any_element(),
+            );
+        }
+        let content = self.render_stack(true, window, cx);
         let divider = div()
             .id("dock-divider")
             .flex_none()
@@ -934,14 +975,71 @@ impl Shell {
                     cx.stop_propagation();
                 }),
             );
-        Some(div().h_full().flex().flex_none().child(divider).child(content))
+        Some(div().h_full().flex().flex_none().child(divider).child(content).into_any_element())
     }
 
-    /// Header and content of the dock whose view is in `Nav`.
-    fn render_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
+    /// The tool is drawn in a dock this frame.
+    fn docked_now(&self, mode: Mode) -> bool {
+        self.left_open() && self.dock_tools(false).contains(&mode) || self.right_open() && self.right_width() > px(0.) && self.dock_tools(true).contains(&mode)
+    }
+
+    /// A dock: its tools one above the other, each under its header, the folded ones reduced to it;
+    /// a header dragged over it shows by a line where it would land.
+    fn render_stack(&mut self, right: bool, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
-        let right = self.nav.right_active;
+        let tools = self.dock_tools(right);
+        let (count, stacked) = (tools.len(), tools.len() > 1);
+        let active = self.nav.mode;
+        let aim = self.tool_aim.filter(|(r, _)| *r == right).map(|(_, at)| at);
+        let full = !right && self.nav.panel == Panel::Full;
+        let width = if right { self.right_width() } else { self.split_width() };
+        let line = move || div().debug_selector(|| "tool-aim".into()).absolute().left_0().right_0().h(t.px(2.)).bg(t.accent);
+        let mut sections = Vec::new();
+        for (at, mode) in tools.into_iter().enumerate() {
+            self.nav.activate(mode);
+            let section = self.render_dock(right, stacked, mode == active, window, cx)
+                .when(aim == Some(at), |d| d.child(line().top_0()))
+                .when(aim == Some(count) && at + 1 == count, |d| d.child(line().bottom_0()))
+                .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<docks::ToolDragged>, _, cx| {
+                    let p = e.event.position;
+                    if e.bounds.contains(&p) {
+                        this.aim_tool(Some((right, at + usize::from(p.y > e.bounds.center().y))), cx);
+                    }
+                }));
+            sections.push(section);
+        }
+        self.nav.activate(active);
+        div()
+            .debug_selector(move || if right { "dock-right".into() } else { "nav-panel".into() })
+            .id(if right { "dock-right" } else { "nav-panel" })
+            .h_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .map(|d| if full { d.flex_1() } else { d.flex_none().w(width) })
+            .children(sections)
+            .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<docks::ToolDragged>, _, cx| {
+                this.tool_drag = true;
+                let mine = this.tool_aim.is_some_and(|(r, _)| r == right);
+                match e.bounds.contains(&e.event.position) {
+                    true if !mine => this.aim_tool(Some((right, count)), cx),
+                    false if mine => this.aim_tool(None, cx),
+                    _ => {}
+                }
+            }))
+            .on_drop(cx.listener(move |this, dragged: &docks::ToolDragged, window, cx| {
+                if let Some((_, at)) = this.tool_aim.take().filter(|(r, _)| *r == right) {
+                    this.place_tool(dragged.mode, right, at, window, cx);
+                }
+            }))
+    }
+
+    /// Header and content of the tool whose view is in `Nav`, in the right dock or the left one;
+    /// `stacked` with others, `keys`: the one that takes the keys of the panel.
+    fn render_dock(&mut self, right: bool, stacked: bool, keys_here: bool, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
+        let t = self.theme;
         let (mode, panel) = (self.nav.mode, self.nav.panel);
+        let shut = stacked && self.nav.folded.contains(&mode);
         let keys = |action: &dyn Action| crate::ui::keys::of(cx, action);
         let source = self.rows_source();
         if source != self.nav.rows_from {
@@ -954,6 +1052,8 @@ impl Shell {
             self.nav.scroll.scroll_to_item(ix, ScrollStrategy::Center);
         }
         let full = !right && panel == Panel::Full;
+        // Under the window buttons: the top tool of the right dock, or of the left one on the whole window.
+        let first = self.dock_tools(right).first() == Some(&mode);
         let folded = self.all_folded();
         let title = match (mode, &self.vault) {
             (Mode::Tree, Some(root)) => vault::stem(root),
@@ -972,14 +1072,28 @@ impl Shell {
             .h(t.px(44.))
             .pl_2()
             // Over the whole window, the window buttons float over the right end of the header.
-            .pr(if (full || right) && !self.nav.native_bar { t.px(super::render::PILL_ROOM) } else { t.px(4.) })
+            .pr(if (full || right) && first && !self.nav.native_bar { t.px(super::render::PILL_ROOM) } else { t.px(4.) })
             // A narrow panel at a large scale: its buttons are cut at its edge, never drawn over the note
             // (they are in the palette too).
             .overflow_hidden()
             .flex()
             .items_center()
+            .when(stacked, |d| d.border_t_1().border_color(t.border))
+            // Stacked, a tool folds down to its header.
+            .when(stacked, |d| {
+                d.child(
+                    button(("tool-fold", mode as usize), if shut { "chevron-right.svg" } else { "chevron-down.svg" }, false, t)
+                        .debug_selector(move || format!("tool-fold-{}", mode.name()))
+                        .tooltip(tip(if shut { tr("Unfold", "Déplier") } else { tr("Fold", "Replier") }, String::new(), t))
+                        .on_click(cx.listener(move |this, _, _, cx| this.fold_tool(mode, cx))),
+                )
+            })
+            // The title is the handle: dragged, the tool goes to the other dock or another place in
+            // its stack. On the whole window it moves the window, as a title bar does.
             .child(
                 div()
+                    .id(("tool-title", mode as usize))
+                    .debug_selector(move || format!("tool-title-{}", mode.name()))
                     .flex_1()
                     .h_full()
                     .flex()
@@ -987,8 +1101,11 @@ impl Shell {
                     .truncate()
                     .text_size(t.px(12.))
                     .text_color(t.soft)
-                    .when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window))
-                    .child(title),
+                    .map(|d| match full {
+                        true => d.when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window)),
+                        false => d.cursor_grab().on_drag(docks::ToolDragged { mode, name: title.clone(), theme: t }, |dragged, _, _, cx| cx.new(|_| dragged.clone())),
+                    })
+                    .child(title.clone()),
             )
             .when(mode == Mode::Graph, |d| {
                 d.child(button("nav-center", "target.svg", false, t).tooltip(tip(tr("Show the whole graph", "Voir tout le graphe"), String::new(), t)).on_click(cx.listener(
@@ -1019,7 +1136,7 @@ impl Shell {
                         .debug_selector(move || if right { "dock-tab-right".into() } else { "dock-tab".into() })
                         .tooltip(tip(tr("Open as a tab", "Ouvrir dans un onglet"), keys(&crate::actions::ToolAsTab), t))
                         .on_click(cx.listener(move |this, _, window, cx| {
-                            this.nav.activate(right);
+                            this.nav.activate(mode);
                             this.tool_as_tab(window, cx)
                         })),
                 )
@@ -1029,11 +1146,19 @@ impl Shell {
                     .debug_selector(move || if right { "dock-move-right".into() } else { "dock-move".into() })
                     .tooltip(tip(if right { tr("Move to the left dock", "Déplacer dans le dock de gauche") } else { tr("Move to the right dock", "Déplacer dans le dock de droite") }, keys(&crate::actions::MoveTool), t))
                     .on_click(cx.listener(move |this, _, window, cx| {
-                        this.nav.activate(right);
+                        this.nav.activate(mode);
                         this.move_tool(window, cx)
                     })),
             ))
-            .when(!right, |d| {
+            .when(stacked, |d| {
+                d.child(
+                    button(("tool-close", mode as usize), "close.svg", false, t)
+                        .debug_selector(move || format!("tool-close-{}", mode.name()))
+                        .tooltip(tip(tr("Hide", "Masquer"), String::new(), t))
+                        .on_click(cx.listener(move |this, _, window, cx| this.hide_tool(mode, window, cx))),
+                )
+            })
+            .when(!right && first, |d| {
                 d.child(
                     button("nav-full", if full { "shrink.svg" } else { "expand.svg" }, false, t)
                         .debug_selector(|| "nav-full".into())
@@ -1091,13 +1216,13 @@ impl Shell {
         self.nav.sel_at.set(None);
         // The rows are drawn later, at layout: they bring their dock's view back for that time.
         let rows = cx.processor(move |this, range, window, cx| {
-            let was = this.nav.right_active;
-            this.nav.activate(right);
+            let was = this.nav.mode;
+            this.nav.activate(mode);
             let rows = this.render_rows(range, window, cx);
             this.nav.activate(was);
             rows
         });
-        let list = uniform_list(if right { "nav-rows-right" } else { "nav-rows" }, self.nav.rows.len(), rows)
+        let list = uniform_list(("nav-rows", mode as usize), self.nav.rows.len(), rows)
             .track_scroll(self.nav.scroll.clone())
             .flex_1()
             .min_h_0()
@@ -1130,25 +1255,26 @@ impl Shell {
                     }),
                 )
             });
-        let width = if right { self.right_width() } else { self.split_width() };
-        let active = self.nav.right_active == right;
         div()
-            .debug_selector(move || if right { "dock-right".into() } else { "nav-panel".into() })
-            .id(if right { "dock-right" } else { "nav-panel" })
-            .h_full()
+            .id(("tool", mode as usize))
+            .debug_selector(move || format!("tool-{}", mode.name()))
+            .relative()
+            .w_full()
             .min_w_0()
+            .min_h_0()
             .flex()
             .flex_col()
-            .map(|d| if full { d.flex_1() } else { d.flex_none().w(width) })
-            // A press in a dock brings its view into `Nav` before any of its gestures read it.
+            // Its share of the dock's height, or its header alone when folded.
+            .map(|d| if shut { d.flex_none() } else { d.flex_1().flex_basis(px(0.)) })
+            // A press in a tool brings its view into `Nav` before any of its gestures read it.
             .capture_any_mouse_down(cx.listener(move |this, _, _, cx| {
-                if this.nav.right_active != right {
-                    this.nav.activate(right);
+                if this.nav.mode != mode {
+                    this.nav.activate(mode);
                     cx.notify();
                 }
             }))
             .key_context("Nav")
-            .when(active, |d| d.track_focus(&self.nav.focus))
+            .when(keys_here, |d| d.track_focus(&self.nav.focus))
             .on_action(cx.listener(|this, _: &Prev, window, cx| this.nav_step(false, window, cx)))
             .on_action(cx.listener(|this, _: &Next, window, cx| this.nav_step(true, window, cx)))
             .on_action(cx.listener(|this, _: &Fold, window, cx| this.nav_fold(false, window, cx)))
@@ -1189,6 +1315,7 @@ impl Shell {
             }))
             .child(header)
             .map(|d| match mode {
+                _ if shut => d,
                 Mode::Graph => d.child(div().flex_1().min_h_0().child(self.graph.clone())),
                 Mode::Calendar => d.child(self.render_calendar(cx)),
                 Mode::Search => d.child(self.render_vault_find(window, cx)),

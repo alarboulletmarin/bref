@@ -42,7 +42,7 @@ each, all `impl Shell`:
 | `library.rs` | the vault: choosing, scanning, watching, icons, backup, trash |
 | `sync.rs` | git sync and cloning |
 | `sidebar.rs`, `files.rs`, `menu.rs`, `listing.rs` | the side panel, file operations, the context menu, list pages |
-| `docks.rs` | where each view of the panel lives: the left dock, the right dock, or a tab (`Pane::tool`). The active dock's view is in `Nav`, the other's waits in `Nav::parked`; drawing a dock, its rows, or a press in it swaps that dock's view in (`Nav::activate`) |
+| `docks.rs` | where each view of the panel lives: the left dock, the right dock, or a tab (`Pane::tool`). Each dock stacks its shown views (`Nav::left_shown`, `Nav::right_shown`, `Nav::folded`); each view has its own rows and scroll: the active one is in `Nav`, the others wait in `Nav::parked`, and drawing a section, its rows, or a press in it swaps its view in (`Nav::activate`). A header dragged (`ToolDragged`) lands with `place_tool` |
 | `palette_open.rs` | every way the palette opens: notes, commands, outline, questions |
 | `help.rs`, `keymap.rs` | the help panel; the default shortcuts and their sections |
 | `travel.rs` | back and forward |

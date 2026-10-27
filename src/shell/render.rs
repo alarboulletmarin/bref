@@ -40,7 +40,7 @@ impl Render for Shell {
         #[cfg(not(test))]
         let dragging = cx.has_active_drag();
         if !dragging {
-            (self.pane_aim, self.tab_aim) = (None, None);
+            (self.pane_aim, self.tab_aim, self.tool_aim, self.tool_drag) = (None, None, None, false);
             // The drag is over (dropped, or out of the window): no more label or line.
             if self.drop_aim.is_some() {
                 self.aim_drop(None, cx);
@@ -138,9 +138,11 @@ impl Render for Shell {
             }
             let toasts = self.render_toasts(cx);
             let toasts = div().absolute().bottom(px(54.)).left_4().right_4().flex().flex_col().items_end().gap_2().children(toasts);
+            // The left dock first: it settles which tool takes the keys.
+            let docks = self.render_nav(window, cx);
             let docked = self.render_right_dock(window, cx);
             body.flex()
-                .child(self.render_nav(window, cx))
+                .child(docks)
                 .when(self.nav.panel != Panel::Full, |d| d.child(note).children(comments).children(docked))
                 .children(self.palette.clone())
                 .child(toasts)

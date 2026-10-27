@@ -115,7 +115,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(shell.read_with(cx, |s, _| s.palette.is_some()));
     cx.simulate_keystrokes("escape");
     shell.update(cx, |s, cx| {
-        (s.nav.mode, s.nav.panel) = (mode, panel);
+        s.nav.show_alone(mode);
+        s.nav.panel = panel;
         cx.notify();
     });
     cx.run_until_parked();

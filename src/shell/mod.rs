@@ -107,6 +107,10 @@ struct Shell {
     pane_aim: Option<(usize, Zone)>,
     /// While a tab is dragged over a tab bar: that pane, and the place it would take.
     tab_aim: Option<(usize, usize)>,
+    /// While a tool's header is dragged: the dock and the place it would take, and whether a
+    /// header is being dragged at all (an empty right dock then offers a place to drop it).
+    tool_aim: Option<docks::ToolAim>,
+    tool_drag: bool,
     /// System files hover over the window: where they would go.
     drop_aim: Option<DropAim>,
     /// Test: the attachments the system was asked to open.
@@ -239,6 +243,8 @@ impl Shell {
             pane_box: Default::default(),
             pane_aim: None,
             tab_aim: None,
+            tool_aim: None,
+            tool_drag: false,
             drop_aim: None,
             #[cfg(test)]
             opened: Vec::new(),
@@ -309,7 +315,7 @@ impl Shell {
             if event.keystroke.key == "escape" && cx.has_active_drag() {
                 cx.stop_active_drag(window);
                 let _ = weak.update(cx, |this, cx| {
-                    (this.pane_aim, this.tab_aim) = (None, None);
+                    (this.pane_aim, this.tab_aim, this.tool_aim, this.tool_drag) = (None, None, None, false);
                     cx.notify();
                 });
                 return cx.stop_propagation();

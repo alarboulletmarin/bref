@@ -1084,7 +1084,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         let before: std::collections::HashSet<_> = fs::read_dir(&root).unwrap().flatten().map(|e| e.path()).collect();
         shell.update_in(cx, |s, window, cx| {
             s.nav.sel = Some(drawing.clone());
-            s.nav.mode = crate::views::nav::Mode::Tree;
+            s.nav.show_alone(crate::views::nav::Mode::Tree);
             s.nav.panel = crate::views::nav::Panel::Split;
             s.new_diagram(window, cx);
         });

@@ -430,7 +430,7 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
     let top = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).top_margin());
     // The panel on the whole window: its four buttons end where the window buttons begin, from a phone width to a very wide window.
     shell.update(cx, |s, cx| {
-        s.nav.mode = nav::Mode::Tree;
+        s.nav.show_alone(nav::Mode::Tree);
         s.nav.panel = nav::Panel::Full;
         cx.notify();
     });

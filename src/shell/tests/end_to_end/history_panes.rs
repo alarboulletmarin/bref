@@ -174,7 +174,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(shell.read_with(cx, |s, _| s.pane_showing(&shelf.join("Pane A.md")).is_some() && s.pane_showing(&pane("A")).is_none()));
         // Dragging a note from the tree onto a pane opens it there; the targeted half is tinted.
     shell.update(cx, |s, cx| {
-        (s.nav.mode, s.nav.panel) = (nav::Mode::Tree, nav::Panel::Split);
+        s.nav.show_alone(nav::Mode::Tree);
+        s.nav.panel = nav::Panel::Split;
         cx.notify();
     });
     cx.run_until_parked();

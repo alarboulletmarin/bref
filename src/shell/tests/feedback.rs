@@ -246,7 +246,7 @@ fn an_empty_panel_says_so(cx: &mut TestAppContext) {
         cx.simulate_resize(size(px(width), px(640.)));
         for mode in [nav::Mode::Tree, nav::Mode::Recent, nav::Mode::Tags, nav::Mode::Links] {
             shell.update(cx, |s, cx| {
-                s.nav.mode = mode;
+                s.nav.show_alone(mode);
                 cx.notify();
             });
             settle(cx);
@@ -276,7 +276,7 @@ fn a_panel_with_notes_says_nothing(cx: &mut TestAppContext) {
     });
     shell.update(cx, |s, cx| {
         s.nav.panel = nav::Panel::Split;
-        s.nav.mode = nav::Mode::Tree;
+        s.nav.show_alone(nav::Mode::Tree);
         cx.notify();
     });
     settle(cx);

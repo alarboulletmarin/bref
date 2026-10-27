@@ -212,7 +212,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     assert_eq!(shell.read_with(cx, |s, _| s.nav.day), (2026, 9, 30));
     assert_eq!(text(cx), "# 2026-09-30\n\n");
     shell.update(cx, |s, cx| {
-        (s.nav.mode, s.nav.panel) = (before.1, before.2);
+        s.nav.show_alone(before.1);
+        s.nav.panel = before.2;
         s.open_note(before.0.as_ref().unwrap(), cx);
     });
     // Once left, the daily note is saved like any note that has a title.
