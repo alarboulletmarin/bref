@@ -502,6 +502,18 @@ impl Shell {
         )
     }
 
+    /// The width the rows of the panel's list have: the dock it is in, the whole window when it is alone.
+    fn list_room(&self) -> Pixels {
+        let (right, alone) = (self.dock_tools(true).contains(&self.nav.mode), self.nav.panel == Panel::Full);
+        let width = match (right, alone) {
+            (true, _) => self.right_width(),
+            (_, true) => self.nav.total - self.theme.px(RAIL),
+            _ => self.split_width(),
+        };
+        // The list's own margin (`px_1`) on both sides.
+        width - px(8.)
+    }
+
     pub(super) fn render_rows(
         &mut self,
         range: Range<usize>,
@@ -514,6 +526,7 @@ impl Shell {
         let marked = &self.nav.marked;
         // Dragging a row of the multiple selection carries the whole batch.
         let lot = marked.iter().next().map(|any| self.targets(any)).unwrap_or_default();
+        let room = self.list_room();
         range
             .filter_map(|ix| {
                 let row = self.nav.rows.get(ix)?;
@@ -567,6 +580,28 @@ impl Shell {
                     Some(false) => "chevron-right.svg",
                     None => "",
                 };
+                // Name and detail share the row by measure: a text is cut with an ellipsis only when it
+                // is given its width, so the shares are worked out here.
+                let shown = {
+                    let used = 8. + 14. * row.depth as f32 + 8. + 8.;
+                    let has_icon = tree || self.icons.contains_key(&row.path);
+                    let fixed = t.px(used + if foldable { 18. } else { 0. } + if has_icon { 20. } else { 0. }) ;
+                    let avail = f32::from(room - fixed);
+                    let measure = |text: &str, size: f32| -> f32 {
+                        if text.is_empty() {
+                            return 0.;
+                        }
+                        let run = gpui::TextRun { len: text.len(), font: gpui::font(crate::ui::assets::sans()), color: t.text, background_color: None, underline: None, strikethrough: None };
+                        let line = window.text_system().shape_line(gpui::SharedString::from(text.to_string()), t.px(size), &[run], None);
+                        f32::from(line.width).ceil() + 1.
+                    };
+                    let (name_w, detail_w) = (measure(&row.name, 13.), measure(&detail, 11.5));
+                    let (name_room, detail_room) = nav::share(avail, name_w, detail_w, f32::from(t.px(4.)), f32::from(t.px(nav::DETAIL_MIN)));
+                    (
+                        nav::ellipsize(&row.name, name_room, |s| measure(s, 13.)),
+                        nav::ellipsize(&detail, detail_room, |s| measure(s, 11.5)),
+                    )
+                };
                 let line = div()
                     .size_full()
                     .pr_2()
@@ -588,23 +623,36 @@ impl Shell {
                                 d.child(svg().path(chevron).size(t.px(14.)).text_color(if selected { t.text } else { t.soft }))
                             }))
                         })
-                        .children(self.icons.get(&row.path).and_then(|name| ICON_SET.iter().find(|(file, _)| file[2..file.len() - 4] == *name)).map(
-                            |(file, _)| svg().path(*file).size(t.px(14.)).flex_none().text_color(if current { t.accent } else { t.text }),
-                        ))
+                        // What the row is, in one 16 px column for every row so the names line up: the icon
+                        // the user gave it (a star is the accent's), else, in the tree, the one of its kind.
+                        .children({
+                            let given = self.icons.get(&row.path).and_then(|name| ICON_SET.iter().find(|(file, _)| file[2..file.len() - 4] == *name));
+                            let (file, tint) = match given {
+                                Some((file, _)) => (*file, if *file == "i-star.svg" || current { t.accent } else { t.text }),
+                                None => (row.icon(), if current { t.accent } else { t.soft }),
+                            };
+                            let selector = format!("nav-icon-{}", row.name);
+                            (given.is_some() || tree).then(|| svg().debug_selector(move || selector.clone()).path(file).size(t.px(16.)).flex_none().text_color(tint))
+                        })
                         .child(
                             div()
-                                .truncate()
+                                .debug_selector({
+                                    let name = format!("nav-name-{}", row.name);
+                                    move || name.clone()
+                                })
+                                .overflow_hidden()
                                 // The name goes first, in full as long as it fits; the link's line, or the
                                 // reason a folder cannot be read, takes what is left.
                                 .map(|d| match (closed.is_some(), wide) {
                                     // The reason a folder cannot be read is said in full; its name gives way.
-                                    (true, _) => d.flex_1().min_w(t.px(40.)),
-                                    (_, true) => d.flex_none().max_w(gpui::relative(0.7)),
-                                    _ => d.flex_1(),
+                                    (true, _) => d.flex_1().min_w(t.px(40.)).truncate(),
+                                    (_, true) => d.flex_none().max_w(gpui::relative(0.7)).truncate(),
+                                    _ => d.flex_none().whitespace_nowrap().child(shown.0.clone()),
                                 })
                                 .when(current, |d| d.text_color(t.accent))
-                                .child(row.name.clone()),
+                                .when(wide, |d| d.child(row.name.clone())),
                         )
+                        .when(!wide, |d| d.child(div().flex_1().min_w_0()))
                         .child(
                             div()
                                 .debug_selector({
@@ -613,14 +661,14 @@ impl Shell {
                                 })
                                 .map(|d| match (closed.is_some(), wide) {
                                     // ponytail: in a panel too narrow for it, the reason is cut last, in full in the row's tooltip.
-                                    (true, _) => d.flex_initial().min_w_0(),
-                                    (_, true) => d.flex_1().min_w_0(),
-                                    _ => d.flex_none().max_w(t.px(110.)),
+                                    (true, _) => d.flex_initial().min_w_0().truncate(),
+                                    (_, true) => d.flex_1().min_w_0().truncate(),
+                                    // At the right, in the width the name leaves it (none: hidden).
+                                    _ => d.flex_none().whitespace_nowrap(),
                                 })
-                                .truncate()
                                 .text_size(t.px(11.5))
                                 .text_color(if selected { t.text } else { t.soft })
-                                .child(detail),
+                                .child(if wide { detail.clone() } else { shown.1.clone() }),
                         );
                 let (path, name) = (row.path.clone(), row.name.clone());
                 // Dropping on a note files into that note's folder.

@@ -441,13 +441,14 @@ impl Shell {
             .debug_selector(|| "vault-chevron".into())
             .tooltip(ui::widgets::tip(tr("Replace", "Remplacer"), keys(&FindReplace), t))
             .on_click(cx.listener(|this, _, window, cx| this.vault_flip_replace(window, cx)));
+        // The field has its own line, the panel's full width; the chevron and the settings are under it.
+        let query = div().flex().child(field("vault-query", &find.query, tr("Search the vault", "Chercher dans le coffre")));
         let first = div()
             .flex()
             .flex_wrap()
             .items_center()
             .gap_1()
             .child(chevron)
-            .child(field("vault-query", &find.query, tr("Search the vault", "Chercher dans le coffre")))
             .child(ui::widgets::toggle("vault-case", "Aa", find.case, tr("Match case", "Respecter la casse"), keys(&FindCase), t).on_click(flip(0)))
             .child(ui::widgets::toggle("vault-word", "\u{201c}ab\u{201d}", find.word, tr("Whole words", "Mots entiers"), keys(&FindWord), t).on_click(flip(1)))
             .child(ui::widgets::toggle("vault-regex", ".*", find.regex, tr("Regular expression", "Expression régulière"), keys(&FindRegex), t).on_click(flip(2)));
@@ -457,7 +458,6 @@ impl Shell {
                 .flex_wrap()
                 .items_center()
                 .gap_1()
-                .child(div().flex_none().w(t.px(28.)))
                 .child(field("vault-with", &find.with, tr("Replace with", "Remplacer par")))
                 .child(
                     ui::widgets::button("vault-replace-all", "replace-all.svg", false, t)
@@ -476,6 +476,7 @@ impl Shell {
             .gap_1p5()
             .text_size(t.px(13.))
             .text_color(t.text)
+            .child(query)
             .child(first)
             .children(second)
             .child(div().debug_selector(|| "vault-count".into()).px_1().text_size(t.px(12.)).text_color(t.soft).child(said));

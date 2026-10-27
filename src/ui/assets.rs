@@ -130,6 +130,13 @@ impl AssetSource for Assets {
             "help.svg" => {
                 r#"<circle cx="8" cy="8" r="5.5"/><path d="M6.4 6.6A1.6 1.6 0 1 1 8 8.4V9.2M8 11.2V11.3"/>"#
             }
+            // What a row of the tree is: a folder (shut, open), a note, a picture, a diagram, any other file.
+            "folder.svg" => r#"<path d="M2.5 5A1 1 0 0 1 3.5 4H6.5L8 5.5H12.5A1 1 0 0 1 13.5 6.5V11.5A1 1 0 0 1 12.5 12.5H3.5A1 1 0 0 1 2.5 11.5Z"/>"#,
+            "folder-open.svg" => r#"<path d="M2.5 11.5V4.5A1 1 0 0 1 3.5 3.5H6.5L8 5H11.5A1 1 0 0 1 12.5 6V8M2.5 11.5L4.2 8H14L12.3 12.5H3.5A1 1 0 0 1 2.5 11.5Z"/>"#,
+            "note.svg" => r#"<path d="M4.5 2.5H9.5L12.5 5.5V13.5H4.5ZM9.5 2.5V5.5H12.5M6.5 8.5H10.5M6.5 11H9.5"/>"#,
+            "file.svg" => r#"<path d="M4.5 2.5H9.5L12.5 5.5V13.5H4.5ZM9.5 2.5V5.5H12.5"/>"#,
+            "image.svg" => r#"<rect x="2.5" y="3.5" width="11" height="9" rx="1"/><circle cx="6" cy="7" r="1"/><path d="M3 12L7 8.5L9.5 11L11 9.5L13.5 12"/>"#,
+            "diagram.svg" => r#"<rect x="2.5" y="2.5" width="5" height="4.5" rx="1"/><circle cx="11" cy="11" r="2.5"/><path d="M7 4.8H10.5V8.5M5 7V11H8.5"/>"#,
             "chevron-right.svg" => r#"<path d="M6.5 4.5L10 8L6.5 11.5"/>"#,
             "chevron-left.svg" => r#"<path d="M9.5 4.5L6 8L9.5 11.5"/>"#,
             "chevron-down.svg" => r#"<path d="M4.5 6.5L8 10L11.5 6.5"/>"#,

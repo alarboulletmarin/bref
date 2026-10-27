@@ -14,6 +14,7 @@ mod vault_find;
 mod keyboard;
 mod keycaps;
 mod layout;
+mod panel_rows;
 mod panes;
 mod tabs;
 mod window;
