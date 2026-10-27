@@ -56,12 +56,14 @@ fn panes_split_move_resize_and_come_back(cx: &mut TestAppContext) {
     assert!(three[1].bottom() <= three[2].top() + px(0.5) && (three[1].left() - three[2].left()).abs() < px(0.5), "{three:?}");
     assert!(three[0].right() <= three[1].left() + px(0.5), "{three:?}");
 
-    // Alt+Shift+arrows go from pane to pane; nothing beyond the edge.
-    cx.simulate_keystrokes("alt-shift-up");
+    // Alt+Shift+arrows (Cmd+Alt on macOS) go from pane to pane; nothing beyond the edge.
+    let mac = cfg!(target_os = "macos");
+    let (up, left) = if mac { ("cmd-alt-up", "cmd-alt-left") } else { ("alt-shift-up", "alt-shift-left") };
+    cx.simulate_keystrokes(up);
     assert_eq!(state(&shell, cx).1, 1);
-    cx.simulate_keystrokes("alt-shift-left");
+    cx.simulate_keystrokes(left);
     assert_eq!(state(&shell, cx).1, 0);
-    cx.simulate_keystrokes("alt-shift-left");
+    cx.simulate_keystrokes(left);
     assert_eq!(state(&shell, cx).1, 0);
 
     // A tab sent down splits its pane when there is none there; alone, it stays.
