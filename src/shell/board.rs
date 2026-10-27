@@ -263,26 +263,40 @@ impl Shell {
             // The width of a card, measured when drawing: the held one keeps its own.
             let width = self.pane().board.card.clone();
             let measure = canvas(move |bounds, _, _| width.set(bounds.size.width), |_, _, _, _| ()).absolute().top_0().left_2().right_2().h_0();
-            let column = div()
-                .relative()
-                .when(c == 0, |d| d.child(measure))
-                .p_2()
-                .rounded(t.large())
-                .bg(t.panel)
+            // The column fills the board's height: its cards scroll inside it, and the room under them
+            // is part of it, so a card dropped there lands in this column.
+            let body = div()
+                .id(("column-body", c))
                 .flex()
                 .flex_col()
                 .gap_2()
-                // On the title, the held card aims at the top of the column; below the cards, the bottom.
-                .child(head.on_drag_move(aim(pane, c, 0, false, cx)))
+                .min_h_0()
+                .overflow_y_scroll()
                 .children(cards)
                 .child(div().child(add).on_drag_move(aim(pane, c, count, false, cx)));
-            // The column's lane goes all the way down: a card dropped under a short
-            // column still lands there.
-            let rest = div().debug_selector(|| format!("column-rest-{c}")).flex_1().min_h(px(48.)).on_drag_move(aim(pane, c, count, false, cx));
-            shown.push(div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).flex().flex_col().child(column).child(rest));
+            let rest = div().debug_selector(|| format!("column-rest-{c}")).flex_1().min_h(px(24.)).on_drag_move(aim(pane, c, count, false, cx));
+            shown.push(
+                div()
+                    .debug_selector(|| format!("column-{c}"))
+                    .relative()
+                    .flex_1()
+                    .min_w(px(NARROW))
+                    .max_w(px(COLUMN))
+                    .when(c == 0, |d| d.child(measure))
+                    .p_2()
+                    .rounded(t.large())
+                    .bg(t.code_bg)
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    // On the title, the held card aims at the top of the column; below the cards, the bottom.
+                    .child(head.on_drag_move(aim(pane, c, 0, false, cx)))
+                    .child(body)
+                    .child(rest),
+            );
         }
         let more = match field_at(Slot::NewColumn) {
-            Some(field) => div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().rounded(t.large()).bg(t.panel).border_1().border_color(t.accent).flex().child(field).into_any_element(),
+            Some(field) => div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().rounded(t.large()).bg(t.code_bg).border_1().border_color(t.accent).flex().child(field).into_any_element(),
             // No column at all: a lone « + » would float in the empty page, so the board says what it lacks.
             None if all.is_empty() => div()
                 .debug_selector(|| "board-empty".into())
@@ -370,7 +384,7 @@ impl Shell {
             .text_size(px(13.))
             .flex()
             .gap_3()
-            .overflow_scroll()
+            .overflow_x_scroll()
             .track_scroll(&self.pane().board.scroll)
             // A click elsewhere confirms what was being written; the keys' spot goes with the mouse.
             .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {

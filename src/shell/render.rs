@@ -698,8 +698,11 @@ impl Shell {
                 .bottom_4()
                 // Always in the same place, board or text: left of the copy button.
                 .right(t.px(50.))
-                .size(t.px(30.))
+                .h(t.px(30.))
                 .rounded(t.large())
+                // On the board the button says what it does; over the text there is no room for it.
+                .when(board, |d| d.w_auto().px_2().gap_1().text_size(t.px(12.)).text_color(t.accent).child(tr("Text", "Texte")))
+                .when(!board, |d| d.w(t.px(30.)))
                 .occlude()
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });

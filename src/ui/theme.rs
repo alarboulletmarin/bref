@@ -324,6 +324,22 @@ mod tests {
         }
     }
 
+    /// A kanban column (`code_bg`) stands out from the page, and a card (`bg`) from its column, in every theme.
+    #[test]
+    fn board_columns_stand_out() {
+        let mut fails = Vec::new();
+        for (name, _) in THEMES {
+            for look in [WindowAppearance::Light, WindowAppearance::Dark] {
+                let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), look);
+                let (page, card) = (contrast(t.code_bg, t.bg), contrast(t.border, t.code_bg));
+                if page < 1.05 || card < 1.1 {
+                    fails.push(format!("{name}: column on page {page:.2}, card edge on column {card:.2}"));
+                }
+            }
+        }
+        assert!(fails.is_empty(), "{}", fails.join("\n"));
+    }
+
     /// `color` with its opacity, laid over `under`.
     fn over(color: Hsla, under: Hsla) -> Hsla {
         blend(Hsla { a: 1., ..color }, under, color.a)

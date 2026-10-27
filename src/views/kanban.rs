@@ -225,7 +225,7 @@ pub const NARROW: f32 = 140.;
 /// A card's frame, its checkbox and its text: the same for the placed card, the one being held
 /// and the place it would take.
 pub fn card_box(t: Theme) -> Div {
-    div().p_2().rounded(t.small()).bg(t.bg).border_1().border_color(t.border).flex().items_start().gap_2()
+    div().p_2().rounded(t.large()).bg(t.bg).border_1().border_color(t.border).flex().items_start().gap_2()
 }
 
 pub fn check_box(done: bool, t: Theme) -> Div {

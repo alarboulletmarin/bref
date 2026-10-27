@@ -56,6 +56,10 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext, here: &Path) {
     let (none, left) = (gpui::Modifiers::none(), gpui::MouseButton::Left);
     let (first, second) = (cx.debug_bounds("card-0-0").unwrap(), cx.debug_bounds("card-0-1").unwrap());
     let under = cx.debug_bounds("column-rest-2").unwrap().center();
+        // Columns are as tall as the board, whatever their cards, and the room under the cards is inside the column.
+    let (tall, short) = (cx.debug_bounds("column-0").unwrap(), cx.debug_bounds("column-2").unwrap());
+    assert_eq!((tall.top(), tall.bottom()), (short.top(), short.bottom()));
+    assert!(short.contains(&under) && short.size.height > px(300.), "{short:?}");
     cx.simulate_mouse_down(first.center(), left, none);
     cx.simulate_mouse_move(first.center() + point(px(6.), px(6.)), left, none);
     cx.simulate_mouse_move(second.center() + point(px(0.), px(4.)), left, none);
