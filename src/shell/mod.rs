@@ -166,6 +166,9 @@ struct Shell {
     icon_pick: Option<IconPick>,
     /// The comments panel was closed: it waits to be asked for again.
     comments_shut: bool,
+    /// Scroll of the comments column, and the comment it last showed (the caret's).
+    comments_scroll: gpui::ScrollHandle,
+    comments_seen: Option<usize>,
     /// Status messages shown, oldest to newest.
     toasts: Vec<Toast>,
     /// Number of the last message, to remove the right one when it expires.
@@ -277,6 +280,8 @@ impl Shell {
             icons: Default::default(),
             icon_pick: None,
             comments_shut: false,
+            comments_scroll: gpui::ScrollHandle::new(),
+            comments_seen: None,
             toasts: Vec::new(),
             toasted: 0,
             template: None,

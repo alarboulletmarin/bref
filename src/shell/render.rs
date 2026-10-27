@@ -628,8 +628,8 @@ impl Shell {
         // click leads to the comment, ready to be edited; the check mark resolves it.
         // ponytail: the note is reread on every render (a search for `{==`); keep the
         // list from one version of the text to the next if very long notes suffer from it.
-        let said: Vec<(String, String, usize, usize, String)> = match self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx) {
-            true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|n| (n.noted.into(), n.said.into(), n.at, n.inside, n.scope)).collect(),
+        let said: Vec<(String, String, usize, usize, usize, String)> = match self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx) {
+            true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|n| (n.noted.into(), n.said.into(), n.at, n.inside, n.end, n.scope)).collect(),
             false => Vec::new(),
         };
         // Their button, left of the copy one, opens and closes the panel; the
@@ -725,22 +725,35 @@ impl Shell {
         if active && column.is_none() {
             self.nav.aside = px(0.);
         }
-        let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at, inside, scope))| {
+        // The comment the caret is in (none past the last) is on `selection`.
+        let caret = self.pane().editor.read(cx).position();
+        let here = said.iter().position(|n| n.2 <= caret && caret <= n.4);
+        if here != self.comments_seen {
+            self.comments_seen = here;
+            if let Some(i) = here {
+                // The title is the column's first child.
+                self.comments_scroll.scroll_to_item(i + 1);
+            }
+        }
+        let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at, inside, _, scope))| {
             let (at, inside) = (*at, *inside);
+            let group = format!("comment-{i}");
+            let words = |d: Div| d.text_color(if said.is_empty() { t.soft } else { t.text }).child(if said.is_empty() { tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string() } else { said.to_string() });
+            // The quoted passage only reminds where the comment is: small, on a faint tint, two lines.
+            let quote = |text: String| div().min_w_0().px_1().rounded(t.small()).bg(t.hover).text_size(t.px(12.)).text_color(t.soft).line_clamp(2).text_ellipsis().child(text);
             div()
                 .id(("comment", i))
+                .group(group.clone())
                 .p_2()
                 .rounded(t.small())
-                .border_1()
-                .border_color(t.border)
-                .bg(t.bg)
+                .when(here == Some(i), |d| d.bg(t.selection))
+                .when(i > 0, |d| d.border_t_1().border_color(t.border))
                 .flex()
                 .flex_col()
                 .gap_1()
                 .cursor_pointer()
-                .hover(|s| s.border_color(t.accent.opacity(0.6)))
                 // Where it is, in a table: `Cell C2`, above the commented text.
-                .when(!scope.is_empty() && !noted.is_empty(), |d| d.child(div().px_1().text_size(t.px(11.)).text_color(t.soft).child(scope.to_string())))
+                .when(!scope.is_empty() && !noted.is_empty(), |d| d.child(div().px_1().text_size(t.px(11.)).text_color(t.dim).child(scope.to_string())))
                 .child(
                     div()
                         .flex()
@@ -748,23 +761,25 @@ impl Shell {
                         .gap_1()
                         .child(match (noted.is_empty(), scope.is_empty()) {
                             // A row, a column, the table: what it is about is the chip.
-                            (true, false) => div().flex_1().min_w_0().px_1().rounded(t.small()).bg(t.selection).line_clamp(2).child(scope.to_string()),
+                            (true, false) => quote(scope.to_string()).flex_1(),
                             // A comment on its own, in the text: it takes the place.
-                            (true, true) => div().flex_1().min_w_0().px_1().text_color(if said.is_empty() { t.soft } else { t.text }).child(if said.is_empty() { tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string() } else { said.to_string() }),
-                            (false, _) => div().flex_1().min_w_0().px_1().rounded(t.small()).bg(t.selection).line_clamp(2).child(noted.to_string()),
+                            (true, true) => words(div().flex_1().min_w_0().px_1()),
+                            (false, _) => quote(noted.to_string()).flex_1(),
                         })
-                        .child(ui::widgets::button(("resolve", i), "check.svg", false, t).on_click(cx.listener(move |this, _, window, cx| {
-                            cx.stop_propagation();
-                            this.pane().editor.update(cx, |e, cx| e.resolve_comment(at, cx));
-                            window.focus(&this.pane().editor.focus_handle(cx));
-                        }))),
+                        // Shown under the pointer and on the keys' focus; always reachable by Tab.
+                        .child(
+                            ui::widgets::button(("resolve", i), "check.svg", false, t)
+                                .opacity(0.)
+                                .group_hover(group, |s| s.opacity(1.))
+                                .focus(|s| s.border_2().border_color(t.accent).opacity(1.))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    cx.stop_propagation();
+                                    this.pane().editor.update(cx, |e, cx| e.resolve_comment(at, cx));
+                                    window.focus(&this.pane().editor.focus_handle(cx));
+                                })),
+                        ),
                 )
-                .when(!noted.is_empty() || !scope.is_empty(), |d| {
-                    d.child(div().text_color(if said.is_empty() { t.soft } else { t.text }).child(match said.is_empty() {
-                        true => tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string(),
-                        false => said.to_string(),
-                    }))
-                })
+                .when(!noted.is_empty() || !scope.is_empty(), |d| d.child(words(div().px_1())))
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.pane().editor.update(cx, |e, cx| e.jump(inside, false, cx));
                     window.focus(&this.pane().editor.focus_handle(cx));
@@ -790,9 +805,9 @@ impl Shell {
                 .text_size(t.px(13.))
                 .flex()
                 .flex_col()
-                .gap_2()
                 .overflow_y_scroll()
-                .child(div().flex().items_center().child(div().flex_1().text_color(t.soft).child(title)).child(shut))
+                .track_scroll(&self.comments_scroll)
+                .child(div().flex().items_center().pb_2().child(div().flex_1().text_color(t.soft).child(title)).child(shut))
                 .children(cards)
         });
         let copy = icon_button("copy-all", if self.copied { "check.svg" } else { "copy.svg" }, t)

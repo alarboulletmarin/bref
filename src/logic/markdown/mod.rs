@@ -832,6 +832,8 @@ pub struct Note<'a> {
     /// The byte where the whole starts, and the one where the comment starts.
     pub at: usize,
     pub inside: usize,
+    /// The byte where the whole ends.
+    pub end: usize,
     /// What it is on, in a table: `Cell C2`, `Header B`, `Row Léa`, `Column Âge`, `Table`; empty elsewhere.
     pub scope: String,
 }
@@ -887,7 +889,7 @@ pub fn all_comments(text: &str) -> Vec<Note<'_>> {
             row = line.trim_start().starts_with('|').then(|| row.map_or(0, |r| r + 1));
             let cells = row.map(|_| cells(line));
             for (whole, noted, said) in comments(line) {
-                let mut note = Note { noted: &line[noted.clone()], said: &line[said.clone()], at: at + whole.start, inside: at + said.start, scope: String::new() };
+                let mut note = Note { noted: &line[noted.clone()], said: &line[said.clone()], at: at + whole.start, inside: at + said.start, end: at + whole.end, scope: String::new() };
                 if let Some(cells) = &cells {
                     let c = cells.iter().rposition(|cell| cell.start <= whole.start).unwrap_or(0);
                     note.scope = match row {

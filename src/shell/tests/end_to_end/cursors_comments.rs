@@ -56,6 +56,19 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.resolve_comment(34, cx)));
     assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\nfin");
     cx.simulate_keystrokes("secondary-z");
+    // The column marks the comment under the caret, and none elsewhere.
+    let seen = |cx: &mut gpui::VisualTestContext, at: usize| {
+        shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.place_cursor(at, cx)));
+        cx.run_until_parked();
+        shell.read_with(cx, |s, _| s.comments_seen)
+    };
+    assert_eq!((seen(cx, 40), seen(cx, 0), seen(cx, 8)), (Some(1), None, Some(0)));
+    // Resolved by the keys (the editor keeps Tab, so the shortcut is the way), and undone.
+    cx.simulate_keystrokes("secondary-shift-m");
+    cx.run_until_parked();
+    assert_eq!(text(cx), "- un mot ici\n{==fin==}{>>ok<<}");
+    cx.simulate_keystrokes("secondary-z");
+    assert_eq!(text(cx), "- un {==mot==}{>>à revoir<<} ici\n{==fin==}{>>ok<<}");
     // The corner button, left of the copy one, closes the panel (and reopens it).
     cx.run_until_parked();
     let corner = cx.update(|window, _| window.viewport_size());
