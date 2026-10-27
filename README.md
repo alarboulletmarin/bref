@@ -299,7 +299,7 @@ A rail of icons stays on the left of the window. It opens a panel beside the not
 | Graph | `Ctrl + G` | one dot per note, one line per `[[link]]` between two notes |
 | Tags | `Ctrl + T` | every `#tag` of the vault with its number of notes; unfold a tag to see them |
 | Backlinks | `Ctrl + L` | the notes that link to the open note, each with the line that holds the link |
-| Calendar | `Ctrl + Shift + J` | one month; the days that have their daily note stand out. Arrows change the day, `Page Up` and `Page Down` the month, `Enter` or a click opens the note of the day, or creates it. The week starts on Monday in French, on Sunday in English |
+| Calendar | `Ctrl + Shift + J` | one month; today is a round pill, a dot under each day that has its daily note; the last days of the neighbouring months are dimmed and open their note too. Arrows change the day, `Page Up` and `Page Down` the month, `Enter` or a click opens the note of the day, or creates it. The week starts on Monday in French, on Sunday in English |
 | Search | `Ctrl + Shift + F` | every match of a search in the text of the vault, note by note (see [Search the vault](#search-the-vault)) |
 
 Backlinks follow the note you open, not the one you preview while moving through the list, so you can look at each linking note in turn. Links written with an alias (`[[Note|alias]]`) and links inside tables count.

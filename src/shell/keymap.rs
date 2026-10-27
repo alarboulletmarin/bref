@@ -97,7 +97,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 k(&nav::ShowGraph, tr("Graph of the notes", "Graphe des notes")),
                 k(&nav::ShowTags, "Tags"),
                 k(&nav::ShowLinks, tr("Backlinks: the notes that link to this one", "Rétroliens : les notes qui mènent à celle-ci")),
-                k(&nav::ShowCalendar, tr("Calendar: arrows, Page Up/Down for the month, Enter opens the day", "Calendrier : flèches, Page haut/bas pour le mois, Entrée ouvre le jour")),
+                k(&nav::ShowCalendar, tr("Calendar: arrows, Page Up/Down for the month, Enter opens the day (a dot marks the days with a note)", "Calendrier : flèches, Page haut/bas pour le mois, Entrée ouvre le jour (un point marque les jours qui ont une note)")),
                 t(tr("A picture", "Une image"), tr("Shown in place of the note; a square in the graph", "Affichée à la place de la note ; un carré dans le graphe")),
                 t(tr("A .csv or .tsv", "Un .csv ou .tsv"), tr("A grid in place of the note; not in the graph", "Une grille à la place de la note ; absent du graphe")),
                 k(&nav::ToggleFull, tr("Panel on the whole window", "Panneau en pleine fenêtre")),

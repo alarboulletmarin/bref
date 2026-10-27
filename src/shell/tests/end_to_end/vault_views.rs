@@ -211,6 +211,15 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     cx.simulate_keystrokes("pageup pageup up enter");
     assert_eq!(shell.read_with(cx, |s, _| s.nav.day), (2026, 9, 30));
     assert_eq!(text(cx), "# 2026-09-30\n\n");
+    // A day of the next month, dimmed in the grid, is a cell like another: a click opens its note and
+    // the grid moves to that month. Today is the one round pill; a day with a note has a dot.
+    let next = cx.debug_bounds("day-2026-10-1").unwrap();
+    let inside = cx.debug_bounds("day-2026-9-30").unwrap();
+    assert!(next.origin.y == inside.origin.y && next.origin.x > inside.origin.x);
+    cx.simulate_click(next.center(), gpui::Modifiers::none());
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.day), (2026, 10, 1));
+    assert_eq!(text(cx), "# 2026-10-01\n\n");
+    assert!(cx.debug_bounds("day-2026-9-30").is_some() && cx.debug_bounds("day-2026-11-1").is_some());
     shell.update(cx, |s, cx| {
         s.nav.show_alone(before.1);
         s.nav.panel = before.2;
@@ -219,6 +228,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     // Once left, the daily note is saved like any note that has a title.
     j.settle(cx);
     fs::remove_file(root.join("2026-09-30.md")).unwrap();
+    let _ = fs::remove_file(root.join("2026-10-01.md"));
     j.settle(cx);
 
     // Terminal: the palette offers it; tests open no window, hence the refusal.

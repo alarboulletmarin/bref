@@ -255,25 +255,46 @@ impl Shell {
             .child(step("month-prev", "chevron-left.svg", -1, cx))
             .child(step("month-next", "chevron-right.svg", 1, cx));
         // Seven equal columns, which shrink with the panel instead of going under the note.
-        let cell = || div().h(t.px(30.)).flex().items_center().justify_center();
+        let cell = || div().h(t.px(32.)).relative().flex().items_center().justify_center();
         let initials = if monday { tr("MTWTFSS", "LMMJVSD") } else { tr("SMTWTFS", "DLMMJVS") };
-        let week = initials.chars().map(|c| cell().text_color(t.soft).text_size(t.px(11.)).child(c.to_string()));
-        let blanks = (0..lead).map(|_| cell().into_any_element());
-        let cells = (1..=days).map(|day| {
-            let date = (year, month, day);
+        let week = initials.chars().map(|c| cell().h(t.px(30.)).text_color(t.soft).text_size(t.px(11.)).child(c.to_string()));
+        // Whole weeks: the last days of the previous month and the first of the next fill the grid.
+        let first = markdown::day_number((year, month, 1));
+        let trail = (7 - (lead + days) % 7) % 7;
+        let cells = (-(lead as i64)..i64::from(days + trail)).map(|offset| {
+            let date = markdown::day_of(first + offset);
+            let inside = date.1 == month;
             let name = crate::lang::date_name(date);
             let has = names.contains(name.as_str());
+            let (is_today, is_open) = (date == today, open.as_deref() == Some(name.as_str()));
+            // The digit sits in a round box, filled in `accent` for today; the dot under it says "a note".
+            let digit = div()
+                .size(t.px(20.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .when(is_today, |d| d.bg(t.accent))
+                .child(date.2.to_string());
             cell()
-                .id(("day", day as usize))
+                .id(("day", (first + offset + 800_000) as usize))
+                .debug_selector(|| format!("day-{}-{}-{}", date.0, date.1, date.2))
                 .rounded(t.small())
                 .cursor_pointer()
-                .text_color(if has || day == chosen { t.text } else { t.soft })
+                .text_color(match (is_today, is_open, inside) {
+                    (true, ..) => t.bg,
+                    (_, true, _) => t.accent,
+                    (_, _, true) if has || date.2 == chosen => t.text,
+                    (_, _, true) => t.soft,
+                    _ => t.dim,
+                })
                 .when(has, |d| d.font_weight(gpui::FontWeight::BOLD))
-                .when(open.as_deref() == Some(name.as_str()), |d| d.text_color(t.accent))
-                .when(date == today, |d| d.border_1().border_color(t.accent.opacity(0.6)))
-                .when(day == chosen, |d| d.bg(t.selection))
+                .when(inside && date.2 == chosen, |d| d.bg(t.selection))
                 .hover(|s| s.bg(t.hover))
-                .child(day.to_string())
+                .child(digit)
+                .when(has, |d| {
+                    d.child(div().absolute().bottom(t.px(2.)).size(t.px(3.)).rounded_full().bg(if is_today { t.accent } else { t.soft }))
+                })
                 .on_click(cx.listener(move |this, _, window, cx| this.open_day(date, window, cx)))
                 .into_any_element()
         });
@@ -286,7 +307,7 @@ impl Shell {
             .flex_col()
             .gap_1()
             .child(head)
-            .child(div().debug_selector(|| "calendar".into()).w_full().max_w(t.px(224.)).grid().grid_cols(7).children(week).children(blanks).children(cells))
+            .child(div().debug_selector(|| "calendar".into()).w_full().max_w(t.px(224.)).grid().grid_cols(7).children(week).children(cells))
     }
 
     pub(super) fn nav_step(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
