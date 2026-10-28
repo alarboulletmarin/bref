@@ -311,12 +311,20 @@ impl Sheet {
         f32::from(window.text_system().shape_line(gpui::SharedString::from(text.to_string()), self.theme.px(size), &[run], None).width).ceil() + 1.
     }
 
+    /// "6 rows · 5 columns". The lone row of an empty table is only there to write in: it is not counted.
+    pub fn summary_text(&self) -> String {
+        match self.table.cols() {
+            0 => summary(0, 0),
+            cols => summary(self.table.rows(), cols),
+        }
+    }
+
     /// The head of the table: its name in the serif, "6 rows · 5 columns", then the settings as pills (the
     /// one in force tinted), copy and export. The name is cut with an ellipsis to what the other parts leave.
     pub(super) fn render_bar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let title = crate::platform::vault::stem(&self.path);
-        let summary = summary(self.table.rows(), self.table.cols());
+        let summary = self.summary_text();
         let (delimiter, encoding, header) = (delimiter_option(self.format.delimiter), self.format.encoding.label().to_string(), tr("Header", "En-tête").to_string());
         // The width of everything but the name: summary, pills (10 px each side), two icons, gaps, and the margins.
         let sans = || gpui::font(crate::ui::assets::sans());

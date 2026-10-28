@@ -1,4 +1,5 @@
 use super::*;
+use crate::views::sheet::summary;
 
 fn window<'a>(cx: &'a mut TestAppContext, tag: &str, files: &[(&str, &[u8])]) -> (PathBuf, Entity<Shell>, &'a mut gpui::VisualTestContext, std::sync::MutexGuard<'static, ()>) {
     let root = std::env::temp_dir().join(format!("bref-table-open-{tag}-{}", std::process::id()));
@@ -61,6 +62,15 @@ fn an_empty_csv_opens_as_a_table(cx: &mut TestAppContext) {
             (table.rows(), table.cols())
         });
         assert!(rows >= 1, "{name}: {rows} x {cols}");
+        // What the head says: an empty file has no row and no column.
+        let got = shell.read_with(cx, |s, cx| s.shown_sheet().unwrap().read(cx).summary_text());
+        // A lone newline is one empty record: one row, one (empty) column, as the parser reads it.
+        let want = match name {
+            "header.csv" => summary(1, 3),
+            "newline.csv" => summary(1, 1),
+            _ => summary(0, 0),
+        };
+        assert_eq!(got, want, "{name}");
         assert!(shell.read_with(cx, |s, _| s.toasts.is_empty()), "{name}: a message is left");
     }
     // Emptied from outside while open: the table stays, empty.

@@ -38,12 +38,10 @@ fn the_table_head_stays_above_the_grid(cx: &mut TestAppContext) {
         cx.simulate_keystrokes(keys.trim_end());
         assert_eq!(shell.read_with(cx, |s, _| s.theme.size), zoom);
         for file in [&long, &empty, &one, &wide] {
-            shell.update_in(cx, |s, window, cx| {
+            shell.update(cx, |s, cx| {
                 let (notes, dirs, images) = vault::scan(&root);
                 s.sync(notes, dirs, images, cx);
                 s.open_note(file, cx);
-                // The note's editor keeps the keys otherwise, and takes the table's place at the next frame.
-                window.focus(&s.shown_sheet().unwrap().focus_handle(cx));
             });
             assert!(shell.read_with(cx, |s, _| s.shown_sheet().is_some()), "{} is not shown as a table", file.display());
             for width in [420., 860., 1600.] {
