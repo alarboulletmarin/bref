@@ -35,7 +35,7 @@ use crate::{
     views::editor::{self, TableOp},
     ui::line::{self, Line},
     logic::markdown, ui::assets::{mono, sans},
-    ui::widgets::{button, tip},
+    ui::widgets::{self, button, pill, tip},
     logic::table::{self, Encoding, Format, Style, Table, WriteError},
     lang::tr, platform::vault,
 };
@@ -50,6 +50,13 @@ actions!(
         PickCopyAs, PickExport
     ]
 );
+
+/// "6 rows · 5 columns" (the header row counts as a row), numbers grouped, French singular for 0 and 1.
+pub fn summary(rows: usize, cols: usize) -> String {
+    let (r, c) = (if rows == 1 { "row" } else { "rows" }, if cols == 1 { "column" } else { "columns" });
+    let (fr, fc) = (if rows < 2 { "ligne" } else { "lignes" }, if cols < 2 { "colonne" } else { "colonnes" });
+    format!("{} {} · {} {}", crate::lang::number(rows), tr(r, fr), crate::lang::number(cols), tr(c, fc))
+}
 
 const ROW: f32 = 26.;
 const GUTTER: f32 = 52.;
@@ -483,11 +490,21 @@ impl Sheet {
 
 #[cfg(test)]
 mod tests {
-    use super::letters;
+    use super::{letters, summary};
 
     #[test]
     fn names_columns_like_a_spreadsheet() {
         let names: Vec<_> = [0, 1, 25, 26, 27, 51, 52, 701, 702].map(letters).into();
         assert_eq!(names, ["A", "B", "Z", "AA", "AB", "AZ", "BA", "ZZ", "AAA"]);
+    }
+
+    #[test]
+    fn the_summary_counts_rows_and_columns() {
+        // Tests run in French: 0 and 1 are singular, 2 and more plural, thousands grouped.
+        assert_eq!(summary(6, 5), "6 lignes · 5 colonnes");
+        assert_eq!(summary(0, 0), "0 ligne · 0 colonne");
+        assert_eq!(summary(1, 1), "1 ligne · 1 colonne");
+        assert_eq!(summary(2, 2), "2 lignes · 2 colonnes");
+        assert_eq!(summary(300_000, 1_000), "300\u{202f}000 lignes · 1\u{202f}000 colonnes");
     }
 }

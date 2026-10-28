@@ -125,6 +125,18 @@ pub fn serif_title<E: gpui::Styled>(e: E, t: Theme, size: f32) -> E {
     e.font_family(crate::ui::assets::SERIF).font_weight(gpui::FontWeight::SEMIBOLD).text_size(t.px(size)).text_color(t.text)
 }
 
+/// The head of a page: the title in the serif, then what it holds in `soft` ("6 open · 2 done", "6 rows · 5 columns").
+/// Debug selectors `{id}-header`, `{id}-title`, `{id}-summary`. The title shrinks (the caller ellipsizes it if it must read well).
+pub fn page_head(t: Theme, id: &'static str, size: f32, title: String, summary: String) -> Div {
+    div()
+        .debug_selector(move || format!("{id}-header"))
+        .flex()
+        .items_baseline()
+        .gap_3()
+        .child(serif_title(div().debug_selector(move || format!("{id}-title")).min_w_0().truncate(), t, size).child(title))
+        .child(div().debug_selector(move || format!("{id}-summary")).flex_none().text_color(t.soft).child(summary))
+}
+
 /// A tinted band inside a sheet: groups what lies in it (a kanban column, a table header) without a line.
 #[allow(dead_code)] // used by the views from step 3 of #91
 pub fn band(t: Theme) -> Div {

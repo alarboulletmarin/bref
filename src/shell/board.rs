@@ -333,13 +333,7 @@ impl Shell {
         // The title, and what is left to do: the pattern a table's header takes too.
         let (open, done) = tally(&all);
         let name = heading(&text).map(str::to_string).or_else(|| self.pane().path.as_deref().map(crate::platform::vault::stem)).unwrap_or_else(|| tr("Board", "Tableau").to_string());
-        let header = div()
-            .debug_selector(|| "board-header".into())
-            .flex()
-            .items_baseline()
-            .gap_3()
-            .child(crate::ui::widgets::serif_title(div().debug_selector(|| "board-title".into()).min_w_0().truncate(), t, 26.).child(name))
-            .child(div().debug_selector(|| "board-summary".into()).flex_none().text_color(t.soft).child(summary(open, done)));
+        let header = crate::ui::widgets::page_head(t, "board", 26., name, summary(open, done));
         div()
             .id("board")
             .key_context("Board")

@@ -4,6 +4,7 @@
 
 mod benches;
 mod board_header;
+mod sheet_header;
 mod docks;
 mod drops;
 mod editing;

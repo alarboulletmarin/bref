@@ -102,11 +102,13 @@ fn sheet_convert(cx: &mut TestAppContext) {
         |window, cx| Shell::new(Some(root), Vec::new(), window, cx)
     });
     cx.run_until_parked();
+    let start = Instant::now();
     shell.update_in(cx, |s, window, cx| {
         s.open_note(&file, cx);
         window.focus(&s.shown_sheet().unwrap().focus_handle(cx));
     });
     cx.run_until_parked();
+    println!("opening {from}: {:?}", start.elapsed());
     let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
     cx.simulate_keystrokes("secondary-a");
     for (name, style) in [("TSV", table::Style::Tsv), ("CSV", table::Style::Csv(b',')), ("Markdown", table::Style::Markdown), ("JSON", table::Style::Json)] {

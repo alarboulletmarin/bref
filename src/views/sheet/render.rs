@@ -36,9 +36,10 @@ impl Render for Sheet {
                         .justify_center()
                         .border_r_1()
                         .border_b_1()
-                        .border_color(t.border)
+                        .border_color(t.code_bg)
                         .bg(t.code_bg)
                         .text_color(t.soft)
+                        .when(c + 1 == self.cols(), |d| d.rounded_tr(t.band()))
                         .when(inside, |d| d.bg(t.selection))
                         .child(letters(c))
                 }),
@@ -69,9 +70,10 @@ impl Render for Sheet {
                 .justify_center()
                 .border_r_1()
                 .border_b_1()
-                .border_color(t.border)
+                .border_color(t.code_bg)
                 .bg(t.code_bg)
                 .text_color(if inside { t.text } else { t.soft })
+                .when(r + 1 == self.table.rows(), |d| d.rounded_bl(t.band()))
                 .when(inside, |d| d.bg(t.selection))
                 .child((r + 1).to_string())
         };
@@ -88,12 +90,16 @@ impl Render for Sheet {
             .font_family(mono())
             .text_size(px(self.text_px()))
             .children((r0..r1).map(|r| number(r, self.y_of(r))))
-            .child(div().absolute().top(px(0.)).left(px(0.)).w(px(GUTTER)).h(px(ROW)).border_r_1().border_b_1().border_color(t.border).bg(t.code_bg))
+            .child(div().absolute().top(px(0.)).left(px(0.)).w(px(GUTTER)).h(px(ROW)).border_r_1().border_b_1().border_color(t.code_bg).bg(t.code_bg).rounded_tl(t.band()))
             .children(self.format.header.then(|| number(0, 0.)));
 
         let body = div()
+            .debug_selector(|| "sheet-body".into())
             .flex_1()
             .min_h_0()
+            .mx(px(24.))
+            .mb(px(16.))
+            .rounded(t.band())
             .relative()
             .overflow_hidden()
             .font_family(sans())
@@ -208,21 +214,21 @@ impl Render for Sheet {
             .on_action(cx.listener(|this, _: &editor::TableDeleteCol, _, cx| this.table_op(TableOp::DeleteCol, cx)))
             .on_action(cx.listener(|this, _: &editor::TableSortAsc, _, cx| this.table_op(TableOp::SortAsc, cx)))
             .on_action(cx.listener(|this, _: &editor::TableSortDesc, _, cx| this.table_op(TableOp::SortDesc, cx)))
-            .child(self.render_bar(cx))
+            .child(self.render_bar(window, cx))
             .child(body)
     }
 }
 
 impl Sheet {
+    /// A setting of the table as a pill; the one in force (`on`) is tinted with the accent.
     pub(super) fn chip(&self, id: &'static str, text: String, on: bool, pick: Pick) -> Stateful<gpui::Div> {
         let t = self.theme;
-        div()
+        pill(t, on)
             .id(id)
-            .px_2()
-            .py_0p5()
-            .rounded(t.small())
+            .debug_selector(move || id.to_string())
+            .h(px(26.))
+            .flex_none()
             .cursor_pointer()
-            .text_color(if on { t.accent } else { t.soft })
             .hover(|s| s.bg(t.hover))
             .child(text)
             .on_click(move |_, window, cx| window.dispatch_action(pick.action(), cx))
@@ -299,53 +305,61 @@ impl Sheet {
         out
     }
 
-    pub(super) fn render_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// Width of `text` shaped in `font` at `size` (scale 1).
+    fn text_width(&self, window: &Window, text: &str, size: f32, font: gpui::Font) -> f32 {
+        let run = gpui::TextRun { len: text.len(), font, color: self.theme.text, background_color: None, underline: None, strikethrough: None };
+        f32::from(window.text_system().shape_line(gpui::SharedString::from(text.to_string()), self.theme.px(size), &[run], None).width).ceil() + 1.
+    }
+
+    /// The head of the table: its name in the serif, "6 rows · 5 columns", then the settings as pills (the
+    /// one in force tinted), copy and export. The name is cut with an ellipsis to what the other parts leave.
+    pub(super) fn render_bar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        let name = self.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-        let info = format!("{name} · {} × {}", self.table.rows(), self.table.cols());
-        let delimiter = delimiter_option(self.format.delimiter);
+        let title = crate::platform::vault::stem(&self.path);
+        let summary = summary(self.table.rows(), self.table.cols());
+        let (delimiter, encoding, header) = (delimiter_option(self.format.delimiter), self.format.encoding.label().to_string(), tr("Header", "En-tête").to_string());
+        // The width of everything but the name: summary, pills (10 px each side), two icons, gaps, and the margins.
+        let sans = || gpui::font(crate::ui::assets::sans());
+        let pills: f32 = [&delimiter, &encoding, &header].iter().map(|text| self.text_width(window, text, 12., sans()) + 20.).sum();
+        let fixed = self.text_width(window, &summary, 13., sans()) + pills + 2. * 28. + 8. * 4. + 16. * 4. + 24. + if self.client { 128. } else { 24. };
+        let serif = gpui::Font { weight: FontWeight::SEMIBOLD, ..gpui::font(crate::ui::assets::SERIF) };
+        let room = (f32::from(self.body.size.width) + 48. - f32::from(t.px(fixed))).max(80.);
+        let title = crate::views::nav::ellipsize(&title, room, |s| self.text_width(window, s, 22., serif.clone()));
         div()
             .flex_none()
-            .min_h(px(40.))
-            .pl_4()
+            .pl(px(24.))
+            .pt(px(20.))
+            .pb(px(14.))
             // Under the window badge, when the app draws its title bar.
-            .pr(px(if self.client { 128. } else { 8. }))
+            .pr(px(if self.client { 128. } else { 24. }))
             .flex()
             // In a narrow window, settings wrap instead of sliding under the badge.
             .flex_wrap()
             .items_center()
-            .gap_1()
-            .border_b_1()
-            .border_color(t.border)
+            .gap_x(px(16.))
+            .gap_y(px(8.))
             .text_size(px(12.))
-            .child(
-                div()
-                    .flex_shrink()
-                    .h(px(38.))
-                    .flex()
-                    .items_center()
-                    .min_w_0()
-                    .truncate()
-                    .text_color(t.soft)
-                    .when(self.client, |d| d.map(crate::ui::widgets::drag_window))
-                    .child(info),
-            )
+            .child(widgets::page_head(t, "sheet-table", 22., title, summary).flex_none().when(self.client, |d| d.map(widgets::drag_window)))
             // Next to the table name: what is selected, and what can be done with it.
             .children(self.span_tools(cx))
-            .child(div().flex_1().min_w(px(8.)).h(px(38.)).when(self.client, |d| d.map(crate::ui::widgets::drag_window)))
-            .child(self.chip("sheet-delimiter", delimiter, false, Pick::Delimiter))
-            .child(self.chip("sheet-encoding", self.format.encoding.label().to_string(), false, Pick::Encoding))
-            .child(self.chip("sheet-header", tr("Header", "En-tête").to_string(), self.format.header, Pick::Header))
-            .child(div().flex_none().w(px(1.)).h(px(16.)).mx(px(6.)).bg(t.border))
+            .child(div().flex_1().min_w(px(8.)).h(px(26.)).when(self.client, |d| d.map(widgets::drag_window)))
+            .child(div().flex().gap_1().child(self.chip("sheet-delimiter", delimiter, false, Pick::Delimiter)).child(self.chip("sheet-encoding", encoding, false, Pick::Encoding)).child(self.chip("sheet-header", header, self.format.header, Pick::Header)))
             .child(
-                button("sheet-copy", if self.copied { "check.svg" } else { "copy.svg" }, false, t)
-                    .tooltip(tip(tr("Copy the selection", "Copier la sélection"), crate::ui::keys::of(cx, &Copy), t))
-                    .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),
-            )
-            .child(
-                button("sheet-export", "export.svg", false, t)
-                    .tooltip(tip(tr("Export the table…", "Exporter le tableau…"), String::new(), t))
-                    .on_click(|_, window, cx| window.dispatch_action(Pick::Export.action(), cx)),
+                div()
+                    .flex()
+                    .gap_1()
+                    .child(
+                        button("sheet-copy", if self.copied { "check.svg" } else { "copy.svg" }, false, t)
+                            .debug_selector(|| "sheet-copy".into())
+                            .tooltip(tip(tr("Copy the selection", "Copier la sélection"), crate::ui::keys::of(cx, &Copy), t))
+                            .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),
+                    )
+                    .child(
+                        button("sheet-export", "export.svg", false, t)
+                            .debug_selector(|| "sheet-export".into())
+                            .tooltip(tip(tr("Export the table…", "Exporter le tableau…"), String::new(), t))
+                            .on_click(|_, window, cx| window.dispatch_action(Pick::Export.action(), cx)),
+                    ),
             )
     }
 
@@ -378,9 +392,9 @@ impl Sheet {
                     .items_center()
                     .border_r_1()
                     .border_b_1()
-                    .border_color(t.border)
+                    .border_color(t.code_bg)
                     .when(self.mono.get(c) == Some(&true) && !head, |d| d.font_family(mono()))
-                    .when(head, |d| d.bg(t.code_bg).font_weight(FontWeight::SEMIBOLD))
+                    .when(head, |d| d.bg(t.code_bg).font_weight(FontWeight::SEMIBOLD).when(c + 1 == self.cols(), |d| d.rounded_tr(t.band())))
                     .when(inside, |d| d.bg(t.selection))
                     .child(div().min_w_0().truncate().child(text))
                     .when(self.cursor == (row, c) && !editing, |d| {
