@@ -321,7 +321,9 @@ impl Shell {
         });
         let sections = rows.into_iter().enumerate().map(|(i, (title, rows))| {
             let busy = rows.iter().any(|row| row.action.is_some() && (row.action == self.help.sel || self.help.edit.as_ref().is_some_and(|edit| Some(edit.action) == row.action)));
-            if let Some(far) = self.help.scroll.bounds_for_item(i).filter(|at| lazy && !busy && (at.bottom() < view.top() - margin || at.top() > view.bottom() + margin)) {
+            // An item's bounds are where it lies unscrolled: the offset brings them to the window.
+            let shift = self.help.scroll.offset().y;
+            if let Some(far) = self.help.scroll.bounds_for_item(i).filter(|at| lazy && !busy && (at.bottom() + shift < view.top() - margin || at.top() + shift > view.bottom() + margin)) {
                 return div().w(t.px(370.)).max_w_full().h(far.size.height);
             }
             div()

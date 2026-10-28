@@ -791,14 +791,18 @@ fn clear_at_a_glance(cx: &mut TestAppContext) {
     // Sections far from the window are empty boxes; the ones in view, after the jump and after wheel steps up, are drawn.
     let drawn = |cx: &mut gpui::VisualTestContext| {
         let (view, boxes, rows) = shell.read_with(cx, |s, cx| {
-            let boxes: Vec<_> = (0..s.help_rows(cx).len()).map(|i| s.help.scroll.bounds_for_item(i).unwrap()).collect();
+            // An item's bounds are where it lies unscrolled: the offset brings them to the window.
+            let shift = point(px(0.), s.help.scroll.offset().y);
+            let boxes: Vec<_> = (0..s.help_rows(cx).len()).map(|i| s.help.scroll.bounds_for_item(i).unwrap() + shift).collect();
             (s.help.scroll.bounds(), boxes, s.help_rows(cx))
         });
-        let mid = rows.iter().zip(&boxes).filter(|(_, b)| b.top() < view.center().y && b.bottom() > view.center().y).collect::<Vec<_>>();
-        assert!(!mid.is_empty(), "a section is at the middle of the list");
-        for (section, _) in mid {
+        let mid = rows.iter().zip(&boxes).filter(|(_, b)| b.top() < view.bottom() && b.bottom() > view.top()).collect::<Vec<_>>();
+        assert!(!mid.is_empty(), "a section is in view");
+        // gpui keeps the debug bounds of earlier frames: the key must be inside its section, in this frame.
+        for (section, at) in mid {
             let action = section.1.iter().find_map(|row| row.action).expect("a section with a shortcut");
-            assert!(cx.debug_bounds(leak(format!("key-{action}"))).is_some(), "{} is drawn at the middle of the list", section.0);
+            let key = cx.debug_bounds(leak(format!("key-{action}")));
+            assert!(key.is_some_and(|key| at.contains(&key.center())), "{} is drawn in view: {key:?} in {at:?}", section.0);
         }
         view.center()
     };
