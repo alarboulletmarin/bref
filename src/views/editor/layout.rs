@@ -1,7 +1,7 @@
 //! Layout: lines shaped and placed, redone only where the text changed (`Damage`, `plan`).
 
 use super::*;
-use crate::ui::assets::needs_system_font;
+use crate::ui::assets::{SERIF, needs_system_font};
 
 /// What the layout depends on, apart from the text: if nothing changed, it is kept.
 #[derive(PartialEq)]
@@ -490,9 +490,10 @@ pub fn text_runs(t: &Theme, text: &str, flags: &[u16], marked: impl Fn(usize) ->
             TextRun {
                 len,
                 font: Font {
-                    weight: if style.heading || f & md::BOLD != 0 { FontWeight::BOLD } else { FontWeight::NORMAL },
+                    weight: if style.heading { FontWeight::SEMIBOLD } else if f & md::BOLD != 0 { FontWeight::BOLD } else { FontWeight::NORMAL },
                     style: if slanted { FontStyle::Italic } else { FontStyle::Normal },
-                    ..font(if code { mono() } else { sans() })
+                    // Titles are set in the serif (code spans stay mono).
+                    ..font(if code { mono() } else if style.heading { SERIF } else { sans() })
                 },
                 color,
                 background_color: (f & md::CODE != 0).then_some(t.code_bg),
@@ -1082,8 +1083,8 @@ impl Editor {
             // Titles: a scale of about 1.2, about one body line of room above the first two levels
             // and two thirds of it above the others.
             let (font_size, pad) = match kind {
-                Kind::Heading(1) => (px(27.), px(24.)),
-                Kind::Heading(2) => (px(22.), px(24.)),
+                Kind::Heading(1) => (px(31.), px(24.)),
+                Kind::Heading(2) => (px(23.), px(24.)),
                 Kind::Heading(3) => (px(19.), px(16.)),
                 Kind::Heading(4) => (px(17.), px(16.)),
                 Kind::Heading(_) => (px(16.), px(16.)),

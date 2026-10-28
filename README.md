@@ -38,7 +38,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Capture in one line**: one shortcut of your desktop (set up from the palette, `Super + Shift + N` on GNOME) opens a single line anywhere, anytime: type, `Enter`, it is at the bottom of today's note and the window is gone. See [Capture](#capture).
 - **A blank page that remembers**: an empty note shows, under the line you write on, today's date (a click opens the note of the day), the keys that matter, and what to read again: the daily notes of a week, a month and a year ago, and one note you have not touched for a month or more, a different one each day. A click opens any of them; the first key you type clears the page.
 - **Word count**: the bottom of the note shows its words and characters, or those of the selection.
-- **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, IBM Plex Sans and Plex Mono built in (nothing to install), any installed font if you prefer, and the text size you like.
+- **Yours to dress**: a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, IBM Plex Sans, Plex Mono and Plex Serif (titles) built in (nothing to install), any installed font if you prefer, and the text size you like.
 - Light and dark, following your system, until you pick a theme. English and French, following the system language.
 
 ## Install
@@ -338,7 +338,7 @@ Bref reopens with the panel as you left it.
 ## Appearance
 
 - **Theme**: the half-filled circle at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system. In every theme, links, secondary text and the titles of colored panels are adjusted to read at a contrast of 4.5:1 at least (WCAG AA).
-- **Fonts**: Bref carries IBM Plex Sans (text) and IBM Plex Mono (code), under the SIL Open Font License (`assets/fonts/`), so it looks the same everywhere without installing anything. Type `font` in the palette (`Ctrl + P`) to choose another font, for the app or for the code, among those installed on your system; type in the list to filter it. Ideograms and emoji, which Plex does not draw, come from a font of your system.
+- **Fonts**: Bref carries IBM Plex Sans (text), IBM Plex Mono (code) and IBM Plex Serif (titles), under the SIL Open Font License (`assets/fonts/`), so it looks the same everywhere without installing anything. Type `font` in the palette (`Ctrl + P`) to choose another font, for the app or for the code, among those installed on your system; type in the list to filter it. Ideograms and emoji, which Plex does not draw, come from a font of your system.
 - **Text size**: `Ctrl + +` and `Ctrl + -`, `Ctrl + 0` for the default. Headings and code scale with it, and so does the width of the text column. The interface around the note (panel, rail, menus, palette, help) follows too, from 85 % to 150 %, so that it stays usable at either end.
 - **Page width**: `page width` in the palette sets how wide the text column is (narrow, normal, wide, or the full window), kept in `settings` as `page=narrow|normal|wide|full`. A table wider than the text does not have to scroll inside it: `wide tables` in the palette chooses between staying in the column, where it scrolls sideways, and spilling out on both sides, centered on the window (the default; `wide=column|center`). A small table keeps its own size, and nothing goes past the window.
 
@@ -568,7 +568,7 @@ The check is the only network request the app makes until you press Update. It r
 
 - **Linux** needs a working Vulkan driver (Mesa or the vendor one). Bref draws its own title bar: GNOME under Wayland draws none for applications. Drag the window by the pill at the top right, by the title of the panel, by the empty part of the rail or of a table's bar (a double click maximizes it), or hold `Alt` and drag from anywhere. On macOS and Windows the system title bar is used.
 - **Language**: French if the system language is French, English otherwise. Bref asks the system (Windows, macOS) or reads `LC_ALL`, `LC_MESSAGES` and `LANG` (Linux, or any system when started from a terminal).
-- **Fonts**: IBM Plex Sans and Plex Mono, built into the app.
+- **Fonts**: IBM Plex Sans, Plex Mono and Plex Serif (titles), built into the app.
 - **Accessibility**: every view can be reached from the keys, and every color pair stays readable in the 13 themes. A screen reader cannot read the window yet: the toolkit Bref is drawn with exposes no accessibility tree. Composing text with an input method (Chinese, Japanese, Korean, dead keys) works in notes, but in a table cell or a diagram shape the text is inserted as it is typed.
 
 ## Troubleshooting

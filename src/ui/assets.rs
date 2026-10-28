@@ -18,7 +18,7 @@ static FONTS: RwLock<(&str, &str)> = RwLock::new(("IBM Plex Sans", "IBM Plex Mon
 /// IBM Plex Sans and Plex Mono (SIL OFL license, `assets/fonts/`), in the binary: the app
 /// has its fonts without installing anything. Static fonts, because gpui 0.2 does not
 /// bold a variable font.
-pub const FONT_FILES: [&[u8]; 8] = [
+pub const FONT_FILES: [&[u8]; 10] = [
     include_bytes!("../../assets/fonts/IBMPlexSans-Regular.ttf"),
     include_bytes!("../../assets/fonts/IBMPlexSans-Italic.ttf"),
     include_bytes!("../../assets/fonts/IBMPlexSans-Bold.ttf"),
@@ -27,7 +27,13 @@ pub const FONT_FILES: [&[u8]; 8] = [
     include_bytes!("../../assets/fonts/IBMPlexMono-Italic.ttf"),
     include_bytes!("../../assets/fonts/IBMPlexMono-Bold.ttf"),
     include_bytes!("../../assets/fonts/IBMPlexMono-BoldItalic.ttf"),
+    include_bytes!("../../assets/fonts/IBMPlexSerif-SemiBold.ttf"),
+    include_bytes!("../../assets/fonts/IBMPlexSerif-SemiBoldItalic.ttf"),
 ];
+
+/// IBM Plex Serif, bundled in SemiBold (600) and its italic only: for titles (note headings, panel and
+/// board titles), never body text. A view asks for it with `font(SERIF)` and `FontWeight::SEMIBOLD`.
+pub const SERIF: &str = "IBM Plex Serif";
 
 pub fn sans() -> &'static str {
     FONTS.read().unwrap().0
