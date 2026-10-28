@@ -1,7 +1,7 @@
 //! Layout: lines shaped and placed, redone only where the text changed (`Damage`, `plan`).
 
 use super::*;
-use crate::ui::assets::{SERIF, needs_system_font};
+use crate::ui::assets::needs_system_font;
 
 /// What the layout depends on, apart from the text: if nothing changed, it is kept.
 #[derive(PartialEq)]
@@ -492,8 +492,8 @@ pub fn text_runs(t: &Theme, text: &str, flags: &[u16], marked: impl Fn(usize) ->
                 font: Font {
                     weight: if style.heading { FontWeight::SEMIBOLD } else if f & md::BOLD != 0 { FontWeight::BOLD } else { FontWeight::NORMAL },
                     style: if slanted { FontStyle::Italic } else { FontStyle::Normal },
-                    // Titles are set in the serif (code spans stay mono).
-                    ..font(if code { mono() } else if style.heading { SERIF } else { sans() })
+                    // Titles follow the chosen font, in semibold (code spans stay mono).
+                    ..font(if code { mono() } else { sans() })
                 },
                 color,
                 background_color: (f & md::CODE != 0).then_some(t.code_bg),
