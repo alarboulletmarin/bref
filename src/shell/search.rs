@@ -479,7 +479,10 @@ impl Shell {
             .child(query)
             .child(first)
             .children(second)
-            .child(div().debug_selector(|| "vault-count".into()).px_1().text_size(t.px(12.)).text_color(t.soft).child(said));
+            // One line, cut with an ellipsis: wrapped, the text is measured at several widths in a row and a
+            // later unbounded measure reuses the narrowest result (one line per character), which made this
+            // header taller than the panel in a 144 px panel and left the list no height.
+            .child(div().debug_selector(|| "vault-count".into()).px_1().truncate().text_size(t.px(12.)).text_color(t.soft).child(said));
         let rows = find.rows().len();
         let list = uniform_list("vault-rows", rows, cx.processor(Self::render_vault_rows)).track_scroll(find.scroll.clone()).flex_1().min_h_0().px_1();
         div()
