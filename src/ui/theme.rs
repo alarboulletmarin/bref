@@ -420,6 +420,8 @@ mod tests {
                 ("text/ground", t.text, t.ground, 4.5),
                 ("accent/ground", t.accent, t.ground, 4.5),
                 ("accent/pill", t.accent, over(t.accent.opacity(0.1), t.bg), 4.5),
+                // The calendar's today: the digit (drawn in `bg`) on its `accent` circle.
+                ("bg/accent", t.bg, t.accent, 4.5),
                 ("accent/pill ground", t.accent, over(t.accent.opacity(0.1), t.ground), 4.5),
                 ("string/bg", t.string, t.bg, 4.5),
                 ("string/code", t.string, t.code_bg, 4.5),

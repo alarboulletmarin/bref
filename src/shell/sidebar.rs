@@ -251,7 +251,16 @@ impl Shell {
         let head = div()
             .flex()
             .items_center()
-            .child(div().flex_1().min_w_0().truncate().pl_1().child(format!("{} {year}", tr(en, fr))))
+            .child(
+                div()
+                    .debug_selector(|| "month-title".into())
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .pl_1()
+                    .map(|d| crate::ui::widgets::serif_title(d, t, 15.))
+                    .child(format!("{} {year}", tr(en, fr))),
+            )
             .child(step("month-prev", "chevron-left.svg", -1, cx))
             .child(step("month-next", "chevron-right.svg", 1, cx));
         // Seven equal columns, which shrink with the panel instead of going under the note.
@@ -267,9 +276,10 @@ impl Shell {
             let name = crate::lang::date_name(date);
             let has = names.contains(name.as_str());
             let (is_today, is_open) = (date == today, open.as_deref() == Some(name.as_str()));
-            // The digit sits in a round box, filled in `accent` for today; the dot under it says "a note".
+            // The digit sits in a round box (the board's 22 px circle: a pill would be wider than a
+            // two-digit day), filled in `accent` for today; the dot under it says "a note".
             let digit = div()
-                .size(t.px(20.))
+                .size(t.px(22.))
                 .flex()
                 .items_center()
                 .justify_center()

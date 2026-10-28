@@ -4,6 +4,7 @@
 
 mod benches;
 mod board_header;
+mod calendar_head;
 mod sheet_header;
 mod table_open;
 mod docks;
