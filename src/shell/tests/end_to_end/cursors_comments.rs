@@ -131,11 +131,11 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // 420 px with the panel: no more room for the comments, the note keeps its own.
     lay(cx, 420., Mode::Tree, Panel::Split, 600.);
     let pane = cx.debug_bounds("pane-0").unwrap();
-    assert!(pane.size.width >= px(199.) && pane.right() == px(420.), "{pane:?}");
+    assert!(pane.size.width >= px(199.) && pane.right() == px(420. - 8.), "{pane:?}");
     // Panel collapsed: the column comes back, narrower; search and the counter fit in the note.
     lay(cx, 420., Mode::Tree, Panel::Rail, 600.);
     let (pane, said) = (cx.debug_bounds("pane-0").unwrap(), cx.debug_bounds("comments").unwrap());
-    assert!(pane.size.width >= px(199.) && said.size.width == px(180.) && said.right() <= px(420.), "{pane:?} {said:?}");
+    assert!(pane.size.width >= px(199.) && said.size.width == px(172.) && said.right() <= px(420. - 8.), "{pane:?} {said:?}");
     cx.simulate_keystrokes("secondary-f");
     cx.run_until_parked();
     within(cx, "find-bar", "pane-0");

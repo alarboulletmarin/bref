@@ -619,6 +619,76 @@ fn the_window_can_always_be_grabbed_at_the_top(cx: &mut TestAppContext) {
     let _ = fs::remove_dir_all(&root);
 }
 
+/// Atelier: the notes and the panel are sheets on the ground, 8 px of it between two sheets and at the window's edges
+/// (top, right, bottom), none between the rail and the panel. In every width, with the panel folded and open, with one
+/// pane and two, and at the smallest and largest zoom.
+#[gpui::test]
+fn sheets_lie_on_the_ground_with_eight_pixels_between(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "ground");
+    let (one, two) = (root.join("Une.md"), root.join("Deux.md"));
+    fs::write(&one, "# Titre\n\nTexte\n").unwrap();
+    fs::write(&two, "# Autre\n\nTexte\n").unwrap();
+    shell.update(cx, |s, cx| {
+        s.rescan(&root, cx);
+        s.open_note(&one, cx);
+    });
+    let gap = nav::GAP;
+    assert_eq!(gap, px(8.));
+    let mut seen = 0;
+    let mut check = |what: &str, width: f32, panels: bool, panes: usize, cx: &mut gpui::VisualTestContext| {
+        cx.simulate_resize(size(px(width), px(720.)));
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+        let sheets: Vec<_> = (0..panes).map(|i| cx.debug_bounds(["pane-0", "pane-1"][i]).unwrap_or_else(|| panic!("{what}: pane {i}"))).collect();
+        for (i, sheet) in sheets.iter().enumerate() {
+            assert_eq!((sheet.top(), sheet.bottom()), (gap, px(720.) - gap), "{what}: pane {i} {sheet:?}");
+        }
+        assert_eq!(sheets.last().unwrap().right(), px(width) - gap, "{what}: right edge {sheets:?}");
+        for pair in sheets.windows(2) {
+            assert_eq!(pair[1].left() - pair[0].right(), gap, "{what}: between the panes {pair:?}");
+        }
+        let rail = cx.debug_bounds("rail-free").expect("the rail is drawn");
+        if panels {
+            let panel = cx.debug_bounds("nav-panel").expect("the panel is drawn");
+            assert_eq!(panel.left(), rail.right(), "{what}: the panel touches the rail's side {panel:?} {rail:?}");
+            assert_eq!((panel.top(), panel.bottom()), (gap, px(720.) - gap), "{what}: panel {panel:?}");
+            assert_eq!(sheets[0].left() - panel.right(), gap, "{what}: between the panel and the note {panel:?} {sheets:?}");
+        } else {
+            assert_eq!(sheets[0].left() - rail.right(), px(0.), "{what}: the note touches the rail's side");
+        }
+        seen += 1;
+    };
+    for width in [860., 1600., 420.] {
+        shell.update(cx, |s, cx| {
+            s.nav.panel = nav::Panel::Rail;
+            cx.notify();
+        });
+        check(&format!("{width} folded"), width, false, 1, cx);
+        shell.update(cx, |s, cx| {
+            s.nav.panel = nav::Panel::Split;
+            cx.notify();
+        });
+        check(&format!("{width} open"), width, true, 1, cx);
+    }
+    shell.update_in(cx, |s, window, cx| s.open_aside(&two, window, cx));
+    shell.update(cx, |s, cx| {
+        s.nav.panel = nav::Panel::Split;
+        cx.notify();
+    });
+    for width in [860., 1600.] {
+        check(&format!("{width} two panes"), width, true, 2, cx);
+    }
+    for keys in ["secondary-- ".repeat(5), "secondary-= ".repeat(21)] {
+        cx.simulate_keystrokes(keys.trim_end());
+        cx.run_until_parked();
+        check("zoomed", 1600., true, 2, cx);
+    }
+    assert_eq!(seen, 10);
+    let _ = fs::remove_dir_all(&root);
+}
+
 /// The interface follows the note's zoom, from 85 % to 150 % of its size at 16: the rail's buttons, the panel's
 /// rows, the menus and the palette grow with it, their text with them.
 #[gpui::test]

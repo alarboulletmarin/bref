@@ -31,8 +31,10 @@ pub const ROW: f32 = 26.;
 pub const LIST_W: Pixels = px(260.);
 /// Width the panel and the comments column always leave to the note.
 pub const NOTE_MIN: Pixels = px(200.);
-/// Handle between the panel and the note.
-pub const DIVIDER: Pixels = px(5.);
+/// Ground between two sheets and around the window's edges (none on the rail's side).
+pub const GAP: Pixels = px(8.);
+/// Handle between the panel and the note: the gap itself, so that dragging it needs no thin line.
+pub const DIVIDER: Pixels = GAP;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub enum Mode {

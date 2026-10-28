@@ -51,7 +51,7 @@ fn tabs_open_switch_close_and_come_back(cx: &mut TestAppContext) {
     // The bar sits over the note, inside the pane, and never over its text.
     let (bar, pane) = (cx.debug_bounds("tabs-0").unwrap(), cx.debug_bounds("pane-0").unwrap());
     assert!(bar.bottom() <= pane.top() + px(0.5) && bar.left() >= pane.left() - px(0.5) && bar.right() <= pane.right() + px(0.5), "{bar:?} over {pane:?}");
-    assert!((bar.top() - top).abs() < px(0.5) && (pane.top() - top - px(34.)).abs() < px(1.), "the bar takes 34 px at the top: {bar:?} {pane:?}");
+    assert!((bar.top() - top).abs() < px(0.5) && (pane.top() - top - px(34. + 6.)).abs() < px(1.), "the bar takes 34 px at the top, then 6 of ground: {bar:?} {pane:?}");
     assert_eq!(shell.read_with(cx, |s, cx| s.tab_labels(0, cx)), vec!["Alpha", "Beta", "Gamma"]);
 
     // Ctrl+Tab goes round; Ctrl+Shift+Tab back.

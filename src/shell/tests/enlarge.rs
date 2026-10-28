@@ -157,7 +157,7 @@ fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
             } else {
                 assert!(btn.left() >= pic.right(), "{what} at {width}: {btn:?} overlaps {pic:?}");
             }
-            page.hover(cx, point(px(width - 1.), btn.center().y));
+            page.hover(cx, point(px(width - 10.), btn.center().y));
             assert!(!page.found(cx)[0].3, "{what}: shown with the pointer away");
             page.hover(cx, point(pic.left() + pic.size.width / 2., btn.center().y.clamp(pic.top(), pic.bottom() - px(0.5))));
             let over = page.found(cx)[0];

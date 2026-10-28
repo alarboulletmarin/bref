@@ -819,9 +819,11 @@ impl Shell {
                 .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.hover)).active(|s| s.bg(t.pressed)))
                 .child(svg().path(icon).size(t.px(14.)).flex_none().text_color(if on { t.soft } else { t.dim }))
         };
+        // The view in sight is a small sheet laid on the rail, its icon in the accent.
+        let on_sheet = |b: Stateful<Div>, on: bool| b.rounded(t.large()).when(on, |d| d.bg(t.bg).shadow(t.lifted()));
         let shown: Vec<Mode> = Mode::ALL.into_iter().filter(|m| self.tool_shown(*m)).collect();
         let mode_button = |id: &'static str, icon, m: Mode, label: &'static str, keys: String| {
-            button(id, icon, shown.contains(&m), t)
+            on_sheet(button(id, icon, shown.contains(&m), t), shown.contains(&m))
                 .debug_selector(move || id.to_string())
                 .tooltip(tip(label, keys, t))
                 // Shift+click: with the others of its dock, one above the other.
@@ -894,7 +896,7 @@ impl Shell {
             .child(mode_button("nav-links", "backlink.svg", Mode::Links, tr("Backlinks", "Rétroliens"), keys(&ShowLinks)))
             .child(mode_button("nav-calendar", "i-calendar.svg", Mode::Calendar, tr("Calendar", "Calendrier"), keys(&ShowCalendar)))
             .child(
-                button("nav-find", "find-text.svg", shown.contains(&Mode::Search), t)
+                on_sheet(button("nav-find", "find-text.svg", shown.contains(&Mode::Search), t), shown.contains(&Mode::Search))
                     .debug_selector(|| "nav-find".into())
                     .tooltip(tip(tr("Search the text of the vault", "Chercher dans le texte du coffre"), keys(&crate::actions::SearchVault), t))
                     .on_click(cx.listener(|this, _, window, cx| match this.tool_shown(Mode::Search) {
@@ -956,7 +958,7 @@ impl Shell {
                     .on_click(cx.listener(|this, _, window, cx| this.set_help(true, window, cx))),
             );
 
-        let wrapper = div().h_full().flex().min_w_0().bg(t.panel);
+        let wrapper = div().h_full().flex().min_w_0();
         // A header dragged from the right dock: the rail of a folded panel takes it.
         let rail = rail
             .on_drag_move(cx.listener(|this, e: &gpui::DragMoveEvent<docks::ToolDragged>, _, cx| {
@@ -1039,6 +1041,7 @@ impl Shell {
                     .h_full()
                     .border_l_1()
                     .border_color(if aimed { t.accent } else { t.border })
+                    .rounded(t.sheet())
                     .bg(if aimed { t.accent.opacity(0.12) } else { t.panel })
                     .on_drag_move(cx.listener(|this, e: &gpui::DragMoveEvent<docks::ToolDragged>, _, cx| {
                         match e.bounds.contains(&e.event.position) {
@@ -1079,7 +1082,7 @@ impl Shell {
                     cx.stop_propagation();
                 }),
             );
-        Some(div().h_full().flex().flex_none().bg(t.panel).child(divider).child(crate::ui::widgets::fade_in(content, "dock-in", &t)).into_any_element())
+        Some(div().h_full().flex().flex_none().child(divider).child(crate::ui::widgets::fade_in(content, "dock-in", &t)).into_any_element())
     }
 
     /// The tool is drawn in a dock this frame.
@@ -1113,7 +1116,8 @@ impl Shell {
             sections.push(section);
         }
         self.nav.activate(active);
-        div()
+        // A sheet on the ground, like the note.
+        crate::ui::widgets::sheet(t)
             .debug_selector(move || if right { "dock-right".into() } else { "nav-panel".into() })
             .id(if right { "dock-right" } else { "nav-panel" })
             .h_full()

@@ -97,7 +97,6 @@ pub fn tip(label: impl Into<SharedString>, keys: String, theme: Theme) -> impl F
 }
 /// A sheet laid on the ground: the note, the panel, a tool. `bg`, the sheet radius, the `lifted` shadow.
 /// The caller sets its size and place; the contents clip to its corners.
-#[allow(dead_code)] // used by the views from step 3 of #91
 pub fn sheet(t: Theme) -> Div {
     div().bg(t.bg).rounded(t.sheet()).shadow(t.lifted()).overflow_hidden()
 }

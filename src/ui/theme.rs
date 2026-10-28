@@ -165,8 +165,11 @@ impl Theme {
             .unwrap_or(text);
         // Links and tags are written in the accent: it must read like text, selected too.
         // It also reads on the ground and in an open pill (10 % of itself over the page or the ground).
-        let pills = [blend(accent, bg, 0.1), blend(accent, ground, 0.1)];
-        let accent_read = picked.iter().chain([&ground]).chain(&pills).fold(accent, |c, b| legible(c, *b));
+        // The pill takes its tint from the accent it holds, so it is read again from the accent made legible, until it settles.
+        let accent_read = (0..4).fold(accent, |a, _| {
+            let pills = [blend(a, bg, 0.1), blend(a, ground, 0.1)];
+            picked.iter().chain([&ground]).chain(&pills).fold(a, |c, b| legible(c, *b))
+        });
         // Strings and numbers take the accent shifted in hue, to match each theme without a palette of their own.
         let code = |by: f32| [bg, code_bg].iter().fold(Hsla { h: (accent_read.h + by).fract(), ..accent_read }, |c, b| legible(c, *b));
         Self {
@@ -258,11 +261,13 @@ impl Theme {
     }
 }
 
-/// The ground under the sheets of `bg`: `bg` toward black by 6 %, then by 2 % more until the two tell apart
-/// (1.08:1). Light themes get their 6 % at once; the dark ones, whose `bg` is already near black, need a third.
+/// The ground under the sheets of `bg`: its lightness lowered by 7.5 %, then by 2 % more until the two tell apart
+/// (1.08:1). The hue stays and so does the saturation (up to 0.3, or a yellow sheet would get a mustard ground): a
+/// warm sheet gets a warm ground, where a blend toward black would grey it.
+/// Light themes get their 7.5 % at once; the dark ones, whose `bg` is already near black, need a third.
 fn ground_of(bg: Hsla) -> Hsla {
-    let black = hsla(0., 0., 0., 1.);
-    (0..25).map(|i| blend(black, bg, 0.06 + i as f32 * 0.02)).find(|g| contrast(*g, bg) >= 1.08).unwrap_or(black)
+    let lower = |by: f32| Hsla { l: bg.l * (1. - by), s: bg.s.min(0.3), ..bg };
+    (0..25).map(|i| lower(0.075 + i as f32 * 0.02)).find(|g| contrast(*g, bg) >= 1.08).unwrap_or(hsla(0., 0., 0., 1.))
 }
 
 /// Radius of the window itself when the app draws its frame (Linux): it matches the system's corners, so it is

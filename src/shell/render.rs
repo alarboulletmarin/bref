@@ -77,7 +77,7 @@ impl Render for Shell {
         window.set_client_inset(inset);
         self.nav.left = inset;
         self.nav.native_bar = !client;
-        self.nav.total = window.viewport_size().width - inset * 2.;
+        self.nav.total = window.viewport_size().width - inset * 2. - if self.vault.is_some() { nav::GAP } else { px(0.) };
 
         let pill = self.render_window_controls(window);
 
@@ -97,7 +97,9 @@ impl Render for Shell {
                 let pane = self.groups[group].shown;
                 let (area, said) = self.in_pane(pane, |this| this.render_pane(pane, group, pane == active, client, window, cx));
                 let bar = self.render_tabs(group, client, cx);
-                areas.push(Some(div().size_full().min_w_0().min_h_0().flex().flex_col().children(bar).child(area).into_any_element()));
+                // Its tab bar sits on the ground, above the sheet of the note.
+                let gap = bar.is_some();
+                areas.push(Some(div().size_full().min_w_0().min_h_0().flex().flex_col().when(gap, |d| d.gap(t.px(6.))).children(bar).child(area).into_any_element()));
                 if pane == active {
                     comments = said;
                 }
@@ -142,7 +144,11 @@ impl Render for Shell {
             // The left dock first: it settles which tool takes the keys.
             let docks = self.render_nav(window, cx);
             let docked = self.render_right_dock(window, cx);
+            // The ground shows around the sheets: 8 px above, right and below; the rail has none on its side.
             body.flex()
+                .pt(nav::GAP)
+                .pr(nav::GAP)
+                .pb(nav::GAP)
                 .child(docks)
                 .when(self.nav.panel != Panel::Full, |d| d.child(note).children(comments).children(docked))
                 .children(self.palette.clone())
@@ -155,7 +161,7 @@ impl Render for Shell {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .bg(t.bg)
+            .bg(t.ground)
             .text_color(t.text)
             .font_family(sans())
             .when(framed, |d| {
@@ -806,7 +812,6 @@ impl Shell {
                 .pt(t.px(48.))
                 .px_3()
                 .pb_3()
-                .bg(t.panel)
                 .text_size(t.px(13.))
                 .flex()
                 .flex_col()
@@ -899,7 +904,7 @@ impl Shell {
                 .border_1()
                 .border_color(t.accent.opacity(0.5))
         });
-        let area = div()
+        let area = ui::widgets::sheet(t)
             .id(("pane", pane))
             .debug_selector(move || format!("pane-{group}"))
             .track_focus(&self.pane().zone)
@@ -972,7 +977,8 @@ impl Shell {
                 let (here, border) = (path.clone(), at - 1);
                 let dragged = self.pane_drag.as_ref().is_some_and(|(p, b)| *p == here && *b == border);
                 let id = format!("pane-border-{}-{border}", here.iter().map(usize::to_string).collect::<Vec<_>>().join("."));
-                let line = div().bg(if dragged { t.accent } else { t.border }).group_hover("pane-border", |s| s.bg(t.accent));
+                // The border is the gap between two sheets: a line only while the pointer is on it.
+                let line = div().bg(if dragged { t.accent } else { gpui::transparent_black() }).group_hover("pane-border", |s| s.bg(t.accent));
                 split = split.child(
                     div()
                         .id(gpui::SharedString::from(id.clone()))
@@ -982,8 +988,8 @@ impl Shell {
                         .flex()
                         .justify_center()
                         .map(|d| match row {
-                            true => d.w(px(5.)).h_full().cursor(CursorStyle::ResizeLeftRight).child(line.w(px(1.)).h_full()),
-                            false => d.h(px(5.)).w_full().flex_col().cursor(CursorStyle::ResizeUpDown).child(line.h(px(1.)).w_full()),
+                            true => d.w(nav::GAP).h_full().cursor(CursorStyle::ResizeLeftRight).child(line.w(px(2.)).h_full()),
+                            false => d.h(nav::GAP).w_full().flex_col().cursor(CursorStyle::ResizeUpDown).child(line.h(px(2.)).w_full()),
                         })
                         // Held, it follows the pointer; a double click shares this split evenly.
                         .on_mouse_down(

@@ -31,11 +31,11 @@ fn tools_move_between_docks_and_tabs(cx: &mut TestAppContext) {
     assert_eq!(places(cx), (vec![Mode::Links], vec![Mode::Tree], vec![Mode::Links]));
     let (left, pane, right) = (bounds(cx, "nav-panel"), bounds(cx, "pane-0"), bounds(cx, "dock-right"));
     assert!(left.right() <= pane.left() + px(0.5) && pane.right() <= right.left() + px(0.5) && right.right() <= px(1600.5), "{left:?} {pane:?} {right:?}");
-    // No line between the zones: each resize handle stays a 5 px strip on the edge of its dock, found
+    // No line between the zones: each resize handle is the 8 px of ground between its dock and the note, found
     // by the pointer though nothing is drawn there at rest.
     let (grip, dock_grip) = (bounds(cx, "nav-divider"), bounds(cx, "dock-divider"));
-    assert_eq!((grip.size.width, grip.left(), grip.right()), (px(5.), left.right(), pane.left()), "{grip:?} {left:?}");
-    assert_eq!((dock_grip.size.width, dock_grip.left(), dock_grip.right()), (px(5.), pane.right(), right.left()), "{dock_grip:?} {right:?}");
+    assert_eq!((grip.size.width, grip.left(), grip.right()), (px(8.), left.right(), pane.left()), "{grip:?} {left:?}");
+    assert_eq!((dock_grip.size.width, dock_grip.left(), dock_grip.right()), (px(8.), pane.right(), right.left()), "{dock_grip:?} {right:?}");
     // Both lists are drawn at once, each from its own rows: a click in the right one opens what
     // links here, and the right dock is the one the keys reach afterwards.
     let alpha = bounds(cx, "nav-row-Alpha");

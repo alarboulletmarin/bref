@@ -206,8 +206,6 @@ impl Shell {
                 .w_full()
                 .h(t.px(TAB_BAR))
                 .flex()
-                .border_b_1()
-                .border_color(t.border)
                 .text_size(t.px(13.))
                 .when(corner, |d| d.pr(t.px(render::PILL_ROOM)))
                 // Past the last tab, it lands at the end; out of the bar, nowhere in it.
