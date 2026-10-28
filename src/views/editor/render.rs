@@ -34,7 +34,7 @@ impl Render for Editor {
                 .child(div().min_w_0().truncate().child(self.counts())),
         );
         // The text scrolls behind this band: it fades into the page, then hides what lies under
-        // the counter and the bar.
+        // the counter and the bar. Its lower corners are the sheet's: the sheet clips to a rectangle, not to its corners.
         let t = self.theme;
         let band = div()
             .debug_selector(|| "note-band".into())
@@ -43,6 +43,8 @@ impl Render for Editor {
             .right_0()
             .bottom_0()
             .h(FOOTER)
+            .rounded_bl(t.sheet())
+            .rounded_br(t.sheet())
             .bg(gpui::linear_gradient(0., gpui::linear_color_stop(t.bg, 0.7), gpui::linear_color_stop(t.bg.opacity(0.), 1.)));
         // Before drawing: matches follow a note changed while the bar is open.
         self.refresh_find(cx);
