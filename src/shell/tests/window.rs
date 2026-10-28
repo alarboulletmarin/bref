@@ -809,14 +809,14 @@ fn clear_at_a_glance(cx: &mut TestAppContext) {
     assert_eq!(shell.read_with(cx, |s, cx| s.palette.as_ref().and_then(|p| p.read(cx).choice_at(0))), Some("Par défaut : Bref, clair ou sombre comme le système".to_string()));
     cx.simulate_keystrokes("escape");
 
-    // Two panes: one line marks the active one, across its top.
+    // Two panes: a ring around the active one's sheet.
     cx.simulate_keystrokes("secondary-\\");
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    let line = cx.debug_bounds("pane-active").expect("the active pane is marked");
+    let ring = cx.debug_bounds("pane-active").expect("the active pane is marked");
     let active = shell.read_with(cx, |s, _| s.active);
     let pane = cx.debug_bounds(leak(format!("pane-{active}"))).unwrap();
-    assert!(line.top() == pane.top() && line.left() >= pane.left() && line.right() <= pane.right() && line.size.height >= px(3.), "{line:?} in {pane:?}");
+    assert_eq!(ring, pane, "the ring runs along the sheet's edge");
 }
 
 /// The rail reads as three groups (navigation, views, actions) then the bottom ones: in a 900, 720 and

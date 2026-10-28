@@ -3,7 +3,9 @@
 use super::*;
 
 /// Height of the tab bar, at scale 1: a row of the side panel.
-const TAB_BAR: f32 = 34.;
+pub(super) const TAB_BAR: f32 = 34.;
+/// A tab, a pill in the bar.
+const TAB_PILL: f32 = 30.;
 
 /// A tab being dragged: a small card with its name follows the pointer.
 #[derive(Clone)]
@@ -96,8 +98,8 @@ impl Shell {
         }
     }
 
-    /// The tab bar of `group`, if it has more than one tab. The tab shown is underlined, in the
-    /// accent in the active pane; one that is not saved yet has a dot in place of its cross.
+    /// The tab bar of `group`, if it has more than one tab. The tab shown is a pill on the sheet's
+    /// colour (lifted in the active pane); one that is not saved yet has a dot in place of its cross.
     pub(super) fn render_tabs(&mut self, group: usize, client: bool, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
         let t = self.theme;
         let tabs = self.groups[group].tabs.clone();
@@ -159,16 +161,19 @@ impl Shell {
                 .relative()
                 .flex_none()
                 .max_w(t.px(200.))
-                .h_full()
-                .pl(t.px(12.))
-                .pr(t.px(6.))
+                .h(t.px(TAB_PILL))
+                .pl(t.px(14.))
+                .pr(t.px(8.))
                 .flex()
                 .items_center()
                 .gap(t.px(6.))
-                .border_r_1()
-                .border_color(t.border)
+                .rounded(t.tab())
                 .cursor_pointer()
                 .text_color(if on || over { t.text } else { t.soft })
+                // The tab shown is a sheet-coloured pill, lifted in the active pane; the others are bare
+                // text that the pointer tints.
+                .when(on, |d| d.bg(t.bg).when(active, |d| d.shadow(t.lifted())))
+                .when(!on, |d| d.hover(|s| s.bg(t.hover)))
                 .when(pane.preview, |d| d.italic())
                 .child(div().min_w_0().truncate().child(label.clone()))
                 .child(slot)
@@ -183,8 +188,6 @@ impl Shell {
                         this.aim_tab(Some((group, at + usize::from(p.x > e.bounds.center().x))), cx);
                     }
                 }))
-                // Under the tab shown: the accent in the active pane, quieter in the other.
-                .when(on, |d| d.child(div().absolute().left_0().right_0().bottom_0().h(t.px(2.)).bg(if active { t.accent } else { t.soft })))
                 .on_hover(cx.listener(move |this, hover: &bool, _, cx| {
                     let now = if *hover { Some(tab) } else { this.tab_hover.filter(|t| *t != tab) };
                     if now != this.tab_hover {
@@ -230,6 +233,8 @@ impl Shell {
                         .min_w_0()
                         .h_full()
                         .flex()
+                        .items_center()
+                        .gap(t.px(4.))
                         .overflow_x_scroll()
                         .track_scroll(&self.groups[group].scroll)
                         .children(cells)

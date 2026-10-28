@@ -415,11 +415,11 @@ impl Shell {
         let controls = window.window_controls();
         div()
             .absolute()
-            .top_0()
+            // On the top strip: as high as the tab bar (34), which starts one gap down, so that the buttons
+            // and the tab pills share their middle.
+            .top(nav::GAP)
             .right_2()
-            // As high as the CSV bar, between the tab bar (34) and the panel header (44): the buttons
-            // sit on the middle of whichever row is under them.
-            .h(t.px(STRIP))
+            .h(t.px(tabs::TAB_BAR))
             .flex()
             .items_center()
             .gap_2()
@@ -629,7 +629,6 @@ impl Shell {
     pub(super) fn render_pane(&mut self, pane: usize, group: usize, active: bool, client: bool, window: &mut Window, cx: &mut Context<Self>) -> (gpui::AnyElement, Option<gpui::AnyElement>) {
         let t = self.theme;
         let many = self.alone().is_none() && self.groups.len() > 1;
-        // Its tab bar shows which pane is active; without one, a line across its top does.
         let barred = self.groups[group].tabs.len() > 1;
         // Copy of the whole note: a plain floating icon, outside the title bar.
         // Comments of the note, on its right: the commented text, then what is said about it. A
@@ -956,8 +955,8 @@ impl Shell {
             }))
             .child(note)
             .when(strip && free_top, |d| d.child(div().debug_selector(move || format!("drag-strip-{group}")).absolute().top_0().left_0().right_0().h(t.px(STRIP)).map(drag_window)))
-            // The active pane of several: a line across its top, in the full accent (3:1 at least on the page).
-            .when(many && active && !barred, |d| d.child(div().debug_selector(|| "pane-active".into()).absolute().top_0().left_0().right_0().h(t.px(3.)).bg(t.accent)))
+            // The active pane of several: a 1 px ring around its sheet, the accent at 30 %. Alone, a pane needs none.
+            .when(many && active, |d| d.child(div().debug_selector(|| "pane-active".into()).absolute().inset_0().rounded(t.sheet()).border_1().border_color(t.accent.opacity(0.3))))
             .children(tint);
         (area.into_any_element(), comments.map(IntoElement::into_any_element))
     }

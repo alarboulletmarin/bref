@@ -209,6 +209,11 @@ impl Theme {
         self.px(6.)
     }
 
+    /// The radius of a tab's pill.
+    pub fn tab(&self) -> Pixels {
+        self.px(9.)
+    }
+
     /// The large radius: cards, bars, panels, blocks of the note.
     pub fn large(&self) -> Pixels {
         self.px(8.)

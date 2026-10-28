@@ -204,3 +204,74 @@ fn the_tree_previews_in_a_single_tab(cx: &mut TestAppContext) {
     assert_eq!(shell.read_with(cx, |s, _| s.opened.last().cloned()), Some(root.join("rapport.pdf")));
     let _ = fs::remove_dir_all(&root);
 }
+
+/// The bar is a row of pills on the ground: twelve tabs with long titles (one without a space), at 420, 860 and
+/// 1,600 px and at zoom 11, 16 and 32, each pill 30 px high (scaled), no wider than 200, in the middle of the bar and
+/// of the window buttons, and the row stops before the buttons.
+#[gpui::test]
+fn tabs_are_pills_that_stay_clear_of_the_window_buttons(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-tab-pills-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let _config = isolated_config(&root);
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let notes: Vec<PathBuf> = (0..12)
+        .map(|i| match i {
+            3 => root.join(format!("{}.md", "Z".repeat(80))),
+            _ => root.join(format!("Une note au titre vraiment très long, numéro {i} ✨ 日本語.md")),
+        })
+        .collect();
+    for note in &notes {
+        fs::write(note, "# Titre\n").unwrap();
+    }
+    let (shell, cx) = cx.add_window_view(|window, cx| {
+        let mut shell = Shell::new(Some(root.clone()), vec![notes[0].clone()], window, cx);
+        shell.client = true;
+        shell
+    });
+    cx.run_until_parked();
+    shell.update_in(cx, |s, window, cx| {
+        for note in &notes[1..] {
+            s.add_tab(window, cx);
+            s.open_note(note, cx);
+        }
+    });
+    let settle = |cx: &mut gpui::VisualTestContext| {
+        for _ in 0..4 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+    };
+    for (keys, zoom) in [("secondary-- ".repeat(5), 11.), ("secondary-0 ".into(), 16.), ("secondary-= ".repeat(16), 32.)] {
+        cx.simulate_keystrokes(keys.trim_end());
+        assert_eq!(shell.read_with(cx, |s, _| s.theme.size), zoom);
+        let scale = if zoom < 16. { 0.85 } else if zoom > 16. { 1.5 } else { 1. };
+        for width in [420., 860., 1600.] {
+            cx.simulate_resize(size(px(width), px(600.)));
+            settle(cx);
+            let what = format!("{width} px at zoom {zoom}");
+            let (bar, row, buttons) = (cx.debug_bounds("tabs-0").unwrap(), cx.debug_bounds("tabs-row-0").unwrap(), cx.debug_bounds("window-pill").unwrap());
+            assert!(row.right() <= buttons.left() + px(0.5), "{what}: the row {row:?} runs under the buttons {buttons:?}");
+            assert!(row.size.width > px(0.), "{what}: no room for a tab");
+            let shown = shell.read_with(cx, |s, _| s.groups[0].shown);
+            let mut drawn = 0;
+            for tab in 0..12 {
+                // Tabs scrolled out of the row do not count: only the ones that show at least in part.
+                let Some(pill) = cx.debug_bounds(leak(format!("tab-{tab}"))).filter(|b| b.right() > row.left() && b.left() < row.right()) else { continue };
+                drawn += 1;
+                assert!((f32::from(pill.size.height) - 30. * scale).abs() < 1., "{what}: tab {tab} is {pill:?} high");
+                assert!(f32::from(pill.size.width) <= 200. * scale + 1., "{what}: tab {tab} is {pill:?} wide");
+                assert!(pill.top() >= bar.top() && pill.bottom() <= bar.bottom(), "{what}: tab {tab} {pill:?} out of the bar {bar:?}");
+            }
+            assert!(drawn >= 1, "{what}: no tab in view");
+            let pill = cx.debug_bounds(leak(format!("tab-{shown}"))).expect("the tab shown is drawn");
+            assert!(pill.size.width >= px(60.), "{what}: the tab shown is squeezed to {pill:?}");
+            // The buttons and the pills share their middle (at zoom 16: the buttons do not scale).
+            if zoom == 16. {
+                assert!((pill.center().y - buttons.center().y).abs() < px(1.), "{what}: pill {pill:?} and buttons {buttons:?} are not level");
+            }
+        }
+    }
+    let _ = fs::remove_dir_all(&root);
+}
