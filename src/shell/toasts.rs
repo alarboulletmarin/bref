@@ -76,14 +76,10 @@ impl Shell {
 
 /// Background of a status message or of the update banner.
 pub(super) fn status_card(t: Theme) -> Div {
-        div()
+        crate::ui::widgets::floating(t)
             .pl_3()
             .pr_2()
             .py_1p5()
-            .rounded(t.small())
-            .bg(t.panel)
-            .border_1()
-            .border_color(t.border)
             .text_size(t.px(13.))
             .flex()
             .items_center()
@@ -98,8 +94,8 @@ impl Shell {
             let id = toast.id;
             let (icon, color) = match toast.tone {
                 Tone::Info => ("info.svg", t.soft),
-                Tone::Done => ("check.svg", t.hue(ui::theme::GREEN, t.panel)),
-                Tone::Failed => ("alert.svg", t.hue(ui::theme::RED, t.panel)),
+                Tone::Done => ("check.svg", t.hue(ui::theme::GREEN, t.bg)),
+                Tone::Failed => ("alert.svg", t.hue(ui::theme::RED, t.bg)),
                 Tone::Busy => ("spinner.svg", t.soft),
             };
             let icon = svg().path(icon).size(t.px(14.)).flex_none().text_color(color);
@@ -113,7 +109,6 @@ impl Shell {
             };
             status_card(t)
                 .max_w(t.px(440.))
-                .shadow(t.floating())
                 .cursor_pointer()
                 .child(icon)
                 .child(div().min_w_0().child(toast.text.clone()))

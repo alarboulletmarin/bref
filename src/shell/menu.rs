@@ -418,8 +418,8 @@ impl Shell {
             div()
                 .id(label)
                 .debug_selector(move || format!("menu-entry-{label}"))
-                .h(t.px(28.))
-                .mx_1()
+                .h(t.px(30.))
+                .mx(t.px(6.))
                 .px_2()
                 .flex()
                 .items_center()
@@ -463,7 +463,7 @@ impl Shell {
                 // The menu is as wide as its longest label with its shortcut, whatever
                 // the font, and stays in the window, even opened near an edge.
                 .child(gpui::anchored().position(at).snap_to_window_with_margin(t.px(8.)).child(
-                    div()
+                    crate::ui::widgets::floating(t)
                         .debug_selector(|| "menu".into())
                         .track_focus(&self.menu_focus)
                         .key_context("Menu")
@@ -478,12 +478,7 @@ impl Shell {
                             }
                         }))
                         .min_w(t.px(230.))
-                        .py(t.px(5.))
-                        .bg(t.panel)
-                        .border_1()
-                        .border_color(t.border)
-                        .rounded(t.large())
-                        .shadow(t.floating())
+                        .py(t.px(6.))
                         .text_size(t.px(13.))
                         .children(rows)
                         .with_animation(

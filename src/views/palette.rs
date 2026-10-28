@@ -21,6 +21,9 @@ use crate::{
     lang::tr,
 };
 
+/// Height of a row of the list.
+const ROW: f32 = 38.;
+
 fn vault_label() -> &'static str {
     tr("Change vault…", "Changer de coffre…")
 }
@@ -173,6 +176,8 @@ pub struct Entry {
     pub name: String,
     pub path: PathBuf,
     pub tags: Arc<[String]>,
+    /// Whole days since the file was written; `None` when unknown.
+    pub days: Option<u64>,
     /// Text of the note, and the same in lowercase, for full-text search.
     pub body: Arc<str>,
     pub lower: Arc<str>,
@@ -269,6 +274,8 @@ enum Item {
 }
 
 pub struct Palette {
+    /// The vault's folder: what the rows' folders are shown from.
+    root: PathBuf,
     /// Submitted with Ctrl+Enter: the choice opens in the other pane.
     pub aside: bool,
     focus: FocusHandle,
@@ -392,6 +399,17 @@ pub fn fuzzy(query: &str, name: &str) -> Option<i32> {
 
 impl Palette {
     /// `entries`: the notes, most recent first.
+    /// The notes' folders are shown from `root`.
+    pub fn with_root(mut self, root: PathBuf) -> Self {
+        self.root = root;
+        self
+    }
+
+    /// The folder of the file in the vault, as a path; empty at the root.
+    fn folder_of(&self, path: &std::path::Path) -> String {
+        path.parent().and_then(|dir| dir.strip_prefix(&self.root).ok()).map(|dir| dir.to_string_lossy().into_owned()).unwrap_or_default()
+    }
+
     pub fn new(entries: Vec<Entry>, query: &str, theme: Theme, cx: &mut Context<Self>) -> Self {
         let mut this = Self {
             focus: cx.focus_handle(),
@@ -401,6 +419,7 @@ impl Palette {
             items: Vec::new(),
             selected: 0,
             aside: false,
+            root: PathBuf::new(),
             prompt: None,
             choices: false,
             updates: None,
@@ -858,10 +877,10 @@ impl Palette {
                 let action = c.action;
                 move || format!("command-{action}")
             })
-            .mx_1()
+            .mx(t.px(6.))
             .px_3()
-            .h(t.px(34.))
-            .rounded(t.small())
+            .h(t.px(ROW))
+            .rounded(t.large())
             .flex()
             .items_center()
             .gap(t.px(11.))
@@ -934,8 +953,13 @@ impl Render for Palette {
             let (label, detail) = match item {
                 Item::Note(n) => {
                     let e = &self.entries[*n];
-                    let tags: Vec<String> = e.tags.iter().take(4).map(|t| format!("#{t}")).collect();
-                    (e.name.clone(), tags.join(" "))
+                    // Under `#tag`, the tags; otherwise the folder.
+                    let detail = if self.query.text.trim_start().starts_with('#') {
+                        e.tags.iter().take(4).map(|t| format!("#{t}")).collect::<Vec<_>>().join(" ")
+                    } else {
+                        self.folder_of(&e.path)
+                    };
+                    (e.name.clone(), detail)
                 }
                 Item::Text(n) => {
                     let e = &self.entries[*n];
@@ -980,39 +1004,90 @@ impl Render for Palette {
                 item,
                 Item::Vault | Item::Help | Item::Diagram | Item::Folder | Item::Outline | Item::Grid(_) | Item::Template(_) | Item::Today | Item::Back | Item::Forward | Item::Sync
             );
+            let note = matches!(item, Item::Note(_));
+            let age = match item {
+                Item::Note(n) => self.entries[*n].days.map(crate::lang::age),
+                _ => None,
+            };
+            let soft = |d: gpui::Div| d.text_size(t.px(12.)).text_color(t.soft);
             div()
                 .debug_selector(move || format!("palette-item-{i}"))
-                .mx_1()
+                .mx(t.px(6.))
                 .px_3()
-                .py_1p5()
-                .rounded(t.small())
+                .h(t.px(ROW))
+                .rounded(t.large())
                 .flex()
+                .items_center()
                 .justify_between()
                 .gap_3()
                 .cursor_pointer()
                 .when(i == self.selected, |d| d.bg(t.selection))
                 .when(i != self.selected, |d| d.hover(|s| s.bg(t.hover)))
-                // With a text excerpt, the name keeps its place and the excerpt is shortened.
-                .child(
-                    div()
-                        .truncate()
-                        .when(matches!(item, Item::Text(_)), |d| d.flex_none().max_w(t.px(220.)))
-                        .child(label),
-                )
-                .child(if shortcut {
-                    keycaps(&detail, t, i == self.selected).debug_selector(move || format!("palette-detail-{i}")).flex_none()
-                } else {
-                    div()
-                        .truncate()
-                        .when(!matches!(item, Item::Text(_)), |d| d.flex_none())
-                        .text_color(if i == self.selected { t.text } else { t.soft })
-                        .text_size(t.px(12.))
-                        .child(detail)
+                // A note: its name, its folder after it, and on the right how long ago it was written. With a
+                // text excerpt, the name keeps its place and the excerpt is shortened.
+                .when(note, |d| {
+                    d.child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .gap(t.px(10.))
+                            .child(div().min_w_0().truncate().child(label.clone()))
+                            .child(soft(div()).debug_selector(move || format!("palette-folder-{i}")).truncate().flex_none().max_w(gpui::relative(0.4)).child(detail.clone())),
+                    )
                 })
+                .when(!note, |d| {
+                    d.child(
+                        div()
+                            .truncate()
+                            .when(matches!(item, Item::Text(_)), |d| d.flex_none().max_w(t.px(220.)))
+                            .child(label),
+                    )
+                    .child(if shortcut {
+                        keycaps(&detail, t, i == self.selected).debug_selector(move || format!("palette-detail-{i}")).flex_none()
+                    } else {
+                        div()
+                            .truncate()
+                            .when(!matches!(item, Item::Text(_)), |d| d.flex_none())
+                            .text_color(if i == self.selected { t.text } else { t.soft })
+                            .text_size(t.px(12.))
+                            .child(detail)
+                    })
+                })
+                .children(age.map(|age| soft(div()).debug_selector(move || format!("palette-age-{i}")).flex_none().w(t.px(56.)).text_right().child(age)))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, _, cx| this.confirm(i, cx)),
                 )
+        });
+
+        // The keys of the main palette, under the list; an input field and an empty list have none to show.
+        let footer = (self.prompt.is_none() && !self.items.is_empty()).then(|| {
+            let hint = |keys: String, what: &'static str| div().flex().items_center().gap(t.px(6.)).child(keycaps(&keys, t, false)).child(what);
+            let hints = if self.commands_only {
+                vec![hint(crate::ui::keys::of(cx, &Confirm), tr("run", "lancer"))]
+            } else {
+                vec![
+                    hint(crate::ui::keys::of(cx, &Confirm), tr("open", "ouvrir")),
+                    hint(crate::ui::keys::of(cx, &ConfirmAside), tr("in the other pane", "dans l'autre volet")),
+                    hint(">".into(), tr("commands", "commandes")),
+                ]
+            };
+            div()
+                .debug_selector(|| "palette-footer".into())
+                .mt(t.px(6.))
+                .px(t.px(18.))
+                .py(t.px(10.))
+                .border_t_1()
+                .border_color(t.code_bg)
+                .flex()
+                .flex_wrap()
+                .gap_x(t.px(16.))
+                .gap_y(t.px(4.))
+                .text_size(t.px(12.))
+                .text_color(t.soft)
+                .children(hints)
         });
 
         let root = div()
@@ -1039,26 +1114,21 @@ impl Render for Palette {
             .justify_center()
             .items_start()
             .child(
-                div()
+                crate::ui::widgets::floating(t)
                     .debug_selector(|| "palette-panel".into())
                     .mt(self.top)
-                    .w(t.px(520.))
+                    .w(t.px(560.))
                     .max_w_full()
-                    .pb_1()
-                    .bg(t.panel)
-                    .border_1()
-                    .border_color(t.border)
-                    .rounded(t.large())
-                    .shadow(t.floating())
+                    .pb(t.px(if footer.is_some() { 0. } else { 6. }))
                     .text_size(t.px(14.))
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .child(
                         div()
-                            .px_4()
-                            .py_3()
-                            .mb_1()
+                            .h(t.px(52.))
+                            .px(t.px(18.))
+                            .mb(t.px(6.))
                             .border_b_1()
-                            .border_color(t.border)
+                            .border_color(t.code_bg)
                             .flex()
                             .items_center()
                             .text_size(t.px(15.))
@@ -1096,6 +1166,7 @@ impl Render for Palette {
                             }),
                     )
                     .children(rows)
+                    .children(footer)
                     .children(self.nothing_to_show().map(|said| {
                         div().debug_selector(|| "palette-empty".into()).px_4().py_3().text_center().text_size(t.px(13.)).text_color(t.soft).child(said)
                     }))

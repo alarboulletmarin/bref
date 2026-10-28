@@ -97,6 +97,7 @@ impl Shell {
             return;
         }
         self.flush(cx);
+        let now = std::time::SystemTime::now();
         let entries = self
             .by_recency()
             .into_iter()
@@ -104,6 +105,7 @@ impl Shell {
                 name: n.name.clone(),
                 path: n.path.clone(),
                 tags: n.tags.clone(),
+                days: now.duration_since(n.mtime).ok().map(|age| age.as_secs() / 86_400),
                 body: n.body.clone(),
                 lower: n.lower.clone(),
             })
@@ -114,6 +116,7 @@ impl Shell {
                 ..Entry::default()
             }))
             .collect();
+        let root = self.vault.clone().unwrap_or_default();
         let theme = self.theme;
         let updates = self.prefs.updates;
         let installable = self.update.as_ref().filter(|r| r.asset.is_some()).map(|r| r.version.clone());
@@ -125,6 +128,7 @@ impl Shell {
         let context = self.here_group(cx).1;
         let palette = cx.new(|cx| {
             Palette::new(entries, query, theme, cx)
+                .with_root(root)
                 .with_updates(updates, installable)
                 .with_table(table)
                 .with_lists(lists)

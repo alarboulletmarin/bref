@@ -95,6 +95,19 @@ pub fn number(n: usize) -> String {
     out
 }
 
+/// How long ago, in the palette's short form: `today`, `3 d`, `2 wk`, `5 mo`, `1 y` (`aujourd'hui`, `3 j`, `2 sem.`,
+/// `5 mois`, `1 an`). `days` is the age in whole days.
+pub fn age(days: u64) -> String {
+    let (n, en, fr) = match days {
+        0 => return tr("today", "aujourd'hui").to_string(),
+        1..=6 => (days, "d", "j"),
+        7..=29 => (days / 7, "wk", "sem."),
+        30..=364 => (days / 30, "mo", "mois"),
+        _ => (days / 365, "y", if days < 730 { "an" } else { "ans" }),
+    };
+    format!("{n} {}", tr(en, fr))
+}
+
 /// `09:05`: the time as written in a template.
 pub fn time_name((hour, minute): (u32, u32)) -> String {
     format!("{hour:02}:{minute:02}")
@@ -128,6 +141,13 @@ pub fn fold(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tells_how_long_ago() {
+        // Tests run in French.
+        let said: Vec<String> = [0, 1, 6, 7, 29, 30, 364, 365, 729, 730, 100_000].map(age).into();
+        assert_eq!(said, ["aujourd'hui", "1 j", "6 j", "1 sem.", "4 sem.", "1 mois", "12 mois", "1 an", "1 an", "2 ans", "273 ans"]);
+    }
 
     #[test]
     fn reads_the_first_system_language() {

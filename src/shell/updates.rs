@@ -93,7 +93,7 @@ impl Shell {
         self.update.clone().map(|release| {
             let banner = status_card(t).max_w_full().flex_wrap().justify_center().gap_y_1().debug_selector(|| "update-banner".into());
             // A row of the window, under the panes: it takes room instead of floating over the note.
-            let row = |card: Div| div().flex_none().w_full().flex().justify_center().px_4().py_2().border_t_1().border_color(t.border).bg(t.bg).child(card);
+            let row = |card: Div| div().flex_none().w_full().flex().justify_center().px_4().py_2().bg(t.ground).child(card);
             if self.updating {
                 return row(banner.pr_3().child(tr("Updating, Bref restarts…", "Mise à jour, Bref redémarre…")));
             }

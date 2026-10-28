@@ -18,16 +18,12 @@ pub(super) struct ToolDragged {
 impl Render for ToolDragged {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        div()
+        crate::ui::widgets::floating(t)
             .px(t.px(10.))
             .py(t.px(5.))
             .max_w(t.px(220.))
             .truncate()
-            .rounded(t.large())
-            .bg(t.panel)
-            .border_1()
-            .border_color(t.border)
-            .shadow(t.lifted())
+            .rounded(t.tab())
             .text_size(t.px(13.))
             .text_color(t.text)
             .child(self.name.clone())

@@ -446,7 +446,7 @@ impl Shell {
                 cx.listener(|this, _, window, cx| this.set_help(false, window, cx)),
             )
             .child(
-                div()
+                crate::ui::widgets::floating(t)
                     .id("help")
                     // Two columns if the window is wide enough, one otherwise.
                     .w(t.px(812.))
@@ -454,11 +454,7 @@ impl Shell {
                     .max_h_full()
                     .flex()
                     .flex_col()
-                    .bg(t.panel)
-                    .border_1()
-                    .border_color(t.border)
-                    .rounded(t.large())
-                    .shadow(t.floating())
+                    .overflow_hidden()
                     .text_size(t.px(13.))
                     // A click in the panel does not close it.
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())

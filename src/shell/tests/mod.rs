@@ -13,6 +13,7 @@ mod editing;
 mod enlarge;
 mod end_to_end;
 mod feedback;
+mod floating;
 mod find_bar;
 mod vault_find;
 mod keyboard;
