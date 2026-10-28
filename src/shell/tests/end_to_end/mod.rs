@@ -94,6 +94,7 @@ fn end_to_end(cx: &mut TestAppContext) {
     diagrams::run(&j, cx);
     md_tables::run(&j, cx);
     blocks::headings(&j, cx);
+    blocks::tags(&j, cx);
     blocks::run(&j, cx);
     outline::run(&j, cx);
     boards::run(&j, cx, &here);

@@ -85,3 +85,44 @@ pub(super) fn headings(j: &Journey, cx: &mut gpui::VisualTestContext) {
         assert_eq!(caret, start, "click on {target:?}");
     }
 }
+
+/// Tags are pills painted behind the text: a note with tags lays out exactly as the same note with the tags turned
+/// into plain words, so the caret, the selection and the clicks stay where they were. A tag cut by a wrap (a long one,
+/// one at the end of a wrapped line), one in a table cell, one in a callout and in a list are measured too.
+pub(super) fn tags(j: &Journey, cx: &mut gpui::VisualTestContext) {
+    let shell = &j.shell;
+    let long = format!("#{}", "mot".repeat(60));
+    let note = format!(
+        "Un #tag et #deux/trois, {long} puis la suite {} #fin\n\n- liste #item\n\n> [!TIP]\n> conseil #astuce\n\n| a | b #c |\n|---|---|\n| #d | e |\n\n`#code` et ##x\n",
+        "assez longue pour passer à la ligne ".repeat(4)
+    );
+    // The same text, every tag's `#` replaced by a letter of the same width: no tag, so no pill.
+    let plain = note.replace(" #", " x").replace("| #", "| x").replace("\n\n#", "\n\nx");
+    assert_eq!(plain.len(), note.len());
+    let geometry = |cx: &mut gpui::VisualTestContext, text: &str| {
+        j.load(cx, text, 0);
+        shell.update_in(cx, |s, window, cx| window.focus(&s.pane().editor.focus_handle(cx)));
+        cx.run_until_parked();
+        shell.read_with(cx, |s, cx| {
+            let editor = s.pane().editor.read(cx);
+            (0..=text.len()).filter(|i| text.is_char_boundary(*i)).map(|i| editor.point_of(i)).collect::<Vec<_>>()
+        })
+    };
+    let (with, without) = (geometry(cx, &note), geometry(cx, &plain));
+    // Rows are as tall and the text is where it was, down to the byte (no layout change, so none to redo either).
+    let pairs = with.iter().zip(&without).filter(|(a, b)| a != b).count();
+    assert_eq!(pairs, 0, "{pairs} byte positions moved because of tags");
+    // The long tag wraps (its two halves are on two lines), and a click on it still lands on the byte.
+    let at = note.find(&long).unwrap();
+    let (first, last) = (with[at].unwrap(), with[at + long.len() - 1].unwrap());
+    assert!(last.y > first.y, "the long tag is not wrapped: {first:?} {last:?}");
+    j.load(cx, &note, 0);
+    shell.update_in(cx, |s, window, cx| window.focus(&s.pane().editor.focus_handle(cx)));
+    cx.run_until_parked();
+    for target in [note.find("#tag").unwrap(), note.find("#fin").unwrap() + 2, at + 90, note.find("#item").unwrap() + 1, note.find("#astuce").unwrap()] {
+        let p = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).point_of(target).unwrap());
+        cx.simulate_click(p + point(px(1.), px(0.)), gpui::Modifiers::none());
+        let caret = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).position());
+        assert_eq!(caret, target, "click on byte {target}");
+    }
+}

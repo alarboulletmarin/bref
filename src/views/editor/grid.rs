@@ -407,9 +407,9 @@ impl TableRow {
             }
         }
         let mut rule = |x: Pixels, y: Pixels, w: Pixels, h: Pixels| {
-            window.paint_quad(fill(Bounds::new(at + point(x, y), size(w, h)), theme.border));
+            window.paint_quad(fill(Bounds::new(at + point(x, y), size(w, h)), theme.code_bg));
         };
-        // The table's outer edge is one rounded stroke, drawn over the lines (`Editor::paint`).
+        // The table's outer edge is one rounded hairline, drawn over the lines (`Editor::paint`).
         if !self.header {
             rule(px(0.), px(0.), self.total(), self.top);
         }

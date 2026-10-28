@@ -22,7 +22,7 @@ pub(super) const BAR_WIDTH: f32 = 6. + 2. + 11. * 26. + 14. + 13. + 2. * 7.;
 /// Background of the button that collapses the bar: always opaque, it goes over text (the selection tint,
 /// translucent, would show what it covers).
 pub fn bar_fill(t: &Theme, open: bool) -> Hsla {
-    if open { crate::ui::theme::blend(t.accent, t.panel, 0.2) } else { t.panel }
+    if open { crate::ui::theme::blend(t.accent, t.bg, 0.2) } else { t.bg }
 }
 
 /// Where and how the formatting bar shows.
@@ -301,10 +301,11 @@ impl Editor {
             .flex_wrap()
             .items_center()
             .gap(t.px(1.))
-            .rounded(t.large())
+            .rounded(t.band())
             .border_1()
             .border_color(t.border)
-            .bg(t.panel)
+            .bg(t.bg)
+            .shadow(t.floating())
             .occlude()
             .child(styled(0, md::BOLD, div().font_weight(FontWeight::BOLD).child("B").into_any_element()))
             .child(styled(1, md::ITALIC, div().italic().child("I").into_any_element()))
@@ -367,6 +368,7 @@ impl Editor {
             .border_1()
             .border_color(t.border)
             .bg(bar_fill(&t, open))
+            .shadow(t.floating())
             .cursor_pointer()
             .hover(|s| s.bg(t.hover))
             .occlude()

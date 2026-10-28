@@ -421,6 +421,30 @@ pub fn highlights(line: &str, table: bool) -> Vec<(Range<usize>, usize)> {
     found
 }
 
+/// The tags (`#word`) of a line outside inline code, as byte ranges: the passages the editor draws as pills.
+/// `table`: the line is a table row, whose cells are read one by one.
+pub fn tags(line: &str, table: bool) -> Vec<Range<usize>> {
+    let mut found = Vec::new();
+    if !line.contains('#') {
+        return found;
+    }
+    let pieces: Vec<Range<usize>> = if table { cells(line) } else { std::iter::once(classify(line, false).1..line.len()).collect() };
+    for piece in pieces {
+        let f = flags(&line[piece.clone()], 0);
+        let mut i = 0;
+        while i < f.len() {
+            if f[i] & TAG == 0 || f[i] & CODE != 0 {
+                i += 1;
+                continue;
+            }
+            let j = (i..f.len()).find(|&j| f[j] & TAG == 0 || f[j] & CODE != 0).unwrap_or(f.len());
+            found.push(piece.start + i..piece.start + j);
+            i = j;
+        }
+    }
+    found
+}
+
 /// The styles the formatting bar applies, in the order of its buttons.
 pub const STYLES: [u16; 6] = [BOLD, ITALIC, UNDER, STRIKE, HIGHLIGHT, CODE];
 
@@ -1109,6 +1133,18 @@ mod tests {
         let f = on("**==a <u>é</u>==**");
         assert_eq!(f[4] & (BOLD | HIGHLIGHT), BOLD | HIGHLIGHT);
         assert_eq!(f[9] & (BOLD | HIGHLIGHT | UNDER), BOLD | HIGHLIGHT | UNDER);
+    }
+
+    #[test]
+    fn tags_are_found_outside_code() {
+        let found = |line: &str, table: bool| tags(line, table).into_iter().map(|r| line[r].to_string()).collect::<Vec<_>>();
+        assert_eq!(found("un #test et #a/b-c, #é", false), ["#test", "#a/b-c", "#é"]);
+        assert_eq!(found("#seul", false), ["#seul"]);
+        assert_eq!(found("`#code` et #vrai", false), ["#vrai"]);
+        for none in ["", "#", "# titre", "a#b", "#123", "##x", "vide `#a #b`"] {
+            assert!(found(none, false).is_empty(), "{none}");
+        }
+        assert_eq!(found("| #a | b #c |", true), ["#a", "#c"]);
     }
 
     #[test]

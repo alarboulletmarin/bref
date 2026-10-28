@@ -187,13 +187,13 @@ impl Editor {
             match row.kind {
                 Kind::Code | Kind::Fence => {
                     let (y, h) = shape_span(row, top, clear);
-                    window.paint_quad(fill(block(px(-12.), y, w + px(24.), h), t.code_bg).corner_radii(corners(t.large(), row)))
+                    window.paint_quad(fill(block(px(-12.), y, w + px(24.), h), t.code_bg).corner_radii(corners(t.band(), row)))
                 }
                 Kind::Quote => {
                     // A callout is its tinted shape alone, lined up with the code blocks; a plain quote keeps a thin neutral bar.
                     if let Some(tint) = row.tint {
                         let (y, h) = shape_span(row, top, clear);
-                        window.paint_quad(fill(block(px(-12.), y, w + px(24.), h), tint.opacity(0.1)).corner_radii(corners(t.large(), row)));
+                        window.paint_quad(fill(block(px(-12.), y, w + px(24.), h), tint.opacity(0.1)).corner_radii(corners(t.band(), row)));
                     } else {
                         window.paint_quad(fill(block(px(-14.), top, px(3.), row.height), t.border).corner_radii(corners(px(1.5), row)))
                     }
@@ -218,7 +218,7 @@ impl Editor {
                 if let Some(grid) = &row.grid {
                     // The table ends here when nothing but dash lines follows.
                     let ends = self.rows[i + 1..].iter().take_while(|r| r.kind == Kind::Table).all(Row::hidden);
-                    grid.paint_back(Bounds::new(point(left, top), size(wide, row.height - row.gap)), t.large(), ends, &t, window);
+                    grid.paint_back(Bounds::new(point(left, top), size(wide, row.height - row.gap)), t.band(), ends, &t, window);
                 }
                 // Background of a passage of text on this line: the selection, the found passages.
                 // `edge`: a 1 px outline around it, for the current found passage.
@@ -247,6 +247,35 @@ impl Editor {
                     }
                 };
                 let mark = |range: &Range<usize>, color: Hsla, window: &mut Window| mark_edged(range, color, None, window);
+                // Tags are pills: the accent at 10 % behind the text, a little wider and shorter than the line, so
+                // that the text and the line's height stay where they are. A tag cut by a wrap is one pill per line.
+                if !matches!(row.kind, Kind::Code | Kind::Fence | Kind::Meta | Kind::Rule) {
+                    let (pad, tall, lift) = (t.px(3.), row.lh * 0.78, row.lh * 0.11);
+                    for r in md::tags(&self.content[row.start..end], row.kind == Kind::Table) {
+                        // At a wrap, the offset of a line's first byte reads as the end of the line before: take the line
+                        // of the byte next to it.
+                        let (a, inner) = (row.pos(r.start), row.pos(r.start + 1));
+                        let a = if a.y == inner.y { a } else { point(px(0.), inner.y) };
+                        let (b, last) = (row.pos(r.end), row.pos(r.end - 1));
+                        // The tag ends the line, the offset after it reads as the next line's: it ends one letter after the last.
+                        let b = if b.y == last.y {
+                            b
+                        } else {
+                            let before = row.pos(r.end.saturating_sub(2));
+                            point(last.x + if before.y == last.y && last.x > before.x { last.x - before.x } else { t.px(8.) }, last.y)
+                        };
+                        let spans: Vec<(Pixels, Pixels, Pixels)> = if let Some(grid) = &row.grid {
+                            grid.spans(r.start, r.end, row.lh).into_iter().map(|(x, y, w)| (x - row.dx, y, w)).collect()
+                        } else if a.y == b.y {
+                            vec![(a.x, a.y, b.x - a.x)]
+                        } else {
+                            vec![(a.x, a.y, w - a.x), (px(0.), b.y, b.x)]
+                        };
+                        for (x, y, width) in spans {
+                            window.paint_quad(fill(block(x - pad, text_top + y + lift, width + pad * 2., tall), crate::ui::widgets::pill_tint(t)).corner_radii(t.small()));
+                        }
+                    }
+                }
                 // Highlighted text (`==text==`), under the selection; matches and comments go over it.
                 if !matches!(row.kind, Kind::Code | Kind::Fence | Kind::Meta | Kind::Rule) {
                     for (r, color) in md::highlights(&self.content[row.start..end], row.kind == Kind::Table) {
@@ -356,7 +385,7 @@ impl Editor {
             window.paint_quad(fill(*thumb, t.dim.opacity(0.5)).corner_radii(px(1.5)));
         }
         // The line where files dragged onto the note would land.
-        // The frame of each table: one rounded stroke, over the header and the lines.
+        // The edge of each table: a hairline in the header's tint, rounded like it, over the lines.
         for (meta, (_, frame)) in self.table_meta.iter().zip(&self.tables) {
             let (Some(first), Some(last)) = (self.rows.get(meta.rows.start), self.rows.get(meta.rows.end - 1)) else { continue };
             let (top, bottom) = (o.y + first.y, o.y + last.y + last.height - last.gap);
@@ -364,7 +393,7 @@ impl Editor {
                 continue;
             }
             let area = Bounds::new(point(frame.left(), top), size(frame.size.width, bottom - top));
-            window.paint_quad(quad(area, t.large(), Hsla::transparent_black(), px(1.), t.border, BorderStyle::default()));
+            window.paint_quad(quad(area, t.band(), Hsla::transparent_black(), px(1.), t.code_bg, BorderStyle::default()));
         }
         if let Some(mark) = self.drop_mark
             && let Some(last) = self.rows.last()
