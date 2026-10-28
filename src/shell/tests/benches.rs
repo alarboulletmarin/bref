@@ -682,3 +682,44 @@ fn comments_frame(cx: &mut TestAppContext) {
     println!("100 comments, frame after a caret move: median {:?}, worst {:?}", frames[10], frames[19]);
     fs::remove_dir_all(&root).ok();
 }
+
+/// The graph on 5,000 notes with about 15,000 links: the window opens on it, the background
+/// arrangement is awaited, then time of the first frame and of 20 frames (a forced refresh).
+/// `cargo test --release --locked graph_frame -- --ignored --nocapture`.
+#[gpui::test]
+#[ignore]
+fn graph_frame(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-graph-frame-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let notes = 5000;
+    for i in 0..notes {
+        let dir = root.join(format!("d{}", i % 40));
+        fs::create_dir_all(&dir).unwrap();
+        // Three links a note, to neighbours and to far notes: about 15,000 edges.
+        let body: String = [1, 7, 1237].iter().map(|k| format!("Vers [[Note {}]]\n", (i * k + k) % notes)).collect();
+        fs::write(dir.join(format!("Note {i}.md")), format!("# Note {i}\n\n{body}")).unwrap();
+    }
+    let _config = isolated_config(&root);
+    vault::save_layout("graph split 260 0");
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let start = Instant::now();
+    let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
+    cx.run_until_parked();
+    println!("startup + arrangement + first frame: {:?}", start.elapsed());
+    println!("graph (nodes, edges): {:?}", shell.read_with(cx, |s, cx| s.graph.read(cx).size()));
+    let mut frames = Vec::new();
+    for i in 0..21 {
+        let begin = Instant::now();
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        if i == 0 {
+            println!("first forced frame: {:?}", begin.elapsed());
+        } else {
+            frames.push(begin.elapsed());
+        }
+    }
+    frames.sort();
+    println!("graph frame: median {:?}, worst {:?}", frames[10], frames[19]);
+    fs::remove_dir_all(&root).ok();
+}
