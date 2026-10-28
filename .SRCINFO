@@ -20,6 +20,6 @@ pkgbase = bref
 	replaces = encre
 	options = !debug
 	source = bref-0.4.4.tar.gz::https://github.com/alarboulletmarin/bref/archive/refs/tags/v0.4.4.tar.gz
-	sha256sums = 4569f48038c83fa2ecb46495fc14856e6cdbaac23d70dc5c44d1dea0c529ed05
+	sha256sums = 6e0269ca8a3878821808789e6e676fe699f88cff378b09d931d1556cda2c29d3
 
 pkgname = bref
