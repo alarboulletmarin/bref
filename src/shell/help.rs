@@ -16,6 +16,9 @@ pub(super) struct Help {
     pub(super) key_tap: Option<gpui::Subscription>,
     /// The list of sections, for the table of contents to scroll it.
     pub(super) scroll: gpui::ScrollHandle,
+    /// The sections and the width of the last frame that drew them as they are: the sections far
+    /// from the window are then drawn as empty boxes of their measured height (`render_help`).
+    pub(super) laid: std::cell::RefCell<Option<(Vec<&'static str>, gpui::Pixels)>>,
 }
 
 /// What prevents keys from becoming a shortcut as they are.
@@ -42,6 +45,7 @@ impl Shell {
         self.help.find = None;
         self.help.sel = None;
         self.help.edit = None;
+        *self.help.laid.borrow_mut() = None;
         if open {
             let theme = self.theme;
             let find = cx.new(|cx| field::Field::new("", theme, cx));
@@ -283,6 +287,13 @@ impl Shell {
         };
         // Table of contents: one link per section, which scrolls the list to it; and how a shortcut is changed.
         let titles: Vec<&'static str> = rows.iter().map(|(title, _)| *title).collect();
+        // A frame costs about 50 us a row, 230 rows: only the sections near the window are built, the
+        // others are boxes of the height they had. Their heights are those of the frame before, so
+        // everything is built again when the sections, the search or the width changed.
+        let view = self.help.scroll.bounds();
+        let lazy = !asked && self.help.laid.borrow().as_ref().is_some_and(|(seen, width)| *seen == titles && *width == view.size.width);
+        *self.help.laid.borrow_mut() = (!asked).then(|| (titles.clone(), view.size.width));
+        let margin = view.size.height / 2.;
         let contents = (!asked && !none).then(|| {
             div()
                 .debug_selector(|| "help-contents".into())
@@ -299,6 +310,7 @@ impl Shell {
                 .children(titles.into_iter().enumerate().map(|(i, title)| {
                     small(format!("help-to-{i}"), title).text_color(t.accent).on_click(cx.listener(move |this, _, _, cx| {
                         this.help.scroll.scroll_to_item(i);
+                        *this.help.laid.borrow_mut() = None;
                         cx.notify();
                     }))
                 }))
@@ -307,7 +319,11 @@ impl Shell {
                     "Cliquez les touches d'une ligne pour les changer",
                 )))
         });
-        let sections = rows.into_iter().map(|(title, rows)| {
+        let sections = rows.into_iter().enumerate().map(|(i, (title, rows))| {
+            let busy = rows.iter().any(|row| row.action.is_some() && (row.action == self.help.sel || self.help.edit.as_ref().is_some_and(|edit| Some(edit.action) == row.action)));
+            if let Some(far) = self.help.scroll.bounds_for_item(i).filter(|at| lazy && !busy && (at.bottom() < view.top() - margin || at.top() > view.bottom() + margin)) {
+                return div().w(t.px(370.)).max_w_full().h(far.size.height);
+            }
             div()
                 .w(t.px(370.))
                 .max_w_full()

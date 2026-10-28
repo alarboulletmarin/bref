@@ -723,3 +723,66 @@ fn graph_frame(cx: &mut TestAppContext) {
     println!("graph frame: median {:?}, worst {:?}", frames[10], frames[19]);
     fs::remove_dir_all(&root).ok();
 }
+
+/// The shortcuts panel open on a small vault: time of a forced frame and of a wheel step over the list.
+/// `cargo test --release --locked help_scroll -- --ignored --nocapture`.
+#[gpui::test]
+#[ignore]
+fn help_scroll(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-help-scroll-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("Note.md"), "# Note\n\ntexte\n").unwrap();
+    let _config = isolated_config(&root);
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
+    cx.run_until_parked();
+    shell.update_in(cx, |s, window, cx| s.set_help(true, window, cx));
+    cx.run_until_parked();
+    // Past the 140 ms opening animation.
+    std::thread::sleep(Duration::from_millis(200));
+    cx.run_until_parked();
+    let time = |what: &str, cx: &mut gpui::VisualTestContext, act: &dyn Fn(&mut gpui::VisualTestContext)| {
+        let mut all = Vec::new();
+        for _ in 0..41 {
+            let begin = Instant::now();
+            act(cx);
+            cx.run_until_parked();
+            all.push(begin.elapsed());
+        }
+        all.sort();
+        println!("{what}: median {:?}, worst {:?}", all[20], all[39]);
+    };
+    time("frame without help", cx, &|cx| {
+        shell.update_in(cx, |s, window, cx| s.set_help(false, window, cx));
+        cx.update(|window, _| window.refresh());
+    });
+    shell.update_in(cx, |s, window, cx| s.set_help(true, window, cx));
+    cx.run_until_parked();
+    std::thread::sleep(Duration::from_millis(200));
+    cx.run_until_parked();
+    time("help_rows only", cx, &|cx| {
+        shell.update(cx, |s, cx| {
+            let _ = s.help_rows(cx);
+        })
+    });
+    println!("rows: {}", shell.update(cx, |s, cx| s.help_rows(cx).iter().map(|(_, r)| r.len()).sum::<usize>()));
+    time("render_help build only", cx, &|cx| {
+        shell.update(cx, |s, cx| {
+            let _ = s.render_help(false, cx);
+        })
+    });
+    time("help frame", cx, &|cx| cx.update(|window, _| window.refresh()));
+    println!("list bounds: {:?}", shell.read_with(cx, |s, _| s.help.scroll.bounds()));
+    cx.simulate_mouse_move(point(px(960.), px(500.)), None, gpui::Modifiers::none());
+    time("help wheel step", cx, &|cx| {
+        cx.simulate_event(gpui::ScrollWheelEvent {
+            position: point(px(960.), px(500.)),
+            delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-10.))),
+            ..Default::default()
+        })
+    });
+    println!("scrolled: {:?}", shell.read_with(cx, |s, _| s.help.scroll.offset()));
+    fs::remove_dir_all(&root).ok();
+}

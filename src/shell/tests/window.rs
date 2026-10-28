@@ -788,6 +788,31 @@ fn clear_at_a_glance(cx: &mut TestAppContext) {
     cx.simulate_click(link.center(), gpui::Modifiers::none());
     cx.run_until_parked();
     assert!(scroll(cx) < px(0.), "the list scrolled to the last section");
+    // Sections far from the window are empty boxes; the ones in view, after the jump and after wheel steps up, are drawn.
+    let drawn = |cx: &mut gpui::VisualTestContext| {
+        let (view, boxes, rows) = shell.read_with(cx, |s, cx| {
+            let boxes: Vec<_> = (0..s.help_rows(cx).len()).map(|i| s.help.scroll.bounds_for_item(i).unwrap()).collect();
+            (s.help.scroll.bounds(), boxes, s.help_rows(cx))
+        });
+        let mid = rows.iter().zip(&boxes).filter(|(_, b)| b.top() < view.center().y && b.bottom() > view.center().y).collect::<Vec<_>>();
+        assert!(!mid.is_empty(), "a section is at the middle of the list");
+        for (section, _) in mid {
+            let action = section.1.iter().find_map(|row| row.action).expect("a section with a shortcut");
+            assert!(cx.debug_bounds(leak(format!("key-{action}"))).is_some(), "{} is drawn at the middle of the list", section.0);
+        }
+        view.center()
+    };
+    let centre = drawn(cx);
+    for _ in 0..60 {
+        cx.simulate_event(gpui::ScrollWheelEvent {
+            position: centre,
+            delta: gpui::ScrollDelta::Pixels(point(px(0.), px(300.))),
+            ..Default::default()
+        });
+        cx.run_until_parked();
+        drawn(cx);
+    }
+    assert_eq!(scroll(cx), px(0.), "back at the top");
     cx.simulate_keystrokes("escape escape");
 
     // The sync button: only in a git vault; a mark while the last sync failed.
