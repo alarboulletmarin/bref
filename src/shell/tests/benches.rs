@@ -616,3 +616,35 @@ fn motion_cost(cx: &mut TestAppContext) {
     }
     fs::remove_dir_all(&root).unwrap();
 }
+
+/// A board of 1,000 cards in one column: time of a frame (a forced refresh) and of the opening.
+/// `cargo test --release --locked board_frame -- --ignored --nocapture`.
+#[gpui::test]
+#[ignore]
+fn board_frame(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-board-frame-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let _config = isolated_config(&root);
+    let note = root.join("Mille.md");
+    let cards: String = (0..1000).map(|i| format!("- [{}] Carte {i}\n", if i % 3 == 0 { 'x' } else { ' ' })).collect();
+    fs::write(&note, format!("---\nkanban: true\n---\n# Mille\n\n## Tout\n\n{cards}\n## Rien\n")).unwrap();
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
+    cx.run_until_parked();
+    let start = Instant::now();
+    shell.update(cx, |s, cx| s.open_note(&note, cx));
+    cx.run_until_parked();
+    println!("opening + first frame: {:?}", start.elapsed());
+    let mut frames = Vec::new();
+    for _ in 0..20 {
+        let begin = Instant::now();
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        frames.push(begin.elapsed());
+    }
+    frames.sort();
+    println!("frame: median {:?}, worst {:?}", frames[10], frames[19]);
+    fs::remove_dir_all(&root).ok();
+}

@@ -12,7 +12,7 @@ use crate::{
     ui::theme::Theme,
     logic::markdown::{self, Kind},
     views::field::Field,
-    lang::tr,
+    lang::{number, tr},
 };
 
 #[derive(Debug, PartialEq)]
@@ -62,6 +62,24 @@ impl Board {
 /// The note opens as a board: its front matter carries the `kanban` key (or `kanban-plugin`).
 pub fn is_board(text: &str) -> bool {
     markdown::front_keys(text).iter().any(|key| matches!(*key, "kanban" | "kanban-plugin"))
+}
+
+/// The `# ` title at the top of the note, as written.
+pub fn heading(text: &str) -> Option<&str> {
+    let first = text[markdown::front_matter(text)..].lines().find(|l| !l.trim().is_empty())?;
+    Some(first.strip_prefix("# ")?.trim()).filter(|t| !t.is_empty())
+}
+
+/// How many cards are still open and how many are done, over all the columns.
+pub fn tally(all: &[Column]) -> (usize, usize) {
+    let done = all.iter().flat_map(|c| &c.cards).filter(|k| k.done).count();
+    (all.iter().map(|c| c.cards.len()).sum::<usize>() - done, done)
+}
+
+/// `6 open · 2 done`. French agrees with « carte »: « 0 ouverte », « 1 faite », « 2 faites ».
+pub fn summary(open: usize, done: usize) -> String {
+    let (o, d) = (if open < 2 { "ouverte" } else { "ouvertes" }, if done < 2 { "faite" } else { "faites" });
+    format!("{} {} · {} {}", number(open), tr("open", o), number(done), tr("done", d))
 }
 
 /// The note's columns and their cards. An indented task is a card's detail, not
@@ -223,27 +241,22 @@ pub const COLUMN: f32 = 250.;
 pub const NARROW: f32 = 140.;
 
 /// A card's frame, its checkbox and its text: the same for the placed card, the one being held
-/// and the place it would take.
+/// and the place it would take. The border is clear until the card is hovered, chosen or written in;
+/// the placed card adds its own shadow.
 pub fn card_box(t: Theme) -> Div {
-    div().p_2().rounded(t.large()).bg(t.bg).border_1().border_color(t.border).flex().items_start().gap_2()
+    div().px(px(12.)).py(px(10.)).rounded(t.large()).bg(t.bg).border_1().border_color(gpui::transparent_black()).flex().items_start().gap(px(9.))
 }
 
+/// The round check box: a 1.5 px ring in `soft`, filled with `accent` and a check once done.
 pub fn check_box(done: bool, t: Theme) -> Div {
-    div()
-        .size(px(16.))
-        .flex_none()
-        .mt(px(1.))
-        .rounded(t.small())
-        .border_1()
-        .border_color(if done { t.accent } else { t.soft })
-        .flex()
-        .items_center()
-        .justify_center()
-        .when(done, |d| d.child(svg().path("check.svg").size(px(12.)).text_color(t.accent)))
+    let mut ring = div().size(px(14.)).flex_none().mt(px(3.)).rounded_full().border_color(if done { t.accent } else { t.soft });
+    let widths = &mut ring.style().border_widths;
+    (widths.top, widths.right, widths.bottom, widths.left) = (Some(px(1.5).into()), Some(px(1.5).into()), Some(px(1.5).into()), Some(px(1.5).into()));
+    ring.when(done, |d| d.bg(t.accent).flex().items_center().justify_center().child(svg().path("check.svg").size(px(10.)).text_color(t.bg)))
 }
 
 pub fn card_text(text: &str, done: bool, t: Theme) -> Div {
-    div().flex_1().min_w_0().when(done, |d| d.text_color(t.soft).line_through()).child(text.to_string())
+    div().flex_1().min_w_0().when(done, |d| d.text_color(t.dim).line_through()).child(text.to_string())
 }
 
 /// Card being held: the card itself, lifted, following the pointer from where it was grabbed.
@@ -265,7 +278,7 @@ impl Render for Dragged {
         card_box(t)
             .w(self.width)
             .border_color(t.accent)
-            .shadow(t.lifted())
+            .shadow(t.floating())
             .text_size(px(13.))
             .text_color(t.text)
             .child(check_box(self.done, t))
@@ -312,6 +325,18 @@ mod tests {
         assert!(remove_column(BOARD, 2).unwrap().ends_with("## En cours\n\n") && remove_column(BOARD, 3).is_none());
         let fresh = new_board();
         assert!(is_board(&fresh) && columns(&fresh).iter().map(|c| c.title).collect::<Vec<_>>() == ["À faire", "En cours", "Fait"] && fresh.ends_with("## Fait\n"));
+    }
+
+    /// The header counts: French agrees for 0 and 1 (singular) and 2 and more, thousands are set apart,
+    /// done cards are not open ones, and the title is the `# ` line as written.
+    #[test]
+    fn the_header_counts_the_cards() {
+        assert_eq!(tally(&columns(BOARD)), (2, 1));
+        assert_eq!(tally(&columns("---\nkanban: true\n---\n")), (0, 0));
+        assert_eq!((summary(0, 0), summary(1, 1), summary(2, 2)), ("0 ouverte · 0 faite".into(), "1 ouverte · 1 faite".into(), "2 ouvertes · 2 faites".into()));
+        assert_eq!(summary(1000, 100_000), "1\u{202f}000 ouvertes · 100\u{202f}000 faites");
+        assert_eq!((number(0), number(999), number(1_234_567)), ("0".into(), "999".into(), "1\u{202f}234\u{202f}567".into()));
+        assert_eq!((heading(BOARD), heading("# Un `titre`  \n"), heading("## Non"), heading("---\nkanban: true\n---\n\n#  \n")), (Some("Projet"), Some("Un `titre`"), None, None));
     }
 
     /// Spots are (column, row): row 0 the title, then the cards, then "Add a card"; the column after the

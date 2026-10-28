@@ -203,7 +203,7 @@ impl Shell {
                     continue;
                 }
                 if let Some(field) = field_at(Slot::Card(c, i)) {
-                    cards.push(card_box(t).border_color(t.accent).child(field).into_any_element());
+                    cards.push(card_box(t).shadow(t.lifted()).border_color(t.accent).child(field).into_any_element());
                     continue;
                 }
                 let check = check_box(card.done, t).id(("tick", c * 10_000 + i)).cursor_pointer().on_click(cx.listener(move |this, _, _, cx| {
@@ -211,6 +211,7 @@ impl Shell {
                     this.board_edit(|text| tick(text, from), cx)
                 }));
                 let card = card_box(t)
+                    .shadow(t.lifted())
                     .id(("card", c * 10_000 + i))
                     .debug_selector(|| format!("card-{c}-{i}"))
                     .cursor_grab()
@@ -232,7 +233,6 @@ impl Shell {
                 None => div()
                     .id(("column-title", c))
                     .debug_selector(move || format!("column-title-{c}"))
-                    .flex_1()
                     .min_w_0()
                     .px_1()
                     .rounded(t.small())
@@ -245,7 +245,7 @@ impl Shell {
             };
             // At the bottom of the column: the card being written, otherwise a way to add one.
             let add = match field_at(Slot::New(c)) {
-                Some(field) => card_box(t).border_color(t.accent).child(field).into_any_element(),
+                Some(field) => card_box(t).shadow(t.lifted()).border_color(t.accent).child(field).into_any_element(),
                 None => div()
                     .id(("card-add", c))
                     .px_2()
@@ -259,7 +259,7 @@ impl Shell {
                     .on_click(cx.listener(move |this, _, window, cx| this.board_write(Slot::New(c), window, cx)))
                     .into_any_element(),
             };
-            let head = div().flex().items_center().gap_2().child(title).child(div().text_color(t.soft).child(count.to_string()));
+            let head = div().flex().items_center().gap_2().child(title).child(div().flex_none().text_color(t.soft).child(crate::lang::number(count))).child(div().flex_1());
             // The width of a card, measured when drawing: the held one keeps its own.
             let width = self.pane().board.card.clone();
             let measure = canvas(move |bounds, _, _| width.set(bounds.size.width), |_, _, _, _| ()).absolute().top_0().left_2().right_2().h_0();
@@ -271,6 +271,9 @@ impl Shell {
                 .flex_col()
                 .gap_2()
                 .min_h_0()
+                // Room for the cards' shadows, which the scroll would clip.
+                .p(px(4.))
+                .m(px(-4.))
                 .overflow_y_scroll()
                 .children(cards)
                 .child(div().child(add).on_drag_move(aim(pane, c, count, false, cx)));
@@ -283,8 +286,8 @@ impl Shell {
                     .min_w(px(NARROW))
                     .max_w(px(COLUMN))
                     .when(c == 0, |d| d.child(measure))
-                    .p_2()
-                    .rounded(t.large())
+                    .p(px(10.))
+                    .rounded(t.band())
                     .bg(t.code_bg)
                     .flex()
                     .flex_col()
@@ -296,7 +299,7 @@ impl Shell {
             );
         }
         let more = match field_at(Slot::NewColumn) {
-            Some(field) => div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().rounded(t.large()).bg(t.code_bg).border_1().border_color(t.accent).flex().child(field).into_any_element(),
+            Some(field) => div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().rounded(t.band()).bg(t.code_bg).border_1().border_color(t.accent).flex().child(field).into_any_element(),
             // No column at all: a lone « + » would float in the empty page, so the board says what it lacks.
             None if all.is_empty() => div()
                 .debug_selector(|| "board-empty".into())
@@ -327,6 +330,16 @@ impl Shell {
                 .on_click(cx.listener(|this, _, window, cx| this.board_write(Slot::NewColumn, window, cx)))
                 .into_any_element(),
         };
+        // The title, and what is left to do: the pattern a table's header takes too.
+        let (open, done) = tally(&all);
+        let name = heading(&text).map(str::to_string).or_else(|| self.pane().path.as_deref().map(crate::platform::vault::stem)).unwrap_or_else(|| tr("Board", "Tableau").to_string());
+        let header = div()
+            .debug_selector(|| "board-header".into())
+            .flex()
+            .items_baseline()
+            .gap_3()
+            .child(crate::ui::widgets::serif_title(div().debug_selector(|| "board-title".into()).min_w_0().truncate(), t, 26.).child(name))
+            .child(div().debug_selector(|| "board-summary".into()).flex_none().text_color(t.soft).child(summary(open, done)));
         div()
             .id("board")
             .key_context("Board")
@@ -378,14 +391,13 @@ impl Shell {
                 }
             }))
             .size_full()
-            .pt(px(52.))
+            .pt(px(20.))
             .px_6()
             .pb(px(54.))
             .text_size(px(13.))
             .flex()
-            .gap_3()
-            .overflow_x_scroll()
-            .track_scroll(&self.pane().board.scroll)
+            .flex_col()
+            .gap(px(16.))
             // A click elsewhere confirms what was being written; the keys' spot goes with the mouse.
             .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
                 this.pane_mut().board.at = None;
@@ -402,8 +414,8 @@ impl Shell {
                 }
                 cx.notify();
             }))
-            .children(shown)
-            .child(more)
+            .child(header)
+            .child(div().id("board-columns").flex_1().min_h_0().flex().gap_3().overflow_x_scroll().track_scroll(&self.pane().board.scroll).children(shown).child(more))
     }
 }
 /// While a card is held, the pointer over this zone says where it would land: before the

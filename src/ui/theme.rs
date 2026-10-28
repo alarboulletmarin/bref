@@ -375,9 +375,11 @@ mod tests {
         for (name, _) in THEMES {
             for look in [WindowAppearance::Light, WindowAppearance::Dark] {
                 let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), look);
-                let (page, card) = (contrast(t.code_bg, t.bg), contrast(t.border, t.code_bg));
-                if page < 1.05 || card < 1.1 {
-                    fails.push(format!("{name}: column on page {page:.2}, card edge on column {card:.2}"));
+                // A card is a `bg` sheet on the column: its edge is the column's own contrast. The check
+                // box's mark (drawn in `bg`) reads on its `accent` fill.
+                let (page, mark) = (contrast(t.code_bg, t.bg), contrast(t.bg, t.accent));
+                if page < 1.05 || mark < 2.5 {
+                    fails.push(format!("{name}: column on page {page:.2}, check mark on accent {mark:.2}"));
                 }
             }
         }

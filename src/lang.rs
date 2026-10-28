@@ -81,6 +81,20 @@ fn first_language(list: &str) -> Option<&str> {
         .map(|l| l.trim_end_matches(',').trim_matches('"'))
 }
 
+/// A count with its thousands set apart: `1,000` in English, `1 000` (narrow no-break space) in French.
+pub fn number(n: usize) -> String {
+    let digits = n.to_string();
+    let sep = tr(",", "\u{202f}");
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push_str(sep);
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// `09:05`: the time as written in a template.
 pub fn time_name((hour, minute): (u32, u32)) -> String {
     format!("{hour:02}:{minute:02}")
