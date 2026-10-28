@@ -380,7 +380,7 @@ impl Shell {
             .size_full()
             .pt(px(52.))
             .px_6()
-            .pb_4()
+            .pb(px(54.))
             .text_size(px(13.))
             .flex()
             .gap_3()
