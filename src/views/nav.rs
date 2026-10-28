@@ -618,6 +618,8 @@ pub struct Listing {
     pub filter: Entity<Field>,
     /// Cell being rewritten: the note, the key, its field.
     pub edit: Option<(PathBuf, String, Entity<Field>)>,
+    /// The page's scroll: only the rows near the window are built.
+    pub scroll: gpui::ScrollHandle,
 }
 
 /// The vault's tags in alphabetical order; under an expanded tag, its notes.

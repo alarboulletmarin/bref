@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 use gpui::{
-    App, Context, Focusable, MouseButton, Window, div, prelude::*, px,
+    App, Context, Focusable, MouseButton, Pixels, Window, div, prelude::*, px,
 };
 use crate::{
     views::field::{Field, FieldEvent},
@@ -17,6 +17,9 @@ use crate::{
 };
 use super::*;
 use crate::views::nav::*;
+
+/// Where the rows begin among the children of the page: after the title, the filter and the column titles.
+const FIRST_ROW: usize = 3;
 
 /// A note of a list page: its path and its cells.
 type ListedNote = (PathBuf, Vec<String>);
@@ -39,7 +42,7 @@ impl Shell {
         .detach();
         window.focus(&filter.focus_handle(cx));
         self.pane_mut().peek = false;
-        self.pane_mut().listing = Some(Listing { of, by: 0, back: false, filter, edit: None });
+        self.pane_mut().listing = Some(Listing { of, by: 0, back: false, filter, edit: None, scroll: gpui::ScrollHandle::new() });
         cx.notify();
     }
 
@@ -144,12 +147,11 @@ impl Shell {
     /// The list page, in place of the note: typing filters the rows (`key:text` for a
     /// single column), a click on a column title sorts, a click on a note's name
     /// opens it, a click on another cell rewrites it (Enter confirms, Escape gives up).
-    // ponytail: every row is drawn; go through the virtualized grid of
-    // `sheet.rs` for a folder of thousands of notes. A note's name is not changed here.
+    // A note's name is not changed here.
     pub(super) fn render_listing(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let (keys, rows) = self.listed(cx).unwrap_or_default();
-        let Some(Listing { of, by, back, filter, edit }) = self.pane().listing.as_ref() else {
+        let Some(Listing { of, by, back, filter, edit, scroll }) = self.pane().listing.as_ref() else {
             return div().into_any_element();
         };
         let (by, back, count) = (*by, *back, rows.len());
@@ -166,8 +168,22 @@ impl Shell {
                 .child(format!("{key}{arrow}"))
                 .on_click(cx.listener(move |this, _, _, cx| this.sort_listing(i, cx)))
         });
-        let mut lines = Vec::new();
-        for (i, (path, cells)) in rows.into_iter().enumerate() {
+        // A row costs about 60 us a frame: only those near the window are built, the others are a
+        // space of their height above and below. Rows are `ROW` high, but for the one being written,
+        // so all are built while a cell is open. Before the first frame, where the rows begin is unknown.
+        let row = t.px(ROW);
+        // An item's bounds are where it lies unscrolled: the offset brings them to the window.
+        let (view, top) = (scroll.bounds(), scroll.bounds_for_item(FIRST_ROW).map(|b| b.top() + scroll.offset().y));
+        let (from, to) = match top.filter(|_| edit.is_none()) {
+            Some(top) => {
+                let at = |y: Pixels| ((y - top) / row).max(0.) as usize;
+                (at(view.top() - view.size.height).min(count), (at(view.bottom() + view.size.height) + 1).min(count))
+            }
+            None => (0, count),
+        };
+        // `flex_none`: in the column, a space would shrink to nothing.
+        let mut lines = vec![div().flex_none().h(row * from as f32)];
+        for (i, (path, cells)) in rows.into_iter().enumerate().skip(from).take(to - from) {
             let mut shown = Vec::new();
             for (c, text) in cells.into_iter().enumerate() {
                 let writing = edit.as_ref().filter(|(open, key, _)| *open == path && *key == keys[c] && c > 0);
@@ -206,6 +222,7 @@ impl Shell {
             }
             lines.push(div().min_h(t.px(ROW)).flex().items_center().rounded(t.small()).hover(|s| s.bg(t.hover)).children(shown));
         }
+        lines.push(div().flex_none().h(row * (count - to) as f32));
         let asked = !filter.read(cx).line.text.is_empty();
         let hint = div().absolute().left(t.px(6.)).top_0().text_color(t.soft).child(tr("Filter… (key:text for one column)", "Filtrer… (clé:texte pour une colonne)"));
         let filter_box = div()
@@ -232,6 +249,7 @@ impl Shell {
             .flex()
             .flex_col()
             .overflow_scroll()
+            .track_scroll(scroll)
             // A click elsewhere confirms the cell being written.
             .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.list_commit(window, cx)))
             .child(

@@ -234,6 +234,53 @@ fn settle(cx: &mut gpui::VisualTestContext) {
     }
 }
 
+/// A list page of 300 notes builds only the rows near the window; scrolled to the end and back,
+/// the row at the middle of the page is drawn at every step.
+#[gpui::test]
+fn a_long_list_page_draws_the_rows_in_view(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "long-list");
+    let dir = root.join("Long");
+    fs::create_dir(&dir).unwrap();
+    for i in 0..300 {
+        fs::write(dir.join(format!("Note {i:03}.md")), format!("---\nrang: {i}\n---\n# Note {i}\n")).unwrap();
+    }
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    shell.update_in(cx, |s, window, cx| s.open_listing(dir.clone(), window, cx));
+    settle(cx);
+    // gpui keeps the debug bounds of earlier frames: the row under the middle must be there, at its
+    // place in this frame. Above it, the rows left out are a space (the first child after the titles).
+    let drawn = |cx: &mut gpui::VisualTestContext| {
+        let (view, first, row) = shell.read_with(cx, |s, _| {
+            let scroll = &s.pane().listing.as_ref().unwrap().scroll;
+            let first = scroll.bounds_for_item(3).unwrap();
+            (scroll.bounds(), first + point(px(0.), scroll.offset().y), s.theme.px(crate::views::nav::ROW))
+        });
+        let i = (((view.center().y - first.top()) / row) as usize).min(299);
+        let at = cx.debug_bounds(leak(format!("list-cell-{i}-1"))).unwrap_or_else(|| panic!("row {i} is drawn"));
+        assert!(at.top() <= view.center().y && at.bottom() >= view.center().y, "row {i} at the middle of {view:?}: {at:?}");
+        (view.center(), i, first.size.height)
+    };
+    let (centre, _, skipped) = drawn(cx);
+    assert_eq!(skipped, px(0.), "nothing left out above the first row");
+    let wheel = |cx: &mut gpui::VisualTestContext, dy: f32| {
+        cx.simulate_event(gpui::ScrollWheelEvent { position: centre, delta: gpui::ScrollDelta::Pixels(point(px(0.), px(dy))), ..Default::default() });
+        cx.run_until_parked();
+    };
+    let mut end = (0, px(0.));
+    for _ in 0..40 {
+        wheel(cx, -300.);
+        let (_, i, skipped) = drawn(cx);
+        end = (i, skipped);
+    }
+    assert!(end.0 > 250 && end.1 > px(0.), "at the end, the rows above are left out: {end:?}");
+    for _ in 0..40 {
+        wheel(cx, 300.);
+        drawn(cx);
+    }
+    assert!(cx.debug_bounds("list-cell-0-1").is_some(), "back at the first row");
+    let _ = fs::remove_dir_all(&root);
+}
+
 /// An empty panel says so, in each of its lists, inside the panel; the wide and the narrow window alike.
 #[gpui::test]
 fn an_empty_panel_says_so(cx: &mut TestAppContext) {

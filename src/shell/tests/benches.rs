@@ -786,3 +786,41 @@ fn help_scroll(cx: &mut TestAppContext) {
     println!("scrolled: {:?}", shell.read_with(cx, |s, _| s.help.scroll.offset()));
     fs::remove_dir_all(&root).ok();
 }
+
+/// The list page of a folder of 1,000 notes: time of a frame (a forced refresh).
+/// `cargo test --release --locked listing_frame -- --ignored --nocapture`.
+#[gpui::test]
+#[ignore]
+fn listing_frame(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-listing-frame-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let dir = root.join("Mille");
+    fs::create_dir_all(&dir).unwrap();
+    for i in 0..1000 {
+        fs::write(dir.join(format!("Note {i}.md")), format!("---\nstatus: ouvert\nrating: {}\n---\n# Note {i}\n", i % 5)).unwrap();
+    }
+    let _config = isolated_config(&root);
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
+    cx.run_until_parked();
+    let start = Instant::now();
+    shell.update_in(cx, |s, window, cx| s.open_listing(dir.clone(), window, cx));
+    cx.run_until_parked();
+    println!("opening + first frame: {:?}", start.elapsed());
+    let mut frames = Vec::new();
+    for _ in 0..20 {
+        let begin = Instant::now();
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        frames.push(begin.elapsed());
+    }
+    frames.sort();
+    println!("frame: median {:?}, worst {:?}", frames[10], frames[19]);
+    let begin = Instant::now();
+    for _ in 0..20 {
+        shell.update(cx, |s, cx| assert_eq!(s.listed(cx).unwrap().1.len(), 1000));
+    }
+    println!("rows only (listed): {:?}", begin.elapsed() / 20);
+    fs::remove_dir_all(&root).ok();
+}
