@@ -466,6 +466,24 @@ mod tests {
         assert!(fails.is_empty(), "{}", fails.join("\n"));
     }
 
+    /// In each theme, the open row of the panel (accent 10 %) shows on the sheet and is told from the
+    /// selection.
+    #[test]
+    fn the_open_row_differs_from_the_selection() {
+        let mut fails = Vec::new();
+        for (name, _) in THEMES {
+            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+            let (open, picked) = (over(crate::ui::widgets::pill_tint(t), t.bg), over(t.selection, t.bg));
+            if contrast(open, t.bg) < 1.03 {
+                fails.push(format!("{name}: the open row does not show on the sheet ({:.3})", contrast(open, t.bg)));
+            }
+            if contrast(picked, open) < 1.02 {
+                fails.push(format!("{name}: the selection is not told from the open row ({:.3})", contrast(picked, open)));
+            }
+        }
+        assert!(fails.is_empty(), "{}", fails.join("\n"));
+    }
+
     /// Print the ground/sheet contrast of the 13 themes (`cargo test ground_table -- --nocapture --ignored`).
     #[test]
     #[ignore]

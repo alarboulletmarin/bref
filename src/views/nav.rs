@@ -27,7 +27,9 @@ actions!(nav, [OpenAside, SetIcon, ShowFolder, CopyLink, CopyPath, CopyRelative,
 
 /// Width of the rail and height of a row, at the interface's scale 1 (`Theme::px`).
 pub const RAIL: f32 = 40.;
-pub const ROW: f32 = 26.;
+pub const ROW: f32 = 28.;
+/// Indent of a tree row per level of depth, at scale 1.
+pub const INDENT: f32 = 16.;
 pub const LIST_W: Pixels = px(260.);
 /// Width the panel and the comments column always leave to the note.
 pub const NOTE_MIN: Pixels = px(200.);

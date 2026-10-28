@@ -52,6 +52,13 @@ fn the_tree_lines_names_up_after_an_icon(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let (inside, folder) = (bounds(cx, "nav-icon-Dedans".into()).unwrap(), bounds(cx, "nav-icon-Dossier".into()).unwrap());
     assert!(inside.left() > folder.left(), "{inside:?} {folder:?}");
+    // The rows are 28 px high with 8 px of sheet on each side: the icon of a root folder starts after that
+    // margin and the row's own 8 px (the indent is 16 px a level, whatever the zoom).
+    let (panel, row) = (bounds(cx, "nav-panel".into()).unwrap(), bounds(cx, "nav-row-Dossier".into()).unwrap());
+    let ui = shell.read_with(cx, |s, _| s.theme.px(1.));
+    assert!((row.size.height - ui * 28.).abs() < px(0.5), "{row:?}");
+    assert!(folder.left() - panel.left() >= px(16.), "{folder:?} {panel:?}");
+    assert!((inside.left() - folder.left() - px(16.)).abs() < px(0.5), "{inside:?} {folder:?}");
     let _ = fs::remove_dir_all(&root);
 }
 

@@ -111,7 +111,18 @@ pub fn pill(t: Theme, on: bool) -> Div {
         .px(t.px(10.))
         .rounded(t.small())
         .text_color(if on { t.accent } else { t.soft })
-        .when(on, |d| d.bg(t.accent.opacity(0.1)))
+        .when(on, |d| d.bg(pill_tint(t)))
+}
+
+/// The tint of what is open (a pill, the open row of the panel): the accent at 10 %, quieter than the selection.
+pub fn pill_tint(t: Theme) -> gpui::Hsla {
+    t.accent.opacity(0.1)
+}
+
+/// A title in the serif (Plex Serif SemiBold, the only weight bundled), in the text colour, `size` at scale 1:
+/// the header of a panel or a tool, the title of a board or a table, the month of the calendar.
+pub fn serif_title<E: gpui::Styled>(e: E, t: Theme, size: f32) -> E {
+    e.font_family(crate::ui::assets::SERIF).font_weight(gpui::FontWeight::SEMIBOLD).text_size(t.px(size)).text_color(t.text)
 }
 
 /// A tinted band inside a sheet: groups what lies in it (a kanban column, a table header) without a line.

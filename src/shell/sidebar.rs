@@ -531,8 +531,8 @@ impl Shell {
             (_, true) => self.nav.total - self.theme.px(RAIL),
             _ => self.split_width(),
         };
-        // The list's own margin (`px_1`) on both sides.
-        width - px(8.)
+        // The list's own margin (`px_2`) on both sides.
+        width - px(16.)
     }
 
     pub(super) fn render_rows(
@@ -605,9 +605,9 @@ impl Shell {
                 // is given its width, so the shares are worked out here.
                 let (stem, ext) = row.split();
                 let shown = {
-                    let used = 8. + 14. * row.depth as f32 + 8. + 8.;
+                    let used = 8. + nav::INDENT * row.depth as f32 + 8. + 8.;
                     let has_icon = tree || self.icons.contains_key(&row.path);
-                    let fixed = t.px(used + if foldable { 18. } else { 0. } + if has_icon { 20. } else { 0. }) ;
+                    let fixed = t.px(used + if foldable { 21. } else { 0. } + if has_icon { 23. } else { 0. }) ;
                     let avail = f32::from(room - fixed);
                     let measure = |text: &str, size: f32| -> f32 {
                         if text.is_empty() {
@@ -629,13 +629,15 @@ impl Shell {
                 let line = div()
                     .size_full()
                     .pr_2()
-                        .pl(px(8. + 14. * row.depth as f32))
+                        .pl(px(8. + nav::INDENT * row.depth as f32))
                         .flex()
                         .items_center()
-                        .gap_1()
-                        .rounded(t.small())
+                        .gap(t.px(7.))
+                        .rounded(t.large())
                         .text_size(t.px(13.))
                         .when(!selected, |d| d.hover(|s| s.bg(t.hover)))
+                        // The open note: an accent pill; the selection wins when it is on the same row.
+                        .when(current && !selected, |d| d.bg(crate::ui::widgets::pill_tint(t)))
                         .when(selected, |d| {
                             let at = self.nav.sel_at.clone();
                             d.bg(if focused { t.selection } else { t.selection.opacity(0.5) })
@@ -717,7 +719,7 @@ impl Shell {
                         .debug_selector(move || selector.clone())
                         .w_full()
                         .h(t.px(ROW))
-                        .px_1()
+                        .px_2()
                         .cursor_pointer()
                         .child(match self.nav.fading(&row.path).filter(|_| tree && t.motion) {
                             Some(seq) => crate::ui::widgets::fade_in(line, (gpui::SharedString::from(format!("row-in-{seq}")), ix), &t),
@@ -1217,9 +1219,8 @@ impl Shell {
                             .flex()
                             .items_center()
                             .truncate()
-                            .text_size(t.px(12.))
-                            .text_color(t.soft)
                             .when(!full, |d| d.cursor_grab().on_drag(docks::ToolDragged { mode, name: title.clone(), theme: t }, |dragged, _, _, cx| cx.new(|_| dragged.clone())))
+                            .map(|d| crate::ui::widgets::serif_title(d, t, 15.))
                             .child(title.clone()),
                     ),
             )
