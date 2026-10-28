@@ -95,6 +95,32 @@ pub fn tip(label: impl Into<SharedString>, keys: String, theme: Theme) -> impl F
     let label = label.into();
     move |_, cx| cx.new(|_| Tip { label: label.clone(), keys: keys.clone(), theme }).into()
 }
+/// A sheet laid on the ground: the note, the panel, a tool. `bg`, the sheet radius, the `lifted` shadow.
+/// The caller sets its size and place; the contents clip to its corners.
+#[allow(dead_code)] // used by the views from step 3 of #91
+pub fn sheet(t: Theme) -> Div {
+    div().bg(t.bg).rounded(t.sheet()).shadow(t.lifted()).overflow_hidden()
+}
+
+/// A pill, for a tab, a tag or a choice: text in `soft`, or, `on`, tinted with the accent (10 %). The caller
+/// adds the label, the size and the click.
+#[allow(dead_code)] // used by the views from step 3 of #91
+pub fn pill(t: Theme, on: bool) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .px(t.px(10.))
+        .rounded(t.small())
+        .text_color(if on { t.accent } else { t.soft })
+        .when(on, |d| d.bg(t.accent.opacity(0.1)))
+}
+
+/// A tinted band inside a sheet: groups what lies in it (a kanban column, a table header) without a line.
+#[allow(dead_code)] // used by the views from step 3 of #91
+pub fn band(t: Theme) -> Div {
+    div().bg(t.code_bg).rounded(t.band())
+}
+
 /// Round icon button: window controls, note copy; 24 px, the smallest target a finger or a shaky hand hits.
 pub fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stateful<gpui::Div> {
     icon_button_over(id, icon, t.hover, t)

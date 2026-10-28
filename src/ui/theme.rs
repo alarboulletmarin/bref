@@ -99,6 +99,8 @@ pub struct Theme {
     pub code_bg: Hsla,
     pub panel: Hsla,
     pub border: Hsla,
+    /// The window's own background, a step darker than `bg` (see `ground_of`): the sheets (`bg`) lie on it.
+    pub ground: Hsla,
     /// Strings and numbers of a code block.
     pub string: Hsla,
     pub number: Hsla,
@@ -147,6 +149,7 @@ impl Theme {
         let system = &THEMES[if dark { 0 } else { 1 }];
         let (_, colors) = THEMES.iter().find(|t| t.0 == prefs.theme).unwrap_or(system);
         let [bg, text, dim, accent, code_bg, panel, border] = colors.map(|c| Hsla::from(rgb(c)));
+        let ground = ground_of(bg);
         // The selection, as strong as the text over it allows.
         let share = (0..=15)
             .map(|i| if bg.l < 0.5 { 0.25 } else { 0.2 } - i as f32 * 0.01)
@@ -154,14 +157,16 @@ impl Theme {
             .unwrap_or(0.12);
         let picked = [bg, panel, blend(accent, bg, share), blend(accent, panel, share)];
         // Some themes' own text is under 4.5:1 on their code background or selected (Solarized).
-        let text = picked.iter().chain([&code_bg]).fold(text, |c, b| legible(c, *b));
+        let text = picked.iter().chain([&code_bg, &ground]).fold(text, |c, b| legible(c, *b));
         // The faintest grey between text and background that still reads on the page, the panel and code.
         let soft = (0..=20)
             .map(|i| blend(text, bg, 0.5 + i as f32 * 0.025))
-            .find(|c| [bg, panel, code_bg].iter().all(|b| contrast(*c, *b) >= 4.5))
+            .find(|c| [bg, panel, code_bg, ground].iter().all(|b| contrast(*c, *b) >= 4.5))
             .unwrap_or(text);
         // Links and tags are written in the accent: it must read like text, selected too.
-        let accent_read = picked.iter().fold(accent, |c, b| legible(c, *b));
+        // It also reads on the ground and in an open pill (10 % of itself over the page or the ground).
+        let pills = [blend(accent, bg, 0.1), blend(accent, ground, 0.1)];
+        let accent_read = picked.iter().chain([&ground]).chain(&pills).fold(accent, |c, b| legible(c, *b));
         // Strings and numbers take the accent shifted in hue, to match each theme without a palette of their own.
         let code = |by: f32| [bg, code_bg].iter().fold(Hsla { h: (accent_read.h + by).fract(), ..accent_read }, |c, b| legible(c, *b));
         Self {
@@ -179,6 +184,7 @@ impl Theme {
             code_bg,
             panel,
             border,
+            ground,
             size: prefs.size,
             ui: (prefs.size / 16.).clamp(0.85, 1.5),
             page: Page::of(&prefs.page),
@@ -203,6 +209,18 @@ impl Theme {
     /// The large radius: cards, bars, panels, blocks of the note.
     pub fn large(&self) -> Pixels {
         self.px(8.)
+    }
+
+    /// The radius of a sheet laid on the ground: the note, the panel, the tools.
+    #[allow(dead_code)] // used by the views from step 3 of #91
+    pub fn sheet(&self) -> Pixels {
+        self.px(12.)
+    }
+
+    /// The radius of a tinted band inside a sheet (`code_bg`): kanban columns, table headers.
+    #[allow(dead_code)] // used by the views from step 3 of #91
+    pub fn band(&self) -> Pixels {
+        self.px(10.)
     }
 
     /// What sits on the page: tooltips, the dragged card, the bars over a canvas.
@@ -238,6 +256,13 @@ impl Theme {
     pub fn callout_label(&self, tint: Hsla) -> Hsla {
         blend(legible(tint, blend(tint, self.bg, 0.1)), self.text, 0.1)
     }
+}
+
+/// The ground under the sheets of `bg`: `bg` toward black by 6 %, then by 2 % more until the two tell apart
+/// (1.08:1). Light themes get their 6 % at once; the dark ones, whose `bg` is already near black, need a third.
+fn ground_of(bg: Hsla) -> Hsla {
+    let black = hsla(0., 0., 0., 1.);
+    (0..25).map(|i| blend(black, bg, 0.06 + i as f32 * 0.02)).find(|g| contrast(*g, bg) >= 1.08).unwrap_or(black)
 }
 
 /// Radius of the window itself when the app draws its frame (Linux): it matches the system's corners, so it is
@@ -315,6 +340,12 @@ mod tests {
             // The window is cut into zones by `bg` and `panel` alone, with no line between them.
             assert!(contrast(t.bg, t.panel) >= 1.03, "{name}: bg and panel too close to tell the zones apart");
             assert!(contrast(t.soft, t.bg) >= 4.5 && contrast(t.soft, t.panel) >= 4.5, "{name}: soft");
+            // The sheets (`bg`) lie on the ground: told apart, and the text, the secondary text and the accent
+            // (rail, tabs) read on both.
+            assert!(contrast(t.ground, t.bg) >= 1.08, "{name}: ground and sheet too close ({:.3})", contrast(t.ground, t.bg));
+            for (what, fg) in [("text", t.text), ("soft", t.soft), ("accent", t.accent)] {
+                assert!(contrast(fg, t.ground) >= 4.5, "{name}: {what} on the ground {:.2}", contrast(fg, t.ground));
+            }
             assert!(contrast(t.accent, t.bg) >= 4.5, "{name}: accent");
             for h in HUES {
                 let tint = Hsla { h, s: 0.7, l: 0.5, a: 1. };
@@ -373,6 +404,11 @@ mod tests {
                 // The selected row of the panel when it has not the focus.
                 ("text/selection half", t.text, over(t.selection.opacity(0.5), t.panel), 4.5),
                 ("accent/selection half", t.accent, over(t.selection.opacity(0.5), t.panel), 4.5),
+                // Atelier: text on the ground, and the accent of an open pill (10 % over the ground or a sheet).
+                ("text/ground", t.text, t.ground, 4.5),
+                ("accent/ground", t.accent, t.ground, 4.5),
+                ("accent/pill", t.accent, over(t.accent.opacity(0.1), t.bg), 4.5),
+                ("accent/pill ground", t.accent, over(t.accent.opacity(0.1), t.ground), 4.5),
                 ("string/bg", t.string, t.bg, 4.5),
                 ("string/code", t.string, t.code_bg, 4.5),
                 ("number/bg", t.number, t.bg, 4.5),
@@ -418,6 +454,20 @@ mod tests {
             }
         }
         assert!(fails.is_empty(), "{}", fails.join("\n"));
+    }
+
+    /// Print the ground/sheet contrast of the 13 themes (`cargo test ground_table -- --nocapture --ignored`).
+    #[test]
+    #[ignore]
+    fn ground_table() {
+        for (name, _) in THEMES {
+            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+            let hex = |c: Hsla| {
+                let c = c.to_rgb();
+                format!("#{:02x}{:02x}{:02x}", (c.r * 255.).round() as u8, (c.g * 255.).round() as u8, (c.b * 255.).round() as u8)
+            };
+            println!("{name}: ground {} sheet {} ratio {:.3} text/ground {:.2} soft/ground {:.2} accent/ground {:.2}", hex(t.ground), hex(t.bg), contrast(t.ground, t.bg), contrast(t.text, t.ground), contrast(t.soft, t.ground), contrast(t.accent, t.ground));
+        }
     }
 
     #[test]
