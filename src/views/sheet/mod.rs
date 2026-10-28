@@ -235,15 +235,27 @@ impl Sheet {
 
     fn measure(&mut self) {
         // One read per row, never cell by cell: time stays linear on a very wide row.
-        let mut chars = vec![0; self.cols()];
+        self.mono = self.table.code_columns(self.first(), SAMPLE);
+        let mut ems = vec![0f32; self.cols()];
         for r in 0..self.table.rows().min(SAMPLE) {
             for (c, field) in self.table.row(r).iter().enumerate() {
-                chars[c] = chars[c].max(field.chars().take(MAX_CHARS + 1).count());
+                // Monospace: 0.6 em a character. Plex Sans: lowercase is narrower, capitals and digits a
+                // little wider; CJK and emoji (from U+2E80) a full em.
+                let em: f32 = field
+                    .chars()
+                    .take(MAX_CHARS + 1)
+                    .map(|ch| match ch {
+                        _ if self.mono[c] => 0.6,
+                        _ if ch as u32 >= 0x2E80 => 1.,
+                        _ if ch.is_lowercase() => 0.55,
+                        _ => 0.65,
+                    })
+                    .sum();
+                ems[c] = ems[c].max(em);
             }
         }
-        let em = self.text_px() * 0.6;
-        self.mono = self.table.code_columns(self.first(), SAMPLE);
-        self.widths = chars.iter().map(|&n| n.clamp(MIN_CHARS, MAX_CHARS) as f32 * em + 2. * PAD).collect();
+        let px = self.text_px();
+        self.widths = ems.iter().map(|&em| em.clamp(MIN_CHARS as f32 * 0.6, MAX_CHARS as f32 * 0.6) * px + 2. * PAD).collect();
         self.place();
     }
 
