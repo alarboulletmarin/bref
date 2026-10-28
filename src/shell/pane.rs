@@ -778,6 +778,11 @@ impl Shell {
             }
             self.flush_sheet(cx);
         }
+        // A file that takes the note's place takes the input too: left in the editor, `render` would
+        // hand the pane back to the note (its focus means "the note is back"). A preview keeps the input.
+        if file.as_ref().is_some_and(|new| self.pane().file_path() != Some(&new.path)) && !self.pane().peek {
+            self.grab = true;
+        }
         self.pane_mut().file = file;
     }
 }
