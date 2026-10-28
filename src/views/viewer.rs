@@ -505,7 +505,9 @@ impl Render for Viewer {
             .relative()
             .key_context("Canvas")
             .track_focus(&self.focus)
+            // The sheet's corners: the sheet under it clips to a rectangle, not to its corners.
             .bg(t.bg)
+            .rounded(t.sheet())
             .cursor(if self.drag.is_some() { CursorStyle::ClosedHand } else { CursorStyle::OpenHand })
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom_by(1.25, cx)))
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.zoom_by(0.8, cx)))

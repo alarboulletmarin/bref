@@ -117,7 +117,9 @@ impl Render for Sheet {
             .size_full()
             .flex()
             .flex_col()
+            // The sheet's corners: the sheet under it clips to a rectangle, not to its corners.
             .bg(t.bg)
+            .rounded(t.sheet())
             .text_color(t.text)
             // A cell being typed in: the keys of an input line come before
             // those of the grid (arrows, deletion, clipboard).
