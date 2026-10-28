@@ -76,14 +76,8 @@ fn the_palette_and_the_menu_keep_their_rows(cx: &mut TestAppContext) {
             });
             settle(cx);
             let menu = bounds_of(cx, "menu");
-            // At zoom 32 in 420 px the menu is wider and taller than the window (as before this step): it
-            // can only be anchored at the margin then.
-            if menu.size.width <= px(width) {
-                assert!(menu.left() >= px(0.) && menu.right() <= px(width) + px(0.5), "{menu:?} in {width}");
-            }
-            if menu.size.height <= px(720.) {
-                assert!(menu.top() >= px(0.) && menu.bottom() <= px(720.) + px(0.5), "{menu:?} in {width}");
-            }
+            assert!(menu.left() >= px(0.) && menu.right() <= px(width) + px(0.5), "{menu:?} in {width}");
+            assert!(menu.top() >= px(0.) && menu.bottom() <= px(720.) + px(0.5), "{menu:?} in {width}");
             let entry = bounds_of(cx, leak(format!("menu-entry-{}", tr("Rename", "Renommer"))));
             assert!((entry.size.height - t.px(30.)).abs() < px(0.5), "{entry:?}");
             shell.update(cx, |s, cx| {

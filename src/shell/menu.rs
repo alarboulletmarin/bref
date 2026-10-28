@@ -405,7 +405,7 @@ impl Shell {
     }
 
     /// Context menu, over the whole window: a click elsewhere closes it.
-    pub(super) fn render_menu(&self, _: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+    pub(super) fn render_menu(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         let menu = self.menu.as_ref()?;
         let t = self.theme;
         let groups = self.menu_groups(cx);
@@ -430,7 +430,7 @@ impl Shell {
                 .when(matches!(what, Do::Trash), |d| d.text_color(t.accent))
                 // The whole label, then its shortcut, dimmer, pinned to the right: the
                 // menu takes the width they need.
-                .child(div().flex_1().whitespace_nowrap().child(label))
+                .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(label))
                 .child(keycaps(&what.keys(cx), t, on).debug_selector(move || format!("menu-keys-{label}")).flex_none().ml_4())
                 .on_mouse_down(
                     MouseButton::Left,
@@ -452,6 +452,8 @@ impl Shell {
                 i += 1;
             }
         }
+        // Never larger than the window minus the anchor margin: long labels are ellipsized, the list scrolls.
+        let room = window.viewport_size() - gpui::size(t.px(16.), t.px(16.));
         let close = || cx.listener(|this: &mut Self, _: &MouseDownEvent, window, cx| this.close_menu(window, cx));
         Some(
             div()
@@ -477,7 +479,11 @@ impl Shell {
                                 cx.stop_propagation();
                             }
                         }))
-                        .min_w(t.px(230.))
+                        .id("menu-list")
+                        .min_w(t.px(230.).min(room.width))
+                        .max_w(room.width)
+                        .max_h(room.height)
+                        .overflow_y_scroll()
                         .py(t.px(6.))
                         .text_size(t.px(13.))
                         .children(rows)
