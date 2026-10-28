@@ -13,6 +13,8 @@ pub(super) const SHADOW: Pixels = px(10.);
 /// `PILL_ROOM` adds its margin to the window's edge and some air: what every top row leaves free under it.
 const PILL_W: f32 = 106.;
 pub(super) const PILL_ROOM: f32 = 124.;
+/// Height of the top row of the window (the window buttons' row): the strip of a pane without a tab bar that moves the window.
+const STRIP: f32 = 40.;
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -411,7 +413,7 @@ impl Shell {
             .right_2()
             // As high as the CSV bar, between the tab bar (34) and the panel header (44): the buttons
             // sit on the middle of whichever row is under them.
-            .h(t.px(40.))
+            .h(t.px(STRIP))
             .flex()
             .items_center()
             .gap_2()
@@ -706,12 +708,15 @@ impl Shell {
                 .occlude()
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });
+        // Without a tab bar, the top row of the pane is a handle to move the window (Linux): the note's text starts under it.
+        let strip = client && !barred;
         // A tab bar puts the note below the window buttons: its text no longer steps down for them.
         let pill = (client && !barred && group == self.corner_group()).then(|| window.viewport_size().width - self.nav.left - px(8.) - t.px(PILL_W));
         self.pane().editor.update(cx, |e, _| {
             e.corner = 1 + talk.is_some() as usize + boards as usize;
             e.bar_here = active;
             e.pill = pill;
+            e.strip = if strip { t.px(STRIP) } else { px(0.) };
         });
         // The comments column takes what the panel and the note leave it, 270 px at
         // most; short of 140 px, it does not show (its button stays, a wider window brings it back).
@@ -834,6 +839,8 @@ impl Shell {
         if tool.is_some() && self.pane().editor.focus_handle(cx).is_focused(window) {
             window.focus(&self.pane().zone);
         }
+        // The views whose top room is empty: the strip can lie over it.
+        let free_top = tool.is_none() && self.pane().figure.is_none() && (listing.is_some() || board || matches!(file, None | Some((_, FileKind::Image))));
         let note = match file {
             _ if let Some(tool) = tool => note.flex().flex_col().child(match tool {
                 nav::Mode::Graph => div().flex_1().min_h_0().child(self.graph.clone()).into_any_element(),
@@ -943,6 +950,7 @@ impl Shell {
                 }
             }))
             .child(note)
+            .when(strip && free_top, |d| d.child(div().debug_selector(move || format!("drag-strip-{group}")).absolute().top_0().left_0().right_0().h(t.px(STRIP)).map(drag_window)))
             // The active pane of several: a line across its top, in the full accent (3:1 at least on the page).
             .when(many && active && !barred, |d| d.child(div().debug_selector(|| "pane-active".into()).absolute().top_0().left_0().right_0().h(t.px(3.)).bg(t.accent)))
             .children(tint);

@@ -915,7 +915,7 @@ impl Shell {
                     .tooltip(tip(tr("New note", "Nouvelle note"), keys(&crate::actions::NewNote), t))
                     .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
             ))
-            .child(div().flex_1().w_full().when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window)))
+            .child(div().debug_selector(|| "rail-free".into()).flex_1().w_full().when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window)))
             // Vault trash (what it holds, to take it back) and backup.
             .child(
                 button("nav-trash", "trash.svg", false, t)
@@ -1193,23 +1193,31 @@ impl Shell {
                 )
             })
             // The title is the handle: dragged, the tool goes to the other dock or another place in
-            // its stack. On the whole window it moves the window, as a title bar does.
+            // its stack. The empty part of the header (and the title, on the whole window) moves the
+            // window, as a title bar does.
             .child(
                 div()
-                    .id(("tool-title", mode as usize))
-                    .debug_selector(move || format!("tool-title-{}", mode.name()))
+                    .debug_selector(move || format!("tool-head-{}", mode.name()))
                     .flex_1()
+                    .min_w_0()
                     .h_full()
                     .flex()
                     .items_center()
-                    .truncate()
-                    .text_size(t.px(12.))
-                    .text_color(t.soft)
-                    .map(|d| match full {
-                        true => d.when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window)),
-                        false => d.cursor_grab().on_drag(docks::ToolDragged { mode, name: title.clone(), theme: t }, |dragged, _, _, cx| cx.new(|_| dragged.clone())),
-                    })
-                    .child(title.clone()),
+                    .when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window))
+                    .child(
+                        div()
+                            .id(("tool-title", mode as usize))
+                            .debug_selector(move || format!("tool-title-{}", mode.name()))
+                            .min_w_0()
+                            .h_full()
+                            .flex()
+                            .items_center()
+                            .truncate()
+                            .text_size(t.px(12.))
+                            .text_color(t.soft)
+                            .when(!full, |d| d.cursor_grab().on_drag(docks::ToolDragged { mode, name: title.clone(), theme: t }, |dragged, _, _, cx| cx.new(|_| dragged.clone())))
+                            .child(title.clone()),
+                    ),
             )
             .when(mode == Mode::Graph, |d| {
                 d.child(button("nav-center", "target.svg", false, t).tooltip(tip(tr("Show the whole graph", "Voir tout le graphe"), String::new(), t)).on_click(cx.listener(

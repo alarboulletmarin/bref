@@ -234,7 +234,9 @@ impl Shell {
                         .flex()
                         .overflow_x_scroll()
                         .track_scroll(&self.groups[group].scroll)
-                        .children(cells),
+                        .children(cells)
+                        // Past the last tab: a handle to move the window, where the app draws its title bar.
+                        .child(div().debug_selector(move || format!("tabs-free-{group}")).flex_1().h_full().when(client, |d| d.map(crate::ui::widgets::drag_window))),
                 ),
         )
     }

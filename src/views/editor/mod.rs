@@ -344,6 +344,8 @@ pub struct Editor {
     /// Left edge (in the window) of the window buttons floating over the top right corner, where the app draws them:
     /// a first line reaching under it starts lower (`place`).
     pub pill: Option<Pixels>,
+    /// Top room kept free for the shell's window handle: the text never starts above it.
+    pub strip: Pixels,
     /// Top margin of the text in the last `place`: `TOP`, or `PILL_CLEAR`.
     top: Pixels,
     /// Changes when everything must be redone (other note, theme, images): nothing is reused.
@@ -458,6 +460,7 @@ impl Editor {
             bar: BarState::default(),
             bar_here: true,
             pill: None,
+            strip: px(0.),
             top: TOP,
             epoch: 0,
             dmg: None,

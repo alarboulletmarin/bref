@@ -447,7 +447,7 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
         }
     }
     // The panel beside the note: a note narrowed by the panel (120, 260, 600 px) starts under the window buttons; in a window wide
-    // enough for the page, the note keeps its usual top margin.
+    // enough for the page, the note starts under the handle strip.
     shell.update(cx, |s, cx| {
         s.nav.panel = nav::Panel::Split;
         cx.notify();
@@ -466,10 +466,10 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
         if narrow {
             assert!(pane.top() + top >= pill, "{window}/{panel}: the text starts at {top:?}, the window buttons end at {pill:?}");
         } else {
-            assert_eq!(top, px(20.), "{window}/{panel}: a note wide enough keeps its top margin");
+            assert_eq!(top, px(40.), "{window}/{panel}: a note wide enough starts under the window's handle strip");
         }
     }
-    // No panel, the page is as wide as the window lets it: the default window keeps its top margin, a narrow one gives room.
+    // No panel, the page is as wide as the window lets it: the default window starts under the handle strip, a narrow one gives room.
     shell.update(cx, |s, cx| {
         s.nav.panel = nav::Panel::Rail;
         cx.notify();
@@ -478,7 +478,8 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
         cx.simulate_resize(size(px(window), px(600.)));
         settle(cx);
         let (pane, pill, top) = (cx.debug_bounds("pane-0").unwrap(), pill_bottom(cx), top(cx));
-        assert_eq!(pane.top() + top >= pill, narrow, "{window}: the text starts at {top:?}, the window buttons end at {pill:?}");
+        // Wide enough: the text starts right under the handle strip, which is as high as the window buttons.
+        assert!(pane.top() + top >= pill && (narrow || top == px(40.)), "{window}: the text starts at {top:?}, the window buttons end at {pill:?}");
     }
     let _ = fs::remove_dir_all(&root);
 }
@@ -528,6 +529,93 @@ fn window_buttons_have_the_top_row_to_themselves(cx: &mut TestAppContext) {
         }
     }
     assert!(seen > 0, "the comments column was never open");
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// Where the app draws its title bar, there is always a place to grab the window: in every layout, the top row of each pane
+/// (tab bar past the last tab, or, without tab bar, a strip over the empty top of the note), the panel's header past its
+/// title and the empty part of the rail. The text never starts under the strip.
+#[gpui::test]
+fn the_window_can_always_be_grabbed_at_the_top(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-grab-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let _config = isolated_config(&root);
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (one, two) = (root.join("Une.md"), root.join("Deux.md"));
+    fs::write(&one, "# Titre\n\nUn {==mot==}{>>remarque<<} et du texte.\n").unwrap();
+    fs::write(&two, "# Autre\n\nTexte\n").unwrap();
+    let (shell, cx) = cx.add_window_view(|window, cx| {
+        let mut shell = Shell::new(Some(root.clone()), vec![one.clone()], window, cx);
+        shell.client = true;
+        shell
+    });
+    cx.run_until_parked();
+    cx.simulate_resize(size(px(860.), px(720.)));
+    let settle = |cx: &mut gpui::VisualTestContext| {
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+    };
+    // The handles of the top row: bounds of the bare strip or of the bar's free part, with the widest one named.
+    let handles = |cx: &mut gpui::VisualTestContext, group: usize| {
+        let names = [["drag-strip-0", "tabs-free-0"], ["drag-strip-1", "tabs-free-1"]][group];
+        names.map(|name| cx.debug_bounds(name)).into_iter().flatten().collect::<Vec<_>>()
+    };
+    let wide = px(200.);
+    let (mut seen, mut report) = (0, Vec::new());
+    let mut check = |what: &str, groups: usize, cx: &mut gpui::VisualTestContext| {
+        settle(cx);
+        for group in 0..groups {
+            let pane = cx.debug_bounds(["pane-0", "pane-1"][group]).unwrap();
+            // Bounds of an element that is no longer drawn stay in the table: only what lies inside the pane counts.
+            let found: Vec<_> = handles(cx, group).into_iter().filter(|b| b.left() >= pane.left() - px(1.) && b.right() <= pane.right() + px(1.)).collect();
+            let best = found.iter().map(|b| b.size.width).fold(px(0.), |a, b| a.max(b));
+            assert!(best >= wide, "{what}: pane {group} has no handle of {wide:?} at its top ({found:?})");
+            for handle in &found {
+                assert!(handle.top() <= pane.top() + px(1.) && handle.bottom() <= pane.top() + px(41.), "{what}: {handle:?} not at the top of {pane:?}");
+            }
+            report.push(format!("{what} pane {group}: {best:?}"));
+            seen += 1;
+        }
+    };
+    let panel = |cx: &mut gpui::VisualTestContext, panel| {
+        shell.update(cx, |s, cx| {
+            s.nav.panel = panel;
+            cx.notify();
+        });
+    };
+    // One pane, one tab: no tab bar, the strip; the text starts under it.
+    panel(cx, nav::Panel::Rail);
+    check("one tab, rail", 1, cx);
+    assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).top_margin()), px(40.), "the text starts under the strip");
+    let rail = cx.debug_bounds("rail-free").expect("the rail has an empty part");
+    assert!(rail.size.height > px(20.), "{rail:?}");
+    // Panel open beside the note (the header's free part past the title), with the comment column open.
+    panel(cx, nav::Panel::Split);
+    check("one tab, panel", 1, cx);
+    let (head, title) = (cx.debug_bounds("tool-head-tree").unwrap(), cx.debug_bounds("tool-title-tree").unwrap());
+    assert!(head.right() > title.right() + px(40.) || head.size.width < title.size.width + px(40.), "{head:?} {title:?}");
+    assert!(cx.debug_bounds("comments").is_some(), "the comments column is open");
+    // Two tabs: the bar, free past the last tab.
+    shell.update_in(cx, |s, window, cx| {
+        s.add_tab(window, cx);
+        s.open_note(&two, cx);
+    });
+    check("two tabs, panel", 1, cx);
+    panel(cx, nav::Panel::Rail);
+    check("two tabs, rail", 1, cx);
+    // Two panes of one tab each.
+    shell.update_in(cx, |s, window, cx| {
+        s.close_tab(1, window, cx);
+        s.open_aside(&two, window, cx);
+    });
+    check("two panes", 2, cx);
+    panel(cx, nav::Panel::Split);
+    check("two panes, panel", 2, cx);
+    assert_eq!(seen, 8, "{report:?}");
     let _ = fs::remove_dir_all(&root);
 }
 
