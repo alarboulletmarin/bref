@@ -486,6 +486,29 @@ mod tests {
         assert!(fails.is_empty(), "{}", fails.join("\n"));
     }
 
+    /// A commented passage shows on the sheet, the one under the caret shows more, and neither is taken for the selection.
+    #[test]
+    fn commented_passages_differ_from_the_selection() {
+        let mut fails = Vec::new();
+        for (name, _) in THEMES {
+            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+            let tint = |on| over(crate::ui::widgets::passage_tint(t, on), t.bg);
+            let (quiet, active, picked) = (tint(false), tint(true), over(t.selection, t.bg));
+            let ratios = [("quiet/sheet", contrast(quiet, t.bg), 1.03), ("active/quiet", contrast(active, quiet), 1.03), ("active/selection", contrast(active, picked), 1.02)];
+            for (what, got, least) in ratios {
+                if got < least {
+                    fails.push(format!("{name}: {what} {got:.3} < {least}"));
+                }
+            }
+            for (what, color) in [("text", t.text), ("accent", t.accent)] {
+                if contrast(color, active) < 4.5 {
+                    fails.push(format!("{name}: {what} does not read on the active passage ({:.2})", contrast(color, active)));
+                }
+            }
+        }
+        assert!(fails.is_empty(), "{}", fails.join("\n"));
+    }
+
     /// Print the ground/sheet contrast of the 13 themes (`cargo test ground_table -- --nocapture --ignored`).
     #[test]
     #[ignore]

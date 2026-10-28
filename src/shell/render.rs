@@ -735,7 +735,7 @@ impl Shell {
         if active && column.is_none() {
             self.nav.aside = px(0.);
         }
-        // The comment the caret is in (none past the last) is on `selection`.
+        // The comment the caret is in (none past the last) is a sheet.
         let caret = self.pane().editor.read(cx).position();
         let here = said.iter().position(|n| n.2 <= caret && caret <= n.4);
         if here != self.comments_seen {
@@ -753,11 +753,13 @@ impl Shell {
             let quote = |text: String| div().min_w_0().px_1().rounded(t.small()).bg(t.hover).text_size(t.px(12.)).text_color(t.soft).line_clamp(2).text_ellipsis().child(text);
             div()
                 .id(("comment", i))
+                .debug_selector(|| format!("comment-{i}"))
                 .group(group.clone())
-                .p_2()
-                .rounded(t.small())
-                .when(here == Some(i), |d| d.bg(t.selection))
-                .when(i > 0, |d| d.border_t_1().border_color(t.border))
+                .px_3()
+                .py(t.px(10.))
+                .rounded(t.large())
+                // The comment under the caret is a small sheet on the ground; the others lie on it, with no line between.
+                .when(here == Some(i), |d| d.bg(t.bg).shadow(t.lifted()))
                 .flex()
                 .flex_col()
                 .gap_1()
@@ -809,14 +811,15 @@ impl Shell {
                 .h_full()
                 // Under the window buttons, whatever the zoom.
                 .pt(t.px(48.))
-                .px_3()
+                .pl(nav::GAP)
                 .pb_3()
                 .text_size(t.px(13.))
                 .flex()
                 .flex_col()
+                .gap(nav::GAP)
                 .overflow_y_scroll()
                 .track_scroll(&self.comments_scroll)
-                .child(div().flex().items_center().pb_2().child(div().flex_1().text_color(t.soft).child(title)).child(shut))
+                .child(div().flex().items_center().px_3().child(div().flex_1().text_color(t.soft).child(title)).child(shut))
                 .children(cards)
         });
         let copy = ui::widgets::button("copy-all", if self.copied { "check.svg" } else { "copy.svg" }, false, t)

@@ -136,6 +136,15 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     lay(cx, 420., Mode::Tree, Panel::Rail, 600.);
     let (pane, said) = (cx.debug_bounds("pane-0").unwrap(), cx.debug_bounds("comments").unwrap());
     assert!(pane.size.width >= px(199.) && said.size.width == px(172.) && said.right() <= px(420. - 8.), "{pane:?} {said:?}");
+    // The column lies on the ground: 8 px after the note's sheet, its cards 8 px apart and inside it, at every width.
+    for width in [420., 860., 1600.] {
+        lay(cx, width, Mode::Tree, Panel::Rail, 260.);
+        let (pane, said) = (cx.debug_bounds("pane-0").unwrap(), cx.debug_bounds("comments").unwrap());
+        let cards: Vec<_> = ["comment-0", "comment-1"].map(|id| cx.debug_bounds(id).unwrap_or_else(|| panic!("{width}: {id} absent"))).into();
+        assert!(said.left() == pane.right() && cards[0].left() - pane.right() == px(8.), "{width}: {pane:?} {said:?} {cards:?}");
+        assert!(cards[1].top() - cards[0].bottom() == px(8.) && cards.iter().all(|c| c.right() <= said.right() && c.size.height > px(30.)), "{width}: {said:?} {cards:?}");
+    }
+    lay(cx, 420., Mode::Tree, Panel::Rail, 600.);
     cx.simulate_keystrokes("secondary-f");
     cx.run_until_parked();
     within(cx, "find-bar", "pane-0");

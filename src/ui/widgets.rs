@@ -119,6 +119,15 @@ pub fn pill_tint(t: Theme) -> gpui::Hsla {
     t.accent.opacity(0.1)
 }
 
+/// The tint of a commented passage: `pill_tint`, stronger for the one the caret is in, still under the selection's
+/// share (the text and the accent read on it) and told from it.
+pub fn passage_tint(t: Theme, on: bool) -> gpui::Hsla {
+    if on { t.accent.opacity(PASSAGE_ON) } else { pill_tint(t) }
+}
+
+/// The share of the accent behind the commented passage under the caret.
+const PASSAGE_ON: f32 = 0.12;
+
 /// A title in the serif (Plex Serif SemiBold, the only weight bundled), in the text colour, `size` at scale 1:
 /// the header of a panel or a tool, the title of a board or a table, the month of the calendar.
 pub fn serif_title<E: gpui::Styled>(e: E, t: Theme, size: f32) -> E {

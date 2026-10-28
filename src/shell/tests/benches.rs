@@ -650,3 +650,35 @@ fn board_frame(cx: &mut TestAppContext) {
     println!("frame: median {:?}, worst {:?}", frames[10], frames[19]);
     fs::remove_dir_all(&root).ok();
 }
+
+/// A note with 100 comments, caret moving from one to the next: time of a frame.
+/// `cargo test --release --locked comments_frame -- --ignored --nocapture`.
+#[gpui::test]
+#[ignore]
+fn comments_frame(cx: &mut TestAppContext) {
+    let root = std::env::temp_dir().join(format!("bref-comments-frame-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let _config = isolated_config(&root);
+    let note = root.join("Cent.md");
+    let lines: String = (0..100).map(|i| format!("Ligne {i} avec {{==un passage==}}{{>>commentaire {i}<<}} au milieu.\n")).collect();
+    fs::write(&note, format!("# Cent\n\n{lines}")).unwrap();
+    cx.update(bind_keys);
+    cx.update(init_fonts);
+    let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
+    cx.run_until_parked();
+    shell.update(cx, |s, cx| s.open_note(&note, cx));
+    cx.run_until_parked();
+    let mut frames = Vec::new();
+    for i in 0..20 {
+        shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.place_cursor(20 + i * 70, cx)));
+        let begin = Instant::now();
+        cx.run_until_parked();
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        frames.push(begin.elapsed());
+    }
+    frames.sort();
+    println!("100 comments, frame after a caret move: median {:?}, worst {:?}", frames[10], frames[19]);
+    fs::remove_dir_all(&root).ok();
+}

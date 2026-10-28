@@ -288,10 +288,11 @@ impl Editor {
                 for (other, _) in self.more.iter().filter(|(other, _)| !other.is_empty() && other.start <= end && other.end > row.start) {
                     mark(other, t.selection, window);
                 }
-                // Text that carries a comment is highlighted.
+                // Text that carries a comment is tinted, stronger when the caret is in that comment.
                 if !matches!(row.kind, Kind::Code | Kind::Fence) {
-                    for (_, noted, _) in md::comments(&self.content[row.start..end]) {
-                        mark(&(row.start + noted.start..row.start + noted.end), t.selection, window);
+                    for (whole, noted, _) in md::comments(&self.content[row.start..end]) {
+                        let on = (row.start + whole.start..=row.start + whole.end).contains(&cursor);
+                        mark(&(row.start + noted.start..row.start + noted.end), crate::ui::widgets::passage_tint(t, on), window);
                     }
                 }
                 if let Some(find) = &self.find {
