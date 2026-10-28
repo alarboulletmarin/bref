@@ -8,17 +8,18 @@ impl Render for Editor {
         // The count is truncated in a narrow note, instead of going out on the left.
         let t = self.theme;
         let after = (12. + 34. * self.corner as f32) * t.ui;
-        // The formatting bar, at the left of the strip, the counter at the right.
+        // The formatting bar, in the middle of the page, apart from the counter, which stays at the right.
         self.bar.at = self.bar_place();
         let folded = self.bar.at == Some(Bar::Compact);
         let bar = match self.bar.at {
-            Some(Bar::Inline) => self.bar.at.map(|mode| self.format_bar(mode, cx).into_any_element()),
+            Some(Bar::Inline(_)) => self.bar.at.map(|mode| self.format_bar(mode, cx).into_any_element()),
             Some(Bar::Compact) if self.bar.open => Some(crate::ui::widgets::fade_in(self.format_bar(Bar::Compact, cx), "bar-in", &t)),
             _ => None,
         };
         let toggle = folded.then(|| self.bar_toggle(cx));
-        // Collapsed, the bar leaves room for its button: the counter is truncated before going under it.
-        let counts = div().absolute().bottom_4().left(t.px(if folded { 46. } else { 8. })).right(px(after)).flex().justify_end().child(
+        // Collapsed, the counter is truncated before going under the button, in the middle.
+        let left = if folded { f32::from(self.viewport.size.width) / 2. + (15. + 8.) * t.ui } else { 8. * t.ui };
+        let counts = div().absolute().bottom_4().left(px(left)).right(px(after)).flex().justify_end().child(
             div()
                 .debug_selector(|| "counts".into())
                 .h(t.px(30.))
