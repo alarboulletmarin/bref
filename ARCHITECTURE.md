@@ -80,6 +80,52 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | the CSV/TSV grid | `views/sheet/` (`disk.rs` loading and saving, `edit.rs`, `clipboard.rs`, `mouse.rs`, `render.rs`) |
 | a shortcut | `shell/keymap.rs` (`defaults`, `help_sections`), `ui/keys.rs` (how keys are read and shown) |
 | the test of a feature | `shell/tests/` (`end_to_end/` is one session, one file per chapter) |
+| the user guide | `book/src/` (an mdBook); `shortcuts.md` is written from `help_sections` by the test `shortcuts_page_is_current` |
+
+## How the main parts work
+
+- **Editor**: a custom text element drawn directly with GPUI's text system. Each line is classified
+  (heading, list item, quote, code…) and shaped with its own size and style runs; the text itself is
+  never transformed. The layout is redone only when the text, the width, the theme or the cursor
+  change, and then only for the lines an edit touched (the others are kept and shifted). A table of
+  more than 1,500 rows is laid out light, with cells shaped only near the screen. A test compares
+  every reused layout with a full one on thousands of random edits.
+- **Typing rules** (`logic/markdown/lists.rs`): pure functions decide what Enter and Tab do on a
+  line and renumber the list around the cursor, unit-tested without any UI.
+- **CSV and TSV** (`logic/table.rs`, `views/sheet/`): the file is decoded once and kept as text with
+  one small index entry per row, so a million rows cost about 12 MB; fields are read on demand, and
+  a row that was not edited is written back as it was. The grid builds only the cells on screen.
+  Encoding and delimiter detection, parsing, writing and the copy and export formats are pure
+  functions with unit tests.
+- **Vault** (`platform/vault.rs`): the note list, its tags and its text are indexed off the UI
+  thread when the vault opens, then kept up to date on each save. Changes made elsewhere are
+  reported by the `notify` crate; the vault is also checked on a slow timer, which becomes the only
+  mechanism when watching is not possible.
+- **Palette**: name matches first (substring, ranked by position, then subsequence; ties keep the
+  most recently opened note first), then notes whose text contains every word, most recent first.
+  The whole text of the vault is kept in memory for that, as written and in lower case: it is
+  lowered once, when the vault is read, not each time the palette opens.
+- **Navigation** (`views/nav.rs`, `shell/sidebar.rs`): the tree is rebuilt from the paths of the
+  indexed notes, and only the visible rows are drawn.
+- **Graph** (`views/graph.rs`): a force-directed layout computed off the UI thread when the links
+  change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
+- **Diagrams** (`logic/diagram/`, `views/canvas/`, `logic/import.rs`): shapes and arrows are plain
+  data; the same outlines are drawn on the canvas and written to the SVG file, whose `<metadata>`
+  holds one line of source per element.
+- **Figures and SVG** (`ui/svg.rs`, `views/viewer.rs`): Mermaid diagrams and SVG files are laid out
+  and rasterized off the UI thread, at most one at a time per figure, and the previous version stays
+  on screen until the new one is ready; a figure never exceeds 8,192 pixels a side or 16 million
+  pixels. The viewer draws tiles of 512 pixels and keeps the last 64; a picture (`Source::Raster`)
+  is not tiled, the graphics card draws it whole.
+- **Updates** (`platform/update.rs`): the latest release comes from the GitHub API through `curl`,
+  at most once a day, off the UI thread, and so does the download. Reading the answer and comparing
+  versions are pure functions with unit tests; swapping `Bref.app` from a disk image is tested on a
+  real macOS by CI. `BREF_RELEASES_API` points the check at a local `file://` release description,
+  to try an update without publishing one.
+- **Startup**: the last note is read before the first frame, so the window appears with its content.
+  Icons are embedded in the binary.
+- **Window**: on Linux Bref draws its own title bar, shadow and resize edges (client-side
+  decorations); on macOS and Windows the system does.
 
 ## Rules
 
