@@ -20,6 +20,7 @@ mod keyboard;
 mod keycaps;
 mod layout;
 mod motion;
+mod shortcuts_page;
 mod panel_rows;
 mod panes;
 mod tabs;
