@@ -20,4 +20,10 @@ uninstall:
 test:
 	cargo test --locked
 
-.PHONY: all install uninstall test
+# The user guide: the shortcuts page is written from the help panel, then the book is built
+# into book/book/ (needs mdbook: `cargo install mdbook`).
+docs:
+	BREF_WRITE_DOCS=1 cargo test --locked shortcuts_page_is_current
+	mdbook build book
+
+.PHONY: all install uninstall test docs
