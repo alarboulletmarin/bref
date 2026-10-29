@@ -1,6 +1,7 @@
 # Builds the user guide (book/, an mdBook) with the website (docs/), checks every link, and
 # publishes both to GitHub Pages from main: the website at the root, the guide under /guide/.
-# Pages must be set to deploy from GitHub Actions (Settings › Pages › Source).
+# Pages must be set to deploy from GitHub Actions (Settings › Pages › Source). After changing
+# that setting, publish at once with Actions › Docs › Run workflow, on main.
 name: Docs
 on:
   push:
@@ -45,12 +46,12 @@ jobs:
         with:
           args: --no-progress --max-retries 3 README.md CONTRIBUTING.md ARCHITECTURE.md 'book/src/*.md' 'docs/*.html'
           fail: true
-      - if: github.event_name == 'push'
+      - if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
   deploy:
-    if: github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: build
     runs-on: ubuntu-latest
     permissions:
