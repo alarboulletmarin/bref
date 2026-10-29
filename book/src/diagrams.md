@@ -35,7 +35,7 @@ Select something and a bar floats over it, with what can be changed in it. It go
 - **Right click**: a menu of what is under the pointer: write in it, turn an arrow around, its route, duplicate, delete, fit a container. On the empty canvas: a text there, select all, fit.
 - **Selection**: click, `Shift + click` or `Ctrl + click` to add a shape or take it out, or drag on the empty canvas.
 - **Move and resize**: drag to move, on a grid. Drag a corner to resize. The arrow keys move by one step.
-- **Keys**: `Delete` removes, `Ctrl + D` duplicates, `Ctrl + Z` undoes.
+- **Keys**: `Delete` or `Backspace` removes, `Ctrl + D` duplicates, `Ctrl + A` selects everything, `Ctrl + Z` undoes and `Ctrl + Shift + Z` redoes.
 
 ## Arrows
 
@@ -53,7 +53,7 @@ Select something and a bar floats over it, with what can be changed in it. It go
 
 ## Text
 
-- `Enter` or a double click writes in the selected shape, or on the arrow. `Esc` when done.
+- `Enter` or a double click writes in the selected shape, or on the arrow. While writing, `Enter` starts a new line and `Ctrl + V` pastes text. `Esc` when done.
 - A double click on the empty canvas starts a text there.
 - A shape grows to hold what you write.
 - Texts are styled with the marks of notes: `**bold**`, `*italic*`, `<u>underlined</u>`, `~~struck~~`, `` `code` ``. They show as typed while you write, and styled once you leave. The SVG file and the PNG export carry the styles.
@@ -89,7 +89,7 @@ It also holds **starting points**: a new diagram that already holds a few shapes
 ## The view
 
 - The wheel moves the canvas, and so does dragging with the middle button.
-- `+` and `-` zoom, as do `Ctrl + wheel` and the buttons at the bottom right.
+- `+` and `-` zoom, as do `Ctrl + +`, `Ctrl + -`, `Ctrl + wheel` and the buttons at the bottom right. `Ctrl + 0` fits too.
 - `0`, or a click on the percentage, fits the whole diagram.
 - The canvas has a faint grid of dots: one every other step of the grid that shapes snap to.
 - A dashed line shows when what you move lines up with another shape, by side or by middle.

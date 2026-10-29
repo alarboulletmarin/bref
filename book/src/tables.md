@@ -55,6 +55,7 @@ Deleting the header makes the next row the header. Deleting the last column or r
 ## Paste
 
 - **In a table**, text goes into one cell, on one line, its `|` escaped. Cells copied from a spreadsheet or a web page (tab-separated), or from another Markdown table, fill the grid from the current cell. Rows and columns are added as needed.
+- **Under a table**, a pasted line becomes part of it, and its columns line up.
 - **Anywhere else**, a pasted Markdown table or tab-separated cells become a table on their own lines, aligned, with the line of dashes added.
 
 ## Formulas
@@ -77,7 +78,7 @@ A cell that starts with `=` computes. The file keeps the formula; other apps sho
 
 **Functions and operators**
 
-- Functions: `sum`, `avg`, `min`, `max`, `count`, `round`, `abs`, `if`.
+- Functions: `sum`, `avg` (or `average`), `min`, `max`, `count`, `round`, `abs`, `if`.
 - Operators: `+ - * / ^ %`. `15%` is a hundredth, `7 % 3` a remainder.
 - Comparisons: `= <> < <= > >=`. Parentheses group.
 - Arguments are separated by `,` or `;`. Decimals in a formula use a point.

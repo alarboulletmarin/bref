@@ -44,7 +44,7 @@ Tabs come back at the next start. A tab out of sight keeps its text, cursor and 
 | `Alt + Shift + ←` `→` `↑` `↓` | move to the pane on that side (`Cmd + Alt + arrows` on macOS) |
 | `Ctrl + 1`, `Ctrl + 2` | move to the first, second pane |
 | `Ctrl + W` | close the tab that has the focus, and the pane with its last tab. Its neighbour takes its room. |
-| `Alt + Shift + Enter` | put the pane on the whole window, and back |
+| `Alt + Shift + Enter` | put the pane on the whole window, and back. The others keep what they hold. |
 | `Ctrl + Enter` in the palette | open the chosen note in the pane beside |
 | `Ctrl + Shift + click` on a `[[link]]` | open it in the pane beside |
 
@@ -62,7 +62,7 @@ Drag a tab to arrange the window:
 
 The part that would receive it is tinted while you drag. `Esc` lets go without moving anything.
 
-A file dragged from the tree does the same. A folder opens as its [list page](boards.md#list-pages).
+A file dragged from the tree does the same. Dropped on the right half of a window that has a single pane, it opens a second pane. A folder opens as its [list page](boards.md#list-pages).
 
 ## Docks
 

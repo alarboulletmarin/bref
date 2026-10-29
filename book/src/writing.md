@@ -6,19 +6,19 @@ What you type is what is saved. Bref only changes how it looks: markers stay vis
 
 | Type | You get |
 |---|---|
-| `# `, `## `, `### ` | headings |
+| `# `, `## `, `### `… up to `###### ` | headings, six levels |
 | `- `, `* `, `+ ` | a bullet list |
-| `1. ` | a numbered list, renumbered as you add, remove or indent items |
-| `[] ` or `- [ ] ` | a task: click the box or press `Ctrl + Enter` to check it |
+| `1. ` or `1) ` | a numbered list, renumbered as you add, remove or indent items |
+| `[] ` or `- [ ] ` | a task: click the box or press `Ctrl + Enter` to check it. `- [x] ` is a ticked one, and `*` or `+` work in place of `-`. |
 | `[ ]` or `[x]` | a box on its own, in a sentence or in a table cell: click it, or press `Ctrl + Enter` next to it |
 | `> ` | a quote |
 | `> [!NOTE]` | a colored panel: that line and the quote lines after it |
 | `\| a \| b \|` | a table, see [Tables and formulas](tables.md) |
 | `` ``` `` then `Enter` | a code block, closed for you |
-| `---` | a divider |
+| `---`, `***` or `___` | a divider |
 | `[[Note name]]` | a link to another note, see [Links](links.md) |
 | `#tag` | a tag, usable as a filter in the palette |
-| `https://…` | a link, opened in your browser |
+| `https://…`, `http://`, `mailto:`, `file://` | a link, opened in your browser or the application of your system |
 | `![](picture.png)` or `![[picture.png]]` | the picture, under its line, see [Pictures](links.md#pictures) |
 | `` ```mermaid `` | a [Mermaid](https://mermaid.js.org) diagram |
 | `$x^2$`, `$$…$$`, or lines between two `$$` lines | a LaTeX formula |
@@ -111,6 +111,7 @@ Blank lines between blocks travel with them. The first line, the title of the no
 
 ## Links in the text
 
+- `[text](address)` is a link to an address with a protocol (`https://`, `mailto:`…). A file of the vault is linked with `[[name]]` instead.
 - `Ctrl + K` makes the selection a link, `[text](address)`. On a link, it selects the address to change it. It does not work over several cells of a table.
 - `Ctrl + V` over a selection: a pasted address makes it a link.
 - `Ctrl + click` opens a `[[link]]`, a `#tag`, a URL or a `[text](address)` link.
@@ -142,9 +143,9 @@ Headings inside code blocks are not listed.
 
 | Key | Action |
 |---|---|
-| `Ctrl + Z`, `Ctrl + Shift + Z` | undo, redo |
+| `Ctrl + Z`, `Ctrl + Shift + Z` (or `Ctrl + Y`) | undo, redo |
 | `Ctrl + ←` `→`, `Ctrl + Backspace` | move, delete by word |
 | `Ctrl + Home`, `Ctrl + End` | start, end of the note |
 | `Ctrl + A` `C` `X` `V` | select all, copy, cut, paste |
 | Double click, triple click | select a word, a line. Keep dragging to extend by words, by lines. |
-| `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` | bigger, smaller, default text size |
+| `Ctrl + +` (or `Ctrl + =`), `Ctrl + -`, `Ctrl + 0` | bigger, smaller, default text size |

@@ -2,7 +2,7 @@
 
 ## The window takes two seconds to open (Linux)
 
-Another Vulkan driver is slow to load. Bref already skips the NVIDIA one when the machine has no NVIDIA card. To see what remains, run `VK_LOADER_DEBUG=driver bref` in a terminal.
+Another Vulkan driver is slow to load. Bref already skips the NVIDIA one when the machine has no NVIDIA card, unless you set `VK_LOADER_DRIVERS_DISABLE` yourself. To see what remains, run `VK_LOADER_DEBUG=driver bref` in a terminal.
 
 ## The window does not open, with an error about a surface or an adapter
 
@@ -29,6 +29,10 @@ See [Changes from other programs](vault.md#changes-from-other-programs).
 ## Sync fails
 
 `git` must reach the repository without asking anything, and the vault must be in a plain state. See [Requirements](sync.md#requirements) and [What it refuses](sync.md#what-it-refuses).
+
+## Bref crashed
+
+The last crash is written to the file `crash` of the [configuration folder](vault.md#configuration-files), with the version of Bref. Attach it to a [bug report](https://github.com/alarboulletmarin/bref/issues): on Windows, the window has no console to show it.
 
 ## Known limits
 

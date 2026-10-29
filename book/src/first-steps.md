@@ -66,7 +66,7 @@ The full list is also in [Keyboard shortcuts](shortcuts.md).
 
 ## Menus
 
-A right click in a note opens a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, underline, strikethrough, highlight, code, make or edit a link, comment, turn the lines into a list.
+A right click in a note opens a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, underline, strikethrough, highlight, code, make or edit a link, comment (or resolve the comment under the pointer), and turn the lines into a bulleted, numbered or task list, or plain text.
 
 `Shift + F10` (or the `Menu` key) opens the same menu at the cursor. In the panel, it opens the menu of the selected line. Arrows, `Home` and `End` walk it, `Enter` runs, `Esc` closes and gives the keys back.
 
