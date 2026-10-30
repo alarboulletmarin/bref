@@ -37,11 +37,16 @@ static CONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// in `src/shell`. See ARCHITECTURE.md.
 #[test]
 fn layers_only_depend_downwards() {
+    // Spelled in two pieces: this file lives in src/shell, and the scan reads the source.
+    let server = concat!("crate::", "mcp");
     let rules: &[(&str, &[&str])] = &[
-        ("src/logic", &["gpui", "crate::platform", "crate::ui", "crate::views", "crate::shell"]),
-        ("src/platform", &["gpui", "crate::ui", "crate::views", "crate::shell"]),
-        ("src/ui", &["crate::views", "crate::shell", "impl Shell"]),
-        ("src/views", &["crate::shell", "impl Shell"]),
+        ("src/logic", &["gpui", "crate::platform", "crate::ui", "crate::views", "crate::shell", server]),
+        ("src/platform", &["gpui", "crate::ui", "crate::views", "crate::shell", server]),
+        ("src/ui", &["crate::views", "crate::shell", "impl Shell", server]),
+        ("src/views", &["crate::shell", "impl Shell", server]),
+        ("src/shell", &[server]),
+        // The server uses logic, platform and the pure parts of ui. It never sees a window.
+        ("src/mcp", &["gpui", "crate::views", "crate::shell", "impl Shell"]),
     ];
     fn files(dir: &Path) -> Vec<PathBuf> {
         let entries = fs::read_dir(dir).unwrap().map(|entry| entry.unwrap().path());
