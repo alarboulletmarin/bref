@@ -11,8 +11,10 @@ use super::{
 
 mod file;
 mod hold;
+mod place;
 mod route;
 mod sequence;
+pub use place::{fit, layered};
 use sequence::Flow;
 
 /// Stroke colors, as `0xrrggbb`: mid tones, readable on a light background

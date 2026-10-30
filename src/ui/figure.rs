@@ -1,7 +1,7 @@
 //! Figures: Mermaid diagrams and LaTeX formulas, rendered as SVG. Pure
 //! functions, with no dependency on the UI.
 
-use std::panic::catch_unwind;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use latex_rust::{Color, Dim, MathFont, SvgOptions, latex_to_svg};
 use mermaid_rs_renderer::{RenderOptions, Theme, render_with_options};
@@ -38,8 +38,9 @@ impl Look {
 /// An SVG and its size on screen, in pixels.
 pub type Figure = (String, f32, f32);
 
-/// The SVG of the Mermaid diagram in `source`; `None` if it is invalid.
-pub fn mermaid(source: &str, look: &Look) -> Option<String> {
+/// The SVG of the Mermaid diagram in `source`. The error is the engine's own words,
+/// or a note that it panicked: a diagram from elsewhere must not take down the app.
+pub fn mermaid(source: &str, look: &Look) -> Result<String, String> {
     let base = if look.dark { Theme::dark() } else { Theme::modern() };
     let theme = Theme {
         font_family: look.font.clone(),
@@ -58,9 +59,11 @@ pub fn mermaid(source: &str, look: &Look) -> Option<String> {
         ..base
     };
     let options = RenderOptions { theme, ..Default::default() };
-    // The engine comes from elsewhere: a diagram that made it panic must not
-    // take down the app, and so the note being typed.
-    catch_unwind(|| render_with_options(source, options).ok()).ok()?
+    match catch_unwind(AssertUnwindSafe(|| render_with_options(source, options))) {
+        Ok(Ok(svg)) => Ok(svg),
+        Ok(Err(e)) => Err(e.to_string()),
+        Err(_) => Err("the diagram engine panicked".into()),
+    }
 }
 
 /// The LaTeX formula `source`, in colour `rgb` and size `size` (pixels);
@@ -131,7 +134,8 @@ mod tests {
         let svg = mermaid("flowchart LR\n    A --> B", &look).unwrap();
         let size = crate::ui::svg::parse(&svg).unwrap().size();
         assert!(svg.contains("#101010") && size.width() > size.height() && size.height() > 10.);
-        assert!(mermaid("ceci n'est pas un diagramme", &look).is_none() && mermaid("", &look).is_none());
+        let broken = mermaid("ceci n'est pas un diagramme", &look).unwrap_err();
+        assert!(!broken.is_empty() && mermaid("", &look).is_err());
 
         let (svg, w, h) = latex(r"\frac{1}{2}", true, [255, 0, 0], 16.).unwrap();
         assert!(svg.starts_with("<svg") && svg.contains("<path") && w > 4. && h > 16.);

@@ -84,7 +84,7 @@ impl Asset for Load {
         async move {
             let svg = match &load.source {
                 Source::File(path, _) => svg::readable(&std::fs::read_to_string(path).ok()?, load.look.dark),
-                Source::Mermaid(text) => figure::mermaid(text, &load.look)?,
+                Source::Mermaid(text) => figure::mermaid(text, &load.look).ok()?,
                 Source::Formula(text, display) => {
                     let ink = |i: usize| u8::from_str_radix(load.look.text.get(i..i + 2)?, 16).ok();
                     figure::latex(text, *display, [ink(1)?, ink(3)?, ink(5)?], FORMULA)?.0
