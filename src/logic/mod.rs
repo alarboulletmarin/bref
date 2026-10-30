@@ -3,6 +3,7 @@
 
 pub mod block;
 pub mod commands;
+pub mod daily;
 pub mod diagram;
 pub mod embed;
 pub mod formula;
@@ -13,6 +14,8 @@ pub mod library;
 pub mod mermaid;
 pub mod markdown;
 pub mod note;
+pub mod rank;
+pub mod wiki;
 pub mod prefs;
 pub mod recall;
 pub mod relation;

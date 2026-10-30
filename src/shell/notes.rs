@@ -255,12 +255,14 @@ impl Shell {
     // ponytail: synchronous rewrite, limited to the notes the index says link to
     // `old`; move to a background task if a note is linked from hundreds of others.
     pub(super) fn relink(&mut self, old: &str, new: &str, cx: &mut Context<Self>) -> bool {
-        let key = old.to_lowercase();
-        if key == new.to_lowercase() || self.notes.iter().any(|n| n.name.to_lowercase() == key) {
-            return false;
-        }
+        let paths: Vec<PathBuf> = {
+            let Some(targets) = logic::wiki::relink_set(&self.notes, old, new) else {
+                return false;
+            };
+            targets.iter().map(|n| n.path.clone()).collect()
+        };
         let mut changed = Vec::new();
-        for note in self.notes.iter_mut().filter(|n| n.links.contains(&key)) {
+        for note in self.notes.iter_mut().filter(|n| paths.contains(&n.path)) {
             let rewritten = fs::read_to_string(&note.path)
                 .ok()
                 .and_then(|text| markdown::relink(&text, old, new))
@@ -537,11 +539,8 @@ impl Shell {
     /// The note a `[[link]]` points to: by its name first, otherwise by an alias in its
     /// front matter.
     pub(super) fn wiki_path(&self, name: &str) -> Option<PathBuf> {
-        let wanted = name.to_lowercase();
         // A template answers no link: `[[Réunion]]` points to the note, not its template.
-        let mut notes = self.notes.iter().filter(|n| !self.is_template(n));
-        let named = notes.clone().find(|n| n.name.to_lowercase() == wanted);
-        named.or_else(|| notes.find(|n| n.answers(&wanted))).map(|note| note.path.clone())
+        logic::wiki::resolve(&self.notes, name, |n| self.is_template(n)).map(|note| note.path.clone())
     }
 
     pub(super) fn open_wiki(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
