@@ -28,6 +28,7 @@ const PAGES: &[(&str, &str)] = &[
     ("compatibility", include_str!("../../book/src/compatibility.md")),
     ("troubleshooting", include_str!("../../book/src/troubleshooting.md")),
     ("performance", include_str!("../../book/src/performance.md")),
+    ("agents", include_str!("../../book/src/agents.md")),
 ];
 
 const PROMPTS: &[(&str, &str, &str, &[(&str, &str, bool)])] = &[

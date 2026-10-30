@@ -7,7 +7,7 @@ map: where things live, which way the dependencies go, and the rules the code ke
 
 ```
 src/
-  main.rs      entry point: declares the layers, calls shell::run()
+  main.rs      entry point: declares the layers, sends `bref mcp` to mcp::run(), then shell::run()
   lang.rs      tr("English", "Français"), language detection, date and search-key names
   actions.rs   the app's actions, dispatched by shortcuts, menus and the palette
   logic/       pure functions: no gpui, no disk, no window
@@ -16,6 +16,8 @@ src/
   views/       gpui entities: editor, side panel, palette, grid, canvas, graph, viewer, board
   shell/       the window: owns the panes and the views, routes events, runs the commands
     tests/     the whole app driven by simulated keystrokes
+  mcp/         `bref mcp`: JSON-RPC over stdio for an agent. Uses logic, platform and the pure
+               parts of ui. Nothing uses it. Its texts stay in English and do not go through tr
 ```
 
 A layer only uses the layers below it:
@@ -24,6 +26,7 @@ A layer only uses the layers below it:
 shell ──► views ──► ui ──► logic
   │         │              ▲
   └─────────┴──► platform ─┘        lang, actions: usable everywhere
+mcp ────────────► ui, logic, platform
 ```
 
 The test `layers_only_depend_downwards` fails when a file breaks this rule, and when a view
@@ -81,6 +84,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | a shortcut | `shell/keymap.rs` (`defaults`, `help_sections`), `ui/keys.rs` (how keys are read and shown) |
 | the test of a feature | `shell/tests/` (`end_to_end/` is one session, one file per chapter) |
 | the user guide | `book/src/` (an mdBook); `shortcuts.md` is written from `help_sections` by the test `shortcuts_page_is_current` |
+| the MCP server (`bref mcp`) | `src/mcp/` (`mod.rs` the protocol, `notes.rs`, `draw.rs`, `guide.rs`); `main` routes `mcp` before the window. A session over pipes is `tests/mcp.rs` |
 
 ## How the main parts work
 
@@ -123,7 +127,11 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
   real macOS by CI. `BREF_RELEASES_API` points the check at a local `file://` release description,
   to try an update without publishing one.
 - **Startup**: the last note is read before the first frame, so the window appears with its content.
-  Icons are embedded in the binary.
+  Icons are embedded in the binary. `bref mcp` never reaches that: `main` runs `mcp::run()` and
+  leaves before the window, one JSON-RPC message at a time, stdout reserved for the protocol.
+- **Agents**: the server keeps the vault's index and rereads it when the watcher signals a change.
+  It writes with the same rules as the app (atomic save, trash, a taken name refused, links
+  rewritten on rename). A diagram file is produced by `Diagram::to_svg` only.
 - **Window**: on Linux Bref draws its own title bar, shadow and resize edges (client-side
   decorations); on macOS and Windows the system does.
 
