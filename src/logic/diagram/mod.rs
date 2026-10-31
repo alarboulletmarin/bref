@@ -1370,13 +1370,35 @@ impl Diagram {
         let drawn = || self.links.iter().zip(traces).filter_map(|(l, t)| Some((l, t.as_ref()?)));
         let ends = drawn().flat_map(|(_, t)| t.points.iter().copied());
         let texts = drawn().flat_map(|(l, t)| [Slot::Start, Slot::End].map(|slot| self.tip_label_box(l, slot, t)).into_iter().flatten().collect::<Vec<_>>());
-        boxes.chain(texts).chain(ends.map(|(x, y)| (x, y, x, y))).reduce(|a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)))
+        // The text in the middle too: right of a standing stroke or of a message to itself, it goes past the stroke.
+        let middles = drawn().map(|(l, t)| (self.shown_text(l), t)).filter(|(text, _)| !text.is_empty()).map(|(text, t)| {
+            let count = text.split('\n').count();
+            let (x, y, centered) = Diagram::label_at(t, 0, count);
+            let w = Diagram::guess_width(&text);
+            let left = if centered { x - w / 2. } else { x };
+            (left, y - LINE, left + w, y + LINE * count as f32)
+        });
+        boxes.chain(texts).chain(middles).chain(ends.map(|(x, y)| (x, y, x, y))).reduce(|a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The text in the middle of an arrow is inside the drawing's frame: written right of a standing
+    /// stroke, a long one used to be cut by the file's edge and by the PNG export.
+    #[test]
+    fn the_frame_holds_the_text_of_a_standing_arrow() {
+        let mut d = Diagram::default();
+        let a = d.add_shape(Form::Rect, 0., 0., 80., 40.);
+        let b = d.add_shape(Form::Rect, 0., 300., 80., 40.);
+        let link = d.add_link(End::Shape(a), End::Shape(b), Head::Arrow, Route::Straight);
+        let text = "reload() at the same place, cursor and scroll kept";
+        d.link_mut(link).unwrap().text = text.into();
+        let (_, _, right, _) = d.bounds().unwrap();
+        assert!(right >= 40. + 6. + Diagram::guess_width(text) - 1., "{right}");
+    }
 
     #[test]
     fn round_trips_through_its_file() {
