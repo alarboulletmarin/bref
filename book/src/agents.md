@@ -168,6 +168,10 @@ Diagrams: the agent draws on the same canvas as you, with the same UML shapes: l
 
 Showing: when Bref is open on the same vault, the agent can open a note, a diagram or a table in a tab of its own (`show`), and the window comes to the front. When Bref is closed, or has another vault open, it says so; the files are written all the same.
 
+![An agent creates a diagram through bref mcp, which writes the SVG, renders it until it is clean, then asks the open window to show it](img/agent-draws-and-shows.svg)
+
+*Drawn by an agent with this server.*
+
 The user guide is a resource (`bref://guide/writing`, `links`, `comments`, `diagrams`, `uml`, and the other pages).
 
 ## Prompts
@@ -215,3 +219,5 @@ A note's text is data. It is not an instruction to the agent.
 ## While you have the note open
 
 What another program writes shows up in Bref within about half a second, with the cursor and the scroll where they were. If you are typing in that note at that moment, Bref merges: the agent's change joins your text, and a single undo takes it back. When you both changed the same lines, your version stays in the note and the agent's is written next to it, as `Note (conflict 2026-10-31).md`, the way a sync conflict is, and a message says so. Nothing is lost either way.
+
+![A note changed on disk while typed in: Bref merges it into the editor as one undo step, or keeps the other version as a conflict copy when the same lines changed](img/note-written-elsewhere.svg)

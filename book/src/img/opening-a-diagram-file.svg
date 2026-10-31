@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="552" height="690" viewBox="104 14 552 690" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" font-family="sans-serif" font-size="14">
+<path d="M250 40C250 45.5 245.5 50 240 50C234.5 50 230 45.5 230 40C230 34.5 234.5 30 240 30C245.5 30 250 34.5 250 40Z" stroke="#7d8590" fill="#7d8590"/>
+<path d="M174 90L306 90C313.7 90 320 96.3 320 104L320 126C320 133.7 313.7 140 306 140L174 140C166.3 140 160 133.7 160 126L160 104C160 96.3 166.3 90 174 90Z" stroke="#7d8590"/>
+<text x="240" y="120" text-anchor="middle" fill="#7d8590" stroke="none">Read the SVG</text>
+<path d="M240 190L255 205L240 220L225 205Z" stroke="#7d8590"/>
+<path d="M434 175L626 175C633.7 175 640 181.3 640 189L640 221C640 228.7 633.7 235 626 235L434 235C426.3 235 420 228.7 420 221L420 189C420 181.3 426.3 175 434 175Z" stroke="#7d8590"/>
+<text x="530" y="201" text-anchor="middle" fill="#7d8590" stroke="none">Viewer</text>
+<text x="530" y="219" text-anchor="middle" fill="#7d8590" stroke="none">(an SVG from elsewhere)</text>
+<path d="M240 300L255 315L240 330L225 315Z" stroke="#7d8590"/>
+<path d="M434 285L626 285C633.7 285 640 291.3 640 299L640 331C640 338.7 633.7 345 626 345L434 345C426.3 345 420 338.7 420 331L420 299C420 291.3 426.3 285 434 285Z" stroke="#7d8590"/>
+<text x="530" y="311" text-anchor="middle" fill="#7d8590" stroke="none">Viewer, read-only</text>
+<text x="530" y="329" text-anchor="middle" fill="#7d8590" stroke="none">(made by a newer Bref)</text>
+<path d="M174 410L306 410C313.7 410 320 416.3 320 424L320 446C320 453.7 313.7 460 306 460L174 460C166.3 460 160 453.7 160 446L160 424C160 416.3 166.3 410 174 410Z" stroke="#7d8590"/>
+<text x="240" y="440" text-anchor="middle" fill="#7d8590" stroke="none">Canvas, editable</text>
+<path d="M420 405L628 405L640 417L640 465L420 465Z" stroke="#7d8590"/>
+<path d="M628 405L628 417L640 417" stroke="#7d8590"/>
+<text x="530" y="431" text-anchor="middle" fill="#7d8590" stroke="none">Lines it cannot read</text>
+<text x="530" y="449" text-anchor="middle" fill="#7d8590" stroke="none">are kept, written back</text>
+<path d="M134 520L346 520C353.7 520 360 526.3 360 534L360 566C360 573.7 353.7 580 346 580L134 580C126.3 580 120 573.7 120 566L120 534C120 526.3 126.3 520 134 520Z" stroke="#7d8590"/>
+<text x="240" y="546" text-anchor="middle" fill="#7d8590" stroke="none">Save with the lowest version</text>
+<text x="240" y="564" text-anchor="middle" fill="#7d8590" stroke="none">that says what it holds</text>
+<path d="M253 653C253 660.2 247.2 666 240 666C232.8 666 227 660.2 227 653C227 645.8 232.8 640 240 640C247.2 640 253 645.8 253 653Z" stroke="#7d8590"/>
+<path d="M249 653C249 658 245 662 240 662C235 662 231 658 231 653C231 648 235 644 240 644C245 644 249 648 249 653Z" stroke="#7d8590" fill="#7d8590"/>
+<path d="M240 50L240 90" stroke="#7d8590"/>
+<path d="M235 80L240 90L245 80" stroke="#7d8590"/>
+<path d="M240 140L240 190" stroke="#7d8590"/>
+<path d="M235 180L240 190L245 180" stroke="#7d8590"/>
+<path d="M255 205L420 205" stroke="#7d8590"/>
+<path d="M410 210L420 205L410 200" stroke="#7d8590"/>
+<text x="337.5" y="199" text-anchor="middle" font-style="italic" fill="#7d8590" stroke="none">[no Bref source]</text>
+<path d="M240 220L240 300" stroke="#7d8590"/>
+<path d="M235 290L240 300L245 290" stroke="#7d8590"/>
+<text x="246" y="265" font-style="italic" fill="#7d8590" stroke="none">[source in metadata]</text>
+<path d="M255 315L420 315" stroke="#7d8590"/>
+<path d="M410 320L420 315L410 310" stroke="#7d8590"/>
+<text x="337.5" y="309" text-anchor="middle" font-style="italic" fill="#7d8590" stroke="none">[newer version]</text>
+<path d="M240 330L240 410" stroke="#7d8590"/>
+<path d="M235 400L240 410L245 400" stroke="#7d8590"/>
+<text x="246" y="375" font-style="italic" fill="#7d8590" stroke="none">[this version or older]</text>
+<path d="M320 435L420 435" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M240 460L240 520" stroke="#7d8590"/>
+<path d="M235 510L240 520L245 510" stroke="#7d8590"/>
+<path d="M240 580L240 640" stroke="#7d8590"/>
+<path d="M235 630L240 640L245 630" stroke="#7d8590"/>
+<metadata id="bref-diagram">
+version 6
+rich 1
+shape 1 dot 230 30 20 20 0 0 0 
+shape 2 round 160 90 160 50 0 0 0 Read the SVG
+shape 3 branch 225 190 30 30 0 0 0 
+shape 4 round 420 175 220 60 0 0 0 Viewer\n(an SVG from elsewhere)
+shape 5 branch 225 300 30 30 0 0 0 
+shape 6 round 420 285 220 60 0 0 0 Viewer, read-only\n(made by a newer Bref)
+shape 7 round 160 410 160 50 0 0 0 Canvas, editable
+shape 8 note 420 405 220 60 0 0 0 Lines it cannot read\nare kept, written back
+shape 9 round 120 520 240 60 0 0 0 Save with the lowest version\nthat says what it holds
+shape 10 final 227 640 26 26 0 0 0 
+link 11 s1 s2 none arrow straight 0 0 
+link 12 s2 s3 none arrow straight 0 0 
+link 13 s3 s4 none arrow straight 0 0 [no Bref source]
+link 14 s3 s5 none arrow straight 0 0 [source in metadata]
+link 15 s5 s6 none arrow straight 0 0 [newer version]
+link 16 s5 s7 none arrow straight 0 0 [this version or older]
+link 17 s7 s8 none none straight 0 1 
+link 18 s7 s9 none arrow straight 0 0 
+link 19 s9 s10 none arrow straight 0 0 
+</metadata>
+</svg>

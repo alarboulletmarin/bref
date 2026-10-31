@@ -29,6 +29,10 @@ shell ──► views ──► ui ──► logic
 mcp ────────────► ui, logic, platform
 ```
 
+![The layers of Bref and which ones each uses](book/src/img/architecture-layers.svg)
+
+*Drawn with `bref mcp`; the source is in the SVG, so Bref opens it on the canvas.*
+
 The test `layers_only_depend_downwards` fails when a file breaks this rule, and when a view
 reaches into the shell.
 

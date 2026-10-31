@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="795" height="776" viewBox="0 24 795 776" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" font-family="sans-serif" font-size="14">
+<path d="M42 40L179 40C180.1 40 181 40.9 181 42L181 74C181 75.1 180.1 76 179 76L42 76C40.9 76 40 75.1 40 74L40 42C40 40.9 40.9 40 42 40Z" stroke="#7d8590"/>
+<path d="M110.5 76L110.5 784" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="110.5" y="54" text-anchor="middle" fill="#7d8590" stroke="none">Agent</text>
+<text x="110.5" y="72" text-anchor="middle" fill="#7d8590" stroke="none">(Claude, Codex…)</text>
+<path d="M253 40L359 40C360.1 40 361 40.9 361 42L361 74C361 75.1 360.1 76 359 76L253 76C251.9 76 251 75.1 251 74L251 42C251 40.9 251.9 40 253 40Z" stroke="#7d8590"/>
+<path d="M306 76L306 784" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="306" y="63" text-anchor="middle" fill="#7d8590" stroke="none">bref mcp</text>
+<path d="M433 40L539 40C540.1 40 541 40.9 541 42L541 74C541 75.1 540.1 76 539 76L433 76C431.9 76 431 75.1 431 74L431 42C431 40.9 431.9 40 433 40Z" stroke="#7d8590"/>
+<path d="M486 76L486 784" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="486" y="63" text-anchor="middle" fill="#7d8590" stroke="none">Vault (disk)</text>
+<path d="M613 40L719 40C720.1 40 721 40.9 721 42L721 74C721 75.1 720.1 76 719 76L613 76C611.9 76 611 75.1 611 74L611 42C611 40.9 611.9 40 613 40Z" stroke="#7d8590"/>
+<path d="M666 76L666 784" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="666" y="63" text-anchor="middle" fill="#7d8590" stroke="none">Bref window</text>
+<path d="M18 294L417 294C418.1 294 419 294.9 419 296L419 402C419 403.1 418.1 404 417 404L18 404C16.9 404 16 403.1 16 402L16 296C16 294.9 16.9 294 18 294Z" stroke="#7d8590"/>
+<path d="M16 294L64 294L64 305L55 314L16 314Z" stroke="#7d8590"/>
+<text x="22" y="309" font-weight="bold" fill="#7d8590" stroke="none">loop</text>
+<text x="72" y="309" fill="#7d8590" stroke="none">[until the drawing is clean]</text>
+<path d="M18 486L777 486C778.1 486 779 486.9 779 488L779 738C779 739.1 778.1 740 777 740L18 740C16.9 740 16 739.1 16 738L16 488C16 486.9 16.9 486 18 486Z" stroke="#7d8590"/>
+<path d="M16 486L64 486L64 497L55 506L16 506Z" stroke="#7d8590"/>
+<path d="M16 666H779" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="22" y="501" font-weight="bold" fill="#7d8590" stroke="none">alt</text>
+<text x="72" y="501" fill="#7d8590" stroke="none">[window open on this vault]</text>
+<text x="24" y="683" fill="#7d8590" stroke="none">[no window]</text>
+<path d="M301 112H311V244H301Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M481 156H491V200H481Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M301 334H311V378H301Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M301 436H311V714H301Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M661 526H671V570H661Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M110.5 112L289 112" stroke="#7d8590"/>
+<path d="M301 112L289 118L289 106Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="205.8" y="106" text-anchor="middle" fill="#7d8590" stroke="none">create_diagram</text>
+<path d="M311 156L469 156" stroke="#7d8590"/>
+<path d="M481 156L469 162L469 150Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="396" y="150" text-anchor="middle" fill="#7d8590" stroke="none">to_svg, atomic write</text>
+<path d="M481 200L311 200" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M321 195L311 200L321 205" stroke="#7d8590"/>
+<text x="396" y="194" text-anchor="middle" fill="#7d8590" stroke="none">written</text>
+<path d="M301 244L110.5 244" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M120.5 239L110.5 244L120.5 249" stroke="#7d8590"/>
+<text x="205.8" y="238" text-anchor="middle" fill="#7d8590" stroke="none">path, embed line</text>
+<path d="M110.5 334L289 334" stroke="#7d8590"/>
+<path d="M301 334L289 340L289 328Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="205.8" y="328" text-anchor="middle" fill="#7d8590" stroke="none">render(path)</text>
+<path d="M301 378L110.5 378" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M120.5 373L110.5 378L120.5 383" stroke="#7d8590"/>
+<text x="205.8" y="372" text-anchor="middle" fill="#7d8590" stroke="none">PNG</text>
+<path d="M110.5 436L289 436" stroke="#7d8590"/>
+<path d="M301 436L289 442L289 430Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="205.8" y="430" text-anchor="middle" fill="#7d8590" stroke="none">show(path)</text>
+<path d="M311 526L649 526" stroke="#7d8590"/>
+<path d="M661 526L649 532L649 520Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="486" y="520" text-anchor="middle" fill="#7d8590" stroke="none">show, on 127.0.0.1</text>
+<path d="M661 570L311 570" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M321 565L311 570L321 575" stroke="#7d8590"/>
+<text x="486" y="564" text-anchor="middle" fill="#7d8590" stroke="none">ok: tab opened</text>
+<path d="M301 614L110.5 614" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M120.5 609L110.5 614L120.5 619" stroke="#7d8590"/>
+<text x="205.8" y="608" text-anchor="middle" fill="#7d8590" stroke="none">shown</text>
+<path d="M301 714L110.5 714" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M120.5 709L110.5 714L120.5 719" stroke="#7d8590"/>
+<text x="205.8" y="708" text-anchor="middle" fill="#7d8590" stroke="none">not open: file written</text>
+<metadata id="bref-diagram">
+version 8
+rich 1
+shape 1 lifeline 40 40 141 744 0 0 0 Agent\n(Claude, Codex…)
+shape 2 lifeline 251 40 110 744 0 0 0 bref mcp
+shape 3 lifeline 431 40 110 744 0 0 0 Vault (disk)
+shape 4 lifeline 611 40 110 744 0 0 0 Bref window
+shape 16 fragment 16 294 403 110 0 0 0 loop\n[until the drawing is clean]
+shape 17 fragment 16 486 763 254 0 0 0 alt\n[window open on this vault]\n[no window]
+link 5 l1 l2 none solidtriangle straight 0 0 create_diagram
+link 6 l2 l3 none solidtriangle straight 0 0 to_svg, atomic write
+link 7 l3 l2 none arrow straight 0 1 written
+link 8 l2 l1 none arrow straight 0 1 path, embed line
+link 9 l1 l2 none solidtriangle straight 0 0 render(path)
+link 10 l2 l1 none arrow straight 0 1 PNG
+link 11 l1 l2 none solidtriangle straight 0 0 show(path)
+link 12 l2 l4 none solidtriangle straight 0 0 show, on 127.0.0.1
+link 13 l4 l2 none arrow straight 0 1 ok: tab opened
+link 14 l2 l1 none arrow straight 0 1 shown
+link 15 l2 l1 none arrow straight 0 1 not open: file written
+held 9 16 0
+held 10 16 0
+held 12 17 0
+held 13 17 0
+held 14 17 0
+held 15 17 1
+</metadata>
+</svg>

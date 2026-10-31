@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="749" height="584" viewBox="24 24 749 584" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" font-family="sans-serif" font-size="14">
+<path d="M42 40L157 40C158.1 40 159 40.9 159 42L159 74C159 75.1 158.1 76 157 76L42 76C40.9 76 40 75.1 40 74L40 42C40 40.9 40.9 40 42 40Z" stroke="#7d8590"/>
+<path d="M99.5 76L99.5 592" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="99.5" y="63" text-anchor="middle" fill="#7d8590" stroke="none">Agent or sync</text>
+<path d="M231 40L337 40C338.1 40 339 40.9 339 42L339 74C339 75.1 338.1 76 337 76L231 76C229.9 76 229 75.1 229 74L229 42C229 40.9 229.9 40 231 40Z" stroke="#7d8590"/>
+<path d="M284 76L284 592" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="284" y="63" text-anchor="middle" fill="#7d8590" stroke="none">Note on disk</text>
+<path d="M411 40L517 40C518.1 40 519 40.9 519 42L519 74C519 75.1 518.1 76 517 76L411 76C409.9 76 409 75.1 409 74L409 42C409 40.9 409.9 40 411 40Z" stroke="#7d8590"/>
+<path d="M464 76L464 592" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="464" y="63" text-anchor="middle" fill="#7d8590" stroke="none">Bref</text>
+<path d="M591 40L697 40C698.1 40 699 40.9 699 42L699 74C699 75.1 698.1 76 697 76L591 76C589.9 76 589 75.1 589 74L589 42C589 40.9 589.9 40 591 40Z" stroke="#7d8590"/>
+<path d="M644 76L644 592" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="644" y="63" text-anchor="middle" fill="#7d8590" stroke="none">Editor</text>
+<path d="M207 294L755 294C756.1 294 757 294.9 757 296L757 546C757 547.1 756.1 548 755 548L207 548C205.9 548 205 547.1 205 546L205 296C205 294.9 205.9 294 207 294Z" stroke="#7d8590"/>
+<path d="M205 294L253 294L253 305L244 314L205 314Z" stroke="#7d8590"/>
+<path d="M205 430H757" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="211" y="309" font-weight="bold" fill="#7d8590" stroke="none">alt</text>
+<text x="261" y="309" fill="#7d8590" stroke="none">[merge::onto(base, ours, disk) succeeds]</text>
+<text x="213" y="447" fill="#7d8590" stroke="none">[same lines changed]</text>
+<path d="M639 200H649V244H639Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M639 334H649V378H639Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M279 478H289V522H279Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M99.5 112L284 112" stroke="#7d8590"/>
+<path d="M274 117L284 112L274 107" stroke="#7d8590"/>
+<text x="191.8" y="106" text-anchor="middle" fill="#7d8590" stroke="none">writes the note</text>
+<path d="M284 156L464 156" stroke="#7d8590"/>
+<path d="M454 161L464 156L454 151" stroke="#7d8590"/>
+<text x="374" y="150" text-anchor="middle" fill="#7d8590" stroke="none">watcher: changed</text>
+<path d="M464 200L627 200" stroke="#7d8590"/>
+<path d="M639 200L627 206L627 194Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="551.5" y="194" text-anchor="middle" fill="#7d8590" stroke="none">text typed</text>
+<path d="M639 244L464 244" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M474 239L464 244L474 249" stroke="#7d8590"/>
+<text x="551.5" y="238" text-anchor="middle" fill="#7d8590" stroke="none">ours</text>
+<path d="M464 334L627 334" stroke="#7d8590"/>
+<path d="M639 334L627 340L627 328Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="551.5" y="328" text-anchor="middle" fill="#7d8590" stroke="none">absorb(edits)</text>
+<path d="M639 378L464 378" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M474 373L464 378L474 383" stroke="#7d8590"/>
+<text x="551.5" y="372" text-anchor="middle" fill="#7d8590" stroke="none">one undo step</text>
+<path d="M464 478L301 478" stroke="#7d8590"/>
+<path d="M289 478L301 472L301 484Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="376.5" y="472" text-anchor="middle" fill="#7d8590" stroke="none">Note (conflict date).md</text>
+<path d="M289 522L464 522" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M454 527L464 522L454 517" stroke="#7d8590"/>
+<text x="376.5" y="516" text-anchor="middle" fill="#7d8590" stroke="none">kept</text>
+<metadata id="bref-diagram">
+version 8
+rich 1
+shape 1 lifeline 40 40 119 552 0 0 0 Agent or sync
+shape 2 lifeline 229 40 110 552 0 0 0 Note on disk
+shape 3 lifeline 409 40 110 552 0 0 0 Bref
+shape 4 lifeline 589 40 110 552 0 0 0 Editor
+shape 13 fragment 205 294 552 254 0 0 0 alt\n[merge::onto(base, ours, disk) succeeds]\n[same lines changed]
+link 5 l1 l2 none arrow straight 0 0 writes the note
+link 6 l2 l3 none arrow straight 0 0 watcher: changed
+link 7 l3 l4 none solidtriangle straight 0 0 text typed
+link 8 l4 l3 none arrow straight 0 1 ours
+link 9 l3 l4 none solidtriangle straight 0 0 absorb(edits)
+link 10 l4 l3 none arrow straight 0 1 one undo step
+link 11 l3 l2 none solidtriangle straight 0 0 Note (conflict date).md
+link 12 l2 l3 none arrow straight 0 1 kept
+held 9 13 0
+held 10 13 0
+held 11 13 1
+held 12 13 1
+</metadata>
+</svg>

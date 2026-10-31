@@ -14,6 +14,8 @@ Put the vault in a folder synced by iCloud, Dropbox, Google Drive or Syncthing. 
 2. What the server has is fetched and merged.
 3. The result is sent. If another computer pushed in the meantime, Bref fetches and merges again, three times at most, then asks you to try again.
 
+![The git sync: commit, then fetch, merge and push, again while the server rejects the push, three times at most](img/git-sync.svg)
+
 A message says what was sent and received, or why it failed. The sync button of the rail turns while it runs; a red dot says the last sync failed.
 
 ### Conflicts

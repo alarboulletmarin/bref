@@ -105,6 +105,8 @@ A diagram is a plain SVG, saved at each change. It opens in a browser and displa
 
 A diagram saved by a newer Bref than yours opens in the viewer, read-only, with a notice: your version would lose what it does not know if it saved the file.
 
+![Opening an SVG: without Bref's source it opens in the viewer; written by a newer Bref, read-only; otherwise on the canvas, saved with the lowest version that can say what it holds](img/opening-a-diagram-file.svg)
+
 **Export**: the button at the top left saves a PNG next to the diagram, dark on white.
 
 ## From Mermaid to the canvas

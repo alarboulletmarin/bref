@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="740" height="604" viewBox="24 24 740 604" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" font-family="sans-serif" font-size="14">
+<path d="M42 40L148 40C149.1 40 150 40.9 150 42L150 74C150 75.1 149.1 76 148 76L42 76C40.9 76 40 75.1 40 74L40 42C40 40.9 40.9 40 42 40Z" stroke="#7d8590"/>
+<path d="M95 76L95 612" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="95" y="63" text-anchor="middle" fill="#7d8590" stroke="none">You</text>
+<path d="M222 40L328 40C329.1 40 330 40.9 330 42L330 74C330 75.1 329.1 76 328 76L222 76C220.9 76 220 75.1 220 74L220 42C220 40.9 220.9 40 222 40Z" stroke="#7d8590"/>
+<path d="M275 76L275 612" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="275" y="63" text-anchor="middle" fill="#7d8590" stroke="none">Bref</text>
+<path d="M402 40L508 40C509.1 40 510 40.9 510 42L510 74C510 75.1 509.1 76 508 76L402 76C400.9 76 400 75.1 400 74L400 42C400 40.9 400.9 40 402 40Z" stroke="#7d8590"/>
+<path d="M455 76L455 612" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="455" y="63" text-anchor="middle" fill="#7d8590" stroke="none">git</text>
+<path d="M582 40L688 40C689.1 40 690 40.9 690 42L690 74C690 75.1 689.1 76 688 76L582 76C580.9 76 580 75.1 580 74L580 42C580 40.9 580.9 40 582 40Z" stroke="#7d8590"/>
+<path d="M635 76L635 612" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="635" y="63" text-anchor="middle" fill="#7d8590" stroke="none">Server</text>
+<path d="M198 250L746 250C747.1 250 748 250.9 748 252L748 534C748 535.1 747.1 536 746 536L198 536C196.9 536 196 535.1 196 534L196 252C196 250.9 196.9 250 198 250Z" stroke="#7d8590"/>
+<path d="M196 250L244 250L244 261L235 270L196 270Z" stroke="#7d8590"/>
+<text x="202" y="265" font-weight="bold" fill="#7d8590" stroke="none">loop</text>
+<text x="252" y="265" fill="#7d8590" stroke="none">[at most 3 times, while rejected]</text>
+<path d="M450 156H460V200H450Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M630 290H640V334H630Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M450 378H460V422H450Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M630 466H640V510H630Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M95 112L275 112" stroke="#7d8590"/>
+<path d="M265 117L275 112L265 107" stroke="#7d8590"/>
+<text x="185" y="106" text-anchor="middle" fill="#7d8590" stroke="none">Ctrl+Shift+S</text>
+<path d="M275 156L438 156" stroke="#7d8590"/>
+<path d="M450 156L438 162L438 150Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="362.5" y="150" text-anchor="middle" fill="#7d8590" stroke="none">save, commit</text>
+<path d="M450 200L275 200" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M285 195L275 200L285 205" stroke="#7d8590"/>
+<text x="362.5" y="194" text-anchor="middle" fill="#7d8590" stroke="none">Bref: sync</text>
+<path d="M275 290L618 290" stroke="#7d8590"/>
+<path d="M630 290L618 296L618 284Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="452.5" y="284" text-anchor="middle" fill="#7d8590" stroke="none">fetch</text>
+<path d="M630 334L275 334" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M285 329L275 334L285 339" stroke="#7d8590"/>
+<text x="452.5" y="328" text-anchor="middle" fill="#7d8590" stroke="none">their commits</text>
+<path d="M275 378L438 378" stroke="#7d8590"/>
+<path d="M450 378L438 384L438 372Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="362.5" y="372" text-anchor="middle" fill="#7d8590" stroke="none">merge</text>
+<path d="M450 422L275 422" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M285 417L275 422L285 427" stroke="#7d8590"/>
+<text x="362.5" y="416" text-anchor="middle" fill="#7d8590" stroke="none">conflicts as copies</text>
+<path d="M275 466L618 466" stroke="#7d8590"/>
+<path d="M630 466L618 472L618 460Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="452.5" y="460" text-anchor="middle" fill="#7d8590" stroke="none">push</text>
+<path d="M630 510L275 510" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M285 505L275 510L285 515" stroke="#7d8590"/>
+<text x="452.5" y="504" text-anchor="middle" fill="#7d8590" stroke="none">accepted or rejected</text>
+<path d="M275 568L95 568" stroke="#7d8590"/>
+<path d="M105 563L95 568L105 573" stroke="#7d8590"/>
+<text x="185" y="562" text-anchor="middle" fill="#7d8590" stroke="none">what was sent, or why not</text>
+<metadata id="bref-diagram">
+version 8
+rich 1
+shape 1 lifeline 40 40 110 572 0 0 0 You
+shape 2 lifeline 220 40 110 572 0 0 0 Bref
+shape 3 lifeline 400 40 110 572 0 0 0 git
+shape 4 lifeline 580 40 110 572 0 0 0 Server
+shape 15 fragment 196 250 552 286 0 0 0 loop\n[at most 3 times, while rejected]
+link 5 l1 l2 none arrow straight 0 0 Ctrl+Shift+S
+link 6 l2 l3 none solidtriangle straight 0 0 save, commit
+link 7 l3 l2 none arrow straight 0 1 Bref: sync
+link 8 l2 l4 none solidtriangle straight 0 0 fetch
+link 9 l4 l2 none arrow straight 0 1 their commits
+link 10 l2 l3 none solidtriangle straight 0 0 merge
+link 11 l3 l2 none arrow straight 0 1 conflicts as copies
+link 12 l2 l4 none solidtriangle straight 0 0 push
+link 13 l4 l2 none arrow straight 0 1 accepted or rejected
+link 14 l2 l1 none arrow straight 0 0 what was sent, or why not
+held 8 15 0
+held 9 15 0
+held 10 15 0
+held 11 15 0
+held 12 15 0
+held 13 15 0
+</metadata>
+</svg>

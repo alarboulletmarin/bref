@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="872" height="662" viewBox="24 24 872 662" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" font-family="sans-serif" font-size="14">
+<path d="M42 40L278 40C279.1 40 280 40.9 280 42L280 128C280 129.1 279.1 130 278 130L42 130C40.9 130 40 129.1 40 128L40 42C40 40.9 40.9 40 42 40Z" stroke="#7d8590"/>
+<path d="M258 46L270 46L270 58L258 58Z" stroke="#7d8590"/>
+<path d="M254 48L262 48L262 51L254 51Z" stroke="#7d8590"/>
+<path d="M254 53L262 53L262 56L254 56Z" stroke="#7d8590"/>
+<text x="160" y="72" text-anchor="middle" fill="#7d8590" stroke="none">«component»</text>
+<text x="160" y="90" text-anchor="middle" fill="#7d8590" stroke="none">shell</text>
+<text x="160" y="108" text-anchor="middle" fill="#7d8590" stroke="none">window, panes, commands</text>
+<path d="M642 40L878 40C879.1 40 880 40.9 880 42L880 128C880 129.1 879.1 130 878 130L642 130C640.9 130 640 129.1 640 128L640 42C640 40.9 640.9 40 642 40Z" stroke="#3fa45b"/>
+<path d="M858 46L870 46L870 58L858 58Z" stroke="#3fa45b"/>
+<path d="M854 48L862 48L862 51L854 51Z" stroke="#3fa45b"/>
+<path d="M854 53L862 53L862 56L854 56Z" stroke="#3fa45b"/>
+<text x="760" y="72" text-anchor="middle" fill="#3fa45b" stroke="none">«component»</text>
+<text x="760" y="90" text-anchor="middle" fill="#3fa45b" stroke="none">mcp</text>
+<text x="760" y="108" text-anchor="middle" fill="#3fa45b" stroke="none">bref mcp, JSON-RPC on stdio</text>
+<path d="M42 220L278 220C279.1 220 280 220.9 280 222L280 308C280 309.1 279.1 310 278 310L42 310C40.9 310 40 309.1 40 308L40 222C40 220.9 40.9 220 42 220Z" stroke="#7d8590"/>
+<path d="M258 226L270 226L270 238L258 238Z" stroke="#7d8590"/>
+<path d="M254 228L262 228L262 231L254 231Z" stroke="#7d8590"/>
+<path d="M254 233L262 233L262 236L254 236Z" stroke="#7d8590"/>
+<text x="160" y="252" text-anchor="middle" fill="#7d8590" stroke="none">«component»</text>
+<text x="160" y="270" text-anchor="middle" fill="#7d8590" stroke="none">views</text>
+<text x="160" y="288" text-anchor="middle" fill="#7d8590" stroke="none">editor, canvas, grid, graph</text>
+<path d="M42 400L278 400C279.1 400 280 400.9 280 402L280 488C280 489.1 279.1 490 278 490L42 490C40.9 490 40 489.1 40 488L40 402C40 400.9 40.9 400 42 400Z" stroke="#7d8590"/>
+<path d="M258 406L270 406L270 418L258 418Z" stroke="#7d8590"/>
+<path d="M254 408L262 408L262 411L254 411Z" stroke="#7d8590"/>
+<path d="M254 413L262 413L262 416L254 416Z" stroke="#7d8590"/>
+<text x="160" y="432" text-anchor="middle" fill="#7d8590" stroke="none">«component»</text>
+<text x="160" y="450" text-anchor="middle" fill="#7d8590" stroke="none">ui</text>
+<text x="160" y="468" text-anchor="middle" fill="#7d8590" stroke="none">theme, fonts, icons, widgets</text>
+<path d="M642 400L878 400C879.1 400 880 400.9 880 402L880 488C880 489.1 879.1 490 878 490L642 490C640.9 490 640 489.1 640 488L640 402C640 400.9 640.9 400 642 400Z" stroke="#7d8590"/>
+<path d="M858 406L870 406L870 418L858 418Z" stroke="#7d8590"/>
+<path d="M854 408L862 408L862 411L854 411Z" stroke="#7d8590"/>
+<path d="M854 413L862 413L862 416L854 416Z" stroke="#7d8590"/>
+<text x="760" y="432" text-anchor="middle" fill="#7d8590" stroke="none">«component»</text>
+<text x="760" y="450" text-anchor="middle" fill="#7d8590" stroke="none">platform</text>
+<text x="760" y="468" text-anchor="middle" fill="#7d8590" stroke="none">disk, git, network, OS</text>
+<path d="M342 580L578 580C579.1 580 580 580.9 580 582L580 668C580 669.1 579.1 670 578 670L342 670C340.9 670 340 669.1 340 668L340 582C340 580.9 340.9 580 342 580Z" stroke="#d98e2b"/>
+<path d="M558 586L570 586L570 598L558 598Z" stroke="#d98e2b"/>
+<path d="M554 588L562 588L562 591L554 591Z" stroke="#d98e2b"/>
+<path d="M554 593L562 593L562 596L554 596Z" stroke="#d98e2b"/>
+<text x="460" y="612" text-anchor="middle" fill="#d98e2b" stroke="none">«component»</text>
+<text x="460" y="630" text-anchor="middle" fill="#d98e2b" stroke="none">logic</text>
+<text x="460" y="648" text-anchor="middle" fill="#d98e2b" stroke="none">pure functions</text>
+<path d="M160 130L160 220" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M155 210L160 220L165 210" stroke="#7d8590"/>
+<path d="M235 130L685 400" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M673.9 399.1L685 400L679 390.6" stroke="#7d8590"/>
+<path d="M160 310L160 400" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M155 390L160 400L165 390" stroke="#7d8590"/>
+<path d="M280 301L640 409" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M629 410.9L640 409L631.9 401.3" stroke="#7d8590"/>
+<path d="M235 490L385 580" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M373.9 579.1L385 580L379 570.6" stroke="#7d8590"/>
+<path d="M685 490L535 580" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M541 570.6L535 580L546.1 579.1" stroke="#7d8590"/>
+<path d="M760 130L760 400" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M755 390L760 400L765 390" stroke="#7d8590"/>
+<path d="M685 130L235 400" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M241 390.6L235 400L246.1 399.1" stroke="#7d8590"/>
+<path d="M735 130L485 580" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M485.5 568.8L485 580L494.2 573.7" stroke="#7d8590"/>
+<metadata id="bref-diagram">
+version 10
+rich 1
+shape 1 component 40 40 240 90 0 0 0 «component»\nshell\nwindow, panes, commands
+shape 2 component 640 40 240 90 3 0 0 «component»\nmcp\nbref mcp, JSON-RPC on stdio
+shape 3 component 40 220 240 90 0 0 0 «component»\nviews\neditor, canvas, grid, graph
+shape 4 component 40 400 240 90 0 0 0 «component»\nui\ntheme, fonts, icons, widgets
+shape 5 component 640 400 240 90 0 0 0 «component»\nplatform\ndisk, git, network, OS
+shape 6 component 340 580 240 90 2 0 0 «component»\nlogic\npure functions
+link 7 s1 s3 none arrow straight 0 1 
+link 8 s1 s5 none arrow straight 0 1 
+link 9 s3 s4 none arrow straight 0 1 
+link 10 s3 s5 none arrow straight 0 1 
+link 11 s4 s6 none arrow straight 0 1 
+link 12 s5 s6 none arrow straight 0 1 
+link 13 s2 s5 none arrow straight 0 1 
+link 14 s2 s4 none arrow straight 0 1 
+link 15 s2 s6 none arrow straight 0 1 
+</metadata>
+</svg>
