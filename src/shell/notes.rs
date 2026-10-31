@@ -103,6 +103,7 @@ impl Shell {
                 self.pane_mut().board.text &= self.pane_mut().path.as_deref() == Some(path);
                 self.pane_mut().board.was = kanban::is_board(&text);
                 self.pane_mut().path = Some(path.to_path_buf());
+                self.pane_mut().base = text.clone();
                 self.calm();
                 let cursor = markdown::body_start(&text);
                 self.pane().editor.update(cx, |e, cx| e.load(text, cursor, cx));
@@ -344,6 +345,36 @@ impl Shell {
         }
     }
 
+    /// Another program (an agent, a sync tool) wrote the note while it was typed in: its changes
+    /// join the typed text as one undo step. When both changed the same lines, its version is
+    /// written next to the note, as a sync conflict is. False if that copy could not be written:
+    /// the note is then not saved, so that nothing is lost.
+    fn take_outside(&mut self, path: &Path, cx: &mut Context<Self>) -> bool {
+        let Ok(disk) = fs::read_to_string(path) else { return true };
+        if disk == self.pane().base {
+            return true;
+        }
+        let ours = self.pane().editor.read(cx).text().to_string();
+        if disk != ours {
+            match logic::merge::onto(&self.pane().base, &ours, &disk) {
+                Some(edits) => self.pane().editor.update(cx, |e, cx| e.absorb(&edits, cx)),
+                None => {
+                    let date = date_name(today());
+                    let copy = git::free_conflict_path(path, &date, "");
+                    if let Err(e) = vault::write(&copy, &disk) {
+                        let what = tr("Changed here and elsewhere, and the other version could not be kept:", "Modifiée ici et ailleurs, et l'autre version n'a pas pu être gardée :");
+                        self.say(Tone::Failed, format!("{what} {}", crate::lang::io_reason(&e)), cx);
+                        return false;
+                    }
+                    let what = tr("Changed here and elsewhere on the same lines: the other version is in", "Modifiée ici et ailleurs sur les mêmes lignes : l'autre version est dans");
+                    self.say(Tone::Info, format!("{what} {}", vault::stem(&copy)), cx);
+                }
+            }
+        }
+        self.pane_mut().base = disk;
+        true
+    }
+
     /// Writes the pane's note to disk if it changed.
     // ponytail: synchronous write on the UI thread (a few KB, < 1 ms);
     // move to a background task if notes get very large.
@@ -353,6 +384,11 @@ impl Shell {
             return;
         };
         if !self.pane().dirty {
+            return;
+        }
+        if let Some(path) = self.pane().path.clone()
+            && !self.take_outside(&path, cx)
+        {
             return;
         }
         let content = self.pane().editor.read(cx).text().to_string();
@@ -368,6 +404,7 @@ impl Shell {
         match vault::save(dir, self.pane().path.as_deref(), self.pane().synced, &content) {
             Ok(path) => {
                 self.pane_mut().dirty = false;
+                self.pane_mut().base = content.clone();
                 self.calm();
                 let (tags, links) = markdown::index(&content);
                 // A template has neither tags nor links.

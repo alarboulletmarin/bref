@@ -65,6 +65,9 @@ pub(super) struct Pane {
     /// The note was created in this pane: left empty, its file does not stay in the vault.
     pub(super) fresh: bool,
     pub(super) dirty: bool,
+    /// The note's file as last read or written here: what another program changed since is
+    /// merged into what is typed (`Shell::take_outside`), not overwritten.
+    pub(super) base: String,
     /// The note shown as a kanban board, when it is one.
     pub(super) board: kanban::Board,
     /// List page shown in place of the note.
@@ -190,6 +193,7 @@ impl Shell {
             new_dir: None,
             fresh: false,
             dirty: false,
+            base: String::new(),
             board: kanban::Board::new(cx),
             listing: None,
             peek: false,

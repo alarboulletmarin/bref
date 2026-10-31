@@ -357,6 +357,20 @@ impl Editor {
         self.revision
     }
 
+    /// What another program changed in the note while it was typed in (`merge::onto`), put into
+    /// the text: a single undo step, the cursors staying in the text around them.
+    pub fn absorb(&mut self, edits: &[(Range<usize>, String)], cx: &mut Context<Self>) {
+        if edits.is_empty() {
+            return;
+        }
+        self.push_undo(true);
+        let held = std::mem::replace(&mut self.held, true);
+        for (range, text) in edits.iter().rev() {
+            self.splice(range.clone(), text, cx);
+        }
+        self.held = held;
+    }
+
     /// Lines put at the start of line `at` (or after the last), typed or dropped:
     /// a single undo step, the cursor at their end.
     pub fn insert_lines(&mut self, at: usize, lines: &[String], cx: &mut Context<Self>) {

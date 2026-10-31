@@ -74,6 +74,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram/` (`file.rs`: the SVG and its source; `hold.rs`: what a package or a frame holds); Mermaid class, sequence and state diagrams turned into canvas diagrams (`logic/mermaid.rs`); relationships (`logic/relation.rs`), class notation (`logic/uml.rs`), `logic/import.rs`; styled text of their labels: `logic/richtext.rs` (the marks of `markdown::emphasis`); the editor: `views/canvas/` |
 | the vault on disk (scan, save, rename, trash, config files) | `platform/vault.rs` |
 | git commands, update check | `platform/git.rs`, `platform/update.rs` |
+| a note written elsewhere while typed in | `logic/merge.rs` (three-way, by lines), `Shell::take_outside` in `shell/notes.rs` |
 | colours, themes, page width | `ui/theme.rs` |
 | icons and fonts | `ui/assets.rs` |
 | the text editor | `views/editor/`: `edit.rs` (changes, undo), `cursor.rs`, `style.rs`, `table.rs`, `blocks.rs`, `find.rs`, `completion.rs`, `links.rs` (links and comments, in a table too), `notes.rs` (which rows, columns and cells of a table carry a comment, for the marks drawn on it), `embed.rs` (sections of other notes shown in place), `format_bar.rs`, `mouse.rs`, `clipboard.rs`, `input.rs` (IME) |

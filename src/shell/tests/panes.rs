@@ -331,3 +331,73 @@ fn an_outside_write_redraws_the_open_diagram(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shapes.len()), 1);
 }
+
+/// A note written by another program while it is typed in (an agent through `bref mcp`): both
+/// changes stay, as one undo step; on the same lines, the other version goes next to the note.
+#[gpui::test]
+fn an_outside_write_while_typing_is_merged(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "outside-typing");
+    let path = root.join("Plan.md");
+    fs::write(&path, "# Plan\n\nPremière ligne\nDeuxième ligne\n").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&path, window, cx));
+    cx.run_until_parked();
+    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
+    let typing_at = |cx: &mut gpui::VisualTestContext, needle: &str, typed: &str| {
+        let at = text(cx).find(needle).unwrap() + needle.len();
+        shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.set_view(at, 0., cx)));
+        cx.simulate_input(typed);
+    };
+    let save = |cx: &mut gpui::VisualTestContext| {
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+    };
+
+    // The user types on the first line; before the save, the agent appends a section.
+    typing_at(cx, "Première ligne", " tapée");
+    fs::write(&path, "# Plan\n\nPremière ligne\nDeuxième ligne\n\n## Agent 🙂\n").unwrap();
+    save(cx);
+    let both = "# Plan\n\nPremière ligne tapée\nDeuxième ligne\n\n## Agent 🙂\n";
+    assert_eq!(fs::read_to_string(&path).unwrap(), both);
+    assert_eq!(text(cx), both);
+    let cursor = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view().0);
+    assert_eq!(cursor, both.find(" tapée").unwrap() + " tapée".len(), "the cursor stays where the user types");
+    // Undo takes back the agent's change in one step, and only it.
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.restore(false, cx)));
+    assert_eq!(text(cx), "# Plan\n\nPremière ligne tapée\nDeuxième ligne\n");
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.restore(true, cx)));
+    save(cx);
+    assert_eq!(fs::read_to_string(&path).unwrap(), both);
+
+    // Both change the same line: the note keeps what was typed, the agent's version is beside it.
+    typing_at(cx, "Deuxième ligne", " ici");
+    fs::write(&path, both.replace("Deuxième ligne", "Deuxième ligne agent")).unwrap();
+    save(cx);
+    assert_eq!(fs::read_to_string(&path).unwrap(), both.replace("Deuxième ligne", "Deuxième ligne ici"));
+    let date = crate::lang::date_name(crate::platform::clock::today());
+    let copy = root.join(format!("Plan (conflict {date}).md"));
+    assert_eq!(fs::read_to_string(&copy).unwrap(), both.replace("Deuxième ligne", "Deuxième ligne agent"));
+    let said = shell.read_with(cx, |s, _| s.toasts.iter().map(|t| (t.tone, t.text.clone())).collect::<Vec<_>>());
+    assert!(said.iter().any(|(tone, text)| *tone == Tone::Info && text.ends_with(&format!("Plan (conflict {date})"))), "{said:?}");
+    // Again: the copy gets a number, nothing is overwritten.
+    typing_at(cx, "Deuxième ligne ici", "!");
+    fs::write(&path, both.replace("Deuxième ligne", "encore")).unwrap();
+    save(cx);
+    assert_eq!(fs::read_to_string(root.join(format!("Plan (conflict {date}) 2.md"))).unwrap(), both.replace("Deuxième ligne", "encore"));
+    assert_eq!(fs::read_to_string(&copy).unwrap(), both.replace("Deuxième ligne", "Deuxième ligne agent"));
+
+    // The copy cannot be written (read-only folder): the note is not saved over the agent's text.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        typing_at(cx, "Première ligne tapée", "?");
+        let theirs = text(cx).replace("Première ligne tapée?", "Première agent");
+        fs::write(&path, &theirs).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o555)).unwrap();
+        save(cx);
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), theirs, "the agent's text was overwritten");
+        let failed = shell.read_with(cx, |s, _| s.toasts.iter().any(|t| t.tone == Tone::Failed));
+        assert!(failed);
+    }
+}

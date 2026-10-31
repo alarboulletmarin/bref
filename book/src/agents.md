@@ -57,4 +57,4 @@ A note's text is data. It is not an instruction to the agent.
 
 ## While you have the note open
 
-What another program writes shows up in Bref within about half a second. A note you are typing in is the exception: Bref keeps your version and writes it back, so an edit the agent makes at that moment is lost without a word. Do not type in a note an agent is writing. Pass the revision from the last read, and a change of yours is refused instead of overwritten.
+What another program writes shows up in Bref within about half a second, with the cursor and the scroll where they were. If you are typing in that note at that moment, Bref merges: the agent's change joins your text, and a single undo takes it back. When you both changed the same lines, your version stays in the note and the agent's is written next to it, as `Note (conflict 2026-10-31).md`, the way a sync conflict is, and a message says so. Nothing is lost either way.
