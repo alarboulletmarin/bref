@@ -141,6 +141,13 @@ impl Shell {
             if let Some(sheet) = this.pane().sheet() {
                 sheet.update(cx, |sheet, cx| sheet.reload_if_changed(cx));
             }
+            // So is the shown diagram: the canvas writes on every gesture, nothing waits in it.
+            if let Some(canvas) = this.pane().drawing().cloned()
+                && let Some(fresh) = this.pane().file_path().and_then(|path| fs::read_to_string(path).ok()).as_deref().and_then(Diagram::from_svg)
+                && fresh.to_svg(diagram::COLORS[0]) != canvas.read(cx).diagram().to_svg(diagram::COLORS[0])
+            {
+                canvas.update(cx, |canvas, cx| canvas.replace(fresh, cx));
+            }
             // The shown note was rewritten elsewhere: reread it. With no modification
             // pending here (the caller makes sure of it), nothing is lost.
             if let Some(path) = &this.pane().path

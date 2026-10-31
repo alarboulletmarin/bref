@@ -290,3 +290,44 @@ fn an_outside_write_keeps_the_place(cx: &mut TestAppContext) {
     let (at, _) = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view());
     assert_eq!(at, "# Long\n\nCourt é\n".len());
 }
+
+/// A diagram rewritten outside the app (an agent through `bref mcp`) is redrawn in its open canvas, without
+/// closing it: the view stays where it was, and one step of undo goes back to what was shown.
+#[gpui::test]
+fn an_outside_write_redraws_the_open_diagram(cx: &mut TestAppContext) {
+    use crate::logic::diagram::{self, Diagram, Form};
+    let (root, shell, cx, _config) = start(cx, "outside-diagram");
+    let path = root.join("Schéma.svg");
+    let mut first = Diagram::default();
+    first.add_shape(Form::Rect, 0., 0., 120., 60.);
+    fs::write(&path, first.to_svg(diagram::COLORS[0])).unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.simulate_resize(size(px(900.), px(700.)));
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&path, window, cx));
+    cx.run_until_parked();
+    let canvas = shell.read_with(cx, |s, _| s.pane().drawing().cloned()).expect("the diagram opens in its canvas");
+    let view = canvas.read_with(cx, |c, _| c.spot(0., 0.));
+
+    let mut second = first.clone();
+    second.add_shape(Form::Ellipse, 300., 0., 120., 80.);
+    fs::write(&path, second.to_svg(diagram::COLORS[0])).unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shapes.len()), 2, "the canvas shows the diagram as it is now");
+    assert_eq!(canvas.read_with(cx, |c, _| c.spot(0., 0.)), view, "the view moved");
+    assert!(shell.read_with(cx, |s, _| s.pane().drawing() == Some(&canvas)), "the same canvas, not a new one");
+
+    // Undo goes back to what was shown, and that is written.
+    shell.update_in(cx, |s, window, cx| window.focus(&s.pane().drawing().unwrap().focus_handle(cx)));
+    cx.simulate_keystrokes("secondary-z");
+    cx.run_until_parked();
+    assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shapes.len()), 1);
+    assert_eq!(Diagram::from_svg(&fs::read_to_string(&path).unwrap()).unwrap().shapes.len(), 1);
+
+    // The same text again, or a file that is no diagram any more: nothing changes.
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    fs::write(&path, "<svg xmlns=\"http://www.w3.org/2000/svg\"/>").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shapes.len()), 1);
+}

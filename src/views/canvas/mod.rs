@@ -432,6 +432,22 @@ impl Canvas {
         }
     }
 
+    /// The diagram was rewritten elsewhere (an agent through `bref mcp`, a sync): it is shown as it is now,
+    /// with the view and what is left of the selection kept, and one step of undo goes back to what was
+    /// shown. Not in the middle of a gesture or of a text being written: `false`, and the write that ends it wins.
+    pub fn replace(&mut self, diagram: Diagram, cx: &mut Context<Self>) -> bool {
+        if self.drag != Drag::None || self.editing.is_some() {
+            return false;
+        }
+        self.remember();
+        self.diagram = diagram;
+        let diagram = &self.diagram;
+        self.selected.retain(|id| diagram.shape(*id).is_some() || diagram.link(*id).is_some());
+        self.hover = None;
+        cx.notify();
+        true
+    }
+
     // ponytail: undo keeps whole copies of the diagram (100 max): a
     // diagram weighs a few KB. Switch to an operation log if they grow.
     fn remember(&mut self) {
