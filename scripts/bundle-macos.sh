@@ -2,7 +2,7 @@
 # Usage: scripts/bundle-macos.sh <binary> <version> <output.dmg>
 #
 # Wraps the binary in Bref.app, signs it "ad hoc" (no Apple Developer account, so no
-# notarization: see the README for opening it the first time), then puts it in a .dmg
+# notarization: see book/src/install.md for opening it the first time), then puts it in a .dmg
 # with a shortcut to Applications. Run it on macOS.
 set -euo pipefail
 cd "$(dirname "$0")/.."

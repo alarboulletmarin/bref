@@ -126,6 +126,22 @@ pub fn conflict_path(path: &Path, date: &str, host: &str) -> PathBuf {
     path.with_file_name(name)
 }
 
+/// `conflict_path`, numbered when that name is taken: nothing is overwritten.
+pub fn free_conflict_path(path: &Path, date: &str, host: &str) -> PathBuf {
+    let named = conflict_path(path, date, host);
+    let mut other = named.clone();
+    let mut n = 1;
+    while other.exists() {
+        n += 1;
+        let stem = named.file_stem().unwrap_or_default().to_string_lossy().to_string();
+        other = named.with_file_name(match named.extension() {
+            Some(extension) => format!("{stem} {n}.{}", extension.to_string_lossy()),
+            None => format!("{stem} {n}"),
+        });
+    }
+    other
+}
+
 /// What git wrote when failing, reduced to one sentence: a refused connection and an unreachable
 /// server have their own, the rest keeps git's last line.
 pub fn explain(stderr: &str) -> String {
@@ -292,17 +308,7 @@ pub fn merge(root: &Path, date: &str, host: &str) -> Result<Merged, Fail> {
                 // Changed on both sides: theirs next to it, ours in its place.
                 [_, true, true] => {
                     let theirs = call(root, &["show", &format!(":3:{path}")])?.stdout;
-                    let mut other = conflict_path(&root.join(path), date, host);
-                    let named = other.clone();
-                    let mut n = 1;
-                    while other.exists() {
-                        n += 1;
-                        let stem = named.file_stem().unwrap_or_default().to_string_lossy().to_string();
-                        other = named.with_file_name(match named.extension() {
-                            Some(extension) => format!("{stem} {n}.{}", extension.to_string_lossy()),
-                            None => format!("{stem} {n}"),
-                        });
-                    }
+                    let other = free_conflict_path(&root.join(path), date, host);
                     std::fs::write(&other, theirs).map_err(|e| Fail::Told(e.to_string()))?;
                     run(root, &["checkout", "-q", "--ours", "--", path])?;
                     conflicts.push(other);

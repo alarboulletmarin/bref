@@ -252,9 +252,32 @@ impl Diagram {
         let life = |end: End| if let End::Life(id) = end { Some(id) } else { None };
         let depth = |open: &[(u32, f32, Option<u32>)], on: u32| open.iter().filter(|(l, ..)| *l == on).count();
         let x_of = |on: u32, depth: usize| self.shape(on).map_or(0., |s| s.x + s.w / 2. - BAR / 2. + NEST * depth as f32);
+        // The alts the message is in, each with its branch and what was open when it was entered.
+        let mut alts: Vec<(u32, u32, Vec<(u32, f32, Option<u32>)>)> = Vec::new();
+        let is_alt = |id: u32| self.shape(id).is_some_and(|s| s.text.lines().next().is_some_and(|op| op.trim() == "alt"));
         for (rank, id) in order.iter().enumerate() {
             let Some(link) = self.link(*id) else { continue };
             let y = ys[rank];
+            // Only one branch of an alt happens: each starts from what was open before the alt, and what the
+            // branch above closed is open again, its bar drawn on to where this one closes it.
+            let chain: Vec<(u32, u32)> = self.chain(link).into_iter().filter(|(frag, _)| is_alt(*frag)).collect();
+            alts.retain(|(frag, ..)| chain.iter().any(|(f, _)| f == frag));
+            for (frag, operand) in chain {
+                match alts.iter_mut().find(|(f, ..)| *f == frag) {
+                    None => alts.push((frag, operand, open.clone())),
+                    Some(alt) if alt.1 < operand => {
+                        alt.1 = operand;
+                        for back in alt.2.iter().filter(|e| !open.contains(e)) {
+                            if let Some(at) = marks.bars.iter().rposition(|b| b.life == back.0 && b.y0 == back.1) {
+                                marks.bars.remove(at);
+                            }
+                        }
+                        let since: Vec<_> = open.iter().filter(|e| !alt.2.contains(e)).copied().collect();
+                        open = alt.2.iter().copied().chain(since).collect();
+                    }
+                    Some(_) => {}
+                }
+            }
             let (from, to) = (life(link.from), life(link.to));
             for on in [from, to].into_iter().flatten() {
                 touch(&mut last, on, y);
@@ -613,6 +636,44 @@ mod tests {
         let (d, lives, _) = talk(2, &[(0, 1, Message::Sync), (1, 1, Message::Sync), (1, 0, Message::Reply)]);
         let own = d.marks().bars.iter().filter(|b| b.life == lives[1]).map(|b| (b.depth, b.y0)).collect::<Vec<_>>();
         assert!(own.contains(&(1, 136.)), "{own:?}");
+    }
+
+    #[test]
+    fn each_branch_of_an_alt_starts_from_what_was_open_before_it() {
+        // A calls B; B answers in [ok] and in [else]: only one of them happens, so B is busy until the last.
+        let bars = |d: &Diagram, life: u32| d.marks().bars.iter().filter(|b| b.life == life).map(|b| (b.y0, b.y1, b.depth)).collect::<Vec<_>>();
+        let y = |d: &Diagram, id: u32| d.message_y(id).unwrap();
+        let branches = |d: &mut Diagram, ids: &[u32], text: &str, split: usize| {
+            d.wrap(ids, text).unwrap();
+            for id in &ids[split..] {
+                d.link_mut(*id).unwrap().operand = 1;
+            }
+            d.fit_sequence();
+        };
+        let (mut d, lives, links) = talk(2, &[(0, 1, Message::Sync), (1, 0, Message::Reply), (1, 0, Message::Reply), (0, 1, Message::Async)]);
+        branches(&mut d, &links[1..3], "alt\n[ok]\n[else]", 1);
+        assert_eq!(bars(&d, lives[1]), [(y(&d, links[0]), y(&d, links[2]), 0)]);
+        // The answer of the [else] leaves from the bar's edge, and after the alt nothing is open any more.
+        let bar = d.marks().bars[0].clone();
+        assert_eq!(d.trace(d.link(links[2]).unwrap()).unwrap().points[0].0, bar.x);
+        assert!(bar.y1 < y(&d, links[3]));
+
+        // In the [else], B calls C before answering: C's bar is there, B's goes on under it.
+        let (mut d, lives, links) = talk(3, &[(0, 1, Message::Sync), (1, 0, Message::Reply), (1, 2, Message::Sync), (2, 1, Message::Reply), (1, 0, Message::Reply)]);
+        branches(&mut d, &links[1..5], "alt\n[cache]\n[else]", 1);
+        assert_eq!(bars(&d, lives[1]), [(y(&d, links[0]), y(&d, links[4]), 0)]);
+        assert_eq!(bars(&d, lives[2]), [(y(&d, links[2]), y(&d, links[3]), 0)]);
+
+        // An alt in the [else] of another: three branches, still one bar to the last answer.
+        let (mut d, lives, links) = talk(2, &[(0, 1, Message::Sync), (1, 0, Message::Reply), (1, 0, Message::Reply), (1, 0, Message::Reply)]);
+        branches(&mut d, &links[1..4], "alt\n[a]\n[else]", 1);
+        branches(&mut d, &links[2..4], "alt\n[b]\n[else]", 1);
+        assert_eq!(bars(&d, lives[1]), [(y(&d, links[0]), y(&d, links[3]), 0)]);
+
+        // A par runs its branches together: the first answer closes the bar, as without a fragment.
+        let (mut d, lives, links) = talk(2, &[(0, 1, Message::Sync), (1, 0, Message::Reply), (1, 0, Message::Reply)]);
+        branches(&mut d, &links[1..3], "par\n[a]\n[b]", 1);
+        assert_eq!(bars(&d, lives[1]), [(y(&d, links[0]), y(&d, links[1]), 0)]);
     }
 
     #[test]

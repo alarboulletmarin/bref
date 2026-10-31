@@ -8,6 +8,8 @@ license = "MIT"
 repository = "https://github.com/alarboulletmarin/bref"
 
 [dependencies]
+# Déjà tirée par gpui, à la même version : images PNG du serveur MCP.
+base64 = "0.22.1"
 # Déjà tirée par gpui, à la même version : l'archive de la sauvegarde.
 flate2 = "1.1.4"
 gpui = "0.2.2"

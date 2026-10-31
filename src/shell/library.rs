@@ -4,17 +4,55 @@ use super::*;
 
 impl Shell {
     /// Rereads the vault right away, without waiting for the watcher: what the merge wrote
-    /// shows, each note keeping its cursor and scroll.
+    /// shows, each note keeping its cursor and scroll (`reload`).
     pub(super) fn rescan(&mut self, root: &Path, cx: &mut Context<Self>) {
-        let views: Vec<(usize, f32)> = self.panes.iter().map(|pane| pane.editor.read(cx).view()).collect();
         let (notes, dirs, images, unreadable) = vault::rescan_full(root, &self.notes);
         self.unreadable = unreadable;
         self.sync(notes, dirs, images, cx);
-        for (pane, (at, scroll)) in self.panes.iter().zip(views) {
-            if pane.editor.read(cx).view().0 != at {
-                pane.editor.update(cx, |editor, cx| editor.set_view(at, scroll, cx));
-            }
+    }
+
+    /// Opens the window's door to `bref mcp` (`platform::link`): an agent asks it to show a file of
+    /// the vault. No door (no port to be had): the agent still writes, it just cannot show.
+    pub(super) fn listen(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if cfg!(test) {
+            return;
         }
+        let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let signal = Arc::new(vault::Signal::default());
+        if platform::link::open(asked.clone(), signal.clone()).is_err() {
+            return;
+        }
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                signal.wait(cx.background_executor().timer(Duration::from_secs(3600))).await;
+                let each: Vec<platform::link::Asked> = std::mem::take(&mut *asked.lock().unwrap());
+                for ask in each {
+                    let Ok(answer) = this.update_in(cx, |this, window, cx| this.show_asked(&ask.path, window, cx)) else {
+                        return;
+                    };
+                    let _ = ask.answer.send(answer);
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Shows a file an agent asked for (`path` absolute), in a tab of its own, and brings the
+    /// window to the front.
+    pub(super) fn show_asked(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) -> Result<(), String> {
+        let Some(root) = self.vault.clone() else {
+            return Err("Bref has no vault open".into());
+        };
+        // The agent and the window may write the vault's path differently (a link, `/private` on macOS).
+        let (Ok(canon_root), Ok(canon)) = (root.canonicalize(), path.canonicalize()) else {
+            return Err(format!("no file at {}", path.display()));
+        };
+        let Ok(inside) = canon.strip_prefix(&canon_root) else {
+            return Err(format!("Bref has another vault open: {}", root.display()));
+        };
+        self.open(&root.join(inside), window, cx);
+        window.activate_window();
+        Ok(())
     }
 
     /// Follows what other programs change in the vault: notes added,
@@ -146,6 +184,13 @@ impl Shell {
             // The shown table was rewritten elsewhere: it is reread if nothing is pending here.
             if let Some(sheet) = this.pane().sheet() {
                 sheet.update(cx, |sheet, cx| sheet.reload_if_changed(cx));
+            }
+            // So is the shown diagram: the canvas writes on every gesture, nothing waits in it.
+            if let Some(canvas) = this.pane().drawing().cloned()
+                && let Some(fresh) = this.pane().file_path().and_then(|path| fs::read_to_string(path).ok()).as_deref().and_then(Diagram::from_svg)
+                && fresh.to_svg(diagram::COLORS[0]) != canvas.read(cx).diagram().to_svg(diagram::COLORS[0])
+            {
+                canvas.update(cx, |canvas, cx| canvas.replace(fresh, cx));
             }
             // The shown note was rewritten elsewhere: reread it. With no modification
             // pending here (the caller makes sure of it), nothing is lost.

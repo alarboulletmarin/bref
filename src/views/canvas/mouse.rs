@@ -32,20 +32,45 @@ impl Canvas {
     }
 
     /// The handle under this point, on the shape under the pointer: the shape, and where on its border it leaves from.
+    /// Past the four handles, anywhere just outside the border (its halo) draws too, from the nearest place of the
+    /// border: the pointer is on the edge it wants to leave by. Not near a corner: that is where a shape is resized.
     pub(super) fn handle_at(&self, p: (f32, f32)) -> Option<(u32, (f32, f32))> {
         let shape = self.hover.and_then(|id| self.diagram.shape(id)).filter(|s| Self::drawable_from(s))?;
-        Self::handles(shape, self.zoom).into_iter().find(|(h, _)| (h.0 - p.0).hypot(h.1 - p.1) <= HANDLE_REACH / self.zoom).map(|(_, at)| (shape.id, at))
+        let reach = HANDLE_REACH / self.zoom;
+        if let Some((_, at)) = Self::handles(shape, self.zoom).into_iter().find(|(h, _)| (h.0 - p.0).hypot(h.1 - p.1) <= reach) {
+            return Some((shape.id, at));
+        }
+        let inside = p.0 >= shape.x && p.0 <= shape.x + shape.w && p.1 >= shape.y && p.1 <= shape.y + shape.h;
+        let corner = Self::corners(shape).iter().any(|c| (c.0 - p.0).hypot(c.1 - p.1) <= reach);
+        if inside || corner || !self.in_halo(shape, p) {
+            return None;
+        }
+        match shape.hook(p.0, p.1) {
+            End::Pin(_, fx, fy) => Some((shape.id, (fx, fy))),
+            _ => None,
+        }
+    }
+
+    /// Whether this point is around the shape, as far out as its handles reach.
+    fn in_halo(&self, shape: &diagram::Shape, p: (f32, f32)) -> bool {
+        let halo = (HANDLE_OUT + HANDLE_REACH) / self.zoom;
+        p.0 >= shape.x - halo && p.0 <= shape.x + shape.w + halo && p.1 >= shape.y - halo && p.1 <= shape.y + shape.h + halo
     }
 
     /// What is under the pointer, when nothing is being dragged: it is lit, and a shape shows its handles.
     pub(super) fn aim_hover(&mut self, p: (f32, f32), cx: &mut Context<Self>) {
         let idle = self.tool == Tool::Select && self.drag == Drag::None && self.editing.is_none() && self.context.is_none();
+        // Leaving a shape toward its handles keeps it pointed at: between the border and a handle there used to be
+        // a gap where it was not, the handles went, and an arrow could only be drawn by jumping over it.
         let next = if !idle {
             None
         } else if self.handle_at(p).is_some() {
             self.hover
         } else {
-            self.diagram.hit(p.0, p.1, 7. / self.zoom)
+            self.diagram.hit(p.0, p.1, 7. / self.zoom).or_else(|| {
+                // Coming from outside, to the edge of a shape: it is pointed at too.
+                self.diagram.shapes.iter().rev().find(|s| Self::drawable_from(s) && self.in_halo(s, p)).map(|s| s.id)
+            })
         };
         if next != self.hover {
             self.hover = next;

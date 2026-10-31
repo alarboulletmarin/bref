@@ -1,650 +1,92 @@
 # Bref
 
+[![CI](https://github.com/alarboulletmarin/bref/actions/workflows/ci.yml/badge.svg)](https://github.com/alarboulletmarin/bref/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/alarboulletmarin/bref)](https://github.com/alarboulletmarin/bref/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 A fast, minimal note-taking app. Notes are plain Markdown files in a folder you choose, styled as you type. Written in Rust with [GPUI](https://www.gpui.rs), a GPU-accelerated UI framework.
 
 ![Bref, light and dark](docs/screenshots/bref.png)
 
-[Features](#features) · [Install](#install) · [First run](#first-run) · [Using Bref](#using-bref) · [Navigation](#navigation) · [Appearance](#appearance) · [Markdown](#markdown) · [Diagrams](#diagrams) · [CSV tables](#csv-and-tsv-tables) · [Syncing](#syncing-a-vault) · [Notes and vault](#notes-and-vault) · [Updates](#updates) · [Compatibility](#compatibility) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works) · [Development](#development)
+**[Install](#install)** · **[User guide](book/src/introduction.md)** · [Shortcuts](book/src/shortcuts.md) · [Website](https://alarboulletmarin.github.io/bref/) · [Contributing](CONTRIBUTING.md)
 
-## Features
+## Why Bref
 
-- **Opens instantly**: the window is on screen in about 75 ms on the author's machine.
-- **Stays fast as it grows**: a keystroke costs about a millisecond of work, in a short note as in one of 5,000 lines, and the palette opens in 4 ms on a vault of 5,000 notes. The figures, and how to measure them, are under [Speed](#speed).
-- **Plain files**: one `.md` file per note, in a folder (the *vault*) you can sync with git, Syncthing or anything else. A folder of Markdown notes you already have works as is, YAML front matter included.
-- **Styled as you type**: headings grow, bold, italic, underline, strikethrough and highlight render, markers stay visible but dimmed. The file on disk is always plain Markdown. A small **formatting bar** at the bottom of the note, centered, applies them with a click: B, I, U, S, highlight (with a choice of five colors), code, link, then bulleted, numbered and task lists and a table (inside a table, its place is taken by row and column buttons: add, delete). A button lights up when the selection already has the style, and a second click removes it. With two panes, only the one you write in shows the bar.
-- **Blocks you can take**: pointing at a line shows a grip left of it (`⋮⋮`). Drag it to move the block, a line showing where it lands: a heading, a line of text, a list item with what is indented under it, a quote or a panel, a code block, a table. A click selects the block and opens its menu: turn it into text, a heading, a list, a quote or a code block, duplicate it, move it up or down, copy, cut, comment or delete it. The `+` left of the grip adds a line under the block and opens the `/` list. `Alt + Up` and `Alt + Down` move the block of the cursor (in a table, its row). Blank lines between blocks travel with them, and the first line, the title of the note, stays first.
-- **Lists that continue themselves**: `- `, `1. ` and `[] ` start a list, Enter continues it, numbering stays in order.
-- **Slash commands**: type `/` for a heading, a list, a colored panel, a code block, a formula or a table, whose size you pick on a grid. What lands in the note is plain Markdown.
-- **Tables like on the web**: cells wrap inside their column, `Tab` moves from cell to cell, `Enter` adds a row, two `+` buttons add a row or a column, and pasting a table from a web page, a spreadsheet or Markdown just works. A cell that starts with `=` is a **formula** (`=B*C`, `=sum(above)`): the cell shows the result.
-- **Embedded sections**: `![[Note#Heading]]` alone on a line shows that heading and what is under it, up to the next heading of the same level, in place and live; `![[Note]]` shows the whole note (without its front matter), `![[Note#^id]]` the block that ends with `^id` (a common Markdown convention). The section is drawn in a frame, a thin bar on its left in the accent color and the source's name at the top right; it follows the theme and wraps to the page. A click on the name, a double click on the frame, or `Alt + Enter` on its line opens the note at that section (`Alt + Left` comes back); `Ctrl + click` on a `[[Note#Heading]]` link does the same. Typing `![[Note#` suggests the headings of the note, `![[Note#^` its blocks (after `[[` too). The embed is read-only: change the text in its note. An embed that leads back to a note already in the chain says *circular embed*, and three levels are shown at most. Renaming the note rewrites the embeds and links to it, renaming the heading (the same headings but one, saved) rewrites `#Heading` in the other notes, and the backlinks list embeds, marked *embedded*. The file stays plain Markdown: other apps show the line as a link. An embed alone on a line is only that: a link inside a sentence, a list item or a code block is not one, and `![[picture.png]]` is still a picture.
-- **Kanban boards**: type `kanban` in the palette and choose **New kanban board**: a note opens as a board with three columns. Everything is done on the board: **+ Add a card** opens a card you type in (`Enter` adds it and opens the next one, `Esc` stops), a double click rewrites a card or a column title in place (emptied, a card is removed), the `+` at the right adds a column. Pick a card up and it follows the pointer, while a dashed slot opens where it would land: between two cards, or at the bottom of a column; click its box to tick it; held near the edge of the window, it scrolls the board. The keys do it all too: the arrows go from card to card, to a column's title, to **+ Add a card** and to the `+` of a new column; `Alt` + arrows carry the card up, down or into the next column; `Space` ticks it, `Enter` or `F2` writes it, `Delete` removes the card, or on a title the column with its cards. Each gesture is undone with `Ctrl+Z`, right on the board. A card being written is a real line of text: arrows, word by word with `Ctrl`, selection with `Shift`, `Ctrl+Backspace`, copy and paste, a click to place the cursor; so are the palette and a cell of a CSV table. Columns narrow to fit the window. Under the board the note stays plain Markdown, one `## heading` per column and one task per card, in a common Markdown kanban layout (the key `kanban: true` of its front matter is what makes it open as a board; typing that key into a note leaves you in the text); the button at the bottom right, left of the copy button, shows that text and comes back.
-- **List pages**: right click a folder in the tree, or a tag in the tags panel, then **Show as a list**: its notes become the rows of a table, and the keys of their front matter (`author:`, `rating:`…) its columns. Type to filter the rows (`author:austen` looks in one column only, `Esc` clears); click a column title to sort by it, again to reverse; click the name of a note to open it. Click any other cell to rewrite it (`Enter` confirms, `Esc` gives up): only that key changes in the front matter of the note, added if it was missing, removed if you empty it, and nothing else in the file.
-- **Icons**: right click a note, a file or a folder in the tree, then **Icon…**: pick one of forty in the grid, or the cross to remove it. Without one, every row of the tree shows a small icon of its kind (folder, note, table, diagram, picture, other file) so the names line up, and a file that is not a note shows its extension next to its name, lighter (`contacts.csv`; a long name is cut before its extension); the icon you gave replaces it, before the name in the panel, follows a rename or a move, and is kept in `.bref-icons` at the root of the vault, so it travels with it.
-- **Comments**: `Ctrl + Shift + M` annotates a word, a line or the line of an image without changing its text. The comment is kept in the note itself as [CriticMarkup](https://criticmarkup.com/), `{==the text==}{>>the comment<<}`, so the file stays plain Markdown: the text is highlighted, the comment follows it, faded. A panel to the right of the note lists its comments: click one to go to it, click its check mark (it shows under the pointer) to resolve it; the comment of the passage under the caret is on a tint and the panel scrolls to it. The speech bubble at the bottom right of the note, next to the copy button, closes the panel and opens it again (so does its cross), and a badge on it counts the comments (`9+` beyond nine); `comments` in the palette lists the comments to jump to one from the keyboard. In a table, a comment is on the text of a cell (one per cell a selection touches, never across a `|`, and a `|` typed in it is written `\|`); a row, a column or the whole table taken by its grip is commented on a line of its own under the table, `{>>Column "Age": in years<<}`, named by its content (a row by its first cell, a column by its header) so that a sort leaves it where it belongs; renaming that first cell or header renames the comment, and deleting the row, the column or the table deletes it, as moving, inserting, duplicating, sorting or swapping rows and columns keep it with what it is about (one `Ctrl + Z` brings both back). A commented cell is tinted and marked in its corner, a commented row, column or table is outlined with a dot on its grip, stronger while the cursor is in the comment, and the panel says where each one is (`Cell C2`, `Row Léa`, `Column Age`, `Table`). A comment on an empty cell is refused: there is nothing to highlight. On such a line, `Ctrl + Shift + M` resolves it: the line goes.
-- **Links between notes**: `[[` suggests your notes; a link to a note that does not exist creates it. `@` suggests days (`@today`, `@tomorrow`, `@monday`, `@2026-10-09`) and links to the daily note of that day. `#tags` filter the note list.
-- **Backlinks**: the notes that link to the open one, each with the line that holds the link.
-- **Sync in one action**: `Ctrl + Shift + S` commits, receives, merges and sends a vault kept in git, in the background; a real conflict keeps both versions as two notes, never as markers in your text. A vault can also simply live in a cloud folder.
-- **Split panes**: `Ctrl + \` splits the pane to the right, `Ctrl + Alt + \` below, as many times as the window has room for: write a note while reading two others, keep a table under a note. Each pane shows anything Bref can show; a file dragged from the tree opens in the pane you drop it on.
-- **Tabs**: a pane holds as many files as you like, as in a code editor. A click on a file in the tree, a note chosen in the palette, a link followed, a new note: each opens in a tab of its own, right of the one shown, and if the file is already open its tab comes to the front instead (a note is open once). Browsing the tree with the arrows previews notes in a single tab, in italics, which the next note browsed replaces; opening it for good keeps it. A bar of tabs, each a rounded pill, appears at the top of the pane as soon as it holds two: a click shows a tab, its cross or the middle button closes it, `Ctrl + Tab` and `Ctrl + Shift + Tab` go round them, `Ctrl + Shift + Page Up` and `Page Down` move the tab along the bar, and a tab can be dragged along it, into another pane, or to an edge to split one. `Ctrl + W` closes the tab, what it holds saved first (the pane goes with its last tab), and `Ctrl + Alt + T` reopens the last one closed. Back and forward go from tab to tab, and bring a closed file back in a tab. Tabs come back at the next start. A tab out of sight keeps its text, cursor and undo, but lets go of what it drew, so a hundred tabs cost little memory.
-- **Back and forward**: `Alt + Left` and `Alt + Right` (`Cmd + [` and `Cmd + ]` on macOS), the side buttons of the mouse or the two arrows at the top of the rail walk through what you opened, notes, pictures, diagrams, tables and list pages alike, and land where you were: same line, same scroll.
-- **Four ways around your notes**: the vault as a tree, the notes you opened last, a graph of the links between them, and your tags, in a panel that folds down to a thin rail of icons. Each view of the panel can live on either side of the notes: the arrow in its header (or **Move the panel's view to the other dock** in the palette) sends it to the dock on the right, and back, so the tree and the backlinks, or the graph and the calendar, stay in sight together. The rail shows or hides a view where it lives; Shift+click on its icon stacks it under the views already shown in its dock, each with a header that folds it down (the chevron) or hides it (the cross). Drag a view by its title to put it elsewhere: a line shows where it lands in a dock, and while it is dragged a strip on the right edge of the window opens the right dock; Escape lets go without moving anything. The graph and the calendar also open as a tab of a pane, to get room (the button next to the arrow, or **Open the graph or the calendar as a tab**); closing the tab gives the view back to its dock. The right dock hides when the window leaves the notes too little room, and where everything is comes back at the next launch.
-- **Diagrams drawn by hand**: shapes, arrows that hold on to them, UML boxes, on a canvas. Each diagram is an SVG file in your vault, shown in your notes.
-- **CSV and TSV files, edited in place**: a `.csv` or `.tsv` in the vault opens in a grid. The encoding (UTF-8, UTF-16, ISO-8859-1, Windows-1252) and the delimiter (comma, semicolon, tab, pipe…) are detected and can be changed; select cells with the keyboard or the mouse, copy, paste, export, and what you change is written straight into the file. A million rows are parsed in under a tenth of a second on the author's machine.
-- **Keyboard first**: one palette to find, create and switch notes, and a shortcut for every view. No toolbar.
-- **Nothing hidden**: `F10`, or the first button of the rail, opens the command palette: every command the view can do, with an icon, a short name and its keys, grouped, those of what you are on (a block, a table, a diagram) first. Type to find one by what it does, `Enter` runs it. In the note palette, `>` switches to the commands. The help panel opens on the keys of the view, and the bar of a CSV table shows the gestures of the whole rows or columns selected.
-- **Shortcuts you can change**: the help panel (`F1`) lists every shortcut, searches them as you type, and lets you give any of them other keys. The menus show, beside each action, the shortcut that does the same. A combination already in use says by what, and is only taken when you ask.
-- **No save button**: notes are written to disk as you type, and named after their first line.
-- **Daily note**: one key opens the note of the day, or creates it.
-- **Capture in one line**: one shortcut of your desktop (set up from the palette, `Super + Shift + N` on GNOME) opens a single line anywhere, anytime: type, `Enter`, it is at the bottom of today's note and the window is gone. See [Capture](#capture).
-- **A blank page that remembers**: an empty note shows, under the line you write on, today's date (a click opens the note of the day), the keys that matter, and what to read again: the daily notes of a week, a month and a year ago, and one note you have not touched for a month or more, a different one each day. A click opens any of them; the first key you type clears the page.
-- **Word count**: the bottom of the note shows its words and characters, or those of the selection.
-- **Yours to dress**: panel, notes and tabs rest as sheets on a softly tinted ground, page titles in a serif while note titles follow your font; a dozen themes (Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, Solarized…) previewed as you browse them, IBM Plex Sans, Plex Mono and Plex Serif (titles) built in (nothing to install), any installed font if you prefer, and the text size you like.
-- Light and dark, following your system, until you pick a theme. English and French, following the system language.
+- **Fast.** The window opens in about 75 ms. A keystroke costs about a millisecond, even in a note of 5,000 lines. [Figures](book/src/performance.md)
+- **Plain files.** One `.md` file per note, in an ordinary folder. Sync it with git, Syncthing or a cloud folder. An existing folder of Markdown notes works as is.
+- **Styled as you type.** Headings grow, bold and italics render, markers stay visible but dimmed. The file on disk stays plain Markdown.
+- **Tables that compute.** Cells wrap, `Tab` moves between them, pasting from a spreadsheet works, and `=sum(above)` adds up a column.
+- **Linked notes.** `[[Links]]`, backlinks, tags, embedded sections, a graph, and a calendar of daily notes.
+- **More than notes.** Kanban boards, list pages built from front matter, UML diagrams drawn by hand and saved as SVG, and a CSV grid that opens a million rows.
+- **Agents.** `bref mcp` lets an agent read, write and draw in the vault, with Bref's links, trash and diagrams. [Guide](book/src/agents.md)
+- **Keyboard first.** One palette for notes and commands. Every shortcut is listed in the app (`F1`) and can be changed.
+- **Yours to dress.** 13 themes, IBM Plex built in, any installed font. Light and dark, English and French.
+
+![Typing a note: the title grows, styles render, a table adds up its column](docs/screenshots/demo.gif)
 
 ## Install
 
-| Your system | Go to |
+| System | Get it |
 |---|---|
-| Arch Linux | [Arch](#arch-linux) |
-| Ubuntu, Linux Mint, Debian | [Ubuntu, Linux Mint, Debian](#ubuntu-linux-mint-debian) |
-| Fedora | [Fedora](#fedora) |
-| Another Linux distribution | [Other distributions](#other-distributions) |
-| macOS | [macOS](#macos) |
-| Windows | [Windows](#windows) |
-
-On Arch, macOS and Windows there is a ready-made download; everywhere else Bref is compiled on your machine, which takes a few minutes the first time. Compiling needs a recent stable Rust: install it with [rustup](https://rustup.rs) if `rustc --version` shows less than 1.88.
-
-### Arch Linux
-
-Every release ships a ready-to-install package (no compiler needed), which pacman then tracks as `bref`. The package is not signed, so download it first: given a URL, pacman looks for a `.sig` file and warns when there is none.
+| Arch Linux | the prebuilt package, below |
+| macOS 11 or later | [`bref-macos.dmg`](https://github.com/alarboulletmarin/bref/releases/latest/download/bref-macos.dmg) |
+| Windows 10 or 11 | [installer](https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64-setup.exe) or [zip](https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64.zip) |
+| Ubuntu, Debian, Fedora, other Linux | build from source, below |
 
 ```bash
+# Arch Linux
 curl -LO https://github.com/alarboulletmarin/bref/releases/latest/download/bref-x86_64.pkg.tar.zst
 sudo pacman -U ./bref-x86_64.pkg.tar.zst
 ```
 
-To follow `main` instead, build the development package from a checkout (needs `cargo` and `git`, it conflicts with `bref`):
-
 ```bash
-git clone https://github.com/alarboulletmarin/bref.git
-cd bref/aur/bref-git
-makepkg -si
-```
-
-Or build the latest tagged release yourself with `makepkg -si` from the repository root. Not on the AUR yet.
-
-### Ubuntu, Linux Mint, Debian
-
-1. Install the build tools and libraries:
-
-   ```bash
-   sudo apt install build-essential pkg-config libfontconfig-dev libfreetype-dev \
-     libwayland-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan1 \
-     fonts-noto-color-emoji
-   ```
-
-2. Install Rust with [rustup](https://rustup.rs); the `cargo` from apt is usually too old.
-
-3. Build and install:
-
-   ```bash
-   git clone https://github.com/alarboulletmarin/bref.git
-   cd bref
-   make
-   sudo make install
-   ```
-
-### Fedora
-
-Same steps as above, with these packages (names not tested):
-
-```bash
-sudo dnf install gcc pkgconf-pkg-config fontconfig-devel freetype-devel \
-  wayland-devel libxcb-devel libxkbcommon-devel libxkbcommon-x11-devel vulkan-loader \
-  google-noto-color-emoji-fonts
-```
-
-### Other distributions
-
-You need the development files of fontconfig, freetype, Wayland, libxcb and libxkbcommon (with its X11 part), a Vulkan driver for your GPU, an emoji font (Noto Color Emoji, for 🎉 in notes and names), and Rust. Then:
-
-```bash
-make                    # cargo build --release --locked
-sudo make install       # PREFIX=/usr/local by default, PREFIX=/usr for a system-wide install
-```
-
-`make install` adds the `bref` command, an entry in your application menu and its icon. `sudo make uninstall` removes them.
-
-### macOS
-
-Download [`bref-macos.dmg`](https://github.com/alarboulletmarin/bref/releases/latest/download/bref-macos.dmg) (Apple Silicon and Intel, macOS 11 or later), open it and drag Bref to Applications.
-
-The app is not notarized (that needs a paid Apple Developer account), so macOS blocks the first launch. Open **System Settings**, **Privacy & Security**, scroll down and click **Open Anyway**. Or run this once in a terminal:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Bref.app
-```
-
-To compile it yourself instead you need Xcode (the full app, for the Metal shader compiler) and Rust:
-
-```bash
+# Other Linux: needs Rust 1.88 or later, and the libraries listed in the install guide
 git clone https://github.com/alarboulletmarin/bref.git
 cd bref
-cargo install --path . --locked
+make && sudo make install
 ```
 
-This installs the `bref` command in `~/.cargo/bin`, without the `.app` bundle: start it from a terminal.
+The macOS and Windows downloads are not signed. The first launch needs one extra click: see [the install guide](book/src/install.md), which also covers the packages of each distribution, building on macOS and Windows, and upgrading.
 
-### Windows
+Bref tells you when a new version is out. On Arch, macOS and Windows (installer), one click updates it.
 
-Download [`bref-windows-x86_64-setup.exe`](https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64-setup.exe) and run it (Windows 10 or 11, 64-bit). It installs for your user only, with no administrator rights, adds a Start menu entry and an uninstaller. If you would rather install nothing, take [`bref-windows-x86_64.zip`](https://github.com/alarboulletmarin/bref/releases/latest/download/bref-windows-x86_64.zip), unzip it anywhere and run `bref.exe`.
+## Getting started
 
-The files are not signed (a code-signing certificate costs a few hundred euros a year), so SmartScreen may show "Windows protected your PC": click **More info**, then **Run anyway**.
+1. Launch Bref and click **Start in ~/Documents/Notes**, or open a folder you already have.
+2. Type. The first line is the title of the note and the name of its file. Saving is automatic.
+3. `Ctrl + P` finds or creates a note, `F10` lists every command, `F1` lists every shortcut.
 
-To compile it yourself instead you need the Visual Studio C++ build tools with the Windows SDK, and Rust (MSVC toolchain):
+On macOS, read `Cmd` for `Ctrl`. More in [First steps](book/src/first-steps.md).
 
-```powershell
-git clone https://github.com/alarboulletmarin/bref.git
-cd bref
-cargo install --path . --locked
-```
+## Documentation
 
-This installs `bref.exe` in `%USERPROFILE%\.cargo\bin`.
+The [user guide](book/src/introduction.md) covers everything. It is also published as a website: [alarboulletmarin.github.io/bref/guide](https://alarboulletmarin.github.io/bref/guide/).
 
-### Upgrading
-
-| Installed with | Upgrade |
+| Page | What it covers |
 |---|---|
-| Arch, prebuilt package | the **Update** button of the banner, or run the two commands above again |
-| macOS, `.dmg` | the **Update** button of the banner, or download the new `.dmg` and drop Bref on Applications again |
-| Windows, installer | the **Update** button of the banner, or run the new installer: it upgrades in place |
-| Windows, `.zip` | unzip the new version over the old one |
-| Arch, `bref-git` | `git pull`, then `makepkg -si` in `aur/bref-git` |
-| `make install` | `git pull`, then `make` and `sudo make install` |
-| `cargo install` | `git pull`, then `cargo install --path . --locked` |
-
-Bref was called encre until 0.1.4. Your notes are untouched, and the settings saved under the old name are still read: they are written under the new one the next time they change.
-
-| Installed encre with | Before upgrading |
-|---|---|
-| Arch, either package | nothing: the `bref` packages replace `encre` and `encre-git` |
-| `make install` | `sudo make uninstall` in the old checkout, before `git pull` |
-| `cargo install` | `cargo uninstall encre` |
-
-## First run
-
-Bref asks for a **vault**: the folder that holds your notes. One click on **Start in ~/Documents/Notes** creates it there (in your home folder if you have no `Documents`; a folder already there is opened as it is), or **Open another folder…** picks an existing one. That is the only setup.
-
-The choice is remembered, along with the last note you had open. Change vault at any time with `Ctrl + O`.
-
-On Linux, give it a keyboard shortcut if you want it one key away: bind the command `bref` in your desktop settings (GNOME: Settings → Keyboard → Custom Shortcuts).
-
-## Using Bref
-
-Start typing: the first line is the title of the note, and the name of its file.
-
-On macOS, read `Cmd` for `Ctrl`, and `Alt` for `Ctrl` when moving by word.
-
-The bottom right of the note shows its number of words and characters; with a selection, the words and characters selected. Characters are counted as written, Markdown markers included, line ends excluded.
-
-| Key | Action |
-|---|---|
-| `Ctrl + P` | palette: find a note by name or text, create one, filter by `#tag` |
-| `Ctrl + F`, `Ctrl + R` | [find in the note](#find-and-replace), find and replace |
-| `Ctrl + Shift + O` | outline: the headings of the note, to jump to one (also `Outline of the note` in the palette) |
-| `Ctrl + Shift + F` | [search the text of the whole vault](#search-the-vault) in the panel, and replace there |
-| `Ctrl + N` | new note |
-| `Ctrl + J` | today's note: `2026-10-09.md`, opened wherever it is in the vault, or created with the date as its title (also `Today's note` in the palette) |
-| `Ctrl + E`, `Ctrl + Shift + T`, `Ctrl + G`, `Ctrl + T` | [navigation panel](#navigation): vault tree, recent notes, graph, tags |
-| `Ctrl + M` | navigation panel on the whole window, and back |
-| `Ctrl + Shift + D` | new [diagram](#diagrams) |
-| `Ctrl + O` | change vault |
-| `Ctrl + D` | select the word under the cursor; again, add a cursor on its next occurrence. What you type, delete or move then applies to every cursor, and one undo undoes it for all. `Esc` goes back to one cursor |
-| `Alt + click` | add a cursor where you click (not in a table) |
-| `Ctrl + K` | make the selection a link, `[text](address)`; on a link, select its address to change it (not over several cells of a table) |
-| `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` | bigger, smaller, default text size |
-| `Ctrl + Shift + C` | copy the code block the cursor is in, otherwise the whole note (also the icon at the bottom right, for the note) |
-| `Ctrl + click` | open a `[[link]]`, a `#tag`, a URL or a `[text](address)` link |
-| `Ctrl + V` | over a selection, a pasted address makes it a link |
-| Right click | in a note, a menu: open the link under the pointer or copy its address, cut, copy, paste, bold, italic, underline, strikethrough, highlight, code, make or edit a link, comment, turn the lines into a list |
-| `Shift + F10`, the `Menu` key | the same menu from the keys, at the cursor; in the panel, the menu of the selected line. Arrows, `Home`, `End` walk it, `Enter` runs, `Esc` closes and gives the keys back |
-| `Alt + Enter` | on the line of an embedded section (`![[Note#Heading]]`), open its note at that section |
-| `Alt + =` | in a table, write a total in the cell: the sum of the cells above, or on its left |
-| `Ctrl + Alt + C` | in a table, copy the taken cells (or the table) with the results of their formulas, for a spreadsheet |
-| `Ctrl + Shift + M` | comment the selection (without one, the line; in a table, the cell, or the grabbed row, column or table); on a comment, resolve it: the markup goes, the text stays |
-| `F10`, `Ctrl + Shift + P` | the command palette: every command the view can do, grouped, those of what you are on first; type to filter, `Enter` runs, `Esc` closes; also the first button of the rail, or `>` typed in the palette |
-| `F1`, `Ctrl + /` | the list of shortcuts, inside the app, opened on the keys of what is on display (a CSV table, a diagram, a table of the note): a link per section at the top; type to search it, by key or by effect (`ctrl+p`, `graph`), `Esc` empties the search, then closes; click the keys of a row to change them (see [Changing a shortcut](#changing-a-shortcut)); at its foot, the version of Bref and links to its source and to its Ko-fi page |
-| `Alt + Left`, `Alt + Right` | back to what was shown before, and forward again (`Cmd + [`, `Cmd + ]` on macOS); also the back and forward buttons of the mouse, the two arrows at the top of the rail, and **Back** / **Forward** in the palette. Like a browser: opening something after going back drops what was ahead. A note only previewed (arrows in the tree, a click in the graph) does not count, a renamed file is followed, a deleted one is skipped. The history is not kept between two launches: the recent notes are. |
-| `Ctrl + \`, `Ctrl + Alt + \` | split the pane: a new pane to the right, or below. It opens on the palette, to choose what goes there. A pane is split only if both halves keep room to write (300 px wide, 200 px high); otherwise a message says so, and the very first split folds the panel onto its rail when that is enough. `Alt + Shift + arrows` move to the pane on that side, `Ctrl + 1` and `Ctrl + 2` to the first and second pane, `Ctrl + W` closes the tab that has the focus, and the pane with its last tab: its neighbour takes its room. `Alt + Shift + Enter` puts the pane on the whole window, and back; a window too small for every pane shows the one with the focus alone, and all of them again once it is big enough. The palette has **Move the tab to the pane on the left** (right, above, below; a pane is split off when there is none on that side) and **Even out the panes**. In the palette, `Ctrl + Enter` opens the chosen note in the pane beside; so do **Open to the side** in the menu of the tree and `Ctrl + Shift + click` on a `[[link]]`. **Drag a tab** to arrange the window: dropped on a tab bar, it moves there (a line shows where); on the middle of a pane, it joins it; near one of its edges, the pane splits on that side and the tab takes the new half. The part that would receive it is tinted while you drag, and `Esc` lets go without moving anything. A file dragged from the tree does the same; a folder opens as its list page. Every border between panes can be dragged, down to the smallest size of a pane, and a double click shares that split evenly. The palette, the tree and the shortcuts act on the pane that has the focus, marked by a line at its top. A note already shown in one pane is not opened twice: the focus moves to it. The layout comes back at the next launch. |
-| `Ctrl + Shift + S` | sync the vault with git (see [Syncing a vault](#syncing-a-vault)); also **Sync the vault** in the palette |
-| `Ctrl + Q` | quit |
-
-In the palette, type to search; `Enter` opens the selected note. Each note row shows its folder and, on the right, how long ago it was written, and a line of keys under the list reminds the main gestures. Notes whose name matches come first (CSV tables, pictures and diagrams are found by their file name too, `contacts.csv`), then the notes whose text contains every word you typed (from two letters), with the line where the first word appears. If no note has that name, the last row creates it. Typing `#` lists the notes carrying a tag, typing `>` switches to the command palette (`>bold`, `>delete row`); `Enter` runs the command where you were. Without anything typed, on a CSV table or in a table of a note, the palette offers their gestures under the recent notes. Commands are found by any of their words, accents ignored: typing `folder` offers *New folder*, and `table` offers the settings of the CSV table on display (delimiter, encoding, header row, copy as, export); `diagram`, `theme`, `font` and `update` offer theirs too.
-
-| Key | While editing |
-|---|---|
-| `Enter` | continue the list; on an empty item, leave the list |
-| `Tab`, `Shift + Tab` | indent, outdent (the selected lines, or the current list item) |
-| `Ctrl + Enter` | check or uncheck a task or a `[ ]` box; turn a bullet into a task; in a table cell, add a box |
-| `Ctrl + Shift + B` | turn the selected lines (or the line of the cursor) into a list, then into the next kind each time: bullets, numbered, tasks, plain text. The right-click menu and the palette (`bulleted`, `numbered`, `task`, `plain text`) go straight to the kind you want, and the same kind again gives back plain text. Indentation is kept, a numbered list restarts at 1 on each level, a ticked box stays ticked from one task list to another; headings, tables, quotes and code are left alone. One `Ctrl + Z` undoes it. Each kind can also be given its own key in the help panel |
-| `Ctrl + B`, `Ctrl + I`, `Ctrl + U` | bold, italic, underline: the selection is wrapped in `**` `*` `<u>`, and the same key takes the style off again. Without a selection, the signs are inserted and the cursor waits between them. In a table, a selection over several cells, or a row, a column or the whole table taken by its grip, styles the text of each cell (`\| **Léa** \| **31** \|`), never a `|`; empty cells are skipped, and one `Ctrl + Z` undoes the whole gesture |
-| `Ctrl + Shift + X`, `Ctrl + Shift + H`, `Ctrl + Shift + K` | strikethrough, highlight, inline code. Over several lines each line gets its own signs (the bullet, the blanks and code blocks stay as they are), and a selection that already has the style loses it |
-| `Ctrl + Z`, `Ctrl + Shift + Z` | undo, redo |
-| `Ctrl + ←` `→`, `Ctrl + Backspace` | move, delete by word |
-| `Ctrl + Home` `End` | start, end of the note |
-| `Ctrl + A` `C` `X` `V` | select all, copy, cut, paste |
-| Double click, triple click | select a word, a line; keep dragging to extend by words, by lines |
-
-### Changing a shortcut
-
-The shortcuts in this README are the default ones; the help panel (`F1`) always shows the ones in effect.
-
-- Click the keys of a row, or move to it with `Down` and press `Enter`: the row waits, and the next combination you press becomes its shortcut, at once. `Esc` cancels, `Backspace` leaves the action with no shortcut.
-- A combination already used where the action applies is not taken: the row says by which action, and `Enter` (**Replace**) gives it to the new one, the other being left without a shortcut. The same keys in two views that never meet (a table and a diagram) are not a conflict.
-- A key alone that types text, and the keys the text and the views need (`Enter`, `Tab`, the arrows…), are refused, with the reason. A combination your system usually keeps for itself is accepted with a warning.
-- A changed row is highlighted and has a **default** button; **Reset all**, at the top of the panel, puts every shortcut back.
-- The right-click menus and the palette show the keys in effect next to each action that has a shortcut, so a change made here shows there too.
-- Rows without a button are not key bindings (a click, a palette command, something you type): the search finds them, but they cannot be changed.
-
-Only what you changed is kept, one `action=keys` line each, in the `keys` file of the configuration folder (`~/.config/bref/` on Linux), next to `settings`. `secondary` stands for `Cmd` on macOS and `Ctrl` elsewhere. A line that cannot be used (unknown action, unreadable keys, keys already taken) is ignored and reported at launch; the default stays.
-
-### Capture
-
-An idea rarely comes while Bref is open. `bref --capture` opens a window that is one line and nothing else, as fast as the app itself: type, press `Enter`, and the line is added to the note of the day as a list item (`- call Léa`; type `- [ ] ` first to make it a task). The note is created if the day has none yet, and found wherever you keep your daily notes in the vault. `Esc`, or a click beside the line, closes the window without writing anything.
-
-To have it under a key, open the palette (`Ctrl + P`), type `capture` and choose **Set up the quick capture shortcut**:
-
-- **GNOME**: done. Bref adds the shortcut `Super + Shift + N` to your keyboard settings and tells you so. If those keys are already used, it takes none and says so: give it the keys you like in Settings › Keyboard › Custom Shortcuts, under *Bref: capture*, where you can change them at any time. Asking again never adds a second one.
-- **Elsewhere** (KDE, macOS, Windows…): an app cannot take a system-wide shortcut by itself, so Bref copies the command to the clipboard, ready to paste into a new shortcut of your system settings.
-
-Without any setup, on Linux, right click the icon of Bref in the dock or the app grid: **Quick capture** is there.
-
-If Bref is open on today's note, the line appears there a moment later. Without a vault chosen yet, the command opens Bref as usual.
-
-### Outline
-
-`Ctrl + Shift + O` lists the headings of the note, indented by level, with the section the cursor is in selected. Type to filter; `↑` `↓` show each heading in place as you move, `Enter` leaves the cursor there, `Esc` puts it back where it was. Headings inside code blocks are not listed.
-
-### Find and replace
-
-`Ctrl + F` opens a search bar at the top right of the note. Matches are highlighted as you type, the current one more strongly, with its rank (`3 / 12`). The search runs on the text of the file, so Markdown markers (`**`, `[[`) can be searched too, and it works inside tables and code blocks. A selection held on one line becomes the search; the first key typed replaces it. A selection over several lines keeps the search to those lines, as long as the `in the selected lines` button is on. The search and the replacement are kept when the bar closes, and come back selected. Both fields edit like any other: cursor, selection, word moves, paste, and the input method of your language (Japanese, dead keys); a long search scrolls in its field.
-
-| Key | In the search bar |
-|---|---|
-| `Enter`, `Shift + Enter` (or `F3`, `Shift + F3`) | next, previous match, wrapping around |
-| `Alt + C`, `Alt + W` | match case, whole words (also the `Aa` and `“ab”` buttons) |
-| `Ctrl + Shift + Enter` | replace across the whole vault (also the `Vault…` button), with the same options: Bref first shows how many matches in how many notes, and writes nothing until you accept. `Undo the replacement in the vault` in the palette puts every note back, except those changed since |
-| `Alt + R` | regular expression (also the `.*` button): `^` and `$` are the ends of each line, and the replacement can reuse the groups, `$1` |
-| `Ctrl + R` | show the *Replace with* line (also the chevron on the left of the bar); with the bar open, `Ctrl + R` and `Ctrl + F` switch modes and the keys go to the matching field, the search and its options kept. `Tab` moves between the two fields |
-| `Enter` in *Replace with* | replace the current match and go to the next (also the first button beside the field) |
-| `Ctrl + Enter` | replace every match (also the second button); a single `Ctrl + Z` in the note brings them all back |
-| `Esc` | close; the cursor stays on the current match |
-
-A regular expression that does not compile says « Invalid expression » in the bar. Click in the note to edit it while the bar stays open: the matches follow the text, `F3`, `Alt + C` and `Alt + W` still work, and `Esc` closes the bar. With no bar, `F3` opens it.
-
-### Search the vault
-
-`Ctrl + Shift + F` (or the rail's icon with lines and a magnifier) shows the search of the whole vault in the panel, on the search of the note's bar when it is open. It takes the same options as the bar (`Alt + C`, `Alt + W`, `Alt + R`, or `Aa`, `“ab”`, `.*`). Under the count of matches and notes, each note that has the search lists its matches, one line each, with its line number and the match marked; a note's header folds its matches. `↑` `↓` walk the list, `Enter` or a click opens the note on that match, with its bar on the same search; `Esc` gives the keys back to the note. The search runs in the background as you type, and follows the notes as they change, from outside the app too.
-
-`Ctrl + R` (or the chevron) shows the *Replace with* line. Its button, `Ctrl + Enter` or `Enter` in the field replaces in every note, after showing how many matches in how many notes, and writes nothing until you accept; `Undo the replacement in the vault` in the palette puts every note back, except those changed since. The button on a note's header replaces in that note only. The cross at the end of a match sets it aside: neither listed nor replaced. A note that cannot be written is said, the others are replaced.
-
-## Navigation
-
-A rail of icons stays on the left of the window. It opens a panel beside the note, in one of seven views:
-
-| View | Key | Shows |
-|---|---|---|
-| Tree | `Ctrl + E` | the vault and its folders; the open note is highlighted |
-| Recent | `Ctrl + Shift + T` | every note, from the most to the least recently opened |
-| Graph | `Ctrl + G` | one dot per note, one line per `[[link]]` between two notes |
-| Tags | `Ctrl + T` | every `#tag` of the vault with its number of notes; unfold a tag to see them |
-| Backlinks | `Ctrl + L` | the notes that link to the open note, each with the line that holds the link |
-| Calendar | `Ctrl + Shift + J` | one month; today is a round pill, a dot under each day that has its daily note; the last days of the neighbouring months are dimmed and open their note too. Arrows change the day, `Page Up` and `Page Down` the month, `Enter` or a click opens the note of the day, or creates it. The week starts on Monday in French, on Sunday in English |
-| Search | `Ctrl + Shift + F` | every match of a search in the text of the vault, note by note (see [Search the vault](#search-the-vault)) |
-
-Backlinks follow the note you open, not the one you preview while moving through the list, so you can look at each linking note in turn. Links written with an alias (`[[Note|alias]]`) and links inside tables count.
-
-The same keys work in every view (the calendar has its own arrows, see above):
-
-| Key | Action |
-|---|---|
-| `↑` `↓` | select a note and preview it beside the panel, in a single tab in italics (in the graph, a click too) |
-| `Enter`, or a click | open the note in its tab and start typing |
-| `←` `→` | tree and tags: fold or unfold a folder or a tag; graph: move to the nearest note on that side |
-| `Tab` | graph: walk through the notes linked to the selected one |
-| `Esc` | back to the note |
-| `Tab`, `Shift + Tab` | tree, recent and tags: go along the buttons of the panel and of the rail; a ring shows which one has the keys, `Enter` or `Space` presses it |
-| `F2`, `Delete` | tree, recent and tags: rename the selected note or folder, move it to the trash |
-| `Ctrl + Shift + N` | new folder, next to the selected line of the tree |
-
-A previewed note only counts as opened, and moves to the top of the recent list, once you click or type in it: its tab then stays.
-
-- **Sizes**: drag the line between the panel and the note. Dragged all the way left, the panel folds back to its rail; all the way right, it takes the whole window. Double-click the line for the default width. `Ctrl + M`, or the arrows button at the top of the panel, also switches to the whole window and back.
-- **Folding**: pressing the key of the view on display, or clicking its icon, folds the panel. The rail stays: back and forward, the six views, search and new note at the top; the trash, the sync of a vault kept in git (it turns while it runs, a red dot says the last one failed), backup, theme and help at the bottom.
-- **Graph**: a dot per note, bigger with its links; the open note is in the accent colour, its neighbours and their lines darker, notes without links on a ring around the rest (a rounded square is an attachment). Names show for the open note, its neighbours and the most linked notes; pointing at any dot shows its name. Drag the background to move around and scroll to zoom. Pointing at a note lights up the notes it is linked to. Drag a note to move it: the notes linked to it follow, the closest ones the most. The target button glides back to the whole graph. With the graph on the whole window, a click only selects: `Enter` or a double click brings the note back.
-- **Folders**: the double-chevron button at the top of the tree folds every folder; when they are all folded, it unfolds them all.
-- **New note from the tree**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line. The button to the left of the folder one, at the top of the tree, creates it at the root of the vault instead, whatever is selected.
-- **New folder**: the folder button, `Ctrl + Shift + N`, or `new folder` in the palette. The field says where the folder goes.
-- **Right click** on a line for its menu, or `Shift + F10` (the `Menu` key) on the selected line: open, new note here, new folder, copy the `[[link]]`, the path or the path relative to the vault, show in the file manager (Finder, Explorer), duplicate (`Ctrl + D`), rename, move to a folder chosen in a list (what dragging does), set an icon (arrows and `Enter` in its grid), move to the trash. A right click below the last line acts on the vault itself. For the open note, the same entries are in the command palette (`open in the other pane`, `copy the path`, `icon of the note`…).
-- **Several lines at once**: `Ctrl + click` adds a line to the selection or takes it out, `Shift + click` selects everything from the last line chosen. Dragging, duplicating, copying links or paths and moving to the trash then apply to all of them.
-- **Drag and drop**: in the tree, drag a note or a folder onto a folder to move it there, or below the last line to move it to the top of the vault. Nothing is ever overwritten: if the name is taken, the move is refused.
-- **Renaming** a note whose first line is its name rewrites that line too, so both stay in step. The `[[links]]` to it in the other notes follow, see [Notes and vault](#notes-and-vault).
-- **The trash** is the hidden folder `.trash` at the top of the vault: deleting moves the note or the folder there, and never destroys anything. To take something back, click the bin at the bottom of the rail (or type `trash` in the palette): it lists the trash, and `Enter` returns the chosen item to the top of the vault (the trash does not remember where it came from), under another name if its own is taken. Moving something to the trash shows a message with **Undo**, which puts it back exactly where it was (its folder is made again if it is gone, and nothing is overwritten). Empty the trash with your file manager.
-
-Names are sorted as in a file manager: `Note 2` before `Note 10`. Pointing at an icon of the rail or of a bar names it, with its shortcut.
-
-Bref reopens with the panel as you left it.
-
-## Appearance
-
-- **Theme**: the half-filled circle at the bottom of the rail, or `theme` in the palette. Each theme is applied as you move through the list, so you see it before choosing: `Enter` keeps it, `Esc` goes back to the one you had. `Default` follows the light or dark setting of your system. In every theme, links, secondary text and the titles of colored panels are adjusted to read at a contrast of 4.5:1 at least (WCAG AA).
-- **Look**: the window is a warm ground (a little darker than the page, in every theme) on which the note, the panel and the right dock lie as rounded sheets, eight pixels apart; the active pane of a split has a thin accent ring. The open row of a list, a tag in the text, a commented passage and the current tab take a quiet tint of the accent; tables and code blocks have a rounded band; menus, the palette, help and notices float above, with a shadow.
-- **Fonts**: Bref carries IBM Plex Sans (text), IBM Plex Mono (code) and IBM Plex Serif (page titles), under the SIL Open Font License (`assets/fonts/`), so it looks the same everywhere without installing anything. Type `font` in the palette (`Ctrl + P`) to choose another font, for the app or for the code, among those installed on your system; type in the list to filter it. Ideograms and emoji, which Plex does not draw, come from a font of your system.
-- **Text size**: `Ctrl + +` and `Ctrl + -`, `Ctrl + 0` for the default. Headings and code scale with it, and so does the width of the text column. The interface around the note (panel, rail, menus, palette, help) follows too, from 85 % to 150 %, so that it stays usable at either end.
-- **Page width**: `page width` in the palette sets how wide the text column is (narrow, normal, wide, or the full window), kept in `settings` as `page=narrow|normal|wide|full`. A table wider than the text does not have to scroll inside it: `wide tables` in the palette chooses between staying in the column, where it scrolls sideways, and spilling out on both sides, centered on the window (the default; `wide=column|center`). A small table keeps its own size, and nothing goes past the window.
-
-- **Formatting bar**: `formatting bar` in the palette shows or hides the bar under the note (`bar=on|off` in `settings`). It sits in the middle of the strip under the note, the word count and the copy button at the right on the same strip; it slides left when the word count needs the room, and when the note is too narrow for both it folds into one button, in the same middle (a letter with an underline), that opens it above the text, its buttons wrapping onto several lines in a very narrow window. `Esc` or a click in the text closes it.
-- **Animations**: `animations` in the palette turns the short fades off (`motion=on|off` in `settings`). When on, the panel, the formatting bar and a folder of the tree fade in over about 0.13 s as they open; nothing moves on typing, scrolling or the caret, and no fade delays a result. Hovers and closing are instant.
-
-These choices are kept in a file named `settings`, next to the [config file](#notes-and-vault).
-
-## Markdown
-
-What you type is what is saved. Bref only changes how it looks.
-
-| Type | You get |
-|---|---|
-| `# `, `## `, `### ` | headings |
-| `- `, `* `, `+ ` | a bullet list |
-| `1. ` | a numbered list, renumbered as you add, remove or indent items |
-| `[] ` or `- [ ] ` | a task; click the box or press `Ctrl + Enter` to check it |
-| `[ ]` or `[x]` | a box on its own, in a sentence or in a table cell; click it or press `Ctrl + Enter` next to it |
-| `> ` | a quote |
-| `> [!NOTE]` | a colored panel, made of that line and the quote lines after it. `NOTE`, `TIP`, `IMPORTANT`, `WARNING` and `CAUTION` each have their color, as on GitHub |
-| `\| a \| b \|` | a table, see [Tables](#tables) |
-| `` ``` `` then `Enter` | a code block, closed for you. Name the language (`` ```rust ``) to get it colored; the copy icon, on its first line, copies its content |
-| `---` | a divider |
-| `**bold**`, `*italic*`, `<u>underlined</u>`, `~~struck~~`, `==highlighted==`, `<mark class="green">colored</mark>`, `` `code` `` | inline styles (`<u>` because Markdown has no underline; `==` for highlights, but not inside a word, so `abc==` of an address stays as it is; `<mark>` is the HTML tag, with `yellow`, `green`, `blue`, `pink` or `purple` as class, so other apps still show it highlighted) |
-| `[[Note name]]` | a link to another note, with suggestions as you type |
-| `#tag` | a tag, usable as a filter in the palette |
-| `https://…` | a link, opened in your browser |
-| `![](picture.png)` or `![[picture.png]]` | the picture, under its line. It is looked for next to the note, at the top of the vault, then by its file name anywhere in the vault |
-| `Ctrl + V` with a picture in the clipboard | the picture is saved next to the note, and its `![](…)` line inserted |
-| `` ```mermaid `` | a [Mermaid](https://mermaid.js.org) diagram, drawn under its block once the cursor has left it; the magnifier next to the copy button shows it full size, to zoom and move around |
-| `$x^2$`, `$$…$$`, or lines between two `$$` lines | a LaTeX formula, drawn under its line |
-| `->`, `<-`, `<->`, `=>`, `<=>`, `!=`, `<=`, `>=` | shown as →, ←, ↔, ⇒, ⇔, ≠, ≤, ≥, except on the line you are editing and inside code |
-
-Footnotes are kept as you typed them, without special rendering. So are pictures given as a web address. A formula is drawn under its line, not within the text, and only the first one of a line.
-
-### Slash commands
-
-Type `/` at the start of a line or of a word: a list offers what can be inserted there. Keep typing to filter it by name (`/h2`, `/todo`, `/table`) or by label (`/panel` lists the five panels), `Up` and `Down` to choose, `Enter` or `Tab` to insert, `Esc` to dismiss.
-
-| Command | Inserts |
-|---|---|
-| `/h1`, `/h2`, `/h3` | a heading |
-| `/list`, `/num`, `/todo` | a bullet list, a numbered list, a task |
-| `/note`, `/tip`, `/important`, `/warning`, `/caution` | a colored panel |
-| `/quote`, `/rule` | a quote, a divider |
-| `/code`, `/mermaid`, `/math` | a code block, a Mermaid diagram, a formula, with the cursor inside |
-| `/table` | a table, after you chose its size |
-| `/link`, `/image` | `[[` or `![[`, and their suggestions |
-| `/date` | today's date (`2026-10-09`), in place |
-| `/meta` (also `/tags`, `/alias`) | a YAML front matter at the top of the note, wherever you are, with the cursor between the brackets of `tags: []`; if the note has one, the cursor goes there |
-
-### Dropping files
-
-Drag files or folders from your file manager onto the window; the originals never move, and nothing is overwritten (a name already taken becomes `name 2`).
-
-- **On a note**: a line shows between two lines of the text (never inside a table, a code block or the YAML header), and a label next to the pointer says where it will land. The items are copied next to the note, like a pasted picture, and each gets a line at that place: `![[photo.png]]` for a picture, `[[note]]` for a Markdown note, `[[rapport.pdf]]` for a file the vault lists, `[[Folder]]` for a folder. One `Ctrl + Z` takes the lines back (the copies stay).
-- **On the tree**: the folder under the pointer is tinted (on a file, the folder that holds it), the label names it, and a drop between rows goes to the root of the vault. The new files are shown and selected, and the message says how many files were copied and how many items were left out.
-- **What is copied**: folders with everything in them, except hidden files and symbolic links (they are counted, not copied); a folder is never copied into itself. The copy runs in the background, so a large video does not freeze the window.
-- **Files the vault lists**: pictures, CSV and TSV tables, and attachments (`pdf`, video and audio, archives, Office and OpenDocument files, `txt`, `json`…). They show in the tree and the palette, `[[name.pdf]]` opens them in the application of your system, and renaming one rewrites the links to it. Other types are copied but not listed, so no link is written for them.
-- **On the welcome screen**, a dropped folder becomes the vault. `[[Folder]]` opens the folder as a list when no note has that name.
-- Not possible: pasting files copied in a file manager (the toolkit only passes text and pictures), and video or audio playing inside a note.
-
-### Templates
-
-Put notes in a folder named `Templates` (or `Modèles`) at the root of the vault: each one is a template. Case and accents do not matter, and templates may sit in sub-folders. Templates are left out of the graph, the tags, the links and the notes to read again, and a `[[link]]` never points at one.
-
-- **New note from a template**: `new note from a template` in the palette, or *New note from a template* in the right-click menu of a folder of the tree. Choose the template, type the name of the note, and it is written in the folder selected in the tree (the root of the vault otherwise), opened, with the cursor where the template says. A name already taken is refused, nothing is overwritten.
-- **Placeholders**: `{{title}}` is the name you typed, `{{date}}` is `2026-10-09`, `{{time}}` is `09:05`, `{{cursor}}` is where the cursor goes (and disappears). Any other `{{word}}` stays as written.
-- **Insert a template**: `insert a template` in the palette puts one at the cursor, filled with the name of the open note; one `Ctrl + Z` takes it back.
-- **Make a template of a note**: `make a template of this note` in the palette saves the open note in the templates folder (created if there is none), its first `#` title turned into `{{title}}`.
-- **Today's note**: with a template named `Daily`, `Journal`, `Today` or `Note du jour`, `Ctrl + J` creates the note of the day from it.
-
-### Tables
-
-`/table` opens a grid under the cursor. Move the pointer over it, or use the arrows, to choose how many columns and rows you want, then click or press `Enter`: the empty table is written, and the cursor waits in its first cell. For a table larger than the grid, type its size while the grid is open, columns first: `12x5`.
-
-- A table is drawn as a grid, like on the web: columns share the width of the page, a long cell wraps inside its column and its row grows, and a short column keeps its natural width. Header row in bold, `:--` `:-:` `--:` under it align a column. The text underneath is plain Markdown: `|`, the line of dashes and the padding that keeps the columns aligned in other editors are not drawn.
-- `Tab` and `Shift + Tab` go to the next and the previous cell, whose content is selected: typing replaces it. After the last cell, `Tab` adds a row.
-- `Enter` adds a row under the one you are in. On a last row left empty, it removes that row and leaves the table.
-- Arrows move from cell to cell without stopping on the `|`; `Up` and `Down` follow the lines of a wrapped cell, then the cell below. `Backspace` and `Delete` stop at the edge of a cell. Selecting several cells and erasing, cutting or typing empties them without merging the columns.
-- `Ctrl + Shift + L`, `E`, `R` (`Cmd` on macOS) align the column of the cursor left, centered or right.
-- Two `+` buttons appear when the pointer or the cursor is on a table: the one below adds a row, the one on the right adds a column.
-- **Grips**: with the pointer over a table, a small grip (three dots) shows above the column and left of the row under it, and a round one near the top left corner. A click takes the column, the row or the whole table: it is outlined, `Ctrl + C` and `Ctrl + X` copy and cut it as a Markdown table (plain text: it pastes as a table in another note, an issue or a mail), `Delete` empties its cells (the shape of the table stays), and every gesture below applies to it. Drag a column or a row grip to move it (a line shows where it will land, `Esc` lets go; the header row stays first). The `+` that appears between two grips inserts a column or a row right there. A right click on a grip takes it and opens the menu. Tables of more than 1,500 rows have no grips.
-- **Rows and columns**: right click in a table for its menu, or type the name of the gesture in the palette (`row`, `column`, `sort`, `swap`): insert a row above or below, or a column left or right, duplicate, move or delete a row or a column, sort the rows on the column of the cursor (A to Z or Z to A: numbers by value, empty cells last, the header stays put), swap rows and columns, delete the whole table. They apply to every row and column the selection touches, and one `Ctrl + Z` takes a gesture back. `Alt + Up` and `Alt + Down` move the row (the header stays first), `Ctrl + Shift + Backspace` deletes it, or the columns taken by their grip; every gesture is in the help panel, where it can be given a key of its own. Deleting the header makes the next row the header; deleting the last column or row deletes the table. Tables of more than 1,500 rows keep only `Tab`.
-- **Formulas**: a cell that starts with `=` computes, and the file keeps the formula (other apps show its text). `=B*C`, `=sum(above)`, `=avg(B1:B9)`, `=round(B/C, 2)`, `=if(B>10, "big", "small")`. Columns are letters and rows are numbers counted from the first row under the header, as in a spreadsheet (`C2`, `B1:B10`); `B` alone is column B of the row the formula is in, so the same formula works on every line; `above`, `left` and `column` (the others of the column) are ranges by position. Functions: `sum`, `avg`, `min`, `max`, `count`, `round`, `abs`, `if`; operators `+ - * / ^ %` (`15%` is a hundredth, `7 % 3` a remainder), comparisons `= <> < <= > >=`, parentheses; arguments are separated by `,` or `;`, decimals in a formula are written with a point. The numbers of the cells are read as written: `1 234,5`, `1,234.5`, `12.50 €`, `$3`, `15%`; with a single separator it is the decimal one (`1,234` is 1.234: write `1 234` or `1,234.00` for a thousand), as in the sort of a table. Text and empty cells are left out of the sums. The result is shown in the cell, right-aligned, in another color; with the cursor in the cell the formula shows instead, ready to edit. A cell with no result shows `#ERR`, and pointing at it says why (unknown function, reference out of the table, a cell that depends on itself, a text where a number is needed, a division by zero…). Results follow what you type; only a table that has formulas is computed (a table of 1,400 rows with a running total in each takes about 25 ms per keystroke), and not a very large one. `Alt + =` writes a total in the cell (the sum of the cells above, or on its left when only those hold numbers; a cell with something else in it is not overwritten), and after `=` completion offers functions, ranges and the columns by letter or header. `Ctrl + C` on the cells keeps the formulas (it pastes back as formulas); `Ctrl + Alt + C`, or `copy the cells with their results` in the palette, copies the taken cells, or the table, with the results, as tabs and line breaks for a spreadsheet. Formulas are for the tables of a note, not for the CSV grid.
-- **Very large tables**: past 1,500 rows (a whole CSV turned into Markdown, for instance) a table is no longer laid out as one block. Its columns are sized from its first 300 rows, cells stop wrapping (what overflows is cut) so every row has the same height, and only the rows near the screen are drawn. A table of 300,000 rows opens in about 40 ms and typing in it takes under 10 ms. `Tab` and `Shift + Tab` still move between cells and `Enter` adds a row under the current one, but the columns of the text are not realigned as you type.
-- A table you type by hand works the same: `| a | b |` then `Tab` is enough, the line of dashes is written for you. A literal `|` in a cell is written `\|` and shown as `|`.
-- Columns of the text are aligned as you type, counting wide characters (ideograms, emoji) as two; a table too wide to stay aligned is written compactly. Only with more columns than the page can show, even at their narrowest, does the table scroll sideways (`Shift + wheel` or a horizontal swipe), following the cursor.
-- To remove a column, delete its cells by hand.
-
-Pasting keeps tables tidy. In a table, text goes into one cell on one line, its `|` escaped; cells copied from a spreadsheet or a web page (tab-separated) or from another Markdown table fill the grid from the current cell, adding rows and columns as needed. Anywhere else, a pasted Markdown table, or tab-separated cells, becomes a table on its own lines, aligned, with the line of dashes added.
-
-## Diagrams
-
-Mermaid turns text into a diagram. When you would rather place things yourself, `Ctrl + Shift + D` opens a canvas (also `New diagram` in the palette, and in the menu of the tree).
-
-| Key | Tool |
-|---|---|
-| `R`, `U`, `O`, `D` | rectangle, rounded rectangle, ellipse, diamond |
-| `C`, `P`, `N`, `T` | cylinder (a database), person (an actor), note, text |
-| `G`, `F`, `W` | package, frame (a system boundary, a composite state), swimlane: they hold shapes |
-| `A`, `L` | arrow, line |
-| `V` | select |
-
-Pick a tool, from its key or from the **dock** at the bottom of the canvas (select, shapes, arrows and relationships, text, library), then drag; a click drops the shape at its usual size. The shapes and the arrows open a menu that names each one with its key, and a shape can also be dragged from a menu or from the library and dropped on the canvas. Undo, redo and export are in a small cluster at the top left. Select something and a **bar floats over it** with what can be changed in it: it goes above the selection or below, whichever covers fewer shapes, wraps in a narrow window and hides while you drag.
-
-- **Keyboard**: with a menu open (shapes, relationships, the right click, the library), the arrow keys go along its rows and `Enter` picks the one that is lit; `K` opens and closes the menu of relationships; `1` to `6` give the selection one of the six colors. The buttons for the heads and the route of an arrow show their present state in their icon.
-- **Handles and right click**: point at a shape and it lights up with four handles, one in the middle of each side; drag one to another shape and an arrow is drawn, with the look of the last arrow or relationship picked. A right click opens the menu of what is under it: write in it, turn an arrow around, its route, duplicate, delete, fit a container; on the empty canvas, a text there, select all, fit.
-- **Arrows** started or ended on a shape hold on to it: move the shape, they follow. Dropped in the middle of a shape, an end leaves by the side that faces the other end; dropped near an edge, it stays at that spot (the dots shown while you drag). Select an arrow and drag one of its ends to hook it elsewhere.
-- **Routes**: an arrow is elbowed (right angles, leaving the shape by its side), straight or curved; with an arrow selected, a button of its bar goes from one to the next, and new arrows take the last one chosen. An elbowed arrow goes around the shapes in its way, by the path of fewest bends, and keeps it as long as nothing new stands in it (a frame or a swimlane is crossed, what is in it is not); an end hooked on a side keeps that side. Arrows between the same two shapes run side by side instead of stacked.
-- **Text**: `Enter` or a double click writes in the selected shape, or on the arrow; `Esc` when done. A double click on the empty canvas starts a text there. A shape grows to hold what you write. The texts of a diagram are styled with the marks of notes: `**bold**`, `*italic*`, `<u>underlined</u>`, `~~struck~~`, `` `code` ``. They show as typed while you write, and styled once you leave; the SVG file and the PNG export carry the styles. A diagram made before this keeps its stars as they are until you ask, with the italic button at the top left.
-- **Ends of an arrow**: besides the text in its middle, an arrow carries one at each end, a role, a multiplicity (`1`, `0..*`, `+items`). Two buttons of the bar over the arrow write in them, as does `Tab` (start, middle, end, one step of undo for the three) or a double click near an end. They are placed beyond the head, above a lying stroke and beside a standing one, so that they cover neither the shape nor the head; drag one along the stroke to move it away from the end.
-- **UML classes**: in a rectangle, a line made of `---` starts a new compartment: the name of the class on top (a stereotype line first, `«interface»`, `«enumeration»`, `«abstract»` or `<<interface>>`), then the attributes, then the operations, then any other; a later compartment can open with a title (`Responsibilities:`). A member is written as the specification does: `+ name`, `- /derived: Type[0..*] = default {readOnly}`, `# area(width: int): f32`; `+ - # ~` are the visibilities. `static` is drawn underlined and `abstract` in italics (the keyword is not drawn), an abstract class has its name in italics (`«abstract»` or `{abstract}` after it), an object (an instance) is written `name : Type`, or `: Type` with no name, and underlined; its slots are the attributes below it, `total = 12`, the literals of an enumeration stay as typed. What the notation does not read (a sentence, a comment) is drawn as typed, never refused.
-- **Containers**: a package, a frame or a swimlane holds the shapes dropped on it, to any depth: a shape drawn or dragged over one belongs to it, dragged out it leaves it, and one step of undo puts back both its place and its holder. Moving the container moves what it holds, copying it copies them with the arrows between them, removing it removes them. Resizing it leaves them where they are; the button of the bar that appears with a container selected, once it holds something, fits it around what it holds. An arrow can join a held shape to anything outside. The name of a package is in its tab, the lines after it under the tab; a frame has its title at the top left; a swimlane its name in its header.
-- **Package and object diagrams**: a package is a container (`G`): its name is in the tab and the lines after it, a qualified name such as `pkg::billing`, are under it; packages nest to any depth, and `«import»`, `«access»` and `«merge»` between them are in the relationships menu. An object diagram is made of boxes written `name : Type` with their slots, linked by arrows that carry a name in the middle and a role at each end.
-- **Use case diagrams**: a use case is an ellipse with its name (`O`); a line made of `---` in it starts the compartment of its extension points, under the name, behind a separator that stays inside the ellipse. The system boundary is a frame (`F`) that holds the use cases, the actors (`P`) stay outside, an association is a line (`L`), and `«include»` (`K` then `L`), `«extend»` (`K` then `E`, with its condition on the next line) and the generalization of actors or of use cases (`K` then `H`) are in the relationships menu.
-- **Library**: `S`, or the last button of the dock, opens a drawer of the shapes of each family of diagrams (a class, an abstract class, an interface, an enumeration, an object, a package, a note, an n-ary association; a use case, an actor, a system boundary), each with its text and its size, and of starting points: a new diagram that already holds a few of them (a class diagram, a use case diagram, a package diagram, a state machine, a sequence diagram, an activity diagram, a component diagram, a deployment diagram). Typing searches it (by name or family, accents and case ignored), `Enter` picks the first answer, a click on a row makes it the tool that draws the next shape (a click on the canvas draws it at its size, a drag at the size dragged), and a row dragged onto the canvas drops it there, inside the container it is over. `Esc` closes the panel.
-- **State machines**: a state is a rounded box (`U`) whose name is on top and whose internal activities, `entry / action`, `do / activity`, `exit / action`, are in a compartment under a `---` line; a composite state is a rounded container with its name in a header, and holds its substates, its regions cut by a dashed divider. The initial state (a filled dot), the final state, the choice (a small diamond), the junction, the fork and join (a bar), the shallow and deep history (`H`, `H*`), the terminate (a cross) and the entry and exit points are in the library (`S`). A transition is an arrow whose text is read as `trigger [guard] / effect`: the guard, between brackets, is in italics. A transition that stays in its state is a loop: with a shape selected, a button of the bar adds it and writes its label.
-- **Sequence diagrams**: lifelines (from the library, `S`) are side by side, their heads on one line; an arrow drawn from one to another (a lifeline is joined whole, whatever the height) is a **message**, and its height is not drawn but follows from its **order**: the first is under the heads, the next ones 44 below each other, so inserting one pushes the others down, and dragging one up or down puts it where its height says, in one step of undo, while the lifelines keep their places and grow to hold the last message. A call that waits (`K` then `F`, a filled triangle) opens an activation bar on the lifeline it reaches, closed by the answer (a dashed arrow, `K` then `D`) that comes back from it to the caller, nested bars for calls inside calls; an arrow from a lifeline to the same one is a loop on its right, and a call to oneself a short bar; `«create»` (`K` then `O`) brings a lifeline's head down to the message that creates it, `«destroy»` (`W`) ends its line with a cross, found and lost messages (`P`, `T`) have a dot at one end that stays where it was put. A button of the bar numbers the messages (`3: find()`): the number is shown, never typed. **Combined fragments** (`alt`, `opt`, `loop`, `par`, `break`, `critical`, `neg`, `ref`, in the library): with messages selected, picking one wraps them in it (a frame with the operator in its tab and the guard beside it, as wide as the lifelines they touch and as tall as they make it), otherwise it is a shape to draw. The first line of its text is the operator, each line after it an operand (`alt`, `[ok]`, `[else]`), a dashed line between operands; a message is picked through the fragment as usual, a message dragged into a fragment (or let go low in it, to reach the next operand) is held by it and dragged out leaves it, and fragments nest. Removing a fragment keeps its messages.
-- **Activity diagrams**: the library (`S`) has the nodes of an activity: an action (a rounded box), a call behaviour (the same, with a rake in its corner), an object node, the initial node, the activity final and the flow final (a cross in a circle), the decision and the merge (a small diamond), the fork and the join (a bar, which stretches to any length, horizontal or vertical), the activity frame (`act Name`) and the `«interruptible»` region (a dashed frame that holds shapes). The **swimlanes** are a column (a name in a header on top) or a row (a name in a header on the left); both hold the shapes dropped on them and move, copy and remove them together. A **pin** is a small square: dropped within a few pixels of the border of a shape it sits on that border, is held by the shape (it follows it, stays on its border when it is resized, and goes with it when it is removed), and its name is written outside; dragged far from every border it is let go. Control and object flows are arrows (`A`, `N`), their `[guard]` is their text. A starting point of the library is an order in two swimlanes, with a pin, a decision and two ends.
-- **Components and deployment**: the library (`S`) has the component (a box with its small icon in a corner), the **port** (the pin of activity diagrams: it sits on the border of the component, follows it and goes with it), the node, the device and the execution environment (3D boxes whose stereotype is their first line; they **hold** the shapes dropped on them, nodes inside nodes, and move, copy and remove them together) and the artifact (`«artifact»`). The provided and the required interface are the ball (`K` then `B`) and the socket (`K` then `Q`), meeting at one point when two arrows end there; the communication path is a line (`A`) with its stereotype as text (`«HTTPS»`); `«deploy»` (`K` then `J`) puts an artifact on a node, and `«manifest»` (`K` then `V`) makes it the form of a component. Two starting points: a shop and its payment service, and a laptop and a server.
-- **From Mermaid to the canvas**: when a `classDiagram`, a `sequenceDiagram` or a `stateDiagram` is enlarged (the magnifier of its block), a pencil button at the top left makes a canvas diagram of it, next to the note, which is not touched, and opens it to carry on by hand. Classes keep their members (`+String name` becomes `+ name: String`), stereotypes and relations with their multiplicities and labels; sequence diagrams keep their lifelines, their messages in order (`->>`, `-->>`, `-x`, `-)`), `autonumber` and their `alt`, `opt`, `loop`, `par`, `critical` and `break` blocks with their `else` branches; state diagrams keep their states and descriptions, `[*]`, choices, forks, joins and composite states. The shapes are placed by layers, parents above their children. What Bref cannot draw (notes, styles, `rect` colours, regions) is left out, and the toast says how many lines.
-- **Relationships**: `K`, or the arrows button of the dock, opens a menu of the UML relationships by family (associations, inheritance and interfaces, dependencies, messages), each with its name and its letter; a letter picks one, and with an arrow selected the first button of its bar names its relationship and opens the same menu: association (`A`), navigable association (`N`, an arrow), non-navigable end (`X`, a cross), aggregation (`G`, hollow diamond), composition (`C`, full diamond), generalization (`H`, hollow triangle), realization (`Z`, dashed, hollow triangle), dependency (`D`, dashed arrow) and its stereotypes `«use»` (`U`), `«import»` (`I`), `«access»` (`S`), `«include»` (`L`), `«extend»` (`E`), `«merge»` (`M`), the association class (`R`, a dotted line from a class that holds on to the middle of an association and follows it), the provided interface (`B`, a ball) and the required one (`Q`, a socket), the messages of sequence diagrams (below: `F` a call that waits, `O` `«create»`, `W` `«destroy»`, `P` found, `T` lost), and the n-ary association (`Y`, a small diamond). Picked with nothing selected, a relationship is the tool that draws the next arrow; with arrows selected, it changes them. A relationship is not marked in the file: an arrow is recognised from its two heads, its dashes and its stereotype, so one made by hand with the same look is the same relationship. With an arrow selected, two buttons of the bar still change the head at each end (none, arrow, triangle, diamonds, cross, ball, socket) and another makes it dashed.
-- **Selection**: click, `Shift` + click or `Ctrl` + click to add a shape or take it out, or drag on the empty canvas. Drag to move, on a grid; drag a corner to resize. The bar over the selection gives six colors, a tinted background, a dashed outline, duplicate and delete. `Delete` removes, `Ctrl + D` duplicates, `Ctrl + Z` undoes, the arrow keys move by one step.
-- **Guides**: the canvas has a faint grid of dots (one every other step of the grid shapes snap to); a dashed line shows when what you move lines up, by side or by middle, with another shape; with a shape tool picked, the shape it would drop follows the pointer as a dashed outline.
-- **View**: the wheel moves it and the middle button drags it. `+` and `-` zoom, as do `Ctrl` + wheel and the buttons at the bottom right; `0`, or a click on the percentage, fits the whole diagram.
-- **In a note**: `![](Diagram.svg)` or `![[Diagram.svg]]` shows the diagram, in the colors of your theme, and follows its changes. Typing `![[` suggests the diagrams and pictures of the vault.
-- **The file** is a plain SVG, saved at each change: it opens in a browser and displays on GitHub. It also carries its own source, which is what Bref reads to keep editing it. A diagram saved by a newer Bref than yours opens in the viewer, read-only, with a notice: your version would lose what it does not know if it saved the file.
-- **Export**: the button at the top left saves a PNG next to the diagram, dark on white.
-- **Enlarge from the note**: point at a picture (PNG, JPEG, GIF, WebP…), a formula, an SVG or a Mermaid diagram and a magnifier button appears at its corner (beside it when it is too small to hold it, as for a formula or a 1-pixel image). It opens the same viewer, with the same zoom and keys; `Ctrl` + wheel zooms around the pointer and dragging moves a picture. A click on the picture itself still places the cursor. A missing or unreadable picture has no button.
-- **SVG from elsewhere** (draw.io, Mermaid.js, Inkscape, a browser): it opens in a viewer, fitted to its width. Drag or use the wheel to move, `+` `-` (or `Ctrl` + wheel) to zoom from 5 % to 800 %, `0` to fit; `Esc` goes back to the note. It is drawn in tiles at the resolution of the zoom, so a diagram several thousand pixels tall stays sharp. Text written in HTML (draw.io labels, Mermaid.js) is turned into SVG text with its bold, colors and line breaks, and `light-dark()` colors follow the theme. In a note, `![](file.svg)` shows it the same way.
-- **Import**: `import` in the palette takes an Excalidraw file (`.excalidraw`) or a draw.io file (`.drawio`, saved without compression: untick *File › Properties › Compressed*). Shapes, texts, arrows and what they hold on to are kept; freehand strokes and pictures are not, and arrows are routed again by Bref.
-
-## CSV and TSV tables
-
-A `.csv` or `.tsv` file of the vault shows in the tree and opens in a grid, in place of the note. The file is read and written directly: there is no import, and the rows you did not touch are written back byte for byte.
-
-- **Detection**: the encoding comes from the byte order mark, else UTF-8 if the file is valid UTF-8, else Windows-1252. The delimiter (`,` `;` tab `|` `:` or space) is the one that splits most lines into the same number of fields, quotes respected. The first row is a header unless it holds numbers.
-- **Settings**: the bar above the grid shows the delimiter, the encoding and the header row; click one, or search `table` in the palette (`Ctrl + P`), to change it. The file is then read again that way, and the choice is kept for that file. *Detect automatically* forgets it.
-- **Moving**: the arrows, `Tab` and `Shift + Tab`, `Page Up` and `Page Down`, `Home` and `End` along the row, `Ctrl + Home` and `Ctrl + End` to the corners, `Ctrl + Up` and `Ctrl + Down` to the ends of the column. Click a cell, or use the wheel (`Shift` + wheel sideways) and the scroll bars.
-- **Selecting**: `Shift` + arrows, or drag with the mouse. Click a row number or a column header for the whole row or column, the corner or `Ctrl + A` for everything; from the keyboard, `Shift + Space` takes the whole rows of the selection and `Ctrl + Space` its whole columns, as in a spreadsheet. `Ctrl + click` (on a cell, a row number or a header) keeps what is selected and starts another selection: copy and cut take them all, one block under the other, `Delete` empties them all and `Ctrl + Delete` removes all their rows (all their columns, when they are whole columns). Typing and pasting go to the last one.
-- **Writing**: typing replaces the cell, `Enter` or `F2` opens it as it is, `Enter` validates and goes down, `Tab` validates and goes right, `Esc` cancels. `Delete` empties the selection.
-- **Columns and sorting**: the same gestures as the tables of a note, from the palette (`column`, `sort`, `row`) or from their own keys in the help panel: insert a column left or right of the selection, duplicate, move or delete the selected columns, move or duplicate the selected rows (`Alt + Up`, `Alt + Down` move them, the header stays on top), and sort the rows under the header on the column of the cursor, A to Z or Z to A (numbers by value, empty cells last). One `Ctrl + Z` takes each gesture back and the file gets its exact bytes again. The last column cannot be deleted. Columns and sorting read the whole file, which is fine up to a few hundred thousand rows; moving columns on a row shorter than they are leaves it a few empty cells longer after the way back.
-- **Gestures of the selection**: with whole columns selected (a click on their header, or `Ctrl + Space`), the bar above the grid names them next to the name of the file and offers, as icons, to insert a column left or right, move them, sort on them or delete them; with whole rows, to insert a row above or below, move, duplicate or delete them. Pointing at an icon names it, with its keys.
-- **Rows**: `Ctrl + Enter` inserts one below, `Ctrl + Shift + Enter` above, `Ctrl + Delete` (or `Ctrl + Shift + Backspace`, as in a note) removes the selected ones. With whole columns selected (`Ctrl + Space`), the same keys act on columns: as many empty columns to the right or to the left, or the selected columns removed. `Ctrl + Z` and `Ctrl + Shift + Z` undo and redo, a paste in one step.
-- **Copy and paste**: `Ctrl + C` copies the selection as tab-separated text, which spreadsheets and the tables of your notes paste as they are; `Ctrl + X` cuts it. `Ctrl + V` pastes cells from a spreadsheet, a Markdown table or CSV text from the selected cell, adding the rows that are missing; one value fills the whole selection. In a note, selecting cells of a Markdown table and copying gives a Markdown table instead; a spreadsheet pastes its lines in one column, so use the grid's copy for that.
-- **Copy as, export**: `copy table as` and `export table` in the palette (or the buttons of the bar) offer TSV, CSV (with the delimiter of the file), Markdown and JSON, for the selection, or the whole table when only one cell is selected. An export is written next to the table, under a name that is still free.
-- **Saved** about half a second after the last change, in the background, atomically, in the encoding and with the line endings of the file. A character the encoding cannot hold (a `€` in ISO-8859-1) is reported and the file is left alone. If another program rewrites the file and nothing waits to be saved, the grid reads it again.
-- **Limits**: files up to 1 GiB, read whole in memory (about the size of the file); no columns to add or remove, no sorting or formulas.
-
-## Syncing a vault
-
-A vault is a folder of plain files: there are two ways to have the same notes on every computer, and safely copied somewhere else. Pick one, never both: a git repository inside a cloud folder ends up corrupted.
-
-### With git: one action
-
-`Ctrl + Shift + S`, or **Sync the vault** in the palette, does everything, in the background, while you keep typing:
-
-1. the open notes are saved and everything that changed is committed;
-2. what the server has is fetched and merged;
-3. the result is sent.
-
-A message says what was sent and received, or why it failed.
-
-- **Conflicts**: two computers that changed different notes, or different parts of the same note, are merged without a question. When the same lines changed on both sides, both versions are kept, as Dropbox and Syncthing do: the note keeps the version of this computer, the other one is written next to it as `Note (conflict 2026-10-09 laptop).md`, and the sync completes. You never get `<<<<<<<` markers in a note. A note deleted on one side and edited on the other stays, edited.
-- **A vault that is not in git yet**: the same command asks for the address of an *empty* repository (create it on GitHub, GitLab, Codeberg, or on any server you reach by SSH with `git init --bare notes.git`), then connects the vault and sends its notes. The trash (`.trash`) is left out of the repository, through a `.gitignore`.
-- **On another computer**: **Clone a vault from a git address…**, in the palette or on the welcome screen, asks for the address and for a folder, and opens the clone as the vault.
-- **Requirements**: `git` must be installed, and able to reach the repository without asking anything (an SSH key, or a credential helper for HTTPS). Bref never shows a password prompt: a refused sign-in is reported. Without a name and an email in the git configuration, the commits are signed `Bref`.
-- **What it refuses**, with the reason and without touching anything: a merge or a rebase in progress, a detached HEAD, a branch that follows no branch of the server, a locked index, and a vault that is only a folder of a larger repository.
-- **Limits**: syncing is done when you ask, not on a timer nor when quitting. git syncs computers: there is no Bref on a phone, where the repository stays readable with another app.
-
-### With a cloud folder: nothing to do
-
-Put the vault in a folder synced by iCloud, Dropbox, Google Drive or Syncthing: Bref follows what changes there (see below), nothing more is needed.
-
-## Notes and vault
-
-- A vault is an ordinary folder. Notes in subfolders are found too; hidden folders (`.git`…) are ignored. New notes are created at the top of the vault, or in the selected folder when the tree is on display.
-- CSV and TSV files are part of the vault too: the tree lists them with the notes of their folder, and selecting one opens its grid in place of the note (see [CSV and TSV tables](#csv-and-tsv-tables)). They are not in the graph, and a note does not link to them. They can be renamed (they keep their extension), moved, duplicated or trashed like a note.
-- Pictures are part of the vault: the tree lists them under the notes of their folder, and the graph shows them as squares, linked to the notes that display them. Selecting one shows it in place of the note; it can be renamed (the notes that display it follow), moved or trashed like a note.
-- What other programs change in the vault (a sync tool, a script, another editor) is picked up in about half a second, without restarting: Bref asks the system to report changes (inotify, FSEvents, ReadDirectoryChangesW).
-- A note is saved shortly after you stop typing, and when you switch note or quit. Saving is atomic: a crash never leaves a half-written file.
-- A YAML front matter (a block that starts on the first line with `---` and ends with `---` or `...`) is shown dimmed and is never interpreted or rewritten: the title of the note is the first line after it, and renaming a note or rewriting its links leaves the block byte for byte as it was. Two of its keys are read: `tags` (`tags: [a, b]`, `tags: a, b` or a dashed list) count like `#tags` in the text, and each of the `aliases` is another name for the note, suggested after `[[` and followed by links, backlinks and the graph. Other keys and nested YAML are ignored.
-- **Backup**: click the arrow into a tray at the bottom of the rail (or type `back up` in the palette) and choose a folder: Bref writes there one archive of the whole vault, trash included, named after the vault and the date (`Notes 2026-10-09.tar.gz`), numbered if that name is taken. It refuses a folder inside the vault.
-- **Terminal**: type `terminal` in the palette to open the terminal of your system in the folder of the vault (Windows Terminal or the console on Windows, Terminal on macOS; on Linux the one named in `$TERMINAL`, else the one of the desktop). Bref has no terminal of its own.
-- **Status messages**: the outcome of an operation (a backup saved, a note restored, a failure) shows at the bottom right, with a spinner while it runs. A message goes away after four seconds (a long one stays a little longer), or as soon as you click it. A failure stays twelve seconds, until you click it or press `Esc`; it names the file and says why in words (`permission denied`, `not found`, `the disk is full`), never the raw system error.
-- **Unreadable things say so**: a Mermaid diagram or a `$$` formula that cannot be drawn, and a picture that cannot be read (a corrupt file, one of 0 bytes), show « Unreadable figure », « Unreadable formula » or « Unreadable image » under their source; a picture opened alone says « Loading… » while a big one is read. A vault that is no longer where the config left it is said on the welcome page. A vault that cannot be read (no permission) says so in the panel, with the reason and the folder, instead of looking empty, and offers another vault; a folder inside that cannot be read is marked « unreadable: » and the reason, the rest of the vault opens. An import of an Excalidraw or draw.io file counts what Bref cannot draw (« 3 items not imported »).
-- **Empty lists say so**: an empty tree, tag list or recent list, a note nothing links to, a palette search with no result (or with one letter, too little for the text search), a list page with no row, and a board with no column each show one soft line instead of a blank page.
-- A note opens with the cursor at the start of its body, under its title and its front matter: what you type first goes into the text, it does not rename the note.
-- A new note is named after its first line: `# Groceries` becomes `Groceries.md`, and the file is renamed when you change that line. A new note left empty leaves no file behind. A note whose file name did not already match its first line (typical of an existing vault) keeps its name, until you add or change a `# ` title on its first line: the file then takes that name.
-- `[[Groceries]]` finds the note by file name, in any subfolder, ignoring case.
-- When a note is renamed, from the tree or by changing its first line, the `[[links]]` to its old name are rewritten in every note, keeping their `|alias` and `#heading`. After a change of title, this happens when you leave the note, not at each keystroke. If another note still carries the old name, the links are left alone: they may be meant for it.
-- The vault and the notes you opened, most recent first, are remembered in a small text file (the navigation panel in a file named `layout` next to it, and the [appearance](#appearance) in `settings`):
-
-  | System | File |
-  |---|---|
-  | Linux | `~/.config/bref/config` |
-  | macOS | `~/Library/Application Support/bref/config` |
-  | Windows | `%APPDATA%\bref\config` |
-
-## Updates
-
-Once a day, in the background, Bref asks GitHub whether a newer version exists. If so, a discreet banner at the bottom of the window says so.
-
-Where Bref can install itself, the banner offers **Update** (also `Update Bref to …` in the palette): it downloads the new version, installs it, and restarts, with your notes saved first.
-
-| Installed with | What Update does |
-|---|---|
-| Windows installer | runs the new installer silently; it replaces `bref.exe` and opens Bref again |
-| macOS `.dmg` | replaces `Bref.app` in place (it needs write access to the folder that holds it, `/Applications` for most people) and opens it again |
-| Arch, prebuilt package | installs the new package with `pacman -U`, through `pkexec`, which asks for your password in a desktop window |
-
-Elsewhere (Windows zip, compiled from source, `bref-git`, other Linux distributions) the banner links to the download page: follow [Upgrading](#upgrading). If an update fails, Bref stays as it was and says why.
-
-Bref checks nothing but HTTPS: the files are not signed (see [Windows](#windows) and [macOS](#macos)), so an update is as trustworthy as downloading the same file by hand from this repository's releases.
-
-The check is the only network request the app makes until you press Update. It runs `curl` against `api.github.com/repos/alarboulletmarin/bref/releases/latest`, which sees your IP address and the client name `bref`, and nothing else. Without `curl`, or offline, nothing is shown. To check right away, without waiting for the next day, type `check for updates now` in the palette (`Ctrl + P`): Bref answers that it is up to date, or shows the banner. This works even when the daily check is off. Type `updates` in the palette to stop the daily check, or to resume: the choice is kept as `updates=off` in the `settings` file, and the time of the last check in the `update` file, both next to `config`.
-
-## Compatibility
-
-| System | Status |
-|---|---|
-| Linux, GNOME on Wayland | first-class: this is what Bref is built and used on (Arch Linux) |
-| Linux, other desktops, Wayland or X11 | should work, with the same built-in title bar. Not tested |
-| macOS, Windows | built and tested by CI on every commit, and the downloads are built there too; not used day to day by the author |
-
-- **Linux** needs a working Vulkan driver (Mesa or the vendor one). Bref draws its own title bar: GNOME under Wayland draws none for applications. Drag the window by the pill at the top right, by the title of the panel, by the empty part of the rail or of a table's bar (a double click maximizes it), or hold `Alt` and drag from anywhere. On macOS and Windows the system title bar is used.
-- **Language**: French if the system language is French, English otherwise. Bref asks the system (Windows, macOS) or reads `LC_ALL`, `LC_MESSAGES` and `LANG` (Linux, or any system when started from a terminal).
-- **Fonts**: IBM Plex Sans, Plex Mono and Plex Serif (page titles), built into the app.
-- **Accessibility**: every view can be reached from the keys, and every color pair stays readable in the 13 themes. A screen reader cannot read the window yet: the toolkit Bref is drawn with exposes no accessibility tree. Composing text with an input method (Chinese, Japanese, Korean, dead keys) works in notes, but in a table cell or a diagram shape the text is inserted as it is typed.
-
-## Troubleshooting
-
-**The window takes two seconds to open (Linux).** Another Vulkan driver is slow to load. Bref already skips the NVIDIA one when the machine has no NVIDIA card. To check what remains, run `VK_LOADER_DEBUG=driver Bref` in a terminal.
-
-**The window does not open, with an error about a surface or an adapter.** No usable Vulkan driver: install the one for your GPU (`vulkan-intel`, `vulkan-radeon`, `nvidia-utils`… on Arch; `mesa-vulkan-drivers` on Ubuntu).
-
-**Bold text is not bold.** The font you picked is a variable font, which the text engine cannot embolden. [Pick another font](#appearance), or none to go back to the built-in ones.
-
-**A note was not renamed after I changed its title.** Either another note already has that name, or the file name did not match the first line to begin with and that line is not a `# ` title you just added or changed, see [Notes and vault](#notes-and-vault).
-
-**I changed the vault from another program while Bref was open.** Bref is told by the system when the vault changes, and also looks at it every 30 seconds in case an event got lost (every two seconds when the system cannot watch the folder, for instance on some network drives, or when Linux has run out of inotify watches: raise `fs.inotify.max_user_watches`). Notes and folders added, renamed or removed elsewhere show up in the tree, the palette and the graph, and the note on display is read again when its file changes. If you were typing in that note at that moment, your version is kept and written back.
-
-**Limits.** The name field of a new folder or a rename only edits at its end: type, or erase with Backspace. Links written as plain text inside a code block are not followed when a note is renamed.
-
-## Speed
-
-Measured on the author's machine (Intel Core i9-13900H, Linux, release build), on vaults of 30-line notes linked to each other.
-
-| Vault | 1,000 notes | 5,000 notes | 20,000 notes |
-|---|---|---|---|
-| Window on screen | 75 ms | 60 ms | 75 ms |
-| Vault indexed, in the background | 20 ms | 90 ms | 275 ms |
-| Palette: to open, then per letter | 1.7 ms, 1.5 ms | 3.6 ms, 1.9 ms | 11 ms, 4 ms |
-| A note written by another program shows up | in 0.3 to 0.45 s | in 0.3 to 0.45 s | in 0.4 to 0.55 s |
-| Memory | 62 MB | 86 MB | 180 MB |
-
-| One gesture | Work before the frame is drawn |
-|---|---|
-| A letter in a short note | 1.1 ms |
-| A letter in a note of 1,000 lines | 1.2 ms |
-| A letter, an arrow or Enter in a note of 5,000 lines | 1.2 to 1.5 ms |
-| A letter in a table of 400 rows | 3.0 ms |
-| One notch of the mouse wheel | 1.1 ms |
-
-At rest Bref uses 0.3 % of one processor core.
-
-The first table comes from the running app (window, memory, outside change) and from the scale benchmark (index, palette). The second is the time Bref spends between a key and the frame it hands to the graphics card, measured without a display; drawing comes on top, and a screen at 120 Hz leaves 8 ms for both. To measure on your machine:
-
-```bash
-cargo test --release --locked -- --ignored --nocapture bench
-```
-
-## How it works
-
-[ARCHITECTURE.md](ARCHITECTURE.md) maps the code: its layers and where each feature lives.
-
-- **Editor**: a custom text element drawn directly with GPUI's text system. Each line is classified (heading, list item, quote, code…) and shaped with its own size and style runs; the text itself is never transformed. The layout is redone only when the text, the width, the theme or the cursor change, and then only for the lines an edit touched (the others are kept and shifted); a table of more than 1,500 rows is laid out light, with cells shaped only near the screen. A test compares every reused layout with a full one on thousands of random edits.
-- **CSV and TSV** (`src/logic/table.rs`, `src/views/sheet/`): the file is decoded once and kept as text with one small index entry per row, so a million rows cost about 12 MB; fields are read on demand, and a row you did not edit is written back as it was. The grid builds only the cells on screen. Encoding and delimiter detection, parsing, writing and the copy and export formats are pure functions with unit tests.
-- **Typing rules** (`src/logic/markdown/lists.rs`): pure functions decide what Enter and Tab do on a line and renumber the list around the cursor. They are unit-tested without any UI.
-- **Vault** (`src/platform/vault.rs`): the note list, its tags and its text are indexed off the UI thread when the vault opens, then kept up to date on each save. Changes made elsewhere are reported by the `notify` crate; the vault is also checked on a slow timer, which becomes the only mechanism when watching is not possible.
-- **Palette**: name matches first (substring, ranked by position, then subsequence; ties keep the most recently opened note first), then notes whose text contains every word, most recent first. The whole text of the vault is kept in memory for that, as written and in lower case: it is lowered once, when the vault is read, not each time the palette opens.
-- **Updates** (`src/platform/update.rs`): the latest release comes from the GitHub API through `curl`, at most once a day, off the UI thread, and so does the download. Reading the answer and comparing versions are pure functions with unit tests; swapping `Bref.app` from a disk image is tested on a real macOS by CI. `BREF_RELEASES_API` points the check at a local `file://` release description, to try an update without publishing one.
-- **Navigation** (`src/views/nav.rs`, `src/shell/sidebar.rs`): the tree is rebuilt from the paths of the indexed notes, and only the visible rows are drawn. 
-- **Graph** (`src/views/graph.rs`): a force-directed layout computed off the UI thread when the links change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
-- **Diagrams** (`src/logic/diagram/`, `src/views/canvas/`, `src/logic/import.rs`): shapes and arrows are plain data; the same outlines are drawn on the canvas and written to the SVG file, whose `<metadata>` holds one line of source per element.
-- **Figures and SVG** (`src/ui/svg.rs`, `src/views/viewer.rs`): Mermaid diagrams and SVG files are laid out and rasterized off the UI thread, at most one at a time per figure, and the previous version stays on screen until the new one is ready; a figure never exceeds 8,192 pixels a side or 16 million pixels. The viewer draws tiles of 512 pixels and keeps the last 64; a picture (`Source::Raster`) is not tiled, the graphics card draws it whole.
-- **Startup**: the last note is read before the first frame, so the window appears with its content. Icons are embedded in the binary.
-- **Window**: on Linux Bref draws its own title bar, shadow and resize edges (client-side decorations); on macOS and Windows the system does.
-
-## Development
-
-```bash
-cargo run                 # debug build
-cargo run --release       # what gets installed
-make test                 # cargo test --locked
-```
-
-The tests include an end-to-end run driven by simulated keystrokes (typing, lists, autosave, palette, links, navigation panel, file operations, CSV tables), using GPUI's test platform: no display needed. Ignored benchmarks measure vaults of thousands of notes, CSV files of 300,000 rows and notes with a table of 300,000 rows; run them with `cargo test --release --locked -- --ignored --nocapture`, each one reads its parameters from environment variables named in its doc comment.
-
-`Cargo.lock` started as a copy of the one GPUI 0.2.2 was published with: newer versions of some of its dependencies no longer build together. Update dependencies one at a time.
-
-Releasing (maintainer): `scripts/release.sh X.Y.Z` bumps the version, tags, pushes, creates the GitHub release (the Arch package is attached by `.github/workflows/arch-package.yml`) and pins the PKGBUILD checksum.
+| [Writing notes](book/src/writing.md) | Markdown, styles, lists, slash commands, blocks, several cursors |
+| [Tables and formulas](book/src/tables.md) | tables in notes, grips, formulas, very large tables |
+| [Links, embeds and files](book/src/links.md) | links, backlinks, tags, embedded sections, pictures, dropped files |
+| [Comments](book/src/comments.md) | annotating a passage, in a format other apps read |
+| [Daily notes, templates and capture](book/src/daily-notes.md) | today's note, the calendar, templates, quick capture |
+| [The palette and the panel](book/src/navigation.md) | the tree, the graph, the trash, icons |
+| [Tabs, panes and docks](book/src/tabs-and-panes.md) | arranging the window |
+| [Search and replace](book/src/search.md) | in a note, and in the whole vault |
+| [Kanban boards and list pages](book/src/boards.md) | a note as a board, a folder as a table |
+| [Diagrams](book/src/diagrams.md), [UML diagrams](book/src/uml.md) | the canvas, Mermaid, import, every UML notation |
+| [CSV and TSV files](book/src/csv.md) | the grid |
+| [Files on disk](book/src/vault.md) | naming, front matter, backup, configuration files |
+| [Syncing a vault](book/src/sync.md) | git in one key, or a cloud folder |
+| [Settings and appearance](book/src/settings.md) | themes, fonts, page width, changing a shortcut |
+| [Updates](book/src/updates.md) | how Bref updates itself, and what it sends |
+| [Keyboard shortcuts](book/src/shortcuts.md) | every shortcut, as the help panel lists them |
+| [Agents (MCP)](book/src/agents.md) | `bref mcp`: an agent reads, writes and draws in the vault |
+| [Compatibility](book/src/compatibility.md), [Troubleshooting](book/src/troubleshooting.md), [Performance](book/src/performance.md) | systems, known problems, measurements |
+
+## Contributing
+
+Bug reports and small fixes are welcome. For a feature, open an issue first. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the map of the code, [ARCHITECTURE.md](ARCHITECTURE.md). For a security problem, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)
