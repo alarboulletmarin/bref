@@ -34,9 +34,17 @@ Reading: the shape of the vault, a list, a search ranked like the palette, one n
 
 Writing: create a note, replace a passage that occurs once, append, rename (links follow, unless another note still has the old name), move to the trash and bring back, the daily note, a comment on one passage.
 
-Diagrams: check a Mermaid source, turn a class, sequence or state diagram into a canvas diagram, start from a template or from shapes and links, read and edit that file, import Excalidraw or an uncompressed draw.io file, and render a PNG of what was drawn. A diagram file is written by Bref. A flowchart stays a Mermaid block in a note.
+Diagrams: the agent draws on the same canvas as you, with the same UML shapes: lifelines, calls, replies, `alt`, `opt` and `loop` fragments, classes with their compartments, inheritance, composition. You can then move and edit what it drew. It can also start from a template, turn a Mermaid class, sequence or state diagram into a canvas diagram, import Excalidraw or an uncompressed draw.io file, and render a PNG of what it drew to check it. A diagram file is written by Bref. A flowchart stays a Mermaid block in a note.
 
 The user guide is a resource (`bref://guide/writing`, `links`, `comments`, `diagrams`, `uml`, and the other pages). Four prompts start a piece of work: document a feature, an architecture overview, a UML diagram from code, a review that leaves comments.
+
+## Asking for a documented feature
+
+Give the agent the work and say where it goes, for example:
+
+> Implement issue 93. Then document it in my Bref notes with the `bref` server: a note on what changed and why, a technical part, a class diagram of the main types and a UML sequence diagram of the main scenario, drawn on the canvas. Render each diagram and fix it until it is clean.
+
+Clients that show prompts offer the same as **document_feature**: it reminds the agent of the rules of a clean UML diagram (one scenario per diagram, lifelines in the order they take part, a reply for each call that waits, `alt` with a guard per branch). Ask for one diagram per question the reader has. A diagram that reads badly can be named in a second message: "the sequence diagram has too many lifelines, split the error path into its own".
 
 ## What it will not do
 

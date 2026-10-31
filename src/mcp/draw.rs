@@ -74,7 +74,7 @@ pub fn render(server: &mut Server, args: &Value) -> Outcome {
             Err(outcome) => return outcome,
         }
     };
-    match raster(&svg, width) {
+    match raster(&svg, width, theme) {
         Ok((png, w, h)) => Outcome::image(json!({"width": w, "height": h, "kind": kind, "path": shown}), &png),
         Err(message) => Outcome::err(message),
     }
@@ -356,12 +356,13 @@ fn mermaid_blocks(text: &str) -> Vec<String> {
     blocks
 }
 
-fn raster(svg: &str, width: Option<f32>) -> Result<(Vec<u8>, u32, u32), String> {
+/// A dark render is drawn on a dark ground: light ink on white is unreadable.
+fn raster(svg: &str, width: Option<f32>, dark: bool) -> Result<(Vec<u8>, u32, u32), String> {
     let tree = svg::parse(svg).ok_or("the picture could not be drawn")?;
     let (w, h) = (tree.size().width().max(1.), tree.size().height().max(1.));
     let want = width.map(|px| px / w).unwrap_or(2.).max(0.05);
     let scale = svg::scale_for(w, h, want);
-    let png = figure::png(svg, scale).ok_or("the picture could not be drawn")?;
+    let png = figure::png(svg, scale, if dark { 0x1e1e1e } else { 0xffffff }).ok_or("the picture could not be drawn")?;
     let (pw, ph) = png_size(&png);
     Ok((png, pw, ph))
 }
@@ -427,6 +428,13 @@ fn build(from: &Value) -> Result<(Diagram, usize), String> {
         made_links.push(id);
     }
     lay_out(&mut diagram, &unplaced);
+    // Outer fragments first: an inner one then goes inside the operand its messages are in.
+    for fragment in from.get("fragments").and_then(|v| v.as_array()).into_iter().flatten() {
+        let id = wrap(&mut diagram, fragment, &keys)?;
+        if let Some(key) = fragment.get("key").and_then(|v| v.as_str()) {
+            keys.insert(key.to_string(), id);
+        }
+    }
     diagram.fit_sequence();
     let _ = (made_shapes, made_links);
     Ok((diagram, 0))
@@ -497,10 +505,12 @@ fn lay_out(diagram: &mut Diagram, unplaced: &[u32]) {
             break;
         }
     }
-    for (i, id) in lives.iter().enumerate() {
+    // Side by side by their width: a long name does not run into the next head.
+    let mut x = 40.;
+    for id in &lives {
         if let Some(shape) = diagram.shape_mut(*id) {
-            shape.x = 40. + i as f32 * 180.;
-            shape.y = 40.;
+            (shape.x, shape.y) = (x, 40.);
+            x += shape.w.max(110.) + 70.;
         }
     }
 }
@@ -679,6 +689,13 @@ fn route_name(route: Route) -> &'static str {
 }
 
 fn relation_of(name: &str) -> Result<Relation, String> {
+    // The messages of a sequence diagram by their UML names: an answer is a dashed open arrow,
+    // a call that does not wait a plain one.
+    match name {
+        "reply" => return Ok(Relation::Dependency),
+        "async" => return Ok(Relation::Navigable),
+        _ => {}
+    }
     Relation::ALL.into_iter().find(|relation| relation_key(*relation) == name).ok_or_else(|| format!("unknown relation `{name}`"))
 }
 
@@ -727,6 +744,21 @@ fn apply(diagram: &mut Diagram, op: &Value, keys: &mut HashMap<String, u32>, sha
             shape.x = op.get("x").and_then(|v| v.as_f64()).ok_or("`x` is missing")? as f32;
             shape.y = op.get("y").and_then(|v| v.as_f64()).ok_or("`y` is missing")? as f32;
         }
+        "wrap" => {
+            let id = wrap(diagram, op, keys)?;
+            if let Some(key) = op.get("key").and_then(|v| v.as_str()) {
+                keys.insert(key.to_string(), id);
+            }
+            shapes.push(id);
+        }
+        "reorder" => {
+            let id = resolve_id(op.get("id").ok_or("`id` is missing")?, keys, diagram)?;
+            let to = op.get("to").and_then(|v| v.as_u64()).ok_or("`to` is the new place of the message, from 0")?;
+            if !diagram.messages().contains(&id) {
+                return Err("only a message (an arrow with a lifeline at an end) has a place".into());
+            }
+            diagram.reorder(id, to as usize);
+        }
         "relayout" => {
             let ids: Vec<u32> = diagram.shapes.iter().map(|s| s.id).collect();
             lay_out(diagram, &ids);
@@ -734,6 +766,55 @@ fn apply(diagram: &mut Diagram, op: &Value, keys: &mut HashMap<String, u32>, sha
         other => return Err(format!("unknown op `{other}`")),
     }
     Ok(())
+}
+
+/// A combined fragment (`alt`, `opt`, `loop`, `par`…) around messages, as the app's wrap does: it spans
+/// the lifelines they touch and goes inside the fragment they were in. `operands` lists, branch by
+/// branch, the messages of each (`messages` when there is one branch); together they are every message
+/// from the first to the last, in order.
+fn wrap(diagram: &mut Diagram, spec: &Value, keys: &HashMap<String, u32>) -> Result<u32, String> {
+    let text = spec.get("text").and_then(|v| v.as_str()).filter(|t| !t.trim().is_empty()).ok_or("`text` is the operator, then one [guard] line per branch: alt\n[ok]\n[else]")?;
+    let groups: Vec<&Value> = match (spec.get("operands").and_then(|v| v.as_array()), spec.get("messages")) {
+        (Some(groups), _) => groups.iter().collect(),
+        (None, Some(messages)) => vec![messages],
+        (None, None) => return Err("`operands` (a list of lists of messages) or `messages` is missing".into()),
+    };
+    let order = diagram.messages();
+    let mut ranked: Vec<Vec<(usize, u32)>> = Vec::new();
+    for group in &groups {
+        let mut ids = Vec::new();
+        for value in group.as_array().ok_or("each operand is a list of messages")? {
+            let id = resolve_id(value, keys, diagram)?;
+            let rank = order.iter().position(|m| *m == id).ok_or_else(|| format!("`{value}` is not a message (an arrow with a lifeline at an end)"))?;
+            ids.push((rank, id));
+        }
+        if ids.is_empty() {
+            return Err("an operand holds at least one message".into());
+        }
+        ids.sort();
+        ranked.push(ids);
+    }
+    if ranked.windows(2).any(|w| w[0].last().map(|m| m.0) >= w[1].first().map(|m| m.0)) {
+        return Err("the operands follow one another: every message of a branch comes after those of the branch before".into());
+    }
+    let all: Vec<u32> = ranked.iter().flatten().map(|(_, id)| *id).collect();
+    let (first, last) = (ranked[0][0].0, ranked.last().and_then(|g| g.last()).map_or(0, |m| m.0));
+    if last - first + 1 != all.len() {
+        return Err("list every message from the first to the last: a fragment cannot skip one".into());
+    }
+    let id = diagram.wrap(&all, text).ok_or("these messages cannot be wrapped: they must be in the same fragment and branch, and a ref holds no message")?;
+    let branches = diagram.shape(id).map_or(1, Diagram::operands) as usize;
+    if ranked.len() > branches {
+        return Err(format!("{} operands but {branches} guard line(s) in `text`: write one [guard] line per branch", ranked.len()));
+    }
+    for (k, group) in ranked.iter().enumerate() {
+        for (_, m) in group {
+            if let Some(link) = diagram.link_mut(*m).filter(|l| l.holder == Some(id)) {
+                link.operand = k as u32;
+            }
+        }
+    }
+    Ok(id)
 }
 
 fn update(diagram: &mut Diagram, op: &Value, keys: &HashMap<String, u32>) -> Result<(), String> {
@@ -814,6 +895,7 @@ fn update(diagram: &mut Diagram, op: &Value, keys: &HashMap<String, u32>) -> Res
 }
 
 fn described(diagram: &Diagram, path: &str, read_only: bool) -> Value {
+    let order = diagram.messages();
     let shapes: Vec<Value> = diagram
         .shapes
         .iter()
@@ -830,6 +912,7 @@ fn described(diagram: &Diagram, path: &str, read_only: bool) -> Value {
                 "fill": shape.fill,
                 "dashed": shape.dashed,
                 "parent": shape.parent,
+                "operand": shape.operand,
             })
         })
         .collect();
@@ -849,6 +932,10 @@ fn described(diagram: &Diagram, path: &str, read_only: bool) -> Value {
                 "end_text": link.end_text,
                 "dashed": link.dashed,
                 "relation": Relation::of(link).map(relation_key),
+                // A message's place from the top, and the fragment and branch it is in.
+                "order": order.iter().position(|m| *m == link.id),
+                "in": link.holder,
+                "operand": link.operand,
             })
         })
         .collect();

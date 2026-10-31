@@ -39,7 +39,7 @@ impl Shell {
         let canvas = canvas.downgrade();
         cx.spawn(async move |this, cx| {
             let drawn = cx.background_executor().spawn(async move {
-                let bytes = figure::png(&svg, 2.).ok_or_else(|| std::io::Error::other("PNG"))?;
+                let bytes = figure::png(&svg, 2., 0xffffff).ok_or_else(|| std::io::Error::other("PNG"))?;
                 let path = vault::free_path(file.parent().unwrap_or(Path::new("")), &vault::stem(&file), "png");
                 fs::write(&path, bytes).map(|_| path)
             });

@@ -83,12 +83,13 @@ pub fn latex(source: &str, display: bool, rgb: [u8; 3], size: f32) -> Option<Fig
 }
 
 /// The PNG image of an SVG, `scale` times larger than life, on a white background.
-pub fn png(svg: &str, scale: f32) -> Option<Vec<u8>> {
+pub fn png(svg: &str, scale: f32, ground: u32) -> Option<Vec<u8>> {
     use resvg::tiny_skia;
     let tree = crate::ui::svg::parse(svg)?;
     let size = tree.size();
     let mut pixmap = tiny_skia::Pixmap::new((size.width() * scale).ceil() as u32, (size.height() * scale).ceil() as u32)?;
-    pixmap.fill(tiny_skia::Color::WHITE);
+    let [_, r, g, b] = ground.to_be_bytes();
+    pixmap.fill(tiny_skia::Color::from_rgba8(r, g, b, 255));
     resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
     pixmap.encode_png().ok()
 }
@@ -149,7 +150,7 @@ mod tests {
         let png = |mut d: Diagram| {
             let id = d.add_shape(Form::Rect, 0., 0., 200., 90.);
             d.shape_mut(id).unwrap().text = text.into();
-            png(&d.to_svg(0x1e1e1e), 2.).unwrap()
+            png(&d.to_svg(0x1e1e1e), 2., 0xffffff).unwrap()
         };
         let (styled, plain) = (png(Diagram::blank()), png(Diagram::default()));
         // The same text, drawn with its marks or without: two different pictures.

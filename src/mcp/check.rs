@@ -298,6 +298,38 @@ fn diagrams_are_written_by_bref_and_can_be_seen() {
     })));
     let talk = ok(draw::read_diagram(&vault, &json!({"path": seq["path"]})));
     assert!(talk["links"].as_array().unwrap().iter().all(|l| l["from"]["life"].is_number() && l["to"]["life"].is_number()));
+    // A UML sequence drawn from shapes, not Mermaid: an alt with two branches, then an opt wrapped
+    // inside the first one, and a message moved.
+    let msg = |k: &str, from: &str, to: &str, relation: &str| json!({"key": k, "from": from, "to": to, "relation": relation, "text": k});
+    let lives = json!([{"key": "a", "form": "lifeline", "text": "Agent"}, {"key": "s", "form": "lifeline", "text": "A server with a long name"}, {"key": "d", "form": "lifeline", "text": "Disk"}]);
+    let links = json!([msg("call", "a", "s", "sync"), msg("write", "s", "d", "sync"), msg("done", "d", "s", "reply"), msg("ok", "s", "a", "reply"), msg("refused", "s", "a", "reply"), msg("event", "d", "a", "async")]);
+    let alt = ok(draw::create_diagram(&mut vault, &json!({"name": "Alt", "from": {"shapes": lives, "links": links,
+        "fragments": [{"key": "alt", "text": "alt\n[fresh]\n[else]", "operands": [["write", "done", "ok"], ["refused"]]}]}})));
+    let read = ok(draw::read_diagram(&vault, &json!({"path": alt["path"]})));
+    let link = |text: &str| read["links"].as_array().unwrap().iter().find(|l| l["text"] == text).unwrap().clone();
+    let frame = read["shapes"].as_array().unwrap().iter().find(|s| s["form"] == "fragment").unwrap().clone();
+    assert_eq!((link("call")["in"].clone(), link("write")["in"].clone()), (Value::Null, frame["id"].clone()));
+    assert_eq!((link("ok")["operand"].as_u64(), link("refused")["operand"].as_u64(), link("refused")["order"].as_u64()), (Some(0), Some(1), Some(4)));
+    assert_eq!((link("done")["dashed"].as_bool(), link("event")["end"].as_str(), link("event")["dashed"].as_bool()), (Some(true), Some("arrow"), Some(false)));
+    // Lifelines side by side by their width: no head runs into the next.
+    let heads: Vec<(f64, f64)> = read["shapes"].as_array().unwrap().iter().filter(|s| s["form"] == "lifeline").map(|s| (s["x"].as_f64().unwrap(), s["w"].as_f64().unwrap())).collect();
+    assert!(heads.windows(2).all(|w| w[0].0 + w[0].1 < w[1].0), "{heads:?}");
+    let ids = |k: &str| link(k)["id"].clone();
+    let edited = ok(draw::edit_diagram(&mut vault, &json!({"path": alt["path"], "ops": [
+        {"op": "wrap", "key": "opt", "text": "opt\n[renamed]", "messages": [ids("ok")]},
+        {"op": "reorder", "id": ids("event"), "to": 0}]})));
+    let opt = edited["shapes"].as_array().unwrap().iter().find(|s| s["text"] == "opt\n[renamed]").unwrap().clone();
+    assert_eq!((opt["parent"].clone(), opt["operand"].as_u64()), (frame["id"].clone(), Some(0)));
+    let order = |text: &str| edited["links"].as_array().unwrap().iter().find(|l| l["text"] == text).unwrap()["order"].as_u64();
+    assert_eq!((order("event"), order("call")), (Some(0), Some(1)));
+    // What cannot be: a skipped message, more branches than guards, a shape for a message, a ref.
+    let mut refuse = |fragments: Value| err(draw::create_diagram(&mut vault, &json!({"name": "Bad", "from": {"shapes": lives, "links": links, "fragments": fragments}})));
+    assert!(refuse(json!([{"text": "alt\n[a]\n[b]", "operands": [["write"], ["ok"]]}])).contains("cannot skip"));
+    assert!(refuse(json!([{"text": "alt\n[a]", "operands": [["write"], ["done"]]}])).contains("guard"));
+    assert!(refuse(json!([{"text": "loop\n[each]", "messages": ["a"]}])).contains("not a message"));
+    assert!(refuse(json!([{"text": "ref\nLogin", "messages": ["call"]}])).contains("ref"));
+    assert!(refuse(json!([{"text": "alt\n[a]\n[b]", "operands": [["ok"], ["write"]]}])).contains("follow one another"));
+    assert!(!root.join("Bad.svg").exists());
     let mid = ok(draw::create_diagram(&mut vault, &json!({
         "name": "Assoc",
         "from": {"shapes": [

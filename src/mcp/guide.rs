@@ -186,16 +186,33 @@ fn value<'a>(values: &'a [(&str, String)], key: &str) -> &'a str {
     values.iter().find(|(name, _)| *name == key).map(|(_, value)| value.as_str()).unwrap_or("")
 }
 
+/// How a UML diagram is drawn on Bref's canvas, so that it stays a diagram the user can edit and
+/// that follows UML: shared by the prompts that draw.
+const UML: &str = "\
+Draw on the canvas with create_diagram from shapes, links and fragments, not from Mermaid: the user moves and edits \
+these shapes in Bref. Call diagram_library first for the forms and relations. \
+Sequence diagram: one scenario per diagram. Lifelines (form lifeline) left to right in the order they first take part, \
+the one that starts first; name each by its role or component, at most about seven. Messages in time order: sync for a call \
+that waits, with its reply (dashed) carrying what comes back; async for an event or a call that does not wait; create and \
+destroy for lifelines that begin or end; a message to the same lifeline for a call to itself. Write a message as \
+operation(arguments), a reply as the value returned. Conditions and repetition are fragments: alt with one [guard] per \
+branch and [else], opt, loop [condition], par; outer fragments first. Leave out logging, getters and other noise. \
+Class diagram: a class is a rect whose text is the name, ---, the attributes (+ name: Type), ---, the operations \
+(+ name(arg: Type): Type); generalization and realization for inheritance, composition and aggregation for ownership \
+with multiplicities in start_text and end_text (1, 0..1, *), dependency for a use. \
+Then render the diagram, look at it, and fix what overlaps or reads badly with edit_diagram (move, wrap, reorder, update) \
+until it is clean. Embed it with the [[Name.svg]] line create_diagram returns.";
+
 fn document_feature(values: &[(&str, String)]) -> String {
     let feature = value(values, "feature");
     let code = value(values, "code");
     format!(
         "Document the feature \"{feature}\" in this Bref vault. \
-Read bref://guide/writing, bref://guide/links and bref://guide/diagrams first. \
+Read bref://guide/writing, bref://guide/links, bref://guide/diagrams and bref://guide/uml first. \
 Search the vault for notes that already mention it, and follow their links. \
 Create one note: the context, the decisions, and how it works. Link the notes it touches by name with [[Note]]. \
-Draw a class diagram and a sequence diagram with create_diagram, embed each with the [[Name.svg]] line the tool returns, \
-and render both. Fix a diagram that overlaps or that check_mermaid would reject. \
+Add a technical part: the parts involved and how they talk. Draw a class diagram of the main types and a sequence diagram \
+of the main scenario, and explain each in a few sentences under it. {UML} \
 Do not delete a file. Do not type in a note while you are writing it. \
 The code to start from:\n{code}"
     )
@@ -217,9 +234,8 @@ fn uml(values: &[(&str, String)]) -> String {
     let kind = value(values, "kind");
     format!(
         "Draw one {kind} diagram of this code, as a Bref canvas diagram. \
-Read bref://guide/uml. Use diagram_library, then create_diagram (a template or shapes and links). \
-Render it and fix what overlaps. Embed it in a short note that says what it shows. \
-Do not delete a file.\n\n{scope}"
+Read bref://guide/uml. {UML} \
+Put it in a short note that says what it shows. Do not delete a file.\n\n{scope}"
     )
 }
 
