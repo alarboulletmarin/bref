@@ -256,3 +256,195 @@ fn tabs_dragged_into_place(cx: &mut TestAppContext) {
     cx.simulate_mouse_up(rail, MouseButton::Left, none);
     assert_eq!((names(cx, 0), names(cx, 1)), (vec!["Alpha".to_string()], vec!["Gamma".to_string(), "Beta".into()]));
 }
+
+/// A note rewritten outside the app (an agent through `bref mcp`, a sync) is reread where the
+/// reader is: the scroll and the cursor stay, the new text is there.
+#[gpui::test]
+fn an_outside_write_keeps_the_place(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "outside-write");
+    let path = root.join("Long.md");
+    let lines: String = (0..300).map(|i| format!("Ligne {i}\n\n")).collect();
+    fs::write(&path, format!("# Long\n\n{lines}")).unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.simulate_resize(size(px(900.), px(700.)));
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&path, window, cx));
+    cx.run_until_parked();
+    let at = fs::read_to_string(&path).unwrap().find("Ligne 150").unwrap();
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.set_view(at, 2400., cx)));
+    cx.run_until_parked();
+    let before = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view());
+
+    // Appended at the end, then a line inserted at the top, as an agent's edits would.
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str("\n## Écrit par un agent\n");
+    fs::write(&path, &text).unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    let (after, shown) = shell.read_with(cx, |s, cx| (s.pane().editor.read(cx).view(), s.pane().editor.read(cx).text().to_string()));
+    assert!(shown.contains("Écrit par un agent"));
+    assert_eq!(after, before, "the reader was moved");
+    // A text that got shorter than the cursor: the cursor goes to the end, nothing panics.
+    fs::write(&path, "# Long\n\nCourt é\n").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    let (at, _) = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view());
+    assert_eq!(at, "# Long\n\nCourt é\n".len());
+}
+
+/// A diagram rewritten outside the app (an agent through `bref mcp`) is redrawn in its open canvas, without
+/// closing it: the view stays where it was, and one step of undo goes back to what was shown.
+#[gpui::test]
+fn an_outside_write_redraws_the_open_diagram(cx: &mut TestAppContext) {
+    use crate::logic::diagram::{self, Diagram, Form};
+    let (root, shell, cx, _config) = start(cx, "outside-diagram");
+    let path = root.join("Schéma.svg");
+    let mut first = Diagram::default();
+    first.add_shape(Form::Rect, 0., 0., 120., 60.);
+    fs::write(&path, first.to_svg(diagram::COLORS[0])).unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.simulate_resize(size(px(900.), px(700.)));
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&path, window, cx));
+    cx.run_until_parked();
+    let canvas = shell.read_with(cx, |s, _| s.pane().drawing().cloned()).expect("the diagram opens in its canvas");
+    let view = canvas.read_with(cx, |c, _| c.spot(0., 0.));
+
+    let mut second = first.clone();
+    second.add_shape(Form::Ellipse, 300., 0., 120., 80.);
+    fs::write(&path, second.to_svg(diagram::COLORS[0])).unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shapes.len()), 2, "the canvas shows the diagram as it is now");
+    assert_eq!(canvas.read_with(cx, |c, _| c.spot(0., 0.)), view, "the view moved");
+    assert!(shell.read_with(cx, |s, _| s.pane().drawing() == Some(&canvas)), "the same canvas, not a new one");
+
+    // Undo goes back to what was shown, and that is written.
+    shell.update_in(cx, |s, window, cx| window.focus(&s.pane().drawing().unwrap().focus_handle(cx)));
+    cx.simulate_keystrokes("secondary-z");
+    cx.run_until_parked();
+    assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shapes.len()), 1);
+    assert_eq!(Diagram::from_svg(&fs::read_to_string(&path).unwrap()).unwrap().shapes.len(), 1);
+
+    // The same text again, or a file that is no diagram any more: nothing changes.
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    fs::write(&path, "<svg xmlns=\"http://www.w3.org/2000/svg\"/>").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shapes.len()), 1);
+}
+
+/// A note written by another program while it is typed in (an agent through `bref mcp`): both
+/// changes stay, as one undo step; on the same lines, the other version goes next to the note.
+#[gpui::test]
+fn an_outside_write_while_typing_is_merged(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "outside-typing");
+    let path = root.join("Plan.md");
+    fs::write(&path, "# Plan\n\nPremière ligne\nDeuxième ligne\n").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&path, window, cx));
+    cx.run_until_parked();
+    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
+    let typing_at = |cx: &mut gpui::VisualTestContext, needle: &str, typed: &str| {
+        let at = text(cx).find(needle).unwrap() + needle.len();
+        shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.set_view(at, 0., cx)));
+        cx.simulate_input(typed);
+    };
+    let save = |cx: &mut gpui::VisualTestContext| {
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+    };
+
+    // The user types on the first line; before the save, the agent appends a section.
+    typing_at(cx, "Première ligne", " tapée");
+    fs::write(&path, "# Plan\n\nPremière ligne\nDeuxième ligne\n\n## Agent 🙂\n").unwrap();
+    save(cx);
+    let both = "# Plan\n\nPremière ligne tapée\nDeuxième ligne\n\n## Agent 🙂\n";
+    assert_eq!(fs::read_to_string(&path).unwrap(), both);
+    assert_eq!(text(cx), both);
+    let cursor = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view().0);
+    assert_eq!(cursor, both.find(" tapée").unwrap() + " tapée".len(), "the cursor stays where the user types");
+    // Undo takes back the agent's change in one step, and only it.
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.restore(false, cx)));
+    assert_eq!(text(cx), "# Plan\n\nPremière ligne tapée\nDeuxième ligne\n");
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.restore(true, cx)));
+    save(cx);
+    assert_eq!(fs::read_to_string(&path).unwrap(), both);
+
+    // Both change the same line: the note keeps what was typed, the agent's version is beside it.
+    typing_at(cx, "Deuxième ligne", " ici");
+    fs::write(&path, both.replace("Deuxième ligne", "Deuxième ligne agent")).unwrap();
+    save(cx);
+    assert_eq!(fs::read_to_string(&path).unwrap(), both.replace("Deuxième ligne", "Deuxième ligne ici"));
+    let date = crate::lang::date_name(crate::platform::clock::today());
+    let copy = root.join(format!("Plan (conflict {date}).md"));
+    assert_eq!(fs::read_to_string(&copy).unwrap(), both.replace("Deuxième ligne", "Deuxième ligne agent"));
+    let said = shell.read_with(cx, |s, _| s.toasts.iter().map(|t| (t.tone, t.text.clone())).collect::<Vec<_>>());
+    assert!(said.iter().any(|(tone, text)| *tone == Tone::Info && text.ends_with(&format!("Plan (conflict {date})"))), "{said:?}");
+    // Again: the copy gets a number, nothing is overwritten.
+    typing_at(cx, "Deuxième ligne ici", "!");
+    fs::write(&path, both.replace("Deuxième ligne", "encore")).unwrap();
+    save(cx);
+    assert_eq!(fs::read_to_string(root.join(format!("Plan (conflict {date}) 2.md"))).unwrap(), both.replace("Deuxième ligne", "encore"));
+    assert_eq!(fs::read_to_string(&copy).unwrap(), both.replace("Deuxième ligne", "Deuxième ligne agent"));
+
+    // The copy cannot be written (read-only folder): the note is not saved over the agent's text.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        typing_at(cx, "Première ligne tapée", "?");
+        let theirs = text(cx).replace("Première ligne tapée?", "Première agent");
+        fs::write(&path, &theirs).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o555)).unwrap();
+        save(cx);
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), theirs, "the agent's text was overwritten");
+        let failed = shell.read_with(cx, |s, _| s.toasts.iter().any(|t| t.tone == Tone::Failed));
+        assert!(failed);
+    }
+}
+
+/// An agent asks the window to show a file (`bref mcp`, tool `show`): it opens in a tab of its own;
+/// a file of another vault, or none, is refused with a sentence.
+#[gpui::test]
+fn an_agent_shows_a_file(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "agent-show");
+    fs::write(root.join("Ouverte.md"), "# Ouverte\n").unwrap();
+    fs::create_dir_all(root.join("Dossier é")).unwrap();
+    fs::write(root.join("Dossier é/Écrite 🙂.md"), "# Écrite 🙂\n").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&root.join("Ouverte.md"), window, cx));
+    cx.run_until_parked();
+    let shown = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.pane().path.clone());
+    let tabs = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.panes.len());
+    let before = tabs(cx);
+
+    let asked = root.join("Dossier é/Écrite 🙂.md");
+    assert_eq!(shell.update_in(cx, |s, window, cx| s.show_asked(&asked, window, cx)), Ok(()));
+    cx.run_until_parked();
+    assert_eq!(shown(cx), Some(asked.clone()));
+    assert_eq!(tabs(cx), before + 1, "in a tab of its own: the open note stays");
+    // Asked again: the same tab comes to the front, no new one.
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&root.join("Ouverte.md"), window, cx));
+    assert_eq!(shell.update_in(cx, |s, window, cx| s.show_asked(&asked, window, cx)), Ok(()));
+    assert_eq!((shown(cx), tabs(cx)), (Some(asked), before + 1));
+    // The same file written another way (`..` inside the path) is the same file.
+    let other_way = root.join("Dossier é/../Ouverte.md");
+    assert_eq!(shell.update_in(cx, |s, window, cx| s.show_asked(&other_way, window, cx)), Ok(()));
+    assert_eq!(shown(cx), Some(root.join("Ouverte.md")));
+
+    let missing = root.join("Absente.md");
+    assert!(shell.update_in(cx, |s, window, cx| s.show_asked(&missing, window, cx)).unwrap_err().starts_with("no file at"));
+    let elsewhere = std::env::temp_dir().join(format!("bref-elsewhere-{}.md", std::process::id()));
+    fs::write(&elsewhere, "# Ailleurs\n").unwrap();
+    let refused = shell.update_in(cx, |s, window, cx| s.show_asked(&elsewhere, window, cx)).unwrap_err();
+    assert!(refused.starts_with("Bref has another vault open"), "{refused}");
+    fs::remove_file(&elsewhere).ok();
+    assert_eq!(shown(cx), Some(root.join("Ouverte.md")), "a refusal changes nothing");
+
+    // A diagram written by the agent opens in its canvas.
+    let diagram = root.join("Schéma.svg");
+    let mut d = Diagram::default();
+    d.add_shape(diagram::Form::Rect, 0., 0., 120., 60.);
+    fs::write(&diagram, d.to_svg(diagram::COLORS[0])).unwrap();
+    assert_eq!(shell.update_in(cx, |s, window, cx| s.show_asked(&diagram, window, cx)), Ok(()));
+    assert!(shell.read_with(cx, |s, _| s.pane().drawing().is_some()));
+}

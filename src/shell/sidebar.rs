@@ -11,8 +11,9 @@ use gpui::{
     MouseDownEvent, Pixels, ScrollStrategy, Stateful, Window, div, point, prelude::*, px, svg, uniform_list,
 };
 use crate::{
-    ui::widgets::{button, tip}, views::graph,
+    ui::widgets::{button, tip},
     logic::markdown::{self, Date},
+    logic::wiki,
     views::palette::{Palette, PaletteEvent, Setting},
     lang::tr,
     platform::vault,
@@ -143,7 +144,7 @@ impl Shell {
             Mode::Graph | Mode::Calendar | Mode::Search => Vec::new(),
             Mode::Tags => tag_rows(&self.notes, &self.nav.open),
             Mode::Links => (self.nav.anchor.iter())
-                .flat_map(|target| graph::backlinks(&self.notes, target))
+                .flat_map(|target| wiki::backlinks(&self.notes, target))
                 .map(|n| Row { path: n.path.clone(), name: n.name.clone(), depth: 0, dir: None })
                 .collect(),
             Mode::Recent => self
@@ -587,7 +588,7 @@ impl Shell {
                 let detail = match self.nav.anchor.as_ref().filter(|_| links) {
                     Some(target) => {
                         let note = |path: &Path| self.notes.iter().find(|n| n.path == path);
-                        let line = note(target).zip(note(&row.path)).and_then(|(aimed, from)| graph::link_line(&from.body, aimed));
+                        let line = note(target).zip(note(&row.path)).and_then(|(aimed, from)| wiki::link_line(&from.body, aimed));
                         // An embedded section is said to be one.
                         line.map(|line| match embed::parse(line) {
                             Some(_) => format!("{} · {}", tr("embedded", "incorporé"), line.trim()),

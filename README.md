@@ -18,6 +18,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Tables that compute.** Cells wrap, `Tab` moves between them, pasting from a spreadsheet works, and `=sum(above)` adds up a column.
 - **Linked notes.** `[[Links]]`, backlinks, tags, embedded sections, a graph, and a calendar of daily notes.
 - **More than notes.** Kanban boards, list pages built from front matter, UML diagrams drawn by hand and saved as SVG, and a CSV grid that opens a million rows.
+- **Agents.** `bref mcp` lets an agent read, write and draw in the vault, with Bref's links, trash and diagrams. [Guide](book/src/agents.md)
 - **Keyboard first.** One palette for notes and commands. Every shortcut is listed in the app (`F1`) and can be changed.
 - **Yours to dress.** 13 themes, IBM Plex built in, any installed font. Light and dark, English and French.
 
@@ -79,6 +80,7 @@ The [user guide](book/src/introduction.md) covers everything. It is also publish
 | [Settings and appearance](book/src/settings.md) | themes, fonts, page width, changing a shortcut |
 | [Updates](book/src/updates.md) | how Bref updates itself, and what it sends |
 | [Keyboard shortcuts](book/src/shortcuts.md) | every shortcut, as the help panel lists them |
+| [Agents (MCP)](book/src/agents.md) | `bref mcp`: an agent reads, writes and draws in the vault |
 | [Compatibility](book/src/compatibility.md), [Troubleshooting](book/src/troubleshooting.md), [Performance](book/src/performance.md) | systems, known problems, measurements |
 
 ## Contributing

@@ -981,7 +981,7 @@ impl Editor {
                     let editing = (start..=offset + line.len()).contains(&cursor);
                     let (k, look) = (key(0, &source), look.clone());
                     drawing = cached(&mut old, &mut kept, k, editing, || {
-                        drawn(job(k, Arc::new(move || figure::mermaid(&source, &look))), &before, &mut waiting, window, cx)
+                        drawn(job(k, Arc::new(move || figure::mermaid(&source, &look).ok())), &before, &mut waiting, window, cx)
                     });
                     broken = failed(&kept, k.0).then(|| tr("Unreadable figure", "Figure illisible"));
                 }

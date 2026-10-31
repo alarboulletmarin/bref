@@ -37,7 +37,7 @@ use toasts::*;
 
 use crate::actions::*;
 use crate::ui::keys::{self, MOD};
-use crate::lang::{self, date_name, time_name, tr};
+use crate::lang::{date_name, time_name, tr};
 use crate::logic::{self, commands, diagram, embed, history, import, layout::{self, Node, Side, Zone}, markdown, prefs::Prefs, recall, table};
 use crate::platform::{self, clock::{clock, today}, git, update, vault};
 use crate::ui::{self,
@@ -313,6 +313,7 @@ impl Shell {
             None => window.focus(&this.focus),
         }
         this.watch(cx);
+        this.listen(window, cx);
         this.check_updates(cx);
         let weak = cx.weak_entity();
         this.help.key_tap = Some(cx.intercept_keystrokes(move |event, window, cx| {

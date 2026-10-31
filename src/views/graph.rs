@@ -45,30 +45,6 @@ pub fn image_name(path: &Path) -> String {
     path.file_name().unwrap_or_default().to_string_lossy().into_owned()
 }
 
-/// Backlinks: the notes whose `[[wikilink]]` targets note `target`, by name order. As
-/// for edges, when two notes have the same name, the link targets the first.
-pub fn backlinks<'a>(notes: &'a [Note], target: &Path) -> Vec<&'a Note> {
-    let Some(aimed) = notes.iter().find(|note| note.path == target) else {
-        return Vec::new();
-    };
-    let key = aimed.name.to_lowercase();
-    if notes.iter().find(|note| note.name.to_lowercase() == key).is_some_and(|first| first.path != target) {
-        return Vec::new();
-    }
-    let reaches = |note: &&Note| note.path != target && note.links.iter().any(|link| aimed.answers(link));
-    let mut found: Vec<&Note> = notes.iter().filter(reaches).collect();
-    found.sort_by_cached_key(|note| note.name.to_lowercase());
-    found
-}
-
-/// First line of `body` with a wikilink to note `aimed` (its name or an alias).
-pub fn link_line<'a>(body: &'a str, aimed: &Note) -> Option<&'a str> {
-    body.lines().find(|line| {
-        let links = crate::logic::markdown::links(line);
-        links.iter().any(|(_, link)| matches!(link, crate::logic::markdown::Link::Wiki(name) if aimed.answers(&name.to_lowercase())))
-    })
-}
-
 /// Edges `(i, j)`, `i < j`, without duplicates: wikilinks targeting a note of the
 /// vault, and shown images. Images are numbered after notes.
 pub fn edges(notes: &[Note], images: &[PathBuf]) -> Vec<(usize, usize)> {
@@ -669,24 +645,10 @@ mod tests {
     }
 
     #[test]
-    fn lists_backlinks() {
-        let mut notes = vec![note("Cible", &[]), note("b", &["cible"]), note("A", &["cible", "b"]), note("Seule", &["cible"])];
-        notes[3].path = PathBuf::from("/v/sous/Cible.md");
-        notes[3].name = "Cible".into();
-        let names = |target: &str| backlinks(&notes, Path::new(target)).iter().map(|n| n.name.clone()).collect::<Vec<_>>();
-        assert_eq!(names("/v/Cible.md"), ["A", "b", "Cible"]);
-        assert_eq!(names("/v/b.md"), ["A"]);
-        // A second note with the same name: links target the first.
-        assert!(names("/v/sous/Cible.md").is_empty() && names("/v/absente.md").is_empty());
-        let body = "# A\n[[autre]] et [[Cible]]x\n| t | [[cible|alias]] |\n";
-        assert_eq!(link_line(body, &notes[0]), Some("[[autre]] et [[Cible]]x"));
-        assert_eq!(link_line("un [[Cible|alias]] là", &notes[0]), Some("un [[Cible|alias]] là"));
-        assert_eq!(link_line(body, &notes[1]), None);
-        // A front matter alias counts as the name: backlink, link line and graph edge.
+    fn an_alias_is_an_edge() {
+        // A front matter alias counts as the name.
         let mut notes = vec![note("Appli", &[]), note("Journal", &["bref app"])];
         notes[0].aliases = vec!["Bref App".into()].into();
-        assert_eq!(backlinks(&notes, Path::new("/v/Appli.md")).len(), 1);
-        assert_eq!(link_line("vu [[bref app]]", &notes[0]), Some("vu [[bref app]]"));
         assert_eq!(edges(&notes, &[]), [(0, 1)]);
     }
 

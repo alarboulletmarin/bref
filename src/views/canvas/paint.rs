@@ -349,6 +349,12 @@ impl Canvas {
                         let bounds = Bounds::new(point(c.x - px(6.), c.y - px(6.)), size(px(12.), px(12.)));
                         window.paint_quad(quad(bounds, px(6.), t.panel, px(1.5), t.accent, gpui::BorderStyle::default()));
                     }
+                    // Where an arrow would leave from, if the pointer pressed here.
+                    if let Some((_, (fx, fy))) = self.pointer.map(|p| self.world(p)).and_then(|p| self.handle_at(p)) {
+                        let c = at(shape.border((shape.x + fx * shape.w, shape.y + fy * shape.h)));
+                        let bounds = Bounds::new(point(c.x - px(4.), c.y - px(4.)), size(px(8.), px(8.)));
+                        window.paint_quad(quad(bounds, px(4.), t.accent, px(0.), t.accent, gpui::BorderStyle::default()));
+                    }
                 }
             } else if !self.selected.contains(&id)
                 && let Some(drawn) = self.diagram.link(id).and_then(|l| self.diagram.trace(l))

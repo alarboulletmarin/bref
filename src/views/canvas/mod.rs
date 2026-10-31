@@ -346,6 +346,12 @@ impl Canvas {
         Some(self.spot(h.0, h.1))
     }
 
+    /// The shape an arrow would be drawn from if the pointer pressed at this point of the window, and where.
+    #[cfg(test)]
+    pub fn drawable_at(&self, at: Point<Pixels>) -> Option<(u32, (f32, f32))> {
+        self.handle_at(self.world(at))
+    }
+
     /// What is typed in the library, if it is open.
     #[cfg(test)]
     pub fn library_query(&self) -> Option<&str> {
@@ -424,6 +430,22 @@ impl Canvas {
             // Darkened on a light theme, lightened on a dark one, until it reads.
             i => crate::ui::theme::legible(rgb(diagram::COLORS[i as usize % diagram::COLORS.len()]).into(), self.theme.bg),
         }
+    }
+
+    /// The diagram was rewritten elsewhere (an agent through `bref mcp`, a sync): it is shown as it is now,
+    /// with the view and what is left of the selection kept, and one step of undo goes back to what was
+    /// shown. Not in the middle of a gesture or of a text being written: `false`, and the write that ends it wins.
+    pub fn replace(&mut self, diagram: Diagram, cx: &mut Context<Self>) -> bool {
+        if self.drag != Drag::None || self.editing.is_some() {
+            return false;
+        }
+        self.remember();
+        self.diagram = diagram;
+        let diagram = &self.diagram;
+        self.selected.retain(|id| diagram.shape(*id).is_some() || diagram.link(*id).is_some());
+        self.hover = None;
+        cx.notify();
+        true
     }
 
     // ponytail: undo keeps whole copies of the diagram (100 max): a

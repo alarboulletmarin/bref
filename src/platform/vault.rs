@@ -209,7 +209,7 @@ fn is_dir(entry: &fs::DirEntry) -> bool {
 }
 
 /// Fingerprint of the vault's state: the paths of its notes, images and folders,
-/// and the date of each note. It changes as soon as another program touches it, without
+/// and the date of each file. It changes as soon as another program touches it, without
 /// reading a single file.
 pub fn fingerprint(root: &Path) -> u64 {
     let mut seen = Vec::new();
@@ -229,10 +229,8 @@ pub fn fingerprint(root: &Path) -> u64 {
                 }
             } else if path.extension().is_some_and(|e| e == "md") {
                 seen.push((path, entry.metadata().and_then(|m| m.modified()).ok()));
-            } else if is_image(&path) {
-                seen.push((path, None));
-            } else if is_table(&path) {
-                // Another program rewriting the open table must be seen.
+            } else if is_image(&path) || is_table(&path) {
+                // Another program rewriting the open table or diagram must be seen.
                 seen.push((path, entry.metadata().and_then(|m| m.modified()).ok()));
             }
         }
@@ -1085,6 +1083,14 @@ mod tests {
         fs::write(root.join("ailleurs.md"), "x").unwrap();
         assert_ne!(before, fingerprint(&root));
         fs::remove_file(root.join("ailleurs.md")).unwrap();
+        // So does a drawing rewritten in place (an agent editing the open diagram), with no other file touched.
+        let drawing = root.join("schéma.svg");
+        fs::write(&drawing, "<svg/>").unwrap();
+        let before = fingerprint(&root);
+        let later = fs::metadata(&drawing).unwrap().modified().unwrap() + std::time::Duration::from_secs(1);
+        fs::File::options().write(true).open(&drawing).unwrap().set_modified(later).unwrap();
+        assert_ne!(before, fingerprint(&root));
+        fs::remove_file(&drawing).unwrap();
 
         // Renaming a note in step with its title rewrites that title; otherwise the text stays as is.
         let c = rename_note(&root.join("A 2.md"), "C").unwrap();
