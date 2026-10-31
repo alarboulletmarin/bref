@@ -3,7 +3,7 @@
 //! Texts here are in English and do not go through `tr`: a model reads them, they are not
 //! shown in the interface. The protocol is written by hand on `serde_json`. The official
 //! Rust SDK would pull an async runtime into the binary and risk moving the lock; the
-//! stdio server is small enough to stay here. Chosen in issue 93 before this code.
+//! stdio server is small enough to stay here (spike and figures: issue 93).
 //!
 //! Nothing but JSON-RPC goes to stdout, one message per line. Logs, if any, go to stderr.
 
@@ -115,6 +115,7 @@ pub(super) fn disk(error: io::Error) -> String {
 
 /// Runs the server on the process's standard streams. `0` when the client closes stdin.
 pub fn run() -> i32 {
+    crate::lang::speak_english();
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         eprintln!("bref mcp: {info}");
@@ -305,59 +306,43 @@ fn failure(id: Value, code: i32, message: &str) -> Value {
 /// Reads messages until stdin closes. A line past 10 MB is one parse error, then reading goes on.
 fn serve(server: &mut Server, mut input: impl BufRead, mut output: impl Write) -> i32 {
     loop {
-        match read_message(&mut input) {
+        let message = match read_message(&mut input) {
             Ok(None) => return 0,
-            Ok(Some(line)) => {
-                if let Some(message) = server.answer(&line) {
-                    if write_message(&mut output, &message).is_err() {
-                        return 1;
-                    }
-                }
-            }
-            Err(_) => {
-                let _ = write_message(&mut output, &failure(Value::Null, PARSE, "the line is longer than 10 MB"));
-            }
+            Ok(Some(Line::Text(line))) => server.answer(&line),
+            Ok(Some(Line::TooLong)) => Some(failure(Value::Null, PARSE, "the line is longer than 10 MB")),
+            // stdin itself failed: nothing more will come.
+            Err(_) => return 1,
+        };
+        if let Some(message) = message
+            && write_message(&mut output, &message).is_err()
+        {
+            return 1;
         }
     }
 }
 
-fn read_message(input: &mut impl BufRead) -> io::Result<Option<String>> {
+enum Line {
+    Text(String),
+    TooLong,
+}
+
+/// One line, never more than 10 MB in memory: the rest of a longer line is skipped.
+fn read_message(input: &mut impl BufRead) -> io::Result<Option<Line>> {
     let mut buf = Vec::new();
-    loop {
-        if buf.len() > MAX_LINE {
-            let mut dump = [0u8; 8192];
-            loop {
-                let n = input.read(&mut dump)?;
-                if n == 0 || dump[..n].contains(&b'\n') {
-                    break;
-                }
-            }
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "too long"));
-        }
-        let n = input.read_until(b'\n', &mut buf)?;
-        if n == 0 {
-            return if buf.is_empty() { Ok(None) } else { Ok(Some(String::from_utf8_lossy(&buf).into_owned())) };
-        }
-        if buf.len() > MAX_LINE {
-            if !buf.ends_with(b"\n") {
-                let mut dump = [0u8; 8192];
-                loop {
-                    let n = input.read(&mut dump)?;
-                    if n == 0 || dump[..n].contains(&b'\n') {
-                        break;
-                    }
-                }
-            }
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "too long"));
-        }
-        if buf.ends_with(b"\n") {
+    if io::Read::take(&mut *input, MAX_LINE as u64 + 1).read_until(b'\n', &mut buf)? == 0 {
+        return Ok(None);
+    }
+    if buf.len() > MAX_LINE && !buf.ends_with(b"\n") {
+        input.skip_until(b'\n')?;
+        return Ok(Some(Line::TooLong));
+    }
+    if buf.ends_with(b"\n") {
+        buf.pop();
+        if buf.ends_with(b"\r") {
             buf.pop();
-            if buf.ends_with(b"\r") {
-                buf.pop();
-            }
-            return Ok(Some(String::from_utf8_lossy(&buf).into_owned()));
         }
     }
+    Ok(Some(Line::Text(String::from_utf8_lossy(&buf).into_owned())))
 }
 
 fn write_message(output: &mut impl Write, message: &Value) -> io::Result<()> {

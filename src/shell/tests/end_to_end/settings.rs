@@ -23,7 +23,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("cOmmente");
     let found = rows(cx);
     assert!(!found.is_empty() && found.len() < all, "{found:?}");
-    assert!(found.iter().all(|row| lang::fold(row.effect).contains("commente")), "{found:?}");
+    assert!(found.iter().all(|row| crate::lang::fold(row.effect).contains("commente")), "{found:?}");
     cx.simulate_keystrokes("secondary-a");
     cx.simulate_input("maj+f");
     assert!(rows(cx).iter().any(|row| row.keys.ends_with("Maj+F")));

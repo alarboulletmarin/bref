@@ -3,15 +3,22 @@
 
 use std::sync::OnceLock;
 
+static FRENCH: OnceLock<bool> = OnceLock::new();
+
 /// Interface text: French if the system's language is, English otherwise.
 pub fn tr(en: &'static str, fr: &'static str) -> &'static str {
-    static FRENCH: OnceLock<bool> = OnceLock::new();
     #[cfg(test)]
     if ENGLISH.get() {
         return en;
     }
     // Tests run in French to stay deterministic.
     if *FRENCH.get_or_init(|| cfg!(test) || system_is_french()) { fr } else { en }
+}
+
+/// English from now on, whatever the system's language: `bref mcp` talks to a model, and
+/// the library's names and templates it returns are part of what the model reads.
+pub fn speak_english() {
+    let _ = FRENCH.set(false);
 }
 
 #[cfg(test)]

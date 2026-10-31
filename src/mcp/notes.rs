@@ -691,7 +691,12 @@ fn parse_date(text: &str) -> Result<(i32, u32, u32), String> {
     let month = parts.next().and_then(|p| p.parse().ok());
     let day = parts.next().and_then(|p| p.parse().ok());
     match (year, month, day, parts.next()) {
-        (Some(year), Some(month), Some(day), None) if (1..=12).contains(&month) && (1..=31).contains(&day) => Ok((year, month, day)),
+        // A day the calendar has comes back unchanged from a day number: 2026-02-30 does not.
+        (Some(year), Some(month), Some(day), None)
+            if (1..=12).contains(&month) && markdown::day_of(markdown::day_number((year, month, day))) == (year, month, day) =>
+        {
+            Ok((year, month, day))
+        }
         _ => Err(format!("`{text}` is not a date (YYYY-MM-DD)")),
     }
 }

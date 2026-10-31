@@ -37,7 +37,7 @@ use toasts::*;
 
 use crate::actions::*;
 use crate::ui::keys::{self, MOD};
-use crate::lang::{self, date_name, time_name, tr};
+use crate::lang::{date_name, time_name, tr};
 use crate::logic::{self, commands, diagram, embed, history, import, layout::{self, Node, Side, Zone}, markdown, prefs::Prefs, recall, table};
 use crate::platform::{self, clock::{clock, today}, git, update, vault};
 use crate::ui::{self,

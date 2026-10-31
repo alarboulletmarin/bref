@@ -19,7 +19,8 @@ struct Client {
 impl Client {
     fn start(root: &Path, read_only: bool) -> Self {
         let mut command = Command::new(env!("CARGO_BIN_EXE_bref"));
-        command.arg("mcp").arg("--vault").arg(root);
+        // A French system: what the server tells the model stays in English.
+        command.arg("mcp").arg("--vault").arg(root).env("LC_ALL", "fr_FR.UTF-8").env("LANG", "fr_FR.UTF-8");
         if read_only {
             command.arg("--read-only");
         }
@@ -89,6 +90,8 @@ fn a_session_over_pipes() {
     let rendered = client.ask("tools/call", json!({"name": "render", "arguments": {"path": "Boxes.svg", "theme": "light"}}));
     assert_eq!(rendered["result"]["isError"], false);
     assert_eq!(rendered["result"]["content"][1]["mimeType"], "image/png");
+    let library = client.ask("tools/call", json!({"name": "diagram_library", "arguments": {"family": "class"}}));
+    assert_eq!(library["result"]["structuredContent"]["shapes"][0]["name"], "Class");
     let guide = client.ask("resources/read", json!({"uri": "bref://guide/links"}));
     assert!(guide["result"]["contents"][0]["text"].as_str().unwrap().contains("[["));
     let unknown = client.ask("nope", json!({}));

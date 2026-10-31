@@ -123,6 +123,8 @@ impl Vault {
     }
 
     /// A path that stays in the vault. `trash` allows the `.trash` folder and nothing else hidden.
+    /// The answer is under `root` as given, like the index: canonical paths (`/private/var` on
+    /// macOS, `\\?\C:` on Windows) serve only to check where a link leads.
     pub fn inside(&self, raw: &str, trash: bool) -> Result<PathBuf, String> {
         if raw.contains('\0') || raw.split(['/', '\\']).any(|part| part == "..") {
             return Err("a path cannot leave the vault".into());
@@ -154,7 +156,7 @@ impl Vault {
                 cur = target;
             }
         }
-        Ok(cur)
+        Ok(self.root.join(rel))
     }
 
     /// A file of the vault named `name` (a note, a diagram, a picture), or a relative path.

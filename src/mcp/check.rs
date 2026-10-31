@@ -11,6 +11,16 @@ fn scratch() -> PathBuf {
     let root = std::env::temp_dir().join(format!("bref-mcp-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
+    // Reached through a link, as macOS's temp folder (`/var` → `/private/var`) and Windows'
+    // canonical paths (`\\?\C:`) are: a path given by an agent must still find the index's note.
+    #[cfg(unix)]
+    {
+        let link = root.with_extension("via");
+        let _ = fs::remove_file(&link);
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+        return link;
+    }
+    #[allow(unreachable_code)]
     root
 }
 
@@ -177,6 +187,10 @@ fn bytes_on_disk_stay_bytes() {
     assert!(daily["path"].as_str().unwrap().contains("2026-01-02"));
     assert!(fs::read_to_string(root.join("2026-01-02.md")).unwrap().contains("a line"));
     assert!(err(notes::daily_note(&mut vault, &json!({"date": "yesterday"}))).contains("YYYY-MM-DD"));
+    // A day the calendar does not have, and the last day of a leap February.
+    assert!(err(notes::daily_note(&mut vault, &json!({"date": "2026-02-30"}))).contains("YYYY-MM-DD"));
+    assert!(err(notes::daily_note(&mut vault, &json!({"date": "2026-13-01"}))).contains("YYYY-MM-DD"));
+    ok(notes::daily_note(&mut vault, &json!({"date": "2028-02-29"})));
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -260,6 +274,18 @@ fn diagrams_are_written_by_bref_and_can_be_seen() {
     let id = |key: &str| held["shapes"].as_array().unwrap().iter().find(|s| s["text"] == key).unwrap()["id"].clone();
     assert_eq!(parent("app"), id("Host"));
     assert_eq!(parent("Unit"), id("app"));
+    // A link to a held shape places its holder: the node comes after the agent, not beside it.
+    let layered = ok(draw::create_diagram(&mut vault, &json!({
+        "name": "Layered",
+        "from": {"shapes": [
+            {"key": "agent", "text": "Agent"},
+            {"key": "host", "form": "node", "text": "Host"},
+            {"key": "mcp", "form": "component", "text": "mcp", "in": "host"}
+        ], "links": [{"from": "agent", "to": "mcp"}]}
+    })));
+    let layered = ok(draw::read_diagram(&vault, &json!({"path": layered["path"]})));
+    let y = |key: &str| layered["shapes"].as_array().unwrap().iter().find(|s| s["text"] == key).unwrap()["y"].as_f64().unwrap();
+    assert!(y("Host") > y("Agent"), "{layered}");
     let seq = ok(draw::create_diagram(&mut vault, &json!({
         "name": "Talk",
         "from": {"shapes": [
@@ -303,7 +329,10 @@ fn diagrams_are_written_by_bref_and_can_be_seen() {
     fs::write(root.join("Types.svg"), svg).unwrap();
     assert_eq!(ok(draw::read_diagram(&vault, &json!({"path": "Types.svg"})))["read_only"], true);
     assert!(err(draw::edit_diagram(&mut vault, &json!({"path": "Types.svg", "ops": [{"op": "relayout"}]}))).contains("read-only"));
-    let library = ok(draw::library(&json!({"family": "sequence"})));
+    // The server speaks English (`lang::speak_english`); tests run in French.
+    let library = crate::lang::in_english(|| ok(draw::library(&json!({"family": "sequence"}))));
+    let every = crate::lang::in_english(|| ok(draw::library(&json!({}))));
+    assert!(every["shapes"].as_array().unwrap().iter().all(|s| s["family"] != "other"), "a family of the library has no key");
     assert!(library["shapes"].as_array().unwrap().iter().any(|s| s["form"] == "lifeline"));
     assert!(library["templates"].as_array().unwrap().iter().any(|s| s["key"] == "sequence"));
     let empty = ok(draw::create_diagram(&mut vault, &json!({"name": "Empty", "from": {"template": "class"}})));

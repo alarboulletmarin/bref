@@ -1,7 +1,7 @@
 //! Diagrams and figures. A diagram file is written only by `Diagram::to_svg`: its version
 //! stays, and a line this version cannot read is kept.
 
-use std::{collections::HashMap, fs};
+use std::{collections::{HashMap, HashSet}, fs};
 
 use serde_json::{Value, json};
 
@@ -23,8 +23,13 @@ const NEWER: &str = "this diagram was written by a newer version of Bref and is 
 /// Stable names of the library's starting points, in the order `library::templates` returns them.
 const TEMPLATES: [&str; 8] = ["class", "use-case", "package", "state", "sequence", "activity", "component", "deployment"];
 
-/// How many library shapes belong to each family, in the order `library::presets` returns them.
-const FAMILIES: [(&str, usize); 6] = [("class", 8), ("use-case", 3), ("state", 13), ("activity", 13), ("component", 6), ("sequence", 10)];
+/// The key an agent passes for each family of the library, by its English name (`bref mcp`
+/// speaks English: `lang::speak_english`).
+const FAMILIES: [(&str, &str); 6] = [("Class", "class"), ("Use case", "use-case"), ("State machine", "state"), ("Activity", "activity"), ("Component", "component"), ("Sequence", "sequence")];
+
+fn family_key(family: &str) -> &'static str {
+    FAMILIES.iter().find(|(name, _)| *name == family).map_or("other", |(_, key)| key)
+}
 
 pub fn check_mermaid(args: &Value) -> Outcome {
     let source = match arg_str(args, "source") {
@@ -192,19 +197,17 @@ pub fn import_diagram(vault: &mut Vault, args: &Value) -> Outcome {
 
 /// What `diagram_library` returns, also served at `bref://library`.
 pub fn library_value(family: Option<&str>) -> Result<Value, String> {
-    let families = family_of_each();
     if let Some(family) = family
-        && !FAMILIES.iter().any(|(name, _)| *name == family)
+        && !FAMILIES.iter().any(|(_, key)| *key == family)
     {
         return Err(format!("unknown family `{family}`"));
     }
     let shapes: Vec<Value> = library::presets()
         .into_iter()
-        .enumerate()
-        .filter(|(i, _)| family.is_none_or(|name| families.get(*i).copied() == Some(name)))
-        .map(|(i, preset)| {
+        .filter(|preset| family.is_none_or(|key| family_key(preset.family) == key))
+        .map(|preset| {
             json!({
-                "family": families.get(i).copied().unwrap_or("other"),
+                "family": family_key(preset.family),
                 "form": form_name(preset.form),
                 "name": preset.name,
                 "text": preset.text,
@@ -229,14 +232,6 @@ pub fn library_value(family: Option<&str>) -> Result<Value, String> {
         "shapes": shapes,
         "templates": templates,
     }))
-}
-
-fn family_of_each() -> Vec<&'static str> {
-    let mut names = Vec::new();
-    for (name, count) in FAMILIES {
-        names.extend(std::iter::repeat(name).take(count));
-    }
-    names
 }
 
 fn relation_row(relation: Relation) -> Value {
@@ -449,9 +444,20 @@ fn lay_out(diagram: &mut Diagram, unplaced: &[u32]) {
         .collect();
     if !roots.is_empty() {
         let sizes: Vec<(f32, f32)> = roots.iter().map(|id| diagram.shape(*id).map(|s| (s.w, s.h)).unwrap_or((80., 40.))).collect();
+        // A link to a shape held by a package or a node places the holder: `agent → mcp`
+        // with `mcp` in `Poste` puts `Poste` after `agent`.
+        let top = |mut id: u32| {
+            for _ in 0..diagram.shapes.len() {
+                match diagram.shape(id).and_then(|s| s.parent) {
+                    Some(parent) => id = parent,
+                    None => break,
+                }
+            }
+            id
+        };
         let mut edges = Vec::new();
         for link in &diagram.links {
-            let (Some(a), Some(b)) = (link.from.shape(), link.to.shape()) else { continue };
+            let (Some(a), Some(b)) = (link.from.shape().map(top), link.to.shape().map(top)) else { continue };
             let (Some(i), Some(j)) = (roots.iter().position(|id| *id == a), roots.iter().position(|id| *id == b)) else { continue };
             if i != j {
                 edges.push((i, j));
@@ -464,27 +470,27 @@ fn lay_out(diagram: &mut Diagram, unplaced: &[u32]) {
             }
         }
     }
-    let mut placed: HashMap<u32, ()> = roots.into_iter().map(|id| (id, ())).collect();
+    let mut placed: HashSet<u32> = roots.into_iter().collect();
     for _ in 0..=unplaced.len() {
         let mut progressed = false;
         for id in unplaced {
-            if placed.contains_key(id) || lives.contains(id) {
+            if placed.contains(id) || lives.contains(id) {
                 continue;
             }
             let Some(parent) = diagram.shape(*id).and_then(|s| s.parent) else { continue };
-            if !placed.contains_key(&parent) && !diagram.shape(parent).is_some_and(|s| !unplaced.contains(&s.id)) {
+            if !placed.contains(&parent) && !diagram.shape(parent).is_some_and(|s| !unplaced.contains(&s.id)) {
                 continue;
             }
             let (px, py, n) = {
                 let parent = diagram.shape(parent).unwrap();
-                let n = diagram.children(parent.id).iter().filter(|child| placed.contains_key(child)).count();
+                let n = diagram.children(parent.id).iter().filter(|child| placed.contains(child)).count();
                 (parent.x, parent.y, n)
             };
             if let Some(shape) = diagram.shape_mut(*id) {
                 shape.x = px + 24.;
                 shape.y = py + 40. + n as f32 * (shape.h + 16.);
             }
-            placed.insert(*id, ());
+            placed.insert(*id);
             progressed = true;
         }
         if !progressed {
