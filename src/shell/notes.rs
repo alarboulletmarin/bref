@@ -324,8 +324,13 @@ impl Shell {
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
         if let Some(path) = self.pane().path.clone() {
             // Reloading is not opening: a preview stays a preview, the list page stays shown.
+            // Nor does it move the reader: an agent writing at the end leaves cursor and scroll
+            // where they were.
             let (preview, listing) = (self.pane_mut().preview, self.pane_mut().listing.take());
-            self.load_note(&path, cx);
+            let (at, scroll) = self.pane().editor.read(cx).view();
+            if self.load_note(&path, cx) {
+                self.pane().editor.update(cx, |e, cx| e.set_view(at, scroll, cx));
+            }
             (self.pane_mut().preview, self.pane_mut().listing) = (preview, listing);
         }
     }

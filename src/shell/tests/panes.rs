@@ -256,3 +256,37 @@ fn tabs_dragged_into_place(cx: &mut TestAppContext) {
     cx.simulate_mouse_up(rail, MouseButton::Left, none);
     assert_eq!((names(cx, 0), names(cx, 1)), (vec!["Alpha".to_string()], vec!["Gamma".to_string(), "Beta".into()]));
 }
+
+/// A note rewritten outside the app (an agent through `bref mcp`, a sync) is reread where the
+/// reader is: the scroll and the cursor stay, the new text is there.
+#[gpui::test]
+fn an_outside_write_keeps_the_place(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "outside-write");
+    let path = root.join("Long.md");
+    let lines: String = (0..300).map(|i| format!("Ligne {i}\n\n")).collect();
+    fs::write(&path, format!("# Long\n\n{lines}")).unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.simulate_resize(size(px(900.), px(700.)));
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&path, window, cx));
+    cx.run_until_parked();
+    let at = fs::read_to_string(&path).unwrap().find("Ligne 150").unwrap();
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.set_view(at, 2400., cx)));
+    cx.run_until_parked();
+    let before = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view());
+
+    // Appended at the end, then a line inserted at the top, as an agent's edits would.
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str("\n## Écrit par un agent\n");
+    fs::write(&path, &text).unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    let (after, shown) = shell.read_with(cx, |s, cx| (s.pane().editor.read(cx).view(), s.pane().editor.read(cx).text().to_string()));
+    assert!(shown.contains("Écrit par un agent"));
+    assert_eq!(after, before, "the reader was moved");
+    // A text that got shorter than the cursor: the cursor goes to the end, nothing panics.
+    fs::write(&path, "# Long\n\nCourt é\n").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    cx.run_until_parked();
+    let (at, _) = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view());
+    assert_eq!(at, "# Long\n\nCourt é\n".len());
+}

@@ -4,17 +4,11 @@ use super::*;
 
 impl Shell {
     /// Rereads the vault right away, without waiting for the watcher: what the merge wrote
-    /// shows, each note keeping its cursor and scroll.
+    /// shows, each note keeping its cursor and scroll (`reload`).
     pub(super) fn rescan(&mut self, root: &Path, cx: &mut Context<Self>) {
-        let views: Vec<(usize, f32)> = self.panes.iter().map(|pane| pane.editor.read(cx).view()).collect();
         let (notes, dirs, images, unreadable) = vault::rescan_full(root, &self.notes);
         self.unreadable = unreadable;
         self.sync(notes, dirs, images, cx);
-        for (pane, (at, scroll)) in self.panes.iter().zip(views) {
-            if pane.editor.read(cx).view().0 != at {
-                pane.editor.update(cx, |editor, cx| editor.set_view(at, scroll, cx));
-            }
-        }
     }
 
     /// Follows what other programs change in the vault: notes added,
