@@ -346,6 +346,12 @@ impl Canvas {
         Some(self.spot(h.0, h.1))
     }
 
+    /// The shape an arrow would be drawn from if the pointer pressed at this point of the window, and where.
+    #[cfg(test)]
+    pub fn drawable_at(&self, at: Point<Pixels>) -> Option<(u32, (f32, f32))> {
+        self.handle_at(self.world(at))
+    }
+
     /// What is typed in the library, if it is open.
     #[cfg(test)]
     pub fn library_query(&self) -> Option<&str> {

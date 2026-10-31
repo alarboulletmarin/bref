@@ -1290,6 +1290,39 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         assert_eq!(drawn.links.len(), before + 1);
         assert_eq!((made.from, made.end), (diagram::End::Pin(rect.id, 1., 0.5), diagram::Head::Arrow), "{made:?}");
         assert_eq!(made.to.shape(), Some(ellipse.id));
+        // A real pointer goes there step by step: from the middle of the shape out through its border to the handle,
+        // the shape stays pointed at (there was a gap past the border where the handles went away).
+        let (mid_y, edge) = (rect.y + rect.h / 2., rect.x + rect.w);
+        for dx in (0..=18).step_by(2) {
+            let at = canvas.read_with(cx, |c, _| c.spot(edge - 4. + dx as f32, mid_y));
+            cx.simulate_mouse_move(at, None, gpui::Modifiers::none());
+            assert_eq!(canvas.read_with(cx, |c, _| c.pointed().0), Some(rect.id), "lost {dx} px past the border");
+        }
+        // Anywhere just outside an edge, not only at a handle: pressing there and dragging draws an arrow from the
+        // nearest place of that edge. Coming from outside, toward the edge, lights the shape too.
+        let far_above = canvas.read_with(cx, |c, _| c.spot(rect.x + rect.w / 4., rect.y - 120.));
+        cx.simulate_mouse_move(far_above, None, gpui::Modifiers::none());
+        let under = canvas.read_with(cx, |c, _| c.spot(rect.x + rect.w / 4., rect.y - 6.));
+        cx.simulate_mouse_move(under, None, gpui::Modifiers::none());
+        assert_eq!(canvas.read_with(cx, |c, _| c.pointed().0), Some(rect.id), "the edge is reached from outside");
+        let before = canvas.read_with(cx, |c, _| c.diagram().links.len());
+        cx.simulate_mouse_down(under, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_move(target, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_up(target, MouseButton::Left, gpui::Modifiers::none());
+        cx.run_until_parked();
+        let drawn = canvas.read_with(cx, |c, _| c.diagram().clone());
+        let made = drawn.links.last().unwrap();
+        assert_eq!((drawn.links.len(), made.from, made.to.shape()), (before + 1, diagram::End::Pin(rect.id, 0.25, 0.), Some(ellipse.id)), "{made:?}");
+        // The shapes did not move: the gesture drew, it did not drag.
+        assert_eq!((drawn.shapes[0].x, drawn.shapes[0].y), (rect.x, rect.y));
+        // One step of undo takes it back.
+        cx.simulate_keystrokes("secondary-z");
+        cx.run_until_parked();
+        assert_eq!(canvas.read_with(cx, |c, _| c.diagram().links.len()), before);
+        // Just outside a corner is no place to draw from: that is where a selected shape is resized.
+        let corner = canvas.read_with(cx, |c, _| c.spot(rect.x + rect.w + 3., rect.y + rect.h + 3.));
+        cx.simulate_mouse_move(corner, None, gpui::Modifiers::none());
+        assert!(canvas.read_with(cx, |c, _| c.drawable_at(corner)).is_none());
         // Nothing under the pointer: nothing is lit.
         let far = canvas.read_with(cx, |c, _| c.spot(430., 220.));
         cx.simulate_mouse_move(far, None, gpui::Modifiers::none());
