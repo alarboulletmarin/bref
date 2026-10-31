@@ -313,6 +313,7 @@ impl Shell {
             None => window.focus(&this.focus),
         }
         this.watch(cx);
+        this.listen(window, cx);
         this.check_updates(cx);
         let weak = cx.weak_entity();
         this.help.key_tap = Some(cx.intercept_keystrokes(move |event, window, cx| {

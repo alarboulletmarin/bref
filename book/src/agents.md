@@ -36,6 +36,8 @@ Writing: create a note, replace a passage that occurs once, append, rename (link
 
 Diagrams: the agent draws on the same canvas as you, with the same UML shapes: lifelines, calls, replies, `alt`, `opt` and `loop` fragments, classes with their compartments, inheritance, composition. You can then move and edit what it drew. It can also start from a template, turn a Mermaid class, sequence or state diagram into a canvas diagram, import Excalidraw or an uncompressed draw.io file, and render a PNG of what it drew to check it. A diagram file is written by Bref. A flowchart stays a Mermaid block in a note.
 
+Showing: when Bref is open on the same vault, the agent can open a note, a diagram or a table in a tab of its own (`show`), and the window comes to the front. When Bref is closed, or has another vault open, it says so; the files are written all the same.
+
 The user guide is a resource (`bref://guide/writing`, `links`, `comments`, `diagrams`, `uml`, and the other pages). Four prompts start a piece of work: document a feature, an architecture overview, a UML diagram from code, a review that leaves comments.
 
 ## Asking for a documented feature

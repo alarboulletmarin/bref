@@ -401,3 +401,50 @@ fn an_outside_write_while_typing_is_merged(cx: &mut TestAppContext) {
         assert!(failed);
     }
 }
+
+/// An agent asks the window to show a file (`bref mcp`, tool `show`): it opens in a tab of its own;
+/// a file of another vault, or none, is refused with a sentence.
+#[gpui::test]
+fn an_agent_shows_a_file(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "agent-show");
+    fs::write(root.join("Ouverte.md"), "# Ouverte\n").unwrap();
+    fs::create_dir_all(root.join("Dossier é")).unwrap();
+    fs::write(root.join("Dossier é/Écrite 🙂.md"), "# Écrite 🙂\n").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&root.join("Ouverte.md"), window, cx));
+    cx.run_until_parked();
+    let shown = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.pane().path.clone());
+    let tabs = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.panes.len());
+    let before = tabs(cx);
+
+    let asked = root.join("Dossier é/Écrite 🙂.md");
+    assert_eq!(shell.update_in(cx, |s, window, cx| s.show_asked(&asked, window, cx)), Ok(()));
+    cx.run_until_parked();
+    assert_eq!(shown(cx), Some(asked.clone()));
+    assert_eq!(tabs(cx), before + 1, "in a tab of its own: the open note stays");
+    // Asked again: the same tab comes to the front, no new one.
+    shell.update_in(cx, |s, window, cx| s.open_from_nav(&root.join("Ouverte.md"), window, cx));
+    assert_eq!(shell.update_in(cx, |s, window, cx| s.show_asked(&asked, window, cx)), Ok(()));
+    assert_eq!((shown(cx), tabs(cx)), (Some(asked), before + 1));
+    // The same file written another way (`..` inside the path) is the same file.
+    let other_way = root.join("Dossier é/../Ouverte.md");
+    assert_eq!(shell.update_in(cx, |s, window, cx| s.show_asked(&other_way, window, cx)), Ok(()));
+    assert_eq!(shown(cx), Some(root.join("Ouverte.md")));
+
+    let missing = root.join("Absente.md");
+    assert!(shell.update_in(cx, |s, window, cx| s.show_asked(&missing, window, cx)).unwrap_err().starts_with("no file at"));
+    let elsewhere = std::env::temp_dir().join(format!("bref-elsewhere-{}.md", std::process::id()));
+    fs::write(&elsewhere, "# Ailleurs\n").unwrap();
+    let refused = shell.update_in(cx, |s, window, cx| s.show_asked(&elsewhere, window, cx)).unwrap_err();
+    assert!(refused.starts_with("Bref has another vault open"), "{refused}");
+    fs::remove_file(&elsewhere).ok();
+    assert_eq!(shown(cx), Some(root.join("Ouverte.md")), "a refusal changes nothing");
+
+    // A diagram written by the agent opens in its canvas.
+    let diagram = root.join("Schéma.svg");
+    let mut d = Diagram::default();
+    d.add_shape(diagram::Form::Rect, 0., 0., 120., 60.);
+    fs::write(&diagram, d.to_svg(diagram::COLORS[0])).unwrap();
+    assert_eq!(shell.update_in(cx, |s, window, cx| s.show_asked(&diagram, window, cx)), Ok(()));
+    assert!(shell.read_with(cx, |s, _| s.pane().drawing().is_some()));
+}

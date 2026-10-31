@@ -14,7 +14,7 @@ use crate::{
         markdown::Link,
         rank,
     },
-    platform::{clock, vault as files},
+    platform::{clock, link, vault as files},
 };
 
 use super::{
@@ -606,6 +606,20 @@ pub fn rename_note(vault: &mut Vault, args: &Value) -> Outcome {
         "rewritten": rewritten,
         "links_left": left,
     }))
+}
+
+/// Asks the open Bref window to show a note or file: the user sees at once what the agent did.
+pub fn show(vault: &mut Vault, args: &Value) -> Outcome {
+    let path = match arg_str(args, "note").map(str::to_string).and_then(|note| vault.find_file(&note)) {
+        Ok(path) => path,
+        Err(message) => return Outcome::err(message),
+    };
+    // The window compares absolute paths; `--vault` may have been given relative.
+    let absolute = std::path::absolute(&path).unwrap_or(path.clone());
+    match link::show(&absolute) {
+        Ok(()) => Outcome::ok(json!({"shown": vault::rel(&vault.root, &path)})),
+        Err(message) => Outcome::err(message),
+    }
 }
 
 pub fn trash_note(vault: &mut Vault, args: &Value) -> Outcome {

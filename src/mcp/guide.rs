@@ -213,7 +213,7 @@ Search the vault for notes that already mention it, and follow their links. \
 Create one note: the context, the decisions, and how it works. Link the notes it touches by name with [[Note]]. \
 Add a technical part: the parts involved and how they talk. Draw a class diagram of the main types and a sequence diagram \
 of the main scenario, and explain each in a few sentences under it. {UML} \
-Do not delete a file. Do not type in a note while you are writing it. \
+Do not delete a file. When you are done, show the note in Bref with show. \
 The code to start from:\n{code}"
     )
 }

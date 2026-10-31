@@ -21,6 +21,9 @@ impl Client {
         let mut command = Command::new(env!("CARGO_BIN_EXE_bref"));
         // A French system: what the server tells the model stays in English.
         command.arg("mcp").arg("--vault").arg(root).env("LC_ALL", "fr_FR.UTF-8").env("LANG", "fr_FR.UTF-8");
+        // A config of its own: `show` must never reach a Bref window open on this machine.
+        let config = config(root);
+        command.env("XDG_CONFIG_HOME", &config).env("APPDATA", &config).env("HOME", &config);
         if read_only {
             command.arg("--read-only");
         }
@@ -54,6 +57,16 @@ impl Client {
         drop(self.stdin);
         self.child.wait().unwrap().code().unwrap_or(1)
     }
+}
+
+fn config(root: &Path) -> std::path::PathBuf {
+    root.with_extension("config")
+}
+
+/// Where the app writes its door (`platform::link`) under the config folder `config`.
+fn door(config: &Path) -> std::path::PathBuf {
+    let dir = if cfg!(target_os = "macos") { config.join("Library/Application Support") } else { config.to_path_buf() };
+    dir.join("bref/agent")
 }
 
 fn scratch(name: &str) -> std::path::PathBuf {
@@ -94,12 +107,39 @@ fn a_session_over_pipes() {
     assert_eq!(library["result"]["structuredContent"]["shapes"][0]["name"], "Class");
     let guide = client.ask("resources/read", json!({"uri": "bref://guide/links"}));
     assert!(guide["result"]["contents"][0]["text"].as_str().unwrap().contains("[["));
+    // `show` with no Bref open: a sentence, the note is there all the same.
+    let alone = client.ask("tools/call", json!({"name": "show", "arguments": {"note": "Session"}}));
+    assert_eq!(alone["result"]["isError"], true);
+    assert!(alone["result"]["content"][0]["text"].as_str().unwrap().contains("Bref is not open"));
+    // A window listening at its door: it is asked for the note's absolute path, with the secret.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let door = door(&config(&root));
+    fs::create_dir_all(door.parent().unwrap()).unwrap();
+    fs::write(&door, format!("{} s3cret\n", listener.local_addr().unwrap().port())).unwrap();
+    let window = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut line = String::new();
+        BufReader::new(&stream).read_line(&mut line).unwrap();
+        writeln!(stream, "{}", json!({"ok": true})).unwrap();
+        serde_json::from_str::<Value>(&line).unwrap()
+    });
+    let shown = client.ask("tools/call", json!({"name": "show", "arguments": {"note": "Session"}}));
+    assert_eq!(shown["result"]["isError"], false, "{shown}");
+    assert_eq!(shown["result"]["structuredContent"]["shown"], "Session.md");
+    let asked = window.join().unwrap();
+    assert_eq!(asked["secret"], "s3cret");
+    let path = Path::new(asked["show"].as_str().unwrap());
+    assert!(path.is_absolute() && path.ends_with("Session.md"), "{path:?}");
+    // A note that is not there is refused before the window is asked.
+    let missing = client.ask("tools/call", json!({"name": "show", "arguments": {"note": "Nowhere"}}));
+    assert!(missing["result"]["content"][0]["text"].as_str().unwrap().contains("no "), "{missing}");
     let unknown = client.ask("nope", json!({}));
     assert_eq!(unknown["error"]["code"], -32601);
     let broken = client.ask_raw("not json");
     assert_eq!(broken["error"]["code"], -32700);
     assert_eq!(client.finish(), 0);
     let _ = fs::remove_dir_all(&root);
+    let _ = fs::remove_dir_all(config(&root));
 }
 
 impl Client {

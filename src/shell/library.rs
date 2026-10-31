@@ -11,6 +11,50 @@ impl Shell {
         self.sync(notes, dirs, images, cx);
     }
 
+    /// Opens the window's door to `bref mcp` (`platform::link`): an agent asks it to show a file of
+    /// the vault. No door (no port to be had): the agent still writes, it just cannot show.
+    pub(super) fn listen(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if cfg!(test) {
+            return;
+        }
+        let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let signal = Arc::new(vault::Signal::default());
+        if platform::link::open(asked.clone(), signal.clone()).is_err() {
+            return;
+        }
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                signal.wait(cx.background_executor().timer(Duration::from_secs(3600))).await;
+                let each: Vec<platform::link::Asked> = std::mem::take(&mut *asked.lock().unwrap());
+                for ask in each {
+                    let Ok(answer) = this.update_in(cx, |this, window, cx| this.show_asked(&ask.path, window, cx)) else {
+                        return;
+                    };
+                    let _ = ask.answer.send(answer);
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Shows a file an agent asked for (`path` absolute), in a tab of its own, and brings the
+    /// window to the front.
+    pub(super) fn show_asked(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) -> Result<(), String> {
+        let Some(root) = self.vault.clone() else {
+            return Err("Bref has no vault open".into());
+        };
+        // The agent and the window may write the vault's path differently (a link, `/private` on macOS).
+        let (Ok(canon_root), Ok(canon)) = (root.canonicalize(), path.canonicalize()) else {
+            return Err(format!("no file at {}", path.display()));
+        };
+        let Ok(inside) = canon.strip_prefix(&canon_root) else {
+            return Err(format!("Bref has another vault open: {}", root.display()));
+        };
+        self.open(&root.join(inside), window, cx);
+        window.activate_window();
+        Ok(())
+    }
+
     /// Follows what other programs change in the vault: notes added,
     /// renamed, deleted, or modified while they are shown.
     ///
