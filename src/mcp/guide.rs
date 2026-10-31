@@ -56,6 +56,24 @@ const PROMPTS: &[(&str, &str, &str, &[(&str, &str, bool)])] = &[
         "Read a note and leave comments on the passages that need them, with add_comment.",
         &[("note", "The note to review, by name or path", true)],
     ),
+    (
+        "weekly_review",
+        "Weekly review",
+        "Read the daily notes of a week and write one note that sums it up, with links to the days and the notes they mention.",
+        &[("date", "A day of the week to review, YYYY-MM-DD (default today)", false)],
+    ),
+    (
+        "link_orphans",
+        "Link orphan notes",
+        "Find the notes with no link in or out, and propose where to link each one.",
+        &[("folder", "Only the notes in this folder (default the whole vault)", false)],
+    ),
+    (
+        "tidy_tags",
+        "Tidy tags",
+        "Find tags that are duplicates or misspellings of each other, and propose which to merge.",
+        &[],
+    ),
 ];
 
 pub fn list() -> Vec<Value> {
@@ -142,6 +160,9 @@ pub fn prompt(name: &str, args: &Value) -> Result<Value, String> {
         "architecture_overview" => architecture(&values),
         "uml_from_code" => uml(&values),
         "review_note" => review(&values),
+        "weekly_review" => weekly(&values),
+        "link_orphans" => orphans(&values),
+        "tidy_tags" => TIDY_TAGS.to_string(),
         _ => return Err(format!("unknown prompt `{name}`")),
     };
     Ok(json!({
@@ -247,6 +268,42 @@ one comment per passage, and only where the passage occurs once. \
 Read bref://guide/comments for the markup. Do not change the note except through add_comment, and do not delete a file."
     )
 }
+
+fn weekly(values: &[(&str, String)]) -> String {
+    let day = match value(values, "date") {
+        "" => "today".to_string(),
+        date => date.to_string(),
+    };
+    format!(
+        "Review the week, Monday to Sunday, that holds {day} in this Bref vault. Read bref://guide/daily-notes and bref://guide/links. \
+Find the daily notes of those seven days with search_notes or list_notes (sort recent) and read each with read_note. \
+Do not call daily_note for a day that has no note: it would create an empty one. \
+Create one note that sums the week up: what was done, what was decided, what is still open. \
+Link each daily note and each note they mention by name with [[Note]]. Do not delete a file. \
+When you are done, show the note in Bref with show."
+    )
+}
+
+fn orphans(values: &[(&str, String)]) -> String {
+    let scope = match value(values, "folder") {
+        "" => "the vault".to_string(),
+        folder => format!("the folder \"{folder}\""),
+    };
+    format!(
+        "Find the orphan notes in {scope}: list the notes with list_notes (kind note, follow next to the end), \
+and call note_links on each; an orphan has no outgoing link and no backlink. \
+For each orphan, read it and search_notes for its subject to find the notes it belongs with. \
+Then propose, for each orphan, the note that should link to it and the sentence where the [[link]] goes. \
+Do not change any note: give the list, and wait for the user to choose which links to add."
+    )
+}
+
+const TIDY_TAGS: &str = "\
+List every tag with list_tags. Group the tags that mean the same: a different case or accent, singular and plural, \
+- or _ or / between words, a typo, a translation. For each group, give each tag with its count, the tag to keep \
+(usually the most used), and the notes that carry the others (list_notes with tag). \
+Do not change any note: give the list, and wait for the user to agree. Then, for each note, read_note and edit_note \
+with its revision to replace the tag, and do not delete a file.";
 
 /// `%20` and the like. A `%` that is not an escape is kept.
 fn decode(uri: &str) -> String {

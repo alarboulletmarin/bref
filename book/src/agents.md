@@ -168,7 +168,32 @@ Diagrams: the agent draws on the same canvas as you, with the same UML shapes: l
 
 Showing: when Bref is open on the same vault, the agent can open a note, a diagram or a table in a tab of its own (`show`), and the window comes to the front. When Bref is closed, or has another vault open, it says so; the files are written all the same.
 
-The user guide is a resource (`bref://guide/writing`, `links`, `comments`, `diagrams`, `uml`, and the other pages). Four prompts start a piece of work: document a feature, an architecture overview, a UML diagram from code, a review that leaves comments.
+The user guide is a resource (`bref://guide/writing`, `links`, `comments`, `diagrams`, `uml`, and the other pages).
+
+## Prompts
+
+A prompt is a request written in advance that you start yourself: the agent cannot run one. Your client fills it with your arguments and sends it as if you had typed it. Bref offers seven:
+
+| Prompt | Arguments, in order | What the agent does |
+|---|---|---|
+| `document_feature` | `feature`, then `code` (optional) | reads the guide, looks for notes that already mention the feature, writes a note with a class diagram and a sequence diagram, then shows it in Bref |
+| `architecture_overview` | `project` | a hub note, a component diagram, a package diagram, and one note per part |
+| `uml_from_code` | `scope`, `kind` | one UML diagram (`class`, `sequence`, `state`, `component`, `package`, `activity`, `use-case` or `deployment`) of the code in scope, rendered and checked |
+| `review_note` | `note` | comments on the passages that need them, and no other change to the note |
+| `weekly_review` | `date` (optional, `YYYY-MM-DD`, default today) | reads the daily notes of that week, Monday to Sunday, and writes one note that sums it up, with links to the days and the notes they mention; a day without a note stays without one |
+| `link_orphans` | `folder` (optional, default the whole vault) | finds the notes with no link in or out and proposes, for each, the note and the sentence where a link to it would go; it changes nothing until you choose |
+| `tidy_tags` | none | groups the tags that mean the same (case, accents, plural, typo) and proposes the one to keep; it changes nothing until you agree |
+
+In Claude Code, type `/` to see them as `/bref:document_feature (MCP)`, or type the full name followed by the arguments:
+
+```text
+/mcp__bref__uml_from_code src/mcp/guide.rs class
+/mcp__bref__review_note Roadmap
+/mcp__bref__weekly_review 2026-10-28
+/mcp__bref__tidy_tags
+```
+
+Arguments are split on spaces, so each one is a single word: write `issue-93`, not `issue 93`, and pass a path rather than a sentence. For a longer request, send an ordinary message instead. Other clients show prompts in their own menu, under the name of the server.
 
 ## Asking for a documented feature
 
