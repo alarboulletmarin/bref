@@ -110,28 +110,38 @@ pub fn move_card(text: &str, from: (usize, usize), to: (usize, usize)) -> Option
     let card = all.get(from.0)?.cards.get(from.1)?;
     let column = all.get(to.0)?;
     let into = column.cards.get(to.1).map_or(column.end, |next| next.line.start);
-        // Dropped on itself or just after itself: nothing moves.
-    if (card.line.start..=card.line.end).contains(&into) {
+    // Carry the indented block with the card. Indented task lines are details, even when they
+    // look like cards themselves.
+    let mut block_end = card.line.end;
+    for line in text[block_end..].split_inclusive('\n') {
+        let content = line.trim_end_matches(['\n', '\r']);
+        if content.is_empty() || !(content.starts_with(' ') || content.starts_with('\t')) {
+            break;
+        }
+        block_end += line.len();
+    }
+    // Dropped on itself or just after itself: nothing moves.
+    if (card.line.start..=block_end).contains(&into) {
         return None;
     }
-    let mut line = text[card.line.clone()].to_string();
-    if !line.ends_with('\n') {
-        line.push('\n');
+    let mut block = text[card.line.start..block_end].to_string();
+    if !block.ends_with('\n') {
+        block.push('\n');
     }
     let mut moved = String::with_capacity(text.len() + 1);
     let (first, second) = (card.line.start.min(into), card.line.start.max(into));
     moved.push_str(&text[..first]);
     if into < card.line.start {
-        moved.push_str(&line);
+        moved.push_str(&block);
         moved.push_str(&text[into..card.line.start]);
-        moved.push_str(&text[card.line.end..]);
+        moved.push_str(&text[block_end..]);
     } else {
-        moved.push_str(&text[card.line.end..second]);
+        moved.push_str(&text[block_end..second]);
                 // The target column ends the file without a line ending: the card starts one.
         if !moved.ends_with('\n') {
             moved.push('\n');
         }
-        moved.push_str(&line);
+        moved.push_str(&block);
         moved.push_str(&text[second..]);
     }
     Some(moved)
@@ -302,9 +312,9 @@ mod tests {
                 // Into an empty column, then at the end of the last one (the file has no line ending).
         let moved = move_card(BOARD, (0, 0), (1, usize::MAX)).unwrap();
         assert_eq!(titles(&moved), [vec!["Relire"], vec!["Écrire"], vec!["Planifier"]]);
-        assert!(moved.contains("## En cours\n- [ ] Écrire\n\n## Fait") && moved.contains("    - [ ] un détail\n- [ ] Relire"));
+        assert!(moved.contains("## En cours\n- [ ] Écrire\n    - [ ] un détail\n\n## Fait") && !moved.contains("    - [ ] un détail\n- [ ] Relire"));
         let moved = move_card(&moved, (1, 0), (2, usize::MAX)).unwrap();
-        assert!(moved.ends_with("- [x] Planifier\n- [ ] Écrire\n"));
+        assert!(moved.ends_with("- [x] Planifier\n- [ ] Écrire\n    - [ ] un détail\n"));
                 // Before another card, upward as well as downward; onto itself, nothing.
         assert_eq!(titles(&move_card(BOARD, (2, 0), (0, 1)).unwrap()), [vec!["Écrire", "Planifier", "Relire"], vec![], vec![]]);
         assert_eq!(titles(&move_card(BOARD, (0, 0), (0, 2)).unwrap())[0], ["Relire", "Écrire"]);
