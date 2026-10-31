@@ -1,32 +1,162 @@
 # Agents (MCP)
 
-`bref mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server in the same program as Bref. An agent (Claude Code, Claude Desktop, Cursor, VS Code) can read the vault, write notes and draw diagrams, and Bref shows the files. The agent does not get a generic folder: it gets Bref's links, its trash, and its diagrams.
+`bref mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server in the same program as Bref. An agent (Claude Code, Claude Desktop, Codex CLI, Gemini CLI, Cursor, VS Code) can read the vault, write notes and draw diagrams, and Bref shows the files. The agent does not get a generic folder: it gets Bref's links, its trash, and its diagrams.
 
-The server speaks JSON-RPC over the standard input and output of the process. It does not open a window and it does not use the network.
+The server speaks JSON-RPC over the standard input and output of the process. It does not open a window and it does not use the network: `show` reaches the open Bref window through 127.0.0.1, on this computer only.
 
-## What you tell the client
+## Setting it up
 
-The command is the Bref program, and its first argument is `mcp`.
+### 1. The path of the program
 
-| System | Command |
+The client starts Bref itself, often without the `PATH` of your terminal (Claude Desktop on macOS, for one). Give it the full path of the program:
+
+| Installed with | Path |
 |---|---|
-| Arch Linux | `/usr/bin/bref` |
-| macOS | `/Applications/Bref.app/Contents/MacOS/bref` |
-| Windows | `C:\Program Files\Bref\bref.exe` |
+| The Arch package (`pacman -U` or `makepkg -si`) | `/usr/bin/bref` |
+| `sudo make install` | `/usr/local/bin/bref`, or `/usr/bin/bref` with `PREFIX=/usr` |
+| `cargo install` | `~/.cargo/bin/bref`; on Windows `%USERPROFILE%\.cargo\bin\bref.exe` |
+| The macOS disk image | `/Applications/Bref.app/Contents/MacOS/bref` |
+| The Windows installer | `%LOCALAPPDATA%\Programs\Bref\bref.exe`; `C:\Program Files\Bref\bref.exe` if you chose to install for all users |
+| The Windows zip | `bref.exe` in the folder you unzipped it to |
 
-Claude Code:
+The examples below use `/usr/bin/bref`: put yours. A configuration file does not expand `%LOCALAPPDATA%` or `~`: write the whole path, such as `C:\Users\you\AppData\Local\Programs\Bref\bref.exe`.
+
+### 2. The arguments
+
+The first argument is always `mcp`. The server works on the vault Bref has open when the server starts: after opening another vault in Bref, restart the server (in most clients, restart the client). Two more arguments, after `mcp`, change that:
+
+- `--vault <folder>`: another vault, or a vault for a computer where Bref has never been opened.
+- `--read-only`: only the tools that read. The agent cannot write, rename or trash anything.
+
+### 3. The client
+
+#### Claude Code
 
 ```bash
-claude mcp add --scope user bref -- bref mcp
+claude mcp add --scope user bref -- /usr/bin/bref mcp
 ```
 
-Claude Desktop, Cursor, VS Code and the other clients that read a JSON file:
+Everything after `--` is the command and its arguments. `--scope user` makes Bref available in every project; without it, only in the current one. `--scope project` writes it in `.mcp.json` at the root of the project, to share with the people who work on it.
+
+On Windows, in PowerShell:
+
+```powershell
+claude mcp add --scope user bref -- "$env:LOCALAPPDATA\Programs\Bref\bref.exe" mcp
+```
+
+To check: `claude mcp list` shows `bref` with `✔ Connected`, and `/mcp` lists it in a session.
+
+#### Claude Desktop
+
+In Claude Desktop, open **Settings**, then **Developer**, then **Edit Config**. That opens `claude_desktop_config.json`:
+
+| System | File |
+|---|---|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Linux | `~/.config/Claude/claude_desktop_config.json` |
+
+Add `bref` to `mcpServers`, next to the servers already there:
 
 ```json
-{ "mcpServers": { "bref": { "command": "bref", "args": ["mcp"] } } }
+{
+  "mcpServers": {
+    "bref": {
+      "command": "/Applications/Bref.app/Contents/MacOS/bref",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 
-On macOS and Windows, `command` is the path from the table. The server uses the vault Bref already has open. Another folder is `--vault` followed by its path, added after `mcp`. `--read-only` offers only the tools that do not write.
+On Windows, every `\` of the path is written `\\` in JSON:
+
+```json
+{
+  "mcpServers": {
+    "bref": {
+      "command": "C:\\Users\\you\\AppData\\Local\\Programs\\Bref\\bref.exe",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Quit Claude Desktop completely and start it again. Bref is then in the list of connectors of the message box. If it is not, the file `mcp-server-bref.log` in the logs folder says why: `~/Library/Logs/Claude` on macOS, `%APPDATA%\Claude\logs` on Windows, `~/.config/Claude/logs` on Linux.
+
+#### Codex CLI
+
+```bash
+codex mcp add bref -- /usr/bin/bref mcp
+```
+
+Or by hand, in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.bref]
+command = "/usr/bin/bref"
+args = ["mcp"]
+```
+
+On Windows, write the path between single quotes, where `\` stays as is: `command = 'C:\Users\you\AppData\Local\Programs\Bref\bref.exe'`. To check: `codex mcp list`, or `/mcp` in a session.
+
+#### Gemini CLI
+
+```bash
+gemini mcp add --scope user bref /usr/bin/bref mcp
+```
+
+Without `--scope user`, the server is written in `.gemini/settings.json` of the current project. By hand, it goes in `mcpServers` of `~/.gemini/settings.json`, as for Claude Desktop. To check: `gemini mcp list`.
+
+#### Cursor
+
+In `~/.cursor/mcp.json` for every project, or `.cursor/mcp.json` for one:
+
+```json
+{
+  "mcpServers": {
+    "bref": {
+      "type": "stdio",
+      "command": "/usr/bin/bref",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+#### VS Code
+
+Run **MCP: Add Server** from the command palette, choose **Command (stdio)**, type `/usr/bin/bref mcp`, and name it `bref`. By hand, in `.vscode/mcp.json`, the key is `servers` and `type` is required:
+
+```json
+{
+  "servers": {
+    "bref": {
+      "type": "stdio",
+      "command": "/usr/bin/bref",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+#### Other clients
+
+Most read the `mcpServers` object shown for Claude Desktop: a `command`, the full path of Bref, and `args`, `["mcp"]`.
+
+### 4. Check that it works
+
+Ask the agent to call `vault_info` from the `bref` server. It answers with the folder of your vault and how many notes it holds.
+
+- ``no vault: open one in Bref, or pass `--vault` ``: Bref has never opened a vault on this computer. Open one in Bref, or add `--vault` and its folder after `mcp`.
+- `the vault in the config no longer exists`: the vault Bref last opened was moved or deleted. Open it again in Bref, or pass `--vault`.
+- The client says the server failed to start: the path is wrong. Copy it from the table above and check that the file is there.
+
+To see every tool, resource and prompt without an agent, the MCP Inspector starts the server and lists them (it needs Node.js):
+
+```bash
+npx @modelcontextprotocol/inspector /usr/bin/bref mcp
+```
 
 ## What the agent can do
 
