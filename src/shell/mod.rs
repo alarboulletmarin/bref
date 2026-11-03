@@ -219,8 +219,12 @@ impl Shell {
         let theme = Theme::of(&prefs, window.appearance());
         let pane = Self::new_pane(theme, window, cx);
         cx.observe_window_appearance(window, |this, window, cx| this.restyle(window, cx)).detach();
+        let shell = cx.entity().downgrade();
+        window.on_window_should_close(cx, move |window, cx| {
+            shell.update(cx, |this, cx| this.may_close_window(window, cx)).unwrap_or(true)
+        });
         cx.on_app_quit(|this, cx| {
-            this.each_pane(|this| this.leave(cx));
+            this.each_pane(|this| { this.leave(cx); });
             async {}
         })
         .detach();

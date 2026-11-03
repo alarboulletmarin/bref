@@ -275,3 +275,45 @@ fn tabs_are_pills_that_stay_clear_of_the_window_buttons(cx: &mut TestAppContext)
     }
     let _ = fs::remove_dir_all(&root);
 }
+
+/// A failed atomic write must leave the actual editor alive, including its undo history.
+#[gpui::test]
+fn failed_save_keeps_the_tab_and_its_edits(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "tabs-save-failure");
+    let alpha = root.join("Alpha.md");
+    let beta = root.join("Beta.md");
+    let original = "# Alpha\n\noriginal";
+    fs::write(&alpha, original).unwrap();
+    fs::write(&beta, "# Beta\n").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    shell.update_in(cx, |s, window, cx| {
+        s.open_from_nav(&alpha, window, cx);
+        s.open_from_nav(&beta, window, cx);
+        s.open_from_nav(&alpha, window, cx);
+    });
+    fs::create_dir(root.join(".Alpha.tmp")).unwrap();
+    cx.simulate_keystrokes("secondary-end");
+    cx.simulate_input(" UNSAVED CHANGES");
+    let editor = shell.read_with(cx, |s, _| s.pane().editor.clone());
+    assert!(shell.read_with(cx, |s, _| s.pane().dirty));
+    cx.simulate_keystrokes("secondary-w");
+    assert_eq!(fs::read_to_string(&alpha).unwrap(), original);
+    shell.read_with(cx, |s, cx| {
+        assert!(s.panes.iter().any(|p| p.editor == editor), "the editor holding unsaved text was discarded");
+        assert_eq!(s.pane().editor, editor);
+        assert!(s.pane().dirty);
+        assert_eq!(editor.read(cx).text(), format!("{original} UNSAVED CHANGES"));
+        assert!(s.toasts.iter().any(|t| t.tone == Tone::Failed && t.text.contains("Alpha")));
+        assert!(s.closed.is_empty());
+    });
+    cx.simulate_keystrokes("secondary-z");
+    assert_ne!(editor.read_with(cx, |e, _| e.text().to_string()), format!("{original} UNSAVED CHANGES"));
+    cx.simulate_keystrokes("secondary-shift-z");
+    fs::remove_dir(root.join(".Alpha.tmp")).unwrap();
+    cx.simulate_keystrokes("secondary-w");
+    assert_eq!(fs::read_to_string(&alpha).unwrap(), format!("{original} UNSAVED CHANGES"));
+    assert!(!shell.read_with(cx, |s, _| s.panes.iter().any(|p| p.editor == editor)));
+    cx.simulate_keystrokes("secondary-alt-t");
+    assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string()), format!("{original} UNSAVED CHANGES"));
+    let _ = fs::remove_dir_all(&root);
+}

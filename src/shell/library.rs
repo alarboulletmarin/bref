@@ -185,8 +185,9 @@ impl Shell {
             if let Some(sheet) = this.pane().sheet() {
                 sheet.update(cx, |sheet, cx| sheet.reload_if_changed(cx));
             }
-            // So is the shown diagram: the canvas writes on every gesture, nothing waits in it.
-            if let Some(canvas) = this.pane().drawing().cloned()
+            // A failed canvas write still holds edits that must not be replaced by the disk.
+            if !this.pane().canvas_dirty
+                && let Some(canvas) = this.pane().drawing().cloned()
                 && let Some(fresh) = this.pane().file_path().and_then(|path| fs::read_to_string(path).ok()).as_deref().and_then(Diagram::from_svg)
                 && fresh.to_svg(diagram::COLORS[0]) != canvas.read(cx).diagram().to_svg(diagram::COLORS[0])
             {
@@ -204,7 +205,9 @@ impl Shell {
     }
 
     pub(super) fn set_vault(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        self.each_pane(|this| this.leave(cx));
+        if !self.may_close_window(window, cx) {
+            return;
+        }
         // Another vault: a single pane, on a new note.
         self.panes.truncate(1);
         self.active = 0;

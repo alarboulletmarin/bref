@@ -36,10 +36,12 @@ impl Shell {
 
     /// `say`, with an « Undo » button that puts `undo.0` back at `undo.1`.
     pub(super) fn say_undoable(&mut self, tone: Tone, text: impl Into<String>, undo: Option<(PathBuf, PathBuf)>, cx: &mut Context<Self>) {
-        self.toasts.retain(|t| t.tone != Tone::Busy);
+        let text = text.into();
+        // Repeated retries of one failed save refresh its message instead of covering the view.
+        self.toasts.retain(|t| t.tone != Tone::Busy && !(tone == Tone::Failed && t.tone == Tone::Failed && t.text == text));
         self.toasted += 1;
         let id = self.toasted;
-        self.toasts.push(Toast { id, tone, text: text.into(), undo });
+        self.toasts.push(Toast { id, tone, text, undo });
         if tone != Tone::Busy {
             // A failure stays longest; a long message is given time to be read.
             let text_len = self.toasts.last().map_or(0, |t| t.text.chars().count());

@@ -25,6 +25,7 @@ mod panel_rows;
 mod current_file;
 mod panes;
 mod tabs;
+mod save_close;
 mod window;
 
 use super::*;

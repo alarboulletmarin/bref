@@ -38,7 +38,7 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `Ctrl+Shift+C` | Copy the code block, else the note |
 | `Ctrl+click` | Open a \[\[link\]\], \#tag or URL |
 | `F1` / `Ctrl+/` | This help |
-| `Ctrl+Q` | Quit |
+| `Ctrl+Q` | Save and quit; stay open if saving fails |
 
 ## Navigation
 
@@ -66,7 +66,7 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | Dragging a tab | Onto a tab bar: it moves there; onto the middle of a pane: it joins it; near an edge of a pane: a new pane opens there with it. A file from the tree does the same. Escape lets go without moving anything |
 | Border between panes | Drag it to share the room; double click: even shares |
 | Opening a file | Click in the tree, choose in the palette, follow a link: the file opens in a tab of its own, or its tab comes to the front if it is already open; the arrows in the tree preview notes in a single italic tab |
-| `Ctrl+W` | Close the tab that has the focus; the pane goes with its last tab |
+| `Ctrl+W` | Save and close the focused tab; keep it open if saving fails |
 | `Ctrl+Alt+T` | Reopen the last closed tab |
 | `Ctrl+Tab` | Next tab |
 | `Ctrl+Shift+Tab` | Previous tab |

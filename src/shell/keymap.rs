@@ -54,7 +54,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 k(&CopyAll, tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
                 t(&format!("{MOD}+{click}"), tr("Open a [[link]], #tag or URL", "Ouvrir un [[lien]], #tag ou URL")),
                 k(&ToggleHelp, tr("This help", "Cette aide")),
-                k(&Quit, tr("Quit", "Quitter")),
+                k(&Quit, tr("Save and quit; stay open if saving fails", "Enregistrer et quitter ; rester ouvert si l’enregistrement échoue")),
             ],
         ),
         (
@@ -82,7 +82,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 t(tr("Dragging a tab", "Glisser un onglet"), tr("Onto a tab bar: it moves there; onto the middle of a pane: it joins it; near an edge of a pane: a new pane opens there with it. A file from the tree does the same. Escape lets go without moving anything", "Sur une barre d'onglets : il s'y déplace ; au milieu d'un volet : il le rejoint ; près d'un bord d'un volet : un nouveau volet s'y ouvre avec lui. Un fichier de l'arbre fait de même. Échap lâche sans rien déplacer")),
                 t(tr("Border between panes", "Bordure entre volets"), tr("Drag it to share the room; double click: even shares", "La glisser pour partager la place ; double-clic : parts égales")),
                 t(tr("Opening a file", "Ouvrir un fichier"), tr("Click in the tree, choose in the palette, follow a link: the file opens in a tab of its own, or its tab comes to the front if it is already open; the arrows in the tree preview notes in a single italic tab", "Clic dans l'arbre, choix dans la palette, lien suivi : le fichier s'ouvre dans son propre onglet, ou son onglet passe devant s'il est déjà ouvert ; les flèches dans l'arbre montrent les notes en aperçu dans un seul onglet en italique")),
-                k(&ClosePane, tr("Close the tab that has the focus; the pane goes with its last tab", "Fermer l'onglet qui a la saisie ; le volet part avec son dernier onglet")),
+                k(&ClosePane, tr("Save and close the focused tab; keep it open if saving fails", "Enregistrer et fermer l'onglet actif ; le garder ouvert si l'enregistrement échoue")),
                 k(&ReopenTab, tr("Reopen the last closed tab", "Rouvrir le dernier onglet fermé")),
                 k(&NextTab, tr("Next tab", "Onglet suivant")),
                 k(&PrevTab, tr("Previous tab", "Onglet précédent")),

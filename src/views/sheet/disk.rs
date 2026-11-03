@@ -175,14 +175,20 @@ impl Sheet {
     }
 
     pub(super) fn not_saved(&self, e: WriteError) -> String {
-        format!("{} : {e}", tr("Table not saved", "Tableau non enregistré"))
+        format!("{} « {} » : {e}", tr("Table not saved", "Tableau non enregistré"), self.path.display())
     }
 
-    /// Writes what is pending right away (file change, close).
-    pub fn flush(&mut self, cx: &mut Context<Self>) {
+    /// Whether a write or a cell edit still needs saving.
+    pub fn is_dirty(&self) -> bool {
+        self.dirty || self.edit.is_some()
+    }
+
+    /// Writes what is pending right away (file change, close), waiting for any older write.
+    /// False leaves the data and undo history alive for a retry.
+    pub fn flush(&mut self, cx: &mut Context<Self>) -> bool {
         self.finish(cx);
         if !self.dirty {
-            return;
+            return true;
         }
         match self.disk.write(self.generation, &self.path, &self.table, self.format.encoding) {
             Ok(()) => {
@@ -191,5 +197,6 @@ impl Sheet {
             }
             Err(e) => cx.emit(SheetEvent::Error(self.not_saved(e))),
         }
+        !self.dirty
     }
 }

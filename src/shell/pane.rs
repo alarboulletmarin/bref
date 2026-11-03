@@ -65,6 +65,8 @@ pub(super) struct Pane {
     /// The note was created in this pane: left empty, its file does not stay in the vault.
     pub(super) fresh: bool,
     pub(super) dirty: bool,
+    /// A canvas write failed: keep its live diagram until a retry succeeds.
+    pub(super) canvas_dirty: bool,
     /// The note's file as last read or written here: what another program changed since is
     /// merged into what is typed (`Shell::take_outside`), not overwritten.
     pub(super) base: String,
@@ -199,6 +201,7 @@ impl Shell {
             new_dir: None,
             fresh: false,
             dirty: false,
+            canvas_dirty: false,
             base: String::new(),
             board: kanban::Board::new(cx),
             listing: None,
@@ -642,11 +645,14 @@ impl Shell {
 
     /// Ctrl+W: closes the tab that has input, what it holds saved first; the pane goes with
     /// its last tab, and the other takes the whole width. The last tab of the last pane stays.
-    pub(super) fn close_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn close_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if self.panes.len() < 2 {
-            return;
+            return false;
         }
-        self.leave(cx);
+        if !self.leave(cx) {
+            self.focus_pane(self.active, window, cx);
+            return false;
+        }
         if let Some(path) = self.pane().displayed_path().cloned() {
             self.closed.retain(|p| *p != path);
             self.closed.push(path);
@@ -656,6 +662,22 @@ impl Shell {
         }
         self.remove_tab(self.active);
         self.focus_pane(self.active, window, cx);
+        true
+    }
+
+    /// A window owns every tab: no view may be discarded until all writes have succeeded.
+    pub(super) fn may_close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        for tab in 0..self.panes.len() {
+            if !self.in_pane(tab, |this| this.flush_one(cx)) {
+                self.focus_pane(tab, window, cx);
+                return false;
+            }
+        }
+        self.each_pane(|this| {
+            this.follow_title(cx);
+            this.drop_if_empty(cx);
+        });
+        true
     }
 
     /// Ctrl+Alt+T: the last closed tab comes back, in a new tab of the active pane; what was
@@ -771,22 +793,25 @@ impl Shell {
         self.pane().sheet().cloned()
     }
 
-    pub(super) fn flush_sheet(&mut self, cx: &mut Context<Self>) {
-        if let Some(sheet) = self.pane().sheet() {
-            sheet.update(cx, |sheet, cx| sheet.flush(cx));
-        }
+    pub(super) fn flush_sheet(&mut self, cx: &mut Context<Self>) -> bool {
+        self.pane().sheet().is_none_or(|sheet| sheet.update(cx, |sheet, cx| sheet.flush(cx)))
     }
 
     /// Shows `file` in the active pane in place of its note, or the note again (`None`). A table
     /// that is left keeps its place in the history and is saved first.
-    pub(super) fn set_file(&mut self, file: Option<FileView>, cx: &mut Context<Self>) {
+    pub(super) fn set_file(&mut self, file: Option<FileView>, cx: &mut Context<Self>) -> bool {
         let leaving = self.pane().file.as_ref().is_some_and(|old| file.as_ref().is_none_or(|new| new.path != old.path));
         if leaving && self.pane().sheet().is_some() {
             // What `track` would have kept on the next render, while the table still existed.
             if !self.pane().peek {
                 self.mark_place(cx);
             }
-            self.flush_sheet(cx);
+            if !self.flush_sheet(cx) {
+                return false;
+            }
+        }
+        if leaving && !self.flush_canvas(cx) {
+            return false;
         }
         // A file that takes the note's place takes the input too: left in the editor, `render` would
         // hand the pane back to the note (its focus means "the note is back"). A preview keeps the input.
@@ -794,6 +819,7 @@ impl Shell {
             self.grab = true;
         }
         self.pane_mut().file = file;
+        true
     }
 }
 

@@ -90,8 +90,10 @@ impl Shell {
             cx.notify();
             return false;
         }
+        if !self.leave(cx) {
+            return false;
+        }
         self.set_file(None, cx);
-        self.leave(cx);
         cx.notify();
         match fs::read_to_string(path) {
             Ok(text) => {
@@ -189,7 +191,9 @@ impl Shell {
 
     pub(super) fn new_note(&mut self, text: String, cx: &mut Context<Self>) {
         self.pane_mut().peek = false;
-        self.leave(cx);
+        if !self.leave(cx) {
+            return;
+        }
         self.pane_mut().listing = None;
         self.set_file(None, cx);
         self.pane_mut().path = None;
@@ -210,11 +214,16 @@ impl Shell {
     /// Before leaving the shown note: it is saved and, if its title
     /// renamed it, links to its old name follow. Waiting for this moment
     /// avoids rewriting the links at every intermediate title while typing.
-    pub(super) fn leave(&mut self, cx: &mut Context<Self>) {
+    /// False means the current view must stay alive, with its dirty state and undo history.
+    pub(super) fn leave(&mut self, cx: &mut Context<Self>) -> bool {
         self.mark_place(cx);
+        if !self.flush_one(cx) {
+            return false;
+        }
         self.flush(cx);
         self.follow_title(cx);
         self.drop_if_empty(cx);
+        true
     }
 
     /// The links to the note follow the name its title gave it since it was opened.
@@ -338,7 +347,7 @@ impl Shell {
 
     /// Brings the disk up to date: each pane writes what is waiting in it.
     pub(super) fn flush(&mut self, cx: &mut Context<Self>) {
-        self.each_pane(|this| this.flush_one(cx));
+        self.each_pane(|this| { this.flush_one(cx); });
         // What was just written may be shown in an embed, in this window.
         for pane in &self.panes {
             pane.editor.update(cx, |e, cx| e.refresh_embeds(cx));
@@ -363,7 +372,7 @@ impl Shell {
                     let copy = git::free_conflict_path(path, &date, "");
                     if let Err(e) = vault::write(&copy, &disk) {
                         let what = tr("Changed here and elsewhere, and the other version could not be kept:", "Modifiée ici et ailleurs, et l'autre version n'a pas pu être gardée :");
-                        self.say(Tone::Failed, format!("{what} {}", crate::lang::io_reason(&e)), cx);
+                        self.say(Tone::Failed, format!("{what} « {} » : {}", path.display(), crate::lang::io_reason(&e)), cx);
                         return false;
                     }
                     let what = tr("Changed here and elsewhere on the same lines: the other version is in", "Modifiée ici et ailleurs sur les mêmes lignes : l'autre version est dans");
@@ -378,23 +387,25 @@ impl Shell {
     /// Writes the pane's note to disk if it changed.
     // ponytail: synchronous write on the UI thread (a few KB, < 1 ms);
     // move to a background task if notes get very large.
-    pub(super) fn flush_one(&mut self, cx: &mut Context<Self>) {
-        self.flush_sheet(cx);
+    pub(super) fn flush_one(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.flush_sheet(cx) || !self.flush_canvas(cx) {
+            return false;
+        }
         let Some(root) = self.vault.clone() else {
-            return;
+            return !self.pane().dirty;
         };
         if !self.pane().dirty {
-            return;
+            return true;
         }
         if let Some(path) = self.pane().path.clone()
             && !self.take_outside(&path, cx)
         {
-            return;
+            return false;
         }
         let content = self.pane().editor.read(cx).text().to_string();
         if self.pane().path.is_none() && content.trim().is_empty() {
             self.pane_mut().dirty = false;
-            return;
+            return true;
         }
         // A `#` title added or changed at the top: the file now bears its name.
         if vault::h1_of(&content).is_some_and(|h1| self.pane().h1.as_ref() != Some(&h1)) {
@@ -459,6 +470,7 @@ impl Shell {
             }
         }
         cx.notify();
+        !self.pane().dirty
     }
 
     pub(super) fn on_editor_event(

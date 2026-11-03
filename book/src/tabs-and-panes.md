@@ -17,6 +17,11 @@ A pane holds as many files as you like, as in a code editor.
 
 A tab can be dragged along the bar, into another pane, or to an edge to split one. See [Drag a tab](#drag-a-tab).
 
+- **Saving before closing** includes a cell still being edited in a CSV or TSV grid.
+- **If saving fails**, the tab stays open and comes to the front with its text and undo history. The message names the file and explains the error.
+- **Retry**: restore the destination's writability, then close again.
+- **Closing the window**, using **Quit**, or switching vaults also keeps the current documents open if one cannot be saved.
+
 Tabs come back at the next start. A tab out of sight keeps its text, cursor and undo, but lets go of what it drew, so a hundred tabs cost little memory.
 
 ## Back and forward

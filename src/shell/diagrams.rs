@@ -3,7 +3,7 @@
 use super::*;
 
 impl Shell {
-    /// The diagram is saved on every change: nothing waits in memory.
+    /// Each change attempts a save; a failed write keeps the live diagram for a retry.
     // ponytail: synchronous write on every gesture or keystroke (a few KB);
     // defer it like the notes' if big diagrams make things wait.
     pub(super) fn on_canvas_event(&mut self, canvas: Entity<Canvas>, event: &CanvasEvent, cx: &mut Context<Self>) {
@@ -17,19 +17,36 @@ impl Shell {
         let Some(path) = self.pane().file_path().filter(|_| self.pane().drawing() == Some(&canvas)) else {
             return;
         };
-        let result = match event {
-            CanvasEvent::Changed => vault::write(path, &canvas.read(cx).diagram().to_svg(diagram::COLORS[0])),
-            CanvasEvent::Export => return self.export_png(path.clone(), &canvas, cx),
-            CanvasEvent::Template(i) => {
-                self.template = Some(*i);
-                return cx.notify();
+        match event {
+            CanvasEvent::Changed => {
+                self.pane_mut().canvas_dirty = true;
+                self.flush_canvas(cx);
             }
-        };
-        match result {
-            Ok(()) => self.calm(),
-            Err(e) => self.say(Tone::Failed, format!("{} : {}", tr("Diagram not saved", "Schéma non enregistré"), crate::lang::io_reason(&e)), cx),
+            CanvasEvent::Export => return self.export_png(path.clone(), &canvas, cx),
+            CanvasEvent::Template(i) => self.template = Some(*i),
         }
         cx.notify();
+    }
+
+    /// Retries a failed canvas write before its entity can be discarded.
+    pub(super) fn flush_canvas(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.pane().canvas_dirty {
+            return true;
+        }
+        let (Some(path), Some(canvas)) = (self.pane().file_path(), self.pane().drawing()) else {
+            return false;
+        };
+        match vault::write(path, &canvas.read(cx).diagram().to_svg(diagram::COLORS[0])) {
+            Ok(()) => {
+                self.pane_mut().canvas_dirty = false;
+                self.calm();
+                true
+            }
+            Err(e) => {
+                self.say(Tone::Failed, format!("{} « {} » : {}", tr("Diagram not saved", "Schéma non enregistré"), path.display(), crate::lang::io_reason(&e)), cx);
+                false
+            }
+        }
     }
 
     /// PNG image of the diagram, next to it: dark ink on a white background, so

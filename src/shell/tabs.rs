@@ -88,7 +88,9 @@ impl Shell {
     pub(super) fn close_tab(&mut self, tab: usize, window: &mut Window, cx: &mut Context<Self>) {
         let keep = (self.active != tab).then_some(self.active);
         self.active = tab;
-        self.close_pane(window, cx);
+        if !self.close_pane(window, cx) {
+            return;
+        }
         if let Some(keep) = keep {
             self.focus_pane(if keep > tab { keep - 1 } else { keep }, window, cx);
         }
@@ -132,7 +134,8 @@ impl Shell {
             let pane = &self.panes[tab];
             let (on, over) = (tab == shown, hovered == Some(tab));
             let slot = div().size(t.px(16.)).flex_none().flex().items_center().justify_center();
-            let slot = match (over || on && !pane.dirty, pane.dirty) {
+            let dirty = pane.dirty || pane.canvas_dirty || pane.sheet().is_some_and(|sheet| sheet.read(cx).is_dirty());
+            let slot = match (over || on && !dirty, dirty) {
                 (true, _) => slot.child(
                     div()
                         .id(("tab-close", tab))

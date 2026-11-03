@@ -79,7 +79,7 @@ impl Render for Shell {
         self.nav.native_bar = !client;
         self.nav.total = window.viewport_size().width - inset * 2. - if self.vault.is_some() { nav::GAP } else { px(0.) };
 
-        let pill = self.render_window_controls(window);
+        let pill = self.render_window_controls(window, cx);
 
         let body = div().flex_1().min_h_0().relative();
         let body = if self.vault.is_none() {
@@ -170,6 +170,12 @@ impl Render for Shell {
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &OpenPalette, window, cx| {
                 this.open_palette("", window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &Quit, window, cx| {
+                cx.stop_propagation();
+                if this.may_close_window(window, cx) {
+                    cx.quit();
+                }
             }))
             .on_action(cx.listener(|this, _: &NewNote, window, cx| this.new_note_here(window, cx)))
             .on_action(cx.listener(|this, _: &NewFromTemplate, window, cx| this.open_templates(TemplateAct::New, window, cx)))
@@ -275,7 +281,7 @@ impl Render for Shell {
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &MaximizePane, _, cx| this.toggle_zoom(cx)))
-            .on_action(cx.listener(|this, _: &ClosePane, window, cx| this.close_pane(window, cx)))
+            .on_action(cx.listener(|this, _: &ClosePane, window, cx| { this.close_pane(window, cx); }))
             .on_action(cx.listener(|this, _: &ReopenTab, window, cx| this.reopen_tab(window, cx)))
             .on_action(cx.listener(|this, _: &NextTab, window, cx| this.cycle_tab(true, window, cx)))
             .on_action(cx.listener(|this, _: &PrevTab, window, cx| this.cycle_tab(false, window, cx)))
@@ -410,7 +416,7 @@ impl Shell {
     // (tab bar, panel header, board bar, CSV bar) stops `PILL_ROOM` short of them and a narrow
     // note starts under them. The group is also a move handle, like the panel header, the
     // empty part of the rail and the board bar; Alt + drag moves from anywhere.
-    pub(super) fn render_window_controls(&self, window: &Window) -> Div {
+    pub(super) fn render_window_controls(&self, window: &Window, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
         let controls = window.window_controls();
         div()
@@ -437,7 +443,11 @@ impl Shell {
             // Closing is the one button that warns: its hover is the red of the callout recipe.
             .child(
                 icon_button_over("close", "close.svg", t.danger_hover(), t)
-                    .on_click(|_, window, _| window.remove_window()),
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        if this.may_close_window(window, cx) {
+                            window.remove_window();
+                        }
+                    })),
             )
     }
 
@@ -834,7 +844,9 @@ impl Shell {
             .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
         // The image picked in the panel; it goes away as soon as the note takes over again.
         if self.pane().editor.focus_handle(cx).is_focused(window) {
-            self.set_file(None, cx);
+            if !self.set_file(None, cx) {
+                self.focus_pane(self.active, window, cx);
+            }
             self.pane_mut().listing = None;
             self.pane_mut().figure = None;
         }
