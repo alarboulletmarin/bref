@@ -51,7 +51,7 @@ impl Render for Shell {
             self.keep_preview();
         }
         self.track(cx);
-        let title = match (self.pane().file_path().or(self.pane().path.as_ref()), &self.vault) {
+        let title = match (self.pane().displayed_path(), &self.vault) {
             (Some(p), _) => vault::stem(p),
             (None, Some(_)) => tr("New note", "Nouvelle note").to_string(),
             (None, None) => "Bref".to_string(),

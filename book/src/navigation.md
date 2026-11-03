@@ -8,7 +8,7 @@ A rail of icons stays on the left of the window. It opens a panel beside the not
 
 | View | Key | Shows |
 |---|---|---|
-| Tree | `Ctrl + E` | the vault and its folders. The open note is highlighted. |
+| Tree | `Ctrl + E` | the vault and its folders. The displayed file is highlighted. |
 | Recent | `Ctrl + Shift + T` | every note, from the most to the least recently opened |
 | Graph | `Ctrl + G` | one dot per note, one line per `[[link]]` between two notes |
 | Tags | `Ctrl + T` | every `#tag` of the vault with its number of notes. Unfold a tag to see them. |
@@ -43,6 +43,7 @@ A previewed note only counts as opened once you click or type in it. It then mov
 
 ## The tree
 
+- **Current file**: the accent tint follows the active tab and pane, for Markdown notes, diagrams, SVG, pictures and CSV/TSV tables. A separately selected row or several selected rows keep their selection tint.
 - **Order**: names are sorted as in a file manager: `Note 2` before `Note 10`.
 - **Fold all**: the double-chevron button at the top of the tree folds every folder. When they are all folded, it unfolds them all.
 - **New note**: with the tree on display, `Ctrl + N` creates the note in the folder of the selected line. The button left of the folder button, at the top of the tree, creates it at the root of the vault instead.
@@ -77,7 +78,7 @@ Right click a note, a file or a folder in the tree, then **Icon…**. Pick one o
 
 One dot per note, bigger with its links.
 
-- The open note is in the accent colour. Its neighbours and their lines are darker.
+- The displayed file is in the accent colour when it has a node (a note, diagram, SVG or picture). CSV/TSV tables have no node. Its neighbours and their lines are darker.
 - Notes without links sit on a ring around the rest. A rounded square is an attachment, such as a picture.
 - Names show for the open note, its neighbours and the most linked notes. Pointing at any dot shows its name, and lights up the notes it is linked to.
 - Drag the background to move around. Scroll to zoom. The target button glides back to the whole graph.
@@ -85,6 +86,8 @@ One dot per note, bigger with its links.
 - With the graph on the whole window, a click only selects. `Enter` or a double click brings the note back.
 
 Links to notes that do not exist yet are left out.
+
+Backlinks stay on the last note while a diagram, picture or table is displayed. Choosing a file in the tree or graph does not turn it into a backlink target.
 
 ## The trash
 

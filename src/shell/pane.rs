@@ -147,6 +147,12 @@ pub(super) fn read_panes(text: &str) -> (Option<Node>, Vec<(Vec<PathBuf>, usize)
 }
 
 impl Pane {
+    /// The displayed document; a file view takes precedence over the note kept underneath.
+    /// Note operations and backlinks still use `path`.
+    pub(super) fn displayed_path(&self) -> Option<&PathBuf> {
+        self.file_path().or(self.path.as_ref())
+    }
+
     /// Path of the file shown in place of the note.
     pub(super) fn file_path(&self) -> Option<&PathBuf> {
         self.file.as_ref().map(|file| &file.path)
@@ -641,7 +647,7 @@ impl Shell {
             return;
         }
         self.leave(cx);
-        if let Some(path) = self.pane().file_path().or(self.pane().path.as_ref()).cloned() {
+        if let Some(path) = self.pane().displayed_path().cloned() {
             self.closed.retain(|p| *p != path);
             self.closed.push(path);
             if self.closed.len() > CLOSED_KEPT {
@@ -733,7 +739,7 @@ impl Shell {
                     // A tool's tab is written `@graph`, `@calendar`.
                     let path = match pane.tool {
                         Some(tool) => format!("@{}", tool.name()),
-                        None => pane.file_path().or(pane.path.as_ref())?.display().to_string(),
+                        None => pane.displayed_path()?.display().to_string(),
                     };
                     Some(format!("{}{path}", if tab == group.shown { "*" } else { "" }))
                 })

@@ -566,7 +566,7 @@ impl Shell {
                     true => self.nav.sel.as_ref() == Some(&row.path),
                     false => marked.contains(&row.path),
                 };
-                let current = self.pane().path.as_ref() == Some(&row.path);
+                let current = self.pane().displayed_path() == Some(&row.path);
                 // In the recent list, the note's folder serves as detail.
                 let detail = match (&self.vault, row.path.parent()) {
                     (Some(root), Some(dir)) if !tree => dir
@@ -638,6 +638,7 @@ impl Shell {
                     )
                 };
                 let line = div()
+                    .when(current, |d| d.debug_selector(|| "nav-current".into()))
                     .size_full()
                     .pr_2()
                         .pl(px(8. + nav::INDENT * row.depth as f32))
@@ -647,7 +648,7 @@ impl Shell {
                         .rounded(t.large())
                         .text_size(t.px(13.))
                         .when(!selected, |d| d.hover(|s| s.bg(t.hover)))
-                        // The open note: an accent pill; the selection wins when it is on the same row.
+                        // The displayed file: an accent pill; the selection wins on the same row.
                         .when(current && !selected, |d| d.bg(crate::ui::widgets::pill_tint(t)))
                         .when(selected, |d| {
                             let at = self.nav.sel_at.clone();
@@ -812,11 +813,11 @@ impl Shell {
         }
         let panel = self.nav.panel;
         let unfolded = self.left_open();
-        // A tool's tab is no note: the backlinks stay on the last one.
-        if !self.pane().preview && self.pane().tool.is_none() {
+        // A tool or file view is no note: the backlinks stay on the last one.
+        if !self.pane().preview && self.pane().tool.is_none() && self.pane().file.is_none() {
             self.nav.anchor = self.pane().path.clone();
         }
-        let (current, selected) = (self.pane().path.clone(), self.nav.sel.clone());
+        let (current, selected) = (self.pane().displayed_path().cloned(), self.nav.sel.clone());
         self.graph.update(cx, |graph, _| graph.sync(t, current.as_deref(), selected.as_deref()));
 
         let travel = |id: &'static str, icon: &'static str, on: bool| {

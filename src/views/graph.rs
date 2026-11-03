@@ -298,7 +298,7 @@ impl Graph {
         cx.notify();
     }
 
-    /// Theme, open note and selected note, as the window knows them.
+    /// Theme, displayed document and selected node, as the window knows them.
     pub fn sync(&mut self, theme: Theme, current: Option<&Path>, selected: Option<&Path>) {
         let find = |path: Option<&Path>| self.nodes.iter().position(|(p, _)| Some(p.as_path()) == path);
         (self.current, self.selected) = (find(current), find(selected));
@@ -309,6 +309,13 @@ impl Graph {
     #[cfg(test)]
     pub fn size(&self) -> (usize, usize) {
         (self.nodes.len(), self.edges.len())
+    }
+
+    /// The current document and the separately selected node.
+    #[cfg(test)]
+    pub fn indicated(&self) -> (Option<&Path>, Option<&Path>) {
+        let path = |index: Option<usize>| index.map(|i| self.nodes[i].0.as_path());
+        (path(self.current), path(self.selected))
     }
 
     /// The view glides until it frames the whole graph.

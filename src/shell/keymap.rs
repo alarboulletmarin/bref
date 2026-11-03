@@ -93,6 +93,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 t(&format!("{MOD}+{shift}+{click}"), tr("Open a [[link]] in the other pane", "Ouvrir un [[lien]] dans l'autre volet")),
                 t(tr("Drag from the tree", "Glisser depuis l'arbre"), tr("Onto a pane: open the file there; onto the right half of a single pane: open a second one", "Sur un volet : y ouvrir le fichier ; sur la moitié droite du seul volet : en ouvrir un second")),
                 k(&nav::ShowTree, tr("Vault tree", "Arbre du coffre")),
+                t(tr("Current file", "Fichier affiché"), tr("The tree marks the file shown in the active tab and pane, including diagrams, pictures and tables; selection stays separate. The graph marks it when it has a node. Backlinks stay on the last note", "L'arbre marque le fichier du volet et de l'onglet actifs, y compris les schémas, images et tableaux ; la sélection reste distincte. Le graphe le marque s'il a un nœud. Les rétroliens restent sur la dernière note")),
                 k(&nav::ShowRecent, tr("Recent notes", "Notes récentes")),
                 k(&nav::ShowGraph, tr("Graph of the notes", "Graphe des notes")),
                 k(&nav::ShowTags, "Tags"),

@@ -16,7 +16,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Plain files.** One `.md` file per note, in an ordinary folder. Sync it with git, Syncthing or a cloud folder. An existing folder of Markdown notes works as is.
 - **Styled as you type.** Headings grow, bold and italics render, markers stay visible but dimmed. The file on disk stays plain Markdown.
 - **Tables that compute.** Cells wrap, `Tab` moves between them, pasting from a spreadsheet works, and `=sum(above)` adds up a column.
-- **Linked notes.** `[[Links]]`, backlinks, tags, embedded sections, a graph, and a calendar of daily notes.
+- **Linked notes.** `[[Links]]`, backlinks, tags, embedded sections, a graph, and a calendar of daily notes. The tree follows the active file, including diagrams, pictures and tables.
 - **More than notes.** Kanban boards, list pages built from front matter, UML diagrams drawn by hand and saved as SVG, and a CSV grid that opens a million rows.
 - **Agents.** `bref mcp` lets an agent read, write and draw in the vault, with Bref's links, trash and diagrams. [Guide](book/src/agents.md)
 - **Keyboard first.** One palette for notes and commands. Every shortcut is listed in the app (`F1`) and can be changed.

@@ -77,6 +77,7 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `Ctrl+Shift+click` | Open a \[\[link\]\] in the other pane |
 | Drag from the tree | Onto a pane: open the file there; onto the right half of a single pane: open a second one |
 | `Ctrl+E` | Vault tree |
+| Current file | The tree marks the file shown in the active tab and pane, including diagrams, pictures and tables; selection stays separate. The graph marks it when it has a node. Backlinks stay on the last note |
 | `Ctrl+Shift+T` | Recent notes |
 | `Ctrl+G` | Graph of the notes |
 | `Ctrl+T` | Tags |

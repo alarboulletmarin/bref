@@ -22,6 +22,7 @@ mod layout;
 mod motion;
 mod shortcuts_page;
 mod panel_rows;
+mod current_file;
 mod panes;
 mod tabs;
 mod window;
