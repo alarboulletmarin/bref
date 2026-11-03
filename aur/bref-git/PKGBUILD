@@ -2,7 +2,7 @@
 # Tracks the main branch: every `makepkg -si` builds the latest commit.
 pkgname=bref-git
 _name=bref
-pkgver=0.1.0.r0.g0000000
+pkgver=0.4.5.r7.gfbaa930
 pkgrel=1
 pkgdesc="Fast, minimal Markdown note-taking app (development version)"
 arch=('x86_64' 'aarch64')
