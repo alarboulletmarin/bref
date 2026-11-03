@@ -1,0 +1,73 @@
+# A draft stays private if any platform fails. Explicit dispatch works for drafts
+# and does not depend on release events recursively triggered by GITHUB_TOKEN.
+name: Native release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag and draft release (vX.Y.Z)
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: native-release-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    # Draft releases are visible only with push access, even for a read.
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate tag syntax before checkout
+        env:
+          TAG: ${{ inputs.tag }}
+        run: '[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Check version and require an unpublished draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          python3 - "$TAG" <<'PYCODE'
+          import importlib.util, pathlib, sys
+          spec = importlib.util.spec_from_file_location("release", "scripts/publish-release.py")
+          release = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(release)
+          release.expected_assets(pathlib.Path.cwd(), sys.argv[1])
+          release.draft(sys.argv[1])
+          PYCODE
+  arch:
+    needs: validate
+    uses: ./.github/workflows/arch-package.yml
+    with:
+      tag: ${{ inputs.tag }}
+  binaries:
+    needs: validate
+    uses: ./.github/workflows/release-binaries.yml
+    with:
+      tag: ${{ inputs.tag }}
+  publish:
+    needs: [validate, arch, binaries]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: dist
+      - name: Verify all downloads, attach them to the draft, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: python3 scripts/publish-release.py "$TAG" dist

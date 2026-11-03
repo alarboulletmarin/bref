@@ -1,0 +1,33 @@
+# Release orchestration is tested without Cargo builds or GitHub mutations.
+name: Release checks
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'scripts/*release*'
+      - '.github/workflows/*release*'
+      - '.github/workflows/arch-package.yml'
+  pull_request:
+    paths:
+      - 'scripts/*release*'
+      - '.github/workflows/*release*'
+      - '.github/workflows/arch-package.yml'
+permissions:
+  contents: read
+concurrency:
+  group: release-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Shell syntax and isolated preparation/publication regressions
+        run: |
+          bash -n scripts/release.sh
+          python3 scripts/test-release.py
+          python3 scripts/test-publish-release.py

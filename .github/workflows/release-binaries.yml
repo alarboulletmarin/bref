@@ -1,24 +1,21 @@
-# Builds the Windows and macOS downloads and attaches them to every published release.
+# Reusable packaging jobs. They never attach to or publish a release.
 name: Binaries
 on:
-  release:
-    types: [published]
-  # By hand: build again and re-attach to an existing release (its tag must contain packaging/),
-  # or build any branch without touching a release (`-f tag=<branch> -f attach=false`): the
-  # files are then only in the run artifacts.
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag (or branch, with attach off) to build
+        description: Tag or branch to build (artifacts only)
+        type: string
         required: true
-      attach:
-        description: Attach the files to the release of that tag
-        type: boolean
-        default: true
 permissions:
-  contents: write
+  contents: read
 env:
-  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  TAG: ${{ inputs.tag }}
 defaults:
   run:
     shell: bash
@@ -32,6 +29,7 @@ jobs:
           ref: ${{ env.TAG }}
       - run: rustup toolchain install stable --profile minimal
       - run: cargo build --release --locked
+      - run: cargo test --locked
       - name: The C runtime is linked in (no Visual C++ redistributable needed)
         shell: pwsh
         run: |
@@ -56,15 +54,11 @@ jobs:
           if (-not (Test-Path C:\bref-test\bref.exe)) { throw 'the installer did not install bref.exe' }
       - uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: native-windows
           path: dist/*
           retention-days: 7
           overwrite: true
-      - name: Attach to the release
-        if: github.event_name == 'release' || inputs.attach
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" dist/* --clobber
+          if-no-files-found: error
   macos:
     runs-on: macos-latest
     timeout-minutes: 45
@@ -82,6 +76,7 @@ jobs:
           lipo -create -output bref-universal \
             target/aarch64-apple-darwin/release/bref target/x86_64-apple-darwin/release/bref
           lipo -info bref-universal
+      - run: cargo test --locked
       - name: Package
         run: |
           ver=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
@@ -94,12 +89,8 @@ jobs:
           hdiutil detach /Volumes/Bref -quiet
       - uses: actions/upload-artifact@v4
         with:
-          name: macos
+          name: native-macos
           path: dist/*
           retention-days: 7
           overwrite: true
-      - name: Attach to the release
-        if: github.event_name == 'release' || inputs.attach
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" dist/* --clobber
+          if-no-files-found: error

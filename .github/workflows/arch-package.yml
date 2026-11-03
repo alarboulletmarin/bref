@@ -1,30 +1,48 @@
-# Attaches a ready-to-install Arch package to every published release.
+# Build an Arch package without publishing it. release-native.yml owns publication.
 name: Arch package
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to package (artifacts only)
+        type: string
+        required: true
 permissions:
-  contents: write
+  contents: read
+env:
+  TAG: ${{ inputs.tag }}
 jobs:
   package:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     container: archlinux:base-devel
     steps:
-      - run: pacman -Syu --noconfirm cargo git github-cli fontconfig freetype2 libxcb libxkbcommon libxkbcommon-x11 wayland
+      - run: pacman -Syu --noconfirm cargo git fontconfig freetype2 libxcb libxkbcommon libxkbcommon-x11 wayland
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
-      - name: Build
+          ref: ${{ env.TAG }}
+      - name: Build and inspect the package
         run: |
           useradd -m builder
           chown -R builder .
-          # --skipinteg: the PKGBUILD checksum is pinned after the release exists
+          # The tag predates the checksum-pinning commit on main. The downloaded
+          # source is the exact tag selected by the release orchestrator.
           su builder -c 'makepkg -f --noconfirm --nodeps --skipinteg'
-      - name: Upload
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cp bref-[0-9]*-x86_64.pkg.tar.zst bref-x86_64.pkg.tar.zst
-          gh release upload "${{ github.event.release.tag_name }}" \
-            bref-[0-9]*-x86_64.pkg.tar.zst bref-x86_64.pkg.tar.zst \
-            --clobber --repo "${{ github.repository }}"
+          mkdir dist
+          cp bref-[0-9]*-x86_64.pkg.tar.zst dist/
+          cp bref-[0-9]*-x86_64.pkg.tar.zst dist/bref-x86_64.pkg.tar.zst
+          pacman -Qip dist/bref-x86_64.pkg.tar.zst
+          bsdtar -tf dist/bref-x86_64.pkg.tar.zst > /tmp/package-contents
+          grep -Fx 'usr/bin/bref' /tmp/package-contents
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-arch
+          path: dist/*
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: error

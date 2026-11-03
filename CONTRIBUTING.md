@@ -68,4 +68,4 @@ CI builds the guide and checks every link (`.github/workflows/docs.yml`); pushes
 
 ## Releasing (maintainer)
 
-`scripts/release.sh X.Y.Z` bumps the version, tags, pushes, creates the GitHub release (the Arch package is attached by `.github/workflows/arch-package.yml`) and pins the PKGBUILD checksum.
+`scripts/release.sh X.Y.Z` prepares a draft and explicitly starts the native packaging workflow. The release is published only after all expected downloads have been built, attached and checked. See [RELEASING.md](RELEASING.md) for simulation, recovery and artifact-only builds.
