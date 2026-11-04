@@ -1,7 +1,5 @@
 //! Writing in a shape or an arrow, erasing, moving and styling the selection.
 
-use unicode_segmentation::UnicodeSegmentation;
-
 use super::*;
 
 impl Canvas {
@@ -22,19 +20,39 @@ impl Canvas {
         self.remember();
         self.context = None;
         self.slot = slot;
-        let Some(len) = self.text_of(id).map(|t| t.len()) else { return };
-        self.editing = Some((id, len));
-        self.selected = vec![id];
+        if self.begin(id) {
+            self.selected = vec![id];
+        }
         cx.notify();
+    }
+
+    /// The text of `id` (at `self.slot`) is now the one being written, cursor at its end.
+    pub(super) fn begin(&mut self, id: u32) -> bool {
+        self.editing = self.text_of(id).map(|text| Writing { id, field: Input::multiline(text.clone()) });
+        self.editing.is_some()
+    }
+
+    /// The element whose text is being written.
+    pub(super) fn writing_id(&self) -> Option<u32> {
+        self.editing.as_ref().map(|w| w.id)
+    }
+
+    /// The field being written changed: its text goes into the diagram.
+    pub(super) fn wrote(&mut self, cx: &mut Context<Self>) {
+        let Some(Writing { id, field }) = &self.editing else { return };
+        let (id, text) = (*id, field.text.clone());
+        if let Some(target) = self.text_of(id) {
+            *target = text;
+        }
+        self.changed(cx);
     }
 
     /// Tab: from one text of an arrow to the next; on a selected arrow, starts with its first.
     pub(super) fn next_text(&mut self, cx: &mut Context<Self>) {
-        match (self.editing, self.selected.as_slice()) {
-            (Some((id, _)), _) if self.diagram.link(id).is_some() => {
+        match (self.writing_id(), self.selected.as_slice()) {
+            (Some(id), _) if self.diagram.link(id).is_some() => {
                 self.slot = self.slot.next();
-                let len = self.text_of(id).map_or(0, |t| t.len());
-                self.editing = Some((id, len));
+                self.begin(id);
                 cx.notify();
             }
             (None, &[id]) if self.diagram.link(id).is_some() => self.start_editing_slot(id, Slot::Start, cx),
@@ -45,7 +63,7 @@ impl Canvas {
 
     pub(super) fn stop_editing(&mut self, cx: &mut Context<Self>) {
         self.slot = Slot::Middle;
-        if let Some((id, _)) = self.editing.take() {
+        if let Some(Writing { id, .. }) = self.editing.take() {
             // A text left empty leaves nothing behind.
             let empty = self.diagram.shape(id).is_some_and(|s| s.form == Form::Text && s.text.trim().is_empty());
             if empty {
@@ -58,7 +76,7 @@ impl Canvas {
 
     /// Inserts `text` at the cursor; outside writing, a letter picks a tool.
     pub(super) fn typed(&mut self, text: &str, cx: &mut Context<Self>) {
-        let Some((id, at)) = self.editing else {
+        let Some(writing) = &mut self.editing else {
             // The library is open: what is typed searches it.
             if let Some(query) = &mut self.library {
                 query.push_str(text);
@@ -110,30 +128,25 @@ impl Canvas {
             }
             return;
         };
-        if let Some(target) = self.text_of(id) {
-            target.insert_str(at, text);
-            self.editing = Some((id, at + text.len()));
-            self.changed(cx);
-        }
+        // What is typed takes the place of what is selected.
+        writing.field.insert(text);
+        self.wrote(cx);
     }
 
-    /// Moves the cursor by one displayed character (grapheme), or erases it if `erase`.
-    pub(super) fn step(&mut self, forward: bool, erase: bool, cx: &mut Context<Self>) {
-        let Some((id, at)) = self.editing else { return };
-        let Some(text) = self.text_of(id) else { return };
-        let to = if forward {
-            text[at..].graphemes(true).next().map_or(at, |g| at + g.len())
-        } else {
-            text[..at].grapheme_indices(true).next_back().map_or(at, |(i, _)| i)
+    /// Up or Down while writing: the line above or below, at the same distance from the left, as it is drawn;
+    /// past the first line, the start of the text, past the last, its end. `select` extends the selection.
+    pub(super) fn vertical(&mut self, down: bool, select: bool, cx: &mut Context<Self>) {
+        let Some(writing) = &mut self.editing else { return };
+        let at = writing.field.cursor();
+        let Some(i) = self.rows.iter().rposition(|r| r.start <= at) else { return };
+        let x = self.rows[i].x(at.min(self.rows[i].end()));
+        let to = match if down { self.rows.get(i + 1) } else { i.checked_sub(1).map(|i| &self.rows[i]) } {
+            Some(row) => row.start + row.shaped.closest_index_for_x(x - row.origin.x),
+            None if down => writing.field.text.len(),
+            None => 0,
         };
-        if erase {
-            text.replace_range(at.min(to)..at.max(to), "");
-            self.editing = Some((id, at.min(to)));
-            self.changed(cx);
-        } else {
-            self.editing = Some((id, to));
-            cx.notify();
-        }
+        if select { writing.field.extend(to) } else { writing.field.place(to) }
+        cx.notify();
     }
 
     pub(super) fn erase(&mut self, forward: bool, cx: &mut Context<Self>) {
@@ -142,8 +155,9 @@ impl Canvas {
             self.reset_cursor();
             return cx.notify();
         }
-        if self.editing.is_some() {
-            return self.step(forward, true, cx);
+        if let Some(writing) = &mut self.editing {
+            writing.field.delete(if forward { To::Right } else { To::Left });
+            return self.wrote(cx);
         }
         if !self.selected.is_empty() {
             self.remember();
@@ -162,9 +176,12 @@ impl Canvas {
             }
             return;
         }
-        if self.editing.is_some() {
+        if let Some(writing) = &mut self.editing {
             if dx != 0. {
-                self.step(dx > 0., false, cx);
+                writing.field.go(if dx > 0. { To::Right } else { To::Left }, false);
+                cx.notify();
+            } else if dy != 0. {
+                self.vertical(dy > 0., false, cx);
             }
         } else if !self.selected.is_empty() {
             self.remember();
@@ -211,7 +228,7 @@ impl Canvas {
         self.remember();
         let link = self.diagram.add_link(End::Shape(id), End::Shape(id), diagram::Head::Arrow, Route::Elbow);
         self.slot = Slot::Middle;
-        self.editing = Some((link, 0));
+        self.begin(link);
         self.selected = vec![link];
         self.changed(cx);
     }
@@ -232,8 +249,12 @@ impl Canvas {
         }
     }
 
-    /// Selects everything.
+    /// Selects everything: while writing, the whole text.
     pub(super) fn select_all(&mut self, cx: &mut Context<Self>) {
+        if let Some(writing) = &mut self.editing {
+            writing.field.select_all();
+            return cx.notify();
+        }
         self.selected = self.diagram.shapes.iter().map(|s| s.id).chain(self.diagram.links.iter().map(|l| l.id)).collect();
         cx.notify();
     }
@@ -265,7 +286,8 @@ impl Canvas {
         self.remember();
         let p = self.world(at);
         let id = self.diagram.add_shape(Form::Text, diagram::snap(p.0), diagram::snap(p.1), 80., diagram::LINE);
-        (self.editing, self.selected) = (Some((id, 0)), vec![id]);
+        self.begin(id);
+        self.selected = vec![id];
         self.changed(cx);
     }
 

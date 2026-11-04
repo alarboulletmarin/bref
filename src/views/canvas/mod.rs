@@ -24,11 +24,12 @@ use crate::{
     logic::library::{self, Preset},
     logic::relation::Relation,
     logic::richtext::{self, Span},
+    ui::line::{self as input, Line as Input, To},
     ui::widgets::{button, tip},
     ui::assets::{mono, sans}, lang::tr,
 };
 
-actions!(canvas, [ZoomIn, ZoomOut, ZoomFit, Erase, EraseNext, Duplicate, SelectAll, Undo, Redo, Confirm, Cancel, Left, Right, Up, Down, Paste, NextText]);
+actions!(canvas, [ZoomIn, ZoomOut, ZoomFit, Erase, EraseNext, Duplicate, SelectAll, Undo, Redo, Confirm, Cancel, Left, Right, Up, Down, SelectUp, SelectDown, Paste, NextText]);
 
 pub enum CanvasEvent {
     /// The diagram changed: it needs saving.
@@ -220,6 +221,34 @@ enum Drag {
     /// Text at an end of an arrow being dragged along its stroke; `begun` once it has moved.
     Along { id: u32, slot: Slot, begun: bool },
     Pan { last: Point<Pixels> },
+    /// Selecting in the text being written, from where the button went down.
+    Text,
+}
+
+/// The text being written: the element (its text is `slot` on an arrow), and the field that holds it while it
+/// is written, with its cursor, its selection and what an input method composes. Each change is copied
+/// into the diagram, so that undo and saving see it.
+pub(super) struct Writing {
+    id: u32,
+    field: Input,
+}
+
+/// A line of the text being written, as it was last drawn: where its first byte is in the text, the
+/// top-left corner of the line on screen, and its glyphs. The mouse and Up/Down find a character by it.
+pub(super) struct Row {
+    start: usize,
+    origin: Point<Pixels>,
+    shaped: gpui::ShapedLine,
+}
+
+impl Row {
+    fn end(&self) -> usize {
+        self.start + self.shaped.len
+    }
+
+    fn x(&self, at: usize) -> Pixels {
+        self.origin.x + self.shaped.x_for_index(at - self.start)
+    }
 }
 
 pub struct Canvas {
@@ -236,8 +265,10 @@ pub struct Canvas {
     zoom: f32,
     /// Fit the whole diagram on the next frame.
     fit: bool,
-    /// Element whose text is being written, and cursor position (byte).
-    editing: Option<(u32, usize)>,
+    /// The text being written.
+    editing: Option<Writing>,
+    /// Where its lines were drawn.
+    rows: Vec<Row>,
     /// Which of an arrow's three texts is being written.
     slot: Slot,
     /// The menu of relationships is open: a letter picks one.
@@ -294,6 +325,7 @@ impl Canvas {
             zoom: 1.,
             fit: true,
             editing: None,
+            rows: Vec::new(),
             slot: Slot::Middle,
             relations: false,
             shapes: false,
@@ -336,7 +368,7 @@ impl Canvas {
     /// The shape or arrow whose text is being written.
     #[cfg(test)]
     pub fn writing(&self) -> Option<u32> {
-        self.editing.map(|(id, _)| id)
+        self.writing_id()
     }
 
     /// Whether a gesture is in progress, and how many steps of undo there are.
@@ -407,6 +439,25 @@ impl Canvas {
     }
 
     /// Screen position of a diagram point.
+    /// The text being written, and its selection (bytes), if any.
+    #[cfg(test)]
+    pub fn label(&self) -> Option<(&str, Range<usize>)> {
+        self.editing.as_ref().map(|w| (w.field.text.as_str(), w.field.selection()))
+    }
+
+    /// Where the byte `at` of the text being written was drawn: the left of the character, the top of its line.
+    #[cfg(test)]
+    pub fn spot_of_byte(&self, at: usize) -> Option<Point<Pixels>> {
+        let row = self.rows.iter().rev().find(|r| r.start <= at)?;
+        Some(point(row.x(at), row.origin.y))
+    }
+
+    /// Writes in the text of `id` at `slot`, as a double click on it does.
+    #[cfg(test)]
+    pub fn write_in(&mut self, id: u32, slot: Slot, cx: &mut Context<Self>) {
+        self.start_editing_slot(id, slot, cx);
+    }
+
     /// Number of selected shapes and arrows.
     #[cfg(test)]
     pub fn picked(&self) -> usize {
@@ -547,16 +598,15 @@ impl Canvas {
 }
 
 
-// ponytail: input as it comes, without IME composition (composed text is
-// inserted as is) nor selection in the text; reuse the editor's handler
-// if diagrams are written in Japanese or Chinese.
+// ponytail: an input method's composition is inserted as it comes, not marked (#101); the text and the
+// selection it asks for are those of the label being written.
 impl EntityInputHandler for Canvas {
-    fn text_for_range(&mut self, _: Range<usize>, _: &mut Option<Range<usize>>, _: &mut Window, _: &mut Context<Self>) -> Option<String> {
-        None
+    fn text_for_range(&mut self, range: Range<usize>, _: &mut Option<Range<usize>>, _: &mut Window, _: &mut Context<Self>) -> Option<String> {
+        self.editing.as_ref().map(|w| w.field.text_utf16(range))
     }
 
     fn selected_text_range(&mut self, _: bool, _: &mut Window, _: &mut Context<Self>) -> Option<UTF16Selection> {
-        Some(UTF16Selection { range: 0..0, reversed: false })
+        Some(self.editing.as_ref().map_or(UTF16Selection { range: 0..0, reversed: false }, |w| w.field.utf16()))
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
@@ -565,8 +615,14 @@ impl EntityInputHandler for Canvas {
 
     fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {}
 
-    fn replace_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
-        self.typed(text, cx);
+    fn replace_text_in_range(&mut self, range: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
+        match &mut self.editing {
+            Some(writing) => {
+                writing.field.commit(range, text);
+                self.wrote(cx);
+            }
+            None => self.typed(text, cx),
+        }
     }
 
     fn replace_and_mark_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: Option<Range<usize>>, _: &mut Window, cx: &mut Context<Self>) {

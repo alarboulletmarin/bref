@@ -124,6 +124,9 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `K` | Relationships: a letter picks one (A N X G C H Z D, U I S L E M for a dependency with its stereotype, R association class, B ball, Q socket, J V «deploy» «manifest», F O W P T the messages of a sequence diagram, Y n-ary association); on selected arrows it changes them |
 | `A` / `L` / `V` | Arrow / line, held by the shapes they join / select |
 | Enter, double click | Write in the shape or on the arrow; Esc when done |
+| While writing | Click to place the cursor, drag or Shift+click to select, double click a word; arrows, words, Home, End, select all, copy, cut and paste act on the text; a click elsewhere ends it |
+| `Shift+Up` | Diagram, while writing: select up to the line above |
+| `Shift+Down` | Diagram, while writing: select down to the line below |
 | `Tab` | Arrow: the text at its start, in its middle, at its end (a role, a multiplicity); drag one along the stroke |
 | `---` | Alone on a line of a box: a compartment (UML class) |
 | `«interface»  + static x: int  abstract f()` | In a class: a stereotype line, then members; static is underlined, abstract in italics; name : Type is an object |

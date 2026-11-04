@@ -121,7 +121,7 @@ impl Canvas {
         self.diagram.adopt(&[id]);
         (self.selected, self.tool) = (vec![id], Tool::Select);
         if form == Form::Text {
-            self.editing = Some((id, 0));
+            self.begin(id);
         }
         self.changed(cx);
     }
@@ -148,8 +148,57 @@ impl Canvas {
         cx.notify();
     }
 
+    /// The pointer is over the text being written: on one of its lines, or inside the shape it is in.
+    pub(super) fn text_under(&self, at: Point<Pixels>) -> bool {
+        let Some(id) = self.writing_id() else { return false };
+        let (pad, tall) = (px(4.), px(diagram::LINE * self.zoom));
+        let on_row = self.rows.iter().any(|r| {
+            let (left, right) = (r.origin.x - pad, r.origin.x + r.shaped.width.max(px(1.5)) + pad);
+            (left..=right).contains(&at.x) && (r.origin.y..=r.origin.y + tall).contains(&at.y)
+        });
+        let p = self.world(at);
+        on_row || (self.diagram.shape(id).is_some() && self.diagram.hit(p.0, p.1, 0.) == Some(id))
+    }
+
+    /// The byte of the text being written nearest to this point, as its lines were drawn: above its first
+    /// line, its start; below its last, its end.
+    pub(super) fn byte_at(&self, at: Point<Pixels>) -> Option<usize> {
+        let tall = px(diagram::LINE * self.zoom);
+        let (first, last) = (self.rows.first()?, self.rows.last()?);
+        if at.y < first.origin.y {
+            return Some(first.start);
+        }
+        if at.y > last.origin.y + tall {
+            return Some(last.end());
+        }
+        let away = |r: &&Row| if at.y < r.origin.y { r.origin.y - at.y } else { (at.y - r.origin.y - tall).max(px(0.)) };
+        let row = self.rows.iter().min_by(|a, b| f32::from(away(a)).total_cmp(&f32::from(away(b))))?;
+        Some(row.start + row.shaped.closest_index_for_x(at.x - row.origin.x))
+    }
+
+    /// A press on the text being written: the cursor goes there; with Shift the selection reaches it,
+    /// a double click takes the word, a triple click the whole text; dragging selects.
+    fn press_text(&mut self, e: &MouseDownEvent) -> bool {
+        if self.tool != Tool::Select || !self.text_under(e.position) {
+            return false;
+        }
+        let (Some(at), Some(writing)) = (self.byte_at(e.position), self.editing.as_mut()) else { return false };
+        match e.click_count {
+            2 => writing.field.select_word(at),
+            n if n >= 3 => writing.field.select_all(),
+            _ if e.modifiers.shift => writing.field.extend(at),
+            _ => writing.field.place(at),
+        }
+        self.drag = Drag::Text;
+        true
+    }
+
     pub(super) fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus);
+        if self.press_text(e) {
+            (self.context, self.shapes, self.relations) = (None, false, false);
+            return cx.notify();
+        }
         self.stop_editing(cx);
         (self.context, self.shapes, self.relations) = (None, false, false);
         let p = self.world(e.position);
@@ -255,7 +304,8 @@ impl Canvas {
                     (None, None, None) if e.click_count >= 2 => {
                         self.remember();
                         let id = self.diagram.add_shape(Form::Text, diagram::snap(p.0), diagram::snap(p.1), 80., diagram::LINE);
-                        (self.editing, self.selected) = (Some((id, 0)), vec![id]);
+                        self.begin(id);
+                        self.selected = vec![id];
                         Drag::None
                     }
                     (None, None, None) => {
@@ -285,6 +335,7 @@ impl Canvas {
     /// diagonally, an arrow end reattaches, the dragged view is held, a tool draws.
     pub(super) fn hand_at(&self, at: Point<Pixels>) -> CursorStyle {
         match self.drag {
+            Drag::Text => return CursorStyle::IBeam,
             Drag::Pan { .. } | Drag::Move { begun: true, .. } | Drag::Along { begun: true, .. } | Drag::Reorder { begun: true, .. } => return CursorStyle::ClosedHand,
             Drag::Resize { .. } | Drag::Tip { .. } | Drag::Create { .. } | Drag::Marquee { .. } | Drag::Along { .. } | Drag::Reorder { .. } => return self.hand,
             _ => {}
@@ -309,9 +360,7 @@ impl Canvas {
         {
             return CursorStyle::Crosshair;
         }
-        if let Some((id, _)) = self.editing
-            && self.diagram.shape(id).is_some_and(|shape| shape.contains(p.0, p.1))
-        {
+        if self.text_under(at) {
             return CursorStyle::IBeam;
         }
         match self.diagram.hit(p.0, p.1, near).or_else(|| self.diagram.tip_label_hit(p.0, p.1).map(|(id, _)| id)) {
@@ -341,6 +390,11 @@ impl Canvas {
                 self.drag = Drag::Pan { last: e.position };
             }
             _ if held != Some(MouseButton::Left) => return,
+            Drag::Text => {
+                if let (Some(at), Some(writing)) = (self.byte_at(e.position), self.editing.as_mut()) {
+                    writing.field.extend(at);
+                }
+            }
             Drag::Create { id, from } => {
                 let to = (diagram::snap(p.0), diagram::snap(p.1));
                 if let Some(shape) = self.diagram.shape_mut(id) {
@@ -424,7 +478,7 @@ impl Canvas {
                 self.diagram.gather(id);
                 (self.selected, self.tool) = (vec![id], Tool::Select);
                 if text {
-                    self.editing = Some((id, 0));
+                    self.begin(id);
                 }
                 self.changed(cx);
             }

@@ -25,11 +25,13 @@ impl Render for Canvas {
 
         let (dock, cluster, zoom, drawer, bar, menu) = (self.bottom(cx), self.cluster(cx), self.zoom_box(cx), self.drawer(cx), self.selection_bar(cx), self.context_menu(cx));
 
-        div()
+        // While a text is written, the keys of an input line come before those of the canvas (arrows,
+        // words, Home and End, selection, deletion, clipboard); Up and Down, Enter and Tab stay its own.
+        input::keys(div(), cx, |this| this.editing.as_mut().map(|w| &mut w.field), Self::wrote)
             .size_full()
             .flex()
             .flex_col()
-            .key_context("Canvas")
+            .key_context(if self.editing.is_some() { "Canvas Line" } else { "Canvas" })
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom_by(1.25, cx)))
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.zoom_by(0.8, cx)))
@@ -40,6 +42,9 @@ impl Render for Canvas {
             .on_action(cx.listener(|this, _: &Right, _, cx| this.nudge(1., 0., cx)))
             .on_action(cx.listener(|this, _: &Up, _, cx| this.nudge(0., -1., cx)))
             .on_action(cx.listener(|this, _: &Down, _, cx| this.nudge(0., 1., cx)))
+            // Shift+Up/Down: the selection in the text being written grows by a line; otherwise, as Up/Down.
+            .on_action(cx.listener(|this, _: &SelectUp, _, cx| if this.editing.is_some() { this.vertical(false, true, cx) } else { this.nudge(0., -1., cx) }))
+            .on_action(cx.listener(|this, _: &SelectDown, _, cx| if this.editing.is_some() { this.vertical(true, true, cx) } else { this.nudge(0., 1., cx) }))
             .on_action(cx.listener(|this, _: &NextText, _, cx| this.next_text(cx)))
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
@@ -54,7 +59,7 @@ impl Render for Canvas {
                 }
             }))
             // Enter: write in the selected element; while writing, new line.
-            .on_action(cx.listener(|this, _: &Confirm, _, cx| match (this.editing, this.selected.as_slice()) {
+            .on_action(cx.listener(|this, _: &Confirm, _, cx| match (this.writing_id(), this.selected.as_slice()) {
                 // In the library: Enter picks the first shape that answers the search.
                 // A menu is open: the row the arrow keys are on.
                 (None, _) if this.menu_open() => this.pick(cx),

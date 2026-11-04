@@ -22,7 +22,7 @@ impl Line {
 impl Canvas {
     /// The shape being written in grows to hold its text.
     pub(super) fn fit_text(&mut self, window: &mut Window) {
-        let Some(shape) = self.editing.and_then(|(id, _)| self.diagram.shape(id)) else { return };
+        let Some(shape) = self.writing_id().and_then(|id| self.diagram.shape(id)) else { return };
         let (lines, _) = self.diagram.lines(shape);
         // What is written is shown as typed: its marks are not applied.
         let widest = self.diagram.runs(shape, true).iter().map(|spans| self.measure(spans, 1., window)).fold(0f32, f32::max);
@@ -41,11 +41,24 @@ impl Canvas {
 
     /// The runs of a line of the text of element `id`: styled, except while it is being written.
     pub(super) fn spans_of(&self, id: u32, slot: Slot, text: &str, bold: bool) -> Vec<Span> {
-        match self.editing {
-            Some((editing, _)) if editing == id && slot == self.slot => richtext::plain(text, bold),
+        match self.writing_id() {
+            Some(editing) if editing == id && slot == self.slot => richtext::plain(text, bold),
             _ if slot == Slot::Middle && self.diagram.link(id).is_some() => self.diagram.label_runs(text),
             _ => self.diagram.styled(text, bold),
         }
+    }
+
+    /// A line of the text being written, shaped as it is drawn (as typed, at the zoom), from byte `start`
+    /// of its text, written at `(x, y)` of the diagram from its `anchor`.
+    fn row(&self, start: usize, text: &str, bold: bool, (x, y): (f32, f32), anchor: Anchor, window: &mut Window) -> Row {
+        let mut line = self.shaped(&richtext::plain(text, bold), self.theme.text, self.zoom, window);
+        let shaped = line.parts.remove(0);
+        let back = match anchor {
+            Anchor::Start => px(0.),
+            Anchor::Middle => shaped.width / 2.,
+            Anchor::End => shaped.width,
+        };
+        Row { start, origin: self.spot(x, y) - point(back, px(0.)), shaped }
     }
 
     pub(super) fn line(&self, text: &str, bold: bool, color: Hsla, scale: f32, window: &mut Window) -> Line {
@@ -140,13 +153,9 @@ impl Canvas {
             line.paint(origin, px(diagram::LINE * zoom), window, cx).ok();
         };
 
-        // Cursor of the text being written: (line, byte in the line).
-        let caret = self.editing.and_then(|(id, at)| {
-            let text = self.diagram.shape(id).map(|s| s.text.as_str()).or_else(|| self.diagram.link(id).map(|l| l.text_of(self.slot)))?;
-            let before = &text[..at];
-            Some((id, before.matches('\n').count(), before.len() - before.rfind('\n').map_or(0, |i| i + 1)))
-        });
-        let mut caret_at = None;
+        // The lines of the text being written, where they are drawn: its selection and its cursor are put on them.
+        let writing = self.writing_id();
+        let mut rows: Vec<Row> = Vec::new();
 
         // A faint grid of dots, where shapes snap to; spaced out as the view shrinks, so that it stays a texture.
         let mut step = diagram::GRID * 2.;
@@ -179,19 +188,15 @@ impl Canvas {
                 let (x0, x1) = shape.rule_span(y);
                 stroke(window, &[Cmd::Move(x0, y), Cmd::Line(x1, y)], shape.form == Form::Fragment, ink);
             }
-            // Separator strokes are not text lines: the cursor's line
-            // is found by its place in the text.
-            let starts: Vec<usize> = shape.text.split('\n').scan(0, |at, l| Some(std::mem::replace(at, *at + l.len() + 1))).collect();
-            let runs = self.diagram.runs(shape, self.editing.is_some_and(|(id, _)| id == shape.id));
+            let runs = self.diagram.runs(shape, writing == Some(shape.id));
             for (line, spans) in lines.iter().zip(&runs) {
                 write(self, window, cx, line.x, line.y, spans, line.centered.into(), ink);
-                if let Some((id, row, col)) = caret
-                    && id == shape.id
-                    && starts.get(row) == Some(&(line.text.as_ptr() as usize - shape.text.as_ptr() as usize))
+                // A line is found in the text by its place in it (separator strokes are not text lines).
+                let start = (line.text.as_ptr() as usize).checked_sub(shape.text.as_ptr() as usize).filter(|at| at + line.text.len() <= shape.text.len());
+                if writing == Some(shape.id)
+                    && let Some(start) = start
                 {
-                    let width = self.measure(&richtext::plain(line.text, line.bold), 1., window);
-                    let left = if line.centered { line.x - width / 2. } else { line.x };
-                    caret_at = Some((left + self.measure(&richtext::plain(&line.text[..col], line.bold), 1., window), line.y));
+                    rows.push(self.row(start, line.text, line.bold, (line.x, line.y), line.centered.into(), window));
                 }
             }
         }
@@ -221,40 +226,29 @@ impl Canvas {
                 stroke(window, path, false, ink);
             }
             // Written, the text is as typed; otherwise a message of a numbered diagram has its number.
-            let writing = self.editing.is_some_and(|(id, _)| id == link.id) && self.slot == Slot::Middle;
-            let shown = if writing { link.text.clone() } else { self.diagram.shown_text(link) };
+            let written = |slot: Slot| writing == Some(link.id) && self.slot == slot;
+            let shown = if written(Slot::Middle) { link.text.clone() } else { self.diagram.shown_text(link) };
             let lines: Vec<&str> = shown.split('\n').collect();
+            let mut start = 0;
             for (i, text) in lines.iter().enumerate() {
                 let (x, y, centered) = Diagram::label_at(&drawn, i, lines.len());
                 write(self, window, cx, x, y, &self.spans_of(link.id, Slot::Middle, text, false), centered.into(), ink);
-                if let Some((id, row, col)) = caret
-                    && id == link.id
-                    && row == i
-                    && self.slot == Slot::Middle
-                {
-                    let left = if centered { x - self.measure(&richtext::plain(text, false), 1., window) / 2. } else { x };
-                    caret_at = Some((left + self.measure(&richtext::plain(&text[..col], false), 1., window), y));
+                if written(Slot::Middle) {
+                    rows.push(self.row(start, text, false, (x, y), centered.into(), window));
                 }
+                start += text.len() + 1;
             }
             // The texts at the ends: a role, a multiplicity.
             for (tip, slot, along) in [(drawn.tips[0], Slot::Start, link.start_along), (drawn.tips[1], Slot::End, link.end_along)] {
                 let lines: Vec<&str> = link.text_of(slot).split('\n').collect();
+                let mut start = 0;
                 for (i, text) in lines.iter().enumerate() {
                     let (x, y, anchor) = Diagram::tip_label_at(&tip, along, i, lines.len());
                     write(self, window, cx, x, y, &self.spans_of(link.id, slot, text, false), anchor, ink);
-                    if let Some((id, row, col)) = caret
-                        && id == link.id
-                        && row == i
-                        && self.slot == slot
-                    {
-                        let width = self.measure(&richtext::plain(text, false), 1., window);
-                        let left = match anchor {
-                            Anchor::Start => x,
-                            Anchor::Middle => x - width / 2.,
-                            Anchor::End => x - width,
-                        };
-                        caret_at = Some((left + self.measure(&richtext::plain(&text[..col], false), 1., window), y));
+                    if written(slot) {
+                        rows.push(self.row(start, text, false, (x, y), anchor, window));
                     }
+                    start += text.len() + 1;
                 }
             }
         }
@@ -395,11 +389,21 @@ impl Canvas {
             let (a, b) = (at((from.0.min(to.0), from.1.min(to.1))), at((from.0.max(to.0), from.1.max(to.1))));
             window.paint_quad(fill(Bounds::from_corners(a, b), t.selection));
         }
-        if let Some((x, y)) = caret_at
-            && self.focus.is_focused(window)
-        {
-            let top = at((x, y + diagram::LINE * 0.1));
-            window.paint_quad(fill(Bounds::new(top, size(px(1.5), px(diagram::LINE * 0.8 * zoom))), t.accent));
+        // The selection in the text being written, line by line, and its cursor.
+        if let Some(field) = self.editing.as_ref().map(|w| &w.field) {
+            let (chosen, tall) = (field.selection(), px(diagram::LINE * zoom));
+            for row in &rows {
+                let (a, b) = (chosen.start.max(row.start), chosen.end.min(row.end()));
+                if a < b {
+                    window.paint_quad(fill(Bounds::from_corners(point(row.x(a), row.origin.y), point(row.x(b), row.origin.y + tall)), t.selection));
+                }
+            }
+            if let Some(row) = rows.iter().rev().find(|r| r.start <= field.cursor())
+                && self.focus.is_focused(window)
+            {
+                let top = point(row.x(field.cursor().min(row.end())), row.origin.y + tall * 0.1);
+                window.paint_quad(fill(Bounds::new(top, size(px(1.5), tall * 0.8)), t.accent));
+            }
         }
         if self.diagram.shapes.is_empty() && self.diagram.links.is_empty() {
             let hint = tr(
@@ -423,5 +427,6 @@ impl Canvas {
                 line.paint(origin, px(20.), window, cx).ok();
             }
         }
+        self.rows = rows;
     }
 }
