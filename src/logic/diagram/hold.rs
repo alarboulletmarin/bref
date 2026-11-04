@@ -82,6 +82,20 @@ impl Diagram {
         changed
     }
 
+    /// Has container `id`, just drawn, hold the shapes beside it (held by the same holder) that lie wholly inside
+    /// it: drawn around them, it takes them in. One that only overlaps it stays as it was: seen over a frame
+    /// is not held by it. `true` if one changed.
+    pub fn gather(&mut self, id: u32) -> bool {
+        let Some(c) = self.shape(id).cloned().filter(|s| s.form.holds()) else { return false };
+        let inside = |s: &Shape| s.x >= c.x && s.y >= c.y && s.x + s.w <= c.x + c.w && s.y + s.h <= c.y + c.h;
+        let taken: Vec<u32> = self.shapes.iter().filter(|s| s.id != id && s.parent == c.parent && inside(s)).map(|s| s.id).collect();
+        let mut changed = false;
+        for s in taken {
+            changed |= self.set_parent(s, Some(id));
+        }
+        changed
+    }
+
     /// Sits pin `id` on the border of the shape it was let go on (the topmost one that is not a pin, whose border
     /// is within `PIN` of its center), and has that shape hold it; far from every border it is let go. `true` if it changed.
     pub fn seat(&mut self, id: u32) -> bool {
@@ -203,6 +217,49 @@ impl Diagram {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_frame_drawn_around_shapes_takes_them_in() {
+        let mut d = Diagram::default();
+        let inner = d.add_shape(Form::Rect, 200., 200., 200., 100.);
+        let across = d.add_shape(Form::Rect, 700., 100., 200., 100.);
+        let link = d.add_link(End::Point(50., 500.), End::Point(750., 500.), Head::None, Route::Straight);
+        let frame = d.add_shape(Form::Frame, 0., 0., 800., 600.);
+        // Placing it is not enough: what was there before stays loose, and under the frame in the drawing order.
+        d.adopt(&[frame]);
+        assert_eq!((d.shape(inner).unwrap().parent, d.shapes.last().unwrap().id), (None, frame));
+        // Drawn around them, it takes in what is wholly inside, and draws it over itself; not what only overlaps it.
+        assert!(d.gather(frame));
+        assert_eq!((d.shape(inner).unwrap().parent, d.shape(across).unwrap().parent), (Some(frame), None));
+        assert_eq!(d.shapes.iter().map(|s| s.id).collect::<Vec<_>>(), vec![across, frame, inner]);
+        assert_eq!((d.hit(300., 250., 7.), d.hit(400., 500., 7.)), (Some(inner), Some(link)));
+        assert!(!d.gather(frame));
+        // Asking it to adopt the inner one gives the same: the one explicit repair there was.
+        let mut e = Diagram::default();
+        let inner = e.add_shape(Form::Rect, 200., 200., 200., 100.);
+        let frame = e.add_shape(Form::Frame, 0., 0., 800., 600.);
+        assert!(e.adopt(&[inner]) && e.shape(inner).unwrap().parent == Some(frame));
+        // A plain rectangle holds nothing.
+        let plain = e.add_shape(Form::Rect, 100., 100., 400., 400.);
+        assert!(!e.gather(plain));
+    }
+
+    #[test]
+    fn a_frame_drawn_inside_a_package_takes_only_its_neighbours() {
+        let mut d = Diagram::default();
+        let pack = d.add_shape(Form::Package, 0., 0., 1000., 1000.);
+        let (a, b) = (d.add_shape(Form::Rect, 100., 100., 50., 50.), d.add_shape(Form::Rect, 600., 600., 50., 50.));
+        d.adopt(&[a, b]);
+        let frame = d.add_shape(Form::Frame, 50., 50., 300., 300.);
+        d.adopt(&[frame]);
+        assert!(d.gather(frame));
+        assert_eq!((d.shape(frame).unwrap().parent, d.shape(a).unwrap().parent, d.shape(b).unwrap().parent), (Some(pack), Some(frame), Some(pack)));
+        // Drawn around the package, a bigger one takes it whole, with what it holds.
+        let outer = d.add_shape(Form::Frame, -10., -10., 1100., 1100.);
+        assert!(d.gather(outer));
+        assert_eq!((d.shape(pack).unwrap().parent, d.shape(a).unwrap().parent), (Some(outer), Some(frame)));
+        assert_eq!(d.descendants(outer).len(), 4);
+    }
 
     /// A package holding two classes, a frame beside it, and a loose note.
     fn sample() -> (Diagram, [u32; 5]) {

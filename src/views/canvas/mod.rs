@@ -333,6 +333,12 @@ impl Canvas {
         (self.hover, self.context.is_some())
     }
 
+    /// The shape or arrow whose text is being written.
+    #[cfg(test)]
+    pub fn writing(&self) -> Option<u32> {
+        self.editing.map(|(id, _)| id)
+    }
+
     /// Whether a gesture is in progress, and how many steps of undo there are.
     #[cfg(test)]
     pub fn gesture(&self) -> (bool, usize) {

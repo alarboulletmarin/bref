@@ -119,7 +119,7 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | Sequence: arrows between lifelines | A message's height follows its order: drag it up or down to reorder; a call that waits opens a bar until its answer; the bar of the bar numbers them; a fragment (S: alt, opt, loop, par…) picked with messages selected wraps them, the first line of its text is the operator, each line after it an operand |
 | Activity (S): actions, decisions, bars, pins | A pin dropped on the border of a shape sits on it, follows it and is removed with it; swimlanes (G F W) are columns or rows; the guard of a flow is its text |
 | Components (S): components, ports, nodes | A port sits on the border of a component and goes with it; a node, a device and an execution environment hold the artifacts and nodes dropped on them; the ball and the socket (K B, K Q) are its interfaces |
-| G F W | Package, frame, swimlane: they hold the shapes dropped on them, and move, copy and remove them together |
+| G F W | Package, frame, swimlane: they hold the shapes dropped on them or drawn around, and move, copy and remove them together |
 | `S` | Shape library: classes, use cases… with their text; type to search, Enter picks, drag a row onto the canvas; starting points open a new diagram |
 | `K` | Relationships: a letter picks one (A N X G C H Z D, U I S L E M for a dependency with its stereotype, R association class, B ball, Q socket, J V «deploy» «manifest», F O W P T the messages of a sequence diagram, Y n-ary association); on selected arrows it changes them |
 | `A` / `L` / `V` | Arrow / line, held by the shapes they join / select |
@@ -128,6 +128,7 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `---` | Alone on a line of a box: a compartment (UML class) |
 | `«interface»  + static x: int  abstract f()` | In a class: a stereotype line, then members; static is underlined, abstract in italics; name : Type is an object |
 | `Shift+click` / `Ctrl+click` | Add a shape to the selection, or take it out |
+| `Alt+click` | Select what lies under the selection at that spot, then round to the top: shapes stacked, an arrow under a filled shape |
 | `Delete` | Remove the selection |
 | `Ctrl+D` | Diagram: duplicate the selection |
 | `Ctrl+Z` | Diagram: undo |

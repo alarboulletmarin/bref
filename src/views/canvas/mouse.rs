@@ -83,7 +83,7 @@ impl Canvas {
     /// the middle of another arrow than `except`, it holds on to that.
     pub(super) fn end_at(&self, p: (f32, f32), not: Option<u32>, mid: bool, except: Option<u32>) -> End {
         // A lifeline is joined whole, even by the arrow that began on it: a message to itself.
-        let shape = self.diagram.shape_at(p.0, p.1).and_then(|id| self.diagram.shape(id)).filter(|s| Some(s.id) != not || s.form == Form::Lifeline);
+        let shape = self.diagram.shapes_under(p.0, p.1, 7. / self.zoom).first().and_then(|id| self.diagram.shape(*id)).filter(|s| Some(s.id) != not || s.form == Form::Lifeline);
         match shape {
             Some(shape) if shape.form == Form::Lifeline => End::Life(shape.id),
             Some(shape) => shape.hook(p.0, p.1),
@@ -206,7 +206,10 @@ impl Canvas {
                     let to = if close(b) { true } else if close(a) { false } else { return None };
                     Some(Drag::Tip { id: link.id, to })
                 });
-                let hit = self.diagram.hit(p.0, p.1, near);
+                // Alt+click: what lies under the selection there, in the order clicks go through it, then round to the top.
+                let under = self.diagram.under(p.0, p.1, near);
+                let below = under.iter().position(|id| self.selected.contains(id)).filter(|_| e.modifiers.alt);
+                let hit = below.map_or(under.first(), |i| under.get((i + 1) % under.len())).copied();
                 let label = self.diagram.tip_label_hit(p.0, p.1).filter(|_| hit.is_none_or(|id| self.diagram.link(id).is_some()));
                 match (corner.or(tip), label, hit) {
                     (Some(drag), ..) => {
@@ -417,6 +420,8 @@ impl Canvas {
                 }
                 let text = shape.form == Form::Text;
                 self.diagram.adopt(&[id]);
+                // A container drawn around shapes takes them in.
+                self.diagram.gather(id);
                 (self.selected, self.tool) = (vec![id], Tool::Select);
                 if text {
                     self.editing = Some((id, 0));

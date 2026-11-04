@@ -70,10 +70,22 @@ Select something and a bar floats over it, with what can be changed in it. It go
 A package (`G`), a frame (`F`) or a swimlane (`W`) holds the shapes dropped on it, to any depth.
 
 - A shape drawn or dragged over a container belongs to it. Dragged out, it leaves it. One step of undo puts back both its place and its holder.
+- A container drawn around shapes takes in those wholly inside it, at its own level. One that only overlaps it stays apart: seen over it is not held by it. Moving or resizing a container never takes in anything new; drag the shape onto it instead.
 - Moving the container moves what it holds. Copying it copies them, with the arrows between them. Removing it removes them.
 - Resizing it leaves them where they are. Once it holds something, a button of its bar fits it around what it holds.
 - An arrow can join a held shape to anything outside.
 - A package has its name in its tab and the lines after it under the tab. A frame has its title at the top left. A swimlane has its name in its header.
+
+## Selecting
+
+A click takes what you see under the pointer:
+
+- The stroke and the text of a shape take it. So does its inside when it is filled, and all of it when it is small (a dot, a bar, a text).
+- The empty inside of a shape that is not filled lets through what it surrounds: an arrow that passes there, a shape inside it. Where nothing else is, it takes the shape, the innermost first.
+- So a frame, a package or a swimlane is taken by its border or its name, and what it holds stays within reach, whatever order they were drawn in.
+- `Alt + click` goes on to what lies under the selection at that spot, then back to the top: two shapes stacked, an arrow under a filled shape.
+
+The pointer lights what a click would take; a right click and a double click act on that same thing.
 
 ## Library
 

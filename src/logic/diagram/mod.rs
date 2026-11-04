@@ -11,6 +11,7 @@ use super::{
 
 mod file;
 mod hold;
+mod pick;
 mod place;
 mod route;
 mod sequence;
@@ -1034,34 +1035,6 @@ impl Diagram {
         }
     }
 
-    /// The topmost shape under this point.
-    pub fn shape_at(&self, x: f32, y: f32) -> Option<u32> {
-        self.shapes.iter().rev().find(|s| s.contains(x, y)).map(|s| s.id)
-    }
-
-    /// What a click at this point grabs: the shape on top, or the arrow when it passes within `reach`; a message
-    /// inside a combined fragment wins over it, so that it can be picked.
-    pub fn hit(&self, x: f32, y: f32, reach: f32) -> Option<u32> {
-        let shape = self.shape_at(x, y);
-        let held = shape.is_some_and(|id| self.shape(id).is_some_and(|s| s.form == Form::Fragment));
-        match shape {
-            Some(_) if !held => shape,
-            _ => self.link_at(x, y, reach).filter(|id| shape.is_none() || self.messages().contains(id)).or(shape),
-        }
-    }
-
-    /// The arrow passing within `reach` of this point.
-    pub fn link_at(&self, x: f32, y: f32, reach: f32) -> Option<u32> {
-        let near = |(ax, ay): (f32, f32), (bx, by): (f32, f32)| {
-            let (dx, dy) = (bx - ax, by - ay);
-            let t = (((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy).max(1e-6)).clamp(0., 1.);
-            (x - ax - t * dx).hypot(y - ay - t * dy) <= reach
-        };
-        let flow = OnceCell::new();
-        let hit = |l: &&Link| self.trace_in(l, &flow).is_some_and(|t| t.points.windows(2).any(|w| near(w[0], w[1])));
-        self.links.iter().rev().find(hit).map(|l| l.id)
-    }
-
     /// The two ends of the stroke, where it touches what it links. `None` if an
     /// attached shape is gone.
     pub fn ends(&self, link: &Link) -> Option<((f32, f32), (f32, f32))> {
@@ -1421,8 +1394,8 @@ mod tests {
         // An attached stroke stops at the shapes' outline, facing each other.
         let (from, to) = d.ends(&d.links[0]).unwrap();
         assert!((119.9..=120.1).contains(&from.0) && (299.0..=301.).contains(&to.0));
-        assert_eq!((d.shape_at(10., 10.), d.shape_at(200., 10.)), (Some(a), None));
-        assert_eq!(d.link_at(200., 36., 6.), Some(link));
+        assert_eq!((d.shapes_under(10., 10., 6.).first(), d.shapes_under(200., 10., 6.).first()), (Some(&a), None));
+        assert_eq!(d.links_at(200., 36., 6.), vec![link]);
 
         // Removing a shape takes its arrows along; copying an arrow follows its shapes.
         let copies = d.duplicate(&[a, b, link], 20.);
