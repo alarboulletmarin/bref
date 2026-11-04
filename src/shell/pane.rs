@@ -653,6 +653,13 @@ impl Shell {
             self.focus_pane(self.active, window, cx);
             return false;
         }
+        self.forget_active();
+        self.focus_pane(self.active, window, cx);
+        true
+    }
+
+    /// Takes the active tab out, once saved, and remembers its file for Ctrl+Alt+T.
+    fn forget_active(&mut self) {
         if let Some(path) = self.pane().displayed_path().cloned() {
             self.closed.retain(|p| *p != path);
             self.closed.push(path);
@@ -661,8 +668,38 @@ impl Shell {
             }
         }
         self.remove_tab(self.active);
-        self.focus_pane(self.active, window, cx);
-        true
+    }
+
+    /// Closes `tabs` one by one, as Ctrl+W does: a tab whose save fails stays open with its edits
+    /// and the others close all the same. Input goes to `keep`, or to the first tab that could not
+    /// close. The window keeps one tab: the last one closed gives way to a new empty note. A
+    /// closed file is never deleted (only an empty new note leaves nothing behind, as with Ctrl+W).
+    pub(super) fn close_tabs(&mut self, tabs: &[usize], keep: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
+        // Indices shift as tabs go: each one is followed by its editor.
+        let id = |this: &Self, tab: usize| this.panes.get(tab).map(|pane| pane.editor.entity_id());
+        let find = |this: &Self, id| this.panes.iter().position(|pane: &Pane| pane.editor.entity_id() == id);
+        let targets: Vec<_> = tabs.iter().filter_map(|&tab| id(self, tab)).collect();
+        let keep = keep.and_then(|tab| id(self, tab));
+        let mut failed = None;
+        for target in targets {
+            let Some(tab) = find(self, target) else { continue };
+            self.active = tab;
+            // Already a new empty note, alone in the window: nothing to close.
+            if self.panes.len() == 1 && self.spare_tab(cx) {
+                continue;
+            }
+            if !self.leave(cx) {
+                failed.get_or_insert(target);
+                continue;
+            }
+            if self.panes.len() == 1 {
+                self.add_tab(window, cx);
+                self.active = find(self, target).unwrap_or(tab);
+            }
+            self.forget_active();
+        }
+        let to = failed.or(keep).and_then(|id| find(self, id)).unwrap_or(self.active);
+        self.focus_pane(to, window, cx);
     }
 
     /// A window owns every tab: no view may be discarded until all writes have succeeded.
@@ -691,8 +728,9 @@ impl Shell {
     }
 
     /// Opens the tabs saved last time (`read_panes`), those whose file is still in the vault; a
-    /// first pane left without any shows the most recent note, as before tabs.
-    pub(super) fn restore_panes(&mut self, tree: Option<Node>, saved: Vec<(Vec<PathBuf>, usize)>, root: &Path, window: &mut Window, cx: &mut Context<Self>) {
+    /// first pane left without any shows the most recent note, as before tabs, unless the window
+    /// was saved (`current`, the format of now) with all its files closed: a new empty note then.
+    pub(super) fn restore_panes(&mut self, tree: Option<Node>, saved: Vec<(Vec<PathBuf>, usize)>, current: bool, root: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let mut seen = std::collections::HashSet::new();
         let mut groups: Vec<(Vec<PathBuf>, usize)> = saved
             .into_iter()
@@ -707,7 +745,7 @@ impl Shell {
         if groups.is_empty() {
             groups.push((Vec::new(), 0));
         }
-        if groups[0].0.is_empty() {
+        if groups[0].0.is_empty() && !current {
             groups[0].0.extend(self.recent.iter().find(|p| !seen.contains(*p)).cloned());
         }
         // A tree that does not match the panes (edited by hand) gives way to a row of them.

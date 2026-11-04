@@ -28,8 +28,15 @@ impl Shell {
         }
         // Without a menu (from the palette), the icon grid opens near the top of the note.
         let at = menu.as_ref().map_or(point(px(80.), px(80.)), |menu| menu.at);
+        let tab = menu.as_ref().and_then(|menu| menu.tab).filter(|tab| *tab < self.panes.len());
         let link = menu.and_then(|menu| menu.text).flatten();
         cx.notify();
+        match (what, tab) {
+            (Do::CloseTab, Some(tab)) => return self.close_tab(tab, window, cx),
+            (Do::CloseOtherTabs, Some(tab)) => return self.close_other_tabs(tab, window, cx),
+            (Do::CloseTabsInPane, Some(tab)) => return self.close_tabs_in_pane(self.group_of(tab), window, cx),
+            _ => {}
+        }
         if let (Do::Icon, Some(path)) = (what, &target) {
             // On the item's icon if it has one, else on "no icon".
             let chosen = self.icons.get(path).and_then(|mine| ICON_SET.iter().position(|(file, _)| file[2..file.len() - 4] == *mine)).map_or(0, |i| i + 1);
@@ -313,7 +320,11 @@ impl Shell {
         let many = menu.target.as_ref().is_some_and(|p| self.nav.marked.contains(p)) && self.nav.marked.len() > 1;
         // Groups of entries; a line separates those that have any.
         let mut groups: Vec<Vec<(&'static str, Do)>> = vec![Vec::new(); 7];
-        if menu.block {
+        if menu.tab.is_some() {
+            groups[0].push((tr("Close", "Fermer"), Do::CloseTab));
+            groups[0].push((tr("Close other tabs", "Fermer les autres onglets"), Do::CloseOtherTabs));
+            groups[0].push((tr("Close all tabs in this pane", "Fermer tous les onglets de ce volet"), Do::CloseTabsInPane));
+        } else if menu.block {
             // A block's handle: what it can become, move or duplicate it, copy it, delete it.
             use editor::BlockOp;
             groups[0].extend(BlockOp::ALL.into_iter().filter(|op| matches!(op, BlockOp::Turn(_))).map(|op| (op.label(), Do::Block(op))));

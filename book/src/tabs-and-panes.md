@@ -15,6 +15,14 @@ A pane holds as many files as you like, as in a code editor.
 | `Ctrl + W` | close the tab, saving what it holds first. The pane goes with its last tab. |
 | `Ctrl + Alt + T` | reopen the last tab closed |
 
+A right click on a tab opens its menu, which the arrows, `Enter` and `Escape` also work:
+
+- **Close**: that tab, as `Ctrl + W` does.
+- **Close other tabs**: every tab of its pane but the one clicked, even if it was not the one shown. It stays, shown, with the focus.
+- **Close all tabs in this pane**: the pane goes, the other panes keep their tabs.
+
+**Close all files**, in the palette, closes every tab of every pane, the graph and the calendar included (they go back to their dock). The window is left with one pane on a new empty note, and comes back that way at the next start. These three also have a line in the palette and can be given a shortcut. Closing never deletes a file: each tab is saved first, a new note with text is kept as a note, and only a new note left empty leaves nothing behind. A tab that cannot be saved stays open with its edits while the others close; the first one gets the focus. `Ctrl + Alt + T` reopens the closed files one by one, the last first.
+
 A tab can be dragged along the bar, into another pane, or to an edge to split one. See [Drag a tab](#drag-a-tab).
 
 - **Saving before closing** includes a cell still being edited in a CSV or TSV grid.

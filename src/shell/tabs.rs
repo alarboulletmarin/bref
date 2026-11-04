@@ -96,6 +96,25 @@ impl Shell {
         }
     }
 
+    /// "Close other tabs": the other tabs of `tab`'s pane close; it stays, shown, with input.
+    pub(super) fn close_other_tabs(&mut self, tab: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let others: Vec<usize> = self.groups[self.group_of(tab)].tabs.iter().copied().filter(|t| *t != tab).collect();
+        self.close_tabs(&others, Some(tab), window, cx);
+    }
+
+    /// "Close all tabs in this pane": the other panes keep theirs.
+    pub(super) fn close_tabs_in_pane(&mut self, group: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let tabs = self.groups[group].tabs.clone();
+        let keep = (self.group_of(self.active) != group).then_some(self.active);
+        self.close_tabs(&tabs, keep, window, cx);
+    }
+
+    /// "Close all files": every tab of every pane; one pane is left, on a new empty note.
+    pub(super) fn close_all_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let all: Vec<usize> = (0..self.panes.len()).collect();
+        self.close_tabs(&all, None, window, cx);
+    }
+
     /// The tab bar of `group`, if it has more than one tab. The tab shown is a pill on the sheet's
     /// colour (lifted in the active pane); one that is not saved yet has a dot in place of its cross.
     pub(super) fn render_tabs(&mut self, group: usize, client: bool, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
@@ -196,6 +215,11 @@ impl Shell {
                 }))
                 .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, window, cx| this.focus_pane(tab, window, cx)))
                 .on_mouse_down(MouseButton::Middle, cx.listener(move |this, _, window, cx| this.close_tab(tab, window, cx)))
+                // Right click: what to close, this tab, the others or the whole pane.
+                .on_mouse_down(MouseButton::Right, cx.listener(move |this, e: &gpui::MouseDownEvent, window, cx| {
+                    cx.stop_propagation();
+                    this.show_menu(nav::Menu { at: e.position, tab: Some(tab), ..Default::default() }, window, cx);
+                }))
         });
         // The window buttons sit over the top right corner: the right pane's bar stops before them,
         // so that no tab scrolls under them.

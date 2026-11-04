@@ -307,8 +307,9 @@ impl Shell {
                 this.recent = recent.into_iter().filter(|p| p.is_file()).collect();
                 // The tabs of last time, those whose file is still there; the older formats left
                 // the first pane to the most recent note.
-                let (tree, saved) = read_panes(&vault::load_file("panes"));
-                this.restore_panes(tree, saved, &root, window, cx);
+                let panes = vault::load_file("panes");
+                let (tree, saved) = read_panes(&panes);
+                this.restore_panes(tree, saved, panes.starts_with("v3 "), &root, window, cx);
                 this.panes_saved = this.panes_state();
                 if this.nav.panel == Panel::Full {
                     window.focus(&this.nav.focus);

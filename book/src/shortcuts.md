@@ -67,6 +67,10 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | Border between panes | Drag it to share the room; double click: even shares |
 | Opening a file | Click in the tree, choose in the palette, follow a link: the file opens in a tab of its own, or its tab comes to the front if it is already open; the arrows in the tree preview notes in a single italic tab |
 | `Ctrl+W` | Save and close the focused tab; keep it open if saving fails |
+|  | Close the other tabs of the pane, each saved first; one that fails to save stays open |
+|  | Close all the tabs of the pane; the other panes keep theirs |
+|  | Close all files, in every pane, without deleting any; the window is left on a new empty note |
+| Right click on a tab | Close it, close the other tabs, or all the tabs of its pane |
 | `Ctrl+Alt+T` | Reopen the last closed tab |
 | `Ctrl+Tab` | Next tab |
 | `Ctrl+Shift+Tab` | Previous tab |

@@ -19,7 +19,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Linked notes.** `[[Links]]`, backlinks, tags, embedded sections, a graph, and a calendar of daily notes. The tree follows the active file, including diagrams, pictures and tables.
 - **More than notes.** Kanban boards, list pages built from front matter, UML diagrams drawn by hand and saved as SVG, and a CSV grid that opens a million rows.
 - **Agents.** `bref mcp` lets an agent read, write and draw in the vault, with Bref's links, trash and diagrams. [Guide](book/src/agents.md)
-- **Safe tab closing.** If saving fails, the document stays open with its edits and undo history.
+- **Safe tab closing.** Close a tab, the other tabs or a whole pane from a tab's right click, or every file from the palette. If saving fails, the document stays open with its edits and undo history.
 - **Keyboard first.** One palette for notes and commands. Every shortcut is listed in the app (`F1`) and can be changed.
 - **Yours to dress.** 13 themes, IBM Plex built in, any installed font. Light and dark, English and French.
 

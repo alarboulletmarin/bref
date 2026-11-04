@@ -195,6 +195,8 @@ pub struct Menu {
     pub commented: bool,
     /// Opened by a block's handle: the block's gestures.
     pub block: bool,
+    /// Right click on a tab: what to close.
+    pub tab: Option<usize>,
     /// The entry the arrow keys are on.
     pub chosen: Option<usize>,
     /// What had the focus before it opened, to give it back.
@@ -246,6 +248,10 @@ pub enum Do {
     Block(editor::BlockOp),
     OpenLink,
     CopyAddress,
+    // Tab menu.
+    CloseTab,
+    CloseOtherTabs,
+    CloseTabsInPane,
 }
 
 impl Do {
@@ -262,6 +268,9 @@ impl Do {
             Do::Rename => of(cx, &Rename),
             Do::Duplicate => of(cx, &Duplicate),
             Do::Trash => of(cx, &Trash),
+            Do::CloseTab => of(cx, &crate::actions::ClosePane),
+            Do::CloseOtherTabs => of(cx, &crate::actions::CloseOtherTabs),
+            Do::CloseTabsInPane => of(cx, &crate::actions::CloseTabsInPane),
             Do::Cut => of(cx, &editor::Cut),
             Do::Copy => of(cx, &editor::Copy),
             Do::Paste => of(cx, &editor::Paste),

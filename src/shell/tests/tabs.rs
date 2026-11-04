@@ -317,3 +317,153 @@ fn failed_save_keeps_the_tab_and_its_edits(cx: &mut TestAppContext) {
     assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string()), format!("{original} UNSAVED CHANGES"));
     let _ = fs::remove_dir_all(&root);
 }
+
+/// Right click on a tab, or the palette: close it, the others, the pane or every file. Each tab is
+/// saved first, one that cannot be stays with its edits, no file is deleted, and an emptied window
+/// is left (and comes back at restart) on a new empty note.
+#[gpui::test]
+fn tabs_close_in_bulk_from_their_menu(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "tabs-bulk");
+    let note = |name: &str| root.join(format!("{name}.md"));
+    for name in ["Alpha", "Beta", "Gamma", "Delta"] {
+        fs::write(note(name), format!("# {name}\n\n")).unwrap();
+    }
+    let csv = root.join("Données.csv");
+    fs::write(&csv, "a,b\n1,2\n").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    let open = |cx: &mut gpui::VisualTestContext, path: &Path| {
+        shell.update_in(cx, |s, window, cx| s.open(path, window, cx));
+        cx.run_until_parked();
+    };
+    for name in ["Alpha", "Beta", "Gamma"] {
+        open(cx, &note(name));
+    }
+    open(cx, &csv);
+    shell.update_in(cx, |s, window, cx| s.tool_as_tab(window, cx));
+    cx.run_until_parked();
+    let names = |cx: &mut gpui::VisualTestContext, group: usize| shell.read_with(cx, |s, cx| s.tab_labels(group, cx));
+    assert_eq!(names(cx, 0), vec!["Alpha", "Beta", "Gamma", "Données", "Graphe"]);
+    let right_click = |cx: &mut gpui::VisualTestContext, tab: usize| {
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let at = cx.debug_bounds(leak(format!("tab-{tab}"))).unwrap().center();
+        cx.simulate_event(gpui::MouseDownEvent { button: MouseButton::Right, position: at, modifiers: gpui::Modifiers::none(), click_count: 1, first_mouse: false });
+        cx.simulate_event(gpui::MouseUpEvent { button: MouseButton::Right, position: at, modifiers: gpui::Modifiers::none(), click_count: 1 });
+        cx.run_until_parked();
+    };
+    let menu = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.menu_groups(cx).concat().iter().map(|(label, _)| *label).collect::<Vec<_>>());
+
+    // The menu of an inactive tab: it opens on that tab without showing it; Escape closes it, nothing else.
+    let beta = shell.read_with(cx, |s, _| s.groups[0].tabs[1]);
+    let shown = shell.read_with(cx, |s, _| s.active);
+    right_click(cx, beta);
+    assert_eq!(menu(cx), vec!["Fermer", "Fermer les autres onglets", "Fermer tous les onglets de ce volet"]);
+    assert_eq!(shell.read_with(cx, |s, _| s.active), shown);
+    cx.simulate_keystrokes("escape");
+    assert!(shell.read_with(cx, |s, _| s.menu.is_none()));
+    assert_eq!(names(cx, 0).len(), 5);
+
+    // "Close other tabs" keeps the clicked tab, not the shown one; it gets shown, with input.
+    right_click(cx, beta);
+    let at = cx.debug_bounds("menu-entry-Fermer les autres onglets").unwrap().center();
+    cx.simulate_click(at, gpui::Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(names(cx, 0), vec!["Beta"]);
+    shell.update_in(cx, |s, window, cx| {
+        assert_eq!(s.pane().path.as_deref(), Some(note("Beta").as_path()));
+        assert!(s.pane().editor.focus_handle(cx).is_focused(window));
+    });
+    assert!(csv.is_file() && note("Alpha").is_file() && note("Gamma").is_file(), "closing never deletes");
+    // The closed files can come back, the last closed first (the graph is a tool, not a file).
+    cx.simulate_keystrokes("secondary-alt-t");
+    assert_eq!(names(cx, 0), vec!["Beta", "Données"]);
+
+    // Two panes: closing every tab of one, from the keys of its menu, leaves the other as it was.
+    shell.update_in(cx, |s, window, cx| { s.add_pane(Side::Right, window, cx); });
+    open(cx, &note("Delta"));
+    let first = shell.read_with(cx, |s, _| s.groups[0].tabs[0]);
+    right_click(cx, first);
+    cx.simulate_keystrokes("down down down enter");
+    cx.run_until_parked();
+    shell.read_with(cx, |s, _| {
+        assert_eq!(s.groups.len(), 1);
+        assert_eq!(s.panes[s.groups[0].tabs[0]].path.as_deref(), Some(note("Delta").as_path()));
+        assert_eq!(s.active, s.groups[0].tabs[0]);
+    });
+
+    // Close all files with a failed save among them: that tab stays, with its text; the others close.
+    open(cx, &note("Alpha"));
+    fs::create_dir(root.join(".Alpha.tmp")).unwrap();
+    cx.simulate_keystrokes("secondary-end");
+    cx.simulate_input("non enregistré");
+    let editor = shell.read_with(cx, |s, _| s.pane().editor.clone());
+    // A draft with text is saved as a note; an empty one leaves nothing.
+    cx.simulate_keystrokes("secondary-n");
+    cx.simulate_input("# Brouillon\n\ntexte");
+    cx.simulate_keystrokes("secondary-n");
+    shell.update_in(cx, |s, window, cx| { s.add_pane(Side::Right, window, cx); });
+    open(cx, &note("Gamma"));
+    fs::create_dir(root.join(".Gamma.tmp")).unwrap();
+    cx.simulate_keystrokes("secondary-end");
+    cx.simulate_input("aussi");
+    let gamma = shell.read_with(cx, |s, _| s.pane().editor.clone());
+    let files = |root: &Path| fs::read_dir(root).unwrap().map(|e| e.unwrap().file_name()).filter(|n| !n.to_string_lossy().starts_with('.')).collect::<std::collections::BTreeSet<_>>();
+    let before = files(&root);
+    cx.dispatch_action(CloseAllFiles);
+    cx.run_until_parked();
+    shell.update_in(cx, |s, window, cx| {
+        // Both failed tabs stay, each in its pane; input goes to the first.
+        assert_eq!((s.panes.len(), s.groups.len()), (2, 2), "{:?}", s.panes.iter().map(|p| p.path.clone()).collect::<Vec<_>>());
+        assert!(s.panes.iter().any(|p| p.editor == gamma && p.dirty));
+        assert_eq!(s.pane().editor, editor);
+        assert!(editor.read(cx).text().ends_with("non enregistré"));
+        assert!(editor.focus_handle(cx).is_focused(window));
+        assert!(s.toasts.iter().any(|t| t.tone == Tone::Failed && t.text.contains("Alpha")));
+    });
+    assert!(root.join("Brouillon.md").is_file());
+    assert_eq!(files(&root), before, "closing neither deletes nor adds a file");
+
+    // Once it can be saved, closing all leaves a single new empty note, at restart too.
+    fs::remove_dir(root.join(".Alpha.tmp")).unwrap();
+    fs::remove_dir(root.join(".Gamma.tmp")).unwrap();
+    cx.dispatch_action(CloseAllFiles);
+    cx.run_until_parked();
+    shell.read_with(cx, |s, cx| {
+        assert_eq!((s.panes.len(), s.groups.len()), (1, 1));
+        assert!(s.pane().path.is_none() && s.pane().file.is_none() && s.pane().tool.is_none());
+        assert!(s.pane().editor.read(cx).text().is_empty());
+    });
+    assert!(fs::read_to_string(note("Alpha")).unwrap().ends_with("non enregistré"));
+    assert!(fs::read_to_string(note("Gamma")).unwrap().ends_with("aussi"));
+    assert_eq!(files(&root), before);
+    // Closing all again changes nothing.
+    cx.dispatch_action(CloseAllFiles);
+    assert_eq!(shell.read_with(cx, |s, _| s.panes.len()), 1);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let recent = vec![note("Gamma")];
+    let (again, cx2) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), recent, window, cx));
+    cx2.run_until_parked();
+    again.read_with(cx2, |s, cx| {
+        assert_eq!(s.panes.len(), 1);
+        assert!(s.pane().path.is_none() && s.pane().editor.read(cx).text().is_empty());
+    });
+    // And Ctrl+Alt+T still brings back what was closed.
+    cx.simulate_keystrokes("secondary-alt-t");
+    assert!(shell.read_with(cx, |s, _| s.pane().path.is_some()));
+
+    // Thirty tabs of long, twin names: the one kept is the one asked for.
+    for n in 0..30 {
+        fs::create_dir_all(root.join(format!("d{n}"))).unwrap();
+        fs::write(root.join(format!("d{n}/Un nom de note très long, répété partout.md")), "x").unwrap();
+    }
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    for n in 0..30 {
+        open(cx, &root.join(format!("d{n}/Un nom de note très long, répété partout.md")));
+    }
+    let kept = shell.read_with(cx, |s, _| s.groups[0].tabs[15]);
+    let path = shell.read_with(cx, |s, _| s.panes[kept].path.clone());
+    shell.update_in(cx, |s, window, cx| s.close_other_tabs(kept, window, cx));
+    shell.read_with(cx, |s, _| assert_eq!((s.panes.len(), s.pane().path.clone()), (1, path)));
+    let _ = fs::remove_dir_all(&root);
+}
