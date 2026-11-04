@@ -1,5 +1,7 @@
 //! Writing in a shape or an arrow, erasing, moving and styling the selection.
 
+use unicode_segmentation::UnicodeSegmentation;
+
 use super::*;
 
 impl Canvas {
@@ -115,14 +117,14 @@ impl Canvas {
         }
     }
 
-    /// Moves the cursor by one character, or erases it if `erase`.
+    /// Moves the cursor by one displayed character (grapheme), or erases it if `erase`.
     pub(super) fn step(&mut self, forward: bool, erase: bool, cx: &mut Context<Self>) {
         let Some((id, at)) = self.editing else { return };
         let Some(text) = self.text_of(id) else { return };
         let to = if forward {
-            text[at..].chars().next().map_or(at, |c| at + c.len_utf8())
+            text[at..].graphemes(true).next().map_or(at, |g| at + g.len())
         } else {
-            text[..at].chars().next_back().map_or(at, |c| at - c.len_utf8())
+            text[..at].grapheme_indices(true).next_back().map_or(at, |(i, _)| i)
         };
         if erase {
             text.replace_range(at.min(to)..at.max(to), "");
