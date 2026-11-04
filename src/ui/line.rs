@@ -40,13 +40,21 @@ pub struct Line {
     anchor: usize,
     /// What an input method is composing (pre-edit), shown underlined until it is committed.
     marked: Option<Range<usize>>,
+    /// The text keeps its newlines (the label of a diagram); otherwise they become spaces.
+    multiline: bool,
 }
 
 impl Line {
     /// The text, cursor at the end.
     pub fn new(text: impl Into<String>) -> Self {
         let text = text.into();
-        Self { at: text.len(), anchor: text.len(), text, marked: None }
+        Self { at: text.len(), anchor: text.len(), text, marked: None, multiline: false }
+    }
+
+    /// A text of several lines, cursor at the end: Enter and pasting keep their newlines,
+    /// Home and End stop at the line's ends.
+    pub fn multiline(text: impl Into<String>) -> Self {
+        Self { multiline: true, ..Self::new(text) }
     }
 
     /// The byte at `units` UTF-16 units from the start (the system counts in them).
@@ -117,8 +125,9 @@ impl Line {
             To::Right => self.text[at..].graphemes(true).next().map_or(at, |g| at + g.len()),
             To::WordLeft => self.text[..at].split_word_bound_indices().rev().find(|(_, w)| !w.trim().is_empty()).map_or(0, |(i, _)| i),
             To::WordRight => self.text[at..].split_word_bound_indices().find(|(_, w)| !w.trim().is_empty()).map_or(self.text.len(), |(i, w)| at + i + w.len()),
-            To::Start => 0,
-            To::End => self.text.len(),
+            // The ends of the cursor's line: of the whole text, in a one-line field.
+            To::Start => self.text[..at].rfind('\n').map_or(0, |i| i + 1),
+            To::End => self.text[at..].find('\n').map_or(self.text.len(), |i| at + i),
         }
     }
 
@@ -142,13 +151,27 @@ impl Line {
         self.anchor = self.at;
     }
 
+    /// Moves the cursor to this byte and keeps the other end of the selection where it was.
+    pub fn extend(&mut self, at: usize) {
+        let anchor = self.anchor;
+        self.place(at);
+        self.anchor = anchor;
+    }
+
+    /// Selects the word at this byte (a double click), or the blank or sign there.
+    pub fn select_word(&mut self, at: usize) {
+        let at = at.min(self.text.len());
+        let (start, word) = self.text.split_word_bound_indices().find(|(i, w)| at < i + w.len()).unwrap_or((self.text.len(), ""));
+        (self.anchor, self.at) = (start, start + word.len());
+    }
+
     pub fn select_all(&mut self) {
         (self.anchor, self.at) = (0, self.text.len());
     }
 
     /// Writes in place of the selection; a one-line field has no newline.
     pub fn insert(&mut self, text: &str) {
-        let text = text.replace("\r\n", " ").replace(['\n', '\r'], " ");
+        let text = if self.multiline { text.replace("\r\n", "\n").replace('\r', "\n") } else { text.replace("\r\n", " ").replace(['\n', '\r'], " ") };
         self.marked = None;
         let chosen = self.selection();
         self.text.replace_range(chosen.clone(), &text);
@@ -305,6 +328,46 @@ mod tests {
         let mut accent = Line::new("é");
         accent.place(1);
         assert_eq!(accent.cursor(), 0);
+    }
+
+    /// A text of several lines (a diagram's label): newlines stay, Home and End keep to the line,
+    /// a click with Shift extends the selection, a double click takes a word.
+    #[test]
+    fn edits_several_lines() {
+        let mut label = Line::multiline("Alpha\nBeta");
+        label.go(To::Start, false);
+        assert_eq!(label.cursor(), 6);
+        label.go(To::End, true);
+        assert_eq!(label.selected(), "Beta");
+        label.insert("Gamma\r\nDelta");
+        assert_eq!(label.text, "Alpha\nGamma\nDelta");
+        label.place(2);
+        label.go(To::End, false);
+        assert_eq!(label.cursor(), 5);
+        label.extend(9);
+        assert_eq!(label.selected(), "\nGam");
+        label.extend(0);
+        assert_eq!(label.selected(), "Alpha");
+        // A double click: the word, the blank between two, the last word, past the end.
+        let mut words = Line::multiline("été  très😀 fini");
+        words.select_word(3);
+        assert_eq!(words.selected(), "été");
+        words.select_word(5);
+        assert_eq!(words.selected(), "  ");
+        words.select_word(words.text.len() - 1);
+        assert_eq!(words.selected(), "fini");
+        words.select_word(999);
+        assert_eq!(words.selected(), "");
+        let mut empty = Line::multiline("");
+        empty.select_word(0);
+        empty.go(To::Start, false);
+        empty.go(To::End, true);
+        assert_eq!((empty.selected(), empty.cursor()), ("", 0));
+        // A one-line field still has its ends at those of the text.
+        let mut one = Line::new("a b");
+        one.place(1);
+        one.go(To::Start, false);
+        assert_eq!(one.cursor(), 0);
     }
 
     /// An input method composes: its text shows in place, marked, and each step replaces the previous
