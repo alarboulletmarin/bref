@@ -467,3 +467,72 @@ fn tabs_close_in_bulk_from_their_menu(cx: &mut TestAppContext) {
     shell.read_with(cx, |s, _| assert_eq!((s.panes.len(), s.pane().path.clone()), (1, path)));
     let _ = fs::remove_dir_all(&root);
 }
+
+/// Closing in bulk over a diagram, a picture and a table whose cell is still typed, its save
+/// pending: each final write lands before its tab goes, and a diagram that cannot be written stays.
+#[gpui::test]
+fn bulk_close_writes_pending_tables_and_diagrams(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "tabs-bulk-kinds");
+    let anchor = root.join("Ancre.md");
+    fs::write(&anchor, "# Ancre\n").unwrap();
+    let image = root.join("Photo.png");
+    fs::write(&image, super::enlarge::png(4, 4)).unwrap();
+    let csv = root.join("Données.csv");
+    fs::write(&csv, "a,b\n1,2\n").unwrap();
+    let drawing = root.join("Schéma.svg");
+    fs::write(&drawing, Diagram::blank().to_svg(diagram::COLORS[0])).unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    let open = |cx: &mut gpui::VisualTestContext, path: &Path| {
+        shell.update_in(cx, |s, window, cx| s.open(path, window, cx));
+        cx.run_until_parked();
+    };
+    for path in [&anchor, &image] {
+        open(cx, path);
+    }
+    // A shape drawn in the diagram, which cannot be written (it saves as soon as it is drawn).
+    let block = root.join(".Schéma.tmp");
+    fs::create_dir(&block).unwrap();
+    open(cx, &drawing);
+    let canvas = shell.read_with(cx, |s, _| s.pane().drawing().cloned().unwrap());
+    let draw = |cx: &mut gpui::VisualTestContext| {
+        cx.simulate_input("r");
+        let (from, to) = canvas.read_with(cx, |c, _| (c.spot(0., 0.), c.spot(120., 60.)));
+        cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_move(to, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_up(to, MouseButton::Left, gpui::Modifiers::none());
+    };
+    draw(cx);
+    assert!(shell.read_with(cx, |s, _| s.pane().canvas_dirty));
+    // A cell still being typed: its background save is only scheduled.
+    open(cx, &csv);
+    cx.simulate_input("modifié");
+    assert_eq!(shell.read_with(cx, |s, cx| s.tab_labels(0, cx)), vec!["Ancre", "Photo", "Schéma", "Données"]);
+
+    // The diagram stays, live, and the others close, the table saved.
+    cx.dispatch_action(CloseAllFiles);
+    cx.run_until_parked();
+    assert!(fs::read_to_string(&csv).unwrap().contains("modifié"));
+    shell.read_with(cx, |s, _| {
+        assert_eq!(s.panes.len(), 1);
+        assert_eq!(s.pane().drawing(), Some(&canvas));
+        assert!(s.pane().canvas_dirty && s.told(Tone::Failed, "Schéma.svg"));
+    });
+    assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shapes.len()), 1);
+
+    // Writable again: it is saved, the window is left on an empty note, every file still there.
+    fs::remove_dir(&block).unwrap();
+    cx.dispatch_action(CloseAllFiles);
+    cx.run_until_parked();
+    assert_eq!(Diagram::from_svg(&fs::read_to_string(&drawing).unwrap()).unwrap().shapes.len(), 1);
+    shell.read_with(cx, |s, cx| {
+        assert_eq!(s.panes.len(), 1);
+        assert!(s.pane().path.is_none() && s.pane().file.is_none() && s.pane().editor.read(cx).text().is_empty());
+    });
+    assert!(anchor.is_file() && image.is_file() && csv.is_file() && drawing.is_file());
+    // They come back the last closed first, the picture too; the first one takes the empty note's place.
+    cx.simulate_keystrokes("secondary-alt-t secondary-alt-t secondary-alt-t");
+    cx.run_until_parked();
+    assert_eq!(shell.read_with(cx, |s, cx| s.tab_labels(0, cx)), vec!["Schéma", "Données", "Photo"]);
+    assert!(shell.read_with(cx, |s, _| matches!(s.pane().file.as_ref().map(|f| &f.kind), Some(FileKind::Image))));
+    let _ = fs::remove_dir_all(&root);
+}

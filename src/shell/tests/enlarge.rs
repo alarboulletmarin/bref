@@ -5,7 +5,7 @@ use super::*;
 use gpui::{Bounds, Modifiers, Pixels, ScrollDelta, ScrollWheelEvent, TouchPhase, point, px, size};
 
 /// A grayscale PNG of `w` x `h` pixels (stored blocks: no compression library needed).
-fn png(w: u32, h: u32) -> Vec<u8> {
+pub(super) fn png(w: u32, h: u32) -> Vec<u8> {
     fn crc(bytes: &[u8]) -> u32 {
         let mut c = !0u32;
         for &b in bytes {
