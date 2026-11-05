@@ -77,6 +77,7 @@ fn the_current_file_in_the_graph_is_not_the_backlink_anchor(cx: &mut TestAppCont
     frames(cx);
     for file in FILES {
         shell.update_in(cx, |s, window, cx| s.open_from_nav(&root.join(file), window, cx));
+        frames(cx);
         // Selection is independent of the document. Do not preview the selected row here.
         shell.update(cx, |s, cx| { s.nav.sel = Some(root.join("Other.md")); cx.notify(); });
         frames(cx);
@@ -124,9 +125,9 @@ fn the_current_file_is_separate_from_tree_selection(cx: &mut TestAppContext) {
     shell.update_in(cx, |s, window, cx| {
         s.open_from_nav(&root.join("Foreign.svg"), window, cx);
         s.show_nav(Mode::Tree, false, window, cx);
-        s.nav.sel = None;
     });
     current(cx, "Foreign.svg");
+    shell.update(cx, |s, cx| { s.nav.sel = None; cx.notify(); });
     let mut held = gpui::Modifiers::none();
     if cfg!(target_os = "macos") { held.platform = true; } else { held.control = true; }
     for name in ["Note", "Other"] {
@@ -215,4 +216,50 @@ fn the_current_file_does_not_fall_back_after_external_changes(cx: &mut TestAppCo
             assert_eq!(s.nav.anchor, Some(root.join("Note.md")));
         });
     }
+}
+
+/// Whatever changes the displayed document (tab, pane, file view), the tree selection moves to it;
+/// between two changes it stays where the user puts it.
+#[gpui::test]
+fn the_tree_selection_follows_the_displayed_document(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "current-follow");
+    fixtures(&root);
+    cx.simulate_resize(size(px(1400.), px(900.)));
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    shell.update_in(cx, |s, window, cx| {
+        s.show_nav(Mode::Tree, false, window, cx);
+        s.open_from_nav(&root.join("Note.md"), window, cx);
+        s.open_from_nav(&root.join("Data.csv"), window, cx);
+        s.open_from_nav(&root.join("Foreign.svg"), window, cx);
+    });
+    frames(cx);
+    let sel = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.nav.sel.clone());
+    assert_eq!(sel(cx), Some(root.join("Foreign.svg")));
+    // Tabs, both ways, round the end.
+    for (keys, file) in [("ctrl-tab", "Note.md"), ("ctrl-tab", "Data.csv"), ("ctrl-shift-tab", "Note.md"), ("ctrl-shift-tab", "Foreign.svg")] {
+        cx.simulate_keystrokes(keys);
+        frames(cx);
+        assert_eq!(sel(cx), Some(root.join(file)), "{keys} to {file}");
+        current(cx, file);
+    }
+    // A picture loaded into the tab, then the note under it again.
+    shell.update(cx, |s, cx| s.open_note(&root.join("Picture.png"), cx));
+    frames(cx);
+    assert_eq!(sel(cx), Some(root.join("Picture.png")));
+    // The user moves the selection: it stays there while the document does not change.
+    shell.update(cx, |s, cx| { s.nav.sel = Some(root.join("Other.md")); cx.notify(); });
+    frames(cx);
+    assert_eq!(sel(cx), Some(root.join("Other.md")));
+    // Another pane, then back.
+    shell.update_in(cx, |s, window, cx| {
+        assert!(s.add_pane(Side::Right, window, cx));
+        s.open_from_nav(&root.join("Data.tsv"), window, cx);
+    });
+    frames(cx);
+    assert_eq!(sel(cx), Some(root.join("Data.tsv")));
+    shell.update_in(cx, |s, window, cx| s.focus_group(0, window, cx));
+    frames(cx);
+    assert_eq!(sel(cx), Some(root.join("Picture.png")));
+    // Only one row wears the selection.
+    current(cx, "Picture.png");
 }

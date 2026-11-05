@@ -817,7 +817,14 @@ impl Shell {
         if !self.pane().preview && self.pane().tool.is_none() && self.pane().file.is_none() {
             self.nav.anchor = self.pane().path.clone();
         }
-        let (current, selected) = (self.pane().displayed_path().cloned(), self.nav.sel.clone());
+        let current = self.pane().displayed_path().cloned();
+        if current != self.nav.followed {
+            if let Some(path) = &current {
+                self.nav.reveal(path);
+            }
+            self.nav.followed = current.clone();
+        }
+        let selected = self.nav.sel.clone();
         self.graph.update(cx, |graph, _| graph.sync(t, current.as_deref(), selected.as_deref()));
 
         let travel = |id: &'static str, icon: &'static str, on: bool| {

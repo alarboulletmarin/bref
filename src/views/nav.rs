@@ -361,6 +361,9 @@ pub struct Nav {
     /// Multiple selection (Ctrl+click, Shift+click); empty as long as a single row
     /// is chosen. `sel` is then the row Shift+click extends from.
     pub marked: HashSet<PathBuf>,
+    /// The displayed document the selection last followed: when another one shows (tab, pane,
+    /// picture, table…), the selection moves to it, and is free again until the next change.
+    pub followed: Option<PathBuf>,
     /// Where the selected row was drawn: the menu opened from the keys opens under it.
     pub sel_at: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<Pixels>>>>,
     /// Note whose backlinks the panel shows: the last opened one, not the one being
@@ -447,6 +450,7 @@ impl Nav {
             graph_w: words.next().and_then(|w| w.parse().ok()).map_or(px(0.), px),
             dragging: false,
             sel: None,
+            followed: None,
             marked: HashSet::new(),
             sel_at: Default::default(),
             anchor: None,
