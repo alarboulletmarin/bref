@@ -32,22 +32,6 @@ pub fn snippet_at(body: &str, lower: &str, row: usize, word: &str) -> String {
     )
 }
 
-/// The text in lowercase, without its accents: « thème » is found by typing « theme ».
-pub fn fold(text: &str) -> String {
-    text.to_lowercase()
-        .chars()
-        .map(|c| match c {
-            'à' | 'â' | 'ä' => 'a',
-            'é' | 'è' | 'ê' | 'ë' => 'e',
-            'î' | 'ï' => 'i',
-            'ô' | 'ö' => 'o',
-            'ù' | 'û' | 'ü' => 'u',
-            'ç' => 'c',
-            c => c,
-        })
-        .collect()
-}
-
 /// Match score: substring first, otherwise subsequence. A higher score is a better name.
 pub fn fuzzy(query: &str, name: &str) -> Option<i32> {
     if let Some(i) = name.find(query) {

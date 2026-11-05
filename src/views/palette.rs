@@ -17,9 +17,9 @@ use crate::{
     ui::widgets::keycaps,
     views::editor::TableOp,
     logic::markdown::ListStyle,
-    logic::rank::{self, contains_all, fuzzy, snippet},
+    logic::rank::{contains_all, fuzzy, snippet},
     views::sheet::Pick,
-    lang::tr,
+    lang::{fold, tr},
 };
 
 /// Height of a row of the list.
@@ -331,7 +331,7 @@ impl Focusable for Palette {
 /// starts one of its words (`new fol`: "New folder"). No subsequence, unlike
 /// notes: `plan` would bring up « Annuler le remplacement ».
 pub fn command(query: &str, label: &str) -> bool {
-    let (query, label) = (rank::fold(query), rank::fold(label));
+    let (query, label) = (fold(query), fold(label));
     if label.contains(query.trim()) {
         return true;
     }
@@ -1131,6 +1131,10 @@ mod tests {
         assert!(command("folder", "New folder"));
         assert!(command("new fol", "New folder"));
         assert!(command("theme", "Thème…"));
+        // Folded like the rest of the app: œ is oe, a typographic apostrophe a straight one.
+        assert!(command("coeur", "Cœur"));
+        assert!(command("l'aide", "Ouvrir l’aide"));
+        assert!(command("l’aide", "Ouvrir l'aide"));
         assert!(command("", "Change vault…"));
         // No more subsequence: scattered letters do not bring up an unrelated command.
         assert!(!command("plan", "Annuler le remplacement dans le coffre"));
