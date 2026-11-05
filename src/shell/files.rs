@@ -56,6 +56,7 @@ impl Shell {
     /// `from` became `to` on disk: everything the app knows about it follows.
     pub(super) fn relocate(&mut self, from: &Path, to: &Path, reload: bool, cx: &mut Context<Self>) {
         self.history.rename(from, to);
+        crate::views::sheet::move_tables(from, to);
         let shift = |p: &PathBuf| match p.strip_prefix(from) {
             Ok(rest) if rest.as_os_str().is_empty() => to.to_path_buf(),
             Ok(rest) => to.join(rest),
@@ -99,6 +100,8 @@ impl Shell {
             Ok(trashed) => trashed,
             Err(e) => return self.fail(tr("Not moved to the trash", "Mise à la corbeille impossible"), path, e, cx),
         };
+        // What is kept for a table goes with it, and comes back with it.
+        crate::views::sheet::move_tables(path, &trashed);
         let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
         self.say_undoable(Tone::Done, format!("{} « {name} »", tr("Moved to the trash:", "Mis à la corbeille :")), Some((trashed, path.to_path_buf())), cx);
         self.history.remove(path);
@@ -126,6 +129,7 @@ impl Shell {
         let made = to.parent().map_or(Ok(()), std::fs::create_dir_all);
         match made.and_then(|()| vault::rename(from, to)) {
             Ok(()) => {
+                crate::views::sheet::move_tables(from, to);
                 self.say(Tone::Done, format!("{} « {} »", tr("Put back:", "Remis en place :"), to.file_name().unwrap_or_default().to_string_lossy()), cx);
                 self.files_changed(cx);
             }

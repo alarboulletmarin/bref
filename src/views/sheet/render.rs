@@ -28,6 +28,7 @@ impl Render for Sheet {
                 (c0..c1).map(|c| {
                     let inside = selected.iter().any(|(_, cols)| cols.contains(&c));
                     div()
+                        .debug_selector(move || format!("sheet-col-{c}"))
                         .flex_none()
                         .w(px(self.widths[c]))
                         .h(px(ROW))
@@ -54,7 +55,7 @@ impl Render for Sheet {
             .bottom(px(0.))
             .overflow_hidden()
             .child(div().absolute().top(px(0.)).left(px(-self.scroll.0)).size_full().children(rows))
-            .child(div().absolute().top(px(0.)).left(px(-self.scroll.0)).w_full().h(px(ROW)).cursor_pointer().child(head))
+            .child(div().absolute().top(px(0.)).left(px(-self.scroll.0)).w_full().h(px(ROW)).cursor_pointer().child(head).children(self.render_handles(c0..c1)))
             .children(self.edit.as_ref().map(|edit| self.render_edit(edit)));
 
         let number = |r: usize, y: f32| {
@@ -107,10 +108,11 @@ impl Render for Sheet {
             .child(grid)
             .child(gutter)
             .child(self.render_bars())
+            .children(self.render_resize(cx))
             .on_mouse_down(MouseButton::Left, cx.listener(|this, e: &MouseDownEvent, window, cx| this.press(e, window, cx)))
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, _, cx| this.drag_to(e, cx)))
-            .on_mouse_up(MouseButton::Left, cx.listener(|this, _: &MouseUpEvent, _, _| this.drag = Drag::None))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, _: &MouseUpEvent, _, _| this.drag = Drag::None))
+            .on_mouse_up(MouseButton::Left, cx.listener(|this, _: &MouseUpEvent, _, cx| this.let_go(cx)))
+            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, _: &MouseUpEvent, _, cx| this.let_go(cx)))
             .on_scroll_wheel(cx.listener(|this, e: &ScrollWheelEvent, _, cx| this.wheel(e, cx)));
 
         line::keys(div(), cx, |this| this.edit.as_mut(), |_, _| ())
@@ -179,6 +181,9 @@ impl Render for Sheet {
             }))
             .on_action(cx.listener(|this, _: &Edit, _, cx| this.begin_edit(None, cx)))
             .on_action(cx.listener(|this, _: &Cancel, _, cx| {
+                if this.cancel_width(cx) {
+                    return;
+                }
                 if this.edit.take().is_none() {
                     this.anchor = this.cursor;
                 }
@@ -194,6 +199,10 @@ impl Render for Sheet {
                 }
             }))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
+            .on_action(cx.listener(|this, _: &WidenColumn, _, cx| this.step_width(1., cx)))
+            .on_action(cx.listener(|this, _: &NarrowColumn, _, cx| this.step_width(-1., cx)))
+            .on_action(cx.listener(|this, _: &FitColumn, _, cx| this.fit_selection(cx)))
+            .on_action(cx.listener(|this, _: &ResetColumnWidths, _, cx| this.reset_widths(cx)))
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
             .on_action(cx.listener(|this, _: &InsertBelow, _, cx| this.insert_rows(true, cx)))
@@ -393,6 +402,7 @@ impl Sheet {
                 let text = if text.contains(['\n', '\r']) { text.replace(['\r', '\n'], "↵") } else { text };
                 let inside = selected.iter().any(|(rows, cols)| rows.contains(&row) && cols.contains(&c));
                 div()
+                    .when(head, |d| d.debug_selector(move || format!("sheet-col-{c}")))
                     .relative()
                     .flex_none()
                     .w(px(self.widths[c]))
@@ -406,7 +416,9 @@ impl Sheet {
                     .when(self.mono.get(c) == Some(&true) && !head, |d| d.font_family(mono()))
                     .when(head, |d| d.bg(t.code_bg).font_weight(FontWeight::SEMIBOLD).when(c + 1 == self.cols(), |d| d.rounded_tr(t.band())))
                     .when(inside, |d| d.bg(t.selection))
-                    .child(div().min_w_0().truncate().child(text))
+                    // One line cut with an ellipsis. Not `truncate`: gpui 0.2.2 keeps the first measure of a line
+                    // that does not wrap, made before the cell's width is known, and never cuts it.
+                    .child(div().flex_1().min_w_0().text_ellipsis().line_clamp(1).child(text))
                     .when(self.cursor == (row, c) && !editing, |d| {
                         d.child(div().absolute().inset_0().border_2().border_color(t.accent))
                     })
@@ -434,6 +446,83 @@ impl Sheet {
             .text_size(px(self.text_px()))
             .when(self.mono.get(col) == Some(&true), |d| d.font_family(mono()))
             .child(edit.shown(t).0)
+    }
+
+    /// The handles on the right edge of the columns, in the top row: nothing to see at rest, the cursor changes
+    /// and the border turns to the accent on hover.
+    fn render_handles(&self, cols: Range<usize>) -> impl Iterator<Item = gpui::Div> + '_ {
+        let t = self.theme;
+        cols.map(move |c| {
+            div()
+                .absolute()
+                .top(px(0.))
+                .left(px(self.xs[c + 1] - HANDLE))
+                .w(px(2. * HANDLE))
+                .h(px(ROW))
+                .cursor(gpui::CursorStyle::ResizeColumn)
+                .group("sheet-handle")
+                .child(div().absolute().top(px(0.)).left(px(HANDLE - 1.)).w(px(1.)).h_full().group_hover("sheet-handle", |s| s.bg(t.accent)))
+        })
+    }
+
+    /// While a column edge is dragged: a guide down the whole view at the new edge, and the width in characters
+    /// in a pill near the pointer. The layer keeps the resize cursor wherever the pointer goes.
+    fn render_resize(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
+        let Drag::Width { col, at, .. } = self.drag else {
+            return None;
+        };
+        let t = self.theme;
+        // The pointer is followed outside the grid and the window too, which the grid's own listeners miss.
+        let this = cx.entity();
+        let follow = canvas(
+            |_, _, _| (),
+            move |_, _, window, _| {
+                let moved = this.clone();
+                window.on_mouse_event(move |e: &MouseMoveEvent, phase, _, cx| {
+                    if phase == gpui::DispatchPhase::Bubble {
+                        moved.update(cx, |sheet, cx| sheet.drag_to(e, cx));
+                    }
+                });
+                let released = this.clone();
+                window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
+                    if phase == gpui::DispatchPhase::Bubble {
+                        released.update(cx, |sheet, cx| sheet.let_go(cx));
+                    }
+                });
+            },
+        )
+        .absolute()
+        .size_full();
+        let x = GUTTER + self.xs[col + 1] - self.scroll.0;
+        let chars = self.chosen.get(col).copied().flatten().unwrap_or_default();
+        let pointer = at - f32::from(self.body.origin.x);
+        let label = format!("{} {}", chars.round() as usize, tr("ch", "car."));
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .cursor(gpui::CursorStyle::ResizeColumn)
+                .child(follow)
+                .child(div().absolute().top(px(0.)).bottom(px(0.)).left(px(x - 0.5)).w(px(1.)).bg(t.accent))
+                .child(
+                    div()
+                        .debug_selector(|| "sheet-width".into())
+                        .absolute()
+                        .top(px(ROW + 6.))
+                        .left(px((pointer + 12.).min(f32::from(self.body.size.width) - 80.).max(GUTTER)))
+                        .px_2()
+                        .py(t.px(3.))
+                        .rounded(t.small())
+                        .bg(t.panel)
+                        .border_1()
+                        .border_color(t.border)
+                        .font_family(mono())
+                        .text_size(t.px(13.))
+                        .text_color(t.soft)
+                        .whitespace_nowrap()
+                        .child(label),
+                ),
+        )
     }
 
     pub(super) fn render_bars(&self) -> impl IntoElement {

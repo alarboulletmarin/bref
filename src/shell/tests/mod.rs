@@ -7,6 +7,7 @@ mod board_header;
 mod calendar_head;
 mod canvas_nesting;
 mod sheet_header;
+mod sheet_widths;
 mod table_open;
 mod docks;
 mod drops;

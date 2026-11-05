@@ -10,8 +10,8 @@ pub(super) enum Change {
     Set(Vec<(usize, usize, String)>),
     Insert(usize, Vec<Vec<String>>),
     Remove(Range<usize>),
-    /// `n` columns before `at`, with their previous cells (none: empty).
-    InsertCols(usize, usize, Vec<Vec<String>>),
+    /// `n` columns before `at`, with their previous cells (none: empty) and widths (none: automatic).
+    InsertCols(usize, usize, Vec<Vec<String>>, Vec<Option<f32>>),
     RemoveCols(Range<usize>),
     /// The columns will start at `to` (counted once removed).
     MoveCols(Range<usize>, usize),
@@ -104,22 +104,34 @@ impl Sheet {
                 self.table.remove_rows(range);
                 Change::Insert(at, rows)
             }
-            // Widths are measured again: `settle` sees they no longer fit the table.
-            Change::InsertCols(at, n, saved) => {
+            // The chosen widths follow their columns; the others are measured again: `settle` sees the
+            // widths no longer fit the table.
+            Change::InsertCols(at, n, saved, mut chosen) => {
+                let before = self.table.cols();
                 self.table.insert_cols(at, n, &saved);
+                chosen.resize(n, None);
+                self.chosen.resize(before, None);
+                widths::insert(&mut self.chosen, at, chosen);
                 self.widths.clear();
+                self.keep_widths();
                 Change::RemoveCols(at..at + n)
             }
             Change::RemoveCols(range) => {
                 let (n, at) = (range.len(), range.start);
+                self.chosen.resize(self.table.cols(), None);
+                let chosen = widths::remove(&mut self.chosen, range.clone());
                 let saved = self.table.remove_cols(range);
                 self.widths.clear();
-                Change::InsertCols(at, n, saved)
+                self.keep_widths();
+                Change::InsertCols(at, n, saved, chosen)
             }
             Change::MoveCols(range, to) => {
                 let back = Change::MoveCols(to..to + range.len(), range.start);
+                self.chosen.resize(self.table.cols(), None);
+                widths::shift(&mut self.chosen, range.clone(), to);
                 self.table.move_cols(range, to);
                 self.widths.clear();
+                self.keep_widths();
                 back
             }
             Change::Reorder(start, perm) => {
@@ -188,7 +200,7 @@ impl Sheet {
         // Whole columns: as many empty columns, to their right or left, selected in turn.
         if self.whole_cols() {
             let at = if below { cols.end } else { cols.start };
-            self.commit(vec![Change::InsertCols(at, cols.len(), Vec::new())], cx);
+            self.commit(vec![Change::InsertCols(at, cols.len(), Vec::new(), Vec::new())], cx);
             (self.anchor, self.cursor) = ((self.last_row(), at + cols.len() - 1), (0, at));
             return cx.notify();
         }
@@ -254,7 +266,7 @@ impl Sheet {
             TableOp::DeleteRow => self.delete_rows(cx),
             TableOp::ColLeft | TableOp::ColRight => {
                 let at = if op == TableOp::ColLeft { cols.start } else { cols.end };
-                self.commit(vec![Change::InsertCols(at, 1, Vec::new())], cx);
+                self.commit(vec![Change::InsertCols(at, 1, Vec::new(), Vec::new())], cx);
                 (self.anchor, self.cursor) = ((r, at), (r, at));
             }
             TableOp::DuplicateRow => {
@@ -264,7 +276,7 @@ impl Sheet {
             }
             TableOp::DuplicateCol => {
                 let saved = (0..tall).map(|r| self.table.cells(r, cols.clone()).into_iter().map(|c| c.into_owned()).collect()).collect();
-                self.commit(vec![Change::InsertCols(cols.end, cols.len(), saved)], cx);
+                self.commit(vec![Change::InsertCols(cols.end, cols.len(), saved, Vec::new())], cx);
                 (self.anchor, self.cursor) = ((r, cols.end), (r, cols.end));
             }
             // Only the body moves: the header stays at the top, and nothing leaves the table.

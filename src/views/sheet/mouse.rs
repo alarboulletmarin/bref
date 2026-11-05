@@ -10,6 +10,9 @@ pub(super) enum Drag {
     Cols,
     /// Scrollbar: vertical or not.
     Bar(bool),
+    /// The right edge of column `col`, grabbed at `from` (x in the window) when it was `start` wide and
+    /// set to `before` (Escape puts it back).
+    Width { col: usize, from: f32, start: f32, before: Option<f32>, at: f32 },
 }
 
 pub(super) enum Hit {
@@ -18,6 +21,8 @@ pub(super) enum Hit {
     Col(usize),
     Corner,
     Bar(bool),
+    /// The handle on the right edge of a column, in the top row.
+    Edge(usize),
 }
 
 impl Sheet {
@@ -30,6 +35,19 @@ impl Sheet {
         }
         if mx > 0. && y > h - EDGE && x > GUTTER {
             return Hit::Bar(false);
+        }
+        if y < ROW && x >= GUTTER {
+            // The handle wins over the column only in a narrow band around its right edge; the edge of
+            // the gutter is not one.
+            let at = x - GUTTER + self.scroll.0;
+            let c = self.col_at(at);
+            let near = |edge: f32| (edge - at).abs() <= HANDLE;
+            if near(self.xs[c + 1]) {
+                return Hit::Edge(c);
+            }
+            if c > 0 && near(self.xs[c]) {
+                return Hit::Edge(c - 1);
+            }
         }
         let col = (x >= GUTTER).then(|| self.col_at(x - GUTTER + self.scroll.0));
         let last = self.table.rows().max(1) - 1;
@@ -53,7 +71,7 @@ impl Sheet {
         let mut kept = std::mem::take(&mut self.more);
         match hit {
             Hit::Cell(..) | Hit::Row(_) | Hit::Col(_) if adding && !extend => kept.push((self.anchor, self.cursor)),
-            Hit::Bar(_) => {}
+            Hit::Bar(_) | Hit::Edge(_) => {}
             _ if adding || extend => {}
             _ => kept.clear(),
         }
@@ -82,6 +100,16 @@ impl Sheet {
                 }
             }
             Hit::Corner => self.select_all(cx),
+            // Double-click: the column fits its text.
+            Hit::Edge(c) if e.click_count >= 2 => {
+                self.fit_cols(&[c]);
+                cx.notify();
+            }
+            Hit::Edge(col) => {
+                let x = f32::from(e.position.x);
+                self.drag = Drag::Width { col, from: x, start: self.widths[col], before: self.chosen.get(col).copied().flatten(), at: x };
+                cx.notify();
+            }
             Hit::Bar(vertical) => {
                 self.drag = Drag::Bar(vertical);
                 self.drag_bar(e.position, vertical, cx);
@@ -92,8 +120,14 @@ impl Sheet {
 
     pub(super) fn drag_to(&mut self, e: &MouseMoveEvent, cx: &mut Context<Self>) {
         if e.pressed_button != Some(MouseButton::Left) {
-            self.drag = Drag::None;
-            return;
+            return self.let_go(cx);
+        }
+        if let Drag::Width { col, from, start, before, .. } = self.drag {
+            let x = f32::from(e.position.x);
+            self.drag = Drag::Width { col, from, start, before, at: x };
+            // Only this column changes: no measure, the frame stays short on a big file.
+            self.set_width(col, start + x - from, false);
+            return cx.notify();
         }
         let at = self.hit(e.position);
         match (self.drag, at) {
@@ -103,6 +137,28 @@ impl Sheet {
             (Drag::Bar(vertical), _) => self.drag_bar(e.position, vertical, cx),
             _ => {}
         }
+    }
+
+    /// The button is released, here or outside the window: a width being set is kept where it is.
+    pub(super) fn let_go(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.drag, Drag::Width { .. }) {
+            self.keep_widths();
+            cx.notify();
+        }
+        self.drag = Drag::None;
+    }
+
+    /// Escape during a drag of a column edge: the width goes back to what it was. False when no edge is dragged.
+    pub(super) fn cancel_width(&mut self, cx: &mut Context<Self>) -> bool {
+        let Drag::Width { col, before, .. } = self.drag else {
+            return false;
+        };
+        self.drag = Drag::None;
+        self.chosen[col] = before;
+        self.measure();
+        self.clamp();
+        cx.notify();
+        true
     }
 
     /// The scrollbar follows the pointer.

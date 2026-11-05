@@ -10,6 +10,7 @@ mod edit;
 mod input;
 mod mouse;
 mod render;
+mod widths;
 
 pub use disk::*;
 use edit::*;
@@ -47,7 +48,7 @@ actions!(
         Origin, Corner, FirstRow, LastRow, Next, Previous, Enter, Edit, Cancel, Backspace, Delete, Copy, Cut,
         Paste, SelectAll, SelectRow, SelectCol, Undo, Redo, InsertBelow, InsertAbove, DeleteRows, PickDelimiter,
         PickEncoding, PickHeader,
-        PickCopyAs, PickExport
+        PickCopyAs, PickExport, WidenColumn, NarrowColumn, FitColumn, ResetColumnWidths
     ]
 );
 
@@ -65,6 +66,8 @@ const PAD: f32 = 8.;
 const SAMPLE: usize = 200;
 const MIN_CHARS: usize = 4;
 const MAX_CHARS: usize = 40;
+/// Half the width of the band, around the edge of a column in the top row, that grabs it to set its width.
+const HANDLE: f32 = 4.;
 /// Thickness of the area where a scrollbar is grabbed.
 const EDGE: f32 = 12.;
 /// Table setting or gesture offered by the palette and the bar.
@@ -150,6 +153,9 @@ pub struct Sheet {
     /// Width of each column, and x of its left edge (one more, for the total).
     widths: Vec<f32>,
     xs: Vec<f32>,
+    /// Width the user set for each column, in characters (`None`: automatic). Kept for the file in `tables`,
+    /// outside the undo history: it is not a change of the file.
+    chosen: Vec<Option<f32>>,
     /// Columns of numbers, dates, IDs (monospace), decided from the sample rows when measured: an edit
     /// does not change it, a new measure (opening, a column inserted or moved) does.
     mono: Vec<bool>,
@@ -180,7 +186,6 @@ impl Sheet {
         let mut this = Self {
             focus: cx.focus_handle(),
             theme,
-            path,
             format: loaded.format,
             table: loaded.table,
             stamp: loaded.stamp,
@@ -190,6 +195,7 @@ impl Sheet {
             edit: None,
             widths: Vec::new(),
             xs: Vec::new(),
+            chosen: kept(&path).widths,
             mono: Vec::new(),
             scroll: (0., 0.),
             body: Bounds::default(),
@@ -201,6 +207,7 @@ impl Sheet {
             disk: Arc::default(),
             copied: false,
             client: false,
+            path,
         };
         this.fresh_table();
         this
@@ -240,30 +247,99 @@ impl Sheet {
         (self.theme.size * 0.9).round().max(11.)
     }
 
-    fn measure(&mut self) {
+    /// Widths of the longest texts of each column among the first rows, in em, counting at most `cap` characters.
+    fn longest(&self, cap: usize) -> Vec<f32> {
         // One read per row, never cell by cell: time stays linear on a very wide row.
-        self.mono = self.table.code_columns(self.first(), SAMPLE);
         let mut ems = vec![0f32; self.cols()];
         for r in 0..self.table.rows().min(SAMPLE) {
             for (c, field) in self.table.row(r).iter().enumerate() {
-                // Monospace: 0.6 em a character. Plex Sans: lowercase is narrower, capitals and digits a
-                // little wider; CJK and emoji (from U+2E80) a full em.
-                let em: f32 = field
-                    .chars()
-                    .take(MAX_CHARS + 1)
-                    .map(|ch| match ch {
-                        _ if self.mono[c] => 0.6,
-                        _ if ch as u32 >= 0x2E80 => 1.,
-                        _ if ch.is_lowercase() => 0.55,
-                        _ => 0.65,
-                    })
-                    .sum();
-                ems[c] = ems[c].max(em);
+                ems[c] = ems[c].max(widths::ems(field, self.mono.get(c).copied().unwrap_or(false), cap));
             }
         }
+        ems
+    }
+
+    fn measure(&mut self) {
+        self.mono = self.table.code_columns(self.first(), SAMPLE);
+        // The columns that are still there keep the width chosen for them; the others are automatic.
+        self.chosen.resize(self.cols(), None);
         let px = self.text_px();
-        self.widths = ems.iter().map(|&em| em.clamp(MIN_CHARS as f32 * 0.6, MAX_CHARS as f32 * 0.6) * px + 2. * PAD).collect();
+        self.widths = self
+            .longest(MAX_CHARS + 1)
+            .iter()
+            .zip(&self.chosen)
+            .map(|(&em, chosen)| match chosen {
+                Some(chars) => widths::to_px(*chars, px, PAD),
+                None => em.clamp(MIN_CHARS as f32 * 0.6, MAX_CHARS as f32 * 0.6) * px + 2. * PAD,
+            })
+            .collect();
         self.place();
+    }
+
+    /// Sets the width of column `col`, in pixels, within the limits; `keep` writes it in `tables`.
+    fn set_width(&mut self, col: usize, px: f32, keep: bool) {
+        if col >= self.widths.len() {
+            return;
+        }
+        let chars = widths::to_chars(px, self.text_px(), PAD);
+        self.chosen.resize(self.cols(), None);
+        self.chosen[col] = Some(chars);
+        self.widths[col] = widths::to_px(chars, self.text_px(), PAD);
+        self.place();
+        self.clamp();
+        if keep {
+            self.keep_widths();
+        }
+    }
+
+    fn keep_widths(&self) {
+        remember_widths(&self.path, &self.chosen);
+    }
+
+    /// The columns of all selections, each once.
+    fn picked_cols(&self) -> Vec<usize> {
+        let all: std::collections::BTreeSet<usize> = self.selections().into_iter().flat_map(|(_, cols)| cols).collect();
+        all.into_iter().filter(|&c| c < self.widths.len()).collect()
+    }
+
+    /// The columns of the selection a character wider (`step` 1) or narrower (-1).
+    fn step_width(&mut self, step: f32, cx: &mut Context<Self>) {
+        self.finish(cx);
+        let char_px = widths::to_px(1., self.text_px(), 0.);
+        for c in self.picked_cols() {
+            self.set_width(c, self.widths[c] + step * char_px, false);
+        }
+        self.keep_widths();
+        cx.notify();
+    }
+
+    /// Columns fitted to their longest text among the first rows, without the cap of the automatic width,
+    /// no wider than the view.
+    fn fit_cols(&mut self, cols: &[usize]) {
+        let (px, view) = (self.text_px(), self.view().0);
+        // No wider than the view: no need to count more characters than it can show.
+        let cap = if view > 0. { (view / (px * 0.5)) as usize + 1 } else { 10_000 };
+        let longest = self.longest(cap);
+        for &c in cols {
+            let chars = widths::fit(longest[c], view, px, PAD);
+            self.set_width(c, widths::to_px(chars, px, PAD), false);
+        }
+        self.keep_widths();
+    }
+
+    fn fit_selection(&mut self, cx: &mut Context<Self>) {
+        self.finish(cx);
+        self.fit_cols(&self.picked_cols());
+        cx.notify();
+    }
+
+    /// Back to the automatic widths, for the whole file.
+    fn reset_widths(&mut self, cx: &mut Context<Self>) {
+        self.chosen.clear();
+        self.keep_widths();
+        self.measure();
+        self.clamp();
+        cx.notify();
     }
 
     fn place(&mut self) {
@@ -278,6 +354,9 @@ impl Sheet {
 
     /// An edited cell can widen its column, up to the limit.
     fn widen(&mut self, col: usize, chars: usize) {
+        if self.chosen.get(col).is_some_and(Option::is_some) {
+            return;
+        }
         let wanted = chars.min(MAX_CHARS) as f32 * self.text_px() * 0.6 + 2. * PAD;
         match self.widths.get_mut(col) {
             Some(w) if *w < wanted => *w = wanted,
@@ -447,6 +526,20 @@ impl Sheet {
 impl Sheet {
     pub fn table(&self) -> &Table {
         &self.table
+    }
+
+    /// Width of each column in pixels, and the one chosen by the user in characters.
+    pub fn col_widths(&self) -> (Vec<f32>, Vec<Option<f32>>) {
+        (self.widths.clone(), self.chosen.clone())
+    }
+
+    pub fn resizing(&self) -> bool {
+        matches!(self.drag, Drag::Width { .. })
+    }
+
+    /// Pixels of a column set to `chars` characters, at the current zoom.
+    pub fn px_of(&self, chars: f32) -> f32 {
+        widths::to_px(chars, self.text_px(), PAD)
     }
 
     /// Middle of cell (`r`, `c`) on screen.

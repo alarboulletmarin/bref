@@ -28,35 +28,108 @@ pub fn load(path: &Path, forced: Option<Format>) -> Result<Loaded, String> {
     // ponytail: synchronous read and parse (100 MB: about 0.3 s); move to a background
     // task with a "loading" state if files of several hundred MB get opened.
     let bytes = fs::read(path).map_err(fail)?;
-    let format = forced.or_else(|| saved_format(path)).unwrap_or_else(|| table::detect(&bytes));
+    let format = forced.or_else(|| kept(path).format).unwrap_or_else(|| table::detect(&bytes));
     let table = Table::parse(table::decode(bytes, format.encoding), format.delimiter);
     Ok(Loaded { table, format, stamp: stamp_of(path) })
 }
 
-/// Settings the user chose for this file: `path ⇥ delimiter ⇥ encoding ⇥ header`.
-pub(super) fn saved_format(path: &Path) -> Option<Format> {
-    let key = path.to_str()?;
-    vault::load_file("tables").lines().find_map(|line| {
-        let mut parts = line.split('\t');
-        (parts.next()? == key).then_some(())?;
-        Some(Format {
-            delimiter: parts.next()?.parse().ok()?,
-            encoding: Encoding::from_label(parts.next()?)?,
-            header: parts.next()? == "1",
-        })
+/// What is kept for a file in the config file `tables`: the read settings the user chose (none: guessed), and
+/// the widths of the columns they set.
+#[derive(Default, Debug, PartialEq)]
+pub(super) struct Kept {
+    pub(super) format: Option<Format>,
+    pub(super) widths: Vec<Option<f32>>,
+}
+
+/// A line of `tables`: `path ⇥ delimiter ⇥ encoding ⇥ header ⇥ widths`. The settings are empty when only the
+/// widths are kept; a line of an older version has no widths.
+fn read_line(line: &str) -> Option<(&str, Kept)> {
+    let mut parts = line.split('\t');
+    let key = parts.next().filter(|k| !k.is_empty())?;
+    let (delimiter, encoding, header) = (parts.next()?, parts.next()?, parts.next()?);
+    let format = match (delimiter.parse().ok(), Encoding::from_label(encoding)) {
+        (Some(delimiter), Some(encoding)) => Some(Format { delimiter, encoding, header: header == "1" }),
+        _ => None,
+    };
+    Some((key, Kept { format, widths: parts.next().map(widths::parse).unwrap_or_default() }))
+}
+
+/// The line for `key`; none when nothing is kept.
+fn write_line(key: &str, kept: &Kept) -> Option<String> {
+    let widths = widths::write(&kept.widths);
+    let format = match kept.format {
+        Some(f) => format!("{}\t{}\t{}", f.delimiter, f.encoding.label(), f.header as u8),
+        None if widths.is_empty() => return None,
+        None => "\t\t".to_string(),
+    };
+    Some(match widths.is_empty() {
+        true => format!("{key}\t{format}"),
+        false => format!("{key}\t{format}\t{widths}"),
     })
 }
 
-pub(super) fn remember_format(path: &Path, format: Option<Format>) {
+/// What is kept for this file.
+pub(super) fn kept(path: &Path) -> Kept {
+    let Some(key) = path.to_str() else {
+        return Kept::default();
+    };
+    vault::load_file("tables").lines().filter_map(read_line).find(|(k, _)| *k == key).map(|(_, kept)| kept).unwrap_or_default()
+}
+
+/// Changes what is kept for this file; the config file is only written if it changes.
+fn keep(path: &Path, change: impl FnOnce(&mut Kept)) {
     let Some(key) = path.to_str().filter(|k| !k.contains(['\t', '\n'])) else {
         return;
     };
-    let mut lines: Vec<String> =
-        vault::load_file("tables").lines().filter(|l| l.split('\t').next() != Some(key)).map(String::from).collect();
-    if let Some(f) = format {
-        lines.push(format!("{key}\t{}\t{}\t{}", f.delimiter, f.encoding.label(), f.header as u8));
+    let text = vault::load_file("tables");
+    let mut kept = text.lines().filter_map(read_line).find(|(k, _)| *k == key).map(|(_, kept)| kept).unwrap_or_default();
+    change(&mut kept);
+    let mut lines: Vec<String> = text.lines().filter(|l| l.split('\t').next() != Some(key)).map(String::from).collect();
+    lines.extend(write_line(key, &kept));
+    let new = lines.join("\n");
+    if new != text {
+        vault::save_file("tables", &new);
     }
-    vault::save_file("tables", &lines.join("\n"));
+}
+
+pub(super) fn remember_format(path: &Path, format: Option<Format>) {
+    keep(path, |kept| kept.format = format);
+}
+
+pub(super) fn remember_widths(path: &Path, chosen: &[Option<f32>]) {
+    keep(path, |kept| kept.widths = chosen.to_vec());
+}
+
+/// `from` (a table, or a folder holding some) became `to` inside the app: what is kept for its tables follows.
+pub fn move_tables(from: &Path, to: &Path) {
+    if let Some(text) = moved_lines(&vault::load_file("tables"), from, to) {
+        vault::save_file("tables", &text);
+    }
+}
+
+/// The `tables` text once `from` became `to`; none if no line changes.
+fn moved_lines(text: &str, from: &Path, to: &Path) -> Option<String> {
+    let moved = |line: &str| -> Option<String> {
+        let (key, rest) = line.split_once('\t')?;
+        let rest_of = Path::new(key).strip_prefix(from).ok()?;
+        let new = if rest_of.as_os_str().is_empty() { to.to_path_buf() } else { to.join(rest_of) };
+        new.to_str().filter(|k| !k.contains(['\t', '\n'])).map(|k| format!("{k}\t{rest}"))
+    };
+    let (mut moved_lines, mut others) = (Vec::new(), Vec::new());
+    for line in text.lines() {
+        match moved(line) {
+            Some(new) => moved_lines.push(new),
+            None => others.push(line.to_string()),
+        }
+    }
+    if moved_lines.is_empty() {
+        return None;
+    }
+    // A line already there for a new path (a file renamed outside the app long ago): the moved one wins.
+    let keys: std::collections::HashSet<String> = moved_lines.iter().filter_map(|l| l.split('\t').next()).map(String::from).collect();
+    others.retain(|l| !keys.contains(l.split('\t').next().unwrap_or_default()));
+    others.extend(moved_lines);
+    Some(others.join("\n"))
 }
 
 /// Last generation written: a late write never replaces a newer one.
@@ -198,5 +271,45 @@ impl Sheet {
             Err(e) => cx.emit(SheetEvent::Error(self.not_saved(e))),
         }
         !self.dirty
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_and_writes_the_tables_lines() {
+        let semicolon = Format { delimiter: b';', encoding: Encoding::Utf8, header: true };
+        // A line of the previous version: four fields, no widths.
+        let (key, old) = read_line("/v/a.csv\t59\tUTF-8\t1").unwrap();
+        assert_eq!((key, old.format, old.widths.len()), ("/v/a.csv", Some(semicolon), 0));
+        // Widths alone: the settings stay guessed.
+        let only = Kept { format: None, widths: vec![None, Some(12.)] };
+        let line = write_line("/v/b.csv", &only).unwrap();
+        assert_eq!(line, "/v/b.csv\t\t\t\t,12");
+        assert_eq!(read_line(&line).unwrap().1, only);
+        let both = Kept { format: Some(semicolon), widths: vec![Some(5.5)] };
+        assert_eq!(read_line(&write_line("/v/c.csv", &both).unwrap()).unwrap().1, both);
+        // Nothing to keep: no line.
+        assert_eq!(write_line("/v/d.csv", &Kept::default()), None);
+        assert_eq!(write_line("/v/d.csv", &Kept { format: None, widths: vec![None] }), None);
+        // Malformed widths are automatic, a broken line is skipped.
+        assert_eq!(read_line("/v/e.csv\t44\tUTF-8\t0\tabc,-1,7").unwrap().1.widths, [None, None, Some(7.)]);
+        assert!(read_line("/v/f.csv\t44").is_none());
+        assert!(read_line("").is_none());
+    }
+
+    #[test]
+    fn moved_tables_keep_their_line() {
+        let text = "/v/a.csv\t44\tUTF-8\t1\t9\n/v/dir/b.csv\t\t\t\t4\n/v/other.csv\t44\tUTF-8\t0\n/v/new.csv\t9\tUTF-8\t0";
+        // A file renamed: its line follows, an old line for the new name gives way.
+        let renamed = moved_lines(text, Path::new("/v/a.csv"), Path::new("/v/new.csv")).unwrap();
+        assert_eq!(renamed, "/v/dir/b.csv\t\t\t\t4\n/v/other.csv\t44\tUTF-8\t0\n/v/new.csv\t44\tUTF-8\t1\t9");
+        // A folder moved: the tables inside follow, not a file whose name only starts the same.
+        let moved = moved_lines(text, Path::new("/v/dir"), Path::new("/v/x/dir")).unwrap();
+        assert!(moved.contains("/v/x/dir/b.csv\t\t\t\t4") && !moved.contains("/v/dir/"));
+        assert_eq!(moved_lines(text, Path::new("/v/d"), Path::new("/v/e")), None);
+        assert_eq!(moved_lines("", Path::new("/v/a.csv"), Path::new("/v/b.csv")), None);
     }
 }

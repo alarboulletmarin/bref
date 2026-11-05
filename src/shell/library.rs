@@ -417,7 +417,7 @@ impl Shell {
                 return;
             }
             let chosen = palette.read(cx).chosen().and_then(|i| found.get(i)).filter(|_| matches!(event, PaletteEvent::Submit(_)));
-            match chosen.map(|path| vault::restore(&root, path)) {
+            match chosen.map(|path| vault::restore(&root, path).inspect(|to| crate::views::sheet::move_tables(path, to))) {
                 Some(Ok(to)) => {
                     let name = to.file_name().unwrap_or_default().to_string_lossy().into_owned();
                     this.say(Tone::Done, format!("{} {name}", tr("Restored:", "Restauré :")), cx);

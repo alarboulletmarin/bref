@@ -158,6 +158,11 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `Ctrl+V` | Table: paste cells from a spreadsheet, Markdown or CSV |
 | `Shift+Space` | Table: select the whole rows of the selection |
 | `Ctrl+Space` | Table: select the whole columns of the selection |
+| Edge of a header | Drag it to set the column's width, kept for the file; double-click fits the column to its text; Esc puts it back |
+| `Alt+.` | Table: widen the column |
+| `Alt+,` | Table: narrow the column |
+|  | Table: fit the column to its text |
+|  | Table: reset the column widths |
 | `Ctrl+Enter` | Table: insert a row below (a column to the right when whole columns are selected) |
 | `Ctrl+Shift+Enter` | Table: insert a row above (a column to the left when whole columns are selected) |
 | `Ctrl+Delete` | Table: remove the selected rows, or the columns when whole columns are selected |
