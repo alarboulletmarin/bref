@@ -5,6 +5,7 @@ pub mod assets;
 pub mod figure;
 pub mod keys;
 pub mod line;
+pub mod print;
 pub mod svg;
 pub mod theme;
 pub mod widgets;

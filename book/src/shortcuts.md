@@ -36,6 +36,7 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `Ctrl+P › clone` | Clone a vault from a git address (also on the welcome screen) |
 | A cloud folder | iCloud, Dropbox, Google Drive, Syncthing: put the vault there, nothing else; never a git repository inside one |
 | `Ctrl+Shift+C` | Copy the code block, else the note |
+|  | Save the note as PDF (A4, unsaved edits included); pictures, figures and embeds that cannot be printed are listed |
 | `Ctrl+click` | Open a \[\[link\]\], \#tag or URL |
 | `F1` / `Ctrl+/` | This help |
 | `Ctrl+Q` | Save and quit; stay open if saving fails |

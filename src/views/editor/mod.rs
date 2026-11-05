@@ -196,6 +196,14 @@ const BROKEN: Pixels = px(20.);
 /// note must not display a file from the disk outside the vault.
 // ponytail: an image folder linked by a symbolic link outside the vault is
 // not followed; allow the link's target if someone needs it.
+/// The picture file written `path` in a note: in the note's folder, at the vault root (the last of
+/// `dirs`), then by its name anywhere in the vault (`images`); never outside the vault.
+pub fn find_picture(dirs: &[PathBuf], images: &HashMap<String, PathBuf>, path: &str) -> Option<PathBuf> {
+    let root = dirs.last();
+    let found = dirs.iter().map(|d| d.join(path)).find(|p| p.is_file() && root.is_some_and(|r| inside(r, p)));
+    found.or_else(|| images.get(&path.rsplit('/').next()?.to_lowercase()).cloned())
+}
+
 fn inside(root: &Path, file: &Path) -> bool {
     let (Ok(root), Ok(file)) = (fs::canonicalize(root), fs::canonicalize(file)) else {
         return false;
@@ -545,6 +553,12 @@ impl Editor {
         self.images = named.collect();
         self.version += 1;
         self.epoch += 1;
+    }
+
+    /// What the note's pictures and embeds are looked up in: its folders, the vault's pictures by
+    /// name, its notes by name (see `find_picture`).
+    pub fn lookups(&self) -> (Vec<PathBuf>, HashMap<String, PathBuf>, HashMap<String, PathBuf>) {
+        (self.dirs.clone(), self.images.clone(), (*self.embeds.sources).clone())
     }
 
     pub fn set_dirs(&mut self, dirs: Vec<PathBuf>) {

@@ -11,6 +11,7 @@ mod table_open;
 mod docks;
 mod drops;
 mod editing;
+mod export_pdf;
 mod enlarge;
 mod end_to_end;
 mod feedback;

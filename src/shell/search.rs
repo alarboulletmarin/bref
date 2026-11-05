@@ -332,7 +332,7 @@ impl Shell {
         let (mut back, mut kept) = (0, 0);
         for (path, old, new) in std::mem::take(&mut self.swapped) {
             let same = fs::read_to_string(&path).is_ok_and(|now| now == new);
-            if same && vault::write(&path, &old).is_ok() {
+            if same && vault::write(&path, old.as_bytes()).is_ok() {
                 if let Some(note) = self.notes.iter_mut().find(|note| note.path == path) {
                     (note.tags, note.links) = Note::index(&old);
                     note.set_body(old);

@@ -250,6 +250,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &sheet::PickExport, window, cx| this.choose_table(Pick::Export, window, cx)))
             .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
+            .on_action(cx.listener(|this, _: &ExportPdf, _, cx| this.export_pdf(cx)))
             .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
             .on_action(cx.listener(|this, _: &Today, window, cx| this.open_today(window, cx)))
             .on_action(cx.listener(|this, _: &SyncVault, window, cx| this.git_sync(window, cx)))

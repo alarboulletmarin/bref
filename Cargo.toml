@@ -18,12 +18,18 @@ mermaid-rs-renderer = { version = "0.3.1", default-features = false }
 # Le système signale les changements du coffre (inotify, FSEvents…). La 7 et non la 8 : celle-ci
 # exige bitflags 2.11 (via kqueue-sys) et ferait bouger le Cargo.lock de GPUI.
 notify = "7"
+# Comes with svg2pdf, at the same version: the pages and the links of an exported PDF.
+pdf-writer = "0.12.1"
 # Déjà tirée par gpui, à la même version : expressions régulières de la recherche.
 regex = "1.12.2"
 # Déjà tirées par gpui, aux mêmes versions : import et export des schémas.
 resvg = { version = "0.45.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 roxmltree = "0.20.0"
 serde_json = "1.0.145"
+# A note exported as PDF: its pages drawn as SVG, the text kept as text. Reuses the usvg of gpui.
+svg2pdf = { version = "0.13.0", default-features = false, features = ["text", "image"] }
+# Comes with usvg and svg2pdf, at the same version: the widths of the letters, to lay out a printed page.
+ttf-parser = "0.25.1"
 # Déjà tirée par gpui, à la même version : somme de contrôle de la mise à jour.
 sha2 = "0.10.9"
 unicode-segmentation = "1.13.3"

@@ -52,6 +52,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 p("clone", tr("Clone a vault from a git address (also on the welcome screen)", "Cloner un coffre depuis une adresse git (aussi sur l'écran d'accueil)")),
                 t(tr("A cloud folder", "Un dossier synchronisé"), tr("iCloud, Dropbox, Google Drive, Syncthing: put the vault there, nothing else; never a git repository inside one", "iCloud, Dropbox, Google Drive, Syncthing : y poser le coffre, rien d'autre ; jamais un dépôt git dans un tel dossier")),
                 k(&CopyAll, tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")),
+                k(&ExportPdf, tr("Save the note as PDF (A4, unsaved edits included); pictures, figures and embeds that cannot be printed are listed", "Enregistrer la note en PDF (A4, modifications non enregistrées comprises) ; les images, figures et incorporations impossibles à imprimer sont signalées")),
                 t(&format!("{MOD}+{click}"), tr("Open a [[link]], #tag or URL", "Ouvrir un [[lien]], #tag ou URL")),
                 k(&ToggleHelp, tr("This help", "Cette aide")),
                 k(&Quit, tr("Save and quit; stay open if saving fails", "Enregistrer et quitter ; rester ouvert si l’enregistrement échoue")),

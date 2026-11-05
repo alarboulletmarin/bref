@@ -16,6 +16,7 @@ mod menu;
 mod notes;
 mod palette_open;
 mod pane;
+mod print;
 mod render;
 mod search;
 mod settings;

@@ -887,10 +887,10 @@ pub fn capture(root: &Path, name: &str, text: &str) -> io::Result<PathBuf> {
 }
 
 /// Atomic write: a crash never leaves a truncated note.
-pub fn write(path: &Path, content: &str) -> io::Result<()> {
+pub fn write(path: &Path, content: impl AsRef<[u8]>) -> io::Result<()> {
     let tmp = path.with_file_name(format!(".{}.tmp", stem(path)));
     let mut file = fs::File::create(&tmp)?;
-    file.write_all(content.as_bytes())?;
+    file.write_all(content.as_ref())?;
     // Without `fsync`, a power cut can leave the rename without the data.
     file.sync_all()?;
     fs::rename(&tmp, path)
