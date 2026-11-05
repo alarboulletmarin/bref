@@ -107,10 +107,11 @@ fn a_label_is_edited_like_text(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("backspace down end");
     cx.simulate_input("?");
     assert_eq!(text(cx), "Alpha\nBeta?");
-    // Home and End keep to the line; Ctrl+arrows go by word.
+    // Home and End keep to the line; the word key (Alt on macOS, Ctrl elsewhere) goes by word.
     cx.simulate_keystrokes("home");
     assert_eq!(writing(cx).unwrap().1, 6..6);
-    cx.simulate_keystrokes("up end secondary-left");
+    let word = if cfg!(target_os = "macos") { "alt" } else { "ctrl" };
+    cx.simulate_keystrokes(&format!("up end {word}-left"));
     assert_eq!(writing(cx).unwrap().1, 0..0);
 
     // Ctrl+A selects the text, not the diagram: what is typed replaces it.
