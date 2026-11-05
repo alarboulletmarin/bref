@@ -55,6 +55,16 @@ With whole columns selected (`Ctrl + Space`), the same keys act on columns: as m
 
 The last column cannot be deleted. Columns and sorting read the whole file, which is fine up to a few hundred thousand rows. Moving columns on a row shorter than they are leaves it a few empty cells longer after the way back.
 
+## Column widths
+
+Each column starts as wide as its longest cell among the first 200 rows, up to 40 characters. To give room to one and take it from another:
+
+- **Drag the right edge of a header.** The pointer changes over it; a guide and the width in characters follow the drag. `Esc` puts the width back.
+- **Double-click the edge**: the column fits its text, beyond 40 characters, up to the width of the view.
+- `Alt + .` and `Alt + ,` widen and narrow the columns of the selection by one character. **Fit the column to its text** and **Reset the column widths** are in the palette.
+
+A column can be made as narrow as three characters, never less: a cut cell ends with an ellipsis, and its full text is in the cell and the copy. The widths are kept for the file, in characters, so the zoom keeps their proportions. They follow their columns when you insert, move or delete some, and the file when you rename, move or trash it in Bref. Setting a width does not change the file and is not undone with `Ctrl + Z`.
+
 ## Copy, paste, export
 
 - `Ctrl + C` copies the selection as tab-separated text, which spreadsheets and the tables of your notes paste as they are. `Ctrl + X` cuts it.
