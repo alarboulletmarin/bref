@@ -139,6 +139,25 @@ Headings inside code blocks are not listed.
 
 `Ctrl + Shift + C` copies the code block the cursor is in, otherwise the whole note. The icon at the bottom right of the note copies the note too.
 
+## Save as PDF
+
+**Save the note as PDF…** in the command palette (`F10`, then `pdf`) asks where to save the note of the active tab, and writes an A4 PDF there, ready to send. No shortcut by default: one can be given in the shortcuts page (`F1`).
+
+- **What is printed**: the note as written now, unsaved edits included; the file of the note is not touched. The front matter is left out.
+- **The look**: the light theme on white paper, whatever the theme of the window. Titles in IBM Plex Serif, text in IBM Plex Sans, code in IBM Plex Mono, 20 mm margins, the page number at the bottom.
+- **The text stays text**: it can be searched, selected and copied in a PDF reader. Letters the app's fonts lack (Japanese, Korean, Hebrew…) are taken from the fonts of the system. Web links can be clicked; `[[links]]` are printed as their text.
+- **Pictures and figures**: PNG, JPEG and GIF pictures, SVG files, Bref diagrams, Mermaid diagrams and `$$` formulas are drawn in, shrunk to fit the page. An embedded section (`![[Note#Heading]]`) is printed under a bar, once (an embed inside it stays a link).
+- **Pages**: a line, a picture or a table row is never cut by a page break, and a heading always goes with the line after it. A long code line or a word longer than the page goes to the next line wherever it must. A table too wide for the page shares the width between its columns, and its cells wrap.
+- **The name**: the PDF never replaces a file. If the name is taken, a number is added (`Note 2.pdf`); without `.pdf`, the extension is added. The message at the bottom says the name written.
+- **What is not printed is said**: a picture that is missing, damaged or in another format (WebP, BMP, TIFF, AVIF, a web address), a note embedded that cannot be found, a diagram the engine cannot read. Each is replaced on the page by *[Not printed: …]* and listed in the message.
+
+Limits:
+
+- **Emoji**: colour emoji cannot go in a PDF font; each one is printed as `�` and counted in the message.
+- **Inline formulas** (`$x^2$`) are printed as written; only `$$` formulas are drawn.
+- A table row taller than a page runs off it, and the header row is not repeated on the next page.
+- Only a note is saved as PDF, not a table, a diagram or a picture shown in its place.
+
 ## Editing keys
 
 | Key | Action |

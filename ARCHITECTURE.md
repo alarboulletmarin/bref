@@ -53,7 +53,7 @@ each, all `impl Shell`:
 | `palette_open.rs` | every way the palette opens: notes, commands, outline, questions |
 | `help.rs`, `keymap.rs` | the help panel; the default shortcuts and their sections |
 | `travel.rs` | back and forward |
-| `search.rs`, `templates.rs`, `tables.rs`, `diagrams.rs`, `board.rs`, `drops.rs`, `capture.rs` | one feature each |
+| `search.rs`, `templates.rs`, `tables.rs`, `diagrams.rs`, `board.rs`, `drops.rs`, `capture.rs`, `print.rs` | one feature each |
 | `settings.rs`, `toasts.rs`, `updates.rs` | settings, status messages, new versions |
 | `render.rs` | drawing the window |
 
@@ -81,6 +81,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram/` (`file.rs`: the SVG and its source; `hold.rs`: what a package or a frame holds; `pick.rs`: what a click grabs); Mermaid class, sequence and state diagrams turned into canvas diagrams (`logic/mermaid.rs`); relationships (`logic/relation.rs`), class notation (`logic/uml.rs`), `logic/import.rs`; styled text of their labels: `logic/richtext.rs` (the marks of `markdown::emphasis`); the editor: `views/canvas/` |
 | the vault on disk (scan, save, rename, trash, config files) | `platform/vault.rs` |
 | git commands, update check | `platform/git.rs`, `platform/update.rs` |
+| a note saved as PDF | `ui/print.rs` (A4 pages as SVG, text kept as `<text>`, pure), `platform/pdf.rs` (svg2pdf, links), `Shell::export_pdf` in `shell/print.rs` (dialog, pictures and embeds read, free name) |
 | the window's door for `bref mcp` (`show`) | `platform/link.rs` (127.0.0.1 and a secret in `<config>/bref/agent`), `Shell::listen` in `shell/library.rs` |
 | a note written elsewhere while typed in | `logic/merge.rs` (three-way, by lines), `Shell::take_outside` in `shell/notes.rs` |
 | colours, themes, page width | `ui/theme.rs` |
