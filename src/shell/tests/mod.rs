@@ -29,6 +29,7 @@ mod current_file;
 mod panes;
 mod tabs;
 mod save_close;
+mod sharing;
 mod window;
 
 use super::*;

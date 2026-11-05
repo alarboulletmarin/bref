@@ -19,7 +19,7 @@ A panel to the right of the note lists its comments.
 - Click a comment to go to it.
 - Click its check mark (it shows under the pointer) to resolve it: the markup goes, the text stays.
 - The comment of the passage under the caret is on a tint, and the panel scrolls to it.
-- The speech bubble at the bottom right of the note, next to the copy button, closes and opens the panel. So does the panel's cross.
+- The speech bubble at the bottom right of the note, next to the Share / Export button, closes and opens the panel. So does the panel's cross.
 - A badge on the bubble counts the comments (`9+` beyond nine).
 - `comments` in the palette lists them, to jump to one from the keyboard.
 

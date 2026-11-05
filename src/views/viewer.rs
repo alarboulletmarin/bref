@@ -477,7 +477,12 @@ impl Render for Viewer {
                         cx.notify();
                     })),
             )
-            .child(button("v-zoom-in", "plus.svg", false, t).tooltip(tip(tr("Zoom in", "Zoomer"), "+".into(), t)).on_click(cx.listener(|this, _, _, cx| this.zoom_by(1.25, cx))));
+            .child(button("v-zoom-in", "plus.svg", false, t).tooltip(tip(tr("Zoom in", "Zoomer"), "+".into(), t)).on_click(cx.listener(|this, _, _, cx| this.zoom_by(1.25, cx))))
+            .when(matches!(self.source, Source::File(..)), |d| d.child(
+                button("v-share", "export.svg", false, t)
+                    .tooltip(tip(tr("Share / Export", "Partager / Exporter"), crate::ui::keys::of(cx, &crate::actions::ShareDocument), t))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(crate::actions::ShareDocument), cx))
+            ));
         // A Mermaid class, sequence or state diagram can be carried on by hand, on the canvas.
         let edit = matches!(&self.source, Source::Mermaid(text) if crate::logic::mermaid::kind(text).is_some()).then(|| {
             div()

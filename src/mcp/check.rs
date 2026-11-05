@@ -221,7 +221,7 @@ fn an_unreadable_folder_does_not_hide_the_rest() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        perms.set_mode(0);
+        perms.set_mode(0o0);
         fs::set_permissions(root.join("locked"), perms).unwrap();
     }
     let vault = open(&root);

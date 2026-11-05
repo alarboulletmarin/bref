@@ -22,5 +22,6 @@ pub mod recall;
 pub mod relation;
 pub mod richtext;
 pub mod state;
+pub mod sharing;
 pub mod table;
 pub mod uml;

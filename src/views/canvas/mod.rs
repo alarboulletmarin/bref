@@ -35,7 +35,6 @@ pub enum CanvasEvent {
     /// The diagram changed: it needs saving.
     Changed,
     /// A PNG image of the diagram is requested.
-    Export,
     /// A new diagram that starts from the library's template of this number.
     Template(usize),
 }

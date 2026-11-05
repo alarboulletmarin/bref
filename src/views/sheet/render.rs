@@ -367,8 +367,8 @@ impl Sheet {
                     .child(
                         button("sheet-export", "export.svg", false, t)
                             .debug_selector(|| "sheet-export".into())
-                            .tooltip(tip(tr("Export the table…", "Exporter le tableau…"), String::new(), t))
-                            .on_click(|_, window, cx| window.dispatch_action(Pick::Export.action(), cx)),
+                            .tooltip(tip(tr("Share / Export", "Partager / Exporter"), crate::ui::keys::of(cx, &crate::actions::ShareDocument), t))
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(crate::actions::ShareDocument), cx)),
                     ),
             )
     }

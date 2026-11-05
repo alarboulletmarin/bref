@@ -75,3 +75,10 @@ The file is saved about half a second after the last change, in the background, 
 - No formulas: they are for the [tables of a note](tables.md#formulas).
 
 CSV and TSV files can be renamed (they keep their extension), moved, duplicated or trashed like a note. They are not in the graph, and a note does not link to them.
+
+## Share a CSV or TSV
+
+- **Share / Export** in the table header opens **Copy as… (table/selection)** and **Export as… (table/selection)**.
+- Both offer TSV, CSV, Markdown and JSON, using current edits.
+- The scope follows the existing grid controls: several selected cells, or the whole table when only one cell is selected.
+- Exports choose a free filename beside the source and refuse to replace a name that becomes occupied. A message confirms the export or reports a failure.

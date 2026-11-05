@@ -135,13 +135,35 @@ What you type, delete or move then applies to every cursor, and one undo undoes 
 
 Headings inside code blocks are not listed.
 
-## Copy
+## Copy and share
 
-`Ctrl + Shift + C` copies the code block the cursor is in, otherwise the whole note. The icon at the bottom right of the note copies the note too.
+- **Share / Export**, at the bottom right or in the command palette, opens the menu for the current document. Its default shortcut is `Ctrl + Alt + E`. Use arrows, `Enter` and `Esc`.
+- **Copy note as Markdown** copies the original Markdown, including front matter and comments.
+- **Copy note as plain text** removes presentation using the rules below.
+- **Save a Markdown copy…** and **Save a text copy…** ask for a destination. An occupied name is refused, even after the system dialog confirms replacement. Choose another name.
+- These actions use the **whole note**, including unsaved edits. A selected passage does not change their scope. The original path, text and unsaved state stay as they were.
+- Saving publishes a complete copy atomically. A filesystem that cannot support this operation reports a failure.
+- A message confirms a copy or saved file, or explains a failure. Cancelling the destination dialog writes nothing.
+- `Ctrl + Shift + C` still copies the code block the cursor is in, otherwise the whole note as Markdown. `Ctrl + C` copies the selected passage.
+
+### Plain-text rules
+
+- Headings and quotes lose their leading markers. Inline bold, italic, underline, strike and highlight lose their formatting markers.
+- List indentation, numbering and task boxes (`[ ]`, `[x]`) stay readable.
+- Links keep their label and destination: `label (address)`. Internal links keep their target, including a section; an alias is followed by that target.
+- Markdown tables become tab-separated rows, without the separator row. Values stay as written, including formulas.
+- Code keeps its text and indentation. Inline backticks and matching code fences are removed. An unclosed fence keeps the remaining code. Backtick and tilde fences are supported.
+- Images become `[image: label (path)]`; embeds become `[embed: target]`, with any alias. No image or embedded document is read or expanded.
+- Closed front matter and HTML comments are omitted. Bref comments keep the annotated text and omit the discussion. Code keeps comment-like text literally.
+- Horizontal rules become blank lines. Unknown syntax stays literal. Line endings become LF; Unicode and paragraph breaks are preserved.
+
+### Portability
+
+Copies contain the document alone. Relative image paths, relative links, internal links and embeds still depend on the vault and its folder layout. Moving a copy elsewhere may break them. Sharing does not bundle attachments or rewrite references into a self-contained document.
 
 ## Save as PDF
 
-**Save the note as PDF…** in the command palette (`F10`, then `pdf`) asks where to save the note of the active tab, and writes an A4 PDF there, ready to send. No shortcut by default: one can be given in the shortcuts page (`F1`).
+**Save the note as PDF…** in **Share / Export** or the command palette (`F10`, then `pdf`) asks where to save the note of the active tab, and writes an A4 PDF there, ready to send. No shortcut by default: one can be given in the shortcuts page (`F1`).
 
 - **What is printed**: the note as written now, unsaved edits included; the file of the note is not touched. The front matter is left out.
 - **The look**: the light theme on white paper, whatever the theme of the window. Titles in IBM Plex Serif, text in IBM Plex Sans, code in IBM Plex Mono, 20 mm margins, the page number at the bottom.

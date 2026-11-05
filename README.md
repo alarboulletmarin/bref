@@ -21,6 +21,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Agents.** `bref mcp` lets an agent read, write and draw in the vault, with Bref's links, trash and diagrams. [Guide](book/src/agents.md)
 - **Safe tab closing.** Close a tab, the other tabs or a whole pane from a tab's right click, or every file from the palette. If saving fails, the document stays open with its edits and undo history.
 - **PDF to send.** A note saved as an A4 PDF from the palette, unsaved edits included: text you can search and copy, pictures, Mermaid diagrams and formulas drawn in. [How](book/src/writing.md#save-as-pdf)
+- **Local sharing.** Copy a whole note as Markdown or readable text, or save a separate copy. One Share / Export menu also offers SVG/PNG for diagrams and the existing table formats.
 - **Keyboard first.** One palette for notes and commands. Every shortcut is listed in the app (`F1`) and can be changed.
 - **Yours to dress.** 13 themes, IBM Plex built in, any installed font. Light and dark, English and French.
 

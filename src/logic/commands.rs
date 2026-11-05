@@ -119,6 +119,7 @@ pub fn catalog() -> Vec<(&'static str, &'static str, &'static str, Group)> {
         ("editor::Find", tr("Find in the note", "Chercher dans la note"), "search.svg", Note),
         ("editor::FindReplace", tr("Replace in the note", "Remplacer dans la note"), "search.svg", Note),
         ("app::Outline", tr("Outline of the note", "Plan de la note"), "c-outline.svg", Note),
+        ("app::ShareDocument", tr("Share / Export the current document", "Partager / Exporter le document courant"), "export.svg", Note),
         ("app::CopyAll", tr("Copy the whole note", "Copier toute la note"), "copy.svg", Note),
         ("app::ExportPdf", tr("Save the note as PDF…", "Enregistrer la note en PDF…"), "export.svg", Note),
         ("nav::OpenAside", tr("Open in the other pane", "Ouvrir dans l'autre volet"), "c-split.svg", Note),

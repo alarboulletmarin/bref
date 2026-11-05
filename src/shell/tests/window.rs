@@ -344,8 +344,16 @@ fn update_banner_stays_clear_of_the_formatting_bar(cx: &mut TestAppContext) {
     let mut checked = 0;
     for panel in [Panel::Rail, Panel::Split] {
       for second_pane in [false, true] {
+        // Split while there is room, then dismiss the content picker before testing the footer.
+        shell.update(cx, |s, cx| { s.nav.panel = panel; s.nav.list_w = px(600.); cx.notify(); });
+        cx.simulate_resize(size(px(1400.), px(600.)));
+        settle(cx);
         if second_pane {
             cx.simulate_keystrokes("secondary-\\");
+            cx.simulate_keystrokes("escape");
+            settle(cx);
+            assert!(shell.read_with(cx, |s, _| s.palette.is_none()));
+            assert_eq!(shell.read_with(cx, |s, _| s.groups.len()), 2);
         }
         for width in [1400., 900., 860., 560., 420., 320., 240.] {
             for (version, updating) in [(None, false), (Some("0.4.0"), false), (Some("100.200.300"), false), (Some("0.4.0"), true)] {
@@ -360,13 +368,17 @@ fn update_banner_stays_clear_of_the_formatting_bar(cx: &mut TestAppContext) {
                 settle(cx);
                 // Folded, the bar is open as well: its buttons and colour badges are the highest thing in the footer.
                 let folded = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_folded());
+                let stage = format!("{panel:?} second={second_pane} width={width} version={version:?} updating={updating}");
                 if folded {
+                    assert!(!shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_shown()), "initially open: {stage}");
                     let at = cx.debug_bounds("format-toggle").unwrap().center();
                     cx.simulate_click(at, gpui::Modifiers::none());
                     settle(cx);
+                    assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_shown()), "toggle failed: {stage}");
                     let at = cx.debug_bounds("format-colors").unwrap().center();
                     cx.simulate_click(at, gpui::Modifiers::none());
                     settle(cx);
+                    assert!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).swatches_open()), "the color button opens its badges at {stage}");
                 }
                 let what = format!("{panel:?} two panes {second_pane} {width} {version:?} updating {updating} folded {folded}");
                 // The pane with input: a window too small for two shows it alone.
@@ -386,10 +398,13 @@ fn update_banner_stays_clear_of_the_formatting_bar(cx: &mut TestAppContext) {
                     assert!(banner.size.width > px(0.) && banner.size.height > px(20.), "{what}: {banner:?}");
                 }
                 checked += 1;
-                // Close what was opened: the next round starts from a folded bar.
+                // Escape closes the badges first, then the folded bar. Verify the next
+                // round starts closed: GPUI retains debug bounds for elements no longer drawn.
                 if folded {
-                    cx.simulate_keystrokes("escape");
+                    cx.simulate_keystrokes("escape escape");
                     settle(cx);
+                    assert!(!shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_shown()));
+                    assert!(!shell.read_with(cx, |s, cx| s.pane().editor.read(cx).swatches_open()));
                 }
             }
         }

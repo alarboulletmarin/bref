@@ -32,6 +32,7 @@ impl Shell {
             SheetEvent::Error(message) => self.say(Tone::Failed, message.clone(), cx),
             // A file appeared next to the table: the tree shows it.
             SheetEvent::Exported => {
+                self.say(Tone::Done, tr("Table exported beside the source file", "Tableau exporté à côté du fichier source"), cx);
                 if let Some(root) = self.vault.clone() {
                     let (notes, dirs, images) = vault::rescan(&root, &self.notes);
                     self.sync(notes, dirs, images, cx);

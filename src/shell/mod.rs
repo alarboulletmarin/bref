@@ -20,6 +20,7 @@ mod print;
 mod render;
 mod search;
 mod settings;
+mod sharing;
 mod sidebar;
 mod sync;
 mod tables;

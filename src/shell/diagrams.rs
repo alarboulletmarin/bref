@@ -14,15 +14,14 @@ impl Shell {
     }
 
     pub(super) fn canvas_event(&mut self, canvas: Entity<Canvas>, event: &CanvasEvent, cx: &mut Context<Self>) {
-        let Some(path) = self.pane().file_path().filter(|_| self.pane().drawing() == Some(&canvas)) else {
+        if self.pane().file_path().is_none() || self.pane().drawing() != Some(&canvas) {
             return;
-        };
+        }
         match event {
             CanvasEvent::Changed => {
                 self.pane_mut().canvas_dirty = true;
                 self.flush_canvas(cx);
             }
-            CanvasEvent::Export => return self.export_png(path.clone(), &canvas, cx),
             CanvasEvent::Template(i) => self.template = Some(*i),
         }
         cx.notify();
@@ -58,12 +57,13 @@ impl Shell {
             let drawn = cx.background_executor().spawn(async move {
                 let bytes = figure::png(&svg, 2., 0xffffff).ok_or_else(|| std::io::Error::other("PNG"))?;
                 let path = vault::free_path(file.parent().unwrap_or(Path::new("")), &vault::stem(&file), "png");
-                fs::write(&path, bytes).map(|_| path)
+                crate::platform::export::save(&path, &bytes).map(|_| path)
             });
             let saved = drawn.await;
             this.update(cx, |this, cx| {
                 match saved {
                     Ok(path) => {
+                        this.say(Tone::Done, format!("{} « {} »", tr("PNG exported", "PNG exporté"), path.display()), cx);
                         this.images.push(path);
                         this.push_names(cx);
                         this.graph_stale = true;

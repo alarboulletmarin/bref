@@ -29,7 +29,7 @@ Columns narrow to fit the window.
 
 **In the file**, the note stays plain Markdown, in a common Markdown kanban layout: one `## heading` per column, and one task per card. The key `kanban: true` in its front matter is what makes it open as a board. Typing that key into a note leaves you in the text.
 
-The button at the bottom right, left of the copy button, shows that text, and comes back to the board.
+The button at the bottom right, left of the Share / Export button, shows that text, and comes back to the board.
 
 ## List pages
 

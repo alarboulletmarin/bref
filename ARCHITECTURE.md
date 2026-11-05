@@ -54,6 +54,7 @@ each, all `impl Shell`:
 | `help.rs`, `keymap.rs` | the help panel; the default shortcuts and their sections |
 | `travel.rs` | back and forward |
 | `search.rs`, `templates.rs`, `tables.rs`, `diagrams.rs`, `board.rs`, `drops.rs`, `capture.rs`, `print.rs` | one feature each |
+| `sharing.rs` | the document-aware Share / Export menu, clipboard formats and save-copy dialog; pure text conversion in `logic/sharing.rs`, atomic no-replace copies in `platform/export.rs` |
 | `settings.rs`, `toasts.rs`, `updates.rs` | settings, status messages, new versions |
 | `render.rs` | drawing the window |
 

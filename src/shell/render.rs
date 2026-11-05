@@ -251,6 +251,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
             .on_action(cx.listener(|this, _: &ExportPdf, _, cx| this.export_pdf(cx)))
+            .on_action(cx.listener(|this, _: &ShareDocument, window, cx| this.show_share(window, cx)))
             .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
             .on_action(cx.listener(|this, _: &Today, window, cx| this.open_today(window, cx)))
             .on_action(cx.listener(|this, _: &SyncVault, window, cx| this.git_sync(window, cx)))
@@ -836,16 +837,19 @@ impl Shell {
                 .child(div().flex().items_center().px_3().child(div().flex_1().text_color(t.soft).child(title)).child(shut))
                 .children(cards)
         });
-        let copy = ui::widgets::button("copy-all", if self.copied { "check.svg" } else { "copy.svg" }, false, t)
+        let copy = ui::widgets::button("copy-all", if self.copied { "check.svg" } else { "export.svg" }, false, t)
             .debug_selector(|| "copy-all".into())
-            .tooltip(ui::widgets::tip(tr("Copy the note", "Copier la note"), keys::of(cx, &CopyAll), t))
+            .tooltip(ui::widgets::tip(tr("Share / Export", "Partager / Exporter"), keys::of(cx, &ShareDocument), t))
             .absolute()
-            .bottom_4()
+            // In an exceptionally narrow note, keep the centered formatting toggle reachable.
+            .map(|d| if self.pane().file.is_none() && self.pane().editor.read(cx).crowded_footer() {
+                d.top(t.px(52.))
+            } else { d.bottom_4() })
             .right_4()
             .size(t.px(30.))
             .rounded(t.large())
             .occlude()
-            .on_click(cx.listener(|this, _, _, cx| this.copy_all(false, cx)));
+            .on_click(cx.listener(|this, _, window, cx| this.show_share(window, cx)));
         // The image picked in the panel; it goes away as soon as the note takes over again.
         if self.pane().editor.focus_handle(cx).is_focused(window) {
             if !self.set_file(None, cx) {
@@ -901,9 +905,10 @@ impl Shell {
             }
             None => {
                 let empty = self.pane().editor.read(cx).text().is_empty().then(|| self.render_empty(cx));
-                note.child(self.pane().editor.clone()).children(empty).child(copy).children(talk).children(flip)
+                note.child(self.pane().editor.clone()).children(empty).children(talk).children(flip)
             }
         };
+        let note = note.when(!self.share_choices(pane).is_empty() && matches!(self.pane().file.as_ref().map(|f| &f.kind), None | Some(FileKind::Image)), |d| d.child(copy));
         // While a tab or a file from the tree is dragged, the area that would receive it is tinted:
         // the whole pane, or the half a new pane would take.
         let tint = self.pane_aim.filter(|(over, _)| *over == group).map(|(_, zone)| {

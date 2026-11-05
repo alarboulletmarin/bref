@@ -23,6 +23,7 @@ impl Shell {
     /// Runs a context menu entry on `target` (`None`: the vault).
     pub(super) fn menu_do(&mut self, what: Do, target: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         let menu = self.menu.take();
+        let share = menu.as_ref().and_then(|m| m.share);
         if let Some(back) = menu.as_ref().and_then(|menu| menu.back.as_ref()) {
             window.focus(back);
         }
@@ -31,6 +32,13 @@ impl Shell {
         let tab = menu.as_ref().and_then(|menu| menu.tab).filter(|tab| *tab < self.panes.len());
         let link = menu.and_then(|menu| menu.text).flatten();
         cx.notify();
+        if let Do::Share(choice) = what {
+            if let Some(pane) = share.filter(|p| self.share_choices(*p).contains(&choice)) {
+                self.active = pane;
+                self.share_document(choice, window, cx);
+            }
+            return;
+        }
         match (what, tab) {
             (Do::CloseTab, Some(tab)) => return self.close_tab(tab, window, cx),
             (Do::CloseOtherTabs, Some(tab)) => return self.close_other_tabs(tab, window, cx),
@@ -289,6 +297,10 @@ impl Shell {
     fn menu_key(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let entries: Vec<Do> = self.menu_groups(cx).into_iter().flatten().map(|(_, what)| what).collect();
         let (Some(menu), n) = (self.menu.as_mut(), entries.len()) else { return false };
+        if n == 0 {
+            self.close_menu(window, cx);
+            return true;
+        }
         let at = menu.chosen;
         menu.chosen = match key {
             "down" => Some(at.map_or(0, |i| (i + 1) % n)),
@@ -315,6 +327,9 @@ impl Shell {
     /// The entries of the open menu, by group; a line separates the groups.
     pub(super) fn menu_groups(&self, cx: &App) -> Vec<Vec<(&'static str, Do)>> {
         let Some(menu) = self.menu.as_ref() else { return Vec::new() };
+        if let Some(pane) = menu.share {
+            return vec![self.share_choices(pane).into_iter().map(|choice| (choice.label(), Do::Share(choice))).collect()];
+        }
         let is_dir = menu.target.as_ref().is_none_or(|p| self.dirs.contains(p));
         let tree = self.nav.mode == Mode::Tree;
         let many = menu.target.as_ref().is_some_and(|p| self.nav.marked.contains(p)) && self.nav.marked.len() > 1;

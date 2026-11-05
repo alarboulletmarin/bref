@@ -479,7 +479,7 @@ impl Canvas {
                 d.child(button("d-rich", "c-italic.svg", false, t).tooltip(tip(tooltip, String::new(), t)).on_click(cx.listener(|this, _, _, cx| this.enrich(cx))))
             })
             .child(div().w(px(1.)).h(px(16.)).mx_1().bg(t.border))
-            .child(button("d-export", if self.exported { "check.svg" } else { "export.svg" }, false, t).tooltip(tip(tr("Export as PNG", "Exporter en PNG"), String::new(), t)).on_click(cx.listener(|_, _, _, cx| cx.emit(CanvasEvent::Export))))
+            .child(button("d-export", if self.exported { "check.svg" } else { "export.svg" }, false, t).tooltip(tip(tr("Share / Export", "Partager / Exporter"), crate::ui::keys::of(cx, &crate::actions::ShareDocument), t)).on_click(|_, window, cx| window.dispatch_action(Box::new(crate::actions::ShareDocument), cx)))
     }
 
     /// The zoom, at the bottom right.

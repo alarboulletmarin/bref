@@ -89,7 +89,7 @@ impl Sheet {
         let suffix = if partial { tr(" (selection)", " (sélection)") } else { "" };
         let name = format!("{}{suffix}", vault::stem(&self.path));
         let file = vault::free_path(self.path.parent().unwrap_or(Path::new("")), &name, style.extension());
-        match vault::write(&file, &text) {
+        match crate::platform::export::save(&file, text.as_bytes()) {
             Ok(()) => cx.emit(SheetEvent::Exported),
             Err(e) => cx.emit(SheetEvent::Error(format!("{} : {e}", tr("Not exported", "Export impossible")))),
         }

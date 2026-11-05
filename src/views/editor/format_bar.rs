@@ -46,6 +46,13 @@ pub(super) struct Tools {
 }
 
 impl Editor {
+    /// The centered formatting toggle and the right corner button need separate rows.
+    /// Their edges meet at width / 2 + 15 = width - 16 - 30; rem margins scale with the UI.
+    pub fn crowded_footer(&self) -> bool {
+        self.theme.bar && self.viewport.size.width > px(0.)
+            && self.viewport.size.width < self.theme.px(122.)
+    }
+
     /// The color badges are open.
     #[cfg(test)]
     pub fn swatches_open(&self) -> bool {
