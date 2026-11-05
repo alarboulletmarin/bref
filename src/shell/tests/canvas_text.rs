@@ -262,3 +262,102 @@ fn the_cursor_follows_the_glyphs_in_classes_arrows_and_at_any_zoom(cx: &mut Test
     assert_eq!((saved.text.as_str(), saved.start_text.as_str()), ("paie\nou\nchaque mois", "0..1"));
     let _ = fs::remove_dir_all(root);
 }
+
+/// An input method composes in a label: each step replaces the previous one, underlined, until it is
+/// committed or given up; its candidate window opens on the text, at any zoom; the UTF-16 ranges the
+/// system sends land on the right characters, beside a two-unit emoji too.
+#[gpui::test]
+fn an_input_method_composes_in_a_label(cx: &mut TestAppContext) {
+    use gpui::EntityInputHandler;
+    let (root, shell, cx, _config) = start(cx, "canvas-ime");
+    let mut drawing = Diagram::blank();
+    let rect = drawing.add_shape(diagram::Form::Rect, 0., 0., 200., 60.);
+    drawing.shape_mut(rect).unwrap().text = "Alpha\nBeta".into();
+    let other = drawing.add_shape(diagram::Form::Rect, 400., 0., 120., 60.);
+    let link = drawing.add_link(End::Shape(rect), End::Shape(other), Head::Arrow, Route::Straight);
+    let path = root.join("Composition.svg");
+    fs::write(&path, drawing.to_svg(diagram::COLORS[0])).unwrap();
+    let canvas = open(&shell, cx, &path);
+    let text = |cx: &mut gpui::VisualTestContext| canvas.read_with(cx, |c, _| c.diagram().shape(rect).unwrap().text.clone());
+    let marked = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| canvas.update(cx, |c, cx| c.marked_text_range(window, cx)));
+    let compose = |cx: &mut gpui::VisualTestContext, range: Option<std::ops::Range<usize>>, s: &str| {
+        cx.update(|window, cx| canvas.update(cx, |c, cx| c.replace_and_mark_text_in_range(range, s, None, window, cx)));
+        cx.run_until_parked();
+    };
+    let commit = |cx: &mut gpui::VisualTestContext, range: Option<std::ops::Range<usize>>, s: &str| {
+        cx.update(|window, cx| canvas.update(cx, |c, cx| c.replace_text_in_range(range, s, window, cx)));
+        cx.run_until_parked();
+    };
+    let selection = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| canvas.update(cx, |c, cx| c.selected_text_range(false, window, cx).map(|s| s.range)));
+    let read = |cx: &mut gpui::VisualTestContext, range: std::ops::Range<usize>| cx.update(|window, cx| canvas.update(cx, |c, cx| c.text_for_range(range, &mut None, window, cx)));
+    let candidates = |cx: &mut gpui::VisualTestContext, at: usize| cx.update(|window, cx| canvas.update(cx, |c, cx| c.bounds_for_range(at..at, Bounds::default(), window, cx)));
+
+    // Outside writing, a composition neither writes nor picks a tool.
+    compose(cx, None, "r");
+    assert_eq!((canvas.read_with(cx, |c, _| c.tool()), marked(cx), text(cx)), (crate::views::canvas::Tool::Select, None, "Alpha\nBeta".into()));
+
+    press(cx, canvas.read_with(cx, |c, _| c.spot(100., 30.)), Modifiers::none(), 1);
+    cx.simulate_keystrokes("enter");
+    // Kana then kanji: each step replaces the last, by the marked range or by the range sent.
+    compose(cx, None, "k");
+    compose(cx, None, "か");
+    assert_eq!((text(cx), marked(cx)), ("Alpha\nBetaか".into(), Some(10..11)));
+    compose(cx, Some(10..11), "かん");
+    assert_eq!((text(cx), marked(cx), selection(cx)), ("Alpha\nBetaかん".into(), Some(10..12), Some(12..12)));
+    assert_eq!(read(cx, 10..12).as_deref(), Some("かん"));
+    // The candidate window opens on the composed text, on its line (the second).
+    let (spot, first) = canvas.read_with(cx, |c, _| (c.spot_of_byte(10).unwrap(), c.spot_of_byte(0).unwrap()));
+    let window = candidates(cx, 10).unwrap();
+    assert!((window.origin.x - spot.x).abs() < px(0.5) && window.origin.y == spot.y && spot.y > first.y, "{window:?} {spot:?}");
+    commit(cx, None, "漢");
+    assert_eq!((text(cx), marked(cx), selection(cx)), ("Alpha\nBeta漢".into(), None, Some(11..11)));
+
+    // Given up: an empty step takes the provisional text away.
+    compose(cx, None, "x");
+    compose(cx, None, "");
+    assert_eq!((text(cx), marked(cx)), ("Alpha\nBeta漢".into(), None));
+    // A dead key: the accent shows, then the letter takes its place.
+    compose(cx, None, "^");
+    commit(cx, None, "ê");
+    assert_eq!(text(cx), "Alpha\nBeta漢ê");
+    // Unmarked by the system, what was composed stays as typed.
+    compose(cx, None, "ね");
+    cx.update(|window, cx| canvas.update(cx, |c, cx| c.unmark_text(window, cx)));
+    assert_eq!((text(cx), marked(cx)), ("Alpha\nBeta漢êね".into(), None));
+    // A selection is replaced by the composition.
+    cx.simulate_keystrokes("shift-left shift-left shift-left");
+    compose(cx, None, "に");
+    commit(cx, None, "日");
+    assert_eq!(text(cx), "Alpha\nBeta日");
+
+    // UTF-16 ranges beside an emoji: two units for one character.
+    cx.simulate_keystrokes("secondary-a");
+    cx.simulate_input("a😀b");
+    assert_eq!((read(cx, 1..3).as_deref(), selection(cx)), (Some("😀"), Some(4..4)));
+    commit(cx, Some(3..4), "c");
+    compose(cx, Some(1..3), "ç");
+    assert_eq!((text(cx), marked(cx)), ("açc".into(), Some(1..2)));
+    // Escape in mid-composition ends writing with the text as shown; one undo brings back the label before writing.
+    cx.simulate_keystrokes("escape");
+    assert_eq!((text(cx), canvas.read_with(cx, |c, _| c.label().is_none())), ("açc".into(), true));
+    cx.simulate_keystrokes("secondary-z");
+    assert_eq!(text(cx), "Alpha\nBeta");
+    cx.simulate_keystrokes("secondary-shift-z");
+    assert_eq!(text(cx), "açc");
+
+    // In an arrow's start text, zoomed in and moved: the candidate window still follows the text.
+    for _ in 0..4 {
+        cx.simulate_input("+");
+    }
+    let inside = canvas.read_with(cx, |c, _| c.spot(100., 30.));
+    cx.simulate_event(gpui::ScrollWheelEvent { position: inside, delta: gpui::ScrollDelta::Pixels(point(px(-53.), px(17.))), modifiers: Modifiers::none(), touch_phase: gpui::TouchPhase::Moved });
+    cx.run_until_parked();
+    canvas.update(cx, |c, cx| c.write_in(link, Slot::Start, cx));
+    cx.run_until_parked();
+    compose(cx, None, "ひ");
+    let (spot, window) = (canvas.read_with(cx, |c, _| c.spot_of_byte(0).unwrap()), candidates(cx, 0).unwrap());
+    assert!((window.origin - spot).x.abs() < px(0.5) && window.origin.y == spot.y, "{window:?} {spot:?}");
+    commit(cx, None, "日");
+    cx.simulate_keystrokes("escape");
+    assert_eq!(canvas.read_with(cx, |c, _| c.diagram().link(link).unwrap().start_text.clone()), "日");
+}

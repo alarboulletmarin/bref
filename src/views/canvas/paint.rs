@@ -398,6 +398,15 @@ impl Canvas {
                     window.paint_quad(fill(Bounds::from_corners(point(row.x(a), row.origin.y), point(row.x(b), row.origin.y + tall)), t.selection));
                 }
             }
+            // What an input method is composing: underlined, as in every other field.
+            if let Some(marked) = field.marked() {
+                for row in &rows {
+                    let (a, b) = (marked.start.max(row.start), marked.end.min(row.end()));
+                    if a < b {
+                        window.paint_quad(fill(Bounds::new(point(row.x(a), row.origin.y + tall * 0.9), size(row.x(b) - row.x(a), px(zoom.max(1.)))), t.text));
+                    }
+                }
+            }
             if let Some(row) = rows.iter().rev().find(|r| r.start <= field.cursor())
                 && self.focus.is_focused(window)
             {

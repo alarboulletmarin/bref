@@ -87,11 +87,7 @@ impl EntityInputHandler for Field {
     }
 
     fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
-        // What was composed stays, as typed text.
-        let text = self.line.marked_utf16().map(|r| self.line.text_utf16(r));
-        if let Some(text) = text {
-            self.line.commit(None, &text);
-        }
+        self.line.unmark();
     }
 
     fn replace_text_in_range(&mut self, range: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {

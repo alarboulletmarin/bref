@@ -598,8 +598,8 @@ impl Canvas {
 }
 
 
-// ponytail: an input method's composition is inserted as it comes, not marked (#101); the text and the
-// selection it asks for are those of the label being written.
+// The text and the selection an input method works on are those of the label being written; outside
+// writing, a composition does nothing (a dead key must not pick a tool) and committed text goes to `typed`.
 impl EntityInputHandler for Canvas {
     fn text_for_range(&mut self, range: Range<usize>, _: &mut Option<Range<usize>>, _: &mut Window, _: &mut Context<Self>) -> Option<String> {
         self.editing.as_ref().map(|w| w.field.text_utf16(range))
@@ -610,10 +610,15 @@ impl EntityInputHandler for Canvas {
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        None
+        self.editing.as_ref()?.field.marked_utf16()
     }
 
-    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {}
+    fn unmark_text(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(writing) = &mut self.editing {
+            writing.field.unmark();
+            cx.notify();
+        }
+    }
 
     fn replace_text_in_range(&mut self, range: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
         match &mut self.editing {
@@ -625,16 +630,23 @@ impl EntityInputHandler for Canvas {
         }
     }
 
-    fn replace_and_mark_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: Option<Range<usize>>, _: &mut Window, cx: &mut Context<Self>) {
-        self.typed(text, cx);
+    fn replace_and_mark_text_in_range(&mut self, range: Option<Range<usize>>, text: &str, selected: Option<Range<usize>>, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(writing) = &mut self.editing {
+            writing.field.compose(range, text, selected);
+            self.wrote(cx);
+        }
     }
 
-    fn bounds_for_range(&mut self, _: Range<usize>, _: Bounds<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<Bounds<Pixels>> {
-        None
+    /// The candidate window opens under the character, where its line was last drawn.
+    fn bounds_for_range(&mut self, range: Range<usize>, _: Bounds<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<Bounds<Pixels>> {
+        let at = self.editing.as_ref()?.field.text_utf16(0..range.start).len();
+        let row = self.rows.iter().rev().find(|r| r.start <= at)?;
+        Some(Bounds::new(point(row.x(at.min(row.end())), row.origin.y), size(px(2.), px(diagram::LINE * self.zoom))))
     }
 
-    fn character_index_for_point(&mut self, _: Point<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
-        None
+    fn character_index_for_point(&mut self, at: Point<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
+        let byte = self.byte_at(at)?;
+        Some(self.editing.as_ref()?.field.text[..byte].encode_utf16().count())
     }
 }
 

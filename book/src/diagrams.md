@@ -55,6 +55,7 @@ Select something and a bar floats over it, with what can be changed in it. It go
 
 - `Enter` or a double click writes in the selected shape, or on the arrow. While writing, `Enter` starts a new line and `Ctrl + V` pastes text. `Esc` when done.
 - While writing, the text is edited like any text. A click places the cursor; dragging or `Shift + click` selects; a double click takes a word, a triple click the whole text. The arrows, `Ctrl + ←/→` (word by word), `Home`, `End`, `Shift` with any of them, `Ctrl + A`, `Ctrl + C`, `Ctrl + X` and `Ctrl + V` act on the text. `↑` and `↓` go to the line above or below. A click outside the text ends writing and keeps it.
+- The input method of your language works there too (Japanese, Chinese, dead keys): the text being composed is underlined, and its candidate window opens beside it.
 - A double click on the empty canvas starts a text there.
 - A shape grows to hold what you write.
 - Texts are styled with the marks of notes: `**bold**`, `*italic*`, `<u>underlined</u>`, `~~struck~~`, `` `code` ``. They show as typed while you write, and styled once you leave. The SVG file and the PNG export carry the styles.

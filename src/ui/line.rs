@@ -78,6 +78,18 @@ impl Line {
         self.marked.clone().map(|r| self.units(r.start)..self.units(r.end))
     }
 
+    /// The text being composed, in bytes.
+    pub fn marked(&self) -> Option<Range<usize>> {
+        self.marked.clone()
+    }
+
+    /// The composition ends as it stands: what was composed stays, as typed text.
+    pub fn unmark(&mut self) {
+        if let Some(text) = self.marked.clone().map(|r| self.text[r].to_string()) {
+            self.commit(None, &text);
+        }
+    }
+
     /// The text of a UTF-16 range, as an input method asks for it.
     pub fn text_utf16(&self, range: Range<usize>) -> String {
         self.text[self.byte(range.start)..self.byte(range.end)].to_string()
