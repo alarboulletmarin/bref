@@ -58,11 +58,8 @@ pub fn link_target(inner: &str) -> Option<Target> {
     if inner.contains(['[', ']']) {
         return None;
     }
-    let inner = inner.split('|').next()?.trim();
-    let (note, anchor) = match inner.split_once('#') {
-        Some((note, rest)) => (note.trim(), rest.trim()),
-        None => (inner, ""),
-    };
+    let link = md::WikiLink::parse(inner);
+    let (note, anchor) = (link.target(), link.anchor().unwrap_or(""));
     if note.is_empty() {
         return None;
     }
@@ -86,18 +83,7 @@ fn block_mark(line: &str) -> Option<Range<usize>> {
 
 /// Lines of `text` outside code blocks: (start, text).
 fn lines(text: &str) -> Vec<(usize, &str)> {
-    let fences = text.lines().filter(|l| md::is_fence(l)).count();
-    let (mut seen, mut in_code, mut at, mut out) = (0, false, 0, Vec::new());
-    for line in text.split('\n') {
-        if md::is_fence(line) {
-            seen += 1;
-            in_code = !in_code && seen < fences;
-        } else if !in_code {
-            out.push((at, line));
-        }
-        at += line.len() + 1;
-    }
-    out
+    md::walk(text).filter(md::Line::outside).map(|l| (l.at, l.text)).collect()
 }
 
 /// The ids of the blocks of the text, in order, to offer after `^`.
@@ -173,70 +159,10 @@ pub fn renamed_heading(before: &str, after: &str) -> Option<(String, String)> {
 /// Writes `![[note#old]]` and `[[note#old]]` as `…#new`, for every link of `text` that points at heading
 /// `old` of note `note`: the new text, and how many. (A renamed note is `markdown::relink`.)
 pub fn rename_heading(text: &str, note: &str, old: &str, new: &str) -> (String, usize) {
-    rewrite(text, |name, anchor| {
-        (name.eq_ignore_ascii_case(note) && anchor.is_some_and(|a| a.eq_ignore_ascii_case(old) && !a.starts_with('^')))
-            .then(|| (name.to_string(), Some(new.to_string())))
+    md::rewrite_wikilinks(text, |w| {
+        let hit = w.target().eq_ignore_ascii_case(note) && w.anchor().is_some_and(|a| a.eq_ignore_ascii_case(old) && !a.starts_with('^'));
+        hit.then(|| w.with(w.target(), Some(new)))
     })
-}
-
-/// Rewrites the wikilinks of `text` (`[[…]]`, `![[…]]`) by what `change` says for their note and anchor:
-/// a new note name and a new anchor; `None` leaves the link alone. Links in code blocks and inline code
-/// are left alone.
-fn rewrite(text: &str, change: impl Fn(&str, Option<&str>) -> Option<(String, Option<String>)>) -> (String, usize) {
-    let (mut out, mut count) = (String::with_capacity(text.len()), 0);
-    let fences = text.lines().filter(|l| md::is_fence(l)).count();
-    let (mut seen, mut in_code) = (0, false);
-    for (n, line) in text.split('\n').enumerate() {
-        if n > 0 {
-            out.push('\n');
-        }
-        if md::is_fence(line) {
-            seen += 1;
-            in_code = !in_code && seen < fences;
-            out.push_str(line);
-            continue;
-        }
-        if in_code {
-            out.push_str(line);
-            continue;
-        }
-        let mut flags = vec![0u16; line.len()];
-        md::inline(line, 0, &mut flags);
-        let mut done = 0;
-        let mut from = 0;
-        while let Some(open) = line[from..].find("[[").map(|i| i + from) {
-            let Some(close) = line[open..].find("]]").map(|i| i + open) else { break };
-            from = close + 2;
-            if flags[open] & md::CODE != 0 {
-                continue;
-            }
-            let inner = &line[open + 2..close];
-            let (target, alias) = inner.split_once('|').map_or((inner, None), |(t, a)| (t, Some(a)));
-            let (name, anchor) = target.split_once('#').map_or((target, None), |(n, a)| (n, Some(a)));
-            if let Some((new_name, new_anchor)) = change(name.trim(), anchor.map(str::trim)) {
-                // Spaces around the name are kept as they were written.
-                let lead = &name[..name.len() - name.trim_start().len()];
-                let tail = &name[name.trim_end().len()..];
-                let mut rewritten = format!("{lead}{new_name}{tail}");
-                if let Some(a) = new_anchor {
-                    rewritten.push('#');
-                    rewritten.push_str(&a);
-                }
-                if let Some(alias) = alias {
-                    rewritten.push('|');
-                    rewritten.push_str(alias);
-                }
-                if rewritten != inner {
-                    out.push_str(&line[done..open + 2]);
-                    out.push_str(&rewritten);
-                    done = close;
-                    count += 1;
-                }
-            }
-        }
-        out.push_str(&line[done..]);
-    }
-    (out, count)
 }
 
 #[cfg(test)]

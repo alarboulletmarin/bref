@@ -68,17 +68,11 @@ pub fn fill(template: &str, title: &str, date: &str, time: &str) -> (String, usi
 /// is none), so that the note born from the template carries the name it is given.
 pub fn templatize(text: &str) -> String {
     let start = front_matter(text);
-    let (mut at, mut fenced) = (start, false);
-    for line in text[start..].split_inclusive('\n') {
-        let bare = line.trim_end_matches('\n');
-        if is_fence(bare) {
-            fenced = !fenced;
-        }
-        if !fenced && classify(bare, false).0 == Kind::Heading(1) && line.trim_start().starts_with("# ") {
-            let end = at + line.trim_end_matches('\n').len();
+    for line in walk(&text[start..]).filter(Line::outside) {
+        if classify(line.text, false).0 == Kind::Heading(1) && line.text.trim_start().starts_with("# ") {
+            let (at, end) = (start + line.at, start + line.at + line.text.len());
             return format!("{}# {{{{title}}}}{}", &text[..at], &text[end..]);
         }
-        at += line.len();
     }
     format!("{}# {{{{title}}}}\n\n{}", &text[..start], &text[start..])
 }
@@ -99,15 +93,11 @@ pub enum ListStyle {
 /// are already in this style, they become text again. Items keep their indent, a numbered
 /// list restarts from 1 at each level, and a checked box stays checked from one task to the other.
 pub fn restyle(block: &str, to: ListStyle) -> (String, Vec<(usize, usize)>) {
-    let mut fenced = false;
+    let mut walked = walk(block);
     let lines: Vec<(&str, Option<Kind>)> = block
         .split('\n')
         .map(|line| {
-            if is_fence(line) {
-                fenced = !fenced;
-                return (line, None);
-            }
-            if fenced || line.trim().is_empty() {
+            if !walked.next().is_none_or(|l| l.outside()) || line.trim().is_empty() {
                 return (line, None);
             }
             let kind = classify(line, false).0;

@@ -134,7 +134,8 @@ fn inline(text: &str) -> String {
         let image = rest.starts_with("![");
         let link = if image { &rest[1..] } else { rest };
         if let Some(inner) = link.strip_prefix("[[").and_then(|r| r.find("]]").map(|end| (&r[..end], end + 4))) {
-            let (target, label) = inner.0.split_once('|').map_or((inner.0, inner.0), |(t, l)| (t, l));
+            let link = md::WikiLink::parse(inner.0);
+            let (target, label) = (link.to, link.alias.unwrap_or(link.to));
             if image { out.push_str("[embed: "); }
             out.push_str(&styles(label));
             if label != target { out.push_str(&format!(" ({target})")); }

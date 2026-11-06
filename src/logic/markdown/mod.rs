@@ -6,12 +6,16 @@ mod front;
 mod lists;
 mod search;
 mod tables;
+mod walk;
+mod wiki;
 
 pub use dates::*;
 pub use front::*;
 pub use lists::*;
 pub use search::*;
 pub use tables::*;
+pub use walk::{Line, lines as walk};
+pub use wiki::{WikiLink, rewrite as rewrite_wikilinks};
 
 use std::ops::Range;
 
@@ -69,6 +73,11 @@ fn indent_len(line: &str) -> usize {
 
 pub fn is_fence(line: &str) -> bool {
     line.trim_start().starts_with("```")
+}
+
+/// The line opens (or closes) a Mermaid block: a fence whose first word is `mermaid`, in any case.
+pub fn is_mermaid_fence(line: &str) -> bool {
+    is_fence(line) && line.trim_start().trim_start_matches('`').split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("mermaid"))
 }
 
 /// The line is a table line: `classify(line, false)` calls it `Kind::Table`, without the rest of the work.
@@ -171,7 +180,7 @@ pub fn links(line: &str) -> Vec<(Range<usize>, Link)> {
         if rest.starts_with("[[")
             && let Some(e) = rest.find("]]")
         {
-            let target = rest[2..e].split(['|', '#']).next().unwrap_or("").trim();
+            let target = WikiLink::parse(&rest[2..e]).target();
             if !target.is_empty() {
                 out.push((i..i + e + 2, Link::Wiki(target.to_string())));
             }
@@ -699,27 +708,22 @@ pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
         }
     }
     let mut wikis = Vec::new();
-    let mut in_code = false;
-    for line in text[front_matter(text)..].lines() {
-        if is_fence(line) {
-            in_code = !in_code;
-        } else if !in_code {
-            for (_, link) in links(line) {
-                let (list, item) = match link {
-                    Link::Tag(t) => (&mut tags, t),
-                    Link::Wiki(w) => (&mut wikis, w.to_lowercase()),
-                    Link::Url(_) => continue,
-                };
-                if !list.contains(&item) {
-                    list.push(item);
-                }
+    for line in walk(&text[front_matter(text)..]).filter(Line::outside).map(|l| l.text) {
+        for (_, link) in links(line) {
+            let (list, item) = match link {
+                Link::Tag(t) => (&mut tags, t),
+                Link::Wiki(w) => (&mut wikis, w.to_lowercase()),
+                Link::Url(_) => continue,
+            };
+            if !list.contains(&item) {
+                list.push(item);
             }
-                        // A displayed image counts as a link to its file.
-            if let Some((_, path)) = image(line) {
-                let name = file_name(&path).to_lowercase();
-                if !wikis.contains(&name) {
-                    wikis.push(name);
-                }
+        }
+        // A displayed image counts as a link to its file.
+        if let Some((_, path)) = image(line) {
+            let name = file_name(&path).to_lowercase();
+            if !wikis.contains(&name) {
+                wikis.push(name);
             }
         }
     }
@@ -727,44 +731,21 @@ pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
 }
 
 /// The text where wikilinks to `old` target `new` (alias and anchor kept,
-/// code blocks and front matter left as is); `None` if no link changes.
+/// code blocks, inline code and front matter left as is); `None` if no link changes.
 pub fn relink(text: &str, old: &str, new: &str) -> Option<String> {
     let old = old.to_lowercase();
     let meta = front_matter(text);
-    let mut out = String::with_capacity(text.len());
-    out.push_str(&text[..meta]);
-    let mut in_code = false;
-    for line in text[meta..].split_inclusive('\n') {
-        let mut done = 0;
-        if is_fence(line) {
-            in_code = !in_code;
-        } else if !in_code {
-            for (range, link) in links(line) {
-                if matches!(link, Link::Wiki(target) if target.to_lowercase() == old) {
-                                        // `[[target|alias]]` or `[[target#anchor]]`: only the target changes.
-                    let inner = &line[range.start + 2..range.end - 2];
-                    let rest = inner.find(['|', '#']).map_or("", |i| &inner[i..]);
-                    out.push_str(&line[done..range.start + 2]);
-                    out.push_str(new);
-                    out.push_str(rest);
-                    done = range.end - 2;
-                }
-            }
-        }
-        out.push_str(&line[done..]);
-    }
-    let out = format!("{}{}", &out[..meta], reembed(&out[meta..], &old, new));
+    let (body, _) = rewrite_wikilinks(&text[meta..], |w| (w.target().to_lowercase() == old).then(|| w.with(new, w.anchor)));
+    let out = format!("{}{}", &text[..meta], reembed(&body, &old, new));
     (out != text).then_some(out)
 }
 
 /// The text where `![…](folder/old)` images name the file `new`.
 fn reembed(text: &str, old: &str, new: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    let mut in_code = false;
-    for line in text.split_inclusive('\n') {
-        if is_fence(line) {
-            in_code = !in_code;
-        } else if !in_code
+    for l in walk(text) {
+        let line = &text[l.at..l.end];
+        if l.outside()
             && let Some((range, path)) = image(line)
             && !line[range.clone()].starts_with("![[")
             && file_name(&path).to_lowercase() == old
@@ -805,19 +786,12 @@ pub fn callout(line: &str) -> Option<Range<usize>> {
 /// closing fence opens no block.
 pub fn headings(text: &str) -> Vec<(u8, &str, usize)> {
     let meta = front_matter(text);
-    let fences = text[meta..].lines().filter(|line| is_fence(line)).count();
-    let (mut seen, mut in_code, mut at, mut found) = (0, false, meta, Vec::new());
-    for line in text[meta..].split('\n') {
-        if is_fence(line) {
-            seen += 1;
-            in_code = !in_code && seen < fences;
-        } else if !in_code
-            && let (Kind::Heading(_), marker) = classify(line, false)
-        {
-            let level = line.trim_start().bytes().take_while(|&b| b == b'#').count() as u8;
-            found.push((level, line[marker..].trim(), at));
+    let mut found = Vec::new();
+    for l in walk(&text[meta..]).filter(Line::outside) {
+        if let (Kind::Heading(_), marker) = classify(l.text, false) {
+            let level = l.text.trim_start().bytes().take_while(|&b| b == b'#').count() as u8;
+            found.push((level, l.text[marker..].trim(), meta + l.at));
         }
-        at += line.len() + 1;
     }
     found
 }
@@ -900,16 +874,12 @@ pub fn all_comments(text: &str) -> Vec<Note<'_>> {
     if !text.contains("{==") && !text.contains("{>>") {
         return Vec::new();
     }
-    let fences = text.lines().filter(|line| is_fence(line)).count();
-    let (mut seen, mut in_code, mut at, mut found) = (0, false, 0, Vec::new());
-    // Line of the table we are in (the header is 0, the dashes 1).
-    let mut row: Option<usize> = None;
-    for line in text.split('\n') {
-        if is_fence(line) {
-            seen += 1;
-            in_code = !in_code && seen < fences;
+    let (mut found, mut row) = (Vec::new(), None::<usize>);
+    // `row`: line of the table we are in (the header is 0, the dashes 1).
+    for Line { at, text: line, fence, code, .. } in walk(text) {
+        if fence {
             row = None;
-        } else if !in_code {
+        } else if !code {
             row = line.trim_start().starts_with('|').then(|| row.map_or(0, |r| r + 1));
             let cells = row.map(|_| cells(line));
             for (whole, noted, said) in comments(line) {
@@ -928,7 +898,6 @@ pub fn all_comments(text: &str) -> Vec<Note<'_>> {
                 found.push(note);
             }
         }
-        at += line.len() + 1;
     }
     found
 }
@@ -976,6 +945,16 @@ mod tests {
         assert_eq!(classify("```rust", false), (Kind::Fence, 7));
         assert_eq!(classify("- a", true), (Kind::Code, 0));
         assert_eq!(classify("texte", false), (Kind::Para, 0));
+    }
+
+    #[test]
+    fn spots_mermaid_fences() {
+        for yes in ["```mermaid", "```Mermaid", "  ```MERMAID", "``` mermaid", "```mermaid title"] {
+            assert!(is_mermaid_fence(yes), "{yes:?}");
+        }
+        for no in ["```", "```rust", "```mermaids", "mermaid", "`mermaid`", ""] {
+            assert!(!is_mermaid_fence(no), "{no:?}");
+        }
     }
 
     #[test]
@@ -1077,6 +1056,7 @@ mod tests {
         inline("lire [la doc](https://a.b/c#d).", 0, &mut flags);
         assert!(flags[5] == DIM && flags[6..12].iter().all(|f| *f == LINK) && flags[12..14] == [DIM; 2]
             && flags[14..29].iter().all(|f| *f == DIM | QUIET) && flags[29] == DIM && flags[30] == 0);
+        assert_eq!(index("```\n#b [[z]]").1, ["z"]);
         let (tags, wikis) = index("#A\n```\n#b [[z]]\n```\n#a #c [[X]] [[x|alias]] [[Y]]");
         assert_eq!(tags, vec!["a", "c"]);
         assert_eq!(wikis, vec!["x", "y"]);
@@ -1084,10 +1064,12 @@ mod tests {
 
     #[test]
     fn relinks_renamed_notes() {
-        let text = "[[Test]] et [[test|alias]], [[ Test#titre]]\n```\n[[Test]]\n```\n[[Testé]] [[Test]]";
-        let want = "[[Essai]] et [[Essai|alias]], [[Essai#titre]]\n```\n[[Test]]\n```\n[[Testé]] [[Essai]]";
+        let text = "[[Test]] et [[test|alias]], [[ Test#titre]] `[[Test]]`\n```\n[[Test]]\n```\n[[Testé]] [[Test]]";
+        let want = "[[Essai]] et [[Essai|alias]], [[ Essai#titre]] `[[Test]]`\n```\n[[Test]]\n```\n[[Testé]] [[Essai]]";
         assert_eq!(relink(text, "Test", "Essai").as_deref(), Some(want));
         assert_eq!(relink(text, "Autre", "Essai"), None);
+                // A stray fence opens no block: the links after it are renamed, as headings and embeds see them.
+        assert_eq!(relink("```\n[[Test]]", "Test", "Essai").as_deref(), Some("```\n[[Essai]]"));
                 // A renamed image: both spellings follow, the rest of the line too.
         let text = "![a](img/Le%20chat.png \"t\") ![[le chat.png|300]] le chat.png";
         let want = "![a](img/Un%20chien.png \"t\") ![[Un chien.png|300]] le chat.png";

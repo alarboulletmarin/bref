@@ -242,18 +242,10 @@ fn section_text(text: &str, section: &str) -> Result<String, String> {
 fn outgoing(vault: &Vault, text: &str) -> Vec<Value> {
     let mut found = Vec::new();
     let mut seen = Vec::new();
-    let mut in_code = false;
-    for (row, line) in text.lines().enumerate() {
-        if markdown::is_fence(line) {
-            in_code = !in_code;
-            continue;
-        }
-        if in_code {
-            continue;
-        }
-        for (_, link) in markdown::links(line) {
+    for (row, line) in markdown::walk(text).enumerate().filter(|(_, l)| l.outside()) {
+        for (_, link) in markdown::links(line.text) {
             let Link::Wiki(name) = link else { continue };
-            let target = name.split(['#', '|']).next().unwrap_or(&name).trim().to_string();
+            let target = name;
             if target.is_empty() || seen.contains(&target.to_lowercase()) {
                 continue;
             }

@@ -12,7 +12,7 @@ use notify::RecommendedWatcher;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    logic::{rank, wiki},
+    logic::{markdown, rank, wiki},
     logic::note::Note,
     platform::{signal::Signal, vault},
 };
@@ -108,7 +108,7 @@ impl Vault {
             let path = self.inside(note, false)?;
             return self.notes.iter().find(|n| n.path == path).ok_or_else(|| format!("no note at `{note}`"));
         }
-        let name = note.split(['#', '|']).next().unwrap_or(note).trim();
+        let name = markdown::WikiLink::parse(note).target();
         if name.is_empty() {
             return Err("the note's name is empty".into());
         }
