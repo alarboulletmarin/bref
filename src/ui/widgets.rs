@@ -2,7 +2,11 @@
 
 use gpui::{AnyView, App, Context, Div, InteractiveElement, MouseButton, SharedString, Stateful, Window, div, prelude::*, svg};
 
-use crate::ui::theme::Theme;
+use crate::{
+    lang::tr,
+    logic::markdown::{FindOption, FindOptions},
+    ui::theme::Theme,
+};
 
 gpui::actions!(widgets, [Press]);
 
@@ -235,6 +239,19 @@ pub fn toggle(id: &'static str, label: &'static str, on: bool, name: &'static st
         .hover(|s| s.bg(t.hover))
         .tooltip(tip(name, keys, t))
         .child(label)
+}
+
+/// The three search settings as toggles (case, whole words, regular expression), in that order: the find
+/// bar of a note and the vault search share them. `ids` and `keys` follow the same order; `flip` makes the
+/// click handler of a setting.
+pub fn find_toggles<F>(ids: [&'static str; 3], options: FindOptions, keys: [String; 3], t: Theme, flip: impl Fn(FindOption) -> F) -> [Stateful<Div>; 3]
+where
+    F: Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+{
+    use FindOption::*;
+    let [case, word, regex] = [(Case, "Aa", tr("Match case", "Respecter la casse")), (Word, "\u{201c}ab\u{201d}", tr("Whole words", "Mots entiers")), (Regex, ".*", tr("Regular expression", "Expression régulière"))];
+    let mut keys = keys.into_iter();
+    [(case, ids[0]), (word, ids[1]), (regex, ids[2])].map(|((option, label, name), id)| toggle(id, label, options.is(option), name, keys.next().unwrap(), t).on_click(flip(option)))
 }
 
 /// The header of a group of rows (a note of the vault search, later a group of a collection): a chevron that

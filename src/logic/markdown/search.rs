@@ -43,7 +43,7 @@ pub fn find(text: &str, query: &str, case: bool, word: bool) -> Vec<Range<usize>
 /// The spans of `text` that `query` names, and the text that replaces each. With `regex`,
 /// `query` is a regular expression (`^` and `$` apply to each line) and `with` can
 /// reuse its groups (`$1`, `${name}`); a badly written expression finds nothing.
-pub fn replacements(text: &str, query: &str, with: &str, case: bool, word: bool, regex: bool) -> Vec<(Range<usize>, String)> {
+pub fn replacements(text: &str, query: &str, with: &str, FindOptions { case, word, regex }: FindOptions) -> Vec<(Range<usize>, String)> {
     if !regex {
         return find(text, query, case, word).into_iter().map(|hit| (hit, with.to_string())).collect();
     }
@@ -62,9 +62,44 @@ pub fn replacements(text: &str, query: &str, with: &str, case: bool, word: bool,
 }
 
 /// The search is a regular expression that does not compile: the bar says so rather than finding nothing.
-pub fn broken(query: &str, word: bool, regex: bool) -> bool {
+pub fn broken(query: &str, FindOptions { word, regex, .. }: FindOptions) -> bool {
     let pattern = if word { format!(r"\b(?:{query})\b") } else { query.to_string() };
     regex && !query.is_empty() && regex::Regex::new(&pattern).is_err()
+}
+
+/// The find bar's settings.
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
+pub struct FindOptions {
+    pub case: bool,
+    pub word: bool,
+    pub regex: bool,
+}
+
+/// One of the settings, as the toggles name it.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum FindOption {
+    Case,
+    Word,
+    Regex,
+}
+
+impl FindOptions {
+    pub fn flip(&mut self, option: FindOption) {
+        let on = match option {
+            FindOption::Case => &mut self.case,
+            FindOption::Word => &mut self.word,
+            FindOption::Regex => &mut self.regex,
+        };
+        *on ^= true;
+    }
+
+    pub fn is(&self, option: FindOption) -> bool {
+        match option {
+            FindOption::Case => self.case,
+            FindOption::Word => self.word,
+            FindOption::Regex => self.regex,
+        }
+    }
 }
 
 /// What is searched and what replaces it, with the find bar's settings.
@@ -72,15 +107,13 @@ pub fn broken(query: &str, word: bool, regex: bool) -> bool {
 pub struct Swap {
     pub query: String,
     pub with: String,
-    pub case: bool,
-    pub word: bool,
-    pub regex: bool,
+    pub options: FindOptions,
 }
 
 /// `text` once its matches are replaced, except those that start at a byte of `skip` (dismissed from the
 /// vault search), and how many were; `None` if none was.
 pub fn swap_except(text: &str, swap: &Swap, skip: &[usize]) -> Option<(String, usize)> {
-    let hits = replacements(text, &swap.query, &swap.with, swap.case, swap.word, swap.regex);
+    let hits = replacements(text, &swap.query, &swap.with, swap.options);
     let hits: Vec<_> = hits.into_iter().filter(|(hit, _)| !skip.contains(&hit.start)).collect();
     let (mut put, mut done) = (String::with_capacity(text.len()), 0);
     for (hit, with) in &hits {
@@ -105,7 +138,7 @@ pub struct Hit {
 pub fn hits(text: &str, swap: &Swap) -> Vec<Hit> {
     let (mut line, mut from) = (1, 0);
     let mut out = Vec::new();
-    for (at, _) in replacements(text, &swap.query, "", swap.case, swap.word, swap.regex) {
+    for (at, _) in replacements(text, &swap.query, "", swap.options) {
         // Lines counted from the previous match on: one pass over the note.
         line += text[from..at.start].matches('\n').count();
         from = at.start;
@@ -161,7 +194,7 @@ mod tests {
     use super::*;
 
     fn swap(query: &str, with: &str, regex: bool) -> Swap {
-        Swap { query: query.into(), with: with.into(), case: false, word: false, regex }
+        Swap { query: query.into(), with: with.into(), options: FindOptions { regex, ..Default::default() } }
     }
 
     #[test]

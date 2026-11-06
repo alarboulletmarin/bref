@@ -33,9 +33,7 @@ pub(super) struct VaultFind {
     with: Entity<Field>,
     /// The replace line shows.
     replace: bool,
-    case: bool,
-    word: bool,
-    regex: bool,
+    options: markdown::FindOptions,
     groups: Vec<Group>,
     /// Notes whose matches are hidden under their header.
     folded: HashSet<PathBuf>,
@@ -56,7 +54,7 @@ pub(super) struct VaultFind {
 impl VaultFind {
     fn swap(&self, cx: &App) -> Swap {
         let (query, with) = (self.query.read(cx).text().to_string(), self.with.read(cx).text().to_string());
-        Swap { query, with, case: self.case, word: self.word, regex: self.regex }
+        Swap { query, with, options: self.options }
     }
 
     fn kept<'a>(&'a self, group: &'a Group) -> impl Iterator<Item = (usize, &'a Hit)> {
@@ -108,7 +106,7 @@ impl Shell {
         find.query.update(cx, |field, cx| field.set(&query, cx));
         if let Some(seed) = seed {
             find.with.update(cx, |field, cx| field.set(&seed.with, cx));
-            (find.case, find.word, find.regex) = (seed.case, seed.word, seed.regex);
+            find.options = seed.options;
         }
         window.focus(&find.query.focus_handle(cx));
         self.put_tool(Mode::Search);
@@ -135,9 +133,7 @@ impl Shell {
             query,
             with,
             replace: false,
-            case: false,
-            word: false,
-            regex: false,
+            options: markdown::FindOptions::default(),
             groups: Vec::new(),
             folded: HashSet::new(),
             dismissed: HashSet::new(),
@@ -165,7 +161,7 @@ impl Shell {
         let seen = self.notes_seen();
         let Some(find) = &mut self.vault_find else { return };
         let swap = find.swap(cx);
-        let same = find.asked.as_ref().is_some_and(|asked| (&asked.query, asked.case, asked.word, asked.regex) == (&swap.query, swap.case, swap.word, swap.regex));
+        let same = find.asked.as_ref().is_some_and(|asked| (&asked.query, asked.options) == (&swap.query, swap.options));
         if same && find.seen == seen {
             return;
         }
@@ -174,7 +170,7 @@ impl Shell {
             find.dismissed.clear();
             find.sel = 0;
         }
-        if swap.query.is_empty() || markdown::broken(&swap.query, swap.word, swap.regex) {
+        if swap.query.is_empty() || markdown::broken(&swap.query, swap.options) {
             (find.groups, find.busy) = (Vec::new(), None);
             return cx.notify();
         }
@@ -273,7 +269,7 @@ impl Shell {
         // The open note is saved first: the replacement starts from what is on screen.
         self.flush(cx);
         // The matches set aside in the panel's results of this same search stay as they are.
-        let panel = self.vault_find.as_ref().filter(|find| find.asked.as_ref().is_some_and(|asked| (&asked.query, asked.case, asked.word, asked.regex) == (&swap.query, swap.case, swap.word, swap.regex)));
+        let panel = self.vault_find.as_ref().filter(|find| find.asked.as_ref().is_some_and(|asked| (&asked.query, asked.options) == (&swap.query, swap.options)));
         let skip = |path: &Path| panel.map_or_else(Vec::new, |find| find.skipped(path));
         let found: Vec<(PathBuf, String, usize)> = (self.notes.iter())
             .filter_map(|note| markdown::swap_except(&note.body, &swap, &skip(&note.path)).map(|(text, count)| (note.path.clone(), text, count)))
@@ -373,13 +369,9 @@ impl Shell {
     }
 
     /// Case, whole words, regular expression: switched, searched again.
-    fn vault_flip(&mut self, which: usize, cx: &mut Context<Self>) {
+    fn vault_flip(&mut self, option: markdown::FindOption, cx: &mut Context<Self>) {
         if let Some(find) = &mut self.vault_find {
-            match which {
-                0 => find.case ^= true,
-                1 => find.word ^= true,
-                _ => find.regex ^= true,
-            }
+            find.options.flip(option);
         }
         self.vault_search(cx);
     }
@@ -416,12 +408,12 @@ impl Shell {
             let (on, empty) = (field.focus_handle(cx).is_focused(window), field.read(cx).text().is_empty());
             ui::widgets::field_frame(id, field.clone(), on, empty, hint, t)
         };
-        let flip = |which: usize| cx.listener(move |this, _: &gpui::ClickEvent, _, cx| this.vault_flip(which, cx));
+        let flip = |option| cx.listener(move |this, _: &gpui::ClickEvent, _, cx| this.vault_flip(option, cx));
         let swap = find.swap(cx);
         let (hits, notes) = find.counts();
         let said = if swap.query.is_empty() {
             tr("Search the text of every note", "Chercher dans le texte de toutes les notes").to_string()
-        } else if markdown::broken(&swap.query, swap.word, swap.regex) {
+        } else if markdown::broken(&swap.query, swap.options) {
             tr("Invalid expression", "Expression invalide").to_string()
         } else if find.busy.is_some() && find.groups.is_empty() {
             tr("Searching…", "Recherche…").to_string()
@@ -444,9 +436,7 @@ impl Shell {
             .items_center()
             .gap_1()
             .child(chevron)
-            .child(ui::widgets::toggle("vault-case", "Aa", find.case, tr("Match case", "Respecter la casse"), keys(&FindCase), t).on_click(flip(0)))
-            .child(ui::widgets::toggle("vault-word", "\u{201c}ab\u{201d}", find.word, tr("Whole words", "Mots entiers"), keys(&FindWord), t).on_click(flip(1)))
-            .child(ui::widgets::toggle("vault-regex", ".*", find.regex, tr("Regular expression", "Expression régulière"), keys(&FindRegex), t).on_click(flip(2)));
+            .children(ui::widgets::find_toggles(["vault-case", "vault-word", "vault-regex"], find.options, [keys(&FindCase), keys(&FindWord), keys(&FindRegex)], t, flip));
         let second = find.replace.then(|| {
             div()
                 .flex()
@@ -490,9 +480,9 @@ impl Shell {
             .key_context("Find")
             .on_action(cx.listener(|this, _: &Find, window, cx| this.open_vault_find(window, cx)))
             .on_action(cx.listener(|this, _: &FindReplace, window, cx| this.vault_flip_replace(window, cx)))
-            .on_action(cx.listener(|this, _: &FindCase, _, cx| this.vault_flip(0, cx)))
-            .on_action(cx.listener(|this, _: &FindWord, _, cx| this.vault_flip(1, cx)))
-            .on_action(cx.listener(|this, _: &FindRegex, _, cx| this.vault_flip(2, cx)))
+            .on_action(cx.listener(|this, _: &FindCase, _, cx| this.vault_flip(markdown::FindOption::Case, cx)))
+            .on_action(cx.listener(|this, _: &FindWord, _, cx| this.vault_flip(markdown::FindOption::Word, cx)))
+            .on_action(cx.listener(|this, _: &FindRegex, _, cx| this.vault_flip(markdown::FindOption::Regex, cx)))
             .on_action(cx.listener(|this, _: &FindSwitch, window, cx| this.vault_switch(window, cx)))
             .on_action(cx.listener(|this, _: &palette::Prev, _, cx| this.vault_step(false, cx)))
             .on_action(cx.listener(|this, _: &palette::Next, _, cx| this.vault_step(true, cx)))

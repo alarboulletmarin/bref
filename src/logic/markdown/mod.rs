@@ -952,19 +952,20 @@ mod tests {
         use std::cmp::Ordering::{Greater, Less};
         assert_eq!((cell_order("9", "10"), cell_order("b", "A"), cell_order("", "z"), cell_order("1,5", "1.25")), (Less, Greater, Greater, Greater));
                 // Replacements: the text as is, or a regular expression and its groups.
-        let put = |query: &str, with: &str, word, regex| replacements("Le chat, le chien.\nle rat", query, with, false, word, regex);
+        let put = |query: &str, with: &str, word, regex| replacements("Le chat, le chien.\nle rat", query, with, FindOptions { word, regex, ..Default::default() });
         assert_eq!(put("le", "un", true, false), [(0..2, "un".to_string()), (9..11, "un".into()), (19..21, "un".into())]);
         assert_eq!(put(r"le (\w+)", "$1 (le)", false, true), [(0..7, "chat (le)".to_string()), (9..17, "chien (le)".into()), (19..25, "rat (le)".into())]);
         assert_eq!(put("^le", "x", false, true).len(), 2);
         assert_eq!(put("ch|ra", "", true, true), []);
         assert!(put("(", "", false, true).is_empty() && put("x*", "", false, true).is_empty());
-        assert_eq!(replacements("A a", "a", "b", true, false, true), [(2..3, "b".to_string())]);
+        assert_eq!(replacements("A a", "a", "b", FindOptions { case: true, regex: true, ..Default::default() }), [(2..3, "b".to_string())]);
         // A regular expression that does not compile is said; text is never one, nor an empty search.
-        assert!(broken("(", false, true) && broken("[a", true, true) && !broken("a*", false, true) && !broken("(", false, false) && !broken("", false, true));
+        let opts = |word, regex| FindOptions { word, regex, ..Default::default() };
+        assert!(broken("(", opts(false, true)) && broken("[a", opts(true, true)) && !broken("a*", opts(false, true)) && !broken("(", opts(false, false)) && !broken("", opts(false, true)));
         // Replacing with what contains the search does not loop; `$1` without a group is empty.
         assert_eq!(put("le", "lele", true, false).len(), 3);
         assert_eq!(put("le", "${1}x", true, true)[0].1, "x");
-        let all = Swap { query: "le".into(), with: "un".into(), case: false, word: true, regex: false };
+        let all = Swap { query: "le".into(), with: "un".into(), options: FindOptions { word: true, ..Default::default() } };
         assert_eq!(swap_except("Le chat, le chien.", &all, &[]), Some(("un chat, un chien.".into(), 2)));
         assert_eq!(swap_except("rien", &all, &[]), None);
                 // Comment names: by content, numbered when the first cells are alike, by position when empty.
