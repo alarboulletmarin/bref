@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="2552" height="1792" viewBox="-16 -616 2552 1792" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" font-family="sans-serif" font-size="14">
 <path d="M2 -600L138 -600C139.1 -600 140 -599.1 140 -598L140 -542C140 -540.9 139.1 -540 138 -540L2 -540C0.9 -540 0 -540.9 0 -542L0 -598C0 -599.1 0.9 -600 2 -600Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15" stroke-dasharray="6 4"/>
-<path d="M0 -572H140" stroke="#7d8590"/>
+<path d="M0 -572L140 -572" stroke="#7d8590"/>
 <text x="70" y="-580" text-anchor="middle" fill="#7d8590" stroke="none"><tspan font-weight="bold">Rect </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
 <text x="8" y="-554" fill="#7d8590" stroke="none">+ x: int</text>
 <path d="M314 -600L426 -600C433.7 -600 440 -593.7 440 -586L440 -554C440 -546.3 433.7 -540 426 -540L314 -540C306.3 -540 300 -546.3 300 -554L300 -586C300 -593.7 306.3 -600 314 -600Z" stroke="#e5534b"/>
-<path d="M300 -572H440" stroke="#e5534b"/>
+<path d="M300 -572L440 -572" stroke="#e5534b"/>
 <text x="370" y="-580" text-anchor="middle" fill="#e5534b" stroke="none"><tspan font-weight="bold">Round </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
 <text x="308" y="-554" fill="#e5534b" stroke="none">+ x: int</text>
 <path d="M720 -560C720 -537.9 693.1 -520 660 -520C626.9 -520 600 -537.9 600 -560C600 -582.1 626.9 -600 660 -600C693.1 -600 720 -582.1 720 -560Z" stroke="#d98e2b"/>
-<path d="M600 -560H720" stroke="#d98e2b"/>
+<path d="M600 -560L720 -560" stroke="#d98e2b"/>
 <text x="660" y="-568" text-anchor="middle" fill="#d98e2b" stroke="none"><tspan>Ellipse </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
 <text x="660" y="-542" text-anchor="middle" fill="#d98e2b" stroke="none">+ x: int</text>
 <path d="M960 -600L1020 -560L960 -520L900 -560Z" stroke="#3fa45b" fill="#3fa45b" fill-opacity="0.15"/>
@@ -120,8 +120,8 @@
 <text x="308" y="230" fill="#e5534b" stroke="none">---</text>
 <text x="308" y="248" fill="#e5534b" stroke="none">+ x: int</text>
 <path d="M2 800L198 800C199.1 800 200 800.9 200 802L200 878C200 879.1 199.1 880 198 880L2 880C0.9 880 0 879.1 0 878L0 802C0 800.9 0.9 800 2 800Z" stroke="#7d8590"/>
-<path d="M0 828H200" stroke="#7d8590"/>
-<path d="M0 854H200" stroke="#7d8590"/>
+<path d="M0 828L200 828" stroke="#7d8590"/>
+<path d="M0 854L200 854" stroke="#7d8590"/>
 <text x="100" y="820" text-anchor="middle" font-weight="bold" fill="#7d8590" stroke="none">Shape</text>
 <text x="8" y="846" fill="#7d8590" stroke="none">+ area(): f32</text>
 <text x="8" y="872" fill="#7d8590" stroke="none"><tspan text-decoration="line-through">old</tspan><tspan> </tspan><tspan font-family="monospace">List&lt;T&gt;</tspan><tspan> &lt;&amp;&gt;</tspan></text>
@@ -136,8 +136,8 @@
 <path d="M60 1060L108 1060L108 1071L99 1080L60 1080Z" stroke="#7d8590"/>
 <text x="66" y="1075" font-weight="bold" fill="#7d8590" stroke="none">alt</text>
 <text x="116" y="1075" fill="#7d8590" stroke="none">[ok]</text>
-<path d="M325 -8H335V138H325Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
-<path d="M505 54H515V80H505Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M325 -8L335 -8L335 138L325 138Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M505 54L515 54L515 80L505 80Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
 <path d="M500 114L520 134M520 114L500 134" stroke="#7d8590"/>
 <path d="M216 840L388 840" stroke="#d98e2b" stroke-dasharray="6 4"/>
 <path d="M200 840L208 835L216 840L208 845Z" stroke="#d98e2b"/>

@@ -14,8 +14,10 @@ mod hold;
 mod pick;
 mod place;
 mod route;
+mod scene;
 mod sequence;
 pub use place::{fit, layered};
+pub use scene::{Fill, Item, Label};
 use sequence::Flow;
 
 /// Stroke colors, as `0xrrggbb`: mid tones, readable on a light background

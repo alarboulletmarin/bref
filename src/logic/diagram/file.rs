@@ -8,84 +8,26 @@ impl Diagram {
     /// `neutral` is the neutral stroke color, as `0xrrggbb`.
     pub fn to_svg(&self, neutral: u32) -> String {
         let color = |i: u8| format!("#{:06x}", if i == 0 { neutral } else { COLORS[i as usize % COLORS.len()] });
-        let (traces, flow) = self.traces();
-        let (x0, y0, x1, y1) = self.bounds_of(&traces).unwrap_or((0., 0., 100., 60.));
+        let scene = self.scene(None);
+        let (x0, y0, x1, y1) = self.bounds_of(&scene.traces).unwrap_or((0., 0., 100., 60.));
         let (x0, y0, w, h) = (x0 - 16., y0 - 16., x1 - x0 + 32., y1 - y0 + 32.);
         let mut out = format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" fill=\"none\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" font-family=\"sans-serif\" font-size=\"{FONT}\">\n",
             num(w), num(h), num(x0), num(y0), num(w), num(h),
         );
-        let dash = |dashed: bool| if dashed { " stroke-dasharray=\"6 4\"" } else { "" };
-        let label = |out: &mut String, x: f32, y: f32, spans: &[Span], anchor: Anchor, ink: &str| {
-            if spans.is_empty() {
-                return;
-            }
-            let anchor = match anchor {
-                Anchor::Start => "",
-                Anchor::Middle => " text-anchor=\"middle\"",
-                Anchor::End => " text-anchor=\"end\"",
-            };
-            // One style for the whole line: on the `<text>`; several: a `<tspan>` for each run.
-            let uniform = spans.windows(2).all(|w| w[0].style == w[1].style);
-            let (attrs, body) = match uniform {
-                true => (style_attrs(spans[0].style), xml::escape(&spans.iter().map(|s| s.text.as_str()).collect::<String>())),
-                false => (String::new(), spans.iter().map(|s| format!("<tspan{}>{}</tspan>", style_attrs(s.style), xml::escape(&s.text))).collect()),
-            };
-            let _ = writeln!(out, "<text x=\"{}\" y=\"{}\"{anchor}{attrs} fill=\"{ink}\" stroke=\"none\">{body}</text>", num(x), num(y + FONT));
-        };
-        for shape in &self.shapes {
-            let ink = color(shape.color);
-            for (i, path) in shape.outline().iter().enumerate() {
-                let fill = if shape.solid().contains(&i) {
-                    format!(" fill=\"{ink}\"")
-                } else if i == 0 && shape.fill {
-                    format!(" fill=\"{ink}\" fill-opacity=\"0.15\"")
-                } else {
-                    String::new()
-                };
-                let _ = writeln!(out, "<path d=\"{}\" stroke=\"{ink}\"{fill}{}/>", path_d(path), dash(shape.dashed || shape.dashed_paths().contains(&i)));
-            }
-            let (lines, rules) = self.lines(shape);
-            for y in rules {
-                let (x0, x1) = shape.rule_span(y);
-                // Between the operands of a combined fragment: dashed.
-                let _ = writeln!(out, "<path d=\"M{} {}H{}\" stroke=\"{ink}\"{}/>", num(x0), num(y), num(x1), dash(shape.form == Form::Fragment));
-            }
-            for (line, spans) in lines.iter().zip(self.runs(shape, false)) {
-                label(&mut out, line.x, line.y, &spans, line.centered.into(), &ink);
-            }
-        }
-        // What the messages add: the bars of the lifelines that are busy, the cross of one that is destroyed.
-        let marks = &flow.marks;
-        for bar in &marks.bars {
-            let (x, y, w, h) = bar.rect();
-            let ink = color(self.shape(bar.life).map_or(0, |s| s.color));
-            let _ = writeln!(out, "<path d=\"M{} {}H{}V{}H{}Z\" stroke=\"{ink}\" fill=\"{ink}\" fill-opacity=\"0.15\"/>", num(x), num(y), num(x + w), num(y + h), num(x));
-        }
-        for (x, y) in &marks.crosses {
-            let _ = writeln!(out, "<path d=\"M{} {}L{} {}M{} {}L{} {}\" stroke=\"{}\"/>", num(x - 10.), num(y - 10.), num(x + 10.), num(y + 10.), num(x + 10.), num(y - 10.), num(x - 10.), num(y + 10.), color(0));
-        }
-        for (link, trace) in self.links.iter().zip(traces) {
-            let Some(trace) = trace else { continue };
-            let ink = color(link.color);
-            let _ = writeln!(out, "<path d=\"{}\" stroke=\"{ink}\"{}/>", path_d(&trace.line), dash(link.dashed));
-            for (path, full) in &trace.heads {
-                let fill = if *full { format!(" fill=\"{ink}\"") } else { String::new() };
-                let _ = writeln!(out, "<path d=\"{}\" stroke=\"{ink}\"{fill}/>", path_d(path));
-            }
-            let shown = self.shown_text(link);
-            let lines: Vec<&str> = if shown.is_empty() { vec![""] } else { shown.split('\n').collect() };
-            for (i, text) in lines.iter().enumerate() {
-                let (x, y, centered) = Diagram::label_at(&trace, i, lines.len());
-                label(&mut out, x, y, &self.label_runs(text), centered.into(), &ink);
-            }
-            for (tip, slot) in [(trace.tips[0], Slot::Start), (trace.tips[1], Slot::End)] {
-                let along = if slot == Slot::Start { link.start_along } else { link.end_along };
-                let lines: Vec<&str> = link.text_of(slot).split('\n').filter(|_| !link.text_of(slot).is_empty()).collect();
-                for (i, text) in lines.iter().enumerate() {
-                    let (x, y, anchor) = Diagram::tip_label_at(&tip, along, i, lines.len());
-                    label(&mut out, x, y, &self.styled(text, false), anchor, &ink);
+        for item in &scene.items {
+            match item {
+                Item::Path(stroke) => {
+                    let ink = color(stroke.ink);
+                    let fill = match stroke.fill {
+                        Fill::None => String::new(),
+                        Fill::Tint => format!(" fill=\"{ink}\" fill-opacity=\"0.15\""),
+                        Fill::Solid => format!(" fill=\"{ink}\""),
+                    };
+                    let dash = if stroke.dashed { " stroke-dasharray=\"6 4\"" } else { "" };
+                    let _ = writeln!(out, "<path d=\"{}\" stroke=\"{ink}\"{fill}{dash}/>", path_d(&stroke.path));
                 }
+                Item::Text(label) => text(&mut out, label, &color(label.ink)),
             }
         }
         let _ = write!(out, "<metadata id=\"bref-diagram\">\n{}</metadata>\n</svg>\n", xml::escape(&self.source()));
@@ -305,6 +247,26 @@ impl Diagram {
         diagram.next = ids.max().unwrap_or(0);
         Some(diagram)
     }
+}
+
+/// A line of text as a `<text>`: nothing for an empty one.
+fn text(out: &mut String, label: &Label, ink: &str) {
+    let spans = &label.spans;
+    if spans.is_empty() {
+        return;
+    }
+    let anchor = match label.anchor {
+        Anchor::Start => "",
+        Anchor::Middle => " text-anchor=\"middle\"",
+        Anchor::End => " text-anchor=\"end\"",
+    };
+    // One style for the whole line: on the `<text>`; several: a `<tspan>` for each run.
+    let uniform = spans.windows(2).all(|w| w[0].style == w[1].style);
+    let (attrs, body) = match uniform {
+        true => (style_attrs(spans[0].style), xml::escape(&spans.iter().map(|s| s.text.as_str()).collect::<String>())),
+        false => (String::new(), spans.iter().map(|s| format!("<tspan{}>{}</tspan>", style_attrs(s.style), xml::escape(&s.text))).collect()),
+    };
+    let _ = writeln!(out, "<text x=\"{}\" y=\"{}\"{anchor}{attrs} fill=\"{ink}\" stroke=\"none\">{body}</text>", num(label.x), num(label.y + FONT));
 }
 
 /// SVG attributes of a text style, with a leading space each.
