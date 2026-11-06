@@ -90,18 +90,28 @@ pub fn home() -> Option<PathBuf> {
 /// Where tests put the home and config folders (both `<root>/.config`, as the environment variables
 /// they replaced did), if one does.
 #[cfg(test)]
-static ISOLATED: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+static ISOLATED: std::sync::Mutex<Option<(PathBuf, std::thread::ThreadId)>> = std::sync::Mutex::new(None);
 /// One test at a time moves the folders: the others wait for the guard to drop.
 #[cfg(test)]
 static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Tests never touch the user's real folders: the last isolated root stays in force after its guard
 /// drops (a window torn down later still writes its files there), and before any test isolated one,
-/// a throwaway folder stands in.
+/// a throwaway folder stands in. Another test thread (the runner names them `module::test`) never
+/// sees the root of the isolated test: it would write its files there while the test reads them;
+/// it gets the throwaway folder. The threads a test starts (unnamed) see its root.
 #[cfg(test)]
 fn isolated_root() -> Option<PathBuf> {
+    let throwaway = || env::temp_dir().join(format!("bref-test-home-{}", std::process::id()));
     let set = ISOLATED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
-    set.or_else(|| Some(env::temp_dir().join(format!("bref-test-home-{}", std::process::id()))))
+    Some(match set {
+        Some((root, owner)) => {
+            let me = std::thread::current();
+            let other_test = me.id() != owner && me.name().is_some_and(|name| name.contains("::"));
+            if other_test { throwaway() } else { root }
+        }
+        None => throwaway(),
+    })
 }
 
 /// Test: the config and home folders live under `root`, and no other test moves them until the guard
@@ -110,7 +120,7 @@ fn isolated_root() -> Option<PathBuf> {
 #[cfg(test)]
 pub fn isolate(root: &Path) -> Isolated {
     let turn = TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    *ISOLATED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(root.to_path_buf());
+    *ISOLATED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((root.to_path_buf(), std::thread::current().id()));
     Isolated(turn)
 }
 
