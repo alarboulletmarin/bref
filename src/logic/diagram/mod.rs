@@ -973,9 +973,14 @@ impl Diagram {
     }
 
     pub fn add_shape(&mut self, form: Form, x: f32, y: f32, w: f32, h: f32) -> u32 {
+        self.add_shape_mut(form, x, y, w, h).id
+    }
+
+    /// As `add_shape`, for a caller that sets the new shape up at once.
+    pub fn add_shape_mut(&mut self, form: Form, x: f32, y: f32, w: f32, h: f32) -> &mut Shape {
         let id = self.fresh();
         self.shapes.push(Shape { id, form, x, y, w, h, text: String::new(), color: 0, fill: false, dashed: false, parent: None, operand: 0 });
-        id
+        self.shapes.last_mut().expect("just pushed")
     }
 
     pub fn add_link(&mut self, from: End, to: End, end: Head, route: Route) -> u32 {

@@ -53,8 +53,8 @@ pub fn excalidraw(json: &str) -> Result<Imported, String> {
             Some("text") if e["containerId"].is_null() => Form::Text,
             _ => continue,
         };
-        let id = diagram.add_shape(form, n(e, "x"), n(e, "y"), n(e, "width"), n(e, "height"));
-        let shape = diagram.shape_mut(id).unwrap();
+        let shape = diagram.add_shape_mut(form, n(e, "x"), n(e, "y"), n(e, "width"), n(e, "height"));
+        let id = shape.id;
         shape.color = color(e["strokeColor"].as_str().unwrap_or(""));
         shape.fill = e["backgroundColor"].as_str().is_some_and(|c| c != "transparent");
         shape.dashed = e["strokeStyle"].as_str().is_some_and(|s| s != "solid");
@@ -212,8 +212,8 @@ pub fn drawio(xml: &str) -> Result<Imported, String> {
             Form::Rect
         };
         let (ox, oy) = origin(cell);
-        let id = diagram.add_shape(form, ox + n(&g, "x"), oy + n(&g, "y"), n(&g, "width"), n(&g, "height"));
-        let shape = diagram.shape_mut(id).unwrap();
+        let shape = diagram.add_shape_mut(form, ox + n(&g, "x"), oy + n(&g, "y"), n(&g, "width"), n(&g, "height"));
+        let id = shape.id;
         shape.text = label(cell);
         shape.color = color(&style(cell, "strokeColor").unwrap_or_default());
         shape.fill = style(cell, "fillColor").is_some_and(|c| c.starts_with('#') && !c.eq_ignore_ascii_case("#ffffff"));

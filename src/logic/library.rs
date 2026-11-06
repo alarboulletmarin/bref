@@ -137,11 +137,9 @@ pub fn templates() -> Vec<Template> {
 /// Adds the shape of the preset named `name` of this family, with its text, and returns its id.
 fn put(d: &mut Diagram, family: &str, name: &str, (x, y): (f32, f32)) -> u32 {
     let preset = presets().into_iter().find(|p| p.family == family && p.name == name).unwrap_or_else(|| panic!("{family}/{name} is in the library"));
-    let id = d.add_shape(preset.form, x, y, preset.w, preset.h);
-    if let Some(shape) = d.shape_mut(id) {
-        (shape.text, shape.fill, shape.dashed) = (preset.text.to_string(), preset.fill, preset.dashed);
-    }
-    id
+    let shape = d.add_shape_mut(preset.form, x, y, preset.w, preset.h);
+    (shape.text, shape.fill, shape.dashed) = (preset.text.to_string(), preset.fill, preset.dashed);
+    shape.id
 }
 
 fn say(d: &mut Diagram, id: u32, text: &str) {

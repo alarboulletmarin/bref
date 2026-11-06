@@ -152,8 +152,7 @@ mod tests {
         use crate::logic::diagram::{Diagram, Form};
         let text = "*Shape*\n---\n+ <u>count</u>: int\n+ **area**(): f32";
         let png = |mut d: Diagram| {
-            let id = d.add_shape(Form::Rect, 0., 0., 200., 90.);
-            d.shape_mut(id).unwrap().text = text.into();
+            d.add_shape_mut(Form::Rect, 0., 0., 200., 90.).text = text.into();
             png(&d.to_svg(0x1e1e1e), crate::ui::assets::APP_FONTS, 2., 0xffffff).unwrap()
         };
         let (styled, plain) = (png(Diagram::blank()), png(Diagram::default()));

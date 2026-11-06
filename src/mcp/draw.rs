@@ -524,8 +524,8 @@ fn add_shape(diagram: &mut Diagram, spec: &Value) -> Result<(u32, bool), String>
     let placed = spec.get("x").is_some() || spec.get("y").is_some();
     let x = spec.get("x").and_then(|v| v.as_f64()).unwrap_or(0.) as f32;
     let y = spec.get("y").and_then(|v| v.as_f64()).unwrap_or(0.) as f32;
-    let id = diagram.add_shape(form, x, y, w, h);
-    let shape = diagram.shape_mut(id).unwrap();
+    let shape = diagram.add_shape_mut(form, x, y, w, h);
+    let id = shape.id;
     shape.text = text;
     if let Some(color) = spec.get("color").and_then(|v| v.as_u64()) {
         if color > 5 {
