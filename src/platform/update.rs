@@ -35,31 +35,36 @@ pub fn releases_url() -> String {
     format!("{}/releases/latest", env!("CARGO_PKG_REPOSITORY"))
 }
 
-/// URL of the latest release. `BREF_RELEASES_API` replaces it: update tests
-/// point it to a local file (`file://`) describing a release.
+/// URL of the latest release. `BREF_RELEASES_API` replaces it (update tests, the QA recipe's
+/// fake feed), but only by a `file://` or `https://` address: never plain `http`.
 fn api_url() -> String {
-    std::env::var("BREF_RELEASES_API").unwrap_or_else(|_| {
+    let default = || {
         let repo = env!("CARGO_PKG_REPOSITORY").replace("https://github.com/", "https://api.github.com/repos/");
         format!("{repo}/releases/latest")
-    })
+    };
+    match std::env::var("BREF_RELEASES_API") {
+        Ok(url) if local_or_https(&url) => url,
+        _ => default(),
+    }
 }
 
-/// `BREF_RELEASES_API` is a test setting: it lifts the URL and sum checks.
-fn overridden() -> bool {
-    std::env::var_os("BREF_RELEASES_API").is_some()
+fn local_or_https(url: &str) -> bool {
+    url.starts_with("file://") || url.starts_with("https://")
 }
 
 /// The file to install only comes from this repository's releases, and over HTTPS end to end
 /// (`curl` follows redirects: without `--proto-redir`, an `http://` URL would get through).
+/// While the feed is overridden, a `file://` address is also accepted (the fake feed of the QA recipe).
 fn trusted(url: &str) -> bool {
     url.strip_prefix(env!("CARGO_PKG_REPOSITORY")).is_some_and(|rest| rest.starts_with("/releases/download/"))
+        || (url.starts_with("file://") && std::env::var("BREF_RELEASES_API").is_ok_and(|feed| local_or_https(&feed)))
 }
 
-fn curl() -> Command {
+/// `curl` for `url`: its own protocol only, and redirects only to HTTPS.
+fn curl(url: &str) -> Command {
     let mut curl = command("curl");
-    if !overridden() {
-        curl.args(["--proto", "=https", "--proto-redir", "=https"]);
-    }
+    let proto = if url.starts_with("file://") { "=file" } else { "=https" };
+    curl.args(["--proto", proto, "--proto-redir", "=https"]);
     curl
 }
 
@@ -115,19 +120,17 @@ pub fn install(url: &str, sha256: Option<&str>) -> Result<(), String> {
     if cfg!(test) {
         return Err("no installation in tests".into());
     }
-    if !overridden() {
-        if !trusted(url) {
-            return Err(tr("untrusted download address", "adresse de téléchargement non fiable").into());
-        }
-        if sha256.is_none() {
-            return Err(tr("this release publishes no checksum", "cette version ne publie pas de somme de contrôle").into());
-        }
+    if !trusted(url) {
+        return Err(tr("untrusted download address", "adresse de téléchargement non fiable").into());
     }
+    let Some(sha256) = sha256 else {
+        return Err(tr("this release publishes no checksum", "cette version ne publie pas de somme de contrôle").into());
+    };
     let dir = private_dir().map_err(|e| e.to_string())?;
     let name = url.rsplit('/').next().filter(|n| !n.is_empty()).unwrap_or("bref-update");
     let file = dir.join(name);
-    let installed = run(curl().args(["-fL", "--max-time", "900", "-A", "bref", "-o"]).arg(&file).arg(url))
-        .and_then(|()| sha256.map_or(Ok(()), |expected| verify(&file, expected)))
+    let installed = run(curl(url).args(["-fL", "--max-time", "900", "-A", "bref", "-o"]).arg(&file).arg(url))
+        .and_then(|()| verify(&file, sha256))
         .and_then(|()| apply(&file));
     // A file refused or whose installation failed does not stay in the temporary folder;
     // after a success, it stays: the installer still reads it once the app has quit.
@@ -171,9 +174,10 @@ fn verify(file: &Path, expected: &str) -> Result<(), String> {
 // The file is checked against the SHA-256 sum GitHub publishes with the release: it protects
 // the download, not the GitHub account itself. Sign the versions (minisign key) if the app grows.
 fn fetch() -> Option<Release> {
-    let out = curl()
+    let url = api_url();
+    let out = curl(&url)
         .args(["-fsSL", "--max-time", "10", "-A", "bref", "-H", "Accept: application/vnd.github+json"])
-        .arg(api_url())
+        .arg(&url)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
@@ -357,6 +361,21 @@ mod tests {
     const JSON: &str = r#"{"tag_name": "v0.2.0", "draft": false, "prerelease": false, "assets": [
         {"name": "bref-x86_64.pkg.tar.zst", "browser_download_url": "https://x/bref-x86_64.pkg.tar.zst"},
         {"name": "bref-macos.dmg", "browser_download_url": "https://x/bref-macos.dmg", "digest": "sha256:ab12"}]}"#;
+
+    #[test]
+    fn the_feed_override_is_local_or_https() {
+        assert!(local_or_https("file:///C:/feed/latest.json") && local_or_https("https://x/y.json"));
+        assert!(!local_or_https("http://x/y.json") && !local_or_https("ftp://x") && !local_or_https(""));
+    }
+
+    #[test]
+    fn only_the_projects_releases_are_trusted() {
+        let ok = format!("{}/releases/download/v1/bref.exe", env!("CARGO_PKG_REPOSITORY"));
+        assert!(trusted(&ok));
+        assert!(!trusted("http://evil/releases/download/x") && !trusted("https://evil/bref.exe"));
+        // Without the override, `file://` is not trusted.
+        assert!(!trusted("file:///tmp/bref.exe") || std::env::var("BREF_RELEASES_API").is_ok());
+    }
 
     #[test]
     fn reads_the_published_release() {
