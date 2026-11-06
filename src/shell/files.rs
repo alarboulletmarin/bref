@@ -70,8 +70,7 @@ impl Shell {
         self.images = self.images.iter().map(shift).collect();
         self.recent = self.recent.iter().map(shift).collect();
         // Icons follow their note or folder, and what it contains.
-        if self.icons.keys().any(|p| p.starts_with(from)) {
-            self.icons = self.icons.drain().map(|(path, icon)| (shift(&path), icon)).collect();
+        if vault::move_icons(&mut self.icons, from, to) {
             self.save_icons(cx);
         }
         self.nav.open = self.nav.open.iter().map(shift).collect();

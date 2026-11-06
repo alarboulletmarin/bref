@@ -464,6 +464,7 @@ fn follow_title(vault: &mut Vault, path: &Path, before: &str, after: &str) -> (s
         vault.rescan();
         return (path.to_path_buf(), false, Some(disk(error)), 0);
     }
+    let _ = files::relocate_icons(&vault.root, path, &dest); // ponytail: a failed icon save is not worth undoing the rename
     let rewritten = vault::relink(vault, &old, &title);
     (dest, true, None, rewritten)
 }
@@ -604,12 +605,14 @@ pub fn rename_note(vault: &mut Vault, args: &Value) -> Outcome {
         vault.rescan();
         return Outcome::err(disk(error));
     }
+    let icons = if dest != path { files::relocate_icons(&vault.root, &path, &dest).err().map(disk) } else { None };
     let rewritten = if old_link != new_link { vault::relink(vault, &old_link, &new_link) } else { vault.rescan(); 0 };
     let left = old_link != new_link && rewritten == 0 && vault.notes.iter().any(|n| n.name.eq_ignore_ascii_case(&old_link));
     Outcome::ok(json!({
         "path": vault::rel(&vault.root, &dest),
         "rewritten": rewritten,
         "links_left": left,
+        "icons_error": icons,
     }))
 }
 

@@ -176,6 +176,23 @@ fn editing_a_heading_rewrites_links_to_it() {
 }
 
 #[test]
+fn icons_follow_a_rename() {
+    let root = scratch();
+    write(&root, "A.md", "# A\n");
+    write(&root, "Dir/X.md", "# X\n");
+    write(&root, "T.md", "# T\n");
+    write(&root, ".bref-icons", "star\tA.md\nheart\tDir\nheart\tDir/X.md\nbolt\tT.md\n");
+    let mut vault = open(&root);
+    ok(notes::rename_note(&mut vault, &json!({"note": "A", "name": "B"})));
+    ok(notes::rename_note(&mut vault, &json!({"note": "X", "folder": "Other"})));
+    // A title edit renames the file too.
+    ok(notes::edit_note(&mut vault, &json!({"note": "T", "edits": [{"old": "# T", "new": "# U"}]})));
+    let icons = fs::read_to_string(root.join(".bref-icons")).unwrap();
+    assert_eq!(icons, "bolt\tU.md\nheart\tDir\nheart\tOther/X.md\nstar\tB.md\n");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_table_can_be_renamed() {
     let root = scratch();
     write(&root, "Sub/data.csv", "a,b\n1,2\n");

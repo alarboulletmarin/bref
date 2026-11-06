@@ -485,6 +485,21 @@ pub fn save_icons(root: &Path, icons: &HashMap<PathBuf, String>) -> io::Result<(
     write(&root.join(ICONS), &lines.concat())
 }
 
+/// `from` became `to` (a file, or a folder and what it holds): its icons follow. False if none did.
+pub fn move_icons(icons: &mut HashMap<PathBuf, String>, from: &Path, to: &Path) -> bool {
+    if !icons.keys().any(|p| p.starts_with(from)) {
+        return false;
+    }
+    *icons = icons.drain().map(|(path, icon)| (if let Ok(rest) = path.strip_prefix(from) { to.join(rest) } else { path }, icon)).collect();
+    true
+}
+
+/// The same on the vault's icon file, for what renames without the app's state.
+pub fn relocate_icons(root: &Path, from: &Path, to: &Path) -> io::Result<()> {
+    let mut icons = load_icons(root);
+    if move_icons(&mut icons, from, to) { save_icons(root, &icons) } else { Ok(()) }
+}
+
 /// The commands to try, in order, to open a terminal in `dir` under the system
 /// `os` (`std::env::consts::OS`): the program and its arguments. `preferred` is the terminal
 /// the user names in `$TERMINAL`.
