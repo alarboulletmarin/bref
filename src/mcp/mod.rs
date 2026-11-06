@@ -100,14 +100,13 @@ pub(super) fn disk(error: io::Error) -> String {
 }
 
 /// Runs the server on the process's standard streams. `0` when the client closes stdin.
-pub fn run() -> i32 {
-    crate::lang::speak_english();
+pub fn run(args: &[String]) -> i32 {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         eprintln!("bref mcp: {info}");
         previous(info);
     }));
-    let (root, read_only) = match arguments() {
+    let (root, read_only) = match arguments(args) {
         Ok(parsed) => parsed,
         Err(message) => {
             eprintln!("bref mcp: {message}");
@@ -121,8 +120,8 @@ pub fn run() -> i32 {
     serve(&mut Server::open(root, read_only), stdin.lock(), stdout.lock())
 }
 
-fn arguments() -> Result<(Option<PathBuf>, bool), String> {
-    let mut args = std::env::args().skip(2);
+fn arguments(args: &[String]) -> Result<(Option<PathBuf>, bool), String> {
+    let mut args = args.iter().cloned();
     let mut root = None;
     let mut read_only = false;
     while let Some(arg) = args.next() {
@@ -272,12 +271,13 @@ impl Server {
     }
 
     fn need(&mut self) -> Result<&mut vault::Vault, Outcome> {
-        if self.vault.is_none() {
-            return Err(Outcome::err(self.blind.clone()));
+        match self.vault.as_mut() {
+            Some(vault) => {
+                vault.refresh();
+                Ok(vault)
+            }
+            None => Err(Outcome::err(self.blind.clone())),
         }
-        let vault = self.vault.as_mut().unwrap();
-        vault.refresh();
-        Ok(vault)
     }
 }
 

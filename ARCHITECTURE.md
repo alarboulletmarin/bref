@@ -7,7 +7,7 @@ map: where things live, which way the dependencies go, and the rules the code ke
 
 ```
 src/
-  main.rs      entry point: declares the layers, sends `bref mcp` to mcp::run(), then shell::run()
+  main.rs      entry point: declares the layers, sends `bref mcp` to mcp::run(&args), then shell::run()
   lang.rs      tr("English", "Français"), language detection, date and search-key names
   actions.rs   the app's actions, dispatched by shortcuts, menus and the palette
   logic/       pure functions: no gpui, no disk, no window
@@ -153,7 +153,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
   real macOS by CI. `BREF_RELEASES_API` points the check at a local `file://` release description,
   to try an update without publishing one.
 - **Startup**: the last note is read before the first frame, so the window appears with its content.
-  Icons are embedded in the binary. `bref mcp` never reaches that: `main` runs `mcp::run()` and
+  Icons are embedded in the binary. `bref mcp` never reaches that: `main` runs `mcp::run(&args)` and
   leaves before the window, one JSON-RPC message at a time, stdout reserved for the protocol.
 - **Agents**: the server keeps the vault's index and rereads it when the watcher signals a change.
   It writes with the same rules as the app (atomic save, trash, a taken name refused, links

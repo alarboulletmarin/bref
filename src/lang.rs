@@ -17,8 +17,16 @@ pub fn tr(en: &'static str, fr: &'static str) -> &'static str {
 
 /// English from now on, whatever the system's language: `bref mcp` talks to a model, and
 /// the library's names and templates it returns are part of what the model reads.
-pub fn speak_english() {
-    let _ = FRENCH.set(false);
+/// Called once, first thing in `main`: if a `tr` already ran the language is fixed, and this
+/// says so (false) instead of silently doing nothing.
+pub fn speak_english() -> bool {
+    choose(&FRENCH, false)
+}
+
+/// Sets the language once; false if it was already fixed to the other one.
+fn choose(cell: &OnceLock<bool>, french: bool) -> bool {
+    let _ = cell.set(french);
+    cell.get() == Some(&french)
 }
 
 #[cfg(test)]
@@ -177,6 +185,18 @@ pub fn fold(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_language_is_chosen_once() {
+        let cell = std::sync::OnceLock::new();
+        assert!(super::choose(&cell, false));
+        assert!(super::choose(&cell, false));
+        assert!(!super::choose(&cell, true), "a language fixed earlier is not replaced");
+        // A `tr` that ran first fixes the language: asking for English afterwards says no.
+        let early = std::sync::OnceLock::new();
+        early.get_or_init(|| true);
+        assert!(!super::choose(&early, false));
+    }
+
     use super::*;
 
     #[test]
