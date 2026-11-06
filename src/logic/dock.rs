@@ -182,6 +182,26 @@ mod tests {
         assert_eq!((l.right.clone(), l.right_shown.clone()), (vec![Mode::Recent], vec![Mode::Recent]));
     }
 
+    /// What the file says, as (left shown, right, right shown): old files, a tool on both sides, unknown names,
+    /// a tool shown on a side it does not live on, empty.
+    #[test]
+    fn the_layout_file_old_new_and_odd() {
+        use Mode::*;
+        let read = |text: &str| {
+            let l = parse(text);
+            (l.left_shown, l.right, l.right_shown)
+        };
+        // Before docks: everything on the left, as it was.
+        assert_eq!(read("tags split 300 0\n"), (vec![Tags], vec![], vec![]));
+        // A tool on both sides keeps the left; an unknown one is dropped; one shown on the right that
+        // does not live there is not shown.
+        assert_eq!(read("graph split 300 0 right=links,bogus,graph,links show=tags width=250\n"), (vec![Graph], vec![Links], vec![]));
+        assert_eq!(read("tree rail 260 0 width=x right=calendar show=calendar\n"), (vec![Tree], vec![Calendar], vec![Calendar]));
+        assert_eq!(read("tree split 260 0 left=links,tree,links right=links,tags show=tags,recent fold=links,zzz\n"), (vec![Links, Tree], vec![Tags], vec![Tags]));
+        // Empty or absent: the defaults.
+        assert_eq!(read(""), (vec![Tree], vec![], vec![]));
+    }
+
     #[test]
     fn plain_line_has_no_keys() {
         let l = parse("tree rail 260 0");
