@@ -545,7 +545,7 @@ impl Rows {
                 let lang = line.trim_start()[3..].trim().to_lowercase();
                 let block = &lines[i..i + len];
                 i += len + 1;
-                if lang == "mermaid" {
+                if md::is_mermaid_fence(line) {
                     match figure::mermaid(&block.join("\n"), &ink.look) {
                         Ok(svg) => self.figure(&svg, "Mermaid", 0., ink),
                         Err(e) => self.missing(format!("Mermaid ({e})"), ink),

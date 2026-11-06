@@ -975,7 +975,7 @@ impl Editor {
                 fences -= 1;
                 if opens {
                     lang = line.trim_start()[3..].trim().to_lowercase();
-                    block = (lang == "mermaid").then(|| (offset, String::new()));
+                    block = md::is_mermaid_fence(line).then(|| (offset, String::new()));
                 } else if let Some((start, source)) = block.take() {
                     // A diagram is drawn once the cursor has left the block, in a background task.
                     let editing = (start..=offset + line.len()).contains(&cursor);

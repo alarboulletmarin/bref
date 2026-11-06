@@ -272,7 +272,7 @@ impl Editor {
     /// left of the copy one.
     pub(super) fn views(&self, row: &Row) -> bool {
         let line = &self.content[row.start..row.start + row.len];
-        row.opens && line.trim_start().get(3..).is_some_and(|lang| lang.trim().eq_ignore_ascii_case("mermaid"))
+        row.opens && md::is_mermaid_fence(line)
     }
 
     pub(super) fn view_bounds(&self, row: &Row) -> Bounds<Pixels> {

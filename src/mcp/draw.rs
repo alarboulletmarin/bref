@@ -344,9 +344,7 @@ fn mermaid_blocks(text: &str) -> Vec<String> {
                 blocks.push(std::mem::take(&mut current));
                 open = false;
             } else {
-                let info = line.trim_start().trim_start_matches('`').trim();
-                let word = info.split_whitespace().next().unwrap_or("");
-                open = word.eq_ignore_ascii_case("mermaid");
+                open = crate::logic::markdown::is_mermaid_fence(line);
             }
             continue;
         }
