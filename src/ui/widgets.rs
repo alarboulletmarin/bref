@@ -260,6 +260,9 @@ pub fn group_header(id: impl Into<gpui::ElementId>, name: impl Into<SharedString
 /// How long a fade lasts: under a key repeat, so a new gesture never waits for the last one.
 pub const FADE: std::time::Duration = std::time::Duration::from_millis(130);
 
+/// How long a "copied" or "exported" confirmation stays on screen.
+pub const FLASH: std::time::Duration = std::time::Duration::from_millis(1500);
+
 /// `element` fades in when it first appears under `id` (the state lives as long as it is drawn);
 /// with `motion=off` it is drawn as is. Opacity only, so the layout never moves.
 pub fn fade_in(element: impl IntoElement + Styled + 'static, id: impl Into<gpui::ElementId>, t: &Theme) -> gpui::AnyElement {

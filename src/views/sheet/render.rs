@@ -1,5 +1,8 @@
 //! Drawing the grid: the toolbar, the rows, the cell being edited, the scroll bars.
 
+
+/// Room the page header leaves at its right when the app draws the window buttons (the pill is 106 px wide, plus its margin).
+const WINDOW_BUTTONS: f32 = 128.;
 use super::*;
 
 impl Render for Sheet {
@@ -340,7 +343,7 @@ impl Sheet {
         // The width of everything but the name: summary, pills (10 px each side), two icons, gaps, and the margins.
         let sans = || gpui::font(t.sans);
         let pills: f32 = [&delimiter, &encoding, &header].iter().map(|text| self.text_width(window, text, 12., sans()) + 20.).sum();
-        let fixed = self.text_width(window, &summary, 13., sans()) + pills + 2. * 28. + 8. * 4. + 16. * 4. + 24. + if self.client { 128. } else { 24. };
+        let fixed = self.text_width(window, &summary, 13., sans()) + pills + 2. * 28. + 8. * 4. + 16. * 4. + 24. + if self.client { WINDOW_BUTTONS } else { 24. };
         let serif = gpui::Font { weight: FontWeight::SEMIBOLD, ..gpui::font(crate::ui::assets::SERIF) };
         let room = (f32::from(self.body.size.width) + 48. - f32::from(t.px(fixed))).max(80.);
         let title = crate::views::nav::ellipsize(&title, room, |s| self.text_width(window, s, 22., serif.clone()));
@@ -350,7 +353,7 @@ impl Sheet {
             .pt(px(20.))
             .pb(px(14.))
             // Under the window badge, when the app draws its title bar.
-            .pr(px(if self.client { 128. } else { 24. }))
+            .pr(px(if self.client { WINDOW_BUTTONS } else { 24. }))
             .flex()
             // In a narrow window, settings wrap instead of sliding under the badge.
             .flex_wrap()

@@ -247,8 +247,6 @@ impl Row {
 pub struct Canvas {
     focus: FocusHandle,
     theme: Theme,
-    /// The app draws the window buttons: the toolbar leaves room for them.
-    client: bool,
     diagram: Diagram,
     selected: Vec<u32>,
     tool: Tool,
@@ -308,7 +306,6 @@ impl Canvas {
         Self {
             focus: cx.focus_handle(),
             theme,
-            client: false,
             diagram,
             selected: Vec::new(),
             tool: Tool::Select,
@@ -411,15 +408,15 @@ impl Canvas {
     }
 
     /// The theme, as the window knows it.
-    pub fn sync(&mut self, theme: Theme, client: bool) {
-        (self.theme, self.client) = (theme, client);
+    pub fn sync(&mut self, theme: Theme) {
+        self.theme = theme;
     }
 
     pub fn exported(&mut self, cx: &mut Context<Self>) {
         self.exported = true;
         cx.notify();
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(std::time::Duration::from_millis(1500)).await;
+            cx.background_executor().timer(crate::ui::widgets::FLASH).await;
             this.update(cx, |this, cx| {
                 this.exported = false;
                 cx.notify();

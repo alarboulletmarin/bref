@@ -365,7 +365,7 @@ impl Editor {
             cx.write_to_clipboard(ClipboardItem::new_string(self.content[block].to_string()));
             self.copied = Some(start);
             cx.spawn(async move |this, cx| {
-                cx.background_executor().timer(Duration::from_millis(1500)).await;
+                cx.background_executor().timer(crate::ui::widgets::FLASH).await;
                 this.update(cx, |this, cx| {
                     this.copied = None;
                     cx.notify();

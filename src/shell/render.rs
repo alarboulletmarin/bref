@@ -884,7 +884,7 @@ impl Shell {
                 note.child(sheet)
             }
             Some((_, FileKind::Drawing(canvas))) => {
-                canvas.update(cx, |canvas, _| canvas.sync(t, client));
+                canvas.update(cx, |canvas, _| canvas.sync(t));
                 note.child(canvas)
             }
             Some((_, FileKind::Svg(viewer))) => {
