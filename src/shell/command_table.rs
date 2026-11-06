@@ -785,12 +785,15 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .help(tr("Several cursors: select the word, then its next occurrence (Esc: back to one)", "Plusieurs curseurs : prendre le mot, puis son occurrence suivante (Échap : un seul)")).edit()
             .key_in("secondary-d", ctx::EDITOR),
         s::<editor::Copy>()
+            .label(tr("Copy", "Copier"))
             .help(tr("Copy", "Copier")).edit()
             .key_in("secondary-c", ctx::EDITOR),
         s::<editor::Cut>()
+            .label(tr("Cut", "Couper"))
             .help(tr("Cut", "Couper")).edit()
             .key_in("secondary-x", ctx::EDITOR),
         s::<editor::Paste>()
+            .label(tr("Paste", "Coller"))
             .help(tr("Paste text or a picture; an address over a selection makes it a link", "Coller du texte ou une image ; une adresse sur une sélection en fait un lien")).edit()
             .key_in("secondary-v", ctx::EDITOR),
         // The board from the keys: arrows go, Alt+arrows carry (before Back and Forward there).
@@ -842,6 +845,11 @@ pub(super) fn specs() -> Vec<CommandSpec> {
     all
 }
 
+/// The label of an action, from the table (it panics if the entry has none: a bug in the table).
+pub(super) fn label<A: Action>() -> &'static str {
+    specs().into_iter().find(|spec| spec.action == A::name_for_type()).and_then(|spec| spec.label).expect("an action the menus use has no label")
+}
+
 /// The default shortcuts. For the same keys, the last binding wins at equal depth, and one with
 /// no context counts as the deepest: the window's own come first, then the views', so that a
 /// view's key is never shadowed by one that holds everywhere. Within a rank, the table's order.
@@ -871,11 +879,23 @@ mod tests {
     #[test]
     fn a_palette_command_has_all_it_needs_and_an_editable_one_its_help() {
         for spec in specs() {
-            assert_eq!(spec.label.is_some(), spec.group.is_some(), "{}: label and group go together", spec.action);
-            assert!(spec.label.is_none() || spec.icon.ends_with(".svg"), "{}: a command has an icon", spec.action);
+            assert!(spec.group.is_none() || spec.label.is_some(), "{}: a palette command needs a label", spec.action);
+            assert!(spec.group.is_none() || spec.icon.ends_with(".svg"), "{}: a palette command has an icon", spec.action);
             assert!(!spec.editable || spec.help.is_some(), "{}: editable without a help line", spec.action);
             assert!(spec.label.is_none_or(|label| !label.is_empty()) && spec.help.is_none_or(|help| !help.is_empty()), "{}", spec.action);
         }
+    }
+
+    /// The context menu names its commands from the table (a missing label would panic when it opens).
+    #[test]
+    fn the_menu_s_commands_have_their_label() {
+        let labels = [
+            label::<editor::Copy>(), label::<editor::Cut>(), label::<editor::Paste>(), label::<editor::Comment>(), label::<editor::Bold>(),
+            label::<editor::Italic>(), label::<editor::Underline>(), label::<editor::Strike>(), label::<editor::Highlight>(),
+            label::<editor::InlineCode>(), label::<NewFromTemplate>(), label::<nav::NewFolder>(),
+        ];
+        assert!(labels.iter().all(|label| !label.is_empty()));
+        assert_eq!(label::<editor::Highlight>(), tr("Highlight", "Surligner"), "one word for the toolbar's and the menu's command");
     }
 
     #[test]

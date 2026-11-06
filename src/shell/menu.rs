@@ -333,6 +333,8 @@ impl Shell {
         let is_dir = menu.target.as_ref().is_none_or(|p| self.dirs.contains(p));
         let tree = self.nav.mode() == Mode::Tree;
         let many = menu.target.as_ref().is_some_and(|p| self.nav.marked().contains(p)) && self.nav.marked().len() > 1;
+        // An entry that is the command itself takes its label from the command table; one that says what it does on this target (a tab, a row, a block) keeps a shorter one.
+        use command_table::label;
         // Groups of entries; a line separates those that have any.
         let mut groups: Vec<Vec<(&'static str, Do)>> = vec![Vec::new(); 7];
         if menu.tab.is_some() {
@@ -344,9 +346,9 @@ impl Shell {
             use editor::BlockOp;
             groups[0].extend(BlockOp::ALL.into_iter().filter(|op| matches!(op, BlockOp::Turn(_))).map(|op| (op.label(), Do::Block(op))));
             groups[1].extend([BlockOp::Duplicate, BlockOp::Up, BlockOp::Down].map(|op| (op.label(), Do::Block(op))));
-            groups[2].push((tr("Copy", "Copier"), Do::Copy));
-            groups[2].push((tr("Cut", "Couper"), Do::Cut));
-            groups[2].push((tr("Comment", "Commenter"), Do::Comment));
+            groups[2].push((label::<editor::Copy>(), Do::Copy));
+            groups[2].push((label::<editor::Cut>(), Do::Cut));
+            groups[2].push((label::<editor::Comment>(), Do::Comment));
             groups[3].push((BlockOp::Delete.label(), Do::Block(BlockOp::Delete)));
         } else if let Some(link) = &menu.text {
             let web = matches!(link, Some(Link::Url(_)));
@@ -356,9 +358,9 @@ impl Shell {
             if web {
                 groups[0].push((tr("Copy the address", "Copier l'adresse"), Do::CopyAddress));
             }
-            groups[1].push((tr("Cut", "Couper"), Do::Cut));
-            groups[1].push((tr("Copy", "Copier"), Do::Copy));
-            groups[1].push((tr("Paste", "Coller"), Do::Paste));
+            groups[1].push((label::<editor::Cut>(), Do::Cut));
+            groups[1].push((label::<editor::Copy>(), Do::Copy));
+            groups[1].push((label::<editor::Paste>(), Do::Paste));
             if self.pane().editor.read(cx).in_table() {
                 // In a table: its rows, its columns, then the table.
                 use editor::TableOp::*;
@@ -369,16 +371,16 @@ impl Shell {
                 ] {
                     groups[group].extend(ops.iter().map(|&op| (op.label(), Do::Table(op))));
                 }
-                groups[5].push((tr("Comment", "Commenter"), Do::Comment));
+                groups[5].push((label::<editor::Comment>(), Do::Comment));
             } else {
-                groups[2].push((tr("Bold", "Gras"), Do::Bold));
-                groups[2].push((tr("Italic", "Italique"), Do::Italic));
-                groups[2].push((tr("Underline", "Souligné"), Do::Underline));
-                groups[2].push((tr("Strikethrough", "Barré"), Do::Strike));
-                groups[2].push((tr("Highlight", "Surligné"), Do::Highlight));
-                groups[2].push((tr("Code", "Code"), Do::Code));
+                groups[2].push((label::<editor::Bold>(), Do::Bold));
+                groups[2].push((label::<editor::Italic>(), Do::Italic));
+                groups[2].push((label::<editor::Underline>(), Do::Underline));
+                groups[2].push((label::<editor::Strike>(), Do::Strike));
+                groups[2].push((label::<editor::Highlight>(), Do::Highlight));
+                groups[2].push((label::<editor::InlineCode>(), Do::Code));
                 groups[2].push((if web { tr("Edit the link", "Modifier le lien") } else { tr("Make a link", "Faire un lien") }, Do::Link));
-                groups[2].push((if menu.commented { tr("Resolve the comment", "Résoudre le commentaire") } else { tr("Comment", "Commenter") }, Do::Comment));
+                groups[2].push((if menu.commented { tr("Resolve the comment", "Résoudre le commentaire") } else { label::<editor::Comment>() }, Do::Comment));
                 // The targeted lines, from one kind of list to another.
                 groups[3].push((tr("Bulleted list", "Liste à puces"), Do::Bullets));
                 groups[3].push((tr("Numbered list", "Liste numérotée"), Do::Numbered));
@@ -396,10 +398,10 @@ impl Shell {
             if tree && !many {
                 groups[1].push((tr("New note here", "Nouvelle note ici"), Do::NewNote));
                 if self.vault.as_ref().is_some_and(|root| vault::template_dir(root, &self.dirs).is_some()) {
-                    groups[1].push((tr("New note from a template", "Nouvelle note depuis un modèle"), Do::FromTemplate));
+                    groups[1].push((label::<NewFromTemplate>(), Do::FromTemplate));
                 }
                 groups[1].push((tr("New diagram here", "Nouveau schéma ici"), Do::NewDiagram));
-                groups[1].push((tr("New folder", "Nouveau dossier"), Do::NewFolder));
+                groups[1].push((label::<nav::NewFolder>(), Do::NewFolder));
             }
             if !is_dir || many {
                 groups[2].push((tr("Copy the [[link]]", "Copier le [[lien]]"), Do::CopyLink));
