@@ -147,9 +147,9 @@ fn the_board_from_the_keys(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     let note = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
-    let at = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.pane().board.at);
+    let at = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.pane().board.at());
     let cards = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| kanban::columns(s.pane().editor.read(cx).text()).iter().map(|c| c.cards.iter().map(|k| format!("{}{}", k.text, if k.done { "✓" } else { "" })).collect::<Vec<_>>()).collect::<Vec<_>>());
-    assert!(cx.update(|window, cx| shell.read(cx).pane().board.focus.is_focused(window)));
+    assert!(cx.update(|window, cx| shell.read(cx).pane().board.focus().is_focused(window)));
 
     // The first arrow lands on the first card; Alt+Down carries it under B, Alt+Right into C1.
     cx.simulate_keystrokes("down");
@@ -196,13 +196,13 @@ fn the_board_from_the_keys(cx: &mut TestAppContext) {
     assert!(last.left() >= px(0.) && last.right() <= width, "{last:?} in a window {width:?} wide");
     // One more: "Add a column", then nothing further; Enter there opens the field of a new column.
     cx.simulate_keystrokes("right right enter");
-    assert_eq!(shell.read_with(cx, |s, _| s.pane().board.field.as_ref().map(|f| f.0)), Some(kanban::Slot::NewColumn));
+    assert_eq!(shell.read_with(cx, |s, _| s.pane().board.field().as_ref().map(|f| f.0)), Some(kanban::Slot::NewColumn));
     cx.simulate_keystrokes("escape");
 
     // Back to the first column, a card held near the right edge scrolls the board toward it.
     cx.simulate_keystrokes("left left left left left left left left left left left left");
     cx.run_until_parked();
-    let offset = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.pane().board.scroll.offset().x);
+    let offset = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.pane().board.scroll().offset().x);
     let start = offset(cx);
     let card = cx.debug_bounds("card-0-0").unwrap();
     let (left, none) = (gpui::MouseButton::Left, gpui::Modifiers::none());

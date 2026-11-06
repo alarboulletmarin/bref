@@ -104,8 +104,8 @@ impl Shell {
                 self.pane_mut().h1 = vault::h1_of(&text);
                 self.pane_mut().origin = Some(vault::stem(path));
                 // A reloaded note keeps its view; another one opens as a board if it is one.
-                self.pane_mut().board.text &= self.pane_mut().path.as_deref() == Some(path);
-                self.pane_mut().board.was = kanban::is_board(&text);
+                let same = self.pane_mut().path.as_deref() == Some(path);
+                self.pane_mut().board.reloaded(same, kanban::is_board(&text));
                 self.pane_mut().path = Some(path.to_path_buf());
                 self.pane_mut().base = text.clone();
                 self.calm();
@@ -203,7 +203,7 @@ impl Shell {
         self.pane_mut().new_dir = None;
         self.pane_mut().fresh = true;
         self.pane_mut().dirty = !text.is_empty();
-        (self.pane_mut().board.text, self.pane_mut().board.was) = (false, kanban::is_board(&text));
+        self.pane_mut().board.reloaded(false, kanban::is_board(&text));
         let cursor = text.len();
         self.pane().editor.update(cx, |e, cx| e.load(text, cursor, cx));
         self.push_dirs(cx);
@@ -443,8 +443,7 @@ impl Shell {
                     // The board key was just written into the text: stay there, the
                     // corner button shows the board when wanted.
                     let board = kanban::is_board(this.pane().editor.read(cx).text());
-                    this.pane_mut().board.text |= board && !this.pane_mut().board.was;
-                    this.pane_mut().board.was = board;
+                    this.pane_mut().board.typed(board);
                     this.keep_preview();
                     this.pane_mut().dirty = true;
                 });

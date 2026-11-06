@@ -381,10 +381,10 @@ fn an_empty_board_says_so(cx: &mut TestAppContext) {
     let pane = cx.debug_bounds("pane-0").unwrap();
     assert!(said.left() >= pane.left() && said.right() <= pane.right(), "{said:?} in {pane:?}");
     // Its button opens the field for the first column.
-    assert!(shell.read_with(cx, |s, _| s.pane().board.field.is_none()));
+    assert!(shell.read_with(cx, |s, _| s.pane().board.field().is_none()));
     cx.simulate_click(gpui::point(said.center().x, said.center().y + px(14.)), gpui::Modifiers::none());
     settle(cx);
-    assert!(shell.read_with(cx, |s, _| s.pane().board.field.is_some()), "a click on « Add a column » asks for its name");
+    assert!(shell.read_with(cx, |s, _| s.pane().board.field().is_some()), "a click on « Add a column » asks for its name");
     let _ = fs::remove_dir_all(&root);
 }
 

@@ -123,7 +123,7 @@ impl Shell {
     pub(super) fn note_aim(&self, pane: usize, at: Point<Pixels>, items: usize, cx: &App) -> Option<DropAim> {
         let shown = self.panes.get(pane)?;
         let editor = shown.editor.read(cx);
-        let board = kanban::is_board(editor.text()) && !shown.board.text;
+        let board = kanban::is_board(editor.text()) && !shown.board.shows_text();
         let writes = shown.shows_note() && !board && self.vault.is_some();
         writes.then(|| DropAim { aim: Aim::Note { pane, at: editor.drop_point(at), version: editor.revision() }, items, pointer: at })
     }

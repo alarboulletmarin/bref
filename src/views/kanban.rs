@@ -12,27 +12,101 @@ use crate::{ui::theme::Theme, views::field::Field};
 
 /// What a pane keeps of the board it shows.
 pub struct Board {
-        /// The open note is a kanban board whose text we are looking at: we asked for it, or we
-        /// just wrote its key (typing `kanban: true` does not leave the text).
-    pub text: bool,
-        /// The note was a board at its last keystroke.
-    pub was: bool,
-        /// Card being moved in the board, and where it would land (column, rank).
-    pub drag: Option<((usize, usize), (usize, usize))>,
-        /// Width of a board card, measured when drawn.
-    pub card: std::rc::Rc<std::cell::Cell<Pixels>>,
-    pub scroll: gpui::ScrollHandle,
-        /// What is being typed in the board, and its input field.
-    pub field: Option<(Slot, Entity<Field>)>,
-        /// The board receives input in place of the note it hides.
-    pub focus: FocusHandle,
+    /// The open note is a kanban board whose text we are looking at: we asked for it, or we
+    /// just wrote its key (typing `kanban: true` does not leave the text).
+    text: bool,
+    /// The note was a board at its last keystroke.
+    was: bool,
+    /// Card being moved in the board, and where it would land (column, rank).
+    drag: Option<((usize, usize), (usize, usize))>,
+    /// Width of a board card, measured when drawn.
+    card: std::rc::Rc<std::cell::Cell<Pixels>>,
+    scroll: gpui::ScrollHandle,
+    /// What is being typed in the board, and its input field.
+    field: Option<(Slot, Entity<Field>)>,
+    /// The board receives input in place of the note it hides.
+    focus: FocusHandle,
     /// The spot the keys are on (see `walk`); `None` until an arrow is pressed, and after a click.
-    pub at: Option<(usize, usize)>,
+    at: Option<(usize, usize)>,
 }
 
 impl Board {
     pub fn new(cx: &mut App) -> Self {
         Board { text: false, was: false, drag: None, card: Default::default(), scroll: Default::default(), field: None, focus: cx.focus_handle(), at: None }
+    }
+
+    /// The note's text is shown in place of the board.
+    pub fn shows_text(&self) -> bool {
+        self.text
+    }
+
+    /// Switches between the board and the text (the open field is dropped); true: the text.
+    pub fn toggle_text(&mut self) -> bool {
+        self.field = None;
+        self.text = !self.text;
+        self.text
+    }
+
+    /// A note was loaded or reloaded; `same` if it is the one that was open (the choice of the
+    /// text holds), `is_board` if it is a board.
+    pub fn reloaded(&mut self, same: bool, is_board: bool) {
+        self.text &= same;
+        self.was = is_board;
+    }
+
+    /// A keystroke left the note a board or not: a board that has just become one (the key was
+    /// typed) stays on its text.
+    pub fn typed(&mut self, is_board: bool) {
+        self.text |= is_board && !self.was;
+        self.was = is_board;
+    }
+
+    pub fn field(&self) -> &Option<(Slot, Entity<Field>)> {
+        &self.field
+    }
+
+    pub fn open_field(&mut self, slot: Slot, field: Entity<Field>) {
+        self.field = Some((slot, field));
+    }
+
+    pub fn close_field(&mut self) {
+        self.field = None;
+    }
+
+    pub fn take_field(&mut self) -> Option<(Slot, Entity<Field>)> {
+        self.field.take()
+    }
+
+    pub fn drag(&self) -> Option<((usize, usize), (usize, usize))> {
+        self.drag
+    }
+
+    pub fn set_drag(&mut self, drag: Option<((usize, usize), (usize, usize))>) {
+        self.drag = drag;
+    }
+
+    pub fn take_drag(&mut self) -> Option<((usize, usize), (usize, usize))> {
+        self.drag.take()
+    }
+
+    pub fn at(&self) -> Option<(usize, usize)> {
+        self.at
+    }
+
+    pub fn set_at(&mut self, at: Option<(usize, usize)>) {
+        self.at = at;
+    }
+
+    pub fn card(&self) -> &std::rc::Rc<std::cell::Cell<Pixels>> {
+        &self.card
+    }
+
+    pub fn scroll(&self) -> &gpui::ScrollHandle {
+        &self.scroll
+    }
+
+    pub fn focus(&self) -> &FocusHandle {
+        &self.focus
     }
 }
 

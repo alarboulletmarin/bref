@@ -18,7 +18,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext, here: &Path) {
     cx.simulate_input("kanban");
     cx.simulate_keystrokes("down enter");
     cx.run_until_parked();
-    let on_board = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| shell.read(cx).pane().board.focus.is_focused(window));
+    let on_board = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| shell.read(cx).pane().board.focus().is_focused(window));
     assert!(shell.read_with(cx, |s, cx| s.board_shown(cx)) && on_board(cx));
     assert_eq!(text(cx), "---\nkanban: true\n---\n# Tableau\n\n## À faire\n\n## En cours\n\n## Fait\n");
     shell.update_in(cx, |s, window, cx| s.board_write(kanban::Slot::New(0), window, cx));
@@ -27,7 +27,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext, here: &Path) {
     cx.simulate_input("Relire");
     cx.simulate_keystrokes("backspace enter escape");
     cx.run_until_parked();
-    assert!(text(cx).contains("## À faire\n- [ ] Écrire\n- [ ] Relir\n\n## En cours") && shell.read_with(cx, |s, cx| s.pane().board.field.is_none() && s.board_shown(cx)) && on_board(cx));
+    assert!(text(cx).contains("## À faire\n- [ ] Écrire\n- [ ] Relir\n\n## En cours") && shell.read_with(cx, |s, cx| s.pane().board.field().is_none() && s.board_shown(cx)) && on_board(cx));
     shell.update_in(cx, |s, window, cx| s.board_write(kanban::Slot::Card(0, 1), window, cx));
     cx.simulate_input("e");
     cx.simulate_keystrokes("enter");
@@ -52,7 +52,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext, here: &Path) {
         // A card picked up with the mouse leaves its place; the place it would take follows the pointer:
         // below a column, its bottom; over a card, before or after it depending on the half aimed at.
     cx.run_until_parked();
-    let held = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.pane().board.drag);
+    let held = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.pane().board.drag());
     let (none, left) = (gpui::Modifiers::none(), gpui::MouseButton::Left);
     let (first, second) = (cx.debug_bounds("card-0-0").unwrap(), cx.debug_bounds("card-0-1").unwrap());
     let under = cx.debug_bounds("column-rest-2").unwrap().center();

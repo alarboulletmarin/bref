@@ -696,10 +696,10 @@ impl Shell {
         // board hides the note, which must no longer receive keystrokes.
         let board = self.board_shown(cx);
         if board && self.pane().editor.focus_handle(cx).is_focused(window) {
-            window.focus(&self.pane().board.focus);
+            window.focus(&self.pane().board.focus());
         }
         if !cx.has_active_drag() {
-            self.pane_mut().board.drag = None;
+            self.pane_mut().board.set_drag(None);
         }
         // The list page closed with input in its filter or one of its cells: nothing
         // receives it anymore, it goes back to the note.
@@ -707,9 +707,9 @@ impl Shell {
             window.focus(&self.pane().editor.focus_handle(cx));
         }
         if !board {
-            self.pane_mut().board.field = None;
+            self.pane_mut().board.close_field();
             // The board left (another note opens), input goes back to the note.
-            if self.pane().board.focus.is_focused(window) {
+            if self.pane().board.focus().is_focused(window) {
                 window.focus(&self.pane().editor.focus_handle(cx));
             }
         }
