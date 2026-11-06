@@ -93,7 +93,7 @@ impl Canvas {
             let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height) - DOCK - TOP);
             match self.diagram.bounds() {
                 Some((x0, y0, x1, y1)) => {
-                    self.zoom = (w / (x1 - x0 + 80.)).min(h / (y1 - y0 + 80.)).clamp(0.2, 1.);
+                    self.zoom = (w / (x1 - x0 + 80.)).min(h / (y1 - y0 + 80.)).clamp(ZOOM.min, 1.);
                     self.pan = (w / 2. - (x0 + x1) / 2. * self.zoom, TOP + h / 2. - (y0 + y1) / 2. * self.zoom);
                 }
                 None => (self.pan, self.zoom) = ((w / 2., TOP + h / 2.), 1.),

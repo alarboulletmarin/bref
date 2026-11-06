@@ -483,13 +483,13 @@ impl Palette {
         self.items.iter().filter_map(|item| if let &Item::Command(n) = item { Some(self.commands[n].action) } else { None }).collect()
     }
 
-    #[cfg(test)]
     /// What is typed.
     #[cfg(test)]
     pub fn typed_text(&self) -> &str {
         &self.query.text
     }
 
+    #[cfg(test)]
     pub fn listed(&self) -> usize {
         self.items.len()
     }

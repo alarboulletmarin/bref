@@ -16,6 +16,7 @@ use gpui::{
 use resvg::usvg;
 
 use crate::{
+    logic::zoom,
     ui::theme::Theme,
     views::canvas::{Cancel, Down, Left, Right, Up, ZoomFit, ZoomIn, ZoomOut},
     ui::widgets::{button, tip},
@@ -37,7 +38,7 @@ const KEPT: usize = 64;
 /// Most tiles drawn at once: zooming fast does not pile up hundreds of them.
 const FLYING: usize = 8;
 /// Allowed zoom: from 5% to 800%.
-const ZOOM: (f32, f32) = (0.05, 8.);
+const ZOOM: zoom::Limits = zoom::Limits::new(0.05, 8.);
 
 /// The SVG read, made readable and parsed, in a theme's colors.
 pub struct Doc {
@@ -242,10 +243,7 @@ impl Viewer {
 
     /// Zooms around this point of the view (pixels from its corner).
     fn zoom_at(&mut self, zoom: f32, (mx, my): (f32, f32), cx: &mut Context<Self>) {
-        let zoom = zoom.clamp(ZOOM.0, ZOOM.1);
-        let k = zoom / self.zoom;
-        self.pan = (mx - (mx - self.pan.0) * k, my - (my - self.pan.1) * k);
-        self.zoom = zoom;
+        (self.zoom, self.pan) = zoom::zoom_at(self.zoom, self.pan, zoom, ZOOM, (mx, my));
         cx.notify();
     }
 
@@ -265,7 +263,7 @@ impl Viewer {
         if e.modifiers.secondary() {
             let o = self.bounds.origin;
             let at = (f32::from(e.position.x - o.x), f32::from(e.position.y - o.y));
-            self.zoom_at(self.zoom * (f32::from(delta.y) * 0.004).exp(), at, cx);
+            self.zoom_at(zoom::wheel(self.zoom, f32::from(delta.y)), at, cx);
         } else {
             self.nudge(f32::from(delta.x) / 80., f32::from(delta.y) / 80., cx);
         }
@@ -276,7 +274,7 @@ impl Viewer {
     fn frame(&mut self, (w, h): (f32, f32)) {
         let (bw, bh) = (f32::from(self.bounds.size.width), f32::from(self.bounds.size.height));
         let margin = 24.;
-        self.zoom = ((bw - 2. * margin) / w.max(1.)).clamp(ZOOM.0, 1.);
+        self.zoom = ((bw - 2. * margin) / w.max(1.)).clamp(ZOOM.min, 1.);
         let top = if h * self.zoom + 2. * margin <= bh { (bh - h * self.zoom) / 2. } else { margin };
         self.pan = ((bw - w * self.zoom) / 2., top);
     }

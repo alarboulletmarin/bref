@@ -20,6 +20,7 @@ use crate::{
     views::nav::{Fold, Next, Open, Prev, Unfold},
     platform::vault,
     logic::note::Note,
+    logic::zoom,
 };
 pub use crate::logic::graph::image_name;
 use crate::logic::graph::{HUB, SETTLE, arrange, edges, follow, node_size, spiral};
@@ -28,6 +29,8 @@ actions!(graph, [Cycle]);
 
 /// Pixels per layout unit below which names are hidden.
 const LABEL_ZOOM: f32 = 30.;
+/// How far the graph zooms out and in (pixels per unit of the layout).
+const ZOOM: zoom::Limits = zoom::Limits::new(4., 240.);
 
 pub enum GraphEvent {
     /// A node is selected: the note can show as a preview.
@@ -335,12 +338,11 @@ impl Graph {
 
     /// The wheel zooms around the pointer.
     fn scroll(&mut self, e: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let zoom = (self.zoom * (f32::from(e.delta.pixel_delta(px(26.)).y) * 0.004).exp()).clamp(4., 240.);
         let c = self.bounds.center();
-        let (mx, my) = (f32::from(e.position.x - c.x), f32::from(e.position.y - c.y));
-        let k = zoom / self.zoom;
-        self.pan = (mx - (mx - self.pan.0) * k, my - (my - self.pan.1) * k);
-        (self.zoom, self.aim) = (zoom, None);
+        let at = (f32::from(e.position.x - c.x), f32::from(e.position.y - c.y));
+        let wanted = zoom::wheel(self.zoom, f32::from(e.delta.pixel_delta(px(26.)).y));
+        (self.zoom, self.pan) = zoom::zoom_at(self.zoom, self.pan, wanted, ZOOM, at);
+        self.aim = None;
         cx.notify();
     }
 

@@ -14,6 +14,9 @@ use std::ops::Range;
 /// Whole copies of the diagram are kept, so fewer steps than the other surfaces.
 const UNDO_DEPTH: usize = 100;
 
+/// How far the canvas zooms out and in.
+const ZOOM: zoom::Limits = zoom::Limits::new(0.2, 4.);
+
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, ElementInputHandler, EntityInputHandler,
     EventEmitter, FocusHandle, Focusable, FontStyle, FontWeight, Hsla, MouseButton, MouseDownEvent, MouseMoveEvent,
@@ -27,6 +30,7 @@ use crate::{
     logic::library::{self, Preset},
     logic::relation::Relation,
     logic::undo::History,
+    logic::zoom,
     logic::richtext::{self, Span},
     ui::line::{self as input, Line as Input, To},
     ui::widgets::{button, tip},

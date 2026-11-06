@@ -96,11 +96,8 @@ impl Canvas {
 
     /// Zooms around the centre of the view.
     pub(super) fn zoom_by(&mut self, by: f32, cx: &mut Context<Self>) {
-        let zoom = (self.zoom * by).clamp(0.2, 4.);
-        let (mx, my) = (f32::from(self.bounds.size.width) / 2., f32::from(self.bounds.size.height) / 2.);
-        let k = zoom / self.zoom;
-        self.pan = (mx - (mx - self.pan.0) * k, my - (my - self.pan.1) * k);
-        self.zoom = zoom;
+        let middle = (f32::from(self.bounds.size.width) / 2., f32::from(self.bounds.size.height) / 2.);
+        (self.zoom, self.pan) = zoom::zoom_at(self.zoom, self.pan, self.zoom * by, ZOOM, middle);
         cx.notify();
     }
 
@@ -533,12 +530,9 @@ impl Canvas {
     pub(super) fn scroll(&mut self, e: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
         let delta = e.delta.pixel_delta(px(26.));
         if e.modifiers.secondary() {
-            let zoom = (self.zoom * (f32::from(delta.y) * 0.004).exp()).clamp(0.2, 4.);
             let o = self.bounds.origin;
-            let (mx, my) = (f32::from(e.position.x - o.x), f32::from(e.position.y - o.y));
-            let k = zoom / self.zoom;
-            self.pan = (mx - (mx - self.pan.0) * k, my - (my - self.pan.1) * k);
-            self.zoom = zoom;
+            let at = (f32::from(e.position.x - o.x), f32::from(e.position.y - o.y));
+            (self.zoom, self.pan) = zoom::zoom_at(self.zoom, self.pan, zoom::wheel(self.zoom, f32::from(delta.y)), ZOOM, at);
         } else {
             self.pan.0 += f32::from(delta.x);
             self.pan.1 += f32::from(delta.y);
