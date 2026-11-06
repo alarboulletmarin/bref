@@ -217,7 +217,7 @@ fn the_vault_search_holds_its_place(cx: &mut TestAppContext) {
     let _ = fs::remove_dir_all(&root);
 }
 
-/// 5 000 notes: a keystroke in the search stays quick, the results come in the background.
+/// 5 000 notes: a keystroke in the search does not wait for the results, which come in the background.
 #[gpui::test]
 fn the_vault_search_of_5000_notes(cx: &mut TestAppContext) {
     let (root, shell, cx, _config) = start(cx, "vault-find-5000");
@@ -227,16 +227,13 @@ fn the_vault_search_of_5000_notes(cx: &mut TestAppContext) {
     shell.update(cx, |s, cx| s.rescan(&root, cx));
     cx.run_until_parked();
     cx.simulate_keystrokes("secondary-shift-f");
-    // What the search adds to a keystroke: starting it, without waiting for the results (the window's drawing,
-    // slow in a debug build on a shared machine, is not counted).
+    // A keystroke only starts the search: right after it, before anything runs in the background, no
+    // result is there yet (a search done on the spot would already show its 111 notes). They come after.
     let query = shell.read_with(cx, |s, _| s.vault_fields().unwrap().0);
     query.update(cx, |field, cx| field.set("numéro 42", cx));
-    let begun = Instant::now();
     shell.update(cx, |s, cx| s.vault_search(cx));
-    let typed = begun.elapsed();
-    let found = Instant::now();
+    let started = shell.read_with(cx, |s, cx| s.vault_state(cx)).map(|s| (s.1, s.2));
+    assert_eq!(started, Some((0, 0)), "the keystroke waited for the results");
     assert_eq!(state(&shell, cx).map(|s| (s.1, s.2)), Some((111, 111)));
-    eprintln!("5 000 notes: keystroke {typed:?}, results {:?}", found.elapsed());
-    assert!(typed < Duration::from_millis(50), "a keystroke took {typed:?}");
     let _ = fs::remove_dir_all(&root);
 }
