@@ -414,7 +414,7 @@ fn sequence(lines: &[&str]) -> Converted {
             }
         }
     }
-    d.fit_sequence();
+    d.normalise();
     Converted { diagram: d, skipped }
 }
 

@@ -228,7 +228,7 @@ fn sequence_diagram() -> Diagram {
     send(&mut d, 2, 1, Relation::Dependency, "user");
     send(&mut d, 1, 1, Relation::Sync, tr("check(password)", "vérifier(mot de passe)"));
     send(&mut d, 1, 0, Relation::Dependency, "token");
-    d.fit_sequence();
+    d.normalise();
     d
 }
 

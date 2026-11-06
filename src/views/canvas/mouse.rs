@@ -421,7 +421,7 @@ impl Canvas {
                     self.remember();
                 }
                 self.diagram.reorder(id, to);
-                self.diagram.fit_sequence();
+                self.diagram.normalise();
                 self.drag = Drag::Reorder { id, begun: true };
             }
             Drag::Along { id, slot, begun } => {

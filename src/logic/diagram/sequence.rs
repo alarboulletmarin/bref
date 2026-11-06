@@ -470,7 +470,7 @@ impl Diagram {
             }
         }
         // A fragment comes after what it holds the shapes of in the drawing order: it is under the lifelines' marks.
-        self.fit_sequence();
+        self.normalise();
         Some(id)
     }
 
