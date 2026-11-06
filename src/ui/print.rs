@@ -16,6 +16,7 @@ use crate::lang::tr;
 use crate::logic::diagram::Diagram;
 use crate::logic::markdown::{self as md, Kind, Link};
 use crate::ui::{figure, svg, theme};
+use crate::ui::assets::{FONT_FILES, MONO_AT, SANS_AT, SERIF_AT};
 
 /// A4, in points.
 pub const PAGE: (f32, f32) = (595.28, 841.89);
@@ -96,6 +97,7 @@ impl Ink {
         };
         let mut look = figure::Look::of(&t);
         look.font = SANS.into();
+        look.fonts = crate::ui::assets::APP_FONTS;
         look.bg = "#ffffff".into();
         Ink {
             text: hex(t.text),
@@ -114,8 +116,10 @@ impl Ink {
 
 // ----- Measuring: the advances of the app's fonts, with no shaping (no kerning).
 
-static FACES: LazyLock<Vec<Face<'static>>> =
-    LazyLock::new(|| crate::ui::assets::FONT_FILES.iter().filter_map(|data| Face::parse(data, 0).ok()).collect());
+/// One slot per file of `FONT_FILES`, in the same order: a file that fails to parse leaves its own slot empty
+/// and moves no other face.
+static FACES: LazyLock<[Option<Face<'static>>; FONT_FILES.len()]> =
+    LazyLock::new(|| std::array::from_fn(|i| Face::parse(FONT_FILES[i], 0).ok()));
 
 /// Font of a piece of text: the base (body or heading) and the inline styles.
 #[derive(Clone, Copy, PartialEq)]
@@ -128,9 +132,9 @@ struct Font {
 fn face(style: u16, font: Font) -> usize {
     let (bold, italic) = (style & md::BOLD != 0, style & md::ITALIC != 0);
     match () {
-        _ if style & md::CODE != 0 => 4 + italic as usize + 2 * bold as usize,
-        _ if font.serif => 8 + italic as usize,
-        _ => italic as usize + 2 * bold as usize,
+        _ if style & md::CODE != 0 => MONO_AT + italic as usize + 2 * bold as usize,
+        _ if font.serif => SERIF_AT + italic as usize,
+        _ => SANS_AT + italic as usize + 2 * bold as usize,
     }
 }
 
@@ -149,7 +153,7 @@ fn advance(c: char, style: u16, font: Font) -> f32 {
         Some(2) => true,
         _ => false,
     };
-    let Some(f) = FACES.get(face(style, font)) else { return size * 0.6 };
+    let Some(f) = FACES[face(style, font)].as_ref() else { return size * 0.6 };
     match f.glyph_index(c).and_then(|g| f.glyph_hor_advance(g)) {
         Some(a) => a as f32 / f.units_per_em() as f32 * size,
         None if wide => size,
@@ -185,7 +189,7 @@ const BOX: char = '\u{FFFD}';
 /// A character of the emoji ranges that the app's text font does not draw.
 fn is_emoji(c: char) -> bool {
     let symbol = matches!(c, '\u{2300}'..='\u{23FF}' | '\u{2600}'..='\u{27BF}' | '\u{2B00}'..='\u{2BFF}');
-    matches!(c, '\u{1F000}'..='\u{1FAFF}') || symbol && FACES.first().is_some_and(|f| f.glyph_index(c).is_none())
+    matches!(c, '\u{1F000}'..='\u{1FAFF}') || symbol && FACES[SANS_AT].as_ref().is_some_and(|f| f.glyph_index(c).is_none())
 }
 
 /// Colour emoji cannot go in a PDF font (their font cannot be subset, the whole export would fail):
@@ -338,7 +342,7 @@ fn draw_line(svg: &mut String, links: &mut Vec<([f32; 4], String)>, text: &Inlin
     while i < glyphs.len() {
         // A character the app's font lacks is drawn on its own: the font found for it would
         // otherwise draw the whole piece.
-        let own = |g: &Glyph| g.c == ' ' || FACES.get(face(g.style, font)).is_some_and(|f| f.glyph_index(g.c).is_some());
+        let own = |g: &Glyph| g.c == ' ' || FACES[face(g.style, font)].as_ref().is_some_and(|f| f.glyph_index(g.c).is_some());
         let (style, link, mark, has) = (glyphs[i].style, glyphs[i].link, glyphs[i].mark, own(&glyphs[i]));
         let n = glyphs[i..].iter().take_while(|g| g.style == style && g.link == link && g.mark == mark && own(g) == has).count();
         let piece = &glyphs[i..i + n];
@@ -472,7 +476,7 @@ impl Rows {
 
     /// An SVG figure, at its own size (CSS pixels).
     fn figure(&mut self, svg: &str, what: &str, indent: f32, ink: &Ink) {
-        match svg::parse(svg).map(|t| (t.size().width() * PX, t.size().height() * PX)) {
+        match svg::parse(svg, crate::ui::assets::APP_FONTS).map(|t| (t.size().width() * PX, t.size().height() * PX)) {
             Some(size) => self.picture(svg.as_bytes(), "image/svg+xml", size, indent),
             None => self.missing(what.to_string(), ink),
         }
@@ -775,7 +779,7 @@ pub fn picture(bytes: &[u8]) -> Option<String> {
 
 /// Size of a raster picture, in points (a pixel for a CSS pixel).
 fn raster_size(bytes: &[u8]) -> Option<(f32, f32)> {
-    let b = svg::parse(&picture(bytes)?)?.root().abs_bounding_box();
+    let b = svg::parse(&picture(bytes)?, crate::ui::assets::APP_FONTS)?.root().abs_bounding_box();
     (b.width() > 0. && b.height() > 0.).then(|| (b.width() * PX, b.height() * PX))
 }
 
@@ -872,7 +876,7 @@ mod tests {
         let printed = print("", &none);
         assert_eq!(printed.pages.len(), 1);
         assert!(printed.missing.is_empty());
-        assert!(svg::parse(&printed.pages[0].svg).is_some());
+        assert!(svg::parse(&printed.pages[0].svg, crate::ui::assets::APP_FONTS).is_some());
     }
 
     #[test]
@@ -1009,7 +1013,7 @@ mod tests {
         // Joined, toned, flagged, keycap, variant: one box per emoji as seen.
         assert_eq!(shown("👩‍💻 👍🏽 ❤️ #️⃣"), ("� � � #".into(), 3));
         assert_eq!(shown("é 漢 → ✓ 1+1"), ("é 漢 → ✓ 1+1".into(), 0));
-        assert!(FACES[0].glyph_index(BOX).is_some(), "the box is in the app's font");
+        assert!(FACES[SANS_AT].as_ref().unwrap().glyph_index(BOX).is_some(), "the box is in the app's font");
         let printed = print("# 🎉\n```\n🎉🎉\n```\n| 🎉 |\n|---|\n", &none);
         assert_eq!(printed.missing, ["4 emoji (�)"]);
     }
@@ -1026,7 +1030,7 @@ mod tests {
     fn every_page_is_readable_svg() {
         let text = "# Été 日本 👩‍💻\n- [ ] tâche\n- [x] faite\n1. un\n> [!note] Attention <&>\n| a | b |\n|---|---|\n| 1 | 2 |\n---\n";
         for page in print(text, &none).pages {
-            assert!(svg::parse(&page.svg).is_some(), "{}", page.svg);
+            assert!(svg::parse(&page.svg, crate::ui::assets::APP_FONTS).is_some(), "{}", page.svg);
         }
     }
 }

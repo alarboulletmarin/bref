@@ -26,7 +26,7 @@ use crate::{
     logic::richtext::{self, Span},
     ui::line::{self as input, Line as Input, To},
     ui::widgets::{button, tip},
-    ui::assets::{mono, sans}, lang::tr,
+    lang::tr,
 };
 
 actions!(canvas, [ZoomIn, ZoomOut, ZoomFit, Erase, EraseNext, Duplicate, SelectAll, Undo, Redo, Confirm, Cancel, Left, Right, Up, Down, SelectUp, SelectDown, Paste, NextText]);

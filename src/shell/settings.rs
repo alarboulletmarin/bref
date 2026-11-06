@@ -6,7 +6,6 @@ use super::*;
 impl Shell {
     /// Applies the appearance settings to the whole window.
     pub(super) fn restyle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        apply_fonts(&self.prefs);
         let theme = Theme::of(&self.prefs, window.appearance());
         self.theme = theme;
         for pane in &self.panes {

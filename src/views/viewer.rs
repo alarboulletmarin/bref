@@ -91,7 +91,7 @@ impl Asset for Load {
                 }
                 Source::Raster(_) => return None,
             };
-            let tree = svg::parse(&svg)?;
+            let tree = svg::parse(&svg, load.look.fonts)?;
             let mut hasher = DefaultHasher::new();
             load.hash(&mut hasher);
             Some(Arc::new(Doc { tree, id: hasher.finish() }))

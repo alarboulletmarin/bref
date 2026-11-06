@@ -15,6 +15,7 @@ pub(super) struct Job {
     pub(super) room: f32,
     pub(super) density: f32,
     pub(super) bg: [u8; 3],
+    pub(super) fonts: crate::ui::assets::Fonts,
 }
 
 impl Job {
@@ -37,7 +38,7 @@ impl gpui::Asset for Job {
     #[allow(clippy::manual_async_fn)]
     fn load(job: Self, _: &mut App) -> impl Future<Output = Drawing> + Send + 'static {
         async move {
-            let tree = svg::parse(&(job.make)()?)?;
+            let tree = svg::parse(&(job.make)()?, job.fonts)?;
             let (w, h) = (tree.size().width(), tree.size().height());
             // No finer than the screen at the largest display width: a very wide
             // or very tall diagram weighs no more than what is seen of it.
@@ -162,7 +163,7 @@ impl Editor {
         let label = |text: &str, color, window: &mut Window| {
             let run = TextRun {
                 len: text.len(),
-                font: font(sans()),
+                font: font(t.sans),
                 color,
                 background_color: None,
                 underline: None,

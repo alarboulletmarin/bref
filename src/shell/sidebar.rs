@@ -624,7 +624,7 @@ impl Shell {
                         if text.is_empty() {
                             return 0.;
                         }
-                        let run = gpui::TextRun { len: text.len(), font: gpui::font(crate::ui::assets::sans()), color: t.text, background_color: None, underline: None, strikethrough: None };
+                        let run = gpui::TextRun { len: text.len(), font: gpui::font(t.sans), color: t.text, background_color: None, underline: None, strikethrough: None };
                         let line = window.text_system().shape_line(gpui::SharedString::from(text.to_string()), t.px(size), &[run], None);
                         f32::from(line.width).ceil() + 1.
                     };

@@ -18,7 +18,6 @@ pub(super) struct Capture {
 impl Capture {
     pub(super) fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let prefs = Prefs::parse(&config::load(config::File::Settings));
-        apply_fonts(&prefs);
         let theme = Theme::of(&prefs, window.appearance());
         let field = Self::ask(tr("Add to today's note", "Ajouter à la note du jour").into(), "", theme, window, cx);
         Self { root, theme, field }
@@ -48,7 +47,7 @@ impl Capture {
 
 impl Render for Capture {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().font_family(sans()).text_color(self.theme.text).child(self.field.clone())
+        div().size_full().font_family(self.theme.sans).text_color(self.theme.text).child(self.field.clone())
     }
 }
 

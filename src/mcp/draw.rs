@@ -5,6 +5,8 @@ use std::{collections::{HashMap, HashSet}, fs};
 
 use serde_json::{Value, json};
 
+use crate::ui::assets::APP_FONTS;
+
 use crate::{
     logic::{
         diagram::{self, Diagram, End, Form, Head, Route},
@@ -290,9 +292,9 @@ fn mermaid_kind(source: &str) -> &'static str {
 
 fn look(dark: bool) -> figure::Look {
     if dark {
-        figure::Look { dark: true, bg: "#1e1e1e".into(), fill: "#2a2a2a".into(), text: "#e6e6e6".into(), line: "#9a9a9a".into(), font: "sans-serif".into() }
+        figure::Look { dark: true, bg: "#1e1e1e".into(), fill: "#2a2a2a".into(), text: "#e6e6e6".into(), line: "#9a9a9a".into(), font: "sans-serif".into(), fonts: APP_FONTS }
     } else {
-        figure::Look { dark: false, bg: "#ffffff".into(), fill: "#f3f3f3".into(), text: "#1c1c1c".into(), line: "#5c5c5c".into(), font: "sans-serif".into() }
+        figure::Look { dark: false, bg: "#ffffff".into(), fill: "#f3f3f3".into(), text: "#1c1c1c".into(), line: "#5c5c5c".into(), font: "sans-serif".into(), fonts: APP_FONTS }
     }
 }
 
@@ -358,11 +360,11 @@ fn mermaid_blocks(text: &str) -> Vec<String> {
 
 /// A dark render is drawn on a dark ground: light ink on white is unreadable.
 fn raster(svg: &str, width: Option<f32>, dark: bool) -> Result<(Vec<u8>, u32, u32), String> {
-    let tree = svg::parse(svg).ok_or("the picture could not be drawn")?;
+    let tree = svg::parse(svg, APP_FONTS).ok_or("the picture could not be drawn")?;
     let (w, h) = (tree.size().width().max(1.), tree.size().height().max(1.));
     let want = width.map(|px| px / w).unwrap_or(2.).max(0.05);
     let scale = svg::scale_for(w, h, want);
-    let png = figure::png(svg, scale, if dark { 0x1e1e1e } else { 0xffffff }).ok_or("the picture could not be drawn")?;
+    let png = figure::png(svg, APP_FONTS, scale, if dark { 0x1e1e1e } else { 0xffffff }).ok_or("the picture could not be drawn")?;
     let (pw, ph) = png_size(&png);
     Ok((png, pw, ph))
 }

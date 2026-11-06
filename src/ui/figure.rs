@@ -15,6 +15,8 @@ pub struct Look {
     pub text: String,
     pub line: String,
     pub font: String,
+    /// Fonts the SVG is drawn with (text, code).
+    pub fonts: crate::ui::assets::Fonts,
 }
 
 impl Look {
@@ -30,7 +32,8 @@ impl Look {
             fill: hex(t.code_bg),
             text: hex(t.text),
             line: hex(t.line),
-            font: crate::ui::assets::sans().to_string(),
+            font: t.sans.to_string(),
+            fonts: (t.sans, t.mono),
         }
     }
 }
@@ -83,9 +86,9 @@ pub fn latex(source: &str, display: bool, rgb: [u8; 3], size: f32) -> Option<Fig
 }
 
 /// The PNG image of an SVG, `scale` times larger than life, on a white background.
-pub fn png(svg: &str, scale: f32, ground: u32) -> Option<Vec<u8>> {
+pub fn png(svg: &str, fonts: crate::ui::assets::Fonts, scale: f32, ground: u32) -> Option<Vec<u8>> {
     use resvg::tiny_skia;
-    let tree = crate::ui::svg::parse(svg)?;
+    let tree = crate::ui::svg::parse(svg, fonts)?;
     let size = tree.size();
     let mut pixmap = tiny_skia::Pixmap::new((size.width() * scale).ceil() as u32, (size.height() * scale).ceil() as u32)?;
     let [_, r, g, b] = ground.to_be_bytes();
@@ -131,9 +134,10 @@ mod tests {
             text: "#eeeeee".into(),
             line: "#808080".into(),
             font: "sans-serif".into(),
+            fonts: crate::ui::assets::APP_FONTS,
         };
         let svg = mermaid("flowchart LR\n    A --> B", &look).unwrap();
-        let size = crate::ui::svg::parse(&svg).unwrap().size();
+        let size = crate::ui::svg::parse(&svg, look.fonts).unwrap().size();
         assert!(svg.contains("#101010") && size.width() > size.height() && size.height() > 10.);
         let broken = mermaid("ceci n'est pas un diagramme", &look).unwrap_err();
         assert!(!broken.is_empty() && mermaid("", &look).is_err());
@@ -150,7 +154,7 @@ mod tests {
         let png = |mut d: Diagram| {
             let id = d.add_shape(Form::Rect, 0., 0., 200., 90.);
             d.shape_mut(id).unwrap().text = text.into();
-            png(&d.to_svg(0x1e1e1e), 2., 0xffffff).unwrap()
+            png(&d.to_svg(0x1e1e1e), crate::ui::assets::APP_FONTS, 2., 0xffffff).unwrap()
         };
         let (styled, plain) = (png(Diagram::blank()), png(Diagram::default()));
         // The same text, drawn with its marks or without: two different pictures.

@@ -35,7 +35,7 @@ use crate::{
     ui::theme::Theme,
     views::editor::{self, TableOp},
     ui::line::{self, Line},
-    logic::markdown, ui::assets::{mono, sans},
+    logic::markdown,
     ui::widgets::{self, button, pill, tip},
     logic::table::{self, Encoding, Format, Style, Table, WriteError},
     lang::tr, platform::vault,

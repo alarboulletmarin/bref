@@ -78,7 +78,7 @@ impl Canvas {
                 let slant = if style.italic && !cjk { FontStyle::Italic } else { FontStyle::Normal };
                 let run = TextRun {
                     len: span.text.len(),
-                    font: gpui::Font { weight, style: slant, ..font(if style.code { mono() } else { sans() }) },
+                    font: gpui::Font { weight, style: slant, ..font(if style.code { self.theme.mono } else { self.theme.sans }) },
                     color,
                     background_color: None,
                     underline: style.under.then_some(UnderlineStyle { thickness: px(1.), color: Some(color), wavy: false }),

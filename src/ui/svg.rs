@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use resvg::{tiny_skia, usvg};
+
+use crate::ui::assets::Fonts;
 use usvg::roxmltree::{self, Node};
 
 /// Maximum side of an image sent to the GPU: 8,192 px work everywhere.
@@ -19,9 +21,8 @@ pub const MAX_PIXELS: f32 = 16e6;
 /// System fonts and the app's; a missing font (Helvetica, Arial on
 /// Linux…) is replaced by the app's text font, never by whichever comes first.
 /// Building it is expensive: it is kept, and rebuilt only when the fonts of the settings change.
-pub fn fonts() -> Arc<usvg::fontdb::Database> {
+pub fn fonts((sans, mono): Fonts) -> Arc<usvg::fontdb::Database> {
     static CACHE: Mutex<Option<((&str, &str), Arc<usvg::fontdb::Database>)>> = Mutex::new(None);
-    let (sans, mono) = (crate::ui::assets::sans(), crate::ui::assets::mono());
     let mut slot = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     refreshed(&mut slot, (sans, mono), || {
         let mut db = usvg::fontdb::Database::new();
@@ -44,13 +45,13 @@ fn refreshed<K: PartialEq + Copy, V: Clone>(slot: &mut Option<(K, V)>, key: K, b
     }
 }
 
-fn options() -> usvg::Options<'static> {
-    usvg::Options { fontdb: fonts(), ..Default::default() }
+fn options(fonts_in_use: Fonts) -> usvg::Options<'static> {
+    usvg::Options { fontdb: fonts(fonts_in_use), ..Default::default() }
 }
 
 /// The SVG tree, ready to draw; `None` if it is unreadable.
-pub fn parse(svg: &str) -> Option<usvg::Tree> {
-    usvg::Tree::from_str(svg, &options()).ok()
+pub fn parse(svg: &str, fonts: Fonts) -> Option<usvg::Tree> {
+    usvg::Tree::from_str(svg, &options(fonts)).ok()
 }
 
 /// The scale at which to rasterize a `w`×`h` image to show it `want` times larger
@@ -485,7 +486,7 @@ fn measure<'a>(words: impl Iterator<Item = &'a (String, Style)>) -> Vec<f32> {
         }
         svg.push_str("</svg>");
         let mut found = vec![None; missing.len()];
-        if let Some(tree) = parse(&svg) {
+        if let Some(tree) = parse(&svg, crate::ui::assets::APP_FONTS) {
             for node in tree.root().children() {
                 if let usvg::Node::Text(text) = node
                     && let Some(n) = text.id().strip_prefix('m').and_then(|n| n.parse::<usize>().ok())
@@ -557,7 +558,7 @@ mod tests {
         let (first, last) = (found[0].1, found[found.len() - 1].1);
         assert!(first < 100. && last > 100. && ((first + last) / 2. - 100.).abs() < 8., "{first} {last}");
         // Each line fits in the box's 118 px, centered on its middle (100).
-        let tree = parse(&svg).unwrap();
+        let tree = parse(&svg, crate::ui::assets::APP_FONTS).unwrap();
         for node in tree.root().children() {
             if let usvg::Node::Text(t) = node {
                 let b = t.bounding_box();
@@ -605,7 +606,7 @@ mod tests {
         assert!(scale_for(1262., 6253., 2.) * 6253. <= MAX_SIDE);
         assert!(scale_for(20000., 20000., 2.).powi(2) * 4e8 <= MAX_PIXELS * 1.001);
         assert!(scale_for(0., 0., 2.) > 0.);
-        let tree = parse(r##"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="2"><rect x="2" width="2" height="2" fill="#ff0000"/></svg>"##).unwrap();
+        let tree = parse(r##"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="2"><rect x="2" width="2" height="2" fill="#ff0000"/></svg>"##, crate::ui::assets::APP_FONTS).unwrap();
         let bmp = bmp(&tree, 1., (0, 0, 4, 2), [0, 0, 255]).unwrap();
         // 54-byte header, 12-byte rows: blue background on the left, red on the right (in BGR).
         assert_eq!(bmp.len(), 54 + 2 * 12);

@@ -88,7 +88,7 @@ impl Render for Sheet {
             // A click there takes a whole row, as a click on a header takes its column.
             .cursor_pointer()
             .bg(t.bg)
-            .font_family(mono())
+            .font_family(t.mono)
             .text_size(px(self.text_px()))
             .children((r0..r1).map(|r| number(r, self.y_of(r))))
             .child(div().absolute().top(px(0.)).left(px(0.)).w(px(GUTTER)).h(px(ROW)).border_r_1().border_b_1().border_color(t.code_bg).bg(t.code_bg).rounded_tl(t.band()))
@@ -103,7 +103,7 @@ impl Render for Sheet {
             .rounded(t.band())
             .relative()
             .overflow_hidden()
-            .font_family(sans())
+            .font_family(t.sans)
             .child(measure)
             .child(grid)
             .child(gutter)
@@ -338,7 +338,7 @@ impl Sheet {
         let summary = self.summary_text();
         let (delimiter, encoding, header) = (delimiter_option(self.format.delimiter), self.format.encoding.label().to_string(), tr("Header", "En-tête").to_string());
         // The width of everything but the name: summary, pills (10 px each side), two icons, gaps, and the margins.
-        let sans = || gpui::font(crate::ui::assets::sans());
+        let sans = || gpui::font(t.sans);
         let pills: f32 = [&delimiter, &encoding, &header].iter().map(|text| self.text_width(window, text, 12., sans()) + 20.).sum();
         let fixed = self.text_width(window, &summary, 13., sans()) + pills + 2. * 28. + 8. * 4. + 16. * 4. + 24. + if self.client { 128. } else { 24. };
         let serif = gpui::Font { weight: FontWeight::SEMIBOLD, ..gpui::font(crate::ui::assets::SERIF) };
@@ -413,7 +413,7 @@ impl Sheet {
                     .when(c + 1 != self.cols(), |d| d.border_r_1())
                     .border_b_1()
                     .border_color(t.code_bg)
-                    .when(self.mono.get(c) == Some(&true) && !head, |d| d.font_family(mono()))
+                    .when(self.mono.get(c) == Some(&true) && !head, |d| d.font_family(t.mono))
                     .when(head, |d| d.bg(t.code_bg).font_weight(FontWeight::SEMIBOLD).when(c + 1 == self.cols(), |d| d.rounded_tr(t.band())))
                     .when(inside, |d| d.bg(t.selection))
                     // One line cut with an ellipsis. Not `truncate`: gpui 0.2.2 keeps the first measure of a line
@@ -444,7 +444,7 @@ impl Sheet {
             .border_2()
             .border_color(t.accent)
             .text_size(px(self.text_px()))
-            .when(self.mono.get(col) == Some(&true), |d| d.font_family(mono()))
+            .when(self.mono.get(col) == Some(&true), |d| d.font_family(t.mono))
             .child(edit.shown(t).0)
     }
 
@@ -516,7 +516,7 @@ impl Sheet {
                         .bg(t.panel)
                         .border_1()
                         .border_color(t.border)
-                        .font_family(mono())
+                        .font_family(t.mono)
                         .text_size(t.px(13.))
                         .text_color(t.soft)
                         .whitespace_nowrap()

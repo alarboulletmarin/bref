@@ -64,7 +64,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
     ui::theme::Wide,
-    ui::theme::Theme, logic::block, logic::diagram::Diagram, ui::figure, views::graph, views::viewer::Source, ui::svg, ui::assets::mono, ui::assets::sans, lang::tr, platform::vault,
+    ui::theme::Theme, logic::block, logic::diagram::Diagram, ui::figure, views::graph, views::viewer::Source, ui::svg, lang::tr, platform::vault,
     logic::markdown::{self as md, Enter, Kind, Link, ListStyle},
 };
 

@@ -12,7 +12,7 @@ fn fixtures(root: &Path) {
     fs::write(root.join("Drawing.svg"), diagram.to_svg(diagram::COLORS[0])).unwrap();
     fs::write(root.join("Foreign.svg"), r##"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120"><rect width="240" height="120" fill="#3875c9"/></svg>"##).unwrap();
     let svg = fs::read_to_string(root.join("Foreign.svg")).unwrap();
-    let png = crate::ui::figure::png(&svg, 1., 0xffffff).unwrap();
+    let png = crate::ui::figure::png(&svg, crate::ui::assets::APP_FONTS, 1., 0xffffff).unwrap();
     fs::write(root.join("Picture.png"), png).unwrap();
     fs::write(root.join("Data.csv"), "Name,Count\nAlpha,1\n").unwrap();
     fs::write(root.join("Data.tsv"), "Name\tCount\nBeta\t2\n").unwrap();

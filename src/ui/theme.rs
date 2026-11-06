@@ -122,6 +122,9 @@ pub struct Theme {
     pub bar: bool,
     /// Short fades when a panel, the format bar or a folder opens; off: everything is instant.
     pub motion: bool,
+    /// Fonts of the text and of the code: the chosen ones, otherwise the app's.
+    pub sans: &'static str,
+    pub mono: &'static str,
 }
 
 /// Offered themes: (name, [background, text, faint, accent, code background, panel, border]).
@@ -150,6 +153,7 @@ impl Theme {
         let (_, colors) = THEMES.iter().find(|t| t.0 == prefs.theme).unwrap_or(system);
         let [bg, text, dim, accent, code_bg, panel, border] = colors.map(|c| Hsla::from(rgb(c)));
         let ground = ground_of(bg);
+        let (sans, mono) = crate::ui::assets::chosen_fonts(prefs);
         // The selection, as strong as the text over it allows.
         let share = (0..=15)
             .map(|i| if bg.l < 0.5 { 0.25 } else { 0.2 } - i as f32 * 0.01)
@@ -194,6 +198,8 @@ impl Theme {
             wide: Wide::of(&prefs.wide),
             bar: prefs.bar != "off",
             motion: prefs.motion != "off",
+            sans,
+            mono,
         }
     }
 }
@@ -340,6 +346,14 @@ pub fn blend(top: Hsla, under: Hsla, share: f32) -> Hsla {
 mod tests {
     use super::*;
     use gpui::WindowAppearance;
+
+    /// A font change is a theme change: views compare themes to know whether to redraw.
+    #[test]
+    fn fonts_are_part_of_the_theme() {
+        let theme = Theme::of(&Prefs::parse("theme=Bref Light\n"), WindowAppearance::Light);
+        assert_eq!((theme.sans, theme.mono), crate::ui::assets::APP_FONTS);
+        assert!(theme != Theme { sans: "Other", ..theme } && theme != Theme { mono: "Other", ..theme });
+    }
 
     /// In each theme, secondary text, the accent (links, tags) and the title of a `[!TIP]`
     /// callout read: at least 4.5:1 (WCAG AA).

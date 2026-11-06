@@ -239,12 +239,12 @@ impl Editor {
         window.paint_quad(fill(Bounds::new(area.origin, size(BAR, area.size.height)), t.accent));
         // The source's name, on the right of the strip; a click on it opens the note there.
         let label = embed.target.label();
-        let run = |color| TextRun { len: label.len(), font: font(sans()), color, background_color: None, underline: None, strikethrough: None };
+        let run = |color| TextRun { len: label.len(), font: font(t.sans), color, background_color: None, underline: None, strikethrough: None };
         let hot = self.embed_label(row, embed).is_some_and(|b| b.contains(&self.pointer));
         let text = window.text_system().shape_line(SharedString::from(label.clone()), px(12.), &[run(if hot { t.accent } else { t.soft })], None);
         text.paint(point(area.right() - PAD - text.width, area.top() + px(4.)), px(16.), window, cx).ok();
         if let Some(why) = &embed.message {
-            let run = TextRun { len: why.len(), font: font(sans()), color: t.soft, background_color: None, underline: None, strikethrough: None };
+            let run = TextRun { len: why.len(), font: font(t.sans), color: t.soft, background_color: None, underline: None, strikethrough: None };
             let line = window.text_system().shape_line(SharedString::from(why.clone()), px(13.), &[run], None);
             line.paint(point(area.left() + BAR + PAD, area.top() + px(3.)), px(18.), window, cx).ok();
             return;

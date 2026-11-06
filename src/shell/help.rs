@@ -341,14 +341,14 @@ impl Shell {
                     let keys = match row.action {
                         // Badges for real keys; a line of words ("Drag from the tree") or of
                         // alternatives ("F3 / Enter") stays text.
-                        None if row.keys.contains(' ') => div().w(t.px(156.)).flex_none().font_family(mono()).text_size(t.px(12.)).child(row.keys.clone()),
+                        None if row.keys.contains(' ') => div().w(t.px(156.)).flex_none().font_family(t.mono).text_size(t.px(12.)).child(row.keys.clone()),
                         None => div().w(t.px(156.)).flex_none().child(keycaps(&row.keys, t, false).flex_wrap()),
                         Some(action) => {
                             let color = if edit.is_some() || row.changed { t.accent } else { t.text };
                             let shown = if edit.is_some() {
-                                div().font_family(mono()).text_size(t.px(12.)).child(tr("Press the keys…", "Tapez les touches…"))
+                                div().font_family(t.mono).text_size(t.px(12.)).child(tr("Press the keys…", "Tapez les touches…"))
                             } else if row.keys.is_empty() {
-                                div().font_family(mono()).text_size(t.px(12.)).child("—")
+                                div().font_family(t.mono).text_size(t.px(12.)).child("—")
                             } else {
                                 keycaps(&row.keys, t, false).flex_wrap()
                             };

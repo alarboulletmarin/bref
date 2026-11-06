@@ -164,7 +164,7 @@ impl Render for Shell {
             .overflow_hidden()
             .bg(t.ground)
             .text_color(t.text)
-            .font_family(sans())
+            .font_family(t.sans)
             .when(framed, |d| {
                 d.rounded(crate::ui::theme::frame_radius()).border_1().border_color(t.border).shadow(crate::ui::theme::frame_shadow(SHADOW / 2.))
             })

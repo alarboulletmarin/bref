@@ -44,7 +44,7 @@ use crate::lang::{date_name, time_name, tr};
 use crate::logic::{self, commands, diagram, embed, history, import, layout::{self, Node, Side, Zone}, markdown, prefs::Prefs, recall, table};
 use crate::platform::{self, clock::{clock, today}, git, update, vault};
 use crate::ui::{self,
-    assets::{Assets, FAMILIES, init_fonts, apply_fonts, logo, mono, sans},
+    assets::{Assets, FAMILIES, init_fonts, logo},
     figure, line,
     theme::{Page, THEMES, Theme, Wide},
     widgets::{drag_window, icon_button, icon_button_over, keycaps},
@@ -218,7 +218,6 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Self {
         let prefs = Prefs::parse(&config::load(config::File::Settings));
-        apply_fonts(&prefs);
         let theme = Theme::of(&prefs, window.appearance());
         let pane = Self::new_pane(theme, window, cx);
         cx.observe_window_appearance(window, |this, window, cx| this.restyle(window, cx)).detach();

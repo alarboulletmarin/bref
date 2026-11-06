@@ -52,10 +52,11 @@ impl Shell {
     /// that it pastes anywhere. It is drawn off the UI thread.
     pub(super) fn export_png(&mut self, file: PathBuf, canvas: &Entity<Canvas>, cx: &mut Context<Self>) {
         let svg = canvas.read(cx).diagram().to_svg(0x1e1e1e);
+        let fonts = (self.theme.sans, self.theme.mono);
         let canvas = canvas.downgrade();
         cx.spawn(async move |this, cx| {
             let drawn = cx.background_executor().spawn(async move {
-                let bytes = figure::png(&svg, 2., 0xffffff).ok_or_else(|| std::io::Error::other("PNG"))?;
+                let bytes = figure::png(&svg, fonts, 2., 0xffffff).ok_or_else(|| std::io::Error::other("PNG"))?;
                 let path = vault::free_path(file.parent().unwrap_or(Path::new("")), &vault::stem(&file), "png");
                 crate::platform::export::save(&path, &bytes).map(|_| path)
             });

@@ -112,7 +112,7 @@ fn sharing_follows_diagrams_images_and_tables(cx: &mut TestAppContext) {
     fs::write(root.join("Drawing.svg"), &original).unwrap();
     let foreign = r##"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120"><rect width="240" height="120" fill="#3875c9"/></svg>"##;
     fs::write(root.join("Foreign.svg"), foreign).unwrap();
-    let png = figure::png(foreign, 1., 0xffffff).unwrap();
+    let png = figure::png(foreign, crate::ui::assets::APP_FONTS, 1., 0xffffff).unwrap();
     fs::write(root.join("Picture.png"), &png).unwrap();
     fs::write(root.join("Data.csv"), "Name,Count\nAlpha,1\nBeta,2\n").unwrap();
     shell.update(cx, |s, cx| { s.rescan(&root, cx); s.open_note(&root.join("Note.md"), cx); });

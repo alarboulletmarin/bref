@@ -493,7 +493,7 @@ pub fn text_runs(t: &Theme, text: &str, flags: &[u16], marked: impl Fn(usize) ->
                     weight: if style.heading { FontWeight::SEMIBOLD } else if f & md::BOLD != 0 { FontWeight::BOLD } else { FontWeight::NORMAL },
                     style: if slanted { FontStyle::Italic } else { FontStyle::Normal },
                     // Titles follow the chosen font, in semibold (code spans stay mono).
-                    ..font(if code { mono() } else { sans() })
+                    ..font(if code { t.mono } else { t.sans })
                 },
                 color,
                 background_color: (f & md::CODE != 0).then_some(t.code_bg),
@@ -818,7 +818,7 @@ impl Editor {
         // A font without `≠` composes it from a `=` and a misplaced bar: might as well
         // leave `!=`.
         let has_unequal = text_system
-            .advance(text_system.resolve_font(&font(sans())), px(16.), '≠')
+            .advance(text_system.resolve_font(&font(t.sans)), px(16.), '≠')
             .is_ok();
         let mut lang = String::new();
         // Mermaid diagrams and LaTeX formulas: drawn once, reused afterwards.
@@ -841,13 +841,13 @@ impl Editor {
         };
         let style = {
             let mut hasher = Fast::default();
-            (key(0, "").0, hex(t.accent), mono(), has_unequal).hash(&mut hasher);
+            (key(0, "").0, hex(t.accent), t.mono, has_unequal).hash(&mut hasher);
             hasher.finish()
         };
         // Figures are drawn at the page's largest width, for this screen.
         let job = {
             let (room, density, bg) = (f32::from(t.page.measure(t.size)), window.scale_factor(), rgb(t.bg));
-            move |(key, family): (u64, u64), make: Arc<dyn Fn() -> Option<String> + Send + Sync>| Job { key, family, make, room, density, bg }
+            move |(key, family): (u64, u64), make: Arc<dyn Fn() -> Option<String> + Send + Sync>| Job { key, family, make, room, density, bg, fonts: (t.sans, t.mono) }
         };
         let vector = |figure: Option<figure::Figure>| {
             Some(figure.map(|(svg, w, h)| (Arc::new(Image::from_bytes(ImageFormat::Svg, svg.into_bytes())), size(px(w), px(h)))))
@@ -1620,7 +1620,7 @@ mod tests {
             .map(|r| {
                 let piece = text[at..at + r.len].to_string();
                 at += r.len;
-                (piece, r.font.style == FontStyle::Italic, r.font.family == mono())
+                (piece, r.font.style == FontStyle::Italic, r.font.family == t.mono)
             })
             .collect()
     }

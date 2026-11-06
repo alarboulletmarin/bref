@@ -58,7 +58,7 @@ fn save(text: &str, title: &str, (dirs, images, notes): (Vec<PathBuf>, HashMap<S
                 return fs::read_to_string(&file).map_or(Found::Missing, Found::Svg);
             }
             // A damaged picture would stop the whole PDF: it is left out, and said.
-            let drawn = |bytes: &[u8]| print::picture(bytes).and_then(|s| ui::svg::parse(&s)).is_some_and(|t| pdf::draws(&t));
+            let drawn = |bytes: &[u8]| print::picture(bytes).and_then(|s| ui::svg::parse(&s, ui::assets::APP_FONTS)).is_some_and(|t| pdf::draws(&t));
             return fs::read(&file).ok().filter(|b| drawn(b)).map_or(Found::Missing, Found::Picture);
         }
         embed::link_target(written)
@@ -68,7 +68,7 @@ fn save(text: &str, title: &str, (dirs, images, notes): (Vec<PathBuf>, HashMap<S
             .map_or(Found::Missing, Found::Section)
     };
     let printed = print::print(text, &find);
-    let sheets = printed.pages.into_iter().map(|p| Some((ui::svg::parse(&p.svg)?, p.links))).collect::<Option<Vec<pdf::Sheet>>>();
+    let sheets = printed.pages.into_iter().map(|p| Some((ui::svg::parse(&p.svg, ui::assets::APP_FONTS)?, p.links))).collect::<Option<Vec<pdf::Sheet>>>();
     let (bytes, outlined) = pdf::document(&sheets.ok_or_else(|| io::Error::other("SVG"))?, print::PAGE, title).map_err(io::Error::other)?;
     let mut missing = printed.missing;
     missing.extend(outlined.into_iter().map(|n| format!("{} {n}", tr("searchable text of page", "texte cherchable de la page"))));

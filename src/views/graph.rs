@@ -18,7 +18,6 @@ use crate::{
     lang::tr,
     ui::theme::Theme,
     views::nav::{Fold, Next, Open, Prev, Unfold},
-    ui::assets::sans,
     platform::vault,
     logic::note::Note,
 };
@@ -570,7 +569,7 @@ impl Graph {
             };
             let run = TextRun {
                 len: name.len(),
-                font: font(sans()),
+                font: font(t.sans),
                 color: if focus == Some(i) || self.current == Some(i) { t.text } else { fade(t.soft, on) },
                 background_color: None,
                 underline: None,

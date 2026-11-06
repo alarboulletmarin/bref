@@ -567,7 +567,7 @@ impl Shell {
                         .text_size(t.px(12.5))
                         .hover(|s| s.bg(t.hover))
                         .when(chosen, |d| d.bg(t.code_bg))
-                        .child(div().flex_none().min_w(t.px(22.)).font_family(mono()).text_size(t.px(11.)).text_color(t.soft).child(hit.line.to_string()))
+                        .child(div().flex_none().min_w(t.px(22.)).font_family(t.mono).text_size(t.px(11.)).text_color(t.soft).child(hit.line.to_string()))
                         .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_color(t.text).child(marked))
                         .child(
                             ui::widgets::button(("vault-dismiss", i), "close.svg", false, t)
