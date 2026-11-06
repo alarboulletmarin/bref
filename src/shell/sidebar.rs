@@ -649,10 +649,10 @@ impl Shell {
                         .text_size(t.font_body())
                         .when(!selected, |d| d.hover(|s| s.bg(t.hover)))
                         // The displayed file: an accent pill; the selection wins on the same row.
-                        .when(current && !selected, |d| d.bg(crate::ui::widgets::pill_tint(t)))
+                        .when(current && !selected, |d| d.bg(t.pill_tint()))
                         .when(selected, |d| {
                             let at = self.nav.sel_at.clone();
-                            d.bg(if focused { t.selection } else { t.selection.opacity(0.5) })
+                            d.bg(if focused { t.selection } else { t.selection_idle() })
                                 .relative()
                                 .child(gpui::canvas(move |bounds, _, _| at.set(Some(bounds)), |_, _, _, _| {}).absolute().size_full())
                         })
@@ -999,7 +999,7 @@ impl Shell {
                         this.place_tool(dragged.mode, false, 0, window, cx);
                     }
                 }))
-                .when(self.tool_aim == Some((false, 0)), |d| d.bg(t.accent.opacity(0.12)))
+                .when(self.tool_aim == Some((false, 0)), |d| d.bg(t.drop_tint()))
             });
         if !unfolded {
             return wrapper.flex_none().child(rail);
@@ -1063,7 +1063,7 @@ impl Shell {
                     .border_l_1()
                     .border_color(if aimed { t.accent } else { t.border })
                     .rounded(t.sheet())
-                    .bg(if aimed { t.accent.opacity(0.12) } else { t.panel })
+                    .bg(if aimed { t.drop_tint() } else { t.panel })
                     .on_drag_move(cx.listener(|this, e: &gpui::DragMoveEvent<docks::ToolDragged>, _, cx| {
                         match e.bounds.contains(&e.event.position) {
                             true => this.aim_tool(Some((true, 0)), cx),

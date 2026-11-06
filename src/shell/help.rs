@@ -428,7 +428,7 @@ impl Shell {
                         .flex_col()
                         .gap_1()
                         .rounded(t.small())
-                        .when(chosen, |d| d.bg(t.selection.opacity(0.5)))
+                        .when(chosen, |d| d.bg(t.selection_idle()))
                         .child(div().flex().gap_3().child(keys).child(div().flex_1().min_w_0().text_color(if chosen { t.text } else { t.soft }).child(row.effect)))
                         .children(note)
                 }))

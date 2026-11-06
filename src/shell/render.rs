@@ -924,7 +924,7 @@ impl Shell {
                     Zone::Edge(Side::Up) => d.left_0().right_0().top_0().h(half),
                     Zone::Edge(Side::Down) => d.left_0().right_0().bottom_0().h(half),
                 })
-                .bg(t.accent.opacity(0.12))
+                .bg(t.drop_tint())
                 .border_1()
                 .border_color(t.accent.opacity(0.5))
         });

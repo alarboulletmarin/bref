@@ -117,18 +117,13 @@ pub fn pill(t: Theme, on: bool) -> Div {
         .px(t.px(10.))
         .rounded(t.small())
         .text_color(if on { t.accent } else { t.soft })
-        .when(on, |d| d.bg(pill_tint(t)))
-}
-
-/// The tint of what is open (a pill, the open row of the panel): the accent at 10 %, quieter than the selection.
-pub fn pill_tint(t: Theme) -> gpui::Hsla {
-    t.accent.opacity(0.1)
+        .when(on, |d| d.bg(t.pill_tint()))
 }
 
 /// The tint of a commented passage: `pill_tint`, stronger for the one the caret is in, still under the selection's
 /// share (the text and the accent read on it) and told from it.
 pub fn passage_tint(t: Theme, on: bool) -> gpui::Hsla {
-    if on { t.accent.opacity(PASSAGE_ON) } else { pill_tint(t) }
+    if on { t.accent.opacity(PASSAGE_ON) } else { t.pill_tint() }
 }
 
 /// The share of the accent behind the commented passage under the caret.

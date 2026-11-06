@@ -874,16 +874,7 @@ impl Editor {
         // Front matter: its lines are written faded, monospaced, without being interpreted.
         let meta = md::front_matter(&self.content);
         // Color of a `[!TYPE]` callout: its tint tells its type.
-        let tint_of = |label: &str| {
-            let h = match label.to_ascii_lowercase().as_str() {
-                "[!tip]" | "[!success]" => 0.38,
-                "[!important]" => 0.75,
-                "[!warning]" => 0.09,
-                "[!caution]" | "[!danger]" | "[!error]" => 0.,
-                _ => 0.58,
-            };
-            Hsla { h, s: 0.7, l: 0.5, a: 1. }
-        };
+        let tint_of = |label: &str| Hsla { h: crate::ui::theme::callout_hue(label), s: 0.7, l: 0.5, a: 1. };
         let mut tint;
         let mut loading = false;
         let mut big: Vec<BigBlock> = Vec::new();

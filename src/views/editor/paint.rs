@@ -273,7 +273,7 @@ impl Editor {
                             vec![(a.x, a.y, w - a.x), (px(0.), b.y, b.x)]
                         };
                         for (x, y, width) in spans {
-                            window.paint_quad(fill(block(x - pad, text_top + y + lift, width + pad * 2., tall), crate::ui::widgets::pill_tint(t)).corner_radii(t.small()));
+                            window.paint_quad(fill(block(x - pad, text_top + y + lift, width + pad * 2., tall), t.pill_tint()).corner_radii(t.small()));
                         }
                     }
                 }
