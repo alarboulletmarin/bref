@@ -217,18 +217,22 @@ impl Render for Shell {
 }
 
 impl Shell {
-    /// The state work a frame still does before drawing: it settles what only the frame can know
-    /// (which pane holds the focus, a drag that ended, the title) and follows it. It cannot move
-    /// to the events: the focus moves without an event of ours (a click inside a pane's editor, a
-    /// tab hidden while it held input), and a canvas event has no `Window` to create the diagram
-    /// the library template asks for. `track` stays here for the same reason: the active pane is
-    /// only known once the focus has been followed. Everything else in `render` is drawing.
-    fn settle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Input arrived in a pane (a click in its note, a tab key): that pane is the active one. It
+    /// is a focus event of gpui, delivered after the frame that showed it, hence the `notify`
+    /// that draws the result.
+    pub(super) fn focus_moved(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sync_after_change(window, cx);
+        let me = cx.entity();
+        cx.defer(move |cx| me.update(cx, |_, cx| cx.notify()));
+    }
+
+    /// The state that follows from a change, settled once the change is made (`notify` of the
+    /// shell, input moved) and never while drawing: which pane holds the focus, the history, the
+    /// title. Each step is idempotent, so that running it twice, or after nothing happened, changes
+    /// nothing.
+    pub(super) fn sync_after_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // The pane holding the focus is the active one; when the code changed it without moving
         // input (a note already open in the other pane), it follows.
-        if let Some(template) = self.template.take() {
-            self.new_diagram_from(template, window, cx);
-        }
         if std::mem::take(&mut self.grab) {
             self.focus_pane(self.active, window, cx);
         } else if let Some(pane) = self.groups.iter().map(|group| group.shown).find(|&pane| self.panes[pane].zone.contains_focused(window, cx)) {
@@ -239,17 +243,6 @@ impl Shell {
             self.focus_pane(self.active, window, cx);
         }
         self.show_active(cx);
-        #[cfg(test)]
-        let dragging = cx.has_active_drag() || self.keep_aim;
-        #[cfg(not(test))]
-        let dragging = cx.has_active_drag();
-        if !dragging {
-            (self.pane_aim, self.tab_aim, self.tool_aim, self.tool_drag) = (None, None, None, false);
-            // The drag is over (dropped, or out of the window): no more label or line.
-            if self.drop_aim.is_some() {
-                self.aim_drop(None, cx);
-            }
-        }
         if self.pane().editor.focus_handle(cx).is_focused(window) {
             self.keep_preview();
         }
@@ -262,6 +255,25 @@ impl Shell {
         if title != self.title {
             window.set_window_title(&title);
             self.title = title;
+        }
+    }
+
+    /// What only the frame knows: the drag in progress (gpui has no event for a drag that ends
+    /// outside the window), and the template a canvas asked for, whose event carries no `Window`.
+    fn settle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(template) = self.template.take() {
+            self.new_diagram_from(template, window, cx);
+        }
+        #[cfg(test)]
+        let dragging = cx.has_active_drag() || self.keep_aim;
+        #[cfg(not(test))]
+        let dragging = cx.has_active_drag();
+        if !dragging {
+            (self.pane_aim, self.tab_aim, self.tool_aim, self.tool_drag) = (None, None, None, false);
+            // The drag is over (dropped, or out of the window): no more label or line.
+            if self.drop_aim.is_some() {
+                self.aim_drop(None, cx);
+            }
         }
     }
 

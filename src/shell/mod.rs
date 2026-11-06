@@ -222,6 +222,11 @@ impl Shell {
         let theme = Theme::of(&prefs, window.appearance());
         let pane = Self::new_pane(theme, window, cx);
         cx.observe_window_appearance(window, |this, window, cx| this.restyle(window, cx)).detach();
+        // Whatever the shell changes ends in a `notify`: the state that follows from it is settled
+        // there (`sync_after_change`), never while drawing.
+        cx.observe_in(&cx.entity(), window, |this, _, window, cx| this.sync_after_change(window, cx)).detach();
+        // Nothing holds input anymore (the tab that had it is gone from the screen): it goes back to the active pane.
+        cx.on_focus_lost(window, |this, window, cx| this.sync_after_change(window, cx)).detach();
         let shell = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
             shell.update(cx, |this, cx| this.may_close_window(window, cx)).unwrap_or(true)

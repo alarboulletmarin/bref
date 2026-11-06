@@ -72,6 +72,8 @@ pub(super) struct Pane {
     /// What is shown now came from browsing (arrows in the tree, graph): the history
     /// ignores it until it is opened for good. See `preview` for the difference.
     pub(super) peek: bool,
+    /// Input arriving in the pane (`Shell::focus_moved`); dropped with the pane.
+    _focus: gpui::Subscription,
 }
 
 /// What a tab shows. The layers are real: the note's text stays loaded under a file, and a list
@@ -272,8 +274,11 @@ impl Shell {
     pub(super) fn new_pane(theme: Theme, window: &mut Window, cx: &mut Context<Self>) -> Pane {
         let editor = cx.new(|cx| Editor::new(theme, cx));
         cx.subscribe_in(&editor, window, Self::on_editor_event).detach();
+        let zone = cx.focus_handle();
+        let _focus = cx.on_focus_in(&zone, window, |this, window, cx| this.focus_moved(window, cx));
         Pane {
-            zone: cx.focus_handle(),
+            zone,
+            _focus,
             editor,
             shown: Shown::Page { base: Base::Note, cover: None },
             path: None,
