@@ -1212,7 +1212,7 @@ impl Editor {
             // ponytail: one picture per line, looked up in the note's folder, at the
             // vault root, then by its name in the whole vault; inline
             // pictures (http) are not loaded.
-            let file = made.picture.as_ref().and_then(|path| find_picture(&self.dirs, &self.images, path));
+            let file = made.picture.as_ref().and_then(|path| find_picture(&self.dirs, &self.vault.images, path));
             let has_file = file.is_some();
             let svg = file.as_ref().is_some_and(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")));
             // The picture wins over a formula on the same line: it is what is drawn.

@@ -93,8 +93,8 @@ impl Editor {
                 // offered, by file name; `[[` offers notes.
         let embed = before[..open].ends_with('!');
         let mut items: Vec<&str> = match embed {
-            true => self.images.values().filter_map(|p| p.file_name()?.to_str()).collect(),
-            false => self.notes.iter().map(String::as_str).collect(),
+            true => self.vault.images.values().filter_map(|p| p.file_name()?.to_str()).collect(),
+            false => self.vault.notes.iter().map(String::as_str).collect(),
         };
         items.retain(|name| name.to_lowercase().contains(&query));
         if embed {
@@ -106,7 +106,7 @@ impl Editor {
 
         /// The headings of `note` that contain `query`, or its block ids if `query` starts with `^`.
     fn anchors(&self, note: &str, query: &str) -> Vec<Choice<'_>> {
-        let text = self.embeds.sources.get(&note.trim().to_lowercase()).and_then(|path| fs::read_to_string(path).ok()).unwrap_or_default();
+        let text = self.vault.sources.get(&note.trim().to_lowercase()).and_then(|path| fs::read_to_string(path).ok()).unwrap_or_default();
         let wanted = query.to_lowercase();
         let mut found: Vec<String> = match wanted.strip_prefix('^') {
             Some(id) => crate::logic::embed::block_ids(&text).into_iter().filter(|b| b.to_lowercase().contains(id)).map(|b| format!("^{b}")).collect(),

@@ -198,6 +198,25 @@ const BROKEN: Pixels = px(20.);
 // not followed; allow the link's target if someone needs it.
 /// The picture file written `path` in a note: in the note's folder, at the vault root (the last of
 /// `dirs`), then by its name anywhere in the vault (`images`); never outside the vault.
+/// What the editors look names up in, built once per change of the vault and shared (`Rc`) by
+/// every tab and embed.
+#[derive(Default)]
+pub struct VaultLookups {
+    /// Names of the notes and their aliases, to complete `[[wikilinks]]`.
+    pub notes: Vec<String>,
+    /// Vault images by file name (lowercase): wherever they are stored, a note finds them.
+    pub images: HashMap<String, PathBuf>,
+    /// Notes and aliases (lowercase) → file, for the sections embedded from them.
+    pub sources: HashMap<String, PathBuf>,
+}
+
+impl VaultLookups {
+    pub fn new(notes: Vec<String>, images: &[PathBuf], sources: HashMap<String, PathBuf>) -> Self {
+        let images = images.iter().map(|p| (graph::image_name(p).to_lowercase(), p.clone())).collect();
+        Self { notes, images, sources }
+    }
+}
+
 pub fn find_picture(dirs: &[PathBuf], images: &HashMap<String, PathBuf>, path: &str) -> Option<PathBuf> {
     let root = dirs.last();
     let found = dirs.iter().map(|d| d.join(path)).find(|p| p.is_file() && root.is_some_and(|r| inside(r, p)));
@@ -254,12 +273,10 @@ pub struct Editor {
     last_edit: Option<Instant>,
     /// Where the last change started (`usize::MAX` after a load or an undo): the ``` there is the one being typed.
     edited_at: usize,
-    notes: Rc<[String]>,
+    /// Notes, pictures and embed sources of the vault: one value shared by every tab and embed.
+    vault: Rc<VaultLookups>,
     /// Folders to look for images in: the note's, then the vault.
     dirs: Vec<PathBuf>,
-    /// Vault images by file name (lowercase): wherever they are
-    /// stored, a note finds them.
-    images: HashMap<String, PathBuf>,
     /// Start of the line whose code block was just copied.
     copied: Option<usize>,
     /// Start of the line whose copy button is hovered.
@@ -420,9 +437,8 @@ impl Editor {
             redo: Snapshots::default(),
             last_edit: None,
             edited_at: usize::MAX,
-            notes: Rc::from([]),
+            vault: Rc::default(),
             dirs: Vec::new(),
-            images: HashMap::new(),
             copied: None,
             hover: None,
             view_hover: None,
@@ -544,23 +560,21 @@ impl Editor {
         self.epoch += 1;
     }
 
-    /// Names of the vault's notes, to complete `[[wikilinks]]`.
-    /// Shared by every editor of the window: one list, however many tabs are open.
-    pub fn set_notes(&mut self, notes: Rc<[String]>) {
-        self.notes = notes;
-    }
-
-    pub fn set_images(&mut self, images: &[PathBuf]) {
-        let named = images.iter().map(|p| (graph::image_name(p).to_lowercase(), p.clone()));
-        self.images = named.collect();
+    /// Tells the editor what the vault holds (see `VaultLookups`) and the name of the note it shows,
+    /// which an embed may not lead back to.
+    pub fn set_vault(&mut self, vault: Rc<VaultLookups>, me: Option<String>) {
+        self.vault = vault;
+        self.embeds.trail = me.into_iter().map(|m| m.to_lowercase()).collect();
+        self.embeds.recheck = true;
         self.version += 1;
         self.epoch += 1;
+        self.laid_out = None;
     }
 
     /// What the note's pictures and embeds are looked up in: its folders, the vault's pictures by
     /// name, its notes by name (see `find_picture`).
     pub fn lookups(&self) -> (Vec<PathBuf>, HashMap<String, PathBuf>, HashMap<String, PathBuf>) {
-        (self.dirs.clone(), self.images.clone(), (*self.embeds.sources).clone())
+        (self.dirs.clone(), self.vault.images.clone(), self.vault.sources.clone())
     }
 
     pub fn set_dirs(&mut self, dirs: Vec<PathBuf>) {

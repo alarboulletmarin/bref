@@ -347,19 +347,15 @@ impl Shell {
     pub(super) fn push_names_to(&mut self, tabs: std::ops::Range<usize>, cx: &mut Context<Self>) {
         // Aliases are offered after `[[` like names.
         let notes: Vec<&Note> = self.notes.iter().filter(|n| !self.is_template(n)).collect();
-        let names: std::rc::Rc<[String]> = notes.iter().map(|n| n.name.clone()).chain(notes.iter().flat_map(|n| n.aliases.iter().cloned())).collect();
+        let names: Vec<String> = notes.iter().map(|n| n.name.clone()).chain(notes.iter().flat_map(|n| n.aliases.iter().cloned())).collect();
         let pictures = vault::pictures(&self.images);
         // Notes and their aliases, for the sections embedded from them.
-        let sources: std::rc::Rc<std::collections::HashMap<String, PathBuf>> =
-            logic::wiki::by_key(notes.iter().copied()).into_iter().map(|(key, i)| (key.as_str().to_string(), notes[i].path.clone())).collect::<std::collections::HashMap<_, _>>().into();
+        let sources = logic::wiki::by_key(notes.iter().copied()).into_iter().map(|(key, i)| (key.as_str().to_string(), notes[i].path.clone())).collect();
+        let lookups = std::rc::Rc::new(crate::views::editor::VaultLookups::new(names, &pictures, sources));
         let me = |pane: &Pane| pane.path.as_deref().and_then(Path::file_stem).map(|s| s.to_string_lossy().to_string());
         for pane in &self.panes[tabs] {
             let me = me(pane);
-            pane.editor.update(cx, |e, _| {
-                e.set_notes(names.clone());
-                e.set_images(&pictures);
-                e.set_sources(sources.clone(), me);
-            });
+            pane.editor.update(cx, |e, _| e.set_vault(lookups.clone(), me));
         }
     }
 
