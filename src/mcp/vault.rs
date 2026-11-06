@@ -260,18 +260,7 @@ fn disk_kind(kind: io::ErrorKind) -> String {
 /// is still called `old`. Returns how many notes changed.
 pub fn relink(vault: &mut Vault, old: &str, new: &str) -> usize {
     vault.rescan();
-    let Some(targets) = wiki::relink_set(&vault.notes, old, new) else {
-        return 0;
-    };
-    let paths: Vec<PathBuf> = targets.iter().map(|n| n.path.clone()).collect();
-    let mut changed = 0;
-    for path in paths {
-        let Ok(text) = fs::read_to_string(&path) else { continue };
-        let Some(fresh) = crate::logic::markdown::relink(&text, old, new) else { continue };
-        if vault::write(&path, &fresh).is_ok() {
-            changed += 1;
-        }
-    }
+    let changed = vault::relink(Some(&vault.root), &mut vault.notes, old, new).len();
     vault.rescan();
     changed
 }

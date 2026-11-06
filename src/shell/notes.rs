@@ -267,25 +267,11 @@ impl Shell {
     // ponytail: synchronous rewrite, limited to the notes the index says link to
     // `old`; move to a background task if a note is linked from hundreds of others.
     pub(super) fn relink(&mut self, old: &str, new: &str, cx: &mut Context<Self>) -> bool {
-        let paths: Vec<PathBuf> = {
-            let Some(targets) = logic::wiki::relink_set(&self.notes, old, new) else {
-                return false;
-            };
-            targets.iter().map(|n| n.path.clone()).collect()
-        };
-        let mut changed = Vec::new();
-        let root = self.vault.clone();
-        for note in self.notes.iter_mut().filter(|n| paths.contains(&n.path)) {
-            let rewritten = fs::read_to_string(&note.path)
-                .ok()
-                .and_then(|text| markdown::relink(&text, old, new))
-                .filter(|text| vault::write(&note.path, text).is_ok());
-            if let Some(text) = rewritten {
-                note.set_text(text.as_str().into(), root.as_ref().is_some_and(|r| vault::in_templates(r, &note.path)));
-                changed.push(note.path.clone());
-                self.graph_stale = true;
-            }
+        let changed = vault::relink(self.vault.as_deref(), &mut self.notes, old, new);
+        if changed.is_empty() {
+            return false;
         }
+        self.graph_stale = true;
         self.refresh_graph(cx);
         // The other pane's note is reloaded here; the active pane's is up to the caller
         // (it may be leaving it).

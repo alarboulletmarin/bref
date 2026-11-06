@@ -280,6 +280,27 @@ pub fn follow_heading(root: Option<&Path>, notes: &mut [Note], path: &Path, was:
     rewritten
 }
 
+/// `[[old]]` becomes `[[new]]` in every note that links to it, on disk and in the index, unless
+/// another note is still called `old` (the links may be meant for it). Returns the notes rewritten.
+pub fn relink(root: Option<&Path>, notes: &mut [Note], old: &str, new: &str) -> Vec<PathBuf> {
+    let Some(targets) = crate::logic::wiki::relink_set(notes, old, new) else {
+        return Vec::new();
+    };
+    let paths: Vec<PathBuf> = targets.iter().map(|n| n.path.clone()).collect();
+    let mut rewritten = Vec::new();
+    for note in notes.iter_mut().filter(|n| paths.contains(&n.path)) {
+        let fresh = fs::read_to_string(&note.path)
+            .ok()
+            .and_then(|text| markdown::relink(&text, old, new))
+            .filter(|text| write(&note.path, text).is_ok());
+        if let Some(text) = fresh {
+            note.set_text(text.as_str().into(), root.is_some_and(|r| in_templates(r, &note.path)));
+            rewritten.push(note.path.clone());
+        }
+    }
+    rewritten
+}
+
 /// Moves the note or folder to the vault's trash: the hidden folder
 /// `.trash`, which the index ignores. Nothing is destroyed.
 pub fn trash(root: &Path, path: &Path) -> io::Result<PathBuf> {
