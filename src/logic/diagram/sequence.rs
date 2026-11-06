@@ -372,6 +372,13 @@ impl Diagram {
         Some(vec![(start, y), (end, y)])
     }
 
+    /// Normalisation after any edit, for the canvas and MCP alike: lifelines follow their messages, then a pin
+    /// stays on the border of the shape it is on.
+    pub fn normalise(&mut self) {
+        self.fit_sequence();
+        self.seat_pins();
+    }
+
     /// Lays the lifelines out as the messages ask: the heads of those not created on one line, those
     /// that are created where their message arrives, each line long enough for its last message, or
     /// its destruction, and a margin.

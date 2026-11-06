@@ -318,6 +318,39 @@ fn an_unreadable_folder_does_not_hide_the_rest() {
 }
 
 #[test]
+fn diagram_edits_reseat_pins() {
+    let root = scratch();
+    let mut vault = open(&root);
+    let made = ok(draw::create_diagram(&mut vault, &json!({"name": "Pins", "from": {
+        "shapes": [
+            {"key": "box", "form": "rect", "x": 0, "y": 0, "w": 140, "h": 60},
+            {"form": "pin", "in": "box", "x": 130, "y": 20, "w": 14, "h": 14}
+        ], "links": []
+    }})));
+    let read = || ok(draw::read_diagram(&vault, &json!({"path": made["path"]})));
+    let first = read();
+    let shapes = first["shapes"].as_array().unwrap();
+    let box_id = shapes.iter().find(|s| s["form"] == "rect").unwrap()["id"].clone();
+    let assert_seated = |diagram: &Value| {
+        let shapes = diagram["shapes"].as_array().unwrap();
+        let holder = shapes.iter().find(|s| s["form"] == "rect").unwrap();
+        let pin = shapes.iter().find(|s| s["form"] == "pin").unwrap();
+        let n = |v: &Value, key: &str| v[key].as_f64().unwrap();
+        let (cx, cy) = (n(pin, "x") + n(pin, "w") / 2., n(pin, "y") + n(pin, "h") / 2.);
+        let (x, y, w, h) = (n(holder, "x"), n(holder, "y"), n(holder, "w"), n(holder, "h"));
+        assert!((x..=x + w).contains(&cx) && (y..=y + h).contains(&cy));
+        assert!(cx == x || cx == x + w || cy == y || cy == y + h, "{diagram}");
+    };
+    assert_seated(&first);
+    for (x, y, w, h) in [(100, 50, 140, 60), (-200, -100, 140, 60), (0, 0, 20, 20), (0, 0, 900, 600), (0, 0, 140, 60)] {
+        ok(draw::edit_diagram(&mut vault, &json!({"path": made["path"], "ops": [
+            {"op": "update", "id": box_id, "x": x, "y": y, "w": w, "h": h}
+        ]})));
+        assert_seated(&ok(draw::read_diagram(&vault, &json!({"path": made["path"]}))));
+    }
+}
+
+#[test]
 fn diagrams_are_written_by_bref_and_can_be_seen() {
     let root = scratch();
     let mut vault = open(&root);

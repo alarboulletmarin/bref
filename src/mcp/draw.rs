@@ -151,7 +151,7 @@ pub fn edit_diagram(vault: &mut Vault, args: &Value) -> Outcome {
             Err(message) => return Outcome::err(message),
         }
     }
-    draft.fit_sequence();
+    draft.normalise();
     if let Err(message) = files::write(&path, &draft.to_svg(diagram::COLORS[0])).map_err(disk) {
         return Outcome::err(message);
     }
@@ -435,7 +435,7 @@ fn build(from: &Value) -> Result<(Diagram, usize), String> {
             keys.insert(key.to_string(), id);
         }
     }
-    diagram.fit_sequence();
+    diagram.normalise();
     let _ = (made_shapes, made_links);
     Ok((diagram, 0))
 }
