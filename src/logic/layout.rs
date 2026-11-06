@@ -2,6 +2,8 @@
 //! whose leaves are panes, each child with its share of its parent. Pure: sizes are fractions of
 //! the space the panes take, the caller turns them into pixels.
 
+use std::path::PathBuf;
+
 /// Side by side (`Row`) or stacked (`Column`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Axis {
@@ -362,6 +364,40 @@ pub fn zone(x: f32, y: f32, w: f32, h: f32, band: f32) -> Zone {
     }
 }
 
+/// Share of the width the left pane can take.
+pub const PANE_RATIO: std::ops::RangeInclusive<f32> = 0.2..=0.8;
+
+/// The saved layout (file `panes`): the left pane's share, then each pane's tabs and the position
+/// of the one it shows. Reads the two older formats too: a share then the second pane's file
+/// (empty: one pane), where the first pane showed the most recent note.
+pub fn read_panes(text: &str) -> (Option<Node>, Vec<(Vec<PathBuf>, usize)>) {
+    let mut lines = text.lines();
+    let first = lines.next().unwrap_or_default();
+    let ratio = |s: &str| s.trim().parse::<f32>().ok().filter(|ratio| PANE_RATIO.contains(ratio)).unwrap_or(0.5);
+    let (tree, v2) = match (first.strip_prefix("v3 "), first.strip_prefix("v2 ")) {
+        (Some(tree), _) => (Some(tree), None),
+        (None, Some(share)) => (None, Some(ratio(share))),
+        (None, None) => {
+            // Older: the first pane is left to the recent notes, the second is the line after.
+            let aside = lines.next().map(str::trim).filter(|line| !line.is_empty());
+            let groups: Vec<_> = aside.map(|path| vec![(Vec::new(), 0), (vec![PathBuf::from(path)], 0)]).unwrap_or_default();
+            return (Some(Node::row(groups.len(), ratio(first))), groups);
+        }
+    };
+    let groups: Vec<(Vec<PathBuf>, usize)> = lines
+        .map(|line| {
+            let tabs: Vec<&str> = line.split('\t').filter(|tab| !tab.is_empty()).collect();
+            let shown = tabs.iter().position(|tab| tab.starts_with('*')).unwrap_or(0);
+            (tabs.iter().map(|tab| PathBuf::from(tab.trim_start_matches('*'))).collect(), shown)
+        })
+        .collect();
+    let node = match (tree, v2) {
+        (Some(tree), _) => Node::read(tree, groups.len()),
+        (None, share) => Some(Node::row(groups.len(), share.unwrap_or(0.5))),
+    };
+    (node, groups)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -549,5 +585,25 @@ mod tests {
         // Outside or degenerate: an edge, never a panic.
         assert_eq!(zone(-5., 50., 200., 100., 80.), Zone::Edge(Side::Left));
         assert_eq!(zone(0., 0., 0., 0., 80.), Zone::Center);
+    }
+
+    #[test]
+    fn reads_the_saved_panes_in_every_version() {
+        let p = |tabs: &[&str], shown| (tabs.iter().map(PathBuf::from).collect::<Vec<_>>(), shown);
+        // Current: tabs split by tab characters, the shown one starred.
+        let tree = Node::row(2, 0.3);
+        let (node, groups) = read_panes(&format!("v3 {}\na\t*b\nc", tree.write()));
+        assert_eq!(groups, [p(&["a", "b"], 1), p(&["c"], 0)]);
+        assert_eq!(node, Some(tree));
+        // Second version: a share, then groups.
+        let (node, groups) = read_panes("v2 0.4\n*a\n");
+        assert_eq!((node.is_some(), groups), (true, vec![p(&["a"], 0)]));
+        // Oldest: a share then the second pane's file, or nothing (one pane).
+        let (_, groups) = read_panes("0.5\n/v/b.md\n");
+        assert_eq!(groups, [p(&[], 0), p(&["/v/b.md"], 0)]);
+        assert!(read_panes("0.5\n").1.is_empty());
+        // Empty, shares out of range or unreadable: no crash.
+        assert!(read_panes("").1.is_empty());
+        assert!(read_panes("v2 9\n*a").0.is_some() && read_panes("v2 x\n*a").0.is_some());
     }
 }

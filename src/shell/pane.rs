@@ -6,6 +6,7 @@
 //! order, and the one it shows.
 
 use super::*;
+pub(super) use crate::logic::layout::read_panes;
 
 /// Width below which two panes do not fit next to the panel: it folds. No pane is made narrower.
 pub(super) const MIN_PANE: Pixels = px(300.);
@@ -30,9 +31,6 @@ pub(super) enum Place {
 pub(super) fn crowded(many: bool, rects: &[layout::Rect], area: Size<Pixels>) -> bool {
     many && area.width > px(0.) && rects.iter().any(|r| area.width * r.w < MIN_PANE / 2. || area.height * r.h < MIN_PANE_H / 2.)
 }
-
-/// Share of the width the left pane can take.
-pub(super) const PANE_RATIO: std::ops::RangeInclusive<f32> = 0.2..=0.8;
 
 /// What one tab holds: a note and its editor, what is shown in its place (image, diagram,
 /// table, list page), and the note's kanban view.
@@ -115,37 +113,6 @@ pub(super) enum FileKind {
     Svg(Entity<viewer::Viewer>),
     /// A CSV or TSV table, in its grid.
     Sheet(Entity<Sheet>),
-}
-
-/// The saved layout (file `panes`): the left pane's share, then each pane's tabs and the position
-/// of the one it shows. Reads the two older formats too: a share then the second pane's file
-/// (empty: one pane), where the first pane showed the most recent note.
-pub(super) fn read_panes(text: &str) -> (Option<Node>, Vec<(Vec<PathBuf>, usize)>) {
-    let mut lines = text.lines();
-    let first = lines.next().unwrap_or_default();
-    let ratio = |s: &str| s.trim().parse::<f32>().ok().filter(|ratio| PANE_RATIO.contains(ratio)).unwrap_or(0.5);
-    let (tree, v2) = match (first.strip_prefix("v3 "), first.strip_prefix("v2 ")) {
-        (Some(tree), _) => (Some(tree), None),
-        (None, Some(share)) => (None, Some(ratio(share))),
-        (None, None) => {
-            // Older: the first pane is left to the recent notes, the second is the line after.
-            let aside = lines.next().map(str::trim).filter(|line| !line.is_empty());
-            let groups: Vec<_> = aside.map(|path| vec![(Vec::new(), 0), (vec![PathBuf::from(path)], 0)]).unwrap_or_default();
-            return (Some(Node::row(groups.len(), ratio(first))), groups);
-        }
-    };
-    let groups: Vec<(Vec<PathBuf>, usize)> = lines
-        .map(|line| {
-            let tabs: Vec<&str> = line.split('\t').filter(|tab| !tab.is_empty()).collect();
-            let shown = tabs.iter().position(|tab| tab.starts_with('*')).unwrap_or(0);
-            (tabs.iter().map(|tab| PathBuf::from(tab.trim_start_matches('*'))).collect(), shown)
-        })
-        .collect();
-    let node = match (tree, v2) {
-        (Some(tree), _) => Node::read(tree, groups.len()),
-        (None, share) => Some(Node::row(groups.len(), share.unwrap_or(0.5))),
-    };
-    (node, groups)
 }
 
 impl Pane {
