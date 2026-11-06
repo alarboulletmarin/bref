@@ -43,7 +43,7 @@ each, all `impl Shell`:
 
 | File | Subject |
 |---|---|
-| `pane.rs` | the panes and their tabs, which one is active, the file a tab shows (`FileView`), splitting, moving a tab between panes, the saved layout; the panes are placed by the tree `logic/layout.rs` (`Node`, leaves = groups), drawn by `render_layout` |
+| `pane.rs` | the panes and their tabs, which one is active, the file a tab shows (`FileView`), splitting, moving a tab between panes, the saved layout; the panes are placed by the tree `logic/layout.rs` (`Node`, leaves = groups; `read_panes` reads the saved file), drawn by `render_layout` |
 | `tabs.rs` | the tab bar of a pane |
 | `notes.rs` | opening, previewing, creating, saving notes; links and wikilinks |
 | `library.rs` | the vault: choosing, scanning, watching, icons, backup, trash |
@@ -77,6 +77,9 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 |---|---|
 | how Markdown is read (headings, links, tags, styles) | `logic/markdown/` (`mod.rs`; `tables.rs` with the comment `Scope`, `lists.rs`, `front.rs`, `dates.rs`, `search.rs`; `walk.rs`: the one walk over the lines outside code blocks, a stray ``` opens nothing; `wiki.rs`: `WikiLink` reads `target#anchor|alias`, `rewrite_wikilinks` is the one rewriter) |
 | CSV/TSV parsing and writing | `logic/table.rs` |
+| kanban boards read from a note (columns, cards, moves) | `logic/kanban.rs`; the pane's state and card widgets in `views/kanban.rs`, drawn by `shell/board.rs` |
+| graph maths (edges, force layout, node sizes, drag propagation) | `logic/graph.rs`; drawn by `views/graph.rs` |
+| fitting a name and its detail in a panel row (`share`, `ellipsize`, `split_ext`) | `logic/rows.rs`; measured and drawn by `shell/sidebar.rs` |
 | embedded sections (`![[Note#Heading]]`: reading the line, finding the section, rewriting links to a renamed heading) | `logic/embed.rs`; laid out and drawn by `views/editor/embed.rs` (a read-only `Editor` per section, framed under its line) |
 | formulas of the cells of a table (parser, evaluator, numbers as written) | `logic/formula.rs`; shown by `views/editor/grid.rs` (`results`, `Shown`), written and completed by `views/editor/formulas.rs` |
 | diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram/` (`scene.rs`: the primitives of a drawing, painted by both the SVG file and the canvas; `file.rs`: the SVG and its source; `hold.rs`: what a package or a frame holds; `pick.rs`: what a click grabs); Mermaid class, sequence and state diagrams turned into canvas diagrams (`logic/mermaid.rs`); relationships (`logic/relation.rs`), class notation (`logic/uml.rs`), `logic/import.rs`; styled text of their labels: `logic/richtext.rs` (the marks of `markdown::emphasis`); the editor: `views/canvas/` |
@@ -125,7 +128,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
   lowered once, when the vault is read, not each time the palette opens.
 - **Navigation** (`views/nav.rs`, `shell/sidebar.rs`): the tree is rebuilt from the paths of the
   indexed notes, and only the visible rows are drawn.
-- **Graph** (`views/graph.rs`): a force-directed layout computed off the UI thread when the links
+- **Graph** (`logic/graph.rs`, `views/graph.rs`): a force-directed layout computed off the UI thread when the links
   change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
 - **Diagrams** (`logic/diagram/`, `views/canvas/`, `logic/import.rs`): shapes and arrows are plain
   data; `Diagram::scene` lists what is drawn (paths with ink, dash and fill; text lines) and both the canvas and the SVG file paint that list; the file's `<metadata>`
