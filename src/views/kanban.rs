@@ -91,7 +91,7 @@ impl Render for Dragged {
             .w(self.width)
             .border_color(t.accent)
             .shadow(t.floating())
-            .text_size(px(13.))
+            .text_size(t.font_body())
             .text_color(t.text)
             .child(check_box(self.done, t))
             .child(card_text(&self.text, self.done, t))

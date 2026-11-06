@@ -468,7 +468,7 @@ impl Render for Viewer {
                     .id("v-zoom-fit")
                     .w(px(52.))
                     .text_center()
-                    .text_size(px(12.))
+                    .text_size(t.font_small())
                     .text_color(t.soft)
                     .cursor_pointer()
                     .child(percent)

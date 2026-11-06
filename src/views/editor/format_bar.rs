@@ -241,7 +241,7 @@ impl Editor {
                 .justify_center()
                 .rounded(t.small())
                 .cursor_pointer()
-                .text_size(t.px(13.))
+                .text_size(t.font_body())
                 .text_color(if lit { t.accent } else { t.soft })
                 .when(lit, |d| d.bg(t.selection))
                 .hover(|s| s.bg(t.hover).text_color(t.text))

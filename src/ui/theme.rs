@@ -210,6 +210,16 @@ impl Theme {
         px(v * self.ui)
     }
 
+    /// Secondary text: labels, hints, buttons of the tools (12 px at scale 1).
+    pub fn font_small(&self) -> Pixels {
+        self.px(12.)
+    }
+
+    /// Running interface text: rows, fields, menus (13 px at scale 1).
+    pub fn font_body(&self) -> Pixels {
+        self.px(13.)
+    }
+
     /// The small radius of the interface: fields, buttons, pills, rows.
     pub fn small(&self) -> Pixels {
         self.px(6.)

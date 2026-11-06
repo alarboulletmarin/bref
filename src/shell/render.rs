@@ -499,7 +499,7 @@ impl Shell {
                         .border_1()
                         .border_color(t.border)
                         .bg(t.panel)
-                        .text_size(t.px(13.))
+                        .text_size(t.font_body())
                         .child(format!("{} « {} »", tr("The vault was not found:", "Le coffre est introuvable :"), vault::shown(gone)))
                         .child(div().text_color(t.soft).child(tr(
                             "Moved, renamed, or on a disk that is not plugged in? Open it again, or start another one.",
@@ -547,7 +547,7 @@ impl Shell {
                         .child(tr("Clone a vault from a git address…", "Cloner un coffre depuis une adresse git…"))
                         .on_click(cx.listener(|this, _, window, cx| this.ask_clone(window, cx))),
                 )
-                .child(div().text_size(t.px(12.)).text_color(t.soft).child(format!(
+                .child(div().text_size(t.font_small()).text_color(t.soft).child(format!(
                     "{} · {}",
                     keys::of(cx, &OpenVault),
                     tr(
@@ -616,7 +616,7 @@ impl Shell {
                     .px(t.px(6.))
                     .py(t.px(2.))
                     .child(div().flex_1().min_w_0().truncate().child(note.name))
-                    .child(div().flex_none().text_size(t.px(12.)).child(recall::ago(note.days)))
+                    .child(div().flex_none().text_size(t.font_small()).child(recall::ago(note.days)))
                     .on_click(cx.listener(move |this, _, window, cx| this.open(&note.path, window, cx)))
             });
             div()
@@ -635,7 +635,7 @@ impl Shell {
                 .flex()
                 .flex_col()
                 .gap_4()
-                .text_size(t.px(13.))
+                .text_size(t.font_body())
                 .children(day)
                 .child(div().flex().flex_wrap().gap_x_4().gap_y_1().children(keys))
                 .children(again),
@@ -724,7 +724,7 @@ impl Shell {
                 .h(t.px(30.))
                 .rounded(t.large())
                 // On the board the button says what it does; over the text there is no room for it.
-                .when(board, |d| d.w_auto().px_2().gap_1().text_size(t.px(12.)).text_color(t.accent).child(tr("Text", "Texte")))
+                .when(board, |d| d.w_auto().px_2().gap_1().text_size(t.font_small()).text_color(t.accent).child(tr("Text", "Texte")))
                 .when(!board, |d| d.w(t.px(30.)))
                 .occlude()
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
@@ -766,7 +766,7 @@ impl Shell {
             let group = format!("comment-{i}");
             let words = |d: Div| d.text_color(if said.is_empty() { t.soft } else { t.text }).child(if said.is_empty() { tr("(nothing written yet)", "(rien d'écrit pour l'instant)").to_string() } else { said.to_string() });
             // The quoted passage only reminds where the comment is: small, on a faint tint, two lines.
-            let quote = |text: String| div().min_w_0().px_1().rounded(t.small()).bg(t.hover).text_size(t.px(12.)).text_color(t.soft).line_clamp(2).text_ellipsis().child(text);
+            let quote = |text: String| div().min_w_0().px_1().rounded(t.small()).bg(t.hover).text_size(t.font_small()).text_color(t.soft).line_clamp(2).text_ellipsis().child(text);
             div()
                 .id(("comment", i))
                 .debug_selector(|| format!("comment-{i}"))
@@ -829,7 +829,7 @@ impl Shell {
                 .pt(t.px(48.))
                 .pl(nav::GAP)
                 .pb_3()
-                .text_size(t.px(13.))
+                .text_size(t.font_body())
                 .flex()
                 .flex_col()
                 .gap(nav::GAP)
@@ -894,7 +894,7 @@ impl Shell {
             }
             Some((path, FileKind::Image)) => {
                 // A big picture takes a while: it says so after a moment; a file that is no picture says so too.
-                let said = move |text: &'static str| move || div().debug_selector(|| "image-said".into()).text_size(t.px(13.)).text_color(t.soft).child(text).into_any_element();
+                let said = move |text: &'static str| move || div().debug_selector(|| "image-said".into()).text_size(t.font_body()).text_color(t.soft).child(text).into_any_element();
                 note.p_6().flex().items_center().justify_center().child(
                     img(path)
                         .max_w_full()

@@ -324,7 +324,7 @@ impl Shell {
                 .flex_wrap()
                 .items_center()
                 .gap_x_1()
-                .text_size(t.px(12.))
+                .text_size(t.font_small())
                 .children(titles.into_iter().enumerate().map(|(i, title)| {
                     small(format!("help-to-{i}"), title).text_color(t.accent).on_click(cx.listener(move |this, _, _, cx| {
                         this.help.scroll.scroll_to_item(i);
@@ -350,7 +350,7 @@ impl Shell {
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(div().mb_1().text_color(t.accent).text_size(t.px(12.)).child(title))
+                .child(div().mb_1().text_color(t.accent).text_size(t.font_small()).child(title))
                 .children(rows.into_iter().map(|row| {
                     let edit = self.help.edit.as_ref().filter(|edit| Some(edit.action) == row.action);
                     let chosen = row.action.is_some() && row.action == self.help.sel;
@@ -358,14 +358,14 @@ impl Shell {
                     let keys = match row.action {
                         // Badges for real keys; a line of words ("Drag from the tree") or of
                         // alternatives ("F3 / Enter") stays text.
-                        None if row.keys.contains(' ') => div().w(t.px(156.)).flex_none().font_family(t.mono).text_size(t.px(12.)).child(row.keys.clone()),
+                        None if row.keys.contains(' ') => div().w(t.px(156.)).flex_none().font_family(t.mono).text_size(t.font_small()).child(row.keys.clone()),
                         None => div().w(t.px(156.)).flex_none().child(keycaps(&row.keys, t, false).flex_wrap()),
                         Some(action) => {
                             let color = if edit.is_some() || row.changed { t.accent } else { t.text };
                             let shown = if edit.is_some() {
-                                div().font_family(t.mono).text_size(t.px(12.)).child(tr("Press the keys…", "Tapez les touches…"))
+                                div().font_family(t.mono).text_size(t.font_small()).child(tr("Press the keys…", "Tapez les touches…"))
                             } else if row.keys.is_empty() {
-                                div().font_family(t.mono).text_size(t.px(12.)).child("—")
+                                div().font_family(t.mono).text_size(t.font_small()).child("—")
                             } else {
                                 keycaps(&row.keys, t, false).flex_wrap()
                             };
@@ -396,13 +396,13 @@ impl Shell {
                     };
                     // Under the row being typed: what to do, or what is wrong.
                     let note = edit.map(|edit| match &edit.issue {
-                        None => div().text_size(t.px(12.)).text_color(t.soft).child(tr(
+                        None => div().text_size(t.font_small()).text_color(t.soft).child(tr(
                             "Backspace: no shortcut · Esc: cancel",
                             "Retour arrière : aucun raccourci · Échap : annuler",
                         )),
-                        Some(KeyIssue::Refused(why)) => div().text_size(t.px(12.)).child(format!("{} : {why}", keys::show(&edit.keys))),
+                        Some(KeyIssue::Refused(why)) => div().text_size(t.font_small()).child(format!("{} : {why}", keys::show(&edit.keys))),
                         Some(KeyIssue::Taken(others)) => div()
-                            .text_size(t.px(12.))
+                            .text_size(t.font_small())
                             .flex()
                             .flex_wrap()
                             .items_center()
@@ -491,7 +491,7 @@ impl Shell {
                     .flex()
                     .flex_col()
                     .overflow_hidden()
-                    .text_size(t.px(13.))
+                    .text_size(t.font_body())
                     // A click in the panel does not close it.
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_action(cx.listener(|this, _: &palette::Prev, _, cx| this.help_step(false, cx)))

@@ -24,7 +24,7 @@ impl Render for TabDragged {
             .max_w(t.px(220.))
             .truncate()
             .rounded(t.tab())
-            .text_size(t.px(13.))
+            .text_size(t.font_body())
             .text_color(t.text)
             .child(self.name.clone())
     }
@@ -232,7 +232,7 @@ impl Shell {
                 .w_full()
                 .h(t.px(TAB_BAR))
                 .flex()
-                .text_size(t.px(13.))
+                .text_size(t.font_body())
                 .when(corner, |d| d.pr(t.px(render::PILL_ROOM)))
                 // Past the last tab, it lands at the end; out of the bar, nowhere in it.
                 .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<TabDragged>, _, cx| {

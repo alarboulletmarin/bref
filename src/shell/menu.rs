@@ -511,7 +511,7 @@ impl Shell {
                         .max_h(room.height)
                         .overflow_y_scroll()
                         .py(t.px(6.))
-                        .text_size(t.px(13.))
+                        .text_size(t.font_body())
                         .children(rows)
                         .with_animation(
                             "menu-in",

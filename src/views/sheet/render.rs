@@ -517,7 +517,7 @@ impl Sheet {
                         .border_1()
                         .border_color(t.border)
                         .font_family(t.mono)
-                        .text_size(t.px(13.))
+                        .text_size(t.font_body())
                         .text_color(t.soft)
                         .whitespace_nowrap()
                         .child(label),

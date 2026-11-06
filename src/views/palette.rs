@@ -951,7 +951,7 @@ impl Render for Palette {
                 Item::Note(n) => self.entries[*n].days.map(crate::lang::age),
                 _ => None,
             };
-            let soft = |d: gpui::Div| d.text_size(t.px(12.)).text_color(t.soft);
+            let soft = |d: gpui::Div| d.text_size(t.font_small()).text_color(t.soft);
             div()
                 .debug_selector(move || format!("palette-item-{i}"))
                 .mx(t.px(6.))
@@ -993,7 +993,7 @@ impl Render for Palette {
                             .truncate()
                             .when(!matches!(item, Item::Text(_)), |d| d.flex_none())
                             .text_color(if i == self.selected { t.text } else { t.soft })
-                            .text_size(t.px(12.))
+                            .text_size(t.font_small())
                             .child(detail)
                     })
                 })
@@ -1027,7 +1027,7 @@ impl Render for Palette {
                 .flex_wrap()
                 .gap_x(t.px(16.))
                 .gap_y(t.px(4.))
-                .text_size(t.px(12.))
+                .text_size(t.font_small())
                 .text_color(t.soft)
                 .children(hints)
         });
@@ -1088,7 +1088,7 @@ impl Render for Palette {
                             })
                             .when(!self.query.text.is_empty(), |d| {
                                 d.children(self.prompt.clone().map(|label| {
-                                    div().ml_auto().pl_3().flex_none().max_w(gpui::relative(0.45)).truncate().text_size(t.px(12.)).text_color(t.soft).child(label)
+                                    div().ml_auto().pl_3().flex_none().max_w(gpui::relative(0.45)).truncate().text_size(t.font_small()).text_color(t.soft).child(label)
                                 }))
                             })
                             // What the commands target first: the note, a table, a diagram.
@@ -1110,7 +1110,7 @@ impl Render for Palette {
                     .children(rows)
                     .children(footer)
                     .children(self.nothing_to_show().map(|said| {
-                        div().debug_selector(|| "palette-empty".into()).px_4().py_3().text_center().text_size(t.px(13.)).text_color(t.soft).child(said)
+                        div().debug_selector(|| "palette-empty".into()).px_4().py_3().text_center().text_size(t.font_body()).text_color(t.soft).child(said)
                     }))
                     // The panel slides into place when opening.
                     .with_animation(

@@ -17,7 +17,7 @@ fn row(id: impl Into<gpui::ElementId>, icon: &'static str, label: &'static str, 
         .gap_2()
         .rounded(t.small())
         .cursor_pointer()
-        .text_size(px(12.5))
+        .text_size(t.px(12.5))
         .text_color(t.text)
         .when(lit, |d| d.bg(t.code_bg))
         .when(focus, |d| d.bg(t.selection))
@@ -29,7 +29,7 @@ fn row(id: impl Into<gpui::ElementId>, icon: &'static str, label: &'static str, 
 
 /// The title of a group of rows.
 fn title(text: &'static str, t: Theme) -> Div {
-    div().px_2().pt_2().pb_1().text_size(px(11.)).text_color(t.soft).child(text.to_uppercase())
+    div().px_2().pt_2().pb_1().text_size(t.px(11.)).text_color(t.soft).child(text.to_uppercase())
 }
 
 /// A menu that opens over the canvas.
@@ -507,7 +507,7 @@ impl Canvas {
                     .id("d-zoom-fit")
                     .w(px(52.))
                     .text_center()
-                    .text_size(px(12.))
+                    .text_size(t.font_small())
                     .text_color(t.soft)
                     .cursor_pointer()
                     .tooltip(tip(tr("Fit the diagram", "Ajuster au diagramme"), "0".into(), t))
@@ -574,12 +574,12 @@ impl Canvas {
                     .bg(t.bg)
                     .border_1()
                     .border_color(t.border)
-                    .text_size(px(12.5))
+                    .text_size(t.px(12.5))
                     .child(svg().path("search.svg").size(px(14.)).flex_none().text_color(t.soft))
                     .child(if query.is_empty() { div().text_color(t.soft).child(tr("Search shapes…", "Chercher une forme…")) } else { div().child(format!("{query}▏")) })
                     .into_any_element(),
                 LibChild::Title(name) => title(name, t).into_any_element(),
-                LibChild::Empty => div().px_2().py_1().text_size(px(12.)).text_color(t.soft).child(tr("No shape answers.", "Aucune forme ne répond.")).into_any_element(),
+                LibChild::Empty => div().px_2().py_1().text_size(t.font_small()).text_color(t.soft).child(tr("No shape answers.", "Aucune forme ne répond.")).into_any_element(),
                 LibChild::Row(Lib::Start(i)) => row(("d-start", i), "file-plus.svg", templates[i].name, String::new(), false, focus == Some(Lib::Start(i)), t)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.library = None;

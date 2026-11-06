@@ -129,7 +129,7 @@ impl Canvas {
                 .gap_2()
                 .rounded(t.small())
                 .cursor_pointer()
-                .text_size(px(12.5))
+                .text_size(t.px(12.5))
                 .text_color(t.text)
                 .bg(if self.relations { t.selection } else { t.bg })
                 .border_1()

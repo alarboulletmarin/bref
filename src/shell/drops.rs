@@ -157,7 +157,7 @@ impl Shell {
                 .bg(t.panel)
                 .border_1()
                 .border_color(t.accent.opacity(0.6))
-                .text_size(px(12.))
+                .text_size(t.font_small())
                 .text_color(t.text)
                 .flex()
                 .gap_1()

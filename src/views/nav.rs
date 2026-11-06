@@ -284,7 +284,7 @@ impl Render for Dragged {
             .bg(t.panel)
             .border_1()
             .border_color(t.border)
-            .text_size(px(13.))
+            .text_size(t.font_body())
             .text_color(t.text)
             .child(self.name.clone())
     }

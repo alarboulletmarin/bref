@@ -89,7 +89,7 @@ pub(super) fn status_card(t: Theme) -> Div {
             .pl_3()
             .pr_2()
             .py_1p5()
-            .text_size(t.px(13.))
+            .text_size(t.font_body())
             .flex()
             .items_center()
             .gap_3()

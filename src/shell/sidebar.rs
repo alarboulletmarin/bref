@@ -313,7 +313,7 @@ impl Shell {
             .flex_1()
             .min_h_0()
             .px_2()
-            .text_size(t.px(13.))
+            .text_size(t.font_body())
             .flex()
             .flex_col()
             .gap_1()
@@ -646,7 +646,7 @@ impl Shell {
                         .items_center()
                         .gap(t.px(7.))
                         .rounded(t.large())
-                        .text_size(t.px(13.))
+                        .text_size(t.font_body())
                         .when(!selected, |d| d.hover(|s| s.bg(t.hover)))
                         // The displayed file: an accent pill; the selection wins on the same row.
                         .when(current && !selected, |d| d.bg(crate::ui::widgets::pill_tint(t)))
@@ -1307,7 +1307,7 @@ impl Shell {
         let unreadable = self.vault.as_ref().and_then(|root| self.unreadable.iter().find(|(dir, _)| dir == root).map(|(_, why)| (root.clone(), *why)));
         let nothing = self.nav.rows.is_empty().then(|| {
             if let Some((root, why)) = &unreadable {
-                return div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(t.px(13.)).text_color(t.soft).child(
+                return div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(t.font_body()).text_color(t.soft).child(
                     div()
                         .debug_selector(|| "nav-unreadable".into())
                         .max_w_full()
@@ -1346,7 +1346,7 @@ impl Shell {
                 Mode::Links => tr("No note links here yet", "Aucune note ne renvoie ici pour l'instant").to_string(),
                 _ => tr("No recent note", "Aucune note récente").to_string(),
             };
-            div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(t.px(13.)).text_color(t.soft).child(div().debug_selector(|| "nav-empty".into()).max_w_full().child(said))
+            div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(t.font_body()).text_color(t.soft).child(div().debug_selector(|| "nav-empty".into()).max_w_full().child(said))
         });
         // Set again by the selected row if it is drawn.
         self.nav.sel_at.set(None);

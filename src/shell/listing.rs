@@ -244,7 +244,7 @@ impl Shell {
             .pt(t.px(48.))
             .px_6()
             .pb_4()
-            .text_size(t.px(13.))
+            .text_size(t.font_body())
             .flex()
             .flex_col()
             .overflow_scroll()

@@ -24,7 +24,7 @@ impl Render for ToolDragged {
             .max_w(t.px(220.))
             .truncate()
             .rounded(t.tab())
-            .text_size(t.px(13.))
+            .text_size(t.font_body())
             .text_color(t.text)
             .child(self.name.clone())
     }

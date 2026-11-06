@@ -29,7 +29,7 @@ impl Render for Editor {
                 .flex()
                 .items_center()
                 .bg(self.theme.bg)
-                .text_size(t.px(12.))
+                .text_size(t.font_small())
                 .text_color(self.theme.soft)
                 .child(div().min_w_0().truncate().child(self.counts())),
         );
