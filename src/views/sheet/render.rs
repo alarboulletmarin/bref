@@ -42,7 +42,7 @@ impl Render for Sheet {
                         .text_color(t.soft)
                         .when(c + 1 == self.cols(), |d| d.rounded_tr(t.band()))
                         .when(inside, |d| d.bg(t.selection))
-                        .child(letters(c))
+                        .child(crate::logic::markdown::column_letters(c))
                 }),
             )
         };
@@ -258,7 +258,7 @@ impl Sheet {
             let named = self.table.cell(0, cols.start).trim().to_string();
             let title = match (cols.len(), self.format.header && !named.is_empty()) {
                 (1, true) => format!("{} « {named} »", tr("Column", "Colonne")),
-                (1, false) => format!("{} {}", tr("Column", "Colonne"), letters(cols.start)),
+                (1, false) => format!("{} {}", tr("Column", "Colonne"), crate::logic::markdown::column_letters(cols.start)),
                 (n, _) => format!("{n} {}", tr("columns", "colonnes")),
             };
             (title, vec![

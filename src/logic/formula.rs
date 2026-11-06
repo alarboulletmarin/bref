@@ -686,6 +686,18 @@ pub fn display(rows: &[Vec<String>], decimal: char) -> Vec<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
+    use super::column_of;
+    use crate::logic::markdown::column_letters;
+
+    /// `column_of` reads back what `column_letters` writes, up to the three letters a formula allows.
+    #[test]
+    fn column_letters_and_column_of_agree() {
+        for c in (0..800).chain([18_276]) {
+            assert_eq!(column_of(&column_letters(c)), Some(c), "{c}");
+        }
+        assert_eq!(column_of("ab"), Some(27));
+    }
+
     use super::*;
 
     fn grid(rows: &[&[&str]]) -> Vec<Vec<String>> {

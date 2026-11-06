@@ -121,20 +121,6 @@ pub fn delimiter_option(d: u8) -> String {
     format!("{}  {sign}", table::delimiter_label(d))
 }
 
-/// Column name the spreadsheet way: A, B… Z, AA, AB…
-fn letters(mut c: usize) -> String {
-    let mut name = Vec::new();
-    loop {
-        name.push(b'A' + (c % 26) as u8);
-        if c < 26 {
-            break;
-        }
-        c = c / 26 - 1;
-    }
-    name.reverse();
-    String::from_utf8(name).unwrap_or_default()
-}
-
 pub struct Sheet {
     focus: FocusHandle,
     theme: Theme,
@@ -583,13 +569,7 @@ impl Sheet {
 
 #[cfg(test)]
 mod tests {
-    use super::{letters, summary};
-
-    #[test]
-    fn names_columns_like_a_spreadsheet() {
-        let names: Vec<_> = [0, 1, 25, 26, 27, 51, 52, 701, 702].map(letters).into();
-        assert_eq!(names, ["A", "B", "Z", "AA", "AB", "AZ", "BA", "ZZ", "AAA"]);
-    }
+    use super::summary;
 
     #[test]
     fn the_summary_counts_rows_and_columns() {
