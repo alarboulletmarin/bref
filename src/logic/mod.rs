@@ -7,6 +7,7 @@ pub mod daily;
 pub mod diagram;
 pub mod embed;
 pub mod formula;
+pub mod graph;
 pub mod history;
 pub mod import;
 pub mod kanban;
