@@ -576,14 +576,23 @@ mod tests {
         assert!(fails.is_empty(), "{}", fails.join("\n"));
     }
 
-    /// Print the ground/sheet contrast of the 13 themes (`cargo test ground_table -- --nocapture --ignored`).
+    /// In each theme the sheet shows on the ground behind it, and text, secondary text and accent read on that ground.
     #[test]
-    #[ignore]
-    fn ground_table() {
+    fn the_ground_shows_the_sheet_and_carries_text() {
+        let mut fails = Vec::new();
         for (name, _) in THEMES {
             let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
-            println!("{name}: ground {} sheet {} ratio {:.3} text/ground {:.2} soft/ground {:.2} accent/ground {:.2}", hex(t.ground), hex(t.bg), contrast(t.ground, t.bg), contrast(t.text, t.ground), contrast(t.soft, t.ground), contrast(t.accent, t.ground));
+            let line = format!("{name}: ground {} sheet {}", hex(t.ground), hex(t.bg));
+            if contrast(t.ground, t.bg) < 1.03 {
+                fails.push(format!("{line}: the sheet does not show on the ground ({:.3})", contrast(t.ground, t.bg)));
+            }
+            for (what, fg) in [("text", t.text), ("soft", t.soft), ("accent", t.accent)] {
+                if contrast(fg, t.ground) < 4.5 {
+                    fails.push(format!("{line}: {what} {:.2} on the ground", contrast(fg, t.ground)));
+                }
+            }
         }
+        assert!(fails.is_empty(), "{}", fails.join("\n"));
     }
 
     #[test]
