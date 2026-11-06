@@ -427,6 +427,10 @@ pub fn edit_note(vault: &mut Vault, args: &Value) -> Outcome {
         return Outcome::err(message);
     }
     let (path, renamed, reason, rewritten) = follow_title(vault, &path, &text, &next);
+    // A renamed heading is followed by the links that point at it, as in the app.
+    if let Some((was, now)) = embed::renamed_heading(&text, &next) {
+        files::follow_heading(&mut vault.notes, &path, &was, &now);
+    }
     let revision = vault::revision(next.as_bytes());
     Outcome::ok(json!({
         "path": vault::rel(&vault.root, &path),

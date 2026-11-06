@@ -158,6 +158,18 @@ pub fn position(text: &str, anchor: &Anchor) -> Option<usize> {
     find(text, anchor).map(|r| r.start)
 }
 
+/// The one heading that was renamed between two versions of a note (the same headings but one,
+/// which reads differently, at the same level): its old and new label. `None` for anything else.
+pub fn renamed_heading(before: &str, after: &str) -> Option<(String, String)> {
+    let (old, new) = (md::headings(before), md::headings(after));
+    let changed: Vec<_> = old.iter().zip(&new).filter(|(a, b)| a.0 != b.0 || a.1 != b.1).collect();
+    let [(was, now)] = changed.as_slice() else { return None };
+    if old.len() != new.len() || was.0 != now.0 || now.1.trim().is_empty() || was.1.trim().is_empty() {
+        return None;
+    }
+    Some((was.1.trim().to_string(), now.1.trim().to_string()))
+}
+
 /// Writes `![[note#old]]` and `[[note#old]]` as `…#new`, for every link of `text` that points at heading
 /// `old` of note `note`: the new text, and how many. (A renamed note is `markdown::relink`.)
 pub fn rename_heading(text: &str, note: &str, old: &str, new: &str) -> (String, usize) {

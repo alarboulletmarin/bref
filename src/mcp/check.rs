@@ -162,6 +162,20 @@ fn a_failed_title_rewrite_undoes_the_rename() {
 }
 
 #[test]
+fn editing_a_heading_rewrites_links_to_it() {
+    let root = scratch();
+    write(&root, "A.md", "# A\n\n## Old part\ntext\n\n## Other\n");
+    write(&root, "L.md", "# L\n[[A#Old part]] ![[A#Old part]] [[A#Other]] [[A#old part|x]]\n");
+    let mut vault = open(&root);
+    ok(notes::edit_note(&mut vault, &json!({"note": "A", "edits": [{"old": "## Old part", "new": "## Né ✓ part"}]})));
+    assert_eq!(fs::read_to_string(root.join("L.md")).unwrap(), "# L\n[[A#Né ✓ part]] ![[A#Né ✓ part]] [[A#Other]] [[A#Né ✓ part|x]]\n");
+    // Two headings changed at once: ambiguous, links stay.
+    ok(notes::edit_note(&mut vault, &json!({"note": "A", "edits": [{"old": "## Other", "new": "## Z"}, {"old": "## Né ✓ part", "new": "## Y"}]})));
+    assert!(fs::read_to_string(root.join("L.md")).unwrap().contains("[[A#Other]]"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_table_can_be_renamed() {
     let root = scratch();
     write(&root, "Sub/data.csv", "a,b\n1,2\n");

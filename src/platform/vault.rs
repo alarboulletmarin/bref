@@ -429,6 +429,25 @@ pub fn retitle(path: &Path, old: &str, new: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// Heading `was` of the note at `path` is now `now`: the other notes that link to it, `[[Note#was]]` and
+/// `![[Note#was]]`, are rewritten on disk and re-indexed. Returns the notes rewritten.
+pub fn follow_heading(notes: &mut [Note], path: &Path, was: &str, now: &str) -> Vec<PathBuf> {
+    let (name, key) = (stem(path), stem(path).to_lowercase());
+    let mut rewritten = Vec::new();
+    for note in notes.iter_mut().filter(|n| n.path != path && n.links.contains(&key)) {
+        let fresh = fs::read_to_string(&note.path)
+            .ok()
+            .map(|text| crate::logic::embed::rename_heading(&text, &name, was, now))
+            .filter(|(_, count)| *count > 0)
+            .filter(|(text, _)| write(&note.path, text).is_ok());
+        if let Some((text, _)) = fresh {
+            (note.tags, note.links) = Note::index(&text);
+            rewritten.push(note.path.clone());
+        }
+    }
+    rewritten
+}
+
 /// Moves the note or folder to the vault's trash: the hidden folder
 /// `.trash`, which the index ignores. Nothing is destroyed.
 pub fn trash(root: &Path, path: &Path) -> io::Result<PathBuf> {
