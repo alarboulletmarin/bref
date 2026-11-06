@@ -82,6 +82,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | kanban boards read from a note (columns, cards, moves) | `logic/kanban.rs`; the pane's state and card widgets in `views/kanban.rs`, drawn by `shell/board.rs` |
 | graph maths (edges, force layout, node sizes, drag propagation) | `logic/graph.rs`; drawn by `views/graph.rs` |
 | rows of the folder tree and the tags (`Row`, `tree_rows`, `tag_rows`) | `logic/tree.rs`; panel state in `views/nav.rs`, drawn by `shell/sidebar.rs` |
+| the panel's tools (`Mode`, `Panel`) and the `layout` file line (`parse`, `write`) | `logic/dock.rs`; the panel state in `views/nav.rs` |
 | names and kinds of files from the path alone (`natural` sort key, `is_image`, `is_table`, `is_attachment`) | `logic/files.rs`, re-exported by `platform/vault.rs` |
 | fitting a name and its detail in a panel row (`share`, `ellipsize`, `split_ext`) | `logic/rows.rs`; measured and drawn by `shell/sidebar.rs` |
 | embedded sections (`![[Note#Heading]]`: reading the line, finding the section, rewriting links to a renamed heading) | `logic/embed.rs`; laid out and drawn by `views/editor/embed.rs` (a read-only `Editor` per section, framed under its line) |

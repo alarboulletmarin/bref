@@ -4,6 +4,7 @@
 pub mod block;
 pub mod commands;
 pub mod daily;
+pub mod dock;
 pub mod diagram;
 pub mod embed;
 pub mod files;

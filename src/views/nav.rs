@@ -1,10 +1,10 @@
 //! Navigation: an always-visible icon rail, and a panel (vault
 //! tree, recent notes, graph or tags) that shares the window with the note.
 
+use crate::logic::dock;
 use crate::platform::config;
 use std::{
     collections::{HashMap, HashSet},
-    hash::Hash,
     path::{Path, PathBuf},
 };
 
@@ -30,7 +30,7 @@ pub const RAIL: f32 = 40.;
 pub const ROW: f32 = 28.;
 /// Indent of a tree row per level of depth, at scale 1.
 pub const INDENT: f32 = 16.;
-pub const LIST_W: Pixels = px(260.);
+pub const LIST_W: Pixels = px(crate::logic::dock::LIST_W);
 /// Width the panel and the comments column always leave to the note.
 pub const NOTE_MIN: Pixels = px(200.);
 /// Ground between two sheets and around the window's edges (none on the rail's side).
@@ -38,46 +38,7 @@ pub const GAP: Pixels = px(8.);
 /// Handle between the panel and the note: the gap itself, so that dragging it needs no thin line.
 pub const DIVIDER: Pixels = GAP;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
-pub enum Mode {
-    #[default]
-    Tree,
-    Recent,
-    Graph,
-    Tags,
-    /// Backlinks: the notes that lead to the open note.
-    Links,
-    /// Calendar: a month, showing the days that have their note.
-    Calendar,
-    /// The vault search: the matches of a search, note by note.
-    Search,
-}
-
-impl Mode {
-    pub const ALL: [Mode; 7] = [Mode::Tree, Mode::Recent, Mode::Graph, Mode::Tags, Mode::Links, Mode::Calendar, Mode::Search];
-
-    /// As written in the `layout` file.
-    pub fn name(self) -> &'static str {
-        match self {
-            Mode::Tree => "tree",
-            Mode::Recent => "recent",
-            Mode::Graph => "graph",
-            Mode::Tags => "tags",
-            Mode::Links => "links",
-            Mode::Calendar => "calendar",
-            Mode::Search => "search",
-        }
-    }
-
-    pub fn named(name: &str) -> Option<Mode> {
-        Mode::ALL.into_iter().find(|m| m.name() == name)
-    }
-
-    /// Only the graph and the calendar open as a tab: they need room, the lists do not.
-    pub fn tabs(self) -> bool {
-        matches!(self, Mode::Graph | Mode::Calendar)
-    }
-}
+pub use crate::logic::dock::{Mode, Panel};
 
 /// Where a tool's list stands. The active tool's view lives in `Nav` itself, where every gesture
 /// of the panel finds it; the others wait in `Nav::parked` (`Nav::activate`).
@@ -88,14 +49,6 @@ pub struct View {
     pub rows_from: u64,
     pub scroll: UniformListScrollHandle,
     pub reveal: bool,
-}
-
-/// Place of the panel: collapsed onto its rail, next to the note, or alone.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Panel {
-    Rail,
-    Split,
-    Full,
 }
 
 /// Narrowest detail (a note's folder) worth showing; under it, it is hidden.
@@ -349,47 +302,20 @@ pub struct Nav {
 impl Nav {
     /// Restores the panel as it was when the app closed.
     pub fn new(focus: FocusHandle) -> Self {
-        let saved = config::load(config::File::Layout);
-        let mut words = saved.split_whitespace();
-        let mode = words.next().and_then(Mode::named).unwrap_or_default();
-        // Then, in any order, what an older file does not have: the right dock.
-        let (positional, keyed): (Vec<&str>, Vec<&str>) = words.partition(|w| !w.contains('='));
-        let key = |name: &str| keyed.iter().find_map(|w| w.strip_prefix(name)?.strip_prefix('='));
-        let list = |name: &str| {
-            let mut tools: Vec<Mode> = Vec::new();
-            for tool in key(name).unwrap_or_default().split(',').filter_map(Mode::named) {
-                if !tools.contains(&tool) {
-                    tools.push(tool);
-                }
-            }
-            tools
-        };
-        // A tool on both sides stays on the left, where it always was.
-        let mut left_shown = list("left");
-        if !left_shown.contains(&mode) {
-            left_shown.insert(0, mode);
-        }
-        let right: Vec<Mode> = list("right").into_iter().filter(|m| !left_shown.contains(m)).collect();
-        let right_shown = list("show").into_iter().filter(|m| right.contains(m)).collect();
-        let folded = list("fold").into_iter().collect();
-        let mut words = positional.into_iter();
+        let saved = dock::parse(&config::load(config::File::Layout));
         Self {
             focus,
-            mode,
+            mode: saved.mode,
             parked: HashMap::new(),
-            left_shown,
-            right_w: key("width").and_then(|w| w.parse().ok()).map_or(LIST_W, px),
-            right,
-            right_shown,
+            left_shown: saved.left_shown,
+            right_w: px(saved.right_w),
+            right: saved.right,
+            right_shown: saved.right_shown,
             right_dragging: false,
-            folded,
-            panel: match words.next() {
-                Some("split") => Panel::Split,
-                Some("full") => Panel::Full,
-                _ => Panel::Rail,
-            },
-            list_w: words.next().and_then(|w| w.parse().ok()).map_or(LIST_W, px),
-            graph_w: words.next().and_then(|w| w.parse().ok()).map_or(px(0.), px),
+            folded: saved.folded,
+            panel: saved.panel,
+            list_w: px(saved.list_w),
+            graph_w: px(saved.graph_w),
             dragging: false,
             sel: None,
             followed: None,
@@ -411,29 +337,18 @@ impl Nav {
     }
 
     pub fn save(&self) {
-        let panel = match self.panel {
-            Panel::Rail => "rail",
-            Panel::Split => "split",
-            Panel::Full => "full",
+        let layout = dock::Layout {
+            mode: self.left_mode(),
+            panel: self.panel,
+            list_w: f32::from(self.list_w),
+            graph_w: f32::from(self.graph_w),
+            left_shown: self.left_shown.clone(),
+            right: self.right.clone(),
+            right_shown: self.right_shown.clone(),
+            right_w: f32::from(self.right_w),
+            folded: self.folded.clone(),
         };
-        let (list, graph) = (f32::from(self.list_w), f32::from(self.graph_w));
-        let names = |tools: &mut dyn Iterator<Item = &Mode>| tools.map(|m| m.name()).collect::<Vec<_>>().join(",");
-        let mut line = format!("{} {panel} {list} {graph}", self.left_mode().name());
-        if self.left_shown.len() > 1 {
-            line += &format!(" left={}", names(&mut self.left_shown.iter()));
-        }
-        if !self.right.is_empty() {
-            line += &format!(" right={} width={}", names(&mut self.right.iter()), f32::from(self.right_w));
-            if !self.right_shown.is_empty() {
-                line += &format!(" show={}", names(&mut self.right_shown.iter()));
-            }
-        }
-        if !self.folded.is_empty() {
-            let mut folded: Vec<&Mode> = self.folded.iter().collect();
-            folded.sort_by_key(|m| m.name());
-            line += &format!(" fold={}", names(&mut folded.into_iter()));
-        }
-        config::keep(config::File::Layout, &format!("{line}\n"));
+        config::keep(config::File::Layout, &format!("{}\n", dock::write(&layout)));
     }
 
     /// The tool's view comes into `Nav`, the active one's goes to wait.
