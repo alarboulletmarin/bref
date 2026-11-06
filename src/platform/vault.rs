@@ -403,21 +403,30 @@ pub fn rename(from: &Path, to: &Path) -> io::Result<()> {
 }
 
 /// Renames a note and returns its path. If its name followed its title, the
-/// first line is rewritten so they stay in step.
+/// first line is rewritten so they stay in step; if that write fails, the rename is undone.
 pub fn rename_note(path: &Path, name: &str) -> io::Result<PathBuf> {
-    let content = fs::read_to_string(path)?;
     let to = path.with_file_name(format!("{name}.md"));
     rename(path, &to)?;
-    // The front matter stays as is: the title is the first line after it.
+    if let Err(e) = retitle(&to, &stem(path), name) {
+        rename(&to, path).ok();
+        return Err(e);
+    }
+    Ok(to)
+}
+
+/// The note's title was `old` (its former name): its first line becomes `new`, written atomically.
+/// The front matter stays as is: the title is the first line after it.
+pub fn retitle(path: &Path, old: &str, new: &str) -> io::Result<()> {
+    let content = fs::read_to_string(path)?;
     let (meta, body) = content.split_at(markdown::front_matter(&content));
-    if stem(path) == title_of(&content)
+    if old == title_of(&content)
         && let Some(first) = body.lines().find(|l| !l.trim().is_empty())
     {
         let hashes = first.trim_start().chars().take_while(|c| *c == '#').count();
-        let title = if hashes > 0 { format!("{} {name}", "#".repeat(hashes)) } else { name.to_string() };
-        fs::write(&to, format!("{meta}{}", body.replacen(first, &title, 1)))?;
+        let title = if hashes > 0 { format!("{} {new}", "#".repeat(hashes)) } else { new.to_string() };
+        write(path, format!("{meta}{}", body.replacen(first, &title, 1)))?;
     }
-    Ok(to)
+    Ok(())
 }
 
 /// Moves the note or folder to the vault's trash: the hidden folder
@@ -1154,6 +1163,13 @@ mod tests {
         fs::write(root.join("D.md"), "\n## D\ntexte D\n").unwrap();
         let e = rename_note(&root.join("D.md"), "E").unwrap();
         assert_eq!(fs::read_to_string(&e).unwrap(), "\n## E\ntexte D\n");
+        // A title that cannot be written leaves the note under its old name.
+        fs::write(root.join("F.md"), "# F\n").unwrap();
+        refuse_writes(&root.join("G.md"), true);
+        assert!(rename_note(&root.join("F.md"), "G").is_err());
+        refuse_writes(&root.join("G.md"), false);
+        assert!(root.join("F.md").exists() && !root.join("G.md").exists());
+        fs::remove_file(root.join("F.md")).unwrap();
         // Never overwrite.
         assert!(rename_note(&e, "C").is_err() && e.exists());
 

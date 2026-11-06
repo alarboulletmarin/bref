@@ -145,6 +145,23 @@ fn renaming_keeps_the_folder_unless_given() {
 }
 
 #[test]
+fn a_failed_title_rewrite_undoes_the_rename() {
+    let root = scratch();
+    write(&root, "A.md", "# A\ntext\n");
+    let mut vault = open(&root);
+    let dest = root.join("B.md");
+    crate::platform::vault::refuse_writes(&dest, true);
+    let message = err(notes::rename_note(&mut vault, &json!({"note": "A", "name": "B"})));
+    crate::platform::vault::refuse_writes(&dest, false);
+    assert!(!message.is_empty());
+    assert!(root.join("A.md").exists() && !dest.exists());
+    assert_eq!(fs::read_to_string(root.join("A.md")).unwrap(), "# A\ntext\n");
+    assert_eq!(ok(notes::rename_note(&mut vault, &json!({"note": "A", "name": "B"})))["path"], "B.md");
+    assert_eq!(fs::read_to_string(&dest).unwrap(), "# B\ntext\n");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_table_can_be_renamed() {
     let root = scratch();
     write(&root, "Sub/data.csv", "a,b\n1,2\n");

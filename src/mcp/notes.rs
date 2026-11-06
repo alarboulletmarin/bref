@@ -589,19 +589,16 @@ pub fn rename_note(vault: &mut Vault, args: &Value) -> Outcome {
     } else {
         (old_stem.clone(), new_stem.clone())
     };
-    // A note whose title was its name keeps the title in step.
-    if dest.extension().is_some_and(|e| e == "md") && old_stem != new_stem {
-        if let Ok(text) = fs::read_to_string(&dest)
-            && files::h1_of(&text).as_deref() == Some(old_stem.as_str())
-        {
-            let meta = markdown::front_matter(&text);
-            let (head, body) = text.split_at(meta);
-            if let Some(first) = body.lines().find(|l| !l.trim().is_empty()) {
-                let hashes = first.trim_start().chars().take_while(|c| *c == '#').count();
-                let title = format!("{} {new_stem}", "#".repeat(hashes.max(1)));
-                let _ = files::write(&dest, &format!("{head}{}", body.replacen(first, &title, 1)));
-            }
+    // A note whose title was its name keeps the title in step; if that fails, nothing changed.
+    if dest.extension().is_some_and(|e| e == "md")
+        && old_stem != new_stem
+        && let Err(error) = files::retitle(&dest, &old_stem, &new_stem)
+    {
+        if dest != path {
+            files::rename(&dest, &path).ok();
         }
+        vault.rescan();
+        return Outcome::err(disk(error));
     }
     let rewritten = if old_link != new_link { vault::relink(vault, &old_link, &new_link) } else { vault.rescan(); 0 };
     let left = old_link != new_link && rewritten == 0 && vault.notes.iter().any(|n| n.name.eq_ignore_ascii_case(&old_link));
