@@ -22,64 +22,8 @@ impl Render for Shell {
         let t = self.theme;
         // The spacings of the interface are in rems: they follow its scale.
         window.set_rem_size(t.px(16.));
-        // The pane holding the focus is the active one; when the code changed it without moving
-        // input (a note already open in the other pane), it follows.
-        if let Some(template) = self.template.take() {
-            self.new_diagram_from(template, window, cx);
-        }
-        if std::mem::take(&mut self.grab) {
-            self.focus_pane(self.active, window, cx);
-        } else if let Some(pane) = self.groups.iter().map(|group| group.shown).find(|&pane| self.panes[pane].zone.contains_focused(window, cx)) {
-            self.active = pane;
-        } else if (0..self.panes.len()).any(|tab| !self.groups.iter().any(|group| group.shown == tab) && self.tab_has_focus(tab, window, cx)) {
-            // Input was in a tab now out of sight, where no key would reach anything: the tab shown
-            // takes it.
-            self.focus_pane(self.active, window, cx);
-        }
-        self.show_active(cx);
-        #[cfg(test)]
-        let dragging = cx.has_active_drag() || self.keep_aim;
-        #[cfg(not(test))]
-        let dragging = cx.has_active_drag();
-        if !dragging {
-            (self.pane_aim, self.tab_aim, self.tool_aim, self.tool_drag) = (None, None, None, false);
-            // The drag is over (dropped, or out of the window): no more label or line.
-            if self.drop_aim.is_some() {
-                self.aim_drop(None, cx);
-            }
-        }
-        if self.pane().editor.focus_handle(cx).is_focused(window) {
-            self.keep_preview();
-        }
-        self.track(cx);
-        let title = match (self.pane().displayed_path(), &self.vault) {
-            (Some(p), _) => vault::stem(p),
-            (None, Some(_)) => tr("New note", "Nouvelle note").to_string(),
-            (None, None) => "Bref".to_string(),
-        };
-        if title != self.title {
-            window.set_window_title(&title);
-            self.title = title;
-        }
-
-        // On Linux the app provides title bar, rounded corners and shadow; on
-        // macOS and Windows, gpui announces `Server` and the system takes care of it.
-        let tiling = match window.window_decorations() {
-            Decorations::Client { tiling } => Some(tiling),
-            Decorations::Server => None,
-        };
-        #[cfg(test)]
-        let tiling = tiling.or(self.client.then(Default::default));
-        let client = tiling.is_some();
-        let framed = tiling.is_some_and(|t| !t.is_tiled())
-            && !window.is_maximized()
-            && !window.is_fullscreen();
-        let inset = if framed { SHADOW } else { px(0.) };
-        window.set_client_inset(inset);
-        let total = window.viewport_size().width - inset * 2. - if self.vault.is_some() { nav::GAP } else { px(0.) };
-        self.nav.set_frame(inset, total);
-        self.nav.set_native_bar(!client);
-
+        self.settle(window, cx);
+        let (client, framed) = self.sync_window(window);
         let pill = self.render_window_controls(window, cx);
 
         let body = div().flex_1().min_h_0().relative();
@@ -272,6 +216,81 @@ impl Render for Shell {
     }
 }
 
+impl Shell {
+    /// The state work a frame still does before drawing: it settles what only the frame can know
+    /// (which pane holds the focus, a drag that ended, the title) and follows it. It cannot move
+    /// to the events: the focus moves without an event of ours (a click inside a pane's editor, a
+    /// tab hidden while it held input), and a canvas event has no `Window` to create the diagram
+    /// the library template asks for. `track` stays here for the same reason: the active pane is
+    /// only known once the focus has been followed. Everything else in `render` is drawing.
+    fn settle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The pane holding the focus is the active one; when the code changed it without moving
+        // input (a note already open in the other pane), it follows.
+        if let Some(template) = self.template.take() {
+            self.new_diagram_from(template, window, cx);
+        }
+        if std::mem::take(&mut self.grab) {
+            self.focus_pane(self.active, window, cx);
+        } else if let Some(pane) = self.groups.iter().map(|group| group.shown).find(|&pane| self.panes[pane].zone.contains_focused(window, cx)) {
+            self.active = pane;
+        } else if (0..self.panes.len()).any(|tab| !self.groups.iter().any(|group| group.shown == tab) && self.tab_has_focus(tab, window, cx)) {
+            // Input was in a tab now out of sight, where no key would reach anything: the tab shown
+            // takes it.
+            self.focus_pane(self.active, window, cx);
+        }
+        self.show_active(cx);
+        #[cfg(test)]
+        let dragging = cx.has_active_drag() || self.keep_aim;
+        #[cfg(not(test))]
+        let dragging = cx.has_active_drag();
+        if !dragging {
+            (self.pane_aim, self.tab_aim, self.tool_aim, self.tool_drag) = (None, None, None, false);
+            // The drag is over (dropped, or out of the window): no more label or line.
+            if self.drop_aim.is_some() {
+                self.aim_drop(None, cx);
+            }
+        }
+        if self.pane().editor.focus_handle(cx).is_focused(window) {
+            self.keep_preview();
+        }
+        self.track(cx);
+        let title = match (self.pane().displayed_path(), &self.vault) {
+            (Some(p), _) => vault::stem(p),
+            (None, Some(_)) => tr("New note", "Nouvelle note").to_string(),
+            (None, None) => "Bref".to_string(),
+        };
+        if title != self.title {
+            window.set_window_title(&title);
+            self.title = title;
+        }
+    }
+
+    /// The window's decorations and size, handed to what depends on them (the inset, the panel's
+    /// width, the native bar). It needs the frame: `window` only knows them while drawing, and a
+    /// resize or a maximize sends us no event. Returns whether the app draws the frame, and
+    /// whether that frame has its margin (shadow, resize handle).
+    fn sync_window(&mut self, window: &mut Window) -> (bool, bool) {
+        // On Linux the app provides title bar, rounded corners and shadow; on
+        // macOS and Windows, gpui announces `Server` and the system takes care of it.
+        let tiling = match window.window_decorations() {
+            Decorations::Client { tiling } => Some(tiling),
+            Decorations::Server => None,
+        };
+        #[cfg(test)]
+        let tiling = tiling.or(self.client.then(Default::default));
+        let client = tiling.is_some();
+        let framed = tiling.is_some_and(|t| !t.is_tiled())
+            && !window.is_maximized()
+            && !window.is_fullscreen();
+        let inset = if framed { SHADOW } else { px(0.) };
+        window.set_client_inset(inset);
+        let total = window.viewport_size().width - inset * 2. - if self.vault.is_some() { nav::GAP } else { px(0.) };
+        self.nav.set_frame(inset, total);
+        self.nav.set_native_bar(!client);
+        (client, framed)
+    }
+}
+
 /// Window edge or corner under the pointer, within a margin of a few pixels.
 pub(super) fn resize_edge(pos: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeEdge> {
     let m = SHADOW;
@@ -292,9 +311,9 @@ pub(super) fn resize_edge(pos: Point<Pixels>, size: Size<Pixels>) -> Option<Resi
 
 impl Shell {
     // The window's buttons, a bare group at the top right: no background, border or shadow of
-    // their own, so they sit on the surface of whatever row is under them. Every top row
-    // (tab bar, panel header, board bar, CSV bar) stops `PILL_ROOM` short of them and a narrow
-    // note starts under them. The group is also a move handle, like the panel header, the
+    // their own, so they sit on the surface of whatever row is under them. The tab bar and the
+    // panel header stop `PILL_ROOM` short of them (the table's page header keeps its own
+    // `WINDOW_BUTTONS`), and a narrow note starts under them (`Chrome::pill`). The group is also a move handle, like the panel header, the
     // empty part of the rail and the board bar; Alt + drag moves from anywhere.
     pub(super) fn render_window_controls(&self, window: &Window, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
