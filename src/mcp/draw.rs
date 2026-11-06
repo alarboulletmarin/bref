@@ -22,15 +22,15 @@ use super::{Outcome, Server, arg_opt, arg_str, disk, vault::{self, Vault}};
 const FLOW: &str = "this Mermaid diagram cannot become a canvas (only classDiagram, sequenceDiagram and stateDiagram can). Put it in a note as a ```mermaid block, then render that block.";
 const NEWER: &str = "this diagram was written by a newer version of Bref and is read-only";
 
-/// Stable names of the library's starting points, in the order `library::templates` returns them.
-const TEMPLATES: [&str; 8] = ["class", "use-case", "package", "state", "sequence", "activity", "component", "deployment"];
-
-/// The key an agent passes for each family of the library, by its English name (`bref mcp`
-/// speaks English: `lang::speak_english`).
-const FAMILIES: [(&str, &str); 6] = [("Class", "class"), ("Use case", "use-case"), ("State machine", "state"), ("Activity", "activity"), ("Component", "component"), ("Sequence", "sequence")];
-
-fn family_key(family: &str) -> &'static str {
-    FAMILIES.iter().find(|(name, _)| *name == family).map_or("other", |(_, key)| key)
+/// The families an agent can ask for: the stable keys of `library::Preset::family_key`.
+fn family_keys() -> Vec<&'static str> {
+    let mut keys: Vec<&'static str> = Vec::new();
+    for preset in library::presets() {
+        if !keys.contains(&preset.family_key) {
+            keys.push(preset.family_key);
+        }
+    }
+    keys
 }
 
 pub fn check_mermaid(args: &Value) -> Outcome {
@@ -200,16 +200,16 @@ pub fn import_diagram(vault: &mut Vault, args: &Value) -> Outcome {
 /// What `diagram_library` returns, also served at `bref://library`.
 pub fn library_value(family: Option<&str>) -> Result<Value, String> {
     if let Some(family) = family
-        && !FAMILIES.iter().any(|(_, key)| *key == family)
+        && !family_keys().contains(&family)
     {
         return Err(format!("unknown family `{family}`"));
     }
     let shapes: Vec<Value> = library::presets()
         .into_iter()
-        .filter(|preset| family.is_none_or(|key| family_key(preset.family) == key))
+        .filter(|preset| family.is_none_or(|key| preset.family_key == key))
         .map(|preset| {
             json!({
-                "family": family_key(preset.family),
+                "family": preset.family_key,
                 "form": preset.form.name(),
                 "name": preset.name,
                 "text": preset.text,
@@ -222,8 +222,7 @@ pub fn library_value(family: Option<&str>) -> Result<Value, String> {
         .collect();
     let templates: Vec<Value> = library::templates()
         .into_iter()
-        .enumerate()
-        .map(|(i, template)| json!({"key": TEMPLATES.get(i).copied().unwrap_or("diagram"), "name": template.name}))
+        .map(|template| json!({"key": template.key, "name": template.name}))
         .filter(|row| family.is_none_or(|name| row["key"] == name))
         .collect();
     Ok(json!({
@@ -391,7 +390,7 @@ fn build(from: &Value) -> Result<(Diagram, usize), String> {
     }
     if let Some(name) = template {
         let made = library::templates();
-        let at = TEMPLATES.iter().position(|key| *key == name).or_else(|| made.iter().position(|template| template.name == name));
+        let at = made.iter().position(|template| template.key == name || template.name == name);
         let Some(at) = at else {
             return Err(format!("no template named `{name}`"));
         };

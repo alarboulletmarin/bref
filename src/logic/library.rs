@@ -12,6 +12,8 @@ use crate::lang::{fold, tr};
 #[derive(Clone, Debug, PartialEq)]
 pub struct Preset {
     pub family: &'static str,
+    /// Stable English id of the family (never translated, never reordered): what `bref mcp` speaks.
+    pub family_key: &'static str,
     pub name: &'static str,
     /// The icon of its row, and of what is dragged.
     pub icon: &'static str,
@@ -52,12 +54,13 @@ pub fn presets() -> Vec<Preset> {
 }
 
 fn shapes() -> Vec<Preset> {
-    let class = tr("Class", "Classe");
-    let state = tr("State machine", "Machine à états");
-    let sequence = tr("Sequence", "Séquence");
-    let activity = tr("Activity", "Activité");
-    let component = tr("Component", "Composant");
-    let p = |family: &'static str, name: &'static str, icon: &'static str, form: Form, (w, h): (f32, f32), text: &'static str| Preset { family, name, icon, form, w, h, text, fill: false, dashed: false };
+    let class = (tr("Class", "Classe"), "class");
+    let usecase = (tr("Use case", "Cas d'utilisation"), "use-case");
+    let state = (tr("State machine", "Machine à états"), "state");
+    let sequence = (tr("Sequence", "Séquence"), "sequence");
+    let activity = (tr("Activity", "Activité"), "activity");
+    let component = (tr("Component", "Composant"), "component");
+    let p = |(family, family_key): (&'static str, &'static str), name: &'static str, icon: &'static str, form: Form, (w, h): (f32, f32), text: &'static str| Preset { family, family_key, name, icon, form, w, h, text, fill: false, dashed: false };
     vec![
         p(class, tr("Class", "Classe"), "d-rect.svg", Form::Rect, (160., 120.), tr("ClassName\n---\n+ attribute: Type\n---\n+ operation()", "NomDeClasse\n---\n+ attribut: Type\n---\n+ operation()")),
         p(class, tr("Abstract class", "Classe abstraite"), "d-rect.svg", Form::Rect, (160., 120.), tr("«abstract»\nClassName\n---\n+ attribute: Type\n---\n+ abstract operation()", "«abstract»\nNomDeClasse\n---\n+ attribut: Type\n---\n+ abstract operation()")),
@@ -67,9 +70,9 @@ fn shapes() -> Vec<Preset> {
         p(class, tr("Package", "Paquetage"), "d-package.svg", Form::Package, Form::Package.default_size(), tr("package", "paquetage")),
         p(class, tr("Note", "Note"), "d-note.svg", Form::Note, (140., 60.), ""),
         p(class, tr("N-ary association", "Association n-aire"), "d-rel-nary.svg", Form::Branch, (40., 40.), ""),
-        p(tr("Use case", "Cas d'utilisation"), tr("Use case", "Cas d'utilisation"), "d-ellipse.svg", Form::Ellipse, (160., 80.), tr("Use case", "Cas d'utilisation")),
-        p(tr("Use case", "Cas d'utilisation"), tr("Actor", "Acteur"), "d-actor.svg", Form::Actor, (40., 80.), tr("Actor", "Acteur")),
-        p(tr("Use case", "Cas d'utilisation"), tr("System boundary", "Frontière du système"), "d-frame.svg", Form::Frame, (320., 220.), tr("System", "Système")),
+        p(usecase, tr("Use case", "Cas d'utilisation"), "d-ellipse.svg", Form::Ellipse, (160., 80.), tr("Use case", "Cas d'utilisation")),
+        p(usecase, tr("Actor", "Acteur"), "d-actor.svg", Form::Actor, (40., 80.), tr("Actor", "Acteur")),
+        p(usecase, tr("System boundary", "Frontière du système"), "d-frame.svg", Form::Frame, (320., 220.), tr("System", "Système")),
         p(state, tr("State", "État"), "d-round.svg", Form::Round, (140., 90.), tr("State\n---\nentry / action\ndo / activity\nexit / action", "État\n---\nentry / action\ndo / activité\nexit / action")),
         p(state, tr("Composite state", "État composite"), "d-st-composite.svg", Form::Composite, (300., 200.), tr("Composite state", "État composite")),
         p(state, tr("Initial state", "État initial"), "d-st-dot.svg", Form::Dot, (20., 20.), ""),
@@ -117,26 +120,41 @@ fn shapes() -> Vec<Preset> {
 
 /// A new diagram that already holds a few shapes, to start from.
 pub struct Template {
+    /// Stable English id (never translated, never reordered): what `bref mcp` speaks.
+    pub key: &'static str,
     pub name: &'static str,
     pub make: fn() -> Diagram,
 }
 
 pub fn templates() -> Vec<Template> {
     vec![
-        Template { name: tr("Class diagram", "Diagramme de classes"), make: class_diagram },
-        Template { name: tr("Use case diagram", "Diagramme de cas d'utilisation"), make: use_case_diagram },
-        Template { name: tr("Package diagram", "Diagramme de paquetages"), make: package_diagram },
-        Template { name: tr("State machine diagram", "Diagramme d'états"), make: state_machine },
-        Template { name: tr("Sequence diagram", "Diagramme de séquence"), make: sequence_diagram },
-        Template { name: tr("Activity diagram", "Diagramme d'activité"), make: activity_diagram },
-        Template { name: tr("Component diagram", "Diagramme de composants"), make: component_diagram },
-        Template { name: tr("Deployment diagram", "Diagramme de déploiement"), make: deployment_diagram },
+        Template { key: "class", name: tr("Class diagram", "Diagramme de classes"), make: class_diagram },
+        Template { key: "use-case", name: tr("Use case diagram", "Diagramme de cas d'utilisation"), make: use_case_diagram },
+        Template { key: "package", name: tr("Package diagram", "Diagramme de paquetages"), make: package_diagram },
+        Template { key: "state", name: tr("State machine diagram", "Diagramme d'états"), make: state_machine },
+        Template { key: "sequence", name: tr("Sequence diagram", "Diagramme de séquence"), make: sequence_diagram },
+        Template { key: "activity", name: tr("Activity diagram", "Diagramme d'activité"), make: activity_diagram },
+        Template { key: "component", name: tr("Component diagram", "Diagramme de composants"), make: component_diagram },
+        Template { key: "deployment", name: tr("Deployment diagram", "Diagramme de déploiement"), make: deployment_diagram },
     ]
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many `put` calls found no preset: the test below wants none, in either language.
+    static MISSED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// Adds the shape of the preset named `name` of this family, with its text, and returns its id.
+/// A label that matches nothing (a typo in one language) still yields a plain box, never a panic.
 fn put(d: &mut Diagram, family: &str, name: &str, (x, y): (f32, f32)) -> u32 {
-    let preset = presets().into_iter().find(|p| p.family == family && p.name == name).unwrap_or_else(|| panic!("{family}/{name} is in the library"));
+    let Some(preset) = presets().into_iter().find(|p| p.family == family && p.name == name) else {
+        #[cfg(test)]
+        MISSED.with(|m| m.set(m.get() + 1));
+        let shape = d.add_shape_mut(Form::Rect, x, y, 140., 60.);
+        shape.text = name.to_string();
+        return shape.id;
+    };
     let shape = d.add_shape_mut(preset.form, x, y, preset.w, preset.h);
     (shape.text, shape.fill, shape.dashed) = (preset.text.to_string(), preset.fill, preset.dashed);
     shape.id
@@ -361,6 +379,29 @@ fn package_diagram() -> Diagram {
 mod tests {
     use super::*;
     use crate::logic::{diagram::COLORS, relation::Relation};
+
+    #[test]
+    fn every_template_label_matches_a_preset_in_both_languages() {
+        let built = || templates().iter().map(|t| (t.make)().shapes.len()).sum::<usize>();
+        MISSED.with(|m| m.set(0));
+        assert!(built() > 0);
+        assert!(crate::lang::in_english(built) > 0);
+        assert_eq!(MISSED.with(|m| m.get()), 0, "a template names a preset that is not in the library");
+    }
+
+    #[test]
+    fn keys_are_unique_and_do_not_follow_the_order_or_the_language() {
+        let keys: Vec<&str> = templates().iter().map(|t| t.key).collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), keys.len());
+        let english = crate::lang::in_english(|| templates().iter().map(|t| t.key).collect::<Vec<_>>());
+        assert_eq!(keys, english);
+        let family_keys: Vec<&str> = presets().iter().map(|p| p.family_key).collect();
+        assert_eq!(family_keys, crate::lang::in_english(|| presets().iter().map(|p| p.family_key).collect::<Vec<_>>()));
+        assert!(family_keys.iter().all(|k| !k.is_empty() && k.is_ascii()));
+    }
 
     #[test]
     fn every_shape_is_there_once_and_can_be_found() {

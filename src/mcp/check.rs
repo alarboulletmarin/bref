@@ -592,3 +592,32 @@ fn five_thousand_notes_stay_searchable() {
     assert!(listed["next"].is_string());
     let _ = fs::remove_dir_all(&root);
 }
+
+/// Templates and families are asked for by their stable key: each one is reachable, in either
+/// language, and the key does not depend on where the entry sits in the list.
+#[test]
+fn every_template_and_family_is_reachable_by_its_key() {
+    let root = scratch();
+    let mut vault = Vault::open(root.clone()).unwrap();
+    for english in [false, true] {
+        let run = |f: &dyn Fn() -> Value| if english { crate::lang::in_english(f) } else { f() };
+        let all = run(&|| ok(draw::library(&json!({}))));
+        let templates = all["templates"].as_array().unwrap();
+        assert_eq!(templates.len(), crate::logic::library::templates().len());
+        for row in templates {
+            let key = row["key"].as_str().unwrap();
+            assert_ne!(key, "diagram", "a template has no key");
+            let made = ok(draw::create_diagram(&mut vault, &json!({"name": format!("T-{key}-{english}"), "from": {"template": key}})));
+            assert!(made["path"].as_str().is_some());
+        }
+        let families: std::collections::BTreeSet<&str> = all["shapes"].as_array().unwrap().iter().map(|s| s["family"].as_str().unwrap()).collect();
+        assert!(families.len() >= 6 && !families.contains("other"));
+        for family in families {
+            let one = run(&|| ok(draw::library(&json!({"family": family}))));
+            let shapes = one["shapes"].as_array().unwrap();
+            assert!(!shapes.is_empty() && shapes.iter().all(|s| s["family"] == family));
+        }
+    }
+    assert!(err(draw::create_diagram(&mut vault, &json!({"name": "X", "from": {"template": "nope"}}))).contains("no template"));
+    fs::remove_dir_all(root).unwrap();
+}
