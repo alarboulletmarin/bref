@@ -36,72 +36,46 @@ impl Shell {
         self.panes.iter().position(|pane| pane.tool() == Some(mode))
     }
 
-    /// The tools drawn in the left dock (or the right one), top to bottom: those shown there that
-    /// live there and are not open as a tab.
+    /// The tools open as a tab of some pane.
+    fn tabbed(&self) -> Vec<Mode> {
+        self.panes.iter().filter_map(|pane| pane.tool).collect()
+    }
+
     pub(super) fn dock_tools(&self, right: bool) -> Vec<Mode> {
-        let shown = if right { &self.nav.right_shown } else { &self.nav.left_shown };
-        shown.iter().copied().filter(|m| self.nav.right.contains(m) == right && self.tool_tab(*m).is_none()).collect()
+        self.nav.dock_tools(right, &self.tabbed())
     }
 
     pub(super) fn left_open(&self) -> bool {
-        self.nav.panel != Panel::Rail && !self.dock_tools(false).is_empty()
+        self.nav.left_open(&self.tabbed())
     }
 
     pub(super) fn right_open(&self) -> bool {
-        self.nav.panel != Panel::Full && !self.dock_tools(true).is_empty()
-    }
-
-    /// The tool is drawn in a dock that is open.
-    fn docked(&self, mode: Mode) -> bool {
-        self.left_open() && self.dock_tools(false).contains(&mode) || self.right_open() && self.dock_tools(true).contains(&mode)
+        self.nav.right_open(&self.tabbed())
     }
 
     /// The tool is in sight: in its dock, or as a tab.
     pub(super) fn tool_shown(&self, mode: Mode) -> bool {
-        self.tool_tab(mode).is_some() || self.docked(mode)
+        let tabs = self.tabbed();
+        tabs.contains(&mode) || self.nav.docked(mode, &tabs)
     }
 
-    /// The tool's view comes into `Nav` and its dock opens on it: alone, as the panel always did,
-    /// unless it is already shown there with others.
+    /// The tool's view comes into `Nav` and its dock opens on it.
     pub(super) fn put_tool(&mut self, mode: Mode) {
-        let right = self.nav.right.contains(&mode);
-        if !self.docked(mode) {
-            match right {
-                true => self.nav.right_shown = vec![mode],
-                false => self.nav.left_shown = vec![mode],
-            }
-        }
-        if !right && self.nav.panel == Panel::Rail {
-            self.nav.panel = Panel::Split;
-        }
-        self.nav.folded.remove(&mode);
-        self.nav.activate(mode);
+        let tabs = self.tabbed();
+        self.nav.put_tool(mode, &tabs);
     }
 
     /// Shift+click on the rail: the tool joins the others of its dock, at the bottom, or leaves
     /// them if it is shown.
     pub(super) fn stack_tool(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tool_tab(mode).is_some() {
+        let tabs = self.tabbed();
+        if tabs.contains(&mode) {
             return self.show_nav(mode, false, window, cx);
         }
-        let right = self.nav.right.contains(&mode);
-        match self.docked(mode) {
+        match self.nav.docked(mode, &tabs) {
             true => self.hide_tool(mode, window, cx),
             false => {
-                // A folded left dock opens on this tool alone.
-                let fresh = !right && !self.left_open();
-                let stack = if right { &mut self.nav.right_shown } else { &mut self.nav.left_shown };
-                if fresh {
-                    stack.clear();
-                }
-                stack.retain(|m| *m != mode);
-                stack.push(mode);
-                if !right && self.nav.panel == Panel::Rail {
-                    self.nav.panel = Panel::Split;
-                }
-                self.nav.folded.remove(&mode);
-                self.nav.activate(mode);
-                self.nav.reveal = true;
+                self.nav.stack_tool(mode, &tabs);
                 window.focus(&self.nav.focus);
                 self.refresh_graph(cx);
                 self.settle_nav(window, cx);
@@ -109,18 +83,14 @@ impl Shell {
         }
     }
 
-    /// The tool leaves its dock's stack; the last one of the left dock folds the panel onto its
-    /// rail instead, so that it comes back the same.
+    /// The tool leaves its dock's stack (see `Nav::hide_tool`).
     pub(super) fn hide_tool(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
+        let tabs = self.tabbed();
         let right = self.nav.right.contains(&mode);
         let had_focus = self.nav.focus.contains_focused(window, cx);
-        match right {
-            true => self.nav.right_shown.retain(|m| *m != mode),
-            false if self.dock_tools(false) == [mode] => self.nav.panel = Panel::Rail,
-            false => self.nav.left_shown.retain(|m| *m != mode),
-        }
+        self.nav.hide_tool(mode, &tabs);
         // The keys go to another tool in sight, or back to the note.
-        match self.dock_tools(right).first().or(self.dock_tools(!right).first()).copied().filter(|m| self.docked(*m)) {
+        match self.nav.next_docked(right, &tabs) {
             Some(next) if had_focus => self.nav.activate(next),
             _ if had_focus => window.focus(&self.pane().editor.focus_handle(cx)),
             _ => {}
@@ -130,9 +100,7 @@ impl Shell {
 
     /// A tool stacked in a dock folds down to its header, or unfolds.
     pub(super) fn fold_tool(&mut self, mode: Mode, cx: &mut Context<Self>) {
-        if !self.nav.folded.remove(&mode) {
-            self.nav.folded.insert(mode);
-        }
+        self.nav.toggle_fold(mode);
         self.nav.save();
         cx.notify();
     }
@@ -150,7 +118,7 @@ impl Shell {
 
     /// The right dock's border follows the pointer.
     pub(super) fn drag_right(&mut self, x: Pixels, cx: &mut Context<Self>) {
-        self.nav.right_w = (self.nav.left + self.nav.total - x).max(px(160.));
+        self.nav.drag_right(x);
         cx.notify();
     }
 
@@ -163,47 +131,10 @@ impl Shell {
     }
 
     /// Puts `mode` at place `at` of the stack of the right dock (`right`) or the left one, by a
-    /// drag of its header or the keys; it is shown there and gets the keys. The left dock, left
-    /// without tools, folds onto its rail.
+    /// drag of its header or the keys (see `Nav::place_tool`); it gets the keys.
     pub(super) fn place_tool(&mut self, mode: Mode, right: bool, at: usize, window: &mut Window, cx: &mut Context<Self>) {
-        // The place counts the tools drawn; the tool itself, if it was above, leaves a gap.
-        let drawn = self.dock_tools(right);
-        let at = match drawn.iter().position(|m| *m == mode) {
-            Some(was) if was < at => at - 1,
-            _ => at,
-        };
-        let before = drawn.iter().filter(|m| **m != mode).nth(at).copied();
-        let left_drawn = self.left_open();
-        self.nav.left_shown.retain(|m| *m != mode);
-        self.nav.right_shown.retain(|m| *m != mode);
-        self.nav.right.retain(|m| *m != mode);
-        let stack = match right {
-            true => {
-                self.nav.right.push(mode);
-                &mut self.nav.right_shown
-            }
-            false => {
-                // A folded left dock opens on this tool alone.
-                if !left_drawn {
-                    self.nav.left_shown.clear();
-                }
-                &mut self.nav.left_shown
-            }
-        };
-        let at = before.and_then(|b| stack.iter().position(|m| *m == b)).unwrap_or(stack.len());
-        stack.insert(at, mode);
-        match (right, self.dock_tools(false).is_empty()) {
-            (false, _) => self.nav.panel = if self.nav.panel == Panel::Full { Panel::Full } else { Panel::Split },
-            // Its last tool gone, the left dock shows another one that lives there; none left, it folds.
-            (true, true) => match Mode::ALL.into_iter().find(|m| !self.nav.right.contains(m) && self.tool_tab(*m).is_none()) {
-                Some(other) => self.nav.left_shown = vec![other],
-                None => self.nav.panel = Panel::Rail,
-            },
-            (true, false) => {}
-        }
-        self.nav.folded.remove(&mode);
-        self.nav.activate(mode);
-        self.nav.reveal = true;
+        let tabs = self.tabbed();
+        self.nav.place_tool(mode, right, at, &tabs);
         window.focus(&self.nav.focus);
         self.refresh_graph(cx);
         self.settle_nav(window, cx);

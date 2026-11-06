@@ -49,7 +49,7 @@ each, all `impl Shell`:
 | `library.rs` | the vault: choosing, scanning, watching, icons, backup, trash |
 | `sync.rs` | git sync and cloning |
 | `sidebar.rs`, `files.rs`, `menu.rs`, `listing.rs` | the side panel, file operations, the context menu, list pages |
-| `docks.rs` | where each view of the panel lives: the left dock, the right dock, or a tab (`Shown::Tool`). Each dock stacks its shown views (`Nav::left_shown`, `Nav::right_shown`, `Nav::folded`); each view has its own rows and scroll: the active one is in `Nav`, the others wait in `Nav::parked`, and drawing a section, its rows, or a press in it swaps its view in (`Nav::activate`). A header dragged (`ToolDragged`) lands with `place_tool` |
+| `docks.rs` | the shell side of the panel's tools: where each view lives is `Nav`'s (`dock_tools`, `put_tool`, `stack_tool`, `hide_tool`, `place_tool`, `toggle_fold`, which take the tools open as tabs, `Shown::Tool`); this file gathers those tabs (`Pane::tool`), moves focus and refreshes after each, and holds `ToolDragged`. Each dock stacks its shown views (`Nav::left_shown`, `Nav::right_shown`, `Nav::folded`); each view has its own rows and scroll: the active one is in `Nav`, the others wait in `Nav::parked` (`Nav::activate`) |
 | `palette_open.rs` | every way the palette opens: notes, commands, outline, questions |
 | `help.rs`, `keymap.rs` | the help panel; the default shortcuts and their sections |
 | `travel.rs` | back and forward |

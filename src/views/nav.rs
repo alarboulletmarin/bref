@@ -358,6 +358,138 @@ impl Nav {
         }
     }
 
+    /// The tools drawn in the left dock (or the right one), top to bottom: those shown there that
+    /// live there and are not open as a tab (`tabs`: the tools that are).
+    pub fn dock_tools(&self, right: bool, tabs: &[Mode]) -> Vec<Mode> {
+        let shown = if right { &self.right_shown } else { &self.left_shown };
+        shown.iter().copied().filter(|m| self.right.contains(m) == right && !tabs.contains(m)).collect()
+    }
+
+    pub fn left_open(&self, tabs: &[Mode]) -> bool {
+        self.panel != Panel::Rail && !self.dock_tools(false, tabs).is_empty()
+    }
+
+    pub fn right_open(&self, tabs: &[Mode]) -> bool {
+        self.panel != Panel::Full && !self.dock_tools(true, tabs).is_empty()
+    }
+
+    /// The tool is drawn in a dock that is open.
+    pub fn docked(&self, mode: Mode, tabs: &[Mode]) -> bool {
+        self.left_open(tabs) && self.dock_tools(false, tabs).contains(&mode) || self.right_open(tabs) && self.dock_tools(true, tabs).contains(&mode)
+    }
+
+    /// The tool's view comes into `Nav` and its dock opens on it: alone, as the panel always did,
+    /// unless it is already shown there with others.
+    pub fn put_tool(&mut self, mode: Mode, tabs: &[Mode]) {
+        let right = self.right.contains(&mode);
+        if !self.docked(mode, tabs) {
+            match right {
+                true => self.right_shown = vec![mode],
+                false => self.left_shown = vec![mode],
+            }
+        }
+        if !right && self.panel == Panel::Rail {
+            self.panel = Panel::Split;
+        }
+        self.folded.remove(&mode);
+        self.activate(mode);
+    }
+
+    /// The tool joins the others of its dock, at the bottom, and is the active one (the caller
+    /// has checked that it is not shown).
+    pub fn stack_tool(&mut self, mode: Mode, tabs: &[Mode]) {
+        let right = self.right.contains(&mode);
+        // A folded left dock opens on this tool alone.
+        let fresh = !right && !self.left_open(tabs);
+        let stack = if right { &mut self.right_shown } else { &mut self.left_shown };
+        if fresh {
+            stack.clear();
+        }
+        stack.retain(|m| *m != mode);
+        stack.push(mode);
+        if !right && self.panel == Panel::Rail {
+            self.panel = Panel::Split;
+        }
+        self.folded.remove(&mode);
+        self.activate(mode);
+        self.reveal = true;
+    }
+
+    /// The tool leaves its dock's stack; the last one of the left dock folds the panel onto its
+    /// rail instead, so that it comes back the same.
+    pub fn hide_tool(&mut self, mode: Mode, tabs: &[Mode]) {
+        match self.right.contains(&mode) {
+            true => self.right_shown.retain(|m| *m != mode),
+            false if self.dock_tools(false, tabs) == [mode] => self.panel = Panel::Rail,
+            false => self.left_shown.retain(|m| *m != mode),
+        }
+    }
+
+    /// The tool the keys go to when `hide_tool` left the dock `right`: the first one in sight in
+    /// that dock, else in the other.
+    pub fn next_docked(&self, right: bool, tabs: &[Mode]) -> Option<Mode> {
+        self.dock_tools(right, tabs).first().or(self.dock_tools(!right, tabs).first()).copied().filter(|m| self.docked(*m, tabs))
+    }
+
+    /// A tool stacked in a dock folds down to its header, or unfolds.
+    pub fn toggle_fold(&mut self, mode: Mode) {
+        if !self.folded.remove(&mode) {
+            self.folded.insert(mode);
+        }
+    }
+
+    /// The right dock's border follows the pointer.
+    pub fn drag_right(&mut self, x: Pixels) {
+        self.right_w = (self.left + self.total - x).max(px(160.));
+    }
+
+    /// Puts `mode` at place `at` of the stack of the right dock (`right`) or the left one; it is
+    /// shown there and active. The left dock, left without tools, folds onto its rail.
+    pub fn place_tool(&mut self, mode: Mode, right: bool, at: usize, tabs: &[Mode]) {
+        // The place counts the tools drawn; the tool itself, if it was above, leaves a gap.
+        let drawn = self.dock_tools(right, tabs);
+        let at = match drawn.iter().position(|m| *m == mode) {
+            Some(was) if was < at => at - 1,
+            _ => at,
+        };
+        let before = drawn.iter().filter(|m| **m != mode).nth(at).copied();
+        let left_drawn = self.left_open(tabs);
+        self.left_shown.retain(|m| *m != mode);
+        self.right_shown.retain(|m| *m != mode);
+        self.right.retain(|m| *m != mode);
+        let stack = match right {
+            true => {
+                self.right.push(mode);
+                &mut self.right_shown
+            }
+            false => {
+                // A folded left dock opens on this tool alone.
+                if !left_drawn {
+                    self.left_shown.clear();
+                }
+                &mut self.left_shown
+            }
+        };
+        let at = before.and_then(|b| stack.iter().position(|m| *m == b)).unwrap_or(stack.len());
+        stack.insert(at, mode);
+        match (right, self.dock_tools(false, tabs).is_empty()) {
+            (false, _) => {
+                if self.panel != Panel::Full {
+                    self.panel = Panel::Split;
+                }
+            }
+            // Its last tool gone, the left dock shows another one that lives there; none left, it folds.
+            (true, true) => match Mode::ALL.into_iter().find(|m| !self.right.contains(m) && !tabs.contains(m)) {
+                Some(other) => self.left_shown = vec![other],
+                None => self.panel = Panel::Rail,
+            },
+            (true, false) => {}
+        }
+        self.folded.remove(&mode);
+        self.activate(mode);
+        self.reveal = true;
+    }
+
     /// The tool's view comes into `Nav`, the active one's goes to wait.
     pub fn activate(&mut self, mode: Mode) {
         if self.mode == mode {
