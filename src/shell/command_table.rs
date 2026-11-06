@@ -810,9 +810,9 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<editor::Delete>()
             .key_in("delete", ctx::EDITOR),
         s::<editor::DeleteWordLeft>()
-            .key_in(&format!("{word}-backspace"), ctx::EDITOR),
+            .key_in(format!("{word}-backspace"), ctx::EDITOR),
         s::<editor::DeleteWordRight>()
-            .key_in(&format!("{word}-delete"), ctx::EDITOR),
+            .key_in(format!("{word}-delete"), ctx::EDITOR),
         s::<editor::Left>()
             .key_in("left", ctx::EDITOR),
         s::<editor::Right>()
@@ -822,9 +822,9 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<editor::Down>()
             .key_in("down", ctx::EDITOR),
         s::<editor::WordLeft>()
-            .key_in(&format!("{word}-left"), ctx::EDITOR),
+            .key_in(format!("{word}-left"), ctx::EDITOR),
         s::<editor::WordRight>()
-            .key_in(&format!("{word}-right"), ctx::EDITOR),
+            .key_in(format!("{word}-right"), ctx::EDITOR),
         s::<editor::Home>()
             .key_in("home", ctx::EDITOR)
             .mac("cmd-left", ctx::EDITOR),
@@ -850,9 +850,9 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<editor::SelectDown>()
             .key_in("shift-down", ctx::EDITOR),
         s::<editor::SelectWordLeft>()
-            .key_in(&format!("{word}-shift-left"), ctx::EDITOR),
+            .key_in(format!("{word}-shift-left"), ctx::EDITOR),
         s::<editor::SelectWordRight>()
-            .key_in(&format!("{word}-shift-right"), ctx::EDITOR),
+            .key_in(format!("{word}-shift-right"), ctx::EDITOR),
         s::<editor::SelectHome>()
             .key_in("shift-home", ctx::EDITOR)
             .mac("cmd-shift-left", ctx::EDITOR),

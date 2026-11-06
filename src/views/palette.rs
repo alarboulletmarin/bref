@@ -484,10 +484,8 @@ impl Palette {
         if self.updates.is_some() && !q.is_empty() && command(&q, check_label()) {
             items.push(Item::Check);
         }
-        if !q.is_empty() {
-            if self.lists {
-                items.extend([TemplateAct::Insert, TemplateAct::Save].into_iter().filter(|a| command(&q, a.label())).map(Item::Template));
-            }
+        if !q.is_empty() && self.lists {
+            items.extend([TemplateAct::Insert, TemplateAct::Save].into_iter().filter(|a| command(&q, a.label())).map(Item::Template));
         }
         if self.lists && !q.is_empty() {
             items.extend(
