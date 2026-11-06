@@ -9,6 +9,7 @@ pub mod embed;
 pub mod formula;
 pub mod history;
 pub mod import;
+pub mod kanban;
 pub mod layout;
 pub mod library;
 pub mod merge;
