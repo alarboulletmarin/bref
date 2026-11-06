@@ -63,10 +63,7 @@ impl Shell {
             Ok(rest) => to.join(rest),
             Err(_) => p.clone(),
         };
-        for note in &mut self.notes {
-            note.path = shift(&note.path);
-            note.name = vault::stem(&note.path);
-        }
+        self.move_notes(shift);
         self.dirs = self.dirs.iter().map(shift).collect();
         self.images = self.images.iter().map(shift).collect();
         self.recent = self.recent.iter().map(shift).collect();
@@ -106,7 +103,7 @@ impl Shell {
         self.say_undoable(Tone::Done, format!("{} « {name} »", tr("Moved to the trash:", "Mis à la corbeille :")), Some((trashed, path.to_path_buf())), cx);
         self.history.remove(path);
         let gone = |p: &PathBuf| p.starts_with(path);
-        self.notes.retain(|n| !gone(&n.path));
+        self.forget_notes(&gone);
         self.dirs.retain(|d| !gone(d));
         self.images.retain(|p| !gone(p));
         self.recent.retain(|p| !gone(p));
@@ -143,9 +140,7 @@ impl Shell {
             config::save_config(root, &self.recent);
         }
         self.calm();
-        self.push_names(cx);
-        self.graph_stale = true;
-        self.refresh_graph(cx);
+        self.index_changed(cx);
         cx.notify();
     }
 }

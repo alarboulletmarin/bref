@@ -66,9 +66,7 @@ impl Shell {
                     Ok(path) => {
                         this.say(Tone::Done, format!("{} « {} »", tr("PNG exported", "PNG exporté"), path.display()), cx);
                         this.images.push(path);
-                        this.push_names(cx);
-                        this.graph_stale = true;
-                        this.refresh_graph(cx);
+                        this.index_changed(cx);
                         canvas.update(cx, |canvas, cx| canvas.exported(cx)).ok();
                     }
                     Err(e) => this.say(Tone::Failed, format!("{} : {}", tr("Picture not saved", "Image non enregistrée"), crate::lang::io_reason(&e)), cx),
@@ -176,9 +174,7 @@ impl Shell {
             return self.say(Tone::Failed, format!("{} : {}", tr("Diagram not saved", "Schéma non enregistré"), crate::lang::io_reason(&e)), cx);
         }
         self.images.push(path.clone());
-        self.push_names(cx);
-        self.graph_stale = true;
-        self.refresh_graph(cx);
+        self.index_changed(cx);
         self.nav.reveal(&path);
         self.load_note(&path, cx);
         if self.nav.panel == Panel::Full {

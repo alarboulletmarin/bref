@@ -170,16 +170,14 @@ impl Shell {
         images.sort();
         self.images.sort();
         if !same || dirs != self.dirs || images != self.images {
-            self.notes = notes;
+            self.replace_notes(notes, true);
             self.dirs = dirs;
             self.images = images;
-            self.push_names(cx);
-            self.graph_stale = true;
-            self.refresh_graph(cx);
+            self.index_changed(cx);
             cx.notify();
         } else {
             // No name, tag or link changed, but the text may have: search follows it.
-            self.notes = notes;
+            self.replace_notes(notes, false);
         }
         self.each_pane(|this| {
             // The shown table was rewritten elsewhere: it is reread if nothing is pending here.
@@ -218,7 +216,7 @@ impl Shell {
         self.vault = Some(root.clone());
         self.lost = None;
         self.icons = vault::load_icons(&root);
-        self.notes.clear();
+        self.replace_notes(Vec::new(), true);
         self.dirs.clear();
         self.images.clear();
         self.recent.clear();
@@ -235,12 +233,10 @@ impl Shell {
             this.update(cx, |this, cx| {
                 if this.vault.as_ref() == Some(&root) {
                     this.unreadable = unreadable;
-                    this.notes = notes;
+                    this.replace_notes(notes, true);
                     this.dirs = dirs;
                     this.images = images;
-                    this.push_names(cx);
-                    this.graph_stale = true;
-                    this.refresh_graph(cx);
+                    this.index_changed(cx);
                     cx.notify();
                 }
             })
@@ -277,6 +273,67 @@ impl Shell {
             }
         })
         .detach();
+    }
+
+    /// Everything that must follow a change of the index (`notes`, `images`): the names offered
+    /// by the editors, and the graph. Call it after the change, never set `graph_stale` by hand.
+    pub(super) fn index_changed(&mut self, cx: &mut Context<Self>) {
+        self.push_names(cx);
+        self.graph_changed(cx);
+    }
+
+    /// Only the graph follows: for a rewrite of note text, which leaves the names as they are
+    /// (`index_changed` when a name, an alias or an image may have changed).
+    pub(super) fn graph_changed(&mut self, cx: &mut Context<Self>) {
+        self.graph_stale = true;
+        self.refresh_graph(cx);
+    }
+
+    // The only places `self.notes` is written (the call to `index_changed` or `graph_changed`
+    // stays with the caller, once per batch): each marks the graph stale when it can change it.
+
+    /// The whole index replaced; `graph_changed` is false when only the text moved.
+    pub(super) fn replace_notes(&mut self, notes: Vec<Note>, graph_changed: bool) {
+        self.notes = notes;
+        self.graph_stale |= graph_changed;
+    }
+
+    /// The text of the note at `path` rewritten in the index (not on disk); its previous text,
+    /// or `None` if the index does not know the note.
+    pub(super) fn edit_note_text(&mut self, path: &Path, text: Arc<str>) -> Option<Arc<str>> {
+        let template = self.vault.as_ref().is_some_and(|r| vault::in_templates(r, path));
+        let note = self.notes.iter_mut().find(|note| note.path == path)?;
+        self.graph_stale = true;
+        Some(note.set_text(text, template))
+    }
+
+    /// The notes `gone` says leave the index.
+    pub(super) fn forget_notes(&mut self, gone: impl Fn(&PathBuf) -> bool) {
+        self.notes.retain(|n| !gone(&n.path));
+        self.graph_stale = true;
+    }
+
+    /// Every note path moved by `shift` (a note or folder was renamed).
+    pub(super) fn move_notes(&mut self, shift: impl Fn(&PathBuf) -> PathBuf) {
+        for note in &mut self.notes {
+            note.path = shift(&note.path);
+            note.name = vault::stem(&note.path);
+        }
+        self.graph_stale = true;
+    }
+
+    /// `fresh` (just saved) becomes the first note, in place of the one at `old` and of any at
+    /// its own path. The graph is marked stale only if the note is new, renamed or linked
+    /// differently. Returns the text of the replaced note, as it was last saved.
+    pub(super) fn put_note(&mut self, old: Option<&PathBuf>, fresh: Note) -> Option<Arc<str>> {
+        let known = self.notes.iter().find(|n| Some(&n.path) == old);
+        if known.is_none_or(|n| n.path != fresh.path || n.links != fresh.links || n.aliases != fresh.aliases) {
+            self.graph_stale = true;
+        }
+        let before = known.map(|n| n.body.clone());
+        self.notes.retain(|n| Some(&n.path) != old && n.path != fresh.path);
+        self.notes.insert(0, fresh);
+        before
     }
 
     pub(super) fn push_names(&mut self, cx: &mut Context<Self>) {

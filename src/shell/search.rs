@@ -307,19 +307,19 @@ impl Shell {
     /// Writes the new text of each note, and keeps the old one.
     pub(super) fn swap_notes(&mut self, found: Vec<(PathBuf, String, usize)>, cx: &mut Context<Self>) {
         self.swapped.clear();
-        let root = self.vault.clone();
         let mut count = 0;
         for (path, text, hits) in found {
-            let Some(note) = self.notes.iter_mut().find(|note| note.path == path) else {
+            if !self.notes.iter().any(|note| note.path == path) {
                 continue;
-            };
+            }
             if let Err(e) = vault::write(&path, &text) {
                 self.say(Tone::Failed, format!("{} {} : {}", tr("Not rewritten:", "Non réécrite :"), path.display(), crate::lang::io_reason(&e)), cx);
                 continue;
             }
             count += hits;
-            let old = note.set_text(Arc::from(text.as_str()), root.as_ref().is_some_and(|r| vault::in_templates(r, &note.path)));
-            self.swapped.push((path, old, text));
+            if let Some(old) = self.edit_note_text(&path, Arc::from(text.as_str())) {
+                self.swapped.push((path, old, text));
+            }
         }
         self.after_swap(cx);
         let done = format!("{} {count} · notes : {} ({})", tr("Replaced:", "Remplacés :"), self.swapped.len(), tr("the palette can undo it", "la palette peut l'annuler"));
@@ -330,14 +330,11 @@ impl Shell {
     /// except those changed since, left as they are.
     pub(super) fn undo_swap(&mut self, cx: &mut Context<Self>) {
         self.flush(cx);
-        let root = self.vault.clone();
         let (mut back, mut kept) = (0, 0);
         for (path, old, new) in std::mem::take(&mut self.swapped) {
             let same = fs::read_to_string(&path).is_ok_and(|now| now == new);
             if same && vault::write(&path, old.as_bytes()).is_ok() {
-                if let Some(note) = self.notes.iter_mut().find(|note| note.path == path) {
-                    note.set_text(old, root.as_ref().is_some_and(|r| vault::in_templates(r, &note.path)));
-                }
+                self.edit_note_text(&path, old);
                 back += 1;
             } else {
                 kept += 1;
@@ -353,8 +350,8 @@ impl Shell {
 
     /// After notes are rewritten: the open one is reread, the graph follows.
     pub(super) fn after_swap(&mut self, cx: &mut Context<Self>) {
-        self.graph_stale = true;
-        self.refresh_graph(cx);
+        // Text only: the names are left as they are.
+        self.graph_changed(cx);
         self.each_pane(|this| this.reload(cx));
         cx.notify();
     }

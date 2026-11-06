@@ -128,12 +128,9 @@ impl Shell {
         if let Err(e) = vault::write(&path, &new) {
             return self.say(super::Tone::Failed, format!("{} {} : {}", tr("Not rewritten:", "Non réécrite :"), path.display(), crate::lang::io_reason(&e)), cx);
         }
-        if let Some(note) = self.notes.iter_mut().find(|note| note.path == path) {
-            let template = self.vault.as_ref().is_some_and(|r| vault::in_templates(r, &note.path));
-            note.set_text(new.as_str().into(), template);
-        }
-        self.graph_stale = true;
-        self.refresh_graph(cx);
+        self.edit_note_text(&path, new.as_str().into());
+        // A front matter key was set: the names are left as they are.
+        self.graph_changed(cx);
         // The note shown under the list is reloaded: it just changed on disk.
         self.each_pane(|this| {
             if this.pane().path.as_ref() == Some(&path) {

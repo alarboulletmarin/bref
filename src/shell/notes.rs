@@ -248,16 +248,14 @@ impl Shell {
             return;
         };
         if fs::read_to_string(&path).is_ok_and(|text| text.trim().is_empty()) && fs::remove_file(&path).is_ok() {
-            self.notes.retain(|n| n.path != path);
+            self.forget_notes(|p| *p == path);
             self.recent.retain(|p| *p != path);
             if let Some(root) = &self.vault {
                 config::save_config(root, &self.recent);
             }
             self.history.remove(&path);
             self.pane_mut().path = None;
-            self.graph_stale = true;
-            self.push_names(cx);
-            self.refresh_graph(cx);
+            self.index_changed(cx);
         }
     }
 
@@ -271,8 +269,8 @@ impl Shell {
         if changed.is_empty() {
             return false;
         }
-        self.graph_stale = true;
-        self.refresh_graph(cx);
+        // The links moved, the names did not.
+        self.graph_changed(cx);
         // The other pane's note is reloaded here; the active pane's is up to the caller
         // (it may be leaving it).
         let showing = |pane: &Pane| pane.path.as_ref().is_some_and(|path| changed.contains(path));
@@ -391,15 +389,10 @@ impl Shell {
                 self.calm();
                 let old = self.pane().path.clone();
                 let fresh = Note::from_text(vault::stem(&path), path.clone(), SystemTime::now(), Arc::from(content), vault::in_templates(&root, &path));
-                // The graph only changes if the note is new, renamed or linked differently.
-                let known = self.notes.iter().find(|n| Some(&n.path) == old.as_ref());
-                if known.is_none_or(|n| n.path != path || n.links != fresh.links || n.aliases != fresh.aliases) {
-                    self.graph_stale = true;
-                }
-                // The text as it was last saved, to see which heading was renamed.
-                let before = self.notes.iter().find(|n| Some(&n.path) == old.as_ref()).map(|n| n.body.clone());
-                self.notes.retain(|n| Some(&n.path) != old.as_ref() && n.path != path);
-                self.notes.insert(0, fresh);
+                // The text as it was last saved, to see which heading was renamed. Only a rename
+                // pushes the names, and only a new link or alias refreshes the graph: a save per
+                // keystroke pause must stay cheap, so this does not go through `index_changed`.
+                let before = self.put_note(old.as_ref(), fresh);
                 if old.as_ref() != Some(&path) {
                     // Renamed by its title, the note keeps its icon.
                     if let Some(icon) = old.as_ref().and_then(|old| self.icons.remove(old)) {
