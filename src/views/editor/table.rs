@@ -292,11 +292,7 @@ impl Editor {
         }
         let map = realigned(&range, &old, &text);
         let sel = map(self.sel.start)..map(self.sel.end);
-        self.follow(&map);
-        self.damaged(&range);
-        self.content.replace_range(range.clone(), &text);
-        self.sel = sel;
-        self.changed(cx);
+        self.rewrite_block(range.clone(), &text, map, sel, cx);
     }
 
     /// Empties the selection's cells, `|` included in the selection: they keep their
@@ -310,15 +306,22 @@ impl Editor {
         if !ranges.is_empty() {
             self.push_undo(true);
             // A byte moves back by what was removed before it; one in an emptied cell goes to its start.
-            self.follow(|p| p - ranges.iter().map(|r| p.min(r.end).saturating_sub(r.start)).sum::<usize>());
-            for r in ranges.iter().rev() {
-                self.damaged(r);
-                self.content.replace_range(r.clone(), "");
+            let map = |p: usize| p - ranges.iter().map(|r| p.min(r.end).saturating_sub(r.start)).sum::<usize>();
+            // The block from the first emptied cell to the last, rewritten without them.
+            let block = ranges[0].start..ranges[ranges.len() - 1].end;
+            let mut new = String::new();
+            let mut from = block.start;
+            for r in &ranges {
+                new.push_str(&self.content[from..r.start.max(from)]);
+                from = r.end.max(from);
             }
+            new.push_str(&self.content[from..block.end]);
+            self.rewrite_block(block, &new, map, at..at, cx);
+        } else {
+            self.sel = at..at;
+            self.reversed = false;
+            self.changed(cx);
         }
-        self.sel = at..at;
-        self.reversed = false;
-        self.changed(cx);
         self.realign(cx);
         if let Some((table, old)) = guard {
             self.rename_scopes(table, old, cx);
@@ -527,11 +530,7 @@ impl Editor {
         let (start, end) = (md::cells(new)[col].start, md::bars(new)[col + 1]);
         let cursor = at + (start + c.saturating_sub(old)).min(end);
         let was = self.content[range.clone()].to_string();
-        self.follow(realigned(&range, &was, &text));
-        self.damaged(&range);
-        self.content.replace_range(range, &text);
-        self.sel = cursor..cursor;
-        self.changed(cx);
+        self.rewrite_block(range.clone(), &text, realigned(&range, &was, &text), cursor..cursor, cx);
     }
 
     /// Tab and Shift+Tab in a table: next or previous cell; at the end
