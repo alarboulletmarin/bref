@@ -560,8 +560,8 @@ fn add_link(diagram: &mut Diagram, spec: &Value, keys: &HashMap<String, u32>) ->
         let link = diagram.link_mut(id).unwrap();
         link.start = start;
         link.dashed = dashed;
-        relation.apply(link);
         fill_link(link, spec);
+        relation.apply(link);
         return Ok(id);
     }
     if let Some(heads) = spec.get("heads") {

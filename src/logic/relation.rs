@@ -124,18 +124,25 @@ impl Relation {
     pub fn apply(self, link: &mut Link) {
         (link.start, link.end, link.dashed) = self.look();
         let old = Relation::stereotyped(&link.text);
-        if let Some(name) = self.stereotype()
-            && (link.text.trim().is_empty() || old.is_some())
-        {
-            link.text = format!("«{name}»");
-        } else if self.stereotype().is_none() && old.is_some() {
-            link.text.clear();
+        // A message that creates or destroys keeps its label, below the stereotype: the stereotype is what
+        // makes it one (`Message::of`).
+        let label = |text: &str| text.split_once('\n').map_or("", |(_, rest)| rest).to_string();
+        let keeps_label = matches!(self, Relation::Create | Relation::Destroy);
+        if let Some(name) = self.stereotype() {
+            if link.text.trim().is_empty() || (old.is_some() && !keeps_label) {
+                link.text = format!("«{name}»");
+            } else if keeps_label {
+                let rest = if old.is_some() { label(&link.text) } else { link.text.clone() };
+                link.text = if rest.trim().is_empty() { format!("«{name}»") } else { format!("«{name}»\n{rest}") };
+            }
+        } else if old.is_some() {
+            link.text = label(&link.text);
         }
     }
 
     /// The relationship whose stereotype is written in `text` (`«use»` or `<<use>>`).
     fn stereotyped(text: &str) -> Option<Relation> {
-        let name = super::uml::stereotype(text)?;
+        let name = super::uml::stereotype(text.lines().next()?)?;
         Relation::ALL.into_iter().find(|r| r.stereotype() == Some(name))
     }
 
@@ -399,5 +406,32 @@ mod tests {
             }
         }
         assert_eq!(seen.len(), 4, "{seen:?}");
+    }
+
+    #[test]
+    fn a_labelled_create_or_destroy_stays_one() {
+        for (relation, label) in [(Relation::Create, "start"), (Relation::Destroy, "close"), (Relation::Create, ""), (Relation::Create, "a\nb"), (Relation::Create, "«create»\nagain")] {
+            let mut d = Diagram::default();
+            let id = d.add_link(End::Point(0., 0.), End::Point(100., 0.), Head::None, Route::Straight);
+            let link = d.link_mut(id).unwrap();
+            link.text = label.to_string();
+            relation.apply(link);
+            assert_eq!(Relation::of(link), Some(relation), "{label:?} -> {:?}", link.text);
+            let name = relation.stereotype().unwrap();
+            assert!(link.text.starts_with(&format!("«{name}»")), "{:?}", link.text);
+            // Applied twice, it does not pile up stereotypes.
+            let once = link.text.clone();
+            relation.apply(link);
+            assert_eq!(link.text, once);
+        }
+        let mut d = Diagram::default();
+            let id = d.add_link(End::Point(0., 0.), End::Point(100., 0.), Head::None, Route::Straight);
+            let link = d.link_mut(id).unwrap();
+        link.text = "start".into();
+        Relation::Create.apply(link);
+        assert_eq!(link.text, "«create»\nstart");
+        // Changing it to another relationship takes the stereotype away and keeps the label.
+        Relation::Sync.apply(link);
+        assert_eq!(link.text, "start");
     }
 }

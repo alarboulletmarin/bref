@@ -351,6 +351,31 @@ fn diagram_edits_reseat_pins() {
 }
 
 #[test]
+fn a_labelled_create_or_destroy_stays_one() {
+    let root = scratch();
+    let mut vault = open(&root);
+    let made = ok(draw::create_diagram(&mut vault, &json!({"name": "Life", "from": {
+        "shapes": [
+            {"key": "a", "form": "lifeline", "text": "A"},
+            {"key": "b", "form": "lifeline", "text": "B"}
+        ], "links": [
+            {"from": "a", "to": "b", "relation": "create", "text": "start"},
+            {"from": "a", "to": "b", "relation": "sync", "text": "work"},
+            {"from": "a", "to": "b", "relation": "destroy", "text": "close"},
+            {"from": "a", "to": "b", "relation": "destroy"}
+        ]
+    }})));
+    let read = ok(draw::read_diagram(&vault, &json!({"path": made["path"]})));
+    let links = read["links"].as_array().unwrap();
+    let relations: Vec<_> = links.iter().map(|l| l["relation"].as_str().unwrap_or("")).collect();
+    assert_eq!(relations, ["create", "sync", "destroy", "destroy"], "{read}");
+    assert_eq!(links[0]["text"], "«create»\nstart");
+    assert_eq!(links[2]["text"], "«destroy»\nclose");
+    let y = |text: &str| read["shapes"].as_array().unwrap().iter().find(|s| s["text"] == text).unwrap()["y"].as_f64().unwrap();
+    assert!(y("B") > y("A"), "the created head is lowered to its message: {read}");
+}
+
+#[test]
 fn diagrams_are_written_by_bref_and_can_be_seen() {
     let root = scratch();
     let mut vault = open(&root);
