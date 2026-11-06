@@ -226,6 +226,8 @@ pub enum EditorEvent {
     View(Source),
     /// An embedded section, or a link to a heading, to open: the note and where in it; with Shift, aside.
     OpenAt(crate::logic::embed::Target, bool),
+    /// Something the user asked for did not happen (a pasted picture that could not be saved): the shell tells them.
+    Failed(String),
 }
 
 /// What the footer counter depends on: the text version and the selection.

@@ -44,7 +44,10 @@ impl Editor {
                 };
                 match vault::save_image(dir, extension, &image.bytes) {
                     Ok(name) => format!("![]({name})"),
-                    Err(_) => return,
+                    Err(e) => {
+                        cx.emit(EditorEvent::Failed(format!("{} : {}", tr("Picture not pasted", "Image non collée"), crate::lang::io_reason(&e))));
+                        return;
+                    }
                 }
             }
             _ => match item.text() {

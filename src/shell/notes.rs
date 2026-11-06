@@ -484,6 +484,7 @@ impl Shell {
             }
             // The diagram, formula or picture takes the note's place; Escape returns to it.
             EditorEvent::View(source) => self.show_figure(source.clone(), window, cx),
+            EditorEvent::Failed(message) => self.say(Tone::Failed, message.clone(), cx),
         }
     }
 

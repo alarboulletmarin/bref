@@ -28,6 +28,7 @@ mod panel_rows;
 mod canvas_text;
 mod current_file;
 mod panes;
+mod paste_failure;
 mod tabs;
 mod save_close;
 mod sharing;
