@@ -81,6 +81,7 @@ fn shortcuts_page_is_in_english_with_every_section() {
         assert!(page.contains(&format!("\n{title}\n")), "{title} missing");
     }
     assert!(page.contains("| Find by name or text, create, filter by \\#tag |"));
-    // The rest of the thread is back in French.
-    assert_eq!(crate::lang::tr("Notes", "Remarques"), "Remarques");
+    // The tests run in French, yet the page is in English: some French section title is not in it.
+    let french: Vec<String> = help_sections(&defaults(), &keys::Changes::new()).iter().map(|(title, _)| title.to_string()).collect();
+    assert!(french.iter().any(|title| !page.contains(&format!("\n## {title}\n"))), "{french:?}");
 }

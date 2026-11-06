@@ -2,12 +2,25 @@
 
 use crate::platform::config;
 use super::*;
-use crate::shell::render::badge_label;
 
-#[test]
-fn badge_shows_the_count_up_to_nine() {
-    assert_eq!(["1", "9", "9+", "9+"], [badge_label(1), badge_label(9), badge_label(10), badge_label(120)]);
-    assert_eq!(badge_label(0), "0");
+/// The badge as drawn: none without a comment, a round one up to nine, the wider "9+" from ten on, whatever
+/// the count after that.
+#[gpui::test]
+fn badge_is_drawn_up_to_nine(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "badge-drawn");
+    let width = |cx: &mut gpui::VisualTestContext, n: usize| {
+        let note = format!("# T\n\n{}\n", (0..n).map(|i| format!("mot{{=={i}==}}{{>>c{i}<<}}")).collect::<Vec<_>>().join(" "));
+        shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(note, 0, cx)));
+        cx.run_until_parked();
+        cx.debug_bounds("comments-badge").map(|b| b.size.width)
+    };
+    let drawn: Vec<_> = [0, 1, 9, 10, 99, 100, 1000].iter().map(|n| width(cx, *n)).collect();
+    assert_eq!(drawn[0], None, "no comment, no badge");
+    assert!(drawn[1..].iter().all(Option::is_some), "{drawn:?}");
+    assert_eq!(drawn[1], drawn[2], "one digit: the same round badge up to nine: {drawn:?}");
+    assert!(drawn[3] > drawn[2], "ten shows `9+`, wider than a digit: {drawn:?}");
+    assert!(drawn[3..].iter().all(|w| *w == drawn[3]), "`9+` whatever the count: {drawn:?}");
+    let _ = fs::remove_dir_all(&root);
 }
 
 #[test]
