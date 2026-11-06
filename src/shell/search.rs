@@ -477,7 +477,7 @@ impl Shell {
             .flex()
             .flex_col()
             // The keys of the note's find bar: settings, Tab, replace all; the arrows walk the results.
-            .key_context("Find")
+            .key_context(crate::ui::keys::context::FIND)
             .on_action(cx.listener(|this, _: &Find, window, cx| this.open_vault_find(window, cx)))
             .on_action(cx.listener(|this, _: &FindReplace, window, cx| this.vault_flip_replace(window, cx)))
             .on_action(cx.listener(|this, _: &FindCase, _, cx| this.vault_flip(crate::logic::search::FindOption::Case, cx)))

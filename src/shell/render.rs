@@ -342,7 +342,7 @@ impl Render for Shell {
                     window.focus(&this.pane().editor.focus_handle(cx));
                 }
             }))
-            .key_context("Shell")
+            .key_context(crate::ui::keys::context::SHELL)
             .child(body)
             // Its own row under the panes, never over the note's footer (counter, formatting bar).
             .children(self.render_update_banner(cx))

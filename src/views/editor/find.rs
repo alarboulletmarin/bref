@@ -348,7 +348,7 @@ impl Editor {
         let bar = div()
             .id("find-bar")
             .debug_selector(|| "find-bar".into())
-            .key_context("Find")
+            .key_context(crate::ui::keys::context::FIND)
             .w(t.px(400.))
             .max_w_full()
             .p_1p5()

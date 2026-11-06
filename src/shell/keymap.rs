@@ -332,12 +332,12 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
     use editor::*;
     use keys::bind as b;
     use palette::{Confirm, Dismiss, Next, Prev};
-    let e = Some("Editor");
-    let p = Some("Palette");
-    let f = Some("Find");
-    let n = Some("Nav");
-    let c = Some("Canvas");
-    let sh = Some("Sheet");
+    let e = Some(keys::context::EDITOR);
+    let p = Some(keys::context::PALETTE);
+    let f = Some(keys::context::FIND);
+    let n = Some(keys::context::NAV);
+    let c = Some(keys::context::CANVAS);
+    let sh = Some(keys::context::SHEET);
     // `secondary` = Cmd on macOS, Ctrl elsewhere; words are traversed with Alt on macOS.
     let word = if cfg!(target_os = "macos") { "alt" } else { "ctrl" };
     let mut all = vec![
@@ -348,7 +348,7 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary-shift-c", &CopyAll, None),
         b("f1", &ToggleHelp, None),
         b("secondary-/", &ToggleHelp, None),
-        b("escape", &CloseHelp, Some("Shell")),
+        b("escape", &CloseHelp, Some(keys::context::SHELL)),
         b("secondary-shift-o", &Outline, None),
         b("secondary-j", &Today, None),
         b("secondary-shift-s", &SyncVault, None),
@@ -382,13 +382,13 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary-shift-p", &ToggleCommands, None),
         // From button to button, where Tab has no other use (the note indents with it). In the window's own
         // context: a binding with none counts as the deepest and would take Tab from the views that use it.
-        b("tab", &FocusNext, Some("Shell")),
-        b("enter", &ui::widgets::Press, Some("Button")),
-        b("shift-tab", &FocusPrev, Some("Shell")),
+        b("tab", &FocusNext, Some(keys::context::SHELL)),
+        b("enter", &ui::widgets::Press, Some(keys::context::BUTTON)),
+        b("shift-tab", &FocusPrev, Some(keys::context::SHELL)),
         // The context menu of the selected row or of the cursor, as on every desktop.
         b("shift-f10", &ContextMenu, None),
         b("menu", &ContextMenu, None),
-        b("secondary-shift-d", &NewDiagram, Some("Shell")),
+        b("secondary-shift-d", &NewDiagram, Some(keys::context::SHELL)),
         b("secondary-=", &canvas::ZoomIn, c),
         b("secondary-+", &canvas::ZoomIn, c),
         b("secondary--", &canvas::ZoomOut, c),
@@ -449,15 +449,15 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("alt-.", &sheet::WidenColumn, sh),
         b("alt-,", &sheet::NarrowColumn, sh),
         b("secondary-shift-backspace", &TableDeleteSpan, sh),
-        b("secondary-e", &nav::ShowTree, Some("Shell")),
-        b("secondary-shift-t", &nav::ShowRecent, Some("Shell")),
-        b("secondary-g", &nav::ShowGraph, Some("Shell")),
-        b("secondary-t", &nav::ShowTags, Some("Shell")),
-        b("secondary-l", &nav::ShowLinks, Some("Shell")),
-        b("secondary-shift-j", &nav::ShowCalendar, Some("Shell")),
-        b("secondary-m", &nav::ToggleFull, Some("Shell")),
+        b("secondary-e", &nav::ShowTree, Some(keys::context::SHELL)),
+        b("secondary-shift-t", &nav::ShowRecent, Some(keys::context::SHELL)),
+        b("secondary-g", &nav::ShowGraph, Some(keys::context::SHELL)),
+        b("secondary-t", &nav::ShowTags, Some(keys::context::SHELL)),
+        b("secondary-l", &nav::ShowLinks, Some(keys::context::SHELL)),
+        b("secondary-shift-j", &nav::ShowCalendar, Some(keys::context::SHELL)),
+        b("secondary-m", &nav::ToggleFull, Some(keys::context::SHELL)),
         b("tab", &graph::Cycle, n),
-        b("secondary-shift-n", &nav::NewFolder, Some("Shell")),
+        b("secondary-shift-n", &nav::NewFolder, Some(keys::context::SHELL)),
         b("f2", &nav::Rename, n),
         b("secondary-d", &nav::Duplicate, n),
         b("delete", &nav::Trash, n),
@@ -558,21 +558,21 @@ pub(super) fn defaults() -> Vec<keys::Bind> {
         b("secondary-shift-z", &Redo, e),
         b("secondary-y", &Redo, e),
         // A gesture made on the kanban board is undone from the board.
-        b("secondary-z", &Undo, Some("Board")),
+        b("secondary-z", &Undo, Some(keys::context::BOARD)),
         // The board from the keys: arrows go, Alt+arrows carry (before Back and Forward there).
-        b("up", &kanban::CardUp, Some("Board")),
-        b("down", &kanban::CardDown, Some("Board")),
-        b("left", &kanban::CardLeft, Some("Board")),
-        b("right", &kanban::CardRight, Some("Board")),
-        b("alt-up", &kanban::CarryUp, Some("Board")),
-        b("alt-down", &kanban::CarryDown, Some("Board")),
-        b("alt-left", &kanban::CarryLeft, Some("Board")),
-        b("alt-right", &kanban::CarryRight, Some("Board")),
-        b("enter", &kanban::CardEdit, Some("Board")),
-        b("f2", &kanban::CardEdit, Some("Board")),
-        b("delete", &kanban::CardRemove, Some("Board")),
-        b("secondary-shift-z", &Redo, Some("Board")),
-        b("secondary-y", &Redo, Some("Board")),
+        b("up", &kanban::CardUp, Some(keys::context::BOARD)),
+        b("down", &kanban::CardDown, Some(keys::context::BOARD)),
+        b("left", &kanban::CardLeft, Some(keys::context::BOARD)),
+        b("right", &kanban::CardRight, Some(keys::context::BOARD)),
+        b("alt-up", &kanban::CarryUp, Some(keys::context::BOARD)),
+        b("alt-down", &kanban::CarryDown, Some(keys::context::BOARD)),
+        b("alt-left", &kanban::CarryLeft, Some(keys::context::BOARD)),
+        b("alt-right", &kanban::CarryRight, Some(keys::context::BOARD)),
+        b("enter", &kanban::CardEdit, Some(keys::context::BOARD)),
+        b("f2", &kanban::CardEdit, Some(keys::context::BOARD)),
+        b("delete", &kanban::CardRemove, Some(keys::context::BOARD)),
+        b("secondary-shift-z", &Redo, Some(keys::context::BOARD)),
+        b("secondary-y", &Redo, Some(keys::context::BOARD)),
         b("escape", &Cancel, e),
     ];
     // After the fields that use them (palette, grid): its keys take precedence over theirs.

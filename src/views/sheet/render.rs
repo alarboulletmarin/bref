@@ -128,7 +128,7 @@ impl Render for Sheet {
             .text_color(t.text)
             // A cell being typed in: the keys of an input line come before
             // those of the grid (arrows, deletion, clipboard).
-            .key_context(if self.edit.is_some() { "Sheet Line" } else { "Sheet" })
+            .key_context(if self.edit.is_some() { crate::ui::keys::context::SHEET_LINE } else { crate::ui::keys::context::SHEET })
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &Left, _, cx| this.go(0, -1, false, cx)))
             .on_action(cx.listener(|this, _: &Right, _, cx| this.go(0, 1, false, cx)))

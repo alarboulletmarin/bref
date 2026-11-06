@@ -494,7 +494,7 @@ impl Shell {
                     crate::ui::widgets::floating(t)
                         .debug_selector(|| "menu".into())
                         .track_focus(&self.menu_focus)
-                        .key_context("Menu")
+                        .key_context(crate::ui::keys::context::MENU)
                         // Escape is the window's `CloseHelp` before it is a key.
                         .on_action(cx.listener(|this, _: &CloseHelp, window, cx| this.close_menu(window, cx)))
                         .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, window, cx| {

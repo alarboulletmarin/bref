@@ -59,7 +59,7 @@ impl Render for Editor {
         let el = div()
             .size_full()
             .relative()
-            .key_context("Editor")
+            .key_context(crate::ui::keys::context::EDITOR)
             .track_focus(&self.focus)
             .cursor(CursorStyle::IBeam);
         let el = motions!(el,

@@ -237,7 +237,7 @@ impl Line {
 /// The keys of an input line, for the "Line" context. Bind after those of the fields
 /// that use it: at equal depth, the last binding wins.
 pub fn bindings(word: &str) -> Vec<Bind> {
-    let c = Some("Line");
+    let c = Some(super::keys::context::LINE);
     vec![
         bind("left", &Left, c),
         bind("right", &Right, c),

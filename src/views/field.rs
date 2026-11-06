@@ -140,7 +140,7 @@ impl Render for Field {
         let placed = layout.clone();
         let field = div()
             // The palette's keys (Enter confirms, Escape gives up) and those of a line.
-            .key_context("Palette Line")
+            .key_context(crate::ui::keys::context::PALETTE_LINE)
             .track_focus(&self.focus)
             .on_action(cx.listener(|_, _: &Confirm, _, cx| cx.emit(FieldEvent::Done)))
             .on_action(cx.listener(|_, _: &Dismiss, _, cx| cx.emit(FieldEvent::Cancel)))

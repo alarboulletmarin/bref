@@ -985,7 +985,7 @@ impl Render for Palette {
             .inset_0()
             .occlude()
             // The keys of an input line serve the question being typed.
-            .key_context("Palette Line")
+            .key_context(crate::ui::keys::context::PALETTE_LINE)
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &Next, _, cx| this.step(1, cx)))
             .on_action(cx.listener(|this, _: &Prev, _, cx| this.step(this.items.len().max(1) - 1, cx)))

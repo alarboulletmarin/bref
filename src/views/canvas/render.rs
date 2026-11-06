@@ -31,7 +31,7 @@ impl Render for Canvas {
             .size_full()
             .flex()
             .flex_col()
-            .key_context(if self.editing.is_some() { "Canvas Line" } else { "Canvas" })
+            .key_context(if self.editing.is_some() { crate::ui::keys::context::CANVAS_LINE } else { crate::ui::keys::context::CANVAS })
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom_by(1.25, cx)))
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.zoom_by(0.8, cx)))

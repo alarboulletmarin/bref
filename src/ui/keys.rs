@@ -9,6 +9,29 @@ use std::collections::BTreeMap;
 /// Shortcut key, as displayed: Cmd on macOS, Ctrl elsewhere.
 pub const MOD: &str = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" };
 
+/// The key contexts: where a binding applies. The names live here only; views set them on
+/// their element (`key_context`), the default table binds against them.
+pub mod context {
+    pub const SHELL: &str = "Shell";
+    pub const EDITOR: &str = "Editor";
+    pub const FIND: &str = "Find";
+    pub const NAV: &str = "Nav";
+    pub const PALETTE: &str = "Palette";
+    pub const CANVAS: &str = "Canvas";
+    pub const SHEET: &str = "Sheet";
+    pub const BOARD: &str = "Board";
+    pub const BUTTON: &str = "Button";
+    pub const MENU: &str = "Menu";
+    /// An input line (`ui::line`), carried by a host view while one is being edited.
+    pub const LINE: &str = "Line";
+    /// The views that carry an input line, and the context they have while it is edited.
+    pub const PALETTE_LINE: &str = "Palette Line";
+    pub const CANVAS_LINE: &str = "Canvas Line";
+    pub const SHEET_LINE: &str = "Sheet Line";
+    /// The hosts of `LINE`: a binding of `LINE` meets theirs.
+    pub const LINE_HOSTS: [&str; 3] = [PALETTE, CANVAS, SHEET];
+}
+
 /// A binding: keys (written by `canon`), an action name, the context where it applies.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bind {
@@ -131,8 +154,8 @@ pub fn show(keys: &str) -> String {
 /// which encloses everything, meets all others; views do not meet each other (a table's
 /// arrows and a diagram's), except an input field with the view that carries it.
 pub fn meets(a: Option<&str>, b: Option<&str>) -> bool {
-    let everywhere = |c: Option<&str>| matches!(c, None | Some("Shell"));
-    let field = |a: Option<&str>, b: Option<&str>| a == Some("Line") && matches!(b, Some("Sheet" | "Palette"));
+    let everywhere = |c: Option<&str>| matches!(c, None | Some(context::SHELL));
+    let field = |a: Option<&str>, b: Option<&str>| a == Some(context::LINE) && b.is_some_and(|b| context::LINE_HOSTS.contains(&b));
     everywhere(a) || everywhere(b) || a == b || field(a, b) || field(b, a)
 }
 
@@ -365,6 +388,14 @@ mod tests {
     }
 
     #[test]
+    fn composite_contexts_are_a_host_and_the_line() {
+        for (host, edited) in [(context::PALETTE, context::PALETTE_LINE), (context::CANVAS, context::CANVAS_LINE), (context::SHEET, context::SHEET_LINE)] {
+            assert_eq!(edited, format!("{host} {}", context::LINE));
+            assert!(context::LINE_HOSTS.contains(&host));
+        }
+    }
+
+    #[test]
     fn contexts_that_meet() {
         assert!(meets(None, Some("Editor")) && meets(Some("Sheet"), Some("Shell")));
         assert!(meets(Some("Nav"), Some("Nav")));
@@ -372,6 +403,9 @@ mod tests {
         assert!(!meets(Some("Sheet"), Some("Canvas")) && !meets(Some("Editor"), Some("Find")));
                 // A cell being edited receives the keys of a text line.
         assert!(meets(Some("Line"), Some("Sheet")) && meets(Some("Palette"), Some("Line")));
+        // A diagram's text field is an input line too: its keys meet the canvas's own.
+        assert!(meets(Some(context::LINE), Some(context::CANVAS)) && meets(Some(context::CANVAS), Some(context::LINE)));
+        assert!(!meets(Some(context::LINE), Some(context::EDITOR)) && !meets(Some(context::LINE), Some(context::NAV)));
     }
 
     #[test]

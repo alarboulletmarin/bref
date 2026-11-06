@@ -334,7 +334,7 @@ impl Shell {
         let header = crate::ui::widgets::page_head(t, "board", 26., name, summary(open, done));
         div()
             .id("board")
-            .key_context("Board")
+            .key_context(crate::ui::keys::context::BOARD)
             .track_focus(self.pane().board.focus())
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.pane().editor.update(cx, |e, cx| e.undo(cx))))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.pane().editor.update(cx, |e, cx| e.redo(cx))))

@@ -505,7 +505,7 @@ impl Render for Viewer {
             .id("viewer")
             .size_full()
             .relative()
-            .key_context("Canvas")
+            .key_context(crate::ui::keys::context::CANVAS)
             .track_focus(&self.focus)
             // The sheet's corners: the sheet under it clips to a rectangle, not to its corners.
             .bg(t.bg)

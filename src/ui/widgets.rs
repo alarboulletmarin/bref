@@ -31,7 +31,7 @@ pub fn button_turned(id: impl Into<gpui::ElementId>, icon: &'static str, active:
         .focus(|s| s.border_2().border_color(t.accent))
         // Enter belongs to the button that has the keys, not to the panel around it: gpui presses
         // it when the key comes up.
-        .key_context("Button")
+        .key_context(super::keys::context::BUTTON)
         .on_action(|_: &Press, _, _| {})
         .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
         .hover(|s| s.bg(t.hover))

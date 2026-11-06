@@ -478,7 +478,7 @@ impl Shell {
                 crate::ui::widgets::popover(t)
                     .debug_selector(|| "icons".into())
                     .track_focus(&self.menu_focus)
-                    .key_context("Menu")
+                    .key_context(crate::ui::keys::context::MENU)
                     .on_action(cx.listener(|this, _: &CloseHelp, window, cx| this.close_icons(window, cx)))
                     .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, window, cx| {
                         if !e.keystroke.modifiers.modified() && this.icons_key(&e.keystroke.key, window, cx) {
@@ -1373,7 +1373,7 @@ impl Shell {
                     cx.notify();
                 }
             }))
-            .key_context("Nav")
+            .key_context(crate::ui::keys::context::NAV)
             .when(keys_here, |d| d.track_focus(self.nav.focus()))
             .on_action(cx.listener(|this, _: &Prev, window, cx| this.nav_step(false, window, cx)))
             .on_action(cx.listener(|this, _: &Next, window, cx| this.nav_step(true, window, cx)))
