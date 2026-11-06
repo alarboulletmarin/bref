@@ -13,7 +13,7 @@ pub struct Signal {
 impl Signal {
     pub fn raise(&self) {
         self.raised.store(true, Ordering::Release);
-        if let Some(waker) = self.waker.lock().unwrap().take() {
+        if let Some(waker) = self.waker.lock().unwrap_or_else(|e| e.into_inner()).take() {
             waker.wake();
         }
     }
@@ -29,7 +29,7 @@ impl Signal {
             if self.take() {
                 return std::task::Poll::Ready(true);
             }
-            *self.waker.lock().unwrap() = Some(cx.waker().clone());
+            *self.waker.lock().unwrap_or_else(|e| e.into_inner()) = Some(cx.waker().clone());
             // Raised in the meantime, before the waker is in place: it is not missed.
             if self.take() {
                 return std::task::Poll::Ready(true);

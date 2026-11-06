@@ -74,7 +74,7 @@ fn serve(mut stream: TcpStream, secret: &str, asked: &Mutex<Vec<Asked>>, signal:
         Err(e) => Err(e),
         Ok(path) => {
             let (answer, wait) = mpsc::channel();
-            asked.lock().unwrap().push(Asked { path, answer });
+            asked.lock().unwrap_or_else(|e| e.into_inner()).push(Asked { path, answer });
             signal.raise();
             wait.recv_timeout(Duration::from_secs(5)).unwrap_or_else(|_| Err("Bref did not answer".into()))
         }
@@ -131,7 +131,7 @@ mod tests {
         thread::spawn(move || {
             loop {
                 if signal.take() {
-                    for ask in asked.lock().unwrap().drain(..) {
+                    for ask in asked.lock().unwrap_or_else(|e| e.into_inner()).drain(..) {
                         let _ = ask.answer.send(answer(&ask.path));
                     }
                 }

@@ -26,7 +26,7 @@ impl Shell {
         cx.spawn_in(window, async move |this, cx| {
             loop {
                 signal.wait(cx.background_executor().timer(Duration::from_secs(3600))).await;
-                let each: Vec<platform::link::Asked> = std::mem::take(&mut *asked.lock().unwrap());
+                let each: Vec<platform::link::Asked> = std::mem::take(&mut *asked.lock().unwrap_or_else(|e| e.into_inner()));
                 for ask in each {
                     let Ok(answer) = this.update_in(cx, |this, window, cx| this.show_asked(&ask.path, window, cx)) else {
                         return;

@@ -142,7 +142,7 @@ pub(super) struct Disk(Mutex<usize>);
 
 impl Disk {
     pub(super) fn write(&self, generation: usize, path: &Path, table: &Table, encoding: Encoding) -> Result<(), WriteError> {
-        let mut last = self.0.lock().unwrap();
+        let mut last = self.0.lock().unwrap_or_else(|e| e.into_inner());
         if *last >= generation {
             return Ok(());
         }
