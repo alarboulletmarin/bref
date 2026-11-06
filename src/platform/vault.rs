@@ -318,25 +318,42 @@ pub fn follow_heading(root: Option<&Path>, notes: &mut [Note], path: &Path, was:
     rewritten
 }
 
+/// What `relink` did: the notes rewritten, and those it could not read or write (with why).
+#[derive(Default)]
+pub struct Relinked {
+    pub rewritten: Vec<PathBuf>,
+    pub failed: Vec<(PathBuf, io::Error)>,
+}
+
 /// `[[old]]` becomes `[[new]]` in every note that links to it, on disk and in the index, unless
-/// another note is still called `old` (the links may be meant for it). Returns the notes rewritten.
-pub fn relink(root: Option<&Path>, notes: &mut [Note], old: &str, new: &str) -> Vec<PathBuf> {
+/// another note is still called `old` (the links may be meant for it). A note that cannot be read or
+/// written is skipped, kept in `failed`: the others are still rewritten.
+pub fn relink(root: Option<&Path>, notes: &mut [Note], old: &str, new: &str) -> Relinked {
     let Some(targets) = crate::logic::wiki::relink_set(notes, old, new) else {
-        return Vec::new();
+        return Relinked::default();
     };
     let paths: Vec<PathBuf> = targets.iter().map(|n| n.path.clone()).collect();
-    let mut rewritten = Vec::new();
+    let mut done = Relinked::default();
     for note in notes.iter_mut().filter(|n| paths.contains(&n.path)) {
-        let fresh = fs::read_to_string(&note.path)
-            .ok()
-            .and_then(|text| markdown::relink(&text, old, new))
-            .filter(|text| write(&note.path, text).is_ok());
-        if let Some(text) = fresh {
-            note.set_text(text.as_str().into(), root.is_some_and(|r| in_templates(r, &note.path)));
-            rewritten.push(note.path.clone());
+        let text = match fs::read_to_string(&note.path) {
+            Ok(text) => text,
+            Err(e) => {
+                done.failed.push((note.path.clone(), e));
+                continue;
+            }
+        };
+        let Some(text) = markdown::relink(&text, old, new) else {
+            continue;
+        };
+        match write(&note.path, &text) {
+            Ok(()) => {
+                note.set_text(text.as_str().into(), root.is_some_and(|r| in_templates(r, &note.path)));
+                done.rewritten.push(note.path.clone());
+            }
+            Err(e) => done.failed.push((note.path.clone(), e)),
         }
     }
-    rewritten
+    done
 }
 
 /// Moves the note or folder to the vault's trash: the hidden folder

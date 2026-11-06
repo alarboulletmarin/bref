@@ -418,7 +418,7 @@ pub fn edit_note(vault: &mut Vault, args: &Value) -> Outcome {
     if let Err(message) = files::write(&path, &next).map_err(disk) {
         return Outcome::err(message);
     }
-    let (path, renamed, reason, rewritten) = follow_title(vault, &path, &text, &next);
+    let (path, renamed, reason, (rewritten, relink_errors)) = follow_title(vault, &path, &text, &next);
     // A renamed heading is followed by the links that point at it, as in the app.
     if let Some((was, now)) = embed::renamed_heading(&text, &next) {
         files::follow_heading(Some(&vault.root), &mut vault.notes, &path, &was, &now);
@@ -430,34 +430,34 @@ pub fn edit_note(vault: &mut Vault, args: &Value) -> Outcome {
         "renamed": renamed,
         "name_kept": reason,
         "rewritten": rewritten,
+        "relink_errors": relink_errors,
     }))
 }
 
 /// A changed `# title` renames the file and the links, unless the new name is taken:
 /// the text is kept and the file keeps its name, as the app does.
-fn follow_title(vault: &mut Vault, path: &Path, before: &str, after: &str) -> (std::path::PathBuf, bool, Option<String>, usize) {
+fn follow_title(vault: &mut Vault, path: &Path, before: &str, after: &str) -> (std::path::PathBuf, bool, Option<String>, (usize, usize)) {
     let was = files::h1_of(before);
     let now = files::h1_of(after);
     let Some(title) = now.filter(|title| was.as_ref() != Some(title)) else {
         vault.rescan();
-        return (path.to_path_buf(), false, None, 0);
+        return (path.to_path_buf(), false, None, (0, 0));
     };
     let old = files::stem(path);
     let Some(dest) = files::title_rename(path, &title, true) else {
         vault.rescan();
-        return (path.to_path_buf(), false, None, 0);
+        return (path.to_path_buf(), false, None, (0, 0));
     };
     if files::taken_by_other(path, &dest) {
         vault.rescan();
-        return (path.to_path_buf(), false, Some("this name is already taken".into()), 0);
+        return (path.to_path_buf(), false, Some("this name is already taken".into()), (0, 0));
     }
     if let Err(error) = files::rename(path, &dest) {
         vault.rescan();
-        return (path.to_path_buf(), false, Some(disk(error)), 0);
+        return (path.to_path_buf(), false, Some(disk(error)), (0, 0));
     }
     let _ = files::relocate_icons(&vault.root, path, &dest); // ponytail: a failed icon save is not worth undoing the rename
-    let rewritten = vault::relink(vault, &old, &title);
-    (dest, true, None, rewritten)
+    (dest, true, None, vault::relink(vault, &old, &title))
 }
 
 pub fn append_to_note(vault: &mut Vault, args: &Value) -> Outcome {
@@ -597,12 +597,13 @@ pub fn rename_note(vault: &mut Vault, args: &Value) -> Outcome {
         return Outcome::err(disk(error));
     }
     let icons = if dest != path { files::relocate_icons(&vault.root, &path, &dest).err().map(disk) } else { None };
-    let rewritten = if old_link != new_link { vault::relink(vault, &old_link, &new_link) } else { vault.rescan(); 0 };
+    let (rewritten, relink_errors) = if old_link != new_link { vault::relink(vault, &old_link, &new_link) } else { vault.rescan(); (0, 0) };
     let left = old_link != new_link && rewritten == 0 && vault.notes.iter().any(|n| n.name.eq_ignore_ascii_case(&old_link));
     Outcome::ok(json!({
         "path": vault::rel(&vault.root, &dest),
         "rewritten": rewritten,
         "links_left": left,
+        "relink_errors": relink_errors,
         "icons_error": icons,
     }))
 }

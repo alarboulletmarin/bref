@@ -263,7 +263,12 @@ impl Shell {
     // ponytail: synchronous rewrite, limited to the notes the index says link to
     // `old`; move to a background task if a note is linked from hundreds of others.
     pub(super) fn relink(&mut self, old: &str, new: &str, cx: &mut Context<Self>) -> bool {
-        let changed = vault::relink(self.vault.as_deref(), &mut self.notes, old, new);
+        let done = vault::relink(self.vault.as_deref(), &mut self.notes, old, new);
+        let changed = done.rewritten;
+        // A note that could not be rewritten keeps its old links: say which, the others went on.
+        for (path, e) in done.failed {
+            self.fail(tr("Links not updated in", "Liens non mis à jour dans"), &path, e, cx);
+        }
         if changed.is_empty() {
             return false;
         }

@@ -251,10 +251,10 @@ fn disk_kind(kind: io::ErrorKind) -> String {
 }
 
 /// Rewrites `[[old]]` into `[[new]]` in every note that links to it, unless another note
-/// is still called `old`. Returns how many notes changed.
-pub fn relink(vault: &mut Vault, old: &str, new: &str) -> usize {
+/// is still called `old`. Returns how many notes changed and how many could not be rewritten.
+pub fn relink(vault: &mut Vault, old: &str, new: &str) -> (usize, usize) {
     vault.rescan();
-    let changed = vault::relink(Some(&vault.root), &mut vault.notes, old, new).len();
+    let done = vault::relink(Some(&vault.root), &mut vault.notes, old, new);
     vault.rescan();
-    changed
+    (done.rewritten.len(), done.failed.len())
 }

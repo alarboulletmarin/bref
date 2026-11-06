@@ -621,3 +621,26 @@ fn every_template_and_family_is_reachable_by_its_key() {
     assert!(err(draw::create_diagram(&mut vault, &json!({"name": "X", "from": {"template": "nope"}}))).contains("no template"));
     fs::remove_dir_all(root).unwrap();
 }
+
+/// A note that cannot be rewritten is counted in `relink_errors`, the others still follow.
+#[cfg(unix)]
+#[test]
+fn a_note_that_cannot_be_relinked_is_counted() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = scratch();
+    write(&root, "Solo.md", "# Solo\n\nbody\n");
+    write(&root, "Fine.md", "# Fine\n\n[[Solo]]\n");
+    write(&root, "ro/Stuck.md", "# Stuck\n\n[[Solo]]\n");
+    fs::set_permissions(root.join("ro"), fs::Permissions::from_mode(0o555)).unwrap();
+    let mut vault = open(&root);
+    let moved = ok(notes::rename_note(&mut vault, &json!({"note": "Solo", "name": "Only"})));
+    fs::set_permissions(root.join("ro"), fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(fs::read_to_string(root.join("Fine.md")).unwrap().contains("[[Only]]"));
+    // Running as root, nothing is refused: only check the count where the folder really was locked.
+    let stuck = fs::read_to_string(root.join("ro/Stuck.md")).unwrap().contains("[[Solo]]");
+    assert_eq!(moved["relink_errors"], u64::from(stuck));
+    assert_eq!(moved["rewritten"], if stuck { 1 } else { 2 });
+    let clean = ok(notes::rename_note(&mut vault, &json!({"note": "Fine", "name": "Better"})));
+    assert_eq!(clean["relink_errors"], 0);
+    fs::remove_dir_all(root).unwrap();
+}
