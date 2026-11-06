@@ -18,6 +18,8 @@ impl Shell {
         let editor = self.pane().editor.read(cx);
         let text = editor.text().to_string();
         let lookups = editor.lookups();
+        // The PDF is written in the fonts the user chose.
+        let fonts = (self.theme.sans, self.theme.mono);
         let path = self.pane().path.clone();
         let title = vault::title_of(&text);
         let name = path.as_deref().map(vault::stem).filter(|s| !s.is_empty()).unwrap_or_else(|| if title.is_empty() { "Note".into() } else { title.clone() });
@@ -27,7 +29,7 @@ impl Shell {
             // Cancelled: nothing is written, nothing is said.
             let Ok(Ok(Some(chosen))) = chosen.await else { return };
             this.update(cx, |this, cx| this.say(Tone::Busy, tr("Saving the PDF…", "Enregistrement du PDF…"), cx)).ok();
-            let saved = cx.background_executor().spawn(async move { save(&text, &title, lookups, &chosen) }).await;
+            let saved = cx.background_executor().spawn(async move { save(&text, &title, fonts, lookups, &chosen) }).await;
             this.update(cx, |this, cx| {
                 match saved {
                     Ok((path, missing)) => {
@@ -50,7 +52,7 @@ impl Shell {
 
 /// Lays out `text`, makes its PDF and writes it at `chosen`, given the `.pdf` extension; a name already
 /// taken gets a number, nothing is overwritten. The path written, and what could not be printed.
-fn save(text: &str, title: &str, (dirs, images, notes): (Vec<PathBuf>, HashMap<String, PathBuf>, HashMap<String, PathBuf>), chosen: &Path) -> io::Result<(PathBuf, Vec<String>)> {
+fn save(text: &str, title: &str, fonts: ui::assets::Fonts, (dirs, images, notes): (Vec<PathBuf>, HashMap<String, PathBuf>, HashMap<String, PathBuf>), chosen: &Path) -> io::Result<(PathBuf, Vec<String>)> {
     let find = |written: &str| {
         if let Some(file) = editor::find_picture(&dirs, &images, written) {
             let svg = file.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
@@ -67,8 +69,8 @@ fn save(text: &str, title: &str, (dirs, images, notes): (Vec<PathBuf>, HashMap<S
             .and_then(|(text, t)| embed::section(&text, &t.anchor))
             .map_or(Found::Missing, Found::Section)
     };
-    let printed = print::print(text, &find);
-    let sheets = printed.pages.into_iter().map(|p| Some((ui::svg::parse(&p.svg, ui::assets::APP_FONTS)?, p.links))).collect::<Option<Vec<pdf::Sheet>>>();
+    let printed = print::print(text, fonts, &find);
+    let sheets = printed.pages.into_iter().map(|p| Some((ui::svg::parse(&p.svg, fonts)?, p.links))).collect::<Option<Vec<pdf::Sheet>>>();
     let (bytes, outlined) = pdf::document(&sheets.ok_or_else(|| io::Error::other("SVG"))?, print::PAGE, title).map_err(io::Error::other)?;
     let mut missing = printed.missing;
     missing.extend(outlined.into_iter().map(|n| format!("{} {n}", tr("searchable text of page", "texte cherchable de la page"))));

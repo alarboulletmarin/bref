@@ -17,7 +17,7 @@ use crate::lang::tr;
 use crate::logic::diagram::Diagram;
 use crate::logic::markdown::{self as md, Kind, Link};
 use crate::ui::{figure, svg, theme};
-use crate::ui::assets::{FONT_FILES, MONO_AT, SANS_AT, SERIF_AT};
+use crate::ui::assets::{Fonts, FONT_FILES, MONO_AT, SANS_AT, SERIF_AT};
 
 /// A4, in points.
 pub const PAGE: (f32, f32) = (595.28, 841.89);
@@ -31,9 +31,10 @@ const LEAD: f32 = 1.5;
 const MONO: f32 = 8.5;
 /// A CSS pixel, in points.
 const PX: f32 = 0.75;
-/// The sans, mono and serif of the app, measured here and named in the SVG.
-const SANS: &str = "IBM Plex Sans";
-const MONO_FONT: &str = "IBM Plex Mono";
+/// The serif of the app, for headings.
+// ponytail: lines are measured with the advances of the app's Plex fonts (`FACES`) whatever font the
+// pages are written in: a chosen font much wider or narrower than Plex wraps a little off (runs can
+// touch or leave a gap). Measure with the chosen font's metrics if that shows.
 const SERIF: &str = "IBM Plex Serif";
 
 /// What a picture or an embed of the note stands for, as the caller found it.
@@ -60,9 +61,9 @@ pub struct Printed {
     pub missing: Vec<String>,
 }
 
-/// Lays out `text` on pages. `find` is asked for each picture and embed, by the path or name written.
-pub fn print(text: &str, find: &dyn Fn(&str) -> Found) -> Printed {
-    let ink = Ink::new();
+/// Lays out `text` on pages, written in `fonts` (the user's, text and code). `find` is asked for each picture and embed, by the path or name written.
+pub fn print(text: &str, fonts: Fonts, find: &dyn Fn(&str) -> Found) -> Printed {
+    let ink = Ink::new(fonts);
     let mut out = Rows { rows: Vec::new(), missing: Vec::new(), group: 0, gap: 0., boxed: 0 };
     out.note(&text[md::front_matter(text)..], find, &ink, 0);
     if out.boxed > 0 {
@@ -83,15 +84,17 @@ struct Ink {
     number: String,
     look: figure::Look,
     rgb: [u8; 3],
+    /// The fonts the pages are written in (text, code), named in the SVG and used to draw it.
+    fonts: Fonts,
 }
 
 impl Ink {
-    fn new() -> Self {
+    fn new(fonts: Fonts) -> Self {
         let t = theme::Theme::of(&crate::logic::prefs::Prefs::parse("theme=Bref Light"), gpui::WindowAppearance::Light);
         let (rgb, hex) = (theme::rgb8, theme::hex);
         let mut look = figure::Look::of(&t);
-        look.font = SANS.into();
-        look.fonts = crate::ui::assets::APP_FONTS;
+        look.font = fonts.0.into();
+        look.fonts = fonts;
         look.bg = "#ffffff".into();
         Ink {
             text: hex(t.text),
@@ -104,6 +107,7 @@ impl Ink {
             number: hex(t.number),
             look,
             rgb: rgb(t.text),
+            fonts,
         }
     }
 }
@@ -349,7 +353,7 @@ fn draw_line(svg: &mut String, links: &mut Vec<([f32; 4], String)>, text: &Inlin
             let _ = write!(svg, r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="2" fill="{fill}"/>"#, at - 1., top + (lh - font.size * 1.3) / 2., w + 2., font.size * 1.3);
         }
         if !shown.trim().is_empty() {
-            let family = if style & md::CODE != 0 { MONO_FONT } else if font.serif { SERIF } else { SANS };
+            let family = if style & md::CODE != 0 { ink.fonts.1 } else if font.serif { SERIF } else { ink.fonts.0 };
             let weight = if font.serif && style & md::CODE == 0 { "600" } else if style & md::BOLD != 0 { "700" } else { "400" };
             let fill = match () {
                 _ if style & md::KEYWORD != 0 => &ink.accent,
@@ -466,7 +470,7 @@ impl Rows {
 
     /// An SVG figure, at its own size (CSS pixels).
     fn figure(&mut self, svg: &str, what: &str, indent: f32, ink: &Ink) {
-        match svg::parse(svg, crate::ui::assets::APP_FONTS).map(|t| (t.size().width() * PX, t.size().height() * PX)) {
+        match svg::parse(svg, ink.fonts).map(|t| (t.size().width() * PX, t.size().height() * PX)) {
             Some(size) => self.picture(svg.as_bytes(), "image/svg+xml", size, indent),
             None => self.missing(what.to_string(), ink),
         }
@@ -629,7 +633,7 @@ impl Rows {
                         }
                         Kind::Ordered => {
                             let number = line[spaces..marker].trim_end();
-                            format!(r#"<text x="{x:.2}" y="{base:.2}" font-family="{SANS}" font-size="{BODY}" fill="{}">{}</text>"#, ink.soft, xml::attr(number))
+                            format!(r#"<text x="{x:.2}" y="{base:.2}" font-family="{}" font-size="{BODY}" fill="{}">{}</text>"#, ink.fonts.0, ink.soft, xml::attr(number))
                         }
                         _ => format!(r#"<circle cx="{:.2}" cy="{:.2}" r="1.8" fill="{}"/>"#, x + 4., lh / 2., ink.soft),
                     };
@@ -830,7 +834,7 @@ fn paginate(rows: &[Row], ink: &Ink) -> Vec<Page> {
         p.links.extend(row.links.iter().map(|([x, y, w, h], url)| ([x + MARGIN, y + MARGIN + top, *w, *h], url.clone())));
     }
     for (n, p) in pages.iter_mut().enumerate() {
-        let number = if count > 1 { format!(r#"<text x="{:.2}" y="{:.2}" font-family="{SANS}" font-size="8" fill="{}" text-anchor="middle">{} / {count}</text>"#, PAGE.0 / 2., PAGE.1 - MARGIN / 2., ink.soft, n + 1) } else { String::new() };
+        let number = if count > 1 { format!(r#"<text x="{:.2}" y="{:.2}" font-family="{}" font-size="8" fill="{}" text-anchor="middle">{} / {count}</text>"#, PAGE.0 / 2., PAGE.1 - MARGIN / 2., ink.fonts.0, ink.soft, n + 1) } else { String::new() };
         p.svg = format!(
             r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" width="{0:.2}" height="{1:.2}" viewBox="0 0 {0:.2} {1:.2}"><rect width="{0:.2}" height="{1:.2}" fill="#ffffff"/>{2}{number}</svg>"##,
             PAGE.0, PAGE.1, p.svg
@@ -863,7 +867,7 @@ mod tests {
 
     #[test]
     fn an_empty_note_is_one_blank_page() {
-        let printed = print("", &none);
+        let printed = print("", crate::ui::assets::APP_FONTS, &none);
         assert_eq!(printed.pages.len(), 1);
         assert!(printed.missing.is_empty());
         assert!(svg::parse(&printed.pages[0].svg, crate::ui::assets::APP_FONTS).is_some());
@@ -871,7 +875,7 @@ mod tests {
 
     #[test]
     fn marks_are_left_out_and_links_kept() {
-        let printed = print("# Titre\n\n**gras** et *ital* `code` [site](https://ex.fr) [[Note|alias]] -> fin", &none);
+        let printed = print("# Titre\n\n**gras** et *ital* `code` [site](https://ex.fr) [[Note|alias]] -> fin", crate::ui::assets::APP_FONTS, &none);
         let text = words(&printed.pages[0]);
         assert!(text.contains("Titre"), "{text}");
         assert!(!text.contains("**") && !text.contains("](") && !text.contains("[["), "{text}");
@@ -884,7 +888,7 @@ mod tests {
     #[test]
     fn a_long_note_goes_over_pages_numbered() {
         let text: String = (0..200).map(|i| format!("Ligne {i}\n")).collect();
-        let printed = print(&text, &none);
+        let printed = print(&text, crate::ui::assets::APP_FONTS, &none);
         assert!(printed.pages.len() >= 3, "{}", printed.pages.len());
         let last = printed.pages.len();
         assert!(words(&printed.pages[last - 1]).contains(&format!("{last} / {last}")));
@@ -899,7 +903,7 @@ mod tests {
         for pad in 0..60 {
             let mut text: String = (0..pad).map(|i| format!("Ligne {i}\n")).collect();
             text.push_str("## Titre\nSuite\n");
-            let printed = print(&text, &none);
+            let printed = print(&text, crate::ui::assets::APP_FONTS, &none);
             for page in &printed.pages {
                 let w = words(page);
                 if w.contains("Titre") {
@@ -912,7 +916,7 @@ mod tests {
     #[test]
     fn long_words_and_code_wrap_inside_the_page() {
         let word = "a".repeat(400);
-        let printed = print(&format!("{word}\n```\n{word}\n```\n"), &none);
+        let printed = print(&format!("{word}\n```\n{word}\n```\n"), crate::ui::assets::APP_FONTS, &none);
         let svg = &printed.pages[0].svg;
         // Every piece of text starts within the page's text column.
         for x in svg.split("<text x=\"").skip(1).map(|s| s[..s.find('"').unwrap()].parse::<f32>().unwrap()) {
@@ -945,7 +949,7 @@ mod tests {
         assert!((w.iter().sum::<f32>() - 210.).abs() < 0.01 && (w[1] - w[2]).abs() < 0.01);
         let row = format!("| {} |", vec!["cellule"; 30].join(" | "));
         // 30 columns: each is narrow, its words cut, nothing leaves the text column.
-        let printed = print(&format!("{row}\n|{}\n{row}\n", "---|".repeat(30)), &none);
+        let printed = print(&format!("{row}\n|{}\n{row}\n", "---|".repeat(30)), crate::ui::assets::APP_FONTS, &none);
         let svg = &printed.pages[0].svg;
         assert_eq!(words(&printed.pages[0]).matches('c').count(), 60);
         for x in svg.split("<text x=\"").skip(1).map(|s| s[..s.find('"').unwrap()].parse::<f32>().unwrap()) {
@@ -955,17 +959,17 @@ mod tests {
 
     #[test]
     fn missing_pictures_and_embeds_are_reported() {
-        let printed = print("![](absent.png)\n![[Ailleurs#Titre]]\n", &none);
+        let printed = print("![](absent.png)\n![[Ailleurs#Titre]]\n", crate::ui::assets::APP_FONTS, &none);
         assert_eq!(printed.missing, ["absent.png", "Ailleurs#Titre"]);
         assert!(words(&printed.pages[0]).contains("absent.png"));
-        let webp = print("![](p.webp)", &|_| Found::Picture(b"RIFF0000WEBP".to_vec()));
+        let webp = print("![](p.webp)", crate::ui::assets::APP_FONTS, &|_| Found::Picture(b"RIFF0000WEBP".to_vec()));
         assert_eq!(webp.missing.len(), 1);
     }
 
     #[test]
     fn embeds_print_their_section_once() {
         let find = |p: &str| if p == "Autre" { Found::Section("Texte incorporé\n![[Autre]]".into()) } else { Found::Missing };
-        let printed = print("Avant\n![[Autre]]\nAprès", &find);
+        let printed = print("Avant\n![[Autre]]\nAprès", crate::ui::assets::APP_FONTS, &find);
         let text = words(&printed.pages[0]);
         assert_eq!(text.matches("Texte incorporé").count(), 1, "{text}");
         assert!(text.contains("[[Autre]]") && text.contains("Après"));
@@ -973,20 +977,20 @@ mod tests {
 
     #[test]
     fn front_matter_is_not_printed() {
-        let printed = print("---\ntags: [a]\n---\n# Titre\n", &none);
+        let printed = print("---\ntags: [a]\n---\n# Titre\n", crate::ui::assets::APP_FONTS, &none);
         let text = words(&printed.pages[0]);
         assert!(!text.contains("tags") && text.contains("Titre"), "{text}");
     }
 
     #[test]
     fn figures_and_pictures_become_images() {
-        let printed = print("```mermaid\ngraph TD\nA-->B\n```\n$$\nx^2\n$$\n", &none);
+        let printed = print("```mermaid\ngraph TD\nA-->B\n```\n$$\nx^2\n$$\n", crate::ui::assets::APP_FONTS, &none);
         assert!(printed.missing.is_empty(), "{:?}", printed.missing);
         assert_eq!(printed.pages[0].svg.matches("<image ").count(), 2);
         // A 2×1 PNG.
         let png = base64::engine::general_purpose::STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGPYEqwFRAAJcgJjO/BPNwAAAABJRU5ErkJggg==").unwrap();
         assert_eq!(raster_size(&png), Some((2. * PX, PX)));
-        let printed = print("![](p.png)", &|_| Found::Picture(png.clone()));
+        let printed = print("![](p.png)", crate::ui::assets::APP_FONTS, &|_| Found::Picture(png.clone()));
         assert!(printed.missing.is_empty() && printed.pages[0].svg.contains("data:image/png;base64"));
     }
 
@@ -1004,22 +1008,35 @@ mod tests {
         assert_eq!(shown("👩‍💻 👍🏽 ❤️ #️⃣"), ("� � � #".into(), 3));
         assert_eq!(shown("é 漢 → ✓ 1+1"), ("é 漢 → ✓ 1+1".into(), 0));
         assert!(FACES[SANS_AT].as_ref().unwrap().glyph_index(BOX).is_some(), "the box is in the app's font");
-        let printed = print("# 🎉\n```\n🎉🎉\n```\n| 🎉 |\n|---|\n", &none);
+        let printed = print("# 🎉\n```\n🎉🎉\n```\n| 🎉 |\n|---|\n", crate::ui::assets::APP_FONTS, &none);
         assert_eq!(printed.missing, ["4 emoji (�)"]);
     }
 
     #[test]
     fn highlights_keep_their_colour() {
-        let printed = print("==a== <mark class=\"green\">b</mark>", &none);
-        let ink = Ink::new();
+        let printed = print("==a== <mark class=\"green\">b</mark>", crate::ui::assets::APP_FONTS, &none);
+        let ink = Ink::new(crate::ui::assets::APP_FONTS);
         assert!(printed.pages[0].svg.contains(&ink.marks[0]) && printed.pages[0].svg.contains(&ink.marks[1]));
         assert_ne!(ink.marks[0], ink.marks[1]);
+    }
+
+    /// The pages are written in the fonts they are given (the user's), not in the app's.
+    #[test]
+    fn pages_are_written_in_the_given_fonts() {
+        let none = |_: &str| Found::Missing;
+        let printed = print("texte `code`\n\n1. un\n", ("Ma Police", "Ma Chasse"), &none);
+        let svg = &printed.pages[0].svg;
+        assert!(svg.contains(r#"font-family="Ma Police""#) && svg.contains(r#"font-family="Ma Chasse""#), "{svg}");
+        assert!(!svg.contains("IBM Plex Sans") && !svg.contains("IBM Plex Mono"), "{svg}");
+        // The app's fonts are what an unset choice gives.
+        let own = print("texte", crate::ui::assets::APP_FONTS, &none);
+        assert!(own.pages[0].svg.contains(r#"font-family="IBM Plex Sans""#));
     }
 
     #[test]
     fn every_page_is_readable_svg() {
         let text = "# Été 日本 👩‍💻\n- [ ] tâche\n- [x] faite\n1. un\n> [!note] Attention <&>\n| a | b |\n|---|---|\n| 1 | 2 |\n---\n";
-        for page in print(text, &none).pages {
+        for page in print(text, crate::ui::assets::APP_FONTS, &none).pages {
             assert!(svg::parse(&page.svg, crate::ui::assets::APP_FONTS).is_some(), "{}", page.svg);
         }
     }
