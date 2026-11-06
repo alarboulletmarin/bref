@@ -79,7 +79,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | CSV/TSV parsing and writing | `logic/table.rs` |
 | embedded sections (`![[Note#Heading]]`: reading the line, finding the section, rewriting links to a renamed heading) | `logic/embed.rs`; laid out and drawn by `views/editor/embed.rs` (a read-only `Editor` per section, framed under its line) |
 | formulas of the cells of a table (parser, evaluator, numbers as written) | `logic/formula.rs`; shown by `views/editor/grid.rs` (`results`, `Shown`), written and completed by `views/editor/formulas.rs` |
-| diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram/` (`file.rs`: the SVG and its source; `hold.rs`: what a package or a frame holds; `pick.rs`: what a click grabs); Mermaid class, sequence and state diagrams turned into canvas diagrams (`logic/mermaid.rs`); relationships (`logic/relation.rs`), class notation (`logic/uml.rs`), `logic/import.rs`; styled text of their labels: `logic/richtext.rs` (the marks of `markdown::emphasis`); the editor: `views/canvas/` |
+| diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram/` (`scene.rs`: the primitives of a drawing, painted by both the SVG file and the canvas; `file.rs`: the SVG and its source; `hold.rs`: what a package or a frame holds; `pick.rs`: what a click grabs); Mermaid class, sequence and state diagrams turned into canvas diagrams (`logic/mermaid.rs`); relationships (`logic/relation.rs`), class notation (`logic/uml.rs`), `logic/import.rs`; styled text of their labels: `logic/richtext.rs` (the marks of `markdown::emphasis`); the editor: `views/canvas/` |
 | the vault on disk (scan, save, rename, trash) | `platform/vault.rs` |
 | the app's config files (`File`, one `config_dir`, old-name fallback) | `platform/config.rs` |
 | wake-up signal of the watcher and the door | `platform/signal.rs` |
@@ -128,8 +128,8 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 - **Graph** (`views/graph.rs`): a force-directed layout computed off the UI thread when the links
   change, then drawn as plain lines and discs. Links to notes that do not exist yet are left out.
 - **Diagrams** (`logic/diagram/`, `views/canvas/`, `logic/import.rs`): shapes and arrows are plain
-  data; the same outlines are drawn on the canvas and written to the SVG file, whose `<metadata>`
-  holds one line of source per element.
+  data; `Diagram::scene` lists what is drawn (paths with ink, dash and fill; text lines) and both the canvas and the SVG file paint that list; the file's `<metadata>`
+  holds one line of source per element (escaped by `logic/xml.rs`).
 - **Figures and SVG** (`ui/svg.rs`, `views/viewer.rs`): Mermaid diagrams and SVG files are laid out
   and rasterized off the UI thread, at most one at a time per figure, and the previous version stays
   on screen until the new one is ready; a figure never exceeds 8,192 pixels a side or 16 million

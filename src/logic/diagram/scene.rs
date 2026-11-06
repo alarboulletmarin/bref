@@ -129,3 +129,36 @@ impl Diagram {
         Scene { items, traces }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn labels(scene: &Scene) -> Vec<&Label> {
+        scene.items.iter().filter_map(|i| if let Item::Text(l) = i { Some(l) } else { None }).collect()
+    }
+
+    #[test]
+    fn only_the_text_being_written_says_where_its_lines_are() {
+        let mut d = Diagram::blank();
+        let a = d.add_shape_mut(Form::Rect, 0., 0., 100., 60.).id;
+        d.shape_mut(a).unwrap().text = "*one*\ntwo".into();
+        let b = d.add_shape(Form::Rect, 300., 0., 100., 60.);
+        let l = d.add_link(End::Shape(a), End::Shape(b), Head::Arrow, Route::Straight);
+        d.link_mut(l).unwrap().text = "*m*".into();
+        // Nothing written: styled, no line says where it is.
+        let quiet = d.scene(None);
+        assert!(labels(&quiet).iter().all(|l| l.written.is_none()) && labels(&quiet)[0].spans[0].style.italic);
+        // The shape written: as typed (marks kept), its lines at their byte in the text.
+        let scene = d.scene(Some((a, Slot::Middle)));
+        let lines: Vec<_> = labels(&scene).iter().filter_map(|l| l.written.as_ref().map(|w| (w.start, w.text.clone()))).collect();
+        assert_eq!(lines, [(0, "*one*".to_string()), (6, "two".to_string())]);
+        assert!(!labels(&scene)[0].spans[0].style.italic);
+        // The start end of an arrow, empty and written: one empty line to put the cursor on.
+        let scene = d.scene(Some((l, Slot::Start)));
+        let written: Vec<_> = labels(&scene).into_iter().filter(|l| l.written.is_some()).collect();
+        assert!(written.len() == 1 && written[0].written.as_ref().is_some_and(|w| w.start == 0 && w.text.is_empty()));
+        // Items run in painting order: shapes, then the arrows.
+        assert!(matches!(quiet.items.last(), Some(Item::Text(_))) && quiet.traces.len() == 1);
+    }
+}

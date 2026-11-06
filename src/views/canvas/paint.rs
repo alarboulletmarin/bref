@@ -39,15 +39,6 @@ impl Canvas {
         }
     }
 
-    /// The runs of a line of the text of element `id`: styled, except while it is being written.
-    pub(super) fn spans_of(&self, id: u32, slot: Slot, text: &str, bold: bool) -> Vec<Span> {
-        match self.writing_id() {
-            Some(editing) if editing == id && slot == self.slot => richtext::plain(text, bold),
-            _ if slot == Slot::Middle && self.diagram.link(id).is_some() => self.diagram.label_runs(text),
-            _ => self.diagram.styled(text, bold),
-        }
-    }
-
     /// A line of the text being written, shaped as it is drawn (as typed, at the zoom), from byte `start`
     /// of its text, written at `(x, y)` of the diagram from its `anchor`.
     fn row(&self, start: usize, text: &str, bold: bool, (x, y): (f32, f32), anchor: Anchor, window: &mut Window) -> Row {
@@ -171,84 +162,24 @@ impl Canvas {
                 window.paint_quad(fill(Bounds::new(point(c.x - px(0.75), c.y - px(0.75)), size(px(1.5), px(1.5))), t.border));
             }
         }
-        for shape in &self.diagram.shapes {
-            let ink = self.ink(shape.color);
-            let outline = shape.outline();
-            if shape.fill && let Some(body) = outline.first() {
-                flood(window, body, ink.opacity(0.15));
-            }
-            for (i, path) in outline.iter().enumerate() {
-                if shape.solid().contains(&i) {
-                    flood(window, path, ink);
-                }
-                stroke(window, path, shape.dashed || shape.dashed_paths().contains(&i), ink);
-            }
-            let (lines, rules) = self.diagram.lines(shape);
-            for y in rules {
-                let (x0, x1) = shape.rule_span(y);
-                stroke(window, &[Cmd::Move(x0, y), Cmd::Line(x1, y)], shape.form == Form::Fragment, ink);
-            }
-            let runs = self.diagram.runs(shape, writing == Some(shape.id));
-            for (line, spans) in lines.iter().zip(&runs) {
-                write(self, window, cx, line.x, line.y, spans, line.centered.into(), ink);
-                // A line is found in the text by its place in it (separator strokes are not text lines).
-                let start = (line.text.as_ptr() as usize).checked_sub(shape.text.as_ptr() as usize).filter(|at| at + line.text.len() <= shape.text.len());
-                if writing == Some(shape.id)
-                    && let Some(start) = start
-                {
-                    rows.push(self.row(start, line.text, line.bold, (line.x, line.y), line.centered.into(), window));
-                }
-            }
-        }
-        // What the messages add: the bars of the lifelines that are busy, the cross of one that is destroyed.
-        let (traces, flow) = self.diagram.traces();
-        let marks = &flow.marks;
-        for bar in &marks.bars {
-            let (x, y, w, h) = bar.rect();
-            let ink = self.ink(self.diagram.shape(bar.life).map_or(0, |s| s.color));
-            let path = [Cmd::Move(x, y), Cmd::Line(x + w, y), Cmd::Line(x + w, y + h), Cmd::Line(x, y + h), Cmd::Close];
-            flood(window, &path, ink.opacity(0.15));
-            stroke(window, &path, false, ink);
-        }
-        for &(x, y) in &marks.crosses {
-            let ink = self.ink(0);
-            stroke(window, &[Cmd::Move(x - 10., y - 10.), Cmd::Line(x + 10., y + 10.)], false, ink);
-            stroke(window, &[Cmd::Move(x + 10., y - 10.), Cmd::Line(x - 10., y + 10.)], false, ink);
-        }
-        for (link, drawn) in self.diagram.links.iter().zip(traces) {
-            let Some(drawn) = drawn else { continue };
-            let ink = self.ink(link.color);
-            stroke(window, &drawn.line, link.dashed, ink);
-            for (path, full) in &drawn.heads {
-                if *full {
-                    flood(window, path, ink);
-                }
-                stroke(window, path, false, ink);
-            }
-            // Written, the text is as typed; otherwise a message of a numbered diagram has its number.
-            let written = |slot: Slot| writing == Some(link.id) && self.slot == slot;
-            let shown = if written(Slot::Middle) { link.text.clone() } else { self.diagram.shown_text(link) };
-            let lines: Vec<&str> = shown.split('\n').collect();
-            let mut start = 0;
-            for (i, text) in lines.iter().enumerate() {
-                let (x, y, centered) = Diagram::label_at(&drawn, i, lines.len());
-                write(self, window, cx, x, y, &self.spans_of(link.id, Slot::Middle, text, false), centered.into(), ink);
-                if written(Slot::Middle) {
-                    rows.push(self.row(start, text, false, (x, y), centered.into(), window));
-                }
-                start += text.len() + 1;
-            }
-            // The texts at the ends: a role, a multiplicity.
-            for (tip, slot, along) in [(drawn.tips[0], Slot::Start, link.start_along), (drawn.tips[1], Slot::End, link.end_along)] {
-                let lines: Vec<&str> = link.text_of(slot).split('\n').collect();
-                let mut start = 0;
-                for (i, text) in lines.iter().enumerate() {
-                    let (x, y, anchor) = Diagram::tip_label_at(&tip, along, i, lines.len());
-                    write(self, window, cx, x, y, &self.spans_of(link.id, slot, text, false), anchor, ink);
-                    if written(slot) {
-                        rows.push(self.row(start, text, false, (x, y), anchor, window));
+        let scene = self.diagram.scene(writing.map(|id| (id, self.slot)));
+        for item in &scene.items {
+            match item {
+                diagram::Item::Path(shape) => {
+                    let ink = self.ink(shape.ink);
+                    match shape.fill {
+                        diagram::Fill::None => {}
+                        diagram::Fill::Tint => flood(window, &shape.path, ink.opacity(0.15)),
+                        diagram::Fill::Solid => flood(window, &shape.path, ink),
                     }
-                    start += text.len() + 1;
+                    stroke(window, &shape.path, shape.dashed, ink);
+                }
+                diagram::Item::Text(label) => {
+                    let ink = self.ink(label.ink);
+                    write(self, window, cx, label.x, label.y, &label.spans, label.anchor, ink);
+                    if let Some(line) = &label.written {
+                        rows.push(self.row(line.start, &line.text, line.bold, (label.x, label.y), label.anchor, window));
+                    }
                 }
             }
         }
