@@ -44,11 +44,11 @@ pub use crate::logic::dock::{Mode, Panel};
 /// of the panel finds it; the others wait in `Nav::parked` (`Nav::activate`).
 #[derive(Default)]
 pub struct View {
-    pub mode: Mode,
-    pub rows: Vec<Row>,
-    pub rows_from: u64,
-    pub scroll: UniformListScrollHandle,
-    pub reveal: bool,
+    mode: Mode,
+    rows: Vec<Row>,
+    rows_from: u64,
+    scroll: UniformListScrollHandle,
+    reveal: bool,
 }
 
 /// Narrowest detail (a note's folder) worth showing; under it, it is hidden.
@@ -820,16 +820,55 @@ pub fn folder_of(sel: &Path) -> Option<PathBuf> {
 /// List page shown in place of the note.
 pub struct Listing {
     /// The folder, or the tag (`#tag`), whose notes are listed.
-    pub of: PathBuf,
+    of: PathBuf,
     /// The sorting column (0: the name), and whether it is reversed.
-    pub by: usize,
-    pub back: bool,
+    by: usize,
+    back: bool,
     /// What is typed keeps the rows that contain it.
-    pub filter: Entity<Field>,
+    filter: Entity<Field>,
     /// Cell being rewritten: the note, the key, its field.
-    pub edit: Option<(PathBuf, String, Entity<Field>)>,
+    edit: Option<(PathBuf, String, Entity<Field>)>,
     /// The page's scroll: only the rows near the window are built.
-    pub scroll: gpui::ScrollHandle,
+    scroll: gpui::ScrollHandle,
+}
+
+impl Listing {
+    pub fn new(of: PathBuf, filter: Entity<Field>) -> Self {
+        Self { of, by: 0, back: false, filter, edit: None, scroll: gpui::ScrollHandle::new() }
+    }
+
+    pub fn of(&self) -> &Path {
+        &self.of
+    }
+
+    pub fn by(&self) -> usize {
+        self.by
+    }
+
+    pub fn reversed(&self) -> bool {
+        self.back
+    }
+
+    pub fn filter(&self) -> &Entity<Field> {
+        &self.filter
+    }
+
+    pub fn edit(&self) -> Option<&(PathBuf, String, Entity<Field>)> {
+        self.edit.as_ref()
+    }
+
+    pub fn scroll(&self) -> &gpui::ScrollHandle {
+        &self.scroll
+    }
+
+    /// Sorts by this column; asking again reverses the order.
+    pub fn sort_by(&mut self, col: usize) {
+        (self.back, self.by) = (self.by == col && !self.back, col);
+    }
+
+    pub fn set_edit(&mut self, cell: Option<(PathBuf, String, Entity<Field>)>) {
+        self.edit = cell;
+    }
 }
 
 pub use crate::logic::commands::reveal_label;

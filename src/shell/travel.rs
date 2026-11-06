@@ -6,7 +6,7 @@ impl Shell {
     /// What is shown in place of the note; nothing for a new note not saved yet.
     pub(super) fn shown(&self) -> Option<Shown> {
         match (self.pane().listing(), self.pane().file_path(), &self.pane().path) {
-            (Some(listing), ..) => Some(Shown::List(listing.of.clone())),
+            (Some(listing), ..) => Some(Shown::List(listing.of().to_path_buf())),
             (None, Some(file), _) => Some(Shown::File(file.clone())),
             (None, None, Some(note)) => Some(Shown::Note(note.clone())),
             (None, None, None) => None,

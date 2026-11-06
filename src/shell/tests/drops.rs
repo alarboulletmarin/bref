@@ -112,7 +112,7 @@ fn drops_journey(cx: &mut TestAppContext) {
     let opened = shell.read_with(cx, |s, _| s.opened.clone());
     assert!(opened.len() == 2 && opened.iter().all(|p| p.file_name().unwrap() == "rapport.pdf"), "the system opens the attachment, whatever its case: {opened:?}");
     shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("Photos".into()), window, cx));
-    assert_eq!(shell.read_with(cx, |s, _| s.pane().listing().map(|l| l.of.clone())), Some(root.join("Photos")));
+    assert_eq!(shell.read_with(cx, |s, _| s.pane().listing().map(|l| l.of().to_path_buf())), Some(root.join("Photos")));
     shell.update_in(cx, |s, window, cx| s.follow(&markdown::Link::Wiki("nuage".into()), window, cx));
     assert!(shell.read_with(cx, |s, cx| s.pane().listing().is_none() && s.pane().editor.read(cx).text().starts_with("# nuage")));
     // The label: near each window edge, it stays inside, and it disappears with the drag.

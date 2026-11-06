@@ -40,9 +40,9 @@ impl Shell {
             None => {}
         }
         if let Some(listing) = pane.listing() {
-            return match nav::tag_of(&listing.of) {
+            return match nav::tag_of(listing.of()) {
                 Some(tag) => format!("#{tag}"),
-                None => vault::stem(&listing.of),
+                None => vault::stem(listing.of()),
             };
         }
         if let Some(path) = pane.displayed_path() {

@@ -306,7 +306,7 @@ impl Shell {
         }
         match (self.pane().listing(), self.pane().file().map(|file| &file.kind)) {
             (_, Some(FileKind::Sheet(sheet))) => window.focus(&sheet.focus_handle(cx)),
-            (Some(listing), _) => window.focus(&listing.filter.focus_handle(cx)),
+            (Some(listing), _) => window.focus(&listing.filter().focus_handle(cx)),
             (None, Some(FileKind::Drawing(canvas))) => window.focus(&canvas.focus_handle(cx)),
             (None, Some(FileKind::Svg(viewer))) => window.focus(&viewer.focus_handle(cx)),
             (None, Some(FileKind::Image)) => window.focus(&self.pane().zone),
@@ -332,7 +332,7 @@ impl Shell {
         file || pane.zone.is_focused(window)
             || pane.editor.focus_handle(cx).is_focused(window)
             || pane.figure().is_some_and(|figure| figure.focus_handle(cx).is_focused(window))
-            || pane.listing().is_some_and(|listing| listing.filter.focus_handle(cx).is_focused(window))
+            || pane.listing().is_some_and(|listing| listing.filter().focus_handle(cx).is_focused(window))
     }
 
     /// The active tab becomes the one its pane shows (code that sets `active` itself, as the
