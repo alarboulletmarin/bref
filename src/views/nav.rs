@@ -244,59 +244,59 @@ impl Render for Dragged {
 }
 
 pub struct Nav {
-    pub focus: FocusHandle,
-    pub mode: Mode,
-    pub panel: Panel,
-    pub list_w: Pixels,
+    focus: FocusHandle,
+    mode: Mode,
+    panel: Panel,
+    list_w: Pixels,
     /// Width of the graph; zero: half the window.
-    pub graph_w: Pixels,
-    pub dragging: bool,
+    graph_w: Pixels,
+    dragging: bool,
     /// Selected row (note or folder).
-    pub sel: Option<PathBuf>,
+    sel: Option<PathBuf>,
     /// Multiple selection (Ctrl+click, Shift+click); empty as long as a single row
     /// is chosen. `sel` is then the row Shift+click extends from.
-    pub marked: HashSet<PathBuf>,
+    marked: HashSet<PathBuf>,
     /// The displayed document the selection last followed: when another one shows (tab, pane,
     /// picture, table…), the selection moves to it, and is free again until the next change.
-    pub followed: Option<PathBuf>,
+    followed: Option<PathBuf>,
     /// Where the selected row was drawn: the menu opened from the keys opens under it.
-    pub sel_at: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<Pixels>>>>,
+    sel_at: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<Pixels>>>>,
     /// Note whose backlinks the panel shows: the last opened one, not the one being
     /// browsed in preview, otherwise the list would change under the selection.
-    pub anchor: Option<PathBuf>,
+    anchor: Option<PathBuf>,
     /// Day chosen in the calendar, which shows its month.
-    pub day: Date,
+    day: Date,
     /// Expanded folders.
-    pub open: HashSet<PathBuf>,
+    open: HashSet<PathBuf>,
     /// Rows of the last frame, and the fingerprint of what they are drawn from.
-    pub rows: Vec<Row>,
-    pub rows_from: u64,
-    pub scroll: UniformListScrollHandle,
+    rows: Vec<Row>,
+    rows_from: u64,
+    scroll: UniformListScrollHandle,
     /// Bring the selection on screen at the next frame.
-    pub reveal: bool,
+    reveal: bool,
     /// The folder unfolded last, when, and which unfolding it was: its rows fade in for `FADE`.
-    pub unfolded: Option<(PathBuf, std::time::Instant, u32)>,
+    unfolded: Option<(PathBuf, std::time::Instant, u32)>,
     /// The system draws the title bar (macOS, Windows): the rail does not have to serve as a
     /// handle to move the window.
-    pub native_bar: bool,
+    native_bar: bool,
     // Left edge and width of the window content, at the last frame.
-    pub left: Pixels,
-    pub total: Pixels,
+    left: Pixels,
+    total: Pixels,
     /// Width reserved to the right of the note (the comments column): the panel leaves it free.
-    pub aside: Pixels,
+    aside: Pixels,
     /// The views of the tools other than the active one (`mode`).
-    pub parked: HashMap<Mode, View>,
+    parked: HashMap<Mode, View>,
     /// The tools shown in the left dock, top to bottom (one, as the panel always was, unless more
     /// are stacked).
-    pub left_shown: Vec<Mode>,
+    left_shown: Vec<Mode>,
     /// The tools that live in the right dock (none at first), those shown there top to bottom,
     /// and its width.
-    pub right: Vec<Mode>,
-    pub right_shown: Vec<Mode>,
-    pub right_w: Pixels,
-    pub right_dragging: bool,
+    right: Vec<Mode>,
+    right_shown: Vec<Mode>,
+    right_w: Pixels,
+    right_dragging: bool,
     /// Tools stacked in a dock and folded down to their header.
-    pub folded: HashSet<Mode>,
+    folded: HashSet<Mode>,
 }
 
 impl Nav {
@@ -349,6 +349,254 @@ impl Nav {
             folded: self.folded.clone(),
         };
         config::keep(config::File::Layout, &format!("{}\n", dock::write(&layout)));
+    }
+
+    pub fn focus(&self) -> &FocusHandle {
+        &self.focus
+    }
+
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    pub fn panel(&self) -> Panel {
+        self.panel
+    }
+
+    pub fn set_panel(&mut self, panel: Panel) {
+        self.panel = panel;
+    }
+
+    /// The panel takes the whole window, or gives the note its place back.
+    pub fn toggle_full(&mut self) {
+        self.panel = if self.panel == Panel::Full { Panel::Split } else { Panel::Full };
+    }
+
+    /// The panel's border dragged to `x` (from the panel's left edge), in a content `room` wide:
+    /// near the rail it collapses onto it, near the other edge it takes the whole window.
+    pub fn drag_to(&mut self, x: Pixels, room: Pixels) {
+        self.panel = if x < px(100.) {
+            Panel::Rail
+        } else if x > room - px(140.) {
+            Panel::Full
+        } else {
+            *self.width() = x;
+            Panel::Split
+        };
+    }
+
+    pub fn list_w(&self) -> Pixels {
+        self.list_w
+    }
+
+    /// Tests size the panel this way.
+    #[cfg(test)]
+    pub fn set_list_w(&mut self, w: Pixels) {
+        self.list_w = w;
+    }
+
+    pub fn dragging(&self) -> bool {
+        self.dragging
+    }
+
+    pub fn set_dragging(&mut self, on: bool) {
+        self.dragging = on;
+    }
+
+    pub fn right_dragging(&self) -> bool {
+        self.right_dragging
+    }
+
+    pub fn set_right_dragging(&mut self, on: bool) {
+        self.right_dragging = on;
+    }
+
+    pub fn graph_w(&self) -> Pixels {
+        self.graph_w
+    }
+
+    pub fn right_w(&self) -> Pixels {
+        self.right_w
+    }
+
+    pub fn set_right_w(&mut self, w: Pixels) {
+        self.right_w = w;
+    }
+
+    /// A gesture ended: no border is being dragged.
+    pub fn stop_dragging(&mut self) {
+        (self.dragging, self.right_dragging) = (false, false);
+    }
+
+    /// The tools shown in each dock, for tests.
+    #[cfg(test)]
+    pub fn left_shown(&self) -> &Vec<Mode> {
+        &self.left_shown
+    }
+
+    #[cfg(test)]
+    pub fn right_shown(&self) -> &Vec<Mode> {
+        &self.right_shown
+    }
+
+    /// The tools that live in the right dock.
+    pub fn right(&self) -> &Vec<Mode> {
+        &self.right
+    }
+
+    pub fn folded(&self) -> &HashSet<Mode> {
+        &self.folded
+    }
+
+    /// Selected row (note or folder).
+    pub fn sel(&self) -> &Option<PathBuf> {
+        &self.sel
+    }
+
+    pub fn set_sel(&mut self, sel: Option<PathBuf>) {
+        self.sel = sel;
+    }
+
+    pub fn marked(&self) -> &HashSet<PathBuf> {
+        &self.marked
+    }
+
+    pub fn clear_marked(&mut self) {
+        self.marked.clear();
+    }
+
+    /// Ctrl+click on row `ix` (`extend`: Shift+click) of the rows drawn: adds it to the multiple
+    /// selection or removes it, or extends the selection from the chosen row to it.
+    pub fn mark(&mut self, ix: usize, extend: bool) {
+        let Some(path) = self.rows.get(ix).map(|r| r.path.clone()) else {
+            return;
+        };
+        if extend {
+            let from = self.sel.as_ref().and_then(|sel| self.rows.iter().position(|r| r.path == *sel)).unwrap_or(ix);
+            self.marked = self.rows[from.min(ix)..=from.max(ix)].iter().map(|r| r.path.clone()).collect();
+            self.sel.get_or_insert(path);
+        } else {
+            // The row already selected is part of the batch.
+            if self.marked.is_empty() {
+                self.marked.extend(self.sel.take());
+            }
+            if !self.marked.remove(&path) {
+                self.marked.insert(path.clone());
+            }
+            // Removed, it leaves its chosen-row place to another of the batch.
+            let other = self.rows.iter().map(|r| &r.path).find(|p| self.marked.contains(*p)).cloned();
+            self.sel = if self.marked.contains(&path) { Some(path) } else { other.or(Some(path)) };
+        }
+    }
+
+    pub fn followed(&self) -> &Option<PathBuf> {
+        &self.followed
+    }
+
+    pub fn set_followed(&mut self, followed: Option<PathBuf>) {
+        self.followed = followed;
+    }
+
+    pub fn sel_at(&self) -> &std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<Pixels>>>> {
+        &self.sel_at
+    }
+
+    pub fn anchor(&self) -> &Option<PathBuf> {
+        &self.anchor
+    }
+
+    pub fn set_anchor(&mut self, anchor: Option<PathBuf>) {
+        self.anchor = anchor;
+    }
+
+    pub fn day(&self) -> Date {
+        self.day
+    }
+
+    pub fn set_day(&mut self, day: Date) {
+        self.day = day;
+    }
+
+    /// Expanded folders.
+    pub fn open(&self) -> &HashSet<PathBuf> {
+        &self.open
+    }
+
+    pub fn set_open(&mut self, open: HashSet<PathBuf>) {
+        self.open = open;
+    }
+
+    /// Expands a folder (no fade: see `unfold`).
+    pub fn open_dir(&mut self, dir: PathBuf) {
+        self.open.insert(dir);
+    }
+
+    /// Folds a folder; whether it was expanded.
+    pub fn close_dir(&mut self, dir: &Path) -> bool {
+        self.open.remove(dir)
+    }
+
+    pub fn close_all_dirs(&mut self) {
+        self.open.clear();
+    }
+
+    /// Rows of the last frame, and the fingerprint of what they are drawn from.
+    pub fn rows(&self) -> &[Row] {
+        &self.rows
+    }
+
+    pub fn rows_from(&self) -> u64 {
+        self.rows_from
+    }
+
+    pub fn set_rows(&mut self, rows: Vec<Row>) {
+        self.rows = rows;
+    }
+
+    pub fn set_rows_from(&mut self, from: u64) {
+        self.rows_from = from;
+    }
+
+    pub fn scroll(&self) -> &UniformListScrollHandle {
+        &self.scroll
+    }
+
+    /// The selection comes on screen at the next frame.
+    pub fn needs_reveal(&self) -> bool {
+        self.reveal
+    }
+
+    pub fn set_needs_reveal(&mut self, on: bool) {
+        self.reveal = on;
+    }
+
+    pub fn native_bar(&self) -> bool {
+        self.native_bar
+    }
+
+    pub fn set_native_bar(&mut self, on: bool) {
+        self.native_bar = on;
+    }
+
+    /// Left edge and width of the window content, at the last frame; set while drawing.
+    pub fn left(&self) -> Pixels {
+        self.left
+    }
+
+    pub fn total(&self) -> Pixels {
+        self.total
+    }
+
+    pub fn set_frame(&mut self, left: Pixels, total: Pixels) {
+        (self.left, self.total) = (left, total);
+    }
+
+    pub fn aside(&self) -> Pixels {
+        self.aside
+    }
+
+    pub fn set_aside(&mut self, aside: Pixels) {
+        self.aside = aside;
     }
 
     /// A panel that took the whole window gives the note its place back.

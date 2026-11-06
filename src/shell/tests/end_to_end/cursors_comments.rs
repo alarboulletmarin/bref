@@ -108,13 +108,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     j.load(cx, &kept, 0);
     // Narrow window or panel too wide: nothing slips under its neighbor or out of the
     // window. The note keeps 200 px, the panel then the comments column give way to it.
-    let before = shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel, s.nav.list_w));
+    let before = shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel(), s.nav.list_w()));
     let whole = cx.update(|window, _| window.viewport_size());
     let lay = |cx: &mut gpui::VisualTestContext, width: f32, mode: Mode, panel: Panel, list: f32| {
         cx.simulate_resize(size(px(width), px(600.)));
         shell.update(cx, |s, cx| {
             s.nav.show_alone(mode);
-            (s.nav.panel, s.nav.list_w) = (panel, px(list));
+            s.nav.set_panel(panel);
+            s.nav.set_list_w(px(list));
             cx.notify();
         });
         cx.run_until_parked();
@@ -157,7 +158,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_resize(whole);
     shell.update(cx, |s, cx| {
         s.nav.show_alone(before.0);
-        (s.nav.panel, s.nav.list_w) = (before.1, before.2);
+        s.nav.set_panel(before.1);
+        s.nav.set_list_w(before.2);
         cx.notify();
     });
     cx.run_until_parked();

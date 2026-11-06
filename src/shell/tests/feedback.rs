@@ -150,7 +150,7 @@ fn a_corrupt_picture_opened_alone_says_so(cx: &mut TestAppContext) {
         // As when it is picked in the panel: the focus is there, not in the note, which would take over again.
         shell.update_in(cx, |s, window, cx| {
             s.open_note(&path, cx);
-            window.focus(&s.nav.focus);
+            window.focus(&s.nav.focus());
         });
         for _ in 0..6 {
             cx.executor().advance_clock(Duration::from_millis(500));
@@ -286,7 +286,7 @@ fn a_long_list_page_draws_the_rows_in_view(cx: &mut TestAppContext) {
 fn an_empty_panel_says_so(cx: &mut TestAppContext) {
     let (root, shell, cx, _config) = start(cx, "empty-panel");
     shell.update(cx, |s, cx| {
-        s.nav.panel = nav::Panel::Split;
+        s.nav.set_panel(nav::Panel::Split);
         cx.notify();
     });
     for width in [420., 860., 1600.] {
@@ -322,7 +322,7 @@ fn a_panel_with_notes_says_nothing(cx: &mut TestAppContext) {
         |window, cx| Shell::new(Some(root), vec![], window, cx)
     });
     shell.update(cx, |s, cx| {
-        s.nav.panel = nav::Panel::Split;
+        s.nav.set_panel(nav::Panel::Split);
         s.nav.show_alone(nav::Mode::Tree);
         cx.notify();
     });
@@ -442,7 +442,7 @@ fn an_unreadable_vault_or_folder_says_so(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-e");
     let reason = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.unreadable.clone());
     assert_eq!(reason(cx), [(root.clone(), std::io::ErrorKind::PermissionDenied)]);
-    assert!(shell.read_with(cx, |s, _| s.nav.rows.is_empty()));
+    assert!(shell.read_with(cx, |s, _| s.nav.rows().is_empty()));
     // The empty page offers no note to write there: neither a new one nor the day's.
     cx.update(|window, _| window.refresh());
     cx.run_until_parked();
@@ -467,7 +467,7 @@ fn an_unreadable_vault_or_folder_says_so(cx: &mut TestAppContext) {
     shell.update(cx, |s, cx| s.rescan(&root, cx));
     cx.run_until_parked();
     assert!(reason(cx).is_empty());
-    assert!(shell.read_with(cx, |s, _| s.nav.rows.iter().any(|r| r.name == "Note")));
+    assert!(shell.read_with(cx, |s, _| s.nav.rows().iter().any(|r| r.name == "Note")));
     // A folder inside: the vault opens, the folder is there, marked; taken away while open, given back.
     let long = "Comptes rendus des réunions de l'année";
     fs::create_dir(root.join(long)).unwrap();
@@ -478,7 +478,7 @@ fn an_unreadable_vault_or_folder_says_so(cx: &mut TestAppContext) {
     let mut closed = reason(cx);
     closed.sort();
     assert_eq!(closed, [(root.join(long), std::io::ErrorKind::PermissionDenied), (root.join("Interdit"), std::io::ErrorKind::PermissionDenied)]);
-    assert!(shell.read_with(cx, |s, _| s.nav.rows.iter().any(|r| r.name == "Interdit") && s.nav.rows.iter().any(|r| r.name == "Note")));
+    assert!(shell.read_with(cx, |s, _| s.nav.rows().iter().any(|r| r.name == "Interdit") && s.nav.rows().iter().any(|r| r.name == "Note")));
     // The reason is said in full at every width: the name gives way, not the reason.
     let mut full = None;
     for width in [1600., 860., 420.] {

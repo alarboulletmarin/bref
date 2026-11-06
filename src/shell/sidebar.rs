@@ -32,13 +32,13 @@ impl Shell {
         if let Some(tab) = self.tool_tab(mode) {
             return self.focus_pane(tab, window, cx);
         }
-        let keys = self.nav.focus.contains_focused(window, cx) && self.nav.mode == mode;
+        let keys = self.nav.focus().contains_focused(window, cx) && self.nav.mode() == mode;
         if self.tool_shown(mode) && (toggle || keys) {
             return self.hide_tool(mode, window, cx);
         }
         self.put_tool(mode);
-        self.nav.reveal = true;
-        window.focus(&self.nav.focus);
+        self.nav.set_needs_reveal(true);
+        window.focus(&self.nav.focus());
         self.refresh_graph(cx);
         self.settle_nav(window, cx);
     }
@@ -54,29 +54,26 @@ impl Shell {
 
     /// A graph node is selected: preview of the note if it has room.
     pub(super) fn select_from_graph(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        if self.nav.panel == Panel::Split {
+        if self.nav.panel() == Panel::Split {
             self.preview_note(path, window, cx);
         }
-        self.nav.sel = Some(path.to_path_buf());
+        self.nav.set_sel(Some(path.to_path_buf()));
         cx.notify();
     }
 
     pub(super) fn toggle_full(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.nav.panel = match self.nav.panel {
-            Panel::Full => Panel::Split,
-            _ => Panel::Full,
-        };
+        self.nav.toggle_full();
         self.settle_nav(window, cx);
     }
 
     /// After a panel change: focus leaves what is no longer
     /// shown, and the layout is saved.
     pub(super) fn settle_nav(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        (self.nav.dragging, self.nav.right_dragging) = (false, false);
+        self.nav.stop_dragging();
         let editor = self.pane().editor.focus_handle(cx);
-        match self.nav.panel {
-            Panel::Rail if self.nav.focus.contains_focused(window, cx) => window.focus(&editor),
-            Panel::Full if editor.is_focused(window) => window.focus(&self.nav.focus),
+        match self.nav.panel() {
+            Panel::Rail if self.nav.focus().contains_focused(window, cx) => window.focus(&editor),
+            Panel::Full if editor.is_focused(window) => window.focus(&self.nav.focus()),
             _ => {}
         }
         self.nav.save();
@@ -86,11 +83,11 @@ impl Shell {
     /// Width of the panel open beside the note: the one it was given, as long as the note
     /// (`NOTE_MIN`) and what is reserved to its right keep their room.
     pub(super) fn split_width(&self) -> Pixels {
-        let room = self.nav.total - self.theme.px(RAIL) - DIVIDER - self.nav.aside;
+        let room = self.nav.total() - self.theme.px(RAIL) - DIVIDER - self.nav.aside();
         // The month can no longer be read below 170 px: its days touch.
         let mode = self.nav.width_mode();
         let floor = px(if self.dock_tools(false).contains(&Mode::Calendar) { 170. } else { 120. });
-        match if mode == Mode::Graph { self.nav.graph_w } else { self.nav.list_w } {
+        match if mode == Mode::Graph { self.nav.graph_w() } else { self.nav.list_w() } {
             w if w == px(0.) => room / 2.,
             w => w.min(room - NOTE_MIN).max(floor),
         }
@@ -98,16 +95,9 @@ impl Shell {
 
     /// The separator follows the pointer; at the ends, one side collapses.
     pub(super) fn drag_nav(&mut self, x: Pixels, cx: &mut Context<Self>) {
-        let x = x - self.nav.left - self.theme.px(RAIL);
-        let room = self.nav.total - self.theme.px(RAIL);
-        self.nav.panel = if x < px(100.) {
-            Panel::Rail
-        } else if x > room - px(140.) {
-            Panel::Full
-        } else {
-            *self.nav.width() = x;
-            Panel::Split
-        };
+        let x = x - self.nav.left() - self.theme.px(RAIL);
+        let room = self.nav.total() - self.theme.px(RAIL);
+        self.nav.drag_to(x, room);
         cx.notify();
     }
 
@@ -115,20 +105,20 @@ impl Shell {
     /// costs ten times more than checking they are still right.
     pub(super) fn rows_source(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
-        let open = self.nav.open.iter().map(|dir| BuildHasherDefault::<DefaultHasher>::default().hash_one(dir)).fold(0u64, u64::wrapping_add);
-        (self.nav.mode, self.nav.panel == Panel::Rail, &self.vault, &self.dirs, &self.images, open).hash(&mut hasher);
-        if self.nav.mode == Mode::Links {
-            self.nav.anchor.hash(&mut hasher);
+        let open = self.nav.open().iter().map(|dir| BuildHasherDefault::<DefaultHasher>::default().hash_one(dir)).fold(0u64, u64::wrapping_add);
+        (self.nav.mode(), self.nav.panel() == Panel::Rail, &self.vault, &self.dirs, &self.images, open).hash(&mut hasher);
+        if self.nav.mode() == Mode::Links {
+            self.nav.anchor().hash(&mut hasher);
         }
-        if self.nav.mode == Mode::Recent {
+        if self.nav.mode() == Mode::Recent {
             self.recent.hash(&mut hasher);
         }
         for note in &self.notes {
             (&note.path, &note.name).hash(&mut hasher);
-            if self.nav.mode == Mode::Tags {
+            if self.nav.mode() == Mode::Tags {
                 note.tags.hash(&mut hasher);
             }
-            if self.nav.mode == Mode::Links {
+            if self.nav.mode() == Mode::Links {
                 (&note.links, &note.aliases).hash(&mut hasher);
             }
         }
@@ -139,11 +129,11 @@ impl Shell {
         let Some(root) = &self.vault else {
             return Vec::new();
         };
-        match self.nav.mode {
-            Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.images, &self.nav.open),
+        match self.nav.mode() {
+            Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.images, &self.nav.open()),
             Mode::Graph | Mode::Calendar | Mode::Search => Vec::new(),
-            Mode::Tags => tag_rows(&self.notes, &self.nav.open),
-            Mode::Links => (self.nav.anchor.iter())
+            Mode::Tags => tag_rows(&self.notes, &self.nav.open()),
+            Mode::Links => (self.nav.anchor().iter())
                 .flat_map(|target| wiki::backlinks(&self.notes, target))
                 .map(|n| Row { path: n.path.clone(), name: n.name.clone(), depth: 0, dir: None })
                 .collect(),
@@ -161,61 +151,42 @@ impl Shell {
     }
 
     pub(super) fn selected_row(&self) -> Option<usize> {
-        let sel = self.nav.sel.as_ref()?;
-        self.nav.rows.iter().position(|r| r.path == *sel)
+        let sel = self.nav.sel().as_ref()?;
+        self.nav.rows().iter().position(|r| r.path == *sel)
     }
 
     /// Selects the row; a note shows as a preview if it has room.
     pub(super) fn nav_select(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(row) = self.nav.rows.get(ix) else {
+        let Some(row) = self.nav.rows().get(ix) else {
             return;
         };
         let (path, is_note) = (row.path.clone(), row.dir.is_none());
-        self.nav.marked.clear();
-        self.nav.scroll.scroll_to_item(ix, ScrollStrategy::Center);
-        if is_note && self.nav.panel == Panel::Split {
+        self.nav.clear_marked();
+        self.nav.scroll().scroll_to_item(ix, ScrollStrategy::Center);
+        if is_note && self.nav.panel() == Panel::Split {
             self.preview_note(&path, window, cx);
         }
-        self.nav.sel = Some(path);
-        self.nav.reveal = false;
+        self.nav.set_sel(Some(path));
+        self.nav.set_needs_reveal(false);
         cx.notify();
     }
 
     /// Ctrl+click adds the row to the selection or removes it; Shift+click
     /// selects everything since the last chosen row.
     pub(super) fn nav_mark(&mut self, ix: usize, extend: bool, cx: &mut Context<Self>) {
-        let Some(path) = self.nav.rows.get(ix).map(|r| r.path.clone()) else {
-            return;
-        };
-        let marked = &mut self.nav.marked;
-        if extend {
-            let from = self.nav.sel.as_ref().and_then(|sel| self.nav.rows.iter().position(|r| r.path == *sel)).unwrap_or(ix);
-            *marked = self.nav.rows[from.min(ix)..=from.max(ix)].iter().map(|r| r.path.clone()).collect();
-            self.nav.sel.get_or_insert(path);
-        } else {
-            // The row already selected is part of the batch.
-            if marked.is_empty() {
-                marked.extend(self.nav.sel.take());
-            }
-            if !marked.remove(&path) {
-                marked.insert(path.clone());
-            }
-            // Removed, it leaves its chosen-row place to another of the batch.
-            let other = self.nav.rows.iter().map(|r| &r.path).find(|p| marked.contains(*p)).cloned();
-            self.nav.sel = if marked.contains(&path) { Some(path) } else { other.or(Some(path)) };
-        }
+        self.nav.mark(ix, extend);
         cx.notify();
     }
 
     /// What an action on `target` aims at: the whole multiple selection if it
     /// is part of it, in panel order, without what a targeted folder already contains.
     pub(super) fn targets(&self, target: &Path) -> Vec<PathBuf> {
-        let marked = &self.nav.marked;
+        let marked = &self.nav.marked();
         if !marked.contains(target) {
             return vec![target.to_path_buf()];
         }
         let mut seen = HashSet::new();
-        let rows = self.nav.rows.iter().map(|r| &r.path);
+        let rows = self.nav.rows().iter().map(|r| &r.path);
         rows.filter(|p| marked.contains(*p) && !p.ancestors().skip(1).any(|a| marked.contains(a)) && seen.insert(*p))
             .cloned()
             .collect()
@@ -223,14 +194,14 @@ impl Shell {
 
     /// Calendar: moves the chosen day by `days` days, or by `months` months.
     pub(super) fn day_step(&mut self, days: i64, months: i32, cx: &mut Context<Self>) {
-        let moved = markdown::day_of(markdown::day_number(self.nav.day) + days);
-        self.nav.day = markdown::add_months(moved, months);
+        let moved = markdown::day_of(markdown::day_number(self.nav.day()) + days);
+        self.nav.set_day(markdown::add_months(moved, months));
         cx.notify();
     }
 
     /// Opens the daily note for `day`, or creates it: the one `@` and Ctrl+J point to.
     pub(super) fn open_day(&mut self, day: Date, window: &mut Window, cx: &mut Context<Self>) {
-        self.nav.day = day;
+        self.nav.set_day(day);
         self.open_wiki(&crate::lang::date_name(day), window, cx);
         cx.notify();
     }
@@ -239,7 +210,7 @@ impl Shell {
     /// arrows change day, Page Up and Down change month, Enter opens the note.
     pub(super) fn render_calendar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
-        let (year, month, chosen) = self.nav.day;
+        let (year, month, chosen) = self.nav.day();
         // The week starts on Monday in French, on Sunday in English.
         let monday = tr("sunday", "monday") == "monday";
         let (lead, days) = markdown::month(year, month, monday);
@@ -322,10 +293,10 @@ impl Shell {
     }
 
     pub(super) fn nav_step(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.nav.mode == Mode::Calendar {
+        if self.nav.mode() == Mode::Calendar {
             return self.day_step(if down { 7 } else { -7 }, 0, cx);
         }
-        let last = self.nav.rows.len().saturating_sub(1);
+        let last = self.nav.rows().len().saturating_sub(1);
         let ix = match self.selected_row() {
             Some(ix) if down => (ix + 1).min(last),
             Some(ix) => ix.saturating_sub(1),
@@ -336,16 +307,16 @@ impl Shell {
 
     /// Enter or double-click: opens the note for good, or toggles the folder.
     pub(super) fn nav_activate(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(row) = self.nav.rows.get(ix) else {
+        let Some(row) = self.nav.rows().get(ix) else {
             return;
         };
-        let path = row.path.clone();
-        self.nav.marked.clear();
-        if row.dir.is_some() {
-            if !self.nav.open.remove(&path) {
+        let (path, dir) = (row.path.clone(), row.dir.is_some());
+        self.nav.clear_marked();
+        if dir {
+            if !self.nav.close_dir(&path) {
                 self.nav.unfold(path.clone());
             }
-            self.nav.sel = Some(path);
+            self.nav.set_sel(Some(path));
             cx.notify();
         } else {
             self.open_from_nav(&path, window, cx);
@@ -369,24 +340,24 @@ impl Shell {
 
     /// Left/right in the tree: collapse or expand, otherwise go up or down.
     pub(super) fn nav_fold(&mut self, unfold: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.nav.mode == Mode::Calendar {
+        if self.nav.mode() == Mode::Calendar {
             return self.day_step(if unfold { 1 } else { -1 }, 0, cx);
         }
         let Some(ix) = self.selected_row() else {
             return self.nav_step(true, window, cx);
         };
-        let row = self.nav.rows[ix].clone();
+        let row = self.nav.rows()[ix].clone();
         match (row.dir, unfold) {
             (Some(false), true) => {
                 self.nav.unfold(row.path);
             }
             (Some(true), false) => {
-                self.nav.open.remove(&row.path);
+                self.nav.close_dir(&row.path);
             }
             (_, true) => return self.nav_step(true, window, cx),
             (_, false) => {
                 let parent = row.path.parent();
-                if let Some(up) = self.nav.rows.iter().position(|r| Some(r.path.as_path()) == parent) {
+                if let Some(up) = self.nav.rows().iter().position(|r| Some(r.path.as_path()) == parent) {
                     return self.nav_select(up, window, cx);
                 }
             }
@@ -397,16 +368,16 @@ impl Shell {
     /// Collapses all the tree's folders; if they already are, expands them all.
     pub(super) fn fold_all(&mut self) {
         if self.all_folded() {
-            self.nav.open = self.dirs.iter().cloned().collect();
+            self.nav.set_open(self.dirs.iter().cloned().collect());
         } else {
-            self.nav.open.clear();
+            self.nav.close_all_dirs();
         }
     }
 
     /// No vault folder is expanded. `open` also keeps the parents of the
     /// vault itself, hence the folder-by-folder test.
     pub(super) fn all_folded(&self) -> bool {
-        !self.dirs.iter().any(|d| self.nav.open.contains(d))
+        !self.dirs.iter().any(|d| self.nav.open().contains(d))
     }
 
     /// Asks for a name in an input field, then calls `then` with that name cleaned up.
@@ -422,7 +393,7 @@ impl Shell {
         let prompt = cx.new(|cx| Palette::prompt(label, text, theme, cx));
         cx.subscribe_in(&prompt, window, move |this, _, event, window, cx| {
             this.palette = None;
-            window.focus(&this.nav.focus);
+            window.focus(&this.nav.focus());
             if let PaletteEvent::Submit(text) = event
                 && let Some(name) = vault::clean_name(text)
             {
@@ -498,8 +469,8 @@ impl Shell {
         let view = window.viewport_size();
         let (width, height) = (px(8. * 30. - 2. + 12.), px(cells.len().div_ceil(8) as f32 * 30. - 2. + 12.));
         let at = point(
-            (at.x - self.nav.left).min(view.width - self.nav.left * 2. - width - t.px(8.)),
-            (at.y - self.nav.left).min(view.height - self.nav.left * 2. - height - t.px(8.)),
+            (at.x - self.nav.left()).min(view.width - self.nav.left() * 2. - width - t.px(8.)),
+            (at.y - self.nav.left()).min(view.height - self.nav.left() * 2. - height - t.px(8.)),
         );
         let close = cx.listener(|this: &mut Self, _: &MouseDownEvent, window, cx| this.close_icons(window, cx));
         Some(
@@ -529,10 +500,10 @@ impl Shell {
 
     /// The width the rows of the panel's list have: the dock it is in, the whole window when it is alone.
     fn list_room(&self) -> Pixels {
-        let (right, alone) = (self.dock_tools(true).contains(&self.nav.mode), self.nav.panel == Panel::Full);
+        let (right, alone) = (self.dock_tools(true).contains(&self.nav.mode()), self.nav.panel() == Panel::Full);
         let width = match (right, alone) {
             (true, _) => self.right_width(),
-            (_, true) => self.nav.total - self.theme.px(RAIL),
+            (_, true) => self.nav.total() - self.theme.px(RAIL),
             _ => self.split_width(),
         };
         // The list's own margin (`px_2`) on both sides.
@@ -546,17 +517,17 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Vec<Stateful<Div>> {
         let t = self.theme;
-        let focused = self.nav.focus.is_focused(window);
-        let tree = self.nav.mode == Mode::Tree;
-        let marked = &self.nav.marked;
+        let focused = self.nav.focus().is_focused(window);
+        let tree = self.nav.mode() == Mode::Tree;
+        let marked = &self.nav.marked();
         // Dragging a row of the multiple selection carries the whole batch.
         let lot = marked.iter().next().map(|any| self.targets(any)).unwrap_or_default();
         let room = self.list_room();
         range
             .filter_map(|ix| {
-                let row = self.nav.rows.get(ix)?;
+                let row = self.nav.rows().get(ix)?;
                 let selected = match marked.is_empty() {
-                    true => self.nav.sel.as_ref() == Some(&row.path),
+                    true => self.nav.sel().as_ref() == Some(&row.path),
                     false => marked.contains(&row.path),
                 };
                 let current = self.pane().displayed_path() == Some(&row.path);
@@ -577,8 +548,8 @@ impl Shell {
                     _ => detail,
                 };
                 // Under backlinks, the line of the note that carries the link.
-                let links = self.nav.mode == Mode::Links;
-                let detail = match self.nav.anchor.as_ref().filter(|_| links) {
+                let links = self.nav.mode() == Mode::Links;
+                let detail = match self.nav.anchor().as_ref().filter(|_| links) {
                     Some(target) => {
                         let note = |path: &Path| self.notes.iter().find(|n| n.path == path);
                         let line = note(target).zip(note(&row.path)).and_then(|(aimed, from)| wiki::link_line(&from.body, aimed));
@@ -599,7 +570,7 @@ impl Shell {
                 };
                 let wide = links || closed.is_some();
                 let said = closed.map(|_| detail.clone());
-                let foldable = !matches!(self.nav.mode, Mode::Recent | Mode::Links);
+                let foldable = !matches!(self.nav.mode(), Mode::Recent | Mode::Links);
                 let chevron = match row.dir {
                     Some(true) => "chevron-down.svg",
                     Some(false) => "chevron-right.svg",
@@ -644,7 +615,7 @@ impl Shell {
                         // The displayed file: an accent pill; the selection wins on the same row.
                         .when(current && !selected, |d| d.bg(t.pill_tint()))
                         .when(selected, |d| {
-                            let at = self.nav.sel_at.clone();
+                            let at = self.nav.sel_at().clone();
                             d.bg(if focused { t.selection } else { t.selection_idle() })
                                 .relative()
                                 .child(gpui::canvas(move |bounds, _, _| at.set(Some(bounds)), |_, _, _, _| {}).absolute().size_full())
@@ -743,12 +714,12 @@ impl Shell {
                             MouseButton::Right,
                             cx.listener(move |this, e: &MouseDownEvent, window, cx| {
                                 // Outside the multiple selection, right-click replaces it.
-                                if !this.nav.marked.contains(&target) {
-                                    this.nav.marked.clear();
-                                    this.nav.sel = Some(target.clone());
+                                if !this.nav.marked().contains(&target) {
+                                    this.nav.clear_marked();
+                                    this.nav.set_sel(Some(target.clone()));
                                 }
                                 // A tag has only one entry: the list of its notes.
-                                window.focus(&this.nav.focus);
+                                window.focus(&this.nav.focus());
                                 if this.vault.as_ref().is_some_and(|root| target.starts_with(root)) || tag_of(&target).is_some() {
                                     this.show_menu(Menu { at: e.position, target: Some(target.clone()), ..Default::default() }, window, cx);
                                 }
@@ -799,25 +770,25 @@ impl Shell {
     pub(super) fn render_nav(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         // The keys stay with a tool in sight: the active one hidden, the first one shown takes them.
-        if !self.docked_now(self.nav.mode)
+        if !self.docked_now(self.nav.mode())
             && let Some(first) = self.dock_tools(false).into_iter().filter(|_| self.left_open()).chain(self.dock_tools(true).into_iter().filter(|_| self.right_open())).next()
         {
             self.nav.activate(first);
         }
-        let panel = self.nav.panel;
+        let panel = self.nav.panel();
         let unfolded = self.left_open();
         // A tool or file view is no note: the backlinks stay on the last one.
         if !self.pane().preview && self.pane().tool().is_none() && self.pane().file().is_none() {
-            self.nav.anchor = self.pane().path.clone();
+            self.nav.set_anchor(self.pane().path.clone());
         }
         let current = self.pane().displayed_path().cloned();
-        if current != self.nav.followed {
+        if current != *self.nav.followed() {
             if let Some(path) = &current {
                 self.nav.reveal(path);
             }
-            self.nav.followed = current.clone();
+            self.nav.set_followed(current.clone());
         }
-        let selected = self.nav.sel.clone();
+        let selected = self.nav.sel().clone();
         self.graph.update(cx, |graph, _| graph.sync(t, current.as_deref(), selected.as_deref()));
 
         let travel = |id: &'static str, icon: &'static str, on: bool| {
@@ -931,7 +902,7 @@ impl Shell {
                     .tooltip(tip(tr("New note", "Nouvelle note"), keys(&crate::actions::NewNote), t))
                     .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
             ))
-            .child(div().debug_selector(|| "rail-free".into()).flex_1().w_full().when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window)))
+            .child(div().debug_selector(|| "rail-free".into()).flex_1().w_full().when(!self.nav.native_bar(), |d| d.map(crate::ui::widgets::drag_window)))
             // Vault trash (what it holds, to take it back) and backup.
             .child(
                 button("nav-trash", "trash.svg", false, t)
@@ -1014,7 +985,7 @@ impl Shell {
                 div()
                     .w_full()
                     .h_full()
-                    .when(self.nav.dragging, |d| d.bg(t.hover))
+                    .when(self.nav.dragging(), |d| d.bg(t.hover))
                     .group_hover("nav-divider", |s| s.bg(t.hover)),
             )
             .on_mouse_down(
@@ -1022,10 +993,10 @@ impl Shell {
                 cx.listener(|this, e: &MouseDownEvent, window, cx| {
                     if e.click_count >= 2 {
                         *this.nav.width() = if this.nav.width_mode() == Mode::Graph { px(0.) } else { LIST_W };
-                        this.nav.panel = Panel::Split;
+                        this.nav.set_panel(Panel::Split);
                         this.settle_nav(window, cx);
                     } else {
-                        this.nav.dragging = true;
+                        this.nav.set_dragging(true);
                     }
                     cx.stop_propagation();
                 }),
@@ -1042,7 +1013,7 @@ impl Shell {
     pub(super) fn render_right_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let t = self.theme;
         if !self.right_open() || self.right_width() <= px(0.) {
-            if !self.tool_drag || self.nav.panel == Panel::Full {
+            if !self.tool_drag || self.nav.panel() == Panel::Full {
                 return None;
             }
             let aimed = self.tool_aim == Some((true, 0));
@@ -1083,15 +1054,15 @@ impl Shell {
             .justify_center()
             .cursor(CursorStyle::ResizeLeftRight)
             .group("dock-divider")
-            .child(div().w_full().h_full().when(self.nav.right_dragging, |d| d.bg(t.hover)).group_hover("dock-divider", |s| s.bg(t.hover)))
+            .child(div().w_full().h_full().when(self.nav.right_dragging(), |d| d.bg(t.hover)).group_hover("dock-divider", |s| s.bg(t.hover)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, e: &MouseDownEvent, window, cx| {
                     if e.click_count >= 2 {
-                        this.nav.right_w = LIST_W;
+                        this.nav.set_right_w(LIST_W);
                         this.settle_nav(window, cx);
                     } else {
-                        this.nav.right_dragging = true;
+                        this.nav.set_right_dragging(true);
                     }
                     cx.stop_propagation();
                 }),
@@ -1110,9 +1081,9 @@ impl Shell {
         let t = self.theme;
         let tools = self.dock_tools(right);
         let (count, stacked) = (tools.len(), tools.len() > 1);
-        let active = self.nav.mode;
+        let active = self.nav.mode();
         let aim = self.tool_aim.filter(|(r, _)| *r == right).map(|(_, at)| at);
-        let full = !right && self.nav.panel == Panel::Full;
+        let full = !right && self.nav.panel() == Panel::Full;
         let width = if right { self.right_width() } else { self.split_width() };
         let line = move || div().debug_selector(|| "tool-aim".into()).absolute().left_0().right_0().h(t.px(2.)).bg(t.accent);
         let mut sections = Vec::new();
@@ -1160,18 +1131,18 @@ impl Shell {
     /// `stacked` with others, `keys`: the one that takes the keys of the panel.
     fn render_dock(&mut self, right: bool, stacked: bool, keys_here: bool, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
-        let (mode, panel) = (self.nav.mode, self.nav.panel);
-        let shut = stacked && self.nav.folded.contains(&mode);
+        let (mode, panel) = (self.nav.mode(), self.nav.panel());
+        let shut = stacked && self.nav.folded().contains(&mode);
         let keys = |action: &dyn Action| crate::ui::keys::of(cx, action);
         let source = self.rows_source();
-        if source != self.nav.rows_from {
-            self.nav.rows = self.nav_rows();
-            self.nav.rows_from = source;
+        if source != self.nav.rows_from() {
+            self.nav.set_rows(self.nav_rows());
+            self.nav.set_rows_from(source);
         }
-        if std::mem::take(&mut self.nav.reveal)
+        if std::mem::take(&mut self.nav.needs_reveal())
             && let Some(ix) = self.selected_row()
         {
-            self.nav.scroll.scroll_to_item(ix, ScrollStrategy::Center);
+            self.nav.scroll().scroll_to_item(ix, ScrollStrategy::Center);
         }
         let full = !right && panel == Panel::Full;
         // Under the window buttons: the top tool of the right dock, or of the left one on the whole window.
@@ -1184,7 +1155,7 @@ impl Shell {
             (Mode::Calendar, _) => tr("Calendar", "Calendrier").to_string(),
             (Mode::Search, _) => tr("Search", "Recherche").to_string(),
             (Mode::Links, _) => {
-                let name = self.nav.anchor.as_deref().map(vault::stem).unwrap_or_default();
+                let name = self.nav.anchor().as_deref().map(vault::stem).unwrap_or_default();
                 format!("{} {name}", tr("Links to", "Liens vers"))
             }
             _ => tr("Recent", "Récents").to_string(),
@@ -1194,7 +1165,7 @@ impl Shell {
             .h(t.px(44.))
             .pl_2()
             // Over the whole window, the window buttons float over the right end of the header.
-            .pr(if (full || right) && first && !self.nav.native_bar { t.px(super::render::PILL_ROOM) } else { t.px(4.) })
+            .pr(if (full || right) && first && !self.nav.native_bar() { t.px(super::render::PILL_ROOM) } else { t.px(4.) })
             // A narrow panel at a large scale: its buttons are cut at its edge, never drawn over the note
             // (they are in the palette too).
             .overflow_hidden()
@@ -1221,7 +1192,7 @@ impl Shell {
                     .h_full()
                     .flex()
                     .items_center()
-                    .when(!self.nav.native_bar, |d| d.map(crate::ui::widgets::drag_window))
+                    .when(!self.nav.native_bar(), |d| d.map(crate::ui::widgets::drag_window))
                     .child(
                         div()
                             .id(("tool-title", mode as usize))
@@ -1247,7 +1218,7 @@ impl Shell {
                     |this, _, window, cx| this.new_note_in(None, window, cx),
                 )))
                 .child(button("nav-folder", "folder-plus.svg", false, t).debug_selector(|| "nav-folder".into()).tooltip(tip(tr("New folder", "Nouveau dossier"), keys(&NewFolder), t)).on_click(cx.listener(
-                    |this, _, window, cx| this.menu_do(Do::NewFolder, this.nav.sel.clone(), window, cx),
+                    |this, _, window, cx| this.menu_do(Do::NewFolder, this.nav.sel().clone(), window, cx),
                 )))
                 // Collapse all; if all already is, expand all.
                 .child(button("nav-fold", if folded { "unfold.svg" } else { "fold.svg" }, false, t).debug_selector(|| "nav-fold".into()).tooltip(tip(if folded { tr("Unfold every folder", "Déplier tous les dossiers") } else { tr("Fold every folder", "Replier tous les dossiers") }, String::new(), t)).on_click(
@@ -1298,7 +1269,7 @@ impl Shell {
         // A vault that cannot be read is not an empty one: whatever the mode, the panel says so, why and
         // where, and offers another vault rather than a note that could not be written.
         let unreadable = self.vault.as_ref().and_then(|root| self.unreadable.iter().find(|(dir, _)| dir == root).map(|(_, why)| (root.clone(), *why)));
-        let nothing = self.nav.rows.is_empty().then(|| {
+        let nothing = self.nav.rows().is_empty().then(|| {
             if let Some((root, why)) = &unreadable {
                 return div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(t.font_body()).text_color(t.soft).child(
                     div()
@@ -1335,24 +1306,24 @@ impl Shell {
                     key => format!("{}\n{} {key}", tr("Nothing here yet", "Rien ici pour l'instant"), tr("New note:", "Nouvelle note :")),
                 },
                 Mode::Tags => tr("No tag yet: write #tag in a note", "Aucun tag pour l'instant : écrivez #tag dans une note").to_string(),
-                Mode::Links if self.nav.anchor.is_none() => tr("Open a note to see what links to it", "Ouvrez une note pour voir ce qui renvoie vers elle").to_string(),
+                Mode::Links if self.nav.anchor().is_none() => tr("Open a note to see what links to it", "Ouvrez une note pour voir ce qui renvoie vers elle").to_string(),
                 Mode::Links => tr("No note links here yet", "Aucune note ne renvoie ici pour l'instant").to_string(),
                 _ => tr("No recent note", "Aucune note récente").to_string(),
             };
             div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(t.font_body()).text_color(t.soft).child(div().debug_selector(|| "nav-empty".into()).max_w_full().child(said))
         });
         // Set again by the selected row if it is drawn.
-        self.nav.sel_at.set(None);
+        self.nav.sel_at().set(None);
         // The rows are drawn later, at layout: they bring their dock's view back for that time.
         let rows = cx.processor(move |this, range, window, cx| {
-            let was = this.nav.mode;
+            let was = this.nav.mode();
             this.nav.activate(mode);
             let rows = this.render_rows(range, window, cx);
             this.nav.activate(was);
             rows
         });
-        let list = uniform_list(("nav-rows", mode as usize), self.nav.rows.len(), rows)
-            .track_scroll(self.nav.scroll.clone())
+        let list = uniform_list(("nav-rows", mode as usize), self.nav.rows().len(), rows)
+            .track_scroll(self.nav.scroll().clone())
             .flex_1()
             .min_h_0()
             // Outside any row: a drop goes to the root, right-click targets the vault.
@@ -1397,13 +1368,13 @@ impl Shell {
             .map(|d| if shut { d.flex_none() } else { d.flex_1().flex_basis(px(0.)) })
             // A press in a tool brings its view into `Nav` before any of its gestures read it.
             .capture_any_mouse_down(cx.listener(move |this, _, _, cx| {
-                if this.nav.mode != mode {
+                if this.nav.mode() != mode {
                     this.nav.activate(mode);
                     cx.notify();
                 }
             }))
             .key_context("Nav")
-            .when(keys_here, |d| d.track_focus(&self.nav.focus))
+            .when(keys_here, |d| d.track_focus(&self.nav.focus()))
             .on_action(cx.listener(|this, _: &Prev, window, cx| this.nav_step(false, window, cx)))
             .on_action(cx.listener(|this, _: &Next, window, cx| this.nav_step(true, window, cx)))
             .on_action(cx.listener(|this, _: &Fold, window, cx| this.nav_fold(false, window, cx)))
@@ -1411,8 +1382,8 @@ impl Shell {
             .on_action(cx.listener(|this, _: &PrevMonth, _, cx| this.day_step(0, -1, cx)))
             .on_action(cx.listener(|this, _: &NextMonth, _, cx| this.day_step(0, 1, cx)))
             .on_action(cx.listener(|this, _: &Open, window, cx| {
-                if this.nav.mode == Mode::Calendar {
-                    return this.open_day(this.nav.day, window, cx);
+                if this.nav.mode() == Mode::Calendar {
+                    return this.open_day(this.nav.day(), window, cx);
                 }
                 if let Some(ix) = this.selected_row() {
                     this.nav_activate(ix, window, cx)
@@ -1420,13 +1391,13 @@ impl Shell {
             }))
             .when(!matches!(mode, Mode::Graph | Mode::Calendar), |d| {
                 d.on_action(cx.listener(|this, _: &Rename, window, cx| {
-                    this.menu_do(Do::Rename, this.nav.sel.clone(), window, cx)
+                    this.menu_do(Do::Rename, this.nav.sel().clone(), window, cx)
                 }))
                 .on_action(cx.listener(|this, _: &Duplicate, window, cx| {
-                    this.menu_do(Do::Duplicate, this.nav.sel.clone(), window, cx)
+                    this.menu_do(Do::Duplicate, this.nav.sel().clone(), window, cx)
                 }))
                 .on_action(cx.listener(|this, _: &Trash, window, cx| {
-                    this.menu_do(Do::Trash, this.nav.sel.clone(), window, cx)
+                    this.menu_do(Do::Trash, this.nav.sel().clone(), window, cx)
                 }))
             })
             .on_action(cx.listener(|this, _: &Close, window, cx| {

@@ -16,7 +16,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     }
     cx.simulate_keystrokes("secondary-t down right down");
     cx.run_until_parked();
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), Mode::Tags);
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.mode()), Mode::Tags);
     assert!(config::load(config::File::Layout).starts_with("tags split"));
     let (tagged, previewed) = shell.read_with(cx, |s, _| {
         let tag = s.notes.iter().flat_map(|n| n.tags.iter()).min().unwrap().clone();
@@ -40,7 +40,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     cx.simulate_keystrokes("secondary-l");
     cx.run_until_parked();
     let rows = |cx: &mut gpui::VisualTestContext| {
-        shell.read_with(cx, |s, _| s.nav.rows.iter().map(|r| r.name.clone()).collect::<Vec<_>>())
+        shell.read_with(cx, |s, _| s.nav.rows().iter().map(|r| r.name.clone()).collect::<Vec<_>>())
     };
     assert_eq!(rows(cx), ["Source A", "Source B"]);
     assert!(config::load(config::File::Layout).starts_with("links split"));
@@ -203,14 +203,14 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
 
     // Calendar: Ctrl+Shift+J shows the month; arrows change the day, Page Down the
     // month, Enter opens that day's note, or creates it.
-    let before = shell.read_with(cx, |s, _| (s.pane().path.clone(), s.nav.mode, s.nav.panel));
+    let before = shell.read_with(cx, |s, _| (s.pane().path.clone(), s.nav.mode(), s.nav.panel()));
     cx.simulate_keystrokes("secondary-shift-j");
-    assert!(shell.read_with(cx, |s, _| s.nav.mode == Mode::Calendar && s.nav.panel != Panel::Rail));
-    shell.update(cx, |s, _| s.nav.day = (2026, 10, 30));
+    assert!(shell.read_with(cx, |s, _| s.nav.mode() == Mode::Calendar && s.nav.panel() != Panel::Rail));
+    shell.update(cx, |s, _| s.nav.set_day((2026, 10, 30)));
     cx.simulate_keystrokes("right down pagedown");
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.day), (2026, 12, 7));
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.day()), (2026, 12, 7));
     cx.simulate_keystrokes("pageup pageup up enter");
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.day), (2026, 9, 30));
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.day()), (2026, 9, 30));
     assert_eq!(text(cx), "# 2026-09-30\n\n");
     // A day of the next month, dimmed in the grid, is a cell like another: a click opens its note and
     // the grid moves to that month. Today is the one round pill; a day with a note has a dot.
@@ -218,12 +218,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     let inside = cx.debug_bounds("day-2026-9-30").unwrap();
     assert!(next.origin.y == inside.origin.y && next.origin.x > inside.origin.x);
     cx.simulate_click(next.center(), gpui::Modifiers::none());
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.day), (2026, 10, 1));
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.day()), (2026, 10, 1));
     assert_eq!(text(cx), "# 2026-10-01\n\n");
     assert!(cx.debug_bounds("day-2026-9-30").is_some() && cx.debug_bounds("day-2026-11-1").is_some());
     shell.update(cx, |s, cx| {
         s.nav.show_alone(before.1);
-        s.nav.panel = before.2;
+        s.nav.set_panel(before.2);
         s.open_note(before.0.as_ref().unwrap(), cx);
     });
     // Once left, the daily note is saved like any note that has a title.

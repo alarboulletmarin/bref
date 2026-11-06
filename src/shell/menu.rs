@@ -106,18 +106,18 @@ impl Shell {
             (Do::Open, Some(path)) => self.open_from_nav(&path, window, cx),
             (Do::OpenAside, Some(path)) => self.open_aside(&path, window, cx),
             (Do::NewNote, _) => {
-                self.nav.open.insert(dir.clone());
-                self.nav.sel = Some(dir);
+                self.nav.open_dir(dir.clone());
+                self.nav.set_sel(Some(dir));
                 self.new_note_here(window, cx);
             }
             (Do::FromTemplate, _) => {
-                self.nav.open.insert(dir.clone());
-                self.nav.sel = Some(dir);
+                self.nav.open_dir(dir.clone());
+                self.nav.set_sel(Some(dir));
                 self.open_templates(crate::views::palette::TemplateAct::New, window, cx);
             }
             (Do::NewDiagram, _) => {
-                self.nav.open.insert(dir.clone());
-                self.nav.sel = Some(dir);
+                self.nav.open_dir(dir.clone());
+                self.nav.set_sel(Some(dir));
                 self.new_diagram(window, cx);
             }
             (Do::NewFolder, _) => {
@@ -130,7 +130,7 @@ impl Shell {
                     let new = dir.join(name);
                     match fs::create_dir(&new) {
                         Ok(()) => {
-                            this.nav.open.insert(dir.clone());
+                            this.nav.open_dir(dir.clone());
                             this.dirs.push(new.clone());
                             this.nav.reveal(&new);
                         }
@@ -178,7 +178,7 @@ impl Shell {
             }
             (Do::Trash, Some(_)) => {
                 all.iter().for_each(|path| self.trash(&root, path, cx));
-                self.nav.marked.clear();
+                self.nav.clear_marked();
             }
             (Do::CopyLink, Some(_)) => {
                 let files = all.iter().filter(|p| !self.dirs.contains(p));
@@ -215,7 +215,7 @@ impl Shell {
                 if let Some(twin) = last {
                     let (notes, dirs, images) = vault::rescan(&root, &self.notes);
                     self.sync(notes, dirs, images, cx);
-                    self.nav.marked.clear();
+                    self.nav.clear_marked();
                     self.nav.reveal(&twin);
                 }
             }
@@ -282,9 +282,9 @@ impl Shell {
 
     /// Shift+F10 or the Menu key: the menu of the selected row in the panel, or of the cursor in the note.
     pub(super) fn menu_from_keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.nav.focus.is_focused(window) {
-            let Some(target) = self.nav.sel.clone() else { return };
-            let at = self.nav.sel_at.get().map_or(point(px(60.), px(60.)), |row| row.bottom_left() + point(px(24.), px(0.)));
+        if self.nav.focus().is_focused(window) {
+            let Some(target) = self.nav.sel().clone() else { return };
+            let at = self.nav.sel_at().get().map_or(point(px(60.), px(60.)), |row| row.bottom_left() + point(px(24.), px(0.)));
             if self.vault.as_ref().is_some_and(|root| target.starts_with(root)) || tag_of(&target).is_some() {
                 self.show_menu(Menu { at, target: Some(target), chosen: Some(0), ..Default::default() }, window, cx);
             }
@@ -331,8 +331,8 @@ impl Shell {
             return vec![self.share_choices(pane).into_iter().map(|choice| (choice.label(), Do::Share(choice))).collect()];
         }
         let is_dir = menu.target.as_ref().is_none_or(|p| self.dirs.contains(p));
-        let tree = self.nav.mode == Mode::Tree;
-        let many = menu.target.as_ref().is_some_and(|p| self.nav.marked.contains(p)) && self.nav.marked.len() > 1;
+        let tree = self.nav.mode() == Mode::Tree;
+        let many = menu.target.as_ref().is_some_and(|p| self.nav.marked().contains(p)) && self.nav.marked().len() > 1;
         // Groups of entries; a line separates those that have any.
         let mut groups: Vec<Vec<(&'static str, Do)>> = vec![Vec::new(); 7];
         if menu.tab.is_some() {

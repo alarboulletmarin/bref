@@ -43,7 +43,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
 
     // Editable shortcuts: Enter on a help line waits for keys, the
     // following ones become the shortcut, right away and in the `keys` file.
-    let (mode, panel) = shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel));
+    let (mode, panel) = shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel()));
     let keys_of = |cx: &mut gpui::VisualTestContext, action: &str| {
         let row = rows(cx).into_iter().find(|row| row.action == Some(action)).unwrap();
         (row.keys, row.changed)
@@ -69,11 +69,11 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(!shell.read_with(cx, |s, _| s.help.open));
     // Without restarting: the old keys do nothing anymore, the new ones act.
     cx.simulate_keystrokes("secondary-e");
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tree);
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.mode()), nav::Mode::Tree);
     cx.simulate_keystrokes("secondary-g");
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tree);
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.mode()), nav::Mode::Tree);
     cx.simulate_keystrokes("secondary-shift-y");
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Graph);
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.mode()), nav::Mode::Graph);
     // Keys already taken: the line says by what, and nothing is taken without « remplacer ».
     cx.simulate_keystrokes("f1");
     cx.simulate_input("graphe des notes");
@@ -89,7 +89,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("filtrer par #tag");
     assert_eq!(keys_of(cx, "app::OpenPalette"), (String::new(), true));
     cx.simulate_keystrokes("escape escape secondary-e secondary-p");
-    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.palette.is_none())), (nav::Mode::Graph, true));
+    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode(), s.palette.is_none())), (nav::Mode::Graph, true));
     // Backspace: no shortcut. Escape during capture cancels only it.
     cx.simulate_keystrokes("f1");
     cx.simulate_input("graphe des notes");
@@ -117,7 +117,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("escape");
     shell.update(cx, |s, cx| {
         s.nav.show_alone(mode);
-        s.nav.panel = panel;
+        s.nav.set_panel(panel);
         cx.notify();
     });
     cx.run_until_parked();

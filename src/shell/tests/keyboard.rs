@@ -21,14 +21,14 @@ fn context_menus_walk_with_the_keys(cx: &mut TestAppContext) {
     // The panel: the selected row's menu opens under it, on its first entry.
     cx.simulate_keystrokes("secondary-e");
     shell.update(cx, |s, cx| {
-        s.nav.sel = Some(root.join("Alpha.md"));
+        s.nav.set_sel(Some(root.join("Alpha.md")));
         cx.notify();
     });
     cx.run_until_parked();
     cx.simulate_keystrokes("shift-f10");
     assert_eq!(menu(cx), Some((Some(0), Some("Ouvrir"))));
     assert!(focus_in_menu(cx));
-    let (at, row) = shell.read_with(cx, |s, _| (s.menu.as_ref().unwrap().at, s.nav.sel_at.get().unwrap()));
+    let (at, row) = shell.read_with(cx, |s, _| (s.menu.as_ref().unwrap().at, s.nav.sel_at().get().unwrap()));
     assert!(at.y >= row.bottom() && at.y < row.bottom() + px(2.) && at.x > row.left(), "under the row: {at:?} {row:?}");
     // Up from the first goes round to the last; Esc closes and the tree has the keys again.
     cx.simulate_keystrokes("up");
@@ -37,7 +37,7 @@ fn context_menus_walk_with_the_keys(cx: &mut TestAppContext) {
     assert_eq!(menu(cx), Some((Some(1), Some("Ouvrir à côté"))));
     cx.simulate_keystrokes("escape");
     assert!(menu(cx).is_none());
-    assert!(cx.update(|window, cx| shell.read(cx).nav.focus.is_focused(window)));
+    assert!(cx.update(|window, cx| shell.read(cx).nav.focus().is_focused(window)));
     // "Move to…" lists the folders, the vault first; the chosen one receives the note, as a drag would.
     cx.simulate_keystrokes("menu up up up");
     assert_eq!(menu(cx), Some((Some(11), Some("Déplacer vers…"))));
@@ -46,10 +46,10 @@ fn context_menus_walk_with_the_keys(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     assert!(root.join("Dossier/Alpha.md").is_file() && !root.join("Alpha.md").exists());
-    assert!(cx.update(|window, cx| shell.read(cx).nav.focus.is_focused(window)), "the keys are back in the tree");
+    assert!(cx.update(|window, cx| shell.read(cx).nav.focus().is_focused(window)), "the keys are back in the tree");
     // A folder is not offered to itself.
     shell.update(cx, |s, cx| {
-        s.nav.sel = Some(root.join("Dossier"));
+        s.nav.set_sel(Some(root.join("Dossier")));
         cx.notify();
     });
     cx.run_until_parked();
@@ -64,7 +64,7 @@ fn context_menus_walk_with_the_keys(cx: &mut TestAppContext) {
     fs::rename(root.join("Dossier/Alpha.md"), root.join("Alpha.md")).unwrap();
     shell.update(cx, |s, cx| {
         s.rescan(&root, cx);
-        s.nav.sel = Some(root.join("Alpha.md"));
+        s.nav.set_sel(Some(root.join("Alpha.md")));
         cx.notify();
     });
     cx.run_until_parked();
@@ -238,9 +238,9 @@ fn buttons_from_the_keys(cx: &mut TestAppContext) {
     };
     let on_button = |cx: &mut gpui::VisualTestContext| cx.update(|w, cx| {
         let s = shell.read(cx);
-        w.focused(cx).is_some() && !s.nav.focus.is_focused(w) && !s.pane().editor.focus_handle(cx).is_focused(w)
+        w.focused(cx).is_some() && !s.nav.focus().is_focused(w) && !s.pane().editor.focus_handle(cx).is_focused(w)
     });
-    let open = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.nav.open.len());
+    let open = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.nav.open().len());
     // From the tree, Tab goes along the panel's buttons as they are drawn: new note, new folder, fold all.
     cx.simulate_keystrokes("secondary-e tab");
     assert!(on_button(cx), "a button has the keys");

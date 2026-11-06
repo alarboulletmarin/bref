@@ -21,7 +21,7 @@ fn the_calendar_stays_inside_its_sheet(cx: &mut TestAppContext) {
     cx.run_until_parked();
     shell.update(cx, |s, _| {
         s.nav.show_alone(Mode::Calendar);
-        s.nav.panel = Panel::Split;
+        s.nav.set_panel(Panel::Split);
     });
     let settle = |cx: &mut gpui::VisualTestContext| {
         for _ in 0..4 {
@@ -32,7 +32,7 @@ fn the_calendar_stays_inside_its_sheet(cx: &mut TestAppContext) {
     // (month, first day, last day): Sep 2025 starts on a Monday, Feb 2026 on a Sunday (28 days, 4 rows
     // in a Monday week), Feb 2024 has 29 days, Mar 2025 spans six weeks from a Saturday.
     for (day, first, last) in [((2025, 9, 15), 1, 30), ((2026, 2, 10), 1, 28), ((2024, 2, 29), 1, 29), ((2025, 3, 31), 1, 31)] {
-        shell.update(cx, |s, _| s.nav.day = day);
+        shell.update(cx, |s, _| s.nav.set_day(day));
         for (keys, zoom) in [("secondary-- ".repeat(5), 11.), ("secondary-0 ".into(), 16.), ("secondary-= ".repeat(16), 32.)] {
             cx.simulate_keystrokes("secondary-0");
             cx.simulate_keystrokes(keys.trim_end());

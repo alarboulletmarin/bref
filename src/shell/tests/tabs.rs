@@ -173,7 +173,7 @@ fn the_tree_previews_in_a_single_tab(cx: &mut TestAppContext) {
     let browse = |name: &str, cx: &mut gpui::VisualTestContext| shell.update_in(cx, |s, window, cx| s.preview_note(&note(name), window, cx));
 
     // Beta, then Gamma, browsed from the tree: one preview tab, the opened note stays where it was.
-    shell.update_in(cx, |s, window, _| window.focus(&s.nav.focus));
+    shell.update_in(cx, |s, window, _| window.focus(&s.nav.focus()));
     browse("Beta", cx);
     assert_eq!(tabs(&shell, cx, 0), (all(&["Alpha", "Beta"]), 1));
     assert!(preview(&shell, cx));

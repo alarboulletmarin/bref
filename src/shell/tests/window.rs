@@ -51,9 +51,9 @@ fn keys_survive_a_restart(cx: &mut TestAppContext) {
     assert_eq!(shell.read_with(cx, |s, _| s.changes.clone()), keys::Changes::from([("nav::ShowTags".to_string(), "secondary-shift-y".to_string())]));
     assert!(shell.read_with(cx, |s, _| s.told(Tone::Failed, "no::Such=f8")));
     cx.simulate_keystrokes("secondary-t");
-    assert_ne!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tags);
+    assert_ne!(shell.read_with(cx, |s, _| s.nav.mode()), nav::Mode::Tags);
     cx.simulate_keystrokes("secondary-shift-y");
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), nav::Mode::Tags);
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.mode()), nav::Mode::Tags);
     // A file from before this version, or empty: the original shortcuts.
     let _ = fs::remove_dir_all(&root);
 }
@@ -346,7 +346,7 @@ fn update_banner_stays_clear_of_the_formatting_bar(cx: &mut TestAppContext) {
     for panel in [Panel::Rail, Panel::Split] {
       for second_pane in [false, true] {
         // Split while there is room, then dismiss the content picker before testing the footer.
-        shell.update(cx, |s, cx| { s.nav.panel = panel; s.nav.list_w = px(600.); cx.notify(); });
+        shell.update(cx, |s, cx| { s.nav.set_panel(panel); s.nav.set_list_w(px(600.)); cx.notify(); });
         cx.simulate_resize(size(px(1400.), px(600.)));
         settle(cx);
         if second_pane {
@@ -359,8 +359,8 @@ fn update_banner_stays_clear_of_the_formatting_bar(cx: &mut TestAppContext) {
         for width in [1400., 900., 860., 560., 420., 320., 240.] {
             for (version, updating) in [(None, false), (Some("0.4.0"), false), (Some("100.200.300"), false), (Some("0.4.0"), true)] {
                 shell.update(cx, |s, cx| {
-                    s.nav.panel = panel;
-                    s.nav.list_w = px(600.);
+                    s.nav.set_panel(panel);
+                    s.nav.set_list_w(px(600.));
                     s.update = version.map(release);
                     s.updating = updating;
                     cx.notify();
@@ -447,7 +447,7 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
     // The panel on the whole window: its four buttons end where the window buttons begin, from a phone width to a very wide window.
     shell.update(cx, |s, cx| {
         s.nav.show_alone(nav::Mode::Tree);
-        s.nav.panel = nav::Panel::Full;
+        s.nav.set_panel(nav::Panel::Full);
         cx.notify();
     });
     for width in [320., 420., 860., 1600.] {
@@ -465,14 +465,14 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
     // The panel beside the note: a note narrowed by the panel (120, 260, 600 px) starts under the window buttons; in a window wide
     // enough for the page, the note starts under the handle strip.
     shell.update(cx, |s, cx| {
-        s.nav.panel = nav::Panel::Split;
+        s.nav.set_panel(nav::Panel::Split);
         cx.notify();
     });
     let pill_bottom = |cx: &mut gpui::VisualTestContext| cx.debug_bounds("window-pill").unwrap().bottom();
     for (window, panel) in [(860., 120.), (860., 260.), (860., 600.), (420., 120.), (1600., 260.), (1600., 600.)] {
         cx.simulate_resize(size(px(window), px(600.)));
         shell.update(cx, |s, cx| {
-            s.nav.list_w = px(panel);
+            s.nav.set_list_w(px(panel));
             cx.notify();
         });
         settle(cx);
@@ -487,7 +487,7 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
     }
     // No panel, the page is as wide as the window lets it: the default window starts under the handle strip, a narrow one gives room.
     shell.update(cx, |s, cx| {
-        s.nav.panel = nav::Panel::Rail;
+        s.nav.set_panel(nav::Panel::Rail);
         cx.notify();
     });
     for (window, narrow) in [(860., false), (1600., false), (420., true), (320., true)] {
@@ -599,7 +599,7 @@ fn the_window_can_always_be_grabbed_at_the_top(cx: &mut TestAppContext) {
     };
     let panel = |cx: &mut gpui::VisualTestContext, panel| {
         shell.update(cx, |s, cx| {
-            s.nav.panel = panel;
+            s.nav.set_panel(panel);
             cx.notify();
         });
     };
@@ -678,19 +678,19 @@ fn sheets_lie_on_the_ground_with_eight_pixels_between(cx: &mut TestAppContext) {
     };
     for width in [860., 1600., 420.] {
         shell.update(cx, |s, cx| {
-            s.nav.panel = nav::Panel::Rail;
+            s.nav.set_panel(nav::Panel::Rail);
             cx.notify();
         });
         check(&format!("{width} folded"), width, false, 1, cx);
         shell.update(cx, |s, cx| {
-            s.nav.panel = nav::Panel::Split;
+            s.nav.set_panel(nav::Panel::Split);
             cx.notify();
         });
         check(&format!("{width} open"), width, true, 1, cx);
     }
     shell.update_in(cx, |s, window, cx| s.open_aside(&two, window, cx));
     shell.update(cx, |s, cx| {
-        s.nav.panel = nav::Panel::Split;
+        s.nav.set_panel(nav::Panel::Split);
         cx.notify();
     });
     for width in [860., 1600.] {

@@ -16,10 +16,10 @@ impl Shell {
         if self.vault.is_none() {
             return;
         }
-        if self.nav.panel == Panel::Rail || self.nav.mode != Mode::Tree {
+        if self.nav.panel() == Panel::Rail || self.nav.mode() != Mode::Tree {
             self.show_nav(Mode::Tree, false, window, cx);
         }
-        self.menu_do(Do::NewFolder, self.nav.sel.clone(), window, cx);
+        self.menu_do(Do::NewFolder, self.nav.sel().clone(), window, cx);
     }
 
     /// A disk operation on `path` failed: what was tried, on which file, and why.
@@ -31,7 +31,7 @@ impl Shell {
     /// Moves everything that was dragged into the folder `dir`.
     pub(super) fn move_all(&mut self, from: &[PathBuf], dir: &Path, cx: &mut Context<Self>) {
         from.iter().for_each(|path| self.move_into(path, dir, cx));
-        self.nav.marked.clear();
+        self.nav.clear_marked();
     }
 
     /// Moves the note or folder `from` into the folder `dir`.
@@ -47,7 +47,7 @@ impl Shell {
         self.flush(cx);
         match vault::rename(from, &to) {
             Ok(()) => {
-                self.nav.open.insert(dir.to_path_buf());
+                self.nav.open_dir(dir.to_path_buf());
                 self.relocate(from, &to, false, cx);
             }
             Err(e) => self.fail(tr("Not moved", "Déplacement impossible"), from, e, cx),
@@ -71,7 +71,7 @@ impl Shell {
         if vault::move_icons(&mut self.icons, from, to) {
             self.save_icons(cx);
         }
-        self.nav.open = self.nav.open.iter().map(shift).collect();
+        self.nav.set_open(self.nav.open().iter().map(shift).collect());
         self.each_pane(|this| {
             if let Some(file) = this.pane_mut().file_mut() {
                 file.path = shift(&file.path);
@@ -107,7 +107,7 @@ impl Shell {
         self.dirs.retain(|d| !gone(d));
         self.images.retain(|p| !gone(p));
         self.recent.retain(|p| !gone(p));
-        self.nav.sel = None;
+        self.nav.set_sel(None);
         self.each_pane(|this| {
             if this.pane().file_path().is_some_and(gone) {
                 this.set_file(None, cx);

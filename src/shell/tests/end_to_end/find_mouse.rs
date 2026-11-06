@@ -175,9 +175,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
 
     // The tree's « nouvelle note » button saves at the vault root, even with a folder selected.
     shell.update_in(cx, |s, _, cx| {
-        s.nav.panel = Panel::Split;
+        s.nav.set_panel(Panel::Split);
         s.nav.show_alone(Mode::Tree);
-        s.nav.sel = Some(root.join("Projets"));
+        s.nav.set_sel(Some(root.join("Projets")));
         s.flush(cx);
     });
     shell.update_in(cx, |s, window, cx| s.new_note_in(None, window, cx));
@@ -186,7 +186,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(root.join("Racine.md").is_file() && !root.join("Projets/Racine.md").exists());
 
     // Ctrl+P: « Nouveau dossier » opens the name input field, the folder is created in the vault.
-    shell.update(cx, |s, _| s.nav.sel = None);
+    shell.update(cx, |s, _| s.nav.set_sel(None));
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("nouveau dossier");
     cx.simulate_keystrokes("down enter");

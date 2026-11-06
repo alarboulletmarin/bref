@@ -13,7 +13,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("enter");
     let archives = root.join("Archives 2026");
     assert!(archives.is_dir());
-    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.sel.clone())), (Mode::Tree, Some(archives.clone())));
+    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.sel().clone())), (Mode::Tree, Some(archives.clone())));
 
     // F2 renames: the title of a note matching its name follows, the recents list too.
     // An icon, chosen in the menu grid, follows the note being renamed; it is
@@ -23,10 +23,10 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         s.menu_do(nav::Do::Icon, Some(root.join("Test.md")), window, cx)
     });
     cx.run_until_parked();
-    let grid = shell.read_with(cx, |s, _| s.icon_pick.as_ref().unwrap().at - point(s.nav.left, s.nav.left));
+    let grid = shell.read_with(cx, |s, _| s.icon_pick.as_ref().unwrap().at - point(s.nav.left(), s.nav.left()));
     cx.simulate_click(grid + point(px(5. + 30. + 14.), px(5. + 14.)), gpui::Modifiers::none());
     assert!(shell.read_with(cx, |s, _| s.icon_pick.is_none() && s.icons.get(&root.join("Test.md")).map(String::as_str) == Some("star")));
-    shell.update(cx, |s, _| s.nav.sel = Some(root.join("Test.md")));
+    shell.update(cx, |s, _| s.nav.set_sel(Some(root.join("Test.md"))));
     cx.simulate_keystrokes("f2");
     cx.simulate_input("s");
     cx.simulate_keystrokes("enter");
@@ -77,9 +77,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.run_until_parked();
     let mark = |cx: &mut gpui::VisualTestContext, from: &str, to: &str, extend: bool| {
         shell.update(cx, |s, cx| {
-            let row = |s: &Shell, name: &str| s.nav.rows.iter().position(|r| r.path == root.join(name)).unwrap();
-            s.nav.marked.clear();
-            s.nav.sel = Some(root.join(from));
+            let row = |s: &Shell, name: &str| s.nav.rows().iter().position(|r| r.path == root.join(name)).unwrap();
+            s.nav.clear_marked();
+            s.nav.set_sel(Some(root.join(from)));
             s.nav_mark(row(s, to), extend, cx);
         });
     };
@@ -89,21 +89,21 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(fs::read_to_string(root.join("Courses 2.md")).unwrap(), text(cx));
     cx.run_until_parked();
     mark(cx, "Courses.md", "Idées.md", true);
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.marked.len()), 3);
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.marked().len()), 3);
     mark(cx, "Courses 2.md", "Idées 2.md", false);
-    shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::CopyRelative, s.nav.sel.clone(), window, cx));
+    shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::CopyRelative, s.nav.sel().clone(), window, cx));
     assert_eq!(cx.read_from_clipboard().and_then(|item| item.text()).as_deref(), Some("Courses 2.md\nIdées 2.md"));
     cx.simulate_keystrokes("delete");
     assert!(root.join(".trash/Courses 2.md").is_file() && root.join(".trash/Idées 2.md").is_file());
-    assert!(root.join("Courses.md").is_file() && shell.read_with(cx, |s, _| s.nav.marked.is_empty()));
+    assert!(root.join("Courses.md").is_file() && shell.read_with(cx, |s, _| s.nav.marked().is_empty()));
 
     // Delete moves to the vault's trash, destroying nothing; the open note gives
     // way to an empty note.
-    shell.update(cx, |s, _| s.nav.sel = Some(archives.clone()));
+    shell.update(cx, |s, _| s.nav.set_sel(Some(archives.clone())));
     cx.simulate_keystrokes("delete");
     assert!(root.join(".trash/Archives 2026/Projets/Plan.md").is_file() && !archives.exists());
     assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[TestsXY]]");
-    shell.update(cx, |s, _| s.nav.sel = Some(root.join("Courses.md")));
+    shell.update(cx, |s, _| s.nav.set_sel(Some(root.join("Courses.md"))));
     cx.simulate_keystrokes("delete");
     assert!(root.join(".trash/Courses.md").is_file());
     assert_eq!(text(cx), "");

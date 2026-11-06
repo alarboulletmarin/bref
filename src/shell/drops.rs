@@ -81,7 +81,7 @@ impl Shell {
         }
         self.rescan(root, cx);
         if let Some(first) = done.first() {
-            self.nav.open.insert(dir.to_path_buf());
+            self.nav.open_dir(dir.to_path_buf());
             self.nav.reveal(&first.to);
         }
         if let Aim::Note { pane, at, version } = aim {

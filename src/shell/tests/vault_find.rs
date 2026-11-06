@@ -55,7 +55,7 @@ fn the_vault_search(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-f");
     cx.simulate_input("zèbre");
     cx.simulate_keystrokes("secondary-shift-f");
-    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (nav::Mode::Search, nav::Panel::Split));
+    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel())), (nav::Mode::Search, nav::Panel::Split));
     assert_eq!(keys_in(&shell, cx), "query");
     // Three matches in two notes: Alpha (its two lines) then Beta; Gamma is not listed.
     assert_eq!(state(&shell, cx), Some(("zèbre".into(), 3, 2, 5, 0)));
@@ -104,7 +104,7 @@ fn the_vault_search(cx: &mut TestAppContext) {
     assert_eq!(rows(cx), before);
     // Escape: the keys go back to the note, the panel stays on its results.
     cx.simulate_keystrokes("secondary-shift-f escape");
-    assert_eq!((keys_in(&shell, cx), shell.read_with(cx, |s, _| s.nav.mode)), ("note", nav::Mode::Search));
+    assert_eq!((keys_in(&shell, cx), shell.read_with(cx, |s, _| s.nav.mode())), ("note", nav::Mode::Search));
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -191,7 +191,7 @@ fn the_vault_search_holds_its_place(cx: &mut TestAppContext) {
         cx.simulate_keystrokes(zoom);
         for list_w in [260., 600.] {
             shell.update(cx, |s, cx| {
-                s.nav.list_w = px(list_w);
+                s.nav.set_list_w(px(list_w));
                 cx.notify();
             });
             for width in [420., 860., 1600.] {

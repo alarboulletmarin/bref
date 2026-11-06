@@ -162,8 +162,8 @@ fn the_bar_holds_its_place(cx: &mut TestAppContext) {
     let geometries = [(nav::Panel::Rail, 260., "secondary-0"), (nav::Panel::Split, 260., "secondary-0"), (nav::Panel::Split, 600., "secondary-0"), (nav::Panel::Rail, 260., &"secondary-= ".repeat(16))];
     for (i, (panel, list_w, zoom)) in geometries.into_iter().enumerate() {
         shell.update(cx, |s, cx| {
-            s.nav.panel = panel;
-            s.nav.list_w = px(list_w);
+            s.nav.set_panel(panel);
+            s.nav.set_list_w(px(list_w));
             cx.notify();
         });
         cx.simulate_keystrokes(zoom.trim_end());
@@ -191,7 +191,7 @@ fn the_bar_holds_its_place(cx: &mut TestAppContext) {
     }
     cx.simulate_keystrokes("secondary-0");
     shell.update(cx, |s, cx| {
-        s.nav.panel = nav::Panel::Rail;
+        s.nav.set_panel(nav::Panel::Rail);
         cx.notify();
     });
     // A search of 300 characters with no space: the bar keeps its width, the field scrolls.
@@ -262,7 +262,7 @@ fn replace_at_the_edges(cx: &mut TestAppContext) {
 fn the_keys_of_the_bar(cx: &mut TestAppContext) {
     let (root, shell, cx, _config) = opened(cx, "find-keys", "a\n");
     fs::write(root.join("Table.csv"), "a,b\n1,2\n").unwrap();
-    let mode = |cx: &mut Cx| shell.read_with(cx, |s, _| s.nav.mode);
+    let mode = |cx: &mut Cx| shell.read_with(cx, |s, _| s.nav.mode());
     cx.simulate_keystrokes("secondary-shift-t");
     assert_eq!(mode(cx), nav::Mode::Recent);
     cx.simulate_keystrokes("secondary-e");

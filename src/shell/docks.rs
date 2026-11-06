@@ -38,7 +38,7 @@ impl Shell {
 
     /// The tools open as a tab of some pane.
     fn tabbed(&self) -> Vec<Mode> {
-        self.panes.iter().filter_map(|pane| pane.tool).collect()
+        self.panes.iter().filter_map(|pane| pane.tool()).collect()
     }
 
     pub(super) fn dock_tools(&self, right: bool) -> Vec<Mode> {
@@ -76,7 +76,7 @@ impl Shell {
             true => self.hide_tool(mode, window, cx),
             false => {
                 self.nav.stack_tool(mode, &tabs);
-                window.focus(&self.nav.focus);
+                window.focus(&self.nav.focus());
                 self.refresh_graph(cx);
                 self.settle_nav(window, cx);
             }
@@ -86,8 +86,8 @@ impl Shell {
     /// The tool leaves its dock's stack (see `Nav::hide_tool`).
     pub(super) fn hide_tool(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
         let tabs = self.tabbed();
-        let right = self.nav.right.contains(&mode);
-        let had_focus = self.nav.focus.contains_focused(window, cx);
+        let right = self.nav.right().contains(&mode);
+        let had_focus = self.nav.focus().contains_focused(window, cx);
         self.nav.hide_tool(mode, &tabs);
         // The keys go to another tool in sight, or back to the note.
         match self.nav.next_docked(right, &tabs) {
@@ -108,11 +108,11 @@ impl Shell {
     /// Width of the right dock: the one it was given, as long as the panes keep `MIN_PANE`; none
     /// (the dock hides) when even 160 px would take it from them.
     pub(super) fn right_width(&self) -> Pixels {
-        let left = if self.left_open() && self.nav.panel == Panel::Split { self.split_width() + DIVIDER } else { px(0.) };
-        let room = self.nav.total - self.theme.px(RAIL) - left - self.nav.aside - DIVIDER - pane::MIN_PANE;
+        let left = if self.left_open() && self.nav.panel() == Panel::Split { self.split_width() + DIVIDER } else { px(0.) };
+        let room = self.nav.total() - self.theme.px(RAIL) - left - self.nav.aside() - DIVIDER - pane::MIN_PANE;
         match room < px(160.) {
             true => px(0.),
-            false => self.nav.right_w.clamp(px(160.), room),
+            false => self.nav.right_w().clamp(px(160.), room),
         }
     }
 
@@ -124,8 +124,8 @@ impl Shell {
 
     /// The active tool goes to the bottom of the other dock's stack.
     pub(super) fn move_tool(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let mode = self.nav.mode;
-        let right = !self.nav.right.contains(&mode);
+        let mode = self.nav.mode();
+        let right = !self.nav.right().contains(&mode);
         let at = self.dock_tools(right).len();
         self.place_tool(mode, right, at, window, cx);
     }
@@ -135,7 +135,7 @@ impl Shell {
     pub(super) fn place_tool(&mut self, mode: Mode, right: bool, at: usize, window: &mut Window, cx: &mut Context<Self>) {
         let tabs = self.tabbed();
         self.nav.place_tool(mode, right, at, &tabs);
-        window.focus(&self.nav.focus);
+        window.focus(&self.nav.focus());
         self.refresh_graph(cx);
         self.settle_nav(window, cx);
     }
@@ -152,7 +152,7 @@ impl Shell {
     /// closing the tab gives it back to its dock.
     pub(super) fn tool_as_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // From the palette, with a list in the dock: the graph.
-        let mode = Some(self.nav.mode).filter(|m| m.tabs()).unwrap_or(Mode::Graph);
+        let mode = Some(self.nav.mode()).filter(|m| m.tabs()).unwrap_or(Mode::Graph);
         if self.tool_tab(mode).is_none() {
             self.fresh_tab(window, cx);
             self.pane_mut().set_tool(mode);

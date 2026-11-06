@@ -233,7 +233,7 @@ impl Shell {
 
         let nav = Nav::new(cx.focus_handle());
         // The graph shares the panel's focus: the same keys navigate it.
-        let graph = cx.new(|_| Graph::new(nav.focus.clone(), theme));
+        let graph = cx.new(|_| Graph::new(nav.focus().clone(), theme));
         cx.subscribe_in(&graph, window, |this, _, event, window, cx| match event {
             GraphEvent::Select(path) => this.select_from_graph(path, window, cx),
             GraphEvent::Open(path) => this.open_from_nav(path, window, cx),
@@ -313,8 +313,8 @@ impl Shell {
                 let (tree, saved) = read_panes(&panes);
                 this.restore_panes(tree, saved, panes.starts_with("v3 "), &root, window, cx);
                 this.panes_saved = this.panes_state();
-                if this.nav.panel == Panel::Full {
-                    window.focus(&this.nav.focus);
+                if this.nav.panel() == Panel::Full {
+                    window.focus(&this.nav.focus());
                 }
             }
             None => window.focus(&this.focus),

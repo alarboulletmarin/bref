@@ -76,9 +76,9 @@ impl Render for Shell {
             && !window.is_fullscreen();
         let inset = if framed { SHADOW } else { px(0.) };
         window.set_client_inset(inset);
-        self.nav.left = inset;
-        self.nav.native_bar = !client;
-        self.nav.total = window.viewport_size().width - inset * 2. - if self.vault.is_some() { nav::GAP } else { px(0.) };
+        let total = window.viewport_size().width - inset * 2. - if self.vault.is_some() { nav::GAP } else { px(0.) };
+        self.nav.set_frame(inset, total);
+        self.nav.set_native_bar(!client);
 
         let pill = self.render_window_controls(window, cx);
 
@@ -151,7 +151,7 @@ impl Render for Shell {
                 .pr(nav::GAP)
                 .pb(nav::GAP)
                 .child(docks)
-                .when(self.nav.panel != Panel::Full, |d| d.child(note).children(comments).children(docked))
+                .when(self.nav.panel() != Panel::Full, |d| d.child(note).children(comments).children(docked))
                 .children(self.palette.clone())
                 .child(toasts)
         };
@@ -220,13 +220,13 @@ impl Render for Shell {
                     cx.notify();
                 }
                 // The right dock's border too.
-                if this.nav.right_dragging {
+                if this.nav.right_dragging() {
                     match e.pressed_button == Some(MouseButton::Left) {
                         true => this.drag_right(e.position.x, cx),
                         false => this.settle_nav(window, cx),
                     }
                 }
-                if !this.nav.dragging {
+                if !this.nav.dragging() {
                 } else if e.pressed_button == Some(MouseButton::Left) {
                     this.drag_nav(e.position.x, cx)
                 } else {
@@ -239,7 +239,7 @@ impl Render for Shell {
                     if this.pane_drag.take().is_some() {
                         cx.notify();
                     }
-                    if this.nav.dragging || this.nav.right_dragging {
+                    if this.nav.dragging() || this.nav.right_dragging() {
                         this.settle_nav(window, cx)
                     }
                 }),
@@ -732,7 +732,7 @@ impl Shell {
         // Without a tab bar, the top row of the pane is a handle to move the window (Linux): the note's text starts under it.
         let strip = client && !barred;
         // A tab bar puts the note below the window buttons: its text no longer steps down for them.
-        let pill = (client && !barred && group == self.corner_group()).then(|| window.viewport_size().width - self.nav.left - px(8.) - t.px(PILL_W));
+        let pill = (client && !barred && group == self.corner_group()).then(|| window.viewport_size().width - self.nav.left() - px(8.) - t.px(PILL_W));
         self.pane().editor.update(cx, |e, _| {
             e.corner = 1 + talk.is_some() as usize + boards as usize;
             e.bar_here = active;
@@ -743,13 +743,13 @@ impl Shell {
         // most; short of 140 px, it does not show (its button stays, a wider window brings it back).
         let column = (active && !said.is_empty() && !self.comments_shut)
             .then(|| {
-                self.nav.aside = px(270.);
-                let panel = if self.nav.panel == Panel::Split { self.split_width() + nav::DIVIDER } else { px(0.) };
-                (self.nav.total - t.px(nav::RAIL) - panel - nav::NOTE_MIN).min(px(270.))
+                self.nav.set_aside(px(270.));
+                let panel = if self.nav.panel() == Panel::Split { self.split_width() + nav::DIVIDER } else { px(0.) };
+                (self.nav.total() - t.px(nav::RAIL) - panel - nav::NOTE_MIN).min(px(270.))
             })
             .filter(|width| *width >= px(140.));
         if active && column.is_none() {
-            self.nav.aside = px(0.);
+            self.nav.set_aside(px(0.));
         }
         // The comment the caret is in (none past the last) is a sheet.
         let caret = self.pane().editor.read(cx).position();

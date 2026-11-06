@@ -1092,9 +1092,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         fs::write(&drawing, Diagram::blank().to_svg(diagram::COLORS[0])).unwrap();
         let before: std::collections::HashSet<_> = fs::read_dir(&root).unwrap().flatten().map(|e| e.path()).collect();
         shell.update_in(cx, |s, window, cx| {
-            s.nav.sel = Some(drawing.clone());
+            s.nav.set_sel(Some(drawing.clone()));
             s.nav.show_alone(crate::views::nav::Mode::Tree);
-            s.nav.panel = crate::views::nav::Panel::Split;
+            s.nav.set_panel(crate::views::nav::Panel::Split);
             s.new_diagram(window, cx);
         });
         cx.run_until_parked();
@@ -1102,7 +1102,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         assert!(made.len() == 1 && made[0].extension().is_some_and(|e| e == "svg") && made[0].is_file(), "{made:?}");
         // The same for a new note.
         shell.update_in(cx, |s, window, cx| {
-            s.nav.sel = Some(drawing.clone());
+            s.nav.set_sel(Some(drawing.clone()));
             s.new_note_in(s.nav.target_dir(), window, cx);
         });
         cx.run_until_parked();
@@ -1110,7 +1110,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.run_until_parked();
         fs::remove_file(&drawing).unwrap();
         fs::remove_file(&made[0]).unwrap();
-        shell.update(cx, |s, _| s.nav.sel = None);
+        shell.update(cx, |s, _| s.nav.set_sel(None));
     }
     // Dragged from the bar or from the library, a shape lands centred on the pointer, and what is drawn under the pointer
     // while it is dragged is centred on it too.

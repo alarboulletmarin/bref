@@ -79,17 +79,17 @@ fn the_current_file_in_the_graph_is_not_the_backlink_anchor(cx: &mut TestAppCont
         shell.update_in(cx, |s, window, cx| s.open_from_nav(&root.join(file), window, cx));
         frames(cx);
         // Selection is independent of the document. Do not preview the selected row here.
-        shell.update(cx, |s, cx| { s.nav.sel = Some(root.join("Other.md")); cx.notify(); });
+        shell.update(cx, |s, cx| { s.nav.set_sel(Some(root.join("Other.md"))); cx.notify(); });
         frames(cx);
         shell.read_with(cx, |s, cx| {
             let expected = (!file.ends_with(".csv") && !file.ends_with(".tsv")).then(|| root.join(file));
             assert_eq!(s.graph.read(cx).indicated(), (expected.as_deref(), Some(root.join("Other.md").as_path())), "{file}");
-            assert_eq!(s.nav.anchor, Some(root.join("Note.md")), "backlinks while showing {file}");
+            assert_eq!(*s.nav.anchor(), Some(root.join("Note.md")), "backlinks while showing {file}");
         });
     }
     shell.update_in(cx, |s, window, cx| s.show_nav(Mode::Links, false, window, cx));
     frames(cx);
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.rows.iter().map(|r| r.path.clone()).collect::<Vec<_>>()), vec![root.join("Other.md")]);
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.rows().iter().map(|r| r.path.clone()).collect::<Vec<_>>()), vec![root.join("Other.md")]);
 }
 
 /// Palette and history use the same current marker as the tree, in every supported view.
@@ -127,7 +127,7 @@ fn the_current_file_is_separate_from_tree_selection(cx: &mut TestAppContext) {
         s.show_nav(Mode::Tree, false, window, cx);
     });
     current(cx, "Foreign.svg");
-    shell.update(cx, |s, cx| { s.nav.sel = None; cx.notify(); });
+    shell.update(cx, |s, cx| { s.nav.set_sel(None); cx.notify(); });
     let mut held = gpui::Modifiers::none();
     if cfg!(target_os = "macos") { held.platform = true; } else { held.control = true; }
     for name in ["Note", "Other"] {
@@ -136,21 +136,21 @@ fn the_current_file_is_separate_from_tree_selection(cx: &mut TestAppContext) {
         current(cx, "Foreign.svg");
     }
     shell.read_with(cx, |s, _| {
-        assert_eq!(s.nav.sel, Some(root.join("Other.md")));
-        assert_eq!(s.nav.marked.len(), 2);
-        assert!(s.nav.marked.contains(&root.join("Note.md")) && s.nav.marked.contains(&root.join("Other.md")));
-        assert_eq!(s.nav.anchor, Some(root.join("Note.md")));
+        assert_eq!(*s.nav.sel(), Some(root.join("Other.md")));
+        assert_eq!(s.nav.marked().len(), 2);
+        assert!(s.nav.marked().contains(&root.join("Note.md")) && s.nav.marked().contains(&root.join("Other.md")));
+        assert_eq!(*s.nav.anchor(), Some(root.join("Note.md")));
     });
     // Keyboard preview keeps input in the tree while marking the file it displays.
     shell.update_in(cx, |s, window, cx| {
-        s.nav.marked.clear();
-        s.nav.sel = Some(root.join("Drawing.svg"));
-        window.focus(&s.nav.focus);
+        s.nav.clear_marked();
+        s.nav.set_sel(Some(root.join("Drawing.svg")));
+        window.focus(&s.nav.focus());
         cx.notify();
     });
     cx.simulate_keystrokes("down");
     current(cx, "Foreign.svg");
-    assert!(shell.update_in(cx, |s, window, _| s.nav.focus.is_focused(window)));
+    assert!(shell.update_in(cx, |s, window, _| s.nav.focus().is_focused(window)));
     cx.simulate_keystrokes("enter");
     current(cx, "Foreign.svg");
 }
@@ -213,7 +213,7 @@ fn the_current_file_does_not_fall_back_after_external_changes(cx: &mut TestAppCo
             assert_eq!(s.graph.read(cx).indicated().0, None);
             assert_eq!(s.pane().displayed_path(), Some(&root.join(from)));
             assert!(!s.nav_rows().iter().any(|row| Some(&row.path) == s.pane().displayed_path()));
-            assert_eq!(s.nav.anchor, Some(root.join("Note.md")));
+            assert_eq!(*s.nav.anchor(), Some(root.join("Note.md")));
         });
     }
 }
@@ -233,7 +233,7 @@ fn the_tree_selection_follows_the_displayed_document(cx: &mut TestAppContext) {
         s.open_from_nav(&root.join("Foreign.svg"), window, cx);
     });
     frames(cx);
-    let sel = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.nav.sel.clone());
+    let sel = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.nav.sel().clone());
     assert_eq!(sel(cx), Some(root.join("Foreign.svg")));
     // Tabs, both ways, round the end.
     for (keys, file) in [("ctrl-tab", "Note.md"), ("ctrl-tab", "Data.csv"), ("ctrl-shift-tab", "Note.md"), ("ctrl-shift-tab", "Foreign.svg")] {
@@ -247,7 +247,7 @@ fn the_tree_selection_follows_the_displayed_document(cx: &mut TestAppContext) {
     frames(cx);
     assert_eq!(sel(cx), Some(root.join("Picture.png")));
     // The user moves the selection: it stays there while the document does not change.
-    shell.update(cx, |s, cx| { s.nav.sel = Some(root.join("Other.md")); cx.notify(); });
+    shell.update(cx, |s, cx| { s.nav.set_sel(Some(root.join("Other.md"))); cx.notify(); });
     frames(cx);
     assert_eq!(sel(cx), Some(root.join("Other.md")));
     // Another pane, then back.

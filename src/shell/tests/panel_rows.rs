@@ -22,7 +22,7 @@ fn the_tree_lines_names_up_after_an_icon(cx: &mut TestAppContext) {
     fs::write(root.join("Long ".repeat(40) + ".md"), "x").unwrap();
     shell.update(cx, |s, cx| s.rescan(&root, cx));
     shell.update_in(cx, |s, window, cx| {
-        s.nav.list_w = px(260.);
+        s.nav.set_list_w(px(260.));
         s.show_nav(Mode::Tree, false, window, cx);
     });
     cx.simulate_resize(size(px(1000.), px(720.)));
@@ -85,7 +85,7 @@ fn the_recent_name_keeps_its_room_before_its_folder(cx: &mut TestAppContext) {
     let mut seen_hidden = false;
     for width in [180., 260., 600.] {
         shell.update(cx, |s, cx| {
-            s.nav.list_w = px(width);
+            s.nav.set_list_w(px(width));
             cx.notify();
         });
         let panel = bounds(cx, "nav-panel".into()).unwrap();
@@ -100,13 +100,13 @@ fn the_recent_name_keeps_its_room_before_its_folder(cx: &mut TestAppContext) {
             seen_folder = true;
             let natural = text.size.width;
             shell.update(cx, |s, cx| {
-                s.nav.list_w = px(900.);
+                s.nav.set_list_w(px(900.));
                 cx.notify();
             });
             let wide = bounds(cx, format!("nav-name-{name}")).unwrap();
             assert!((wide.size.width - natural).abs() < px(1.5), "the name is cut while its folder shows at {width}: {natural:?} {wide:?}");
             shell.update(cx, |s, cx| {
-                s.nav.list_w = px(width);
+                s.nav.set_list_w(px(width));
                 cx.notify();
             });
         } else {
@@ -128,7 +128,7 @@ fn the_vault_search_field_has_its_own_line(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-shift-f");
     for width in [180., 260., 600.] {
         shell.update(cx, |s, cx| {
-            s.nav.list_w = px(width);
+            s.nav.set_list_w(px(width));
             cx.notify();
         });
         let panel = bounds(cx, "nav-panel".into()).unwrap();
@@ -162,7 +162,7 @@ fn a_file_keeps_its_extension_whole_when_its_name_is_cut(cx: &mut TestAppContext
         cx.simulate_keystrokes(zoom);
         for width in [180., 260., 600.] {
             shell.update(cx, |s, cx| {
-                s.nav.list_w = px(width);
+                s.nav.set_list_w(px(width));
                 cx.notify();
             });
             let panel = bounds(cx, "nav-panel".into()).unwrap();

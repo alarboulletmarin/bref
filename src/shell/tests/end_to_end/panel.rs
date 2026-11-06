@@ -10,7 +10,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // already open), which does not count as an opening.
     cx.executor().advance_clock(Duration::from_millis(500));
     cx.simulate_keystrokes("secondary-e up");
-    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (Mode::Tree, Panel::Split));
+    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel())), (Mode::Tree, Panel::Split));
     assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[Test]]");
     // Courses is open in a tab already: that tab is shown, without counting as an opening.
     assert!(shell.read_with(cx, |s, _| !s.pane().preview && s.recent[0] == root.join("Idées.md")));
@@ -19,7 +19,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // The collapse button collapses the whole tree, then expands it entirely.
     let open = |s: &mut Shell| {
         s.fold_all();
-        s.nav.open.len()
+        s.nav.open().len()
     };
     assert_eq!(shell.update(cx, |s, _| (open(s), open(s))), (0, 1));
     assert_eq!(text(cx), "# Plan\n\n[[Courses]]\n");
@@ -44,13 +44,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     drag(cx, 302., 450.);
     assert_eq!(config::load(config::File::Layout), "tree split 410 0\n");
     drag(cx, 452., 60.);
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.panel), Panel::Rail);
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.panel()), Panel::Rail);
 
     // Recent notes, full screen (Ctrl+M), then Escape gives back the room and focus to the note.
     cx.simulate_keystrokes("secondary-shift-t secondary-m");
-    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (Mode::Recent, Panel::Full));
+    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel())), (Mode::Recent, Panel::Full));
     cx.simulate_keystrokes("down escape");
-    assert_eq!(shell.read_with(cx, |s, _| s.nav.panel), Panel::Split);
+    assert_eq!(shell.read_with(cx, |s, _| s.nav.panel()), Panel::Split);
     assert_eq!(text(cx), "# Sous");
     // Asking again for the shown mode: first focus, then collapsing to the rail.
     cx.simulate_keystrokes("secondary-shift-t secondary-shift-t");
@@ -62,7 +62,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("cou");
     cx.simulate_keystrokes("enter secondary-g");
     cx.run_until_parked();
-    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode, s.nav.panel)), (Mode::Graph, Panel::Split));
+    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel())), (Mode::Graph, Panel::Split));
     assert_eq!(shell.read_with(cx, |s, cx| s.graph.read(cx).size()), (5, 2));
     // A node dragged with the mouse follows the pointer.
     let spot = |cx: &mut gpui::VisualTestContext| {
@@ -89,7 +89,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Full screen: the selection no longer moves the note; Enter gives it its place back.
     cx.simulate_keystrokes("secondary-g secondary-m tab");
     let open = shell.read_with(cx, |s, _| s.pane().path.clone());
-    assert!(shell.read_with(cx, |s, _| s.nav.panel == Panel::Full && s.nav.sel != s.pane().path));
+    assert!(shell.read_with(cx, |s, _| s.nav.panel() == Panel::Full && *s.nav.sel() != s.pane().path));
     cx.simulate_keystrokes("enter");
-    assert!(shell.read_with(cx, |s, _| s.nav.panel == Panel::Split && s.pane().path != open));
+    assert!(shell.read_with(cx, |s, _| s.nav.panel() == Panel::Split && s.pane().path != open));
 }
