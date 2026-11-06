@@ -428,11 +428,8 @@ impl Shell {
         } else if hits == 0 {
             tr("No results", "Aucun résultat").to_string()
         } else {
-            let (matches, in_notes) = match (hits, notes) {
-                (1, _) => (tr("match", "passage"), tr("note", "note")),
-                (_, 1) => (tr("matches", "passages"), tr("note", "note")),
-                _ => (tr("matches", "passages"), tr("notes", "notes")),
-            };
+            let matches = crate::lang::plural(hits, ("match", "passage"), ("matches", "passages"));
+            let in_notes = crate::lang::plural(notes, ("note", "note"), ("notes", "notes"));
             format!("{hits} {matches} · {notes} {in_notes}")
         };
         let chevron = ui::widgets::button("vault-chevron", if find.replace { "chevron-down.svg" } else { "chevron-right.svg" }, false, t)

@@ -126,6 +126,12 @@ pub fn number(n: usize) -> String {
     out
 }
 
+/// The noun for a count, as `(English, French)` pairs: 0 and 1 are singular in French
+/// (`0 mot`, `1 mot`, `2 mots`), only 1 is in English (`0 words`, `1 word`).
+pub fn plural(n: usize, one: (&'static str, &'static str), many: (&'static str, &'static str)) -> &'static str {
+    if n < 2 && tr("en", "fr") == "fr" || n == 1 { tr(one.0, one.1) } else { tr(many.0, many.1) }
+}
+
 /// How long ago, in the palette's short form: `today`, `3 d`, `2 wk`, `5 mo`, `1 y` (`aujourd'hui`, `3 j`, `2 sem.`,
 /// `5 mois`, `1 an`). `days` is the age in whole days.
 pub fn age(days: u64) -> String {
@@ -172,6 +178,13 @@ pub fn fold(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nouns_agree_with_their_count() {
+        let word = |n| plural(n, ("word", "mot"), ("words", "mots"));
+        assert_eq!([0, 1, 2, 1000].map(word), ["mot", "mot", "mots", "mots"]);
+        in_english(|| assert_eq!([0, 1, 2, 1000].map(word), ["words", "word", "words", "words"]));
+    }
 
     #[test]
     fn tells_how_long_ago() {

@@ -620,12 +620,12 @@ impl Editor {
         if let Some((_, label)) = self.counted.as_ref().filter(|(known, _)| *known == key) {
             return label.clone();
         }
-        let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+        let plural = |n: usize, one, many| format!("{n} {}", crate::lang::plural(n, one, many));
         let both = |(words, chars): (usize, usize)| {
             format!(
                 "{} · {}",
-                plural(words, tr("word", "mot"), tr("words", "mots")),
-                plural(chars, tr("character", "caractère"), tr("characters", "caractères"))
+                plural(words, ("word", "mot"), ("words", "mots")),
+                plural(chars, ("character", "caractère"), ("characters", "caractères"))
             )
         };
         let label = if self.sel.is_empty() {

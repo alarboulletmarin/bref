@@ -39,7 +39,7 @@ use crate::{
     logic::undo::History,
     ui::widgets::{self, button, pill, tip},
     logic::table::{self, Encoding, Format, Style, Table, WriteError},
-    lang::tr, platform::vault,
+    lang::{plural, tr}, platform::vault,
 };
 
 actions!(
@@ -55,9 +55,8 @@ actions!(
 
 /// "6 rows · 5 columns" (the header row counts as a row), numbers grouped, French singular for 0 and 1.
 pub fn summary(rows: usize, cols: usize) -> String {
-    let (r, c) = (if rows == 1 { "row" } else { "rows" }, if cols == 1 { "column" } else { "columns" });
-    let (fr, fc) = (if rows < 2 { "ligne" } else { "lignes" }, if cols < 2 { "colonne" } else { "colonnes" });
-    format!("{} {} · {} {}", crate::lang::number(rows), tr(r, fr), crate::lang::number(cols), tr(c, fc))
+    let (r, c) = (plural(rows, ("row", "ligne"), ("rows", "lignes")), plural(cols, ("column", "colonne"), ("columns", "colonnes")));
+    format!("{} {r} · {} {c}", crate::lang::number(rows), crate::lang::number(cols))
 }
 
 const ROW: f32 = 26.;
