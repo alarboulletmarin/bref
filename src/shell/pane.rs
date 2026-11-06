@@ -377,9 +377,7 @@ impl Shell {
         if !self.room_beside(self.group(), side, cx) {
             return false;
         }
-        if self.nav.panel == Panel::Full {
-            self.nav.panel = Panel::Split;
-        }
+        self.nav.give_note_room();
         let (group, pane) = (self.group(), Self::new_pane(self.theme, window, cx));
         self.panes.push(pane);
         let tab = self.panes.len() - 1;

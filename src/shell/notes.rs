@@ -184,9 +184,7 @@ impl Shell {
         self.fresh_tab(window, cx);
         self.new_note(String::new(), cx);
         self.pane_mut().new_dir = dir;
-        if self.nav.panel == Panel::Full {
-            self.nav.panel = Panel::Split;
-        }
+        self.nav.give_note_room();
         window.focus(&self.pane().editor.focus_handle(cx));
         self.settle_nav(window, cx);
     }

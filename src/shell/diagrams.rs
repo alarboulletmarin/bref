@@ -177,9 +177,7 @@ impl Shell {
         self.index_changed(cx);
         self.nav.reveal(&path);
         self.load_note(&path, cx);
-        if self.nav.panel == Panel::Full {
-            self.nav.panel = Panel::Split;
-        }
+        self.nav.give_note_room();
         if let Some(canvas) = self.pane().drawing() {
             window.focus(&canvas.focus_handle(cx));
         } else if let Some(viewer) = self.pane().viewer() {

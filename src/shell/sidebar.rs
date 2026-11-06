@@ -356,9 +356,7 @@ impl Shell {
     /// panel took the whole window.
     pub(super) fn open_from_nav(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         self.open(path, window, cx);
-        if self.nav.panel == Panel::Full {
-            self.nav.panel = Panel::Split;
-        }
+        self.nav.give_note_room();
         // A table takes focus so one can write in it; an image shows in place
         // of the note, and the panel keeps control.
         match self.shown_sheet() {
@@ -1438,9 +1436,7 @@ impl Shell {
                 if this.icon_pick.is_some() {
                     return this.close_icons(window, cx);
                 }
-                if this.nav.panel == Panel::Full {
-                    this.nav.panel = Panel::Split;
-                }
+                this.nav.give_note_room();
                 window.focus(&this.pane().editor.focus_handle(cx));
                 this.settle_nav(window, cx);
             }))

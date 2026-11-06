@@ -351,6 +351,13 @@ impl Nav {
         config::keep(config::File::Layout, &format!("{}\n", dock::write(&layout)));
     }
 
+    /// A panel that took the whole window gives the note its place back.
+    pub fn give_note_room(&mut self) {
+        if self.panel == Panel::Full {
+            self.panel = Panel::Split;
+        }
+    }
+
     /// The tool's view comes into `Nav`, the active one's goes to wait.
     pub fn activate(&mut self, mode: Mode) {
         if self.mode == mode {

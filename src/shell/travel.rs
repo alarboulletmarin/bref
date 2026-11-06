@@ -89,9 +89,7 @@ impl Shell {
         {
             self.fresh_tab(window, cx);
         }
-        if self.nav.panel == nav::Panel::Full {
-            self.nav.panel = nav::Panel::Split;
-        }
+        self.nav.give_note_room();
         match entry.shown {
             Shown::List(of) => self.open_listing(of, window, cx),
             Shown::Note(path) => {
