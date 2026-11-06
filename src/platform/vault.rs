@@ -362,8 +362,15 @@ pub fn rescan_full(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec
     let note = |(path, mtime): &(PathBuf, SystemTime)| {
         let template = in_templates(root, path);
         match known.get(path.as_path()) {
-            // Unchanged on disk: the text we have is still right.
-            Some(old) if old.mtime == *mtime => Note::from_text(stem(path), path.clone(), *mtime, old.body.clone(), template),
+            // Unchanged on disk: reused as is.
+            Some(old) if old.mtime == *mtime => {
+                // Shared lists, nothing reparsed; a template keeps none of them.
+                let mut note = (*old).clone();
+                if template {
+                    (note.tags, note.links, note.aliases) = (Arc::from([]), Arc::from([]), Arc::from([]));
+                }
+                note
+            }
             _ => {
                 let text = Arc::from(fs::read_to_string(path).unwrap_or_default());
                 Note::from_text(stem(path), path.clone(), *mtime, text, template)
@@ -1440,6 +1447,31 @@ mod tests {
         }
         assert!(changed.take(), "no event in 10 s");
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A rescan reuses an unchanged note as is (no reparse), reads a changed one again, and a
+    /// template keeps no tags, links or aliases either way.
+    #[test]
+    fn rescan_reuses_unchanged_notes() {
+        let root = std::env::temp_dir().join(format!("bref-reuse-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("Templates")).unwrap();
+        let text = "---\naliases: [Pseudo]\n---\n#etiquette [[Cible]]\n";
+        fs::write(root.join("A.md"), text).unwrap();
+        fs::write(root.join("Templates/T.md"), text).unwrap();
+        let (first, ..) = rescan_full(&root, &[]);
+        let by = |notes: &[Note], name: &str| notes.iter().position(|n| n.name == name).unwrap();
+        assert_eq!(first[by(&first, "A")].aliases[..], ["Pseudo".to_string()]);
+        assert!(first[by(&first, "T")].aliases.is_empty());
+        let (again, ..) = rescan_full(&root, &first);
+        let (a, b) = (&first[by(&first, "A")], &again[by(&again, "A")]);
+        assert!(Arc::ptr_eq(&a.body, &b.body) && Arc::ptr_eq(&a.links, &b.links) && Arc::ptr_eq(&a.aliases, &b.aliases));
+        assert!(again[by(&again, "T")].tags.is_empty() && again[by(&again, "T")].aliases.is_empty());
+        // A note whose mtime moved is read again.
+        let known: Vec<Note> = first.iter().cloned().map(|mut n| { n.mtime = UNIX_EPOCH; n }).collect();
+        let (reread, ..) = rescan_full(&root, &known);
+        assert!(!Arc::ptr_eq(&a.body, &reread[by(&reread, "A")].body));
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// A folder that cannot be listed is reported, root or inner, with the reason; the rest is read as
