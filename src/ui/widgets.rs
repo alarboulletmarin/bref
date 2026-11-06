@@ -107,6 +107,12 @@ pub fn floating(t: Theme) -> Div {
     div().bg(t.bg).rounded(t.sheet()).border_1().border_color(t.border).shadow(t.floating())
 }
 
+/// A small surface that opens over the page (canvas menus, the format bar's pickers, the sidebar's grid): panel
+/// ground, large radius, hairline ring of `border` and the `floating` shadow. The caller sets padding, size and place.
+pub fn popover(t: Theme) -> Div {
+    div().bg(t.panel).rounded(t.large()).border_1().border_color(t.border).shadow(t.floating())
+}
+
 /// A pill, for a tab, a tag or a choice: text in `soft`, or, `on`, tinted with the accent (10 %). The caller
 /// adds the label, the size and the click.
 #[allow(dead_code)] // used by the views from step 3 of #91

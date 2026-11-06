@@ -361,7 +361,7 @@ impl Editor {
         let t = self.theme;
         let open = self.bar.open;
         let left = f32::from(self.viewport.size.width) / 2. - 15. * t.ui;
-        div()
+        crate::ui::widgets::popover(t)
             .id("format-toggle")
             .debug_selector(|| "format-toggle".into())
             .absolute()
@@ -371,11 +371,7 @@ impl Editor {
             .flex()
             .items_center()
             .justify_center()
-            .rounded(t.large())
-            .border_1()
-            .border_color(t.border)
             .bg(bar_fill(&t, open))
-            .shadow(t.floating())
             .cursor_pointer()
             .hover(|s| s.bg(t.hover))
             .occlude()

@@ -34,7 +34,7 @@ fn title(text: &'static str, t: Theme) -> Div {
 
 /// A menu that opens over the canvas.
 fn floating(t: Theme) -> Div {
-    div().p_1().rounded(t.large()).bg(t.panel).border_1().border_color(t.border).shadow(t.floating()).occlude()
+    crate::ui::widgets::popover(t).p_1().occlude()
 }
 
 /// What a row of the menu of a right click does.

@@ -506,7 +506,7 @@ impl Shell {
         let close = cx.listener(|this: &mut Self, _: &MouseDownEvent, window, cx| this.close_icons(window, cx));
         Some(
             div().absolute().inset_0().occlude().on_mouse_down(MouseButton::Left, close).child(
-                div()
+                crate::ui::widgets::popover(t)
                     .debug_selector(|| "icons".into())
                     .track_focus(&self.menu_focus)
                     .key_context("Menu")
@@ -521,11 +521,6 @@ impl Shell {
                     .top(at.y)
                     .w(width)
                     .p(t.px(5.))
-                    .bg(t.panel)
-                    .border_1()
-                    .border_color(t.border)
-                    .rounded(t.large())
-                    .shadow(t.floating())
                     .flex()
                     .flex_wrap()
                     .gap(t.px(2.))
