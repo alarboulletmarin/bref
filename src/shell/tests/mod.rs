@@ -30,6 +30,7 @@ mod panel_rows;
 mod canvas_text;
 mod current_file;
 mod panes;
+mod render_pure;
 mod paste_failure;
 mod tabs;
 mod save_close;

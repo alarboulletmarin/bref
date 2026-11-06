@@ -448,6 +448,11 @@ impl Focusable for Editor {
 }
 
 impl Editor {
+    #[cfg(test)]
+    pub fn chrome(&self) -> Chrome {
+        self.chrome
+    }
+
     /// Takes the window chrome; nothing happens when it is the one already held.
     pub fn set_chrome(&mut self, chrome: Chrome) {
         if self.chrome != chrome {

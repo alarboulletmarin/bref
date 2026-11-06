@@ -51,6 +51,12 @@ pub struct History {
 }
 
 impl History {
+    /// What the list holds, oldest first, and the position in it.
+    #[cfg(test)]
+    pub fn trail(&self) -> (Vec<Shown>, usize) {
+        (self.list.iter().map(|entry| entry.shown.clone()).collect(), self.at)
+    }
+
     pub fn current(&self) -> Option<&Entry> {
         self.list.get(self.at)
     }
