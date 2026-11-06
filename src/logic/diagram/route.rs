@@ -292,7 +292,7 @@ mod tests {
         assert!(clear(&path, &[wall]), "{path:?}");
         // Right-angled only, and it keeps its distance (the margin) from the wall.
         assert!(path.windows(2).all(|w| w[0].0 == w[1].0 || w[0].1 == w[1].1), "{path:?}");
-        assert!(clear(&path, &[grow(wall, MARGIN - 0.5)]) || path.windows(2).take(1).count() == 1, "{path:?}");
+        assert!(clear(&path, &[grow(wall, MARGIN - 0.5)]), "{path:?}");
         // Fewest bends: over the top of the wall (2 more than the straight jog), not a staircase.
         assert!(path.len() <= 6, "{path:?}");
     }
