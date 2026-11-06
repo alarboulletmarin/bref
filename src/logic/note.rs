@@ -4,6 +4,21 @@ use std::{path::PathBuf, sync::Arc, time::SystemTime};
 
 use crate::logic::markdown;
 
+/// What a `[[link]]` names, folded to lowercase: the key under which a note answers, by its
+/// name or by an alias. Always built by `NoteKey::of`, so two keys compare the way links match.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NoteKey(String);
+
+impl NoteKey {
+    pub fn of(name: &str) -> NoteKey {
+        NoteKey(name.to_lowercase())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Clone)]
 pub struct Note {
     pub name: String,
@@ -12,7 +27,7 @@ pub struct Note {
         // does not copy its lists.
     pub tags: Arc<[String]>,
         /// Notes targeted by its `[[wikilinks]]`, lowercase.
-    pub links: Arc<[String]>,
+    pub links: Arc<[NoteKey]>,
         /// Its other names (`aliases` key of the front matter), as written.
     pub aliases: Arc<[String]>,
     pub mtime: SystemTime,
@@ -33,12 +48,12 @@ pub fn lowered(text: &Arc<str>) -> Arc<str> {
 impl Note {
         /// Tags, links and aliases of a note's text. A template has none: what it writes
         /// between `{{ }}` or after `#` is not its own.
-    pub fn index(text: &str, template: bool) -> (Arc<[String]>, Arc<[String]>, Arc<[String]>) {
+    pub fn index(text: &str, template: bool) -> (Arc<[String]>, Arc<[NoteKey]>, Arc<[String]>) {
         if template {
             return (Arc::from([]), Arc::from([]), Arc::from([]));
         }
         let (tags, links) = markdown::index(text);
-        (tags.into(), links.into(), markdown::aliases(text).into())
+        (tags.into(), links.iter().map(|l| NoteKey::of(l)).collect(), markdown::aliases(text).into())
     }
 
         /// A note read from its text: the one way to build everything derived from it.
@@ -54,9 +69,9 @@ impl Note {
         std::mem::replace(&mut self.body, text)
     }
 
-        /// A link written `key` (lowercase) targets this note: by its name, or by an alias.
-    pub fn answers(&self, key: &str) -> bool {
-        self.name.to_lowercase() == key || self.aliases.iter().any(|alias| alias.to_lowercase() == key)
+        /// A link written `key` targets this note: by its name, or by an alias.
+    pub fn answers(&self, key: &NoteKey) -> bool {
+        NoteKey::of(&self.name) == *key || self.aliases.iter().any(|alias| NoteKey::of(alias) == *key)
     }
 }
 
@@ -73,7 +88,7 @@ mod tests {
     #[test]
     fn from_text_derives_everything() {
         let n = note(TEXT, false);
-        assert_eq!((&n.tags[..], &n.links[..], &n.aliases[..]), (&["étiquette".to_string()][..], &["cible".to_string()][..], &["Pseudo".to_string()][..]));
+        assert_eq!((&n.tags[..], &n.links[..], &n.aliases[..]), (&["étiquette".to_string()][..], &[NoteKey::of("cible")][..], &["Pseudo".to_string()][..]));
         assert_eq!(&*n.lower, TEXT.to_lowercase());
         // A template keeps the text and nothing derived from it; empty text is fine.
         let t = note(TEXT, true);

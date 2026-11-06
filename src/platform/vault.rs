@@ -302,7 +302,7 @@ pub fn retitle(path: &Path, old: &str, new: &str) -> io::Result<()> {
 /// Heading `was` of the note at `path` is now `now`: the other notes that link to it, `[[Note#was]]` and
 /// `![[Note#was]]`, are rewritten on disk and re-indexed. Returns the notes rewritten.
 pub fn follow_heading(root: Option<&Path>, notes: &mut [Note], path: &Path, was: &str, now: &str) -> Vec<PathBuf> {
-    let (name, key) = (stem(path), stem(path).to_lowercase());
+    let (name, key) = (stem(path), crate::logic::note::NoteKey::of(&stem(path)));
     let mut rewritten = Vec::new();
     for note in notes.iter_mut().filter(|n| n.path != path && n.links.contains(&key)) {
         let fresh = fs::read_to_string(&note.path)

@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::logic::note::Note;
+use crate::logic::note::{Note, NoteKey};
 
 /// Links from which a note is a hub: its name is always shown.
 pub const HUB: usize = 6;
@@ -22,7 +22,7 @@ pub fn image_name(path: &Path) -> String {
 pub fn edges(notes: &[Note], images: &[PathBuf]) -> Vec<(usize, usize)> {
     let mut by_name = crate::logic::wiki::by_key(notes.iter());
     for (i, image) in images.iter().enumerate() {
-        by_name.entry(image_name(image).to_lowercase()).or_insert(notes.len() + i);
+        by_name.entry(NoteKey::of(&image_name(image))).or_insert(notes.len() + i);
     }
     let mut edges: Vec<(usize, usize)> = notes
         .iter()
@@ -164,7 +164,7 @@ mod tests {
             name: name.into(),
             path: PathBuf::from(format!("/v/{name}.md")),
             tags: Default::default(),
-            links: links.iter().map(|l| l.to_string()).collect(),
+            links: links.iter().map(|l| NoteKey::of(l)).collect(),
             aliases: Default::default(),
             mtime: SystemTime::UNIX_EPOCH,
             body: "".into(),

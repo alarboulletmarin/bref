@@ -348,7 +348,7 @@ impl Shell {
         let pictures = vault::pictures(&self.images);
         // Notes and their aliases, for the sections embedded from them.
         let sources: std::rc::Rc<std::collections::HashMap<String, PathBuf>> =
-            logic::wiki::by_key(notes.iter().copied()).into_iter().map(|(key, i)| (key, notes[i].path.clone())).collect::<std::collections::HashMap<_, _>>().into();
+            logic::wiki::by_key(notes.iter().copied()).into_iter().map(|(key, i)| (key.as_str().to_string(), notes[i].path.clone())).collect::<std::collections::HashMap<_, _>>().into();
         let me = |pane: &Pane| pane.path.as_deref().and_then(Path::file_stem).map(|s| s.to_string_lossy().to_string());
         for pane in &self.panes[tabs] {
             let me = me(pane);
