@@ -208,7 +208,7 @@ fn is_dir(entry: &fs::DirEntry) -> bool {
     entry.file_type().is_ok_and(|kind| kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()))
 }
 
-/// Fingerprint of the vault's state: the paths of its notes, images and folders,
+/// Fingerprint of the vault's state: the paths of its notes, the other files it shows and its folders,
 /// and the date of each file. It changes as soon as another program touches it, without
 /// reading a single file.
 pub fn fingerprint(root: &Path) -> u64 {
@@ -229,8 +229,8 @@ pub fn fingerprint(root: &Path) -> u64 {
                 }
             } else if path.extension().is_some_and(|e| e == "md") {
                 seen.push((path, entry.metadata().and_then(|m| m.modified()).ok()));
-            } else if is_image(&path) || is_table(&path) {
-                // Another program rewriting the open table or diagram must be seen.
+            } else if is_file_shown(&path) {
+                // Another program adding an attachment, or rewriting the open table or diagram, must be seen.
                 seen.push((path, entry.metadata().and_then(|m| m.modified()).ok()));
             }
         }
@@ -888,12 +888,52 @@ pub fn capture(root: &Path, name: &str, text: &str) -> io::Result<PathBuf> {
 
 /// Atomic write: a crash never leaves a truncated note.
 pub fn write(path: &Path, content: impl AsRef<[u8]>) -> io::Result<()> {
-    let tmp = path.with_file_name(format!(".{}.tmp", stem(path)));
-    let mut file = fs::File::create(&tmp)?;
-    file.write_all(content.as_ref())?;
-    // Without `fsync`, a power cut can leave the rename without the data.
-    file.sync_all()?;
-    fs::rename(&tmp, path)
+    let (tmp, mut file) = staging(path)?;
+    let result = (|| {
+        file.write_all(content.as_ref())?;
+        // Without `fsync`, a power cut can leave the rename without the data.
+        file.sync_all()?;
+        fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        fs::remove_file(&tmp).ok();
+    }
+    result
+}
+
+/// Paths whose next writes fail, so a test can play a failed save on every platform.
+#[cfg(test)]
+static REFUSED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+/// Makes every write of `path` fail (`on`), or succeed again.
+#[cfg(test)]
+pub fn refuse_writes(path: &Path, on: bool) {
+    let mut refused = REFUSED.lock().unwrap();
+    refused.retain(|p| p != path);
+    if on {
+        refused.push(path.to_path_buf());
+    }
+}
+
+/// A new hidden file beside `path`, for an atomic write. Its name is unique to this process
+/// and this write: two files of the same stem (`Note.md`, `Note.csv`), or the app and
+/// `bref mcp` saving the same note at once, never share it.
+pub fn staging(path: &Path) -> io::Result<(PathBuf, fs::File)> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    #[cfg(test)]
+    if REFUSED.lock().unwrap().iter().any(|p| p == path) {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "refused by a test"));
+    }
+    loop {
+        // Not built from the file's name: a name near the length limit would leave no room.
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp = path.with_file_name(format!(".bref-{}-{n}.tmp", std::process::id()));
+        match fs::File::create_new(&tmp) {
+            Ok(file) => return Ok((tmp, file)),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 /// Saves the note and returns its path; a new note is created in
@@ -1091,6 +1131,22 @@ mod tests {
         fs::File::options().write(true).open(&drawing).unwrap().set_modified(later).unwrap();
         assert_ne!(before, fingerprint(&root));
         fs::remove_file(&drawing).unwrap();
+        // So does an attachment added by another program: the tree shows it.
+        let before = fingerprint(&root);
+        fs::write(root.join("facture.pdf"), "%PDF").unwrap();
+        assert_ne!(before, fingerprint(&root));
+        fs::remove_file(root.join("facture.pdf")).unwrap();
+        // Two files of the same stem never share a temporary file, and none is left behind.
+        let (a, _) = staging(&root.join("Note.md")).unwrap();
+        let (b, _) = staging(&root.join("Note.csv")).unwrap();
+        let (c, _) = staging(&root.join("Note.md")).unwrap();
+        assert!(a != b && a != c && b != c);
+        for t in [a, b, c] {
+            fs::remove_file(t).unwrap();
+        }
+        write(&root.join("Note.md"), "# Note\n").unwrap();
+        assert!(!fs::read_dir(&root).unwrap().flatten().any(|e| e.file_name().to_string_lossy().ends_with(".tmp")));
+        fs::remove_file(root.join("Note.md")).unwrap();
 
         // Renaming a note in step with its title rewrites that title; otherwise the text stays as is.
         let c = rename_note(&root.join("A 2.md"), "C").unwrap();

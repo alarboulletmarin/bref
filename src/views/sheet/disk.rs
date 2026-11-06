@@ -143,9 +143,8 @@ impl Disk {
             return Ok(());
         }
         // Atomic write: a crash never leaves a truncated table.
-        let tmp = path.with_file_name(format!(".{}.tmp", path.file_name().unwrap_or_default().to_string_lossy()));
+        let (tmp, file) = crate::platform::vault::staging(path)?;
         let result = (|| {
-            let file = fs::File::create(&tmp)?;
             if let Ok(meta) = fs::metadata(path) {
                 fs::set_permissions(&tmp, meta.permissions()).ok();
             }

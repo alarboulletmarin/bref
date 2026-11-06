@@ -291,7 +291,7 @@ fn failed_save_keeps_the_tab_and_its_edits(cx: &mut TestAppContext) {
         s.open_from_nav(&beta, window, cx);
         s.open_from_nav(&alpha, window, cx);
     });
-    fs::create_dir(root.join(".Alpha.tmp")).unwrap();
+    crate::platform::vault::refuse_writes(&root.join("Alpha.md"), true);
     cx.simulate_keystrokes("secondary-end");
     cx.simulate_input(" UNSAVED CHANGES");
     let editor = shell.read_with(cx, |s, _| s.pane().editor.clone());
@@ -309,7 +309,7 @@ fn failed_save_keeps_the_tab_and_its_edits(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-z");
     assert_ne!(editor.read_with(cx, |e, _| e.text().to_string()), format!("{original} UNSAVED CHANGES"));
     cx.simulate_keystrokes("secondary-shift-z");
-    fs::remove_dir(root.join(".Alpha.tmp")).unwrap();
+    crate::platform::vault::refuse_writes(&root.join("Alpha.md"), false);
     cx.simulate_keystrokes("secondary-w");
     assert_eq!(fs::read_to_string(&alpha).unwrap(), format!("{original} UNSAVED CHANGES"));
     assert!(!shell.read_with(cx, |s, _| s.panes.iter().any(|p| p.editor == editor)));
@@ -393,7 +393,7 @@ fn tabs_close_in_bulk_from_their_menu(cx: &mut TestAppContext) {
 
     // Close all files with a failed save among them: that tab stays, with its text; the others close.
     open(cx, &note("Alpha"));
-    fs::create_dir(root.join(".Alpha.tmp")).unwrap();
+    crate::platform::vault::refuse_writes(&root.join("Alpha.md"), true);
     cx.simulate_keystrokes("secondary-end");
     cx.simulate_input("non enregistré");
     let editor = shell.read_with(cx, |s, _| s.pane().editor.clone());
@@ -403,7 +403,7 @@ fn tabs_close_in_bulk_from_their_menu(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-n");
     shell.update_in(cx, |s, window, cx| { s.add_pane(Side::Right, window, cx); });
     open(cx, &note("Gamma"));
-    fs::create_dir(root.join(".Gamma.tmp")).unwrap();
+    crate::platform::vault::refuse_writes(&root.join("Gamma.md"), true);
     cx.simulate_keystrokes("secondary-end");
     cx.simulate_input("aussi");
     let gamma = shell.read_with(cx, |s, _| s.pane().editor.clone());
@@ -424,8 +424,8 @@ fn tabs_close_in_bulk_from_their_menu(cx: &mut TestAppContext) {
     assert_eq!(files(&root), before, "closing neither deletes nor adds a file");
 
     // Once it can be saved, closing all leaves a single new empty note, at restart too.
-    fs::remove_dir(root.join(".Alpha.tmp")).unwrap();
-    fs::remove_dir(root.join(".Gamma.tmp")).unwrap();
+    crate::platform::vault::refuse_writes(&root.join("Alpha.md"), false);
+    crate::platform::vault::refuse_writes(&root.join("Gamma.md"), false);
     cx.dispatch_action(CloseAllFiles);
     cx.run_until_parked();
     shell.read_with(cx, |s, cx| {
@@ -490,8 +490,8 @@ fn bulk_close_writes_pending_tables_and_diagrams(cx: &mut TestAppContext) {
         open(cx, path);
     }
     // A shape drawn in the diagram, which cannot be written (it saves as soon as it is drawn).
-    let block = root.join(".Schéma.tmp");
-    fs::create_dir(&block).unwrap();
+    let block = root.join("Schéma.svg");
+    crate::platform::vault::refuse_writes(&block, true);
     open(cx, &drawing);
     let canvas = shell.read_with(cx, |s, _| s.pane().drawing().cloned().unwrap());
     let draw = |cx: &mut gpui::VisualTestContext| {
@@ -520,7 +520,7 @@ fn bulk_close_writes_pending_tables_and_diagrams(cx: &mut TestAppContext) {
     assert_eq!(canvas.read_with(cx, |c, _| c.diagram().shapes.len()), 1);
 
     // Writable again: it is saved, the window is left on an empty note, every file still there.
-    fs::remove_dir(&block).unwrap();
+    crate::platform::vault::refuse_writes(&block, false);
     cx.dispatch_action(CloseAllFiles);
     cx.run_until_parked();
     assert_eq!(Diagram::from_svg(&fs::read_to_string(&drawing).unwrap()).unwrap().shapes.len(), 1);
