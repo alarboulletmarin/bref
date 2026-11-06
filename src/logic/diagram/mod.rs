@@ -31,7 +31,9 @@ pub const FONT: f32 = 14.;
 pub const LINE: f32 = 18.;
 /// Distance between arrows that run side by side between the same two shapes.
 const SPREAD: f32 = 18.;
-/// Height of the header of a swimlane.
+/// Height of the header of a swimlane. `Form::header` returns it for the forms that have one; the two
+/// outlines (`Lane`, `Composite`) draw their rule at this constant directly rather than through
+/// `header()`, because they are already inside the match arm of the form that has it.
 pub const LANE: f32 = 26.;
 /// Width of the header of a horizontal swimlane, where its name is written.
 pub const ROW: f32 = 100.;

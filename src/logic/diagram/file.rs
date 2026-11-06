@@ -328,8 +328,7 @@ mod tests {
         let mut d = Diagram::blank();
         for (i, (form, _)) in Form::ALL.iter().enumerate() {
             let (w, h) = form.default_size();
-            let id = d.add_shape(*form, (i % 8) as f32 * 300., (i / 8) as f32 * 260. - 600., w, h);
-            let s = d.shape_mut(id).unwrap();
+            let s = d.add_shape_mut(*form, (i % 8) as f32 * 300., (i / 8) as f32 * 260. - 600., w, h);
             s.text = format!("{form:?} *it* **b**\n---\n+ x: int");
             (s.color, s.fill, s.dashed) = ((i % 4) as u8, i % 3 == 0, i % 5 == 0);
         }
