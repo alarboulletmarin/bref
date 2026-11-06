@@ -20,10 +20,7 @@ const STRIP: f32 = 40.;
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        // The spacings of the interface are in rems: they follow its scale.
-        window.set_rem_size(t.px(16.));
-        self.settle(window, cx);
-        let (client, framed) = self.sync_window(window);
+        let (client, framed) = self.frame_of(window);
         let pill = self.render_window_controls(window, cx);
 
         let body = div().flex_1().min_h_0().relative();
@@ -231,6 +228,9 @@ impl Shell {
     /// title. Each step is idempotent, so that running it twice, or after nothing happened, changes
     /// nothing.
     pub(super) fn sync_after_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(template) = self.template.take() {
+            self.new_diagram_from(template, window, cx);
+        }
         // The pane holding the focus is the active one; when the code changed it without moving
         // input (a note already open in the other pane), it follows.
         if std::mem::take(&mut self.grab) {
@@ -256,44 +256,134 @@ impl Shell {
             window.set_window_title(&title);
             self.title = title;
         }
-    }
-
-    /// What only the frame knows: the drag in progress (gpui has no event for a drag that ends
-    /// outside the window), and the template a canvas asked for, whose event carries no `Window`.
-    fn settle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(template) = self.template.take() {
-            self.new_diagram_from(template, window, cx);
+        let (client, _) = self.sync_window(window);
+        self.each_shown_pane(|this, pane, group, active| this.settle_pane(pane, group, active, client, window, cx));
+        self.release_drag_aims(cx);
+        if self.vault.is_some() {
+            self.sync_docks(window, cx);
         }
-        #[cfg(test)]
-        let dragging = cx.has_active_drag() || self.keep_aim;
-        #[cfg(not(test))]
-        let dragging = cx.has_active_drag();
-        if !dragging {
-            (self.pane_aim, self.tab_aim, self.tool_aim, self.tool_drag) = (None, None, None, false);
-            // The drag is over (dropped, or out of the window): no more label or line.
-            if self.drop_aim.is_some() {
-                self.aim_drop(None, cx);
+        // The pane layout is saved as soon as it changes.
+        if self.vault.is_some() {
+            let state = self.panes_state();
+            if state != self.panes_saved {
+                self.keep(config::File::Panes, &state, cx);
+                self.panes_saved = state;
             }
         }
     }
 
-    /// The window's decorations and size, handed to what depends on them (the inset, the panel's
-    /// width, the native bar). It needs the frame: `window` only knows them while drawing, and a
-    /// resize or a maximize sends us no event. Returns whether the app draws the frame, and
-    /// whether that frame has its margin (shadow, resize handle).
-    fn sync_window(&mut self, window: &mut Window) -> (bool, bool) {
-        // On Linux the app provides title bar, rounded corners and shadow; on
-        // macOS and Windows, gpui announces `Server` and the system takes care of it.
+    /// `act` for the tab each group shows, as that pane (`in_pane`).
+    fn each_shown_pane(&mut self, mut act: impl FnMut(&mut Self, usize, usize, bool)) {
+        if self.vault.is_none() {
+            return;
+        }
+        let active = self.active;
+        let alone = self.alone();
+        for group in 0..self.groups.len() {
+            if alone.is_some_and(|alone| alone != group) {
+                continue;
+            }
+            let pane = self.groups[group].shown;
+            self.in_pane(pane, |this| act(this, pane, group, pane == active));
+        }
+    }
+
+    /// What the tab shown by `group` keeps for its drawing: its comments and the one under the
+    /// caret, the focus rules of the board and of the list page, what the window around asks of
+    /// the note (`Chrome`), the room the comments column takes.
+    fn settle_pane(&mut self, _pane: usize, group: usize, active: bool, client: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let t = self.theme;
+        let barred = self.groups[group].tabs.len() > 1;
+        let board = self.board_shown(cx);
+        // ponytail: the note is reread at each change (a search for `{==`); keep the
+        // list from one version of the text to the next if very long notes suffer from it.
+        let said: Vec<(String, String, usize, usize, usize, String)> = match self.pane().shows_note() && !board {
+            true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|n| (n.noted.into(), n.said.into(), n.at, n.inside, n.end, n.scope.map_or(String::new(), |s| s.to_string()))).collect(),
+            false => Vec::new(),
+        };
+        // The comment the caret is in (none past the last) is a sheet.
+        let caret = self.pane().editor.read(cx).position();
+        let here = said.iter().position(|n| n.2 <= caret && caret <= n.4);
+        self.pane_mut().here = here;
+        self.pane_mut().said = said;
+        if active && here != self.comments_seen {
+            self.comments_seen = here;
+            if let Some(i) = here {
+                // The title is the column's first child.
+                self.comments_scroll.scroll_to_item(i + 1);
+            }
+        }
+        // A note that is a kanban board hides the note, which must no longer receive keystrokes.
+        if board && self.pane().editor.focus_handle(cx).is_focused(window) {
+            window.focus(self.pane().board.focus());
+        }
+        // The list page closed with input in its filter or one of its cells: nothing
+        // receives it anymore, it goes back to the note.
+        if active && self.pane().listing().is_none() && window.focused(cx).is_none() {
+            window.focus(&self.pane().editor.focus_handle(cx));
+        }
+        if !board {
+            self.pane_mut().board.close_field();
+            // The board left (another note opens), input goes back to the note.
+            if self.pane().board.focus().is_focused(window) {
+                window.focus(&self.pane().editor.focus_handle(cx));
+            }
+        }
+        let boards = kanban::is_board(self.pane().editor.read(cx).text()) && self.pane().shows_note();
+        let talk = !self.pane().said.is_empty();
+        let strip = client && !barred;
+        // A tab bar puts the note below the window buttons: its text no longer steps down for them.
+        let pill = (client && !barred && group == self.corner_group()).then(|| window.viewport_size().width - self.nav.left() - px(8.) - t.px(PILL_W));
+        let chrome = Chrome { corner: 1 + talk as usize + boards as usize, bar_here: active, pill, strip: if strip { t.px(STRIP) } else { px(0.) } };
+        self.pane().editor.update(cx, |e, _| e.set_chrome(chrome));
+        if active {
+            // The comments column takes what the panel and the note leave it, 270 px at
+            // most; short of 140 px, it does not show (its button stays, a wider window brings it back).
+            let panel = if self.nav.panel() == Panel::Split { self.split_width() + nav::DIVIDER } else { px(0.) };
+            let room = (self.nav.total() - t.px(nav::RAIL) - panel - nav::NOTE_MIN).min(px(270.));
+            self.nav.set_aside(if talk && !self.comments_shut && room >= px(140.) { px(270.) } else { px(0.) });
+        }
+    }
+
+    /// The drag is over (dropped, or out of the window): no more label or line, no card in the air.
+    pub(super) fn release_drag_aims(&mut self, cx: &mut Context<Self>) {
+        #[cfg(test)]
+        let dragging = cx.has_active_drag() || self.keep_aim;
+        #[cfg(not(test))]
+        let dragging = cx.has_active_drag();
+        if dragging {
+            return;
+        }
+        (self.pane_aim, self.tab_aim, self.tool_aim, self.tool_drag) = (None, None, None, false);
+        if self.drop_aim.is_some() {
+            self.aim_drop(None, cx);
+        }
+        for pane in &mut self.panes {
+            pane.board.set_drag(None);
+        }
+    }
+
+    /// Whether the app draws the window's frame (title bar, rounded corners, shadow), and whether
+    /// that frame has its margin (shadow, resize handle). On Linux the app provides them; on
+    /// macOS and Windows, gpui announces `Server` and the system takes care of it.
+    fn frame_of(&self, window: &Window) -> (bool, bool) {
         let tiling = match window.window_decorations() {
             Decorations::Client { tiling } => Some(tiling),
             Decorations::Server => None,
         };
         #[cfg(test)]
         let tiling = tiling.or(self.client.then(Default::default));
-        let client = tiling.is_some();
-        let framed = tiling.is_some_and(|t| !t.is_tiled())
-            && !window.is_maximized()
-            && !window.is_fullscreen();
+        let framed = tiling.is_some_and(|t| !t.is_tiled()) && !window.is_maximized() && !window.is_fullscreen();
+        (tiling.is_some(), framed)
+    }
+
+    /// The window's frame and size, handed to what depends on them (the inset, the panel's
+    /// width, the native bar, the scale of the spacings). Run when the window's bounds change
+    /// and after each change of ours. Returns `frame_of`.
+    fn sync_window(&mut self, window: &mut Window) -> (bool, bool) {
+        // The spacings of the interface are in rems: they follow its scale.
+        window.set_rem_size(self.theme.px(16.));
+        let (client, framed) = self.frame_of(window);
         let inset = if framed { SHADOW } else { px(0.) };
         window.set_client_inset(inset);
         let total = window.viewport_size().width - inset * 2. - if self.vault.is_some() { nav::GAP } else { px(0.) };
@@ -554,12 +644,8 @@ impl Shell {
         // Copy of the whole note: a plain floating icon, outside the title bar.
         // Comments of the note, on its right: the commented text, then what is said about it. A
         // click leads to the comment, ready to be edited; the check mark resolves it.
-        // ponytail: the note is reread on every render (a search for `{==`); keep the
-        // list from one version of the text to the next if very long notes suffer from it.
-        let said: Vec<(String, String, usize, usize, usize, String)> = match self.pane().shows_note() && !self.board_shown(cx) {
-            true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|n| (n.noted.into(), n.said.into(), n.at, n.inside, n.end, n.scope.map_or(String::new(), |s| s.to_string()))).collect(),
-            false => Vec::new(),
-        };
+        // Their text, kept by `settle_pane`.
+        let said = self.pane().said.clone();
         // Their button, left of the copy one, opens and closes the panel; the
         // note's word counter leaves room for it.
         let talk = (!said.is_empty()).then(|| {
@@ -597,27 +683,8 @@ impl Shell {
                     cx.notify();
                 }))
         });
-        // A note that is a kanban board: its button switches from the board to the text. The
-        // board hides the note, which must no longer receive keystrokes.
+        // A note that is a kanban board: its button switches from the board to the text.
         let board = self.board_shown(cx);
-        if board && self.pane().editor.focus_handle(cx).is_focused(window) {
-            window.focus(self.pane().board.focus());
-        }
-        if !cx.has_active_drag() {
-            self.pane_mut().board.set_drag(None);
-        }
-        // The list page closed with input in its filter or one of its cells: nothing
-        // receives it anymore, it goes back to the note.
-        if active && self.pane().listing().is_none() && window.focused(cx).is_none() {
-            window.focus(&self.pane().editor.focus_handle(cx));
-        }
-        if !board {
-            self.pane_mut().board.close_field();
-            // The board left (another note opens), input goes back to the note.
-            if self.pane().board.focus().is_focused(window) {
-                window.focus(&self.pane().editor.focus_handle(cx));
-            }
-        }
         let boards = kanban::is_board(self.pane().editor.read(cx).text()) && self.pane().shows_note();
         let flip = boards.then(|| {
             ui::widgets::button("board-toggle", "board.svg", board, t)
@@ -634,34 +701,16 @@ impl Shell {
                 .occlude()
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_board(window, cx)))
         });
-        // Without a tab bar, the top row of the pane is a handle to move the window (Linux): the note's text starts under it.
+        let here = self.pane().here;
         let strip = client && !barred;
-        // A tab bar puts the note below the window buttons: its text no longer steps down for them.
-        let pill = (client && !barred && group == self.corner_group()).then(|| window.viewport_size().width - self.nav.left() - px(8.) - t.px(PILL_W));
-        let chrome = Chrome { corner: 1 + talk.is_some() as usize + boards as usize, bar_here: active, pill, strip: if strip { t.px(STRIP) } else { px(0.) } };
-        self.pane().editor.update(cx, |e, _| e.set_chrome(chrome));
         // The comments column takes what the panel and the note leave it, 270 px at
         // most; short of 140 px, it does not show (its button stays, a wider window brings it back).
         let column = (active && !said.is_empty() && !self.comments_shut)
             .then(|| {
-                self.nav.set_aside(px(270.));
                 let panel = if self.nav.panel() == Panel::Split { self.split_width() + nav::DIVIDER } else { px(0.) };
                 (self.nav.total() - t.px(nav::RAIL) - panel - nav::NOTE_MIN).min(px(270.))
             })
             .filter(|width| *width >= px(140.));
-        if active && column.is_none() {
-            self.nav.set_aside(px(0.));
-        }
-        // The comment the caret is in (none past the last) is a sheet.
-        let caret = self.pane().editor.read(cx).position();
-        let here = said.iter().position(|n| n.2 <= caret && caret <= n.4);
-        if here != self.comments_seen {
-            self.comments_seen = here;
-            if let Some(i) = here {
-                // The title is the column's first child.
-                self.comments_scroll.scroll_to_item(i + 1);
-            }
-        }
         let cards = said.iter().filter(|_| !self.comments_shut).enumerate().map(|(i, (noted, said, at, inside, _, scope))| {
             let (at, inside) = (*at, *inside);
             let group = format!("comment-{i}");

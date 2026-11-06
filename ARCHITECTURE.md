@@ -56,7 +56,7 @@ each, all `impl Shell`:
 | `search.rs`, `templates.rs`, `tables.rs`, `diagrams.rs`, `board.rs`, `drops.rs`, `capture.rs`, `print.rs` | one feature each |
 | `sharing.rs` | the document-aware Share / Export menu, clipboard formats and save-copy dialog; pure text conversion in `logic/sharing.rs`, atomic no-replace copies in `platform/export.rs` |
 | `settings.rs`, `toasts.rs`, `updates.rs` | settings, status messages, new versions |
-| `render.rs` | drawing the window |
+| `render.rs` | drawing the window (a pure function of the state), and `sync_after_change`: what follows from a change (active pane, history, title, comments, window frame, docks) is settled there, from the shell's own `notify`, the panes' focus events and the window's bounds, never while drawing |
 
 A `Pane` is what **one tab** holds (a note, or a file in its place); `Shell::panes` lists every
 tab of the window, shown or not, so what must reach every open note (saving, renames, the watcher,

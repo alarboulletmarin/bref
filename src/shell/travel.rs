@@ -34,8 +34,8 @@ impl Shell {
         self.history.mark(&shown, place);
     }
 
-    /// The only place where history moves forward: at each render, what is shown is compared to
-    /// its current entry. A preview does not count; neither does going back or forward,
+    /// The only place where history moves forward: `sync_after_change` (never a frame) compares
+    /// what is shown to its current entry. A preview does not count; neither does going back or forward,
     /// since the current entry is then already what is shown.
     pub(super) fn track(&mut self, cx: &App) {
         if self.pane().peek {

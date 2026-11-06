@@ -766,8 +766,11 @@ impl Shell {
             .collect()
     }
 
-    /// The rail, then the left dock and its separator if it is open.
-    pub(super) fn render_nav(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    /// What the docks keep for their drawing, settled after a change and not while drawing: the
+    /// tool that holds the keys, what the backlinks and the tree follow, the graph, each tool's
+    /// rows and the scroll that reveals the selected one, the vault search. A tool's view lives in
+    /// `Nav` while it is the active one, hence the `activate` of each in turn (restored at the end).
+    pub(super) fn sync_docks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let t = self.theme;
         // The keys stay with a tool in sight: the active one hidden, the first one shown takes them.
         if !self.docked_now(self.nav.mode())
@@ -775,8 +778,6 @@ impl Shell {
         {
             self.nav.activate(first);
         }
-        let panel = self.nav.panel();
-        let unfolded = self.left_open();
         // A tool or file view is no note: the backlinks stay on the last one.
         if !self.pane().preview && self.pane().tool().is_none() && self.pane().file().is_none() {
             self.nav.set_anchor(self.pane().path.clone());
@@ -791,6 +792,43 @@ impl Shell {
         let selected = self.nav.sel().clone();
         self.graph.update(cx, |graph, _| graph.sync(t, current.as_deref(), selected.as_deref()));
 
+        let active = self.nav.mode();
+        let mut tools = Vec::new();
+        if self.left_open() {
+            tools.extend(self.dock_tools(false));
+        }
+        if self.right_open() && self.right_width() > px(0.) {
+            tools.extend(self.dock_tools(true));
+        }
+        for mode in tools {
+            self.nav.activate(mode);
+            let source = self.rows_source();
+            if source != self.nav.rows_from() {
+                self.nav.set_rows(self.nav_rows());
+                self.nav.set_rows_from(source);
+            }
+            if std::mem::take(&mut self.nav.needs_reveal())
+                && let Some(ix) = self.selected_row()
+            {
+                self.nav.scroll().scroll_to_item(ix, ScrollStrategy::Center);
+            }
+            if mode == Mode::Search {
+                if self.vault_find.is_none() {
+                    self.vault_find = Some(self.new_vault_find(window, cx));
+                }
+                // The notes changed since (saved, renamed, deleted elsewhere): searched again.
+                self.vault_search(cx);
+            }
+        }
+        self.nav.activate(active);
+    }
+
+
+    /// The rail, then the left dock and its separator if it is open.
+    pub(super) fn render_nav(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let t = self.theme;
+        let panel = self.nav.panel();
+        let unfolded = self.left_open();
         let travel = |id: &'static str, icon: &'static str, on: bool| {
             div()
                 .id(id)
@@ -1134,16 +1172,6 @@ impl Shell {
         let (mode, panel) = (self.nav.mode(), self.nav.panel());
         let shut = stacked && self.nav.folded().contains(&mode);
         let keys = |action: &dyn Action| crate::ui::keys::of(cx, action);
-        let source = self.rows_source();
-        if source != self.nav.rows_from() {
-            self.nav.set_rows(self.nav_rows());
-            self.nav.set_rows_from(source);
-        }
-        if std::mem::take(&mut self.nav.needs_reveal())
-            && let Some(ix) = self.selected_row()
-        {
-            self.nav.scroll().scroll_to_item(ix, ScrollStrategy::Center);
-        }
         let full = !right && panel == Panel::Full;
         // Under the window buttons: the top tool of the right dock, or of the left one on the whole window.
         let first = self.dock_tools(right).first() == Some(&mode);

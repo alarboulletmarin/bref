@@ -72,6 +72,10 @@ pub(super) struct Pane {
     /// What is shown now came from browsing (arrows in the tree, graph): the history
     /// ignores it until it is opened for good. See `preview` for the difference.
     pub(super) peek: bool,
+    /// The comments of the note shown (commented text, text, offsets, scope) and the one the
+    /// caret is in, kept by `Shell::settle_pane`.
+    pub(super) said: Vec<(String, String, usize, usize, usize, String)>,
+    pub(super) here: Option<usize>,
     /// Input arriving in the pane (`Shell::focus_moved`); dropped with the pane.
     _focus: gpui::Subscription,
 }
@@ -274,6 +278,8 @@ impl Shell {
     pub(super) fn new_pane(theme: Theme, window: &mut Window, cx: &mut Context<Self>) -> Pane {
         let editor = cx.new(|cx| Editor::new(theme, cx));
         cx.subscribe_in(&editor, window, Self::on_editor_event).detach();
+        // The caret and the text feed what the shell keeps for drawing (comments, counter room).
+        cx.observe_in(&editor, window, |this, _, window, cx| this.sync_after_change(window, cx)).detach();
         let zone = cx.focus_handle();
         let _focus = cx.on_focus_in(&zone, window, |this, window, cx| this.focus_moved(window, cx));
         Pane {
@@ -293,6 +299,8 @@ impl Shell {
             base: String::new(),
             board: kanban::Board::new(cx),
             peek: false,
+            said: Vec::new(),
+            here: None,
         }
     }
 

@@ -226,7 +226,14 @@ impl Shell {
         // there (`sync_after_change`), never while drawing.
         cx.observe_in(&cx.entity(), window, |this, _, window, cx| this.sync_after_change(window, cx)).detach();
         // Nothing holds input anymore (the tab that had it is gone from the screen): it goes back to the active pane.
-        cx.on_focus_lost(window, |this, window, cx| this.sync_after_change(window, cx)).detach();
+        cx.observe_window_bounds(window, |this, window, cx| this.sync_after_change(window, cx)).detach();
+        cx.on_focus_lost(window, |this, window, cx| {
+            this.sync_after_change(window, cx);
+            // The view that held input is released after this callback: a second pass finds its
+            // focus handle gone, and gives input to the note.
+            cx.defer_in(window, |this, window, cx| this.sync_after_change(window, cx));
+        })
+        .detach();
         let shell = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
             shell.update(cx, |this, cx| this.may_close_window(window, cx)).unwrap_or(true)
@@ -327,6 +334,7 @@ impl Shell {
         }
         this.watch(cx);
         this.listen(window, cx);
+        this.sync_after_change(window, cx);
         this.check_updates(cx);
         let weak = cx.weak_entity();
         this.help.key_tap = Some(cx.intercept_keystrokes(move |event, window, cx| {

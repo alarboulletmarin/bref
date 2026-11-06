@@ -114,7 +114,7 @@ impl Shell {
         self.settle_nav(window, cx);
     }
 
-    fn new_vault_find(&mut self, window: &mut Window, cx: &mut Context<Self>) -> VaultFind {
+    pub(super) fn new_vault_find(&mut self, window: &mut Window, cx: &mut Context<Self>) -> VaultFind {
         let theme = self.theme;
         let (query, with) = (cx.new(|cx| Field::new("", theme, cx).scrolling()), cx.new(|cx| Field::new("", theme, cx).scrolling()));
         // Typed: searched again. Enter in the search opens the selected match; in the replacement, replaces in
@@ -396,13 +396,9 @@ impl Shell {
 
     /// The panel in search mode: the search and its settings on top, the count, then the matches note by note.
     pub(super) fn render_vault_find(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
-        if self.vault_find.is_none() {
-            self.vault_find = Some(self.new_vault_find(window, cx));
-        }
-        // The notes changed since (saved, renamed, deleted elsewhere): searched again.
-        self.vault_search(cx);
         let t = self.theme;
-        let find = self.vault_find.as_ref().unwrap();
+        // Created and searched again by `sync_docks`, before the frame.
+        let Some(find) = self.vault_find.as_ref() else { return div().into_any_element() };
         let keys = |action: &dyn gpui::Action| keys::of(cx, action);
         let field = |id: &'static str, field: &Entity<Field>, hint: &'static str| {
             let (on, empty) = (field.focus_handle(cx).is_focused(window), field.read(cx).text().is_empty());
