@@ -361,9 +361,7 @@ pub fn relink(root: Option<&Path>, notes: &mut [Note], old: &str, new: &str) -> 
 pub fn trash(root: &Path, path: &Path) -> io::Result<PathBuf> {
     let bin = root.join(".trash");
     fs::create_dir_all(&bin)?;
-    let free = free_name(&bin, path.file_name().unwrap_or_default(), path.is_dir());
-    fs::rename(path, &free)?;
-    Ok(free)
+    move_to_free(path, &bin)
 }
 
 /// Vault file that keeps the icons: one `icon<tab>path` line per item,
@@ -413,8 +411,27 @@ pub fn trashed(root: &Path) -> Vec<PathBuf> {
 /// Takes `path` out of the trash and puts it back at the vault root (the trash does not keep
 /// where it came from), under its name, numbered if taken: nothing is overwritten.
 pub fn restore(root: &Path, path: &Path) -> io::Result<PathBuf> {
-    let free = free_name(root, path.file_name().unwrap_or_default(), path.is_dir());
-    fs::rename(path, &free)?;
+    move_to_free(path, root)
+}
+
+/// Moves `path` into `dir` under a free name, which is reserved first (`reserve`): two movers never
+/// pick the same name, and nothing is overwritten. The reservation, still empty, is what the rename
+/// replaces; if the move fails it is taken away again.
+fn move_to_free(path: &Path, dir: &Path) -> io::Result<PathBuf> {
+    // A missing source fails here, before a placeholder is created (it could be the very name asked for).
+    let folder = path.symlink_metadata()?.is_dir();
+    let free = reserve(dir, path.file_name().unwrap_or_default(), folder)?;
+    let mut moved = fs::rename(path, &free);
+    if moved.is_err() && folder && cfg!(windows) {
+        // Windows does not rename a folder onto another, even an empty one: step aside (the name could be
+        // taken in this gap, then the rename fails and nothing is lost).
+        let _ = fs::remove_dir(&free);
+        moved = fs::rename(path, &free);
+    }
+    if let Err(e) = moved {
+        let _ = if folder { fs::remove_dir(&free) } else { fs::remove_file(&free) };
+        return Err(e);
+    }
     Ok(free)
 }
 
@@ -476,12 +493,24 @@ fn free_name(dir: &Path, name: &std::ffi::OsStr, folder: bool) -> PathBuf {
     }
 }
 
-/// Copies `from` to `to`: a file is first written under a hidden name then renamed, so an interrupted
-/// copy never leaves a half file. Returns the number of files copied and of items
+/// `free_name`, created empty in the same step (`create_dir` or `create_new`, which fail if the name
+/// exists): a name one asks for is never one somebody else holds.
+fn reserve(dir: &Path, name: &std::ffi::OsStr, folder: bool) -> io::Result<PathBuf> {
+    loop {
+        let free = free_name(dir, name, folder);
+        match if folder { fs::create_dir(&free) } else { fs::File::create_new(&free).map(drop) } {
+            Ok(()) => return Ok(free),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// Copies `from` to `to`, which exists already, empty (see `reserve`): a file is first written under a
+/// hidden name then renamed over it, so an interrupted copy never leaves a half file. Returns the number of files copied and of items
 /// left out (symbolic links, hidden files, things other than files).
 fn copy_into(from: &Path, to: &Path, skipped: &mut usize) -> io::Result<usize> {
     if from.is_dir() {
-        fs::create_dir(to)?;
         let mut entries: Vec<_> = fs::read_dir(from)?.flatten().collect();
         entries.sort_by_key(|e| e.file_name());
         let mut files = 0;
@@ -491,7 +520,11 @@ fn copy_into(from: &Path, to: &Path, skipped: &mut usize) -> io::Result<usize> {
                 *skipped += 1;
                 continue;
             }
-            files += copy_into(&path, &to.join(entry.file_name()), skipped)?;
+            let inside = to.join(entry.file_name());
+            if kind.is_dir() {
+                fs::create_dir(&inside)?;
+            }
+            files += copy_into(&path, &inside, skipped)?;
         }
         return Ok(files);
     }
@@ -518,7 +551,13 @@ pub fn import(sources: &[PathBuf], dir: &Path) -> (Vec<Imported>, Vec<String>) {
             Ok(_) if name.is_empty() || name.to_string_lossy().starts_with('.') => problems.push(format!("{shown} : hidden")),
             Ok(kind) if kind.is_dir() && dir.starts_with(from) => problems.push(format!("{shown} : a folder cannot be copied into itself")),
             Ok(kind) => {
-                let to = free_name(dir, name, kind.is_dir());
+                let to = match reserve(dir, name, kind.is_dir()) {
+                    Ok(to) => to,
+                    Err(e) => {
+                        problems.push(format!("{shown} : {e}"));
+                        continue;
+                    }
+                };
                 let mut skipped = 0;
                 match copy_into(from, &to, &mut skipped) {
                     Ok(files) => {
@@ -528,10 +567,8 @@ pub fn import(sources: &[PathBuf], dir: &Path) -> (Vec<Imported>, Vec<String>) {
                         done.push(Imported { to, dir: kind.is_dir(), files });
                     }
                     Err(e) => {
-                        // A half-copied folder goes entirely: nothing is left behind.
-                        if kind.is_dir() {
-                            let _ = fs::remove_dir_all(&to);
-                        }
+                        // A half-copied folder goes entirely, and the reserved name of a file: nothing is left behind.
+                        let _ = if kind.is_dir() { fs::remove_dir_all(&to) } else { fs::remove_file(&to) };
                         problems.push(format!("{shown} : {e}"));
                     }
                 }
@@ -856,6 +893,47 @@ mod tests {
         assert_eq!(fs::read_to_string(root.join(ICONS)).unwrap(), "idea\tProjets/Idées.md\nrocket\tProjets\n");
         assert_eq!(load_icons(&root), icons);
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn concurrent_trash_and_restore_of_folders_never_share_a_name() {
+        let root = env::temp_dir().join(format!("bref-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        for i in 0..8 {
+            fs::create_dir_all(root.join(format!("p{i}/Dossier"))).unwrap();
+            fs::write(root.join(format!("p{i}/Dossier/n.md")), format!("note {i}")).unwrap();
+        }
+        let trashed: Vec<PathBuf> = (0..8)
+            .map(|i| {
+                let root = root.clone();
+                std::thread::spawn(move || trash(&root, &root.join(format!("p{i}/Dossier"))).unwrap())
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|t| t.join().unwrap())
+            .collect();
+        let mut contents: Vec<String> = trashed.iter().map(|p| fs::read_to_string(p.join("n.md")).unwrap()).collect();
+        contents.sort();
+        assert_eq!(contents, (0..8).map(|i| format!("note {i}")).collect::<Vec<_>>(), "no folder was merged into or replaced by another");
+        assert_eq!(trashed.iter().collect::<HashSet<_>>().len(), 8);
+        // The same going back: eight folders of one name restored at once.
+        let back: Vec<PathBuf> = trashed
+            .into_iter()
+            .map(|p| {
+                let root = root.clone();
+                std::thread::spawn(move || restore(&root, &p).unwrap())
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|t| t.join().unwrap())
+            .collect();
+        assert_eq!(back.iter().collect::<HashSet<_>>().len(), 8);
+        assert!(back.iter().all(|p| p.join("n.md").is_file()));
+        // A failed move leaves no reservation behind.
+        let before = fs::read_dir(&root).unwrap().count();
+        assert!(restore(&root, &root.join("absent")).is_err());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), before);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
