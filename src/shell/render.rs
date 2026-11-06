@@ -137,7 +137,7 @@ impl Render for Shell {
             // The pane layout is saved as soon as it changes.
             let state = self.panes_state();
             if state != self.panes_saved {
-                config::keep(config::File::Panes, &state);
+                self.keep(config::File::Panes, &state, cx);
                 self.panes_saved = state;
             }
             let toasts = self.render_toasts(cx);

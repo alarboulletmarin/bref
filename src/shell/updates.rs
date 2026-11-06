@@ -80,7 +80,7 @@ impl Shell {
     /// Turns the new-version check on or off, and remembers the choice.
     pub(super) fn toggle_updates(&mut self, cx: &mut Context<Self>) {
         self.prefs.updates = !self.prefs.updates;
-        config::keep(config::File::Settings, &self.prefs.to_text());
+        self.keep(config::File::Settings, &self.prefs.to_text(), cx);
         self.update = None;
         self.check_updates(cx);
         cx.notify();

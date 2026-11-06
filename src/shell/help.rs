@@ -171,7 +171,7 @@ impl Shell {
             self.say(Tone::Info, tr("The system may keep these keys for itself.", "Le système garde peut-être ces touches pour lui."), cx);
         }
         self.rebind(cx);
-        config::keep(config::File::Keys, &keys::write(&self.changes));
+        self.keep(config::File::Keys, &keys::write(&self.changes), cx);
     }
 
     /// Restores the original keys of one action, or of all.
@@ -182,7 +182,7 @@ impl Shell {
         }
         self.help.edit = None;
         self.rebind(cx);
-        config::keep(config::File::Keys, &keys::write(&self.changes));
+        self.keep(config::File::Keys, &keys::write(&self.changes), cx);
     }
 
     /// Applies `changes`: the bindings in effect change right away, without restarting.

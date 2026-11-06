@@ -352,7 +352,7 @@ pub fn connect(root: &Path, url: &str) -> Result<(), Fail> {
     let known = std::fs::read_to_string(&ignore).unwrap_or_default();
     if !known.lines().any(|line| line.trim() == ".trash/") {
         let gap = if known.is_empty() || known.ends_with('\n') { "" } else { "\n" };
-        std::fs::write(&ignore, format!("{known}{gap}.trash/\n")).map_err(|e| Fail::Told(e.to_string()))?;
+        crate::platform::vault::write(&ignore, format!("{known}{gap}.trash/\n")).map_err(|e| Fail::Told(e.to_string()))?;
     }
     let verb = if run(root, &["remote"])?.lines().any(|name| name == "origin") { "set-url" } else { "add" };
     run(root, &["remote", verb, "origin", url])?;

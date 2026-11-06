@@ -246,3 +246,15 @@ fn failed_close_in_a_read_only_or_vanished_directory(cx: &mut TestAppContext) {
     assert_eq!(fs::read_to_string(path).unwrap(), "original changé");
     let _ = fs::remove_dir_all(root);
 }
+
+#[gpui::test]
+fn failed_config_save_is_told(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "config-refused");
+    let settings = config::path(config::File::Settings);
+    crate::platform::vault::refuse_writes(&settings, true);
+    shell.update_in(cx, |s, window, cx| s.resize_text(Some(1.0), window, cx));
+    let told = shell.read_with(cx, |s, _| s.toasts.iter().any(|t| t.tone == Tone::Failed && t.text.contains("settings")));
+    crate::platform::vault::refuse_writes(&settings, false);
+    assert!(told);
+    let _ = fs::remove_dir_all(root);
+}
