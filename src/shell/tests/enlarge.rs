@@ -83,7 +83,7 @@ impl Page {
     }
 
     fn viewer(&self, cx: &mut gpui::VisualTestContext) -> Option<(bool, bool, f32, (f32, f32))> {
-        self.shell.read_with(cx, |s, cx| s.pane().figure.as_ref().map(|f| f.read(cx).state()))
+        self.shell.read_with(cx, |s, cx| s.pane().figure().map(|f| f.read(cx).state()))
     }
 
     fn wheel(&self, cx: &mut gpui::VisualTestContext, at: gpui::Point<Pixels>, dy: f32) {
@@ -223,7 +223,7 @@ fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
         page.wheel(cx, at, 60.);
         let (zoom2, pan2) = (page.viewer(cx).unwrap().2, page.viewer(cx).unwrap().3);
         assert!(zoom2 > zoom, "{what}: the wheel zooms in");
-        let origin = page.shell.read_with(cx, |s, cx| s.pane().figure.as_ref().unwrap().read(cx).origin());
+        let origin = page.shell.read_with(cx, |s, cx| s.pane().figure().unwrap().read(cx).origin());
         let m = (500. - f32::from(origin.x), 300. - f32::from(origin.y));
         let under = |zoom: f32, pan: (f32, f32)| ((m.0 - pan.0) / zoom, (m.1 - pan.1) / zoom);
         let (u1, u2) = (under(zoom, pan), under(zoom2, pan2));
@@ -274,7 +274,7 @@ fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
             figure
         });
         page.shell.update(cx, |s, cx| {
-            s.pane_mut().figure = Some(figure);
+            s.pane_mut().set_cover(Cover::Figure(figure));
             cx.notify();
         });
         page.settle(cx);

@@ -70,7 +70,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(shell.read_with(cx, |s, _| s.images.contains(&file)));
     cx.simulate_keystrokes("escape escape");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.pane().file.is_none() && s.pane().drawing().is_none()));
+    assert!(shell.read_with(cx, |s, _| s.pane().file().is_none() && s.pane().drawing().is_none()));
 
     // `![[` offers the vault's images and diagrams; Enter completes the name.
     cx.simulate_keystrokes("secondary-end enter");
@@ -183,7 +183,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(written.lines().any(|l| l == unknown) && edited.shapes.len() == 2 && edited.shapes[1].id == 10);
     cx.simulate_keystrokes("escape escape");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.pane().file.is_none()));
+    assert!(shell.read_with(cx, |s, _| s.pane().file().is_none()));
     fs::remove_file(&newer).unwrap();
     fs::remove_file(&mixed).unwrap();
 
@@ -1045,7 +1045,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
             cx.run_until_parked();
         };
         let ask = |cx: &mut gpui::VisualTestContext| {
-            let figure = shell.read_with(cx, |s, _| s.pane().figure.clone()).unwrap();
+            let figure = shell.read_with(cx, |s, _| s.pane().figure().cloned()).unwrap();
             figure.update(cx, |f, cx| f.edit_on_canvas(cx));
             cx.run_until_parked();
         };
@@ -1055,12 +1055,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         let count = files(&root);
         show(cx, "flowchart LR\nA --> B");
         ask(cx);
-        assert!(shell.read_with(cx, |s, _| s.pane().figure.is_some() && s.pane().drawing().is_none()));
+        assert!(shell.read_with(cx, |s, _| s.pane().figure().is_some() && s.pane().drawing().is_none()));
         assert_eq!(files(&root), count);
         // A sequence diagram, one line of which is not understood.
         show(cx, "sequenceDiagram\nA->>B: hi\nB-->>A: ho\nNote over A,B: x");
         ask(cx);
-        let (path, canvas, figure) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned(), s.pane().drawing().cloned(), s.pane().figure.is_some()));
+        let (path, canvas, figure) = shell.read_with(cx, |s, _| (s.pane().file_path().cloned(), s.pane().drawing().cloned(), s.pane().figure().is_some()));
         let (path, canvas) = (path.unwrap(), canvas.unwrap());
         assert!(!figure, "the diagram takes the figure's place");
         let d = canvas.read_with(cx, |c, _| c.diagram().clone());

@@ -234,13 +234,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(viewer(cx).unwrap().2, fit);
     cx.simulate_keystrokes("secondary-w");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.pane().file.is_none() && s.pane().viewer().is_none() && s.pane().path.as_ref() == Some(&note)));
+    assert!(shell.read_with(cx, |s, _| s.pane().file().is_none() && s.pane().viewer().is_none() && s.pane().path.as_ref() == Some(&note)));
         // A Mermaid block's magnifier shows the diagram large, in place of the note; + and -
         // zoom; Escape returns to the note.
     let button = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view_button("```mermaid")).unwrap();
     cx.simulate_click(button, gpui::Modifiers::none());
     settle(cx);
-    let figure = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().figure.as_ref().map(|f| f.read(cx).state()));
+    let figure = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().figure().map(|f| f.read(cx).state()));
     let (loaded, failed, fit, _) = figure(cx).unwrap();
     assert!(loaded && !failed && fit > 0., "{:?}", figure(cx));
     assert!(text(cx).contains("```mermaid\nflowchart LR"), "the note did not move");
@@ -251,7 +251,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(figure(cx).unwrap().2, fit);
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.pane().figure.is_none()));
+    assert!(shell.read_with(cx, |s, _| s.pane().figure().is_none()));
     shell.update_in(cx, |s, window, cx| {
         s.preview_note(&root.join("cassé.svg"), window, cx);
         s.focus_pane(s.active, window, cx);

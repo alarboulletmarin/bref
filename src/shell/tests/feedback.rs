@@ -251,7 +251,7 @@ fn a_long_list_page_draws_the_rows_in_view(cx: &mut TestAppContext) {
     // place in this frame. Above it, the rows left out are a space (the first child after the titles).
     let drawn = |cx: &mut gpui::VisualTestContext| {
         let (view, first, row) = shell.read_with(cx, |s, _| {
-            let scroll = &s.pane().listing.as_ref().unwrap().scroll;
+            let scroll = &s.pane().listing().unwrap().scroll;
             let first = scroll.bounds_for_item(3).unwrap();
             (scroll.bounds(), first + point(px(0.), scroll.offset().y), s.theme.px(crate::views::nav::ROW))
         });

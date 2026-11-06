@@ -11,7 +11,7 @@ use crate::ui::print::{self, Found};
 impl Shell {
     /// Asks where to save the note of the active tab as PDF, with its unsaved edits, and saves it there.
     pub(super) fn export_pdf(&mut self, cx: &mut Context<Self>) {
-        if self.pane().file.is_some() {
+        if self.pane().file().is_some() {
             self.say(Tone::Info, tr("Only a note can be saved as PDF", "Seule une note s'enregistre en PDF"), cx);
             return;
         }

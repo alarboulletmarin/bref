@@ -42,14 +42,14 @@ impl Shell {
         .detach();
         window.focus(&filter.focus_handle(cx));
         self.pane_mut().peek = false;
-        self.pane_mut().listing = Some(Listing { of, by: 0, back: false, filter, edit: None, scroll: gpui::ScrollHandle::new() });
+        self.pane_mut().set_cover(Cover::Listing(Listing { of, by: 0, back: false, filter, edit: None, scroll: gpui::ScrollHandle::new() }));
         cx.notify();
     }
 
     /// List page: the columns ("Note", then the front-matter keys) and, sorted, the notes of the
     /// folder or tag that the filter keeps, with their cells.
     pub(super) fn listed(&self, cx: &App) -> Option<(Vec<String>, Vec<ListedNote>)> {
-        let Listing { of, by, back, filter, .. } = self.pane().listing.as_ref()?;
+        let Listing { of, by, back, filter, .. } = self.pane().listing()?;
         let tag = tag_of(of);
         let inside: Vec<&Note> = self.notes.iter().filter(|note| tag.map_or_else(|| note.path.starts_with(of), |tag| note.tags.iter().any(|t| t == tag))).collect();
         let bodies: Vec<&str> = inside.iter().map(|note| &*note.body).collect();
@@ -71,7 +71,7 @@ impl Shell {
 
     /// Sorts the list page by this column; asking again reverses the order.
     pub(super) fn sort_listing(&mut self, col: usize, cx: &mut Context<Self>) {
-        if let Some(Listing { by, back, .. }) = &mut self.pane_mut().listing {
+        if let Some(Listing { by, back, .. }) = self.pane_mut().listing_mut() {
             (*back, *by) = (*by == col && !*back, col);
         }
         cx.notify();
@@ -93,7 +93,7 @@ impl Shell {
         })
         .detach();
         window.focus(&field.focus_handle(cx));
-        if let Some(listing) = &mut self.pane_mut().listing {
+        if let Some(listing) = self.pane_mut().listing_mut() {
             listing.edit = Some((path, key, field));
         }
         cx.notify();
@@ -101,7 +101,7 @@ impl Shell {
 
     /// Closes the open cell without writing anything; typing goes back to the filter.
     pub(super) fn list_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(listing) = &mut self.pane_mut().listing
+        if let Some(listing) = self.pane_mut().listing_mut()
             && listing.edit.take().is_some()
         {
             window.focus(&listing.filter.focus_handle(cx));
@@ -111,7 +111,7 @@ impl Shell {
 
     /// Confirms the open cell: its key is rewritten in the note's front matter, and nothing else.
     pub(super) fn list_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((path, key, field)) = self.pane_mut().listing.as_mut().and_then(|listing| listing.edit.clone()) else {
+        let Some((path, key, field)) = self.pane_mut().listing_mut().and_then(|listing| listing.edit.clone()) else {
             return;
         };
         self.list_close(window, cx);
@@ -147,7 +147,7 @@ impl Shell {
     pub(super) fn render_listing(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let (keys, rows) = self.listed(cx).unwrap_or_default();
-        let Some(Listing { of, by, back, filter, edit, scroll }) = self.pane().listing.as_ref() else {
+        let Some(Listing { of, by, back, filter, edit, scroll }) = self.pane().listing() else {
             return div().into_any_element();
         };
         let (by, back, count) = (*by, *back, rows.len());

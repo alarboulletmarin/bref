@@ -127,7 +127,7 @@ fn context_menus_walk_with_the_keys(cx: &mut TestAppContext) {
     cx.simulate_input("afficher le dossier");
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
-    assert!(shell.read_with(cx, |s, _| s.pane().listing.is_some()));
+    assert!(shell.read_with(cx, |s, _| s.pane().listing().is_some()));
 }
 
 /// The kanban board without the mouse: arrows go, Alt+arrows carry, Space ticks, Enter writes, Delete

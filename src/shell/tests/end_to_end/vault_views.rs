@@ -196,7 +196,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::List, Some(PathBuf::from("#classique")), window, cx));
     assert_eq!(listed(cx).unwrap().1, ["Emma"]);
     shell.update(cx, |s, cx| s.open_note(&root.join("Livres/Dune.md"), cx));
-    assert!(shell.read_with(cx, |s, _| s.pane().listing.is_none()) && text(cx).ends_with("# Dune\n"));
+    assert!(shell.read_with(cx, |s, _| s.pane().listing().is_none()) && text(cx).ends_with("# Dune\n"));
     shell.update(cx, |s, cx| s.open_note(&here, cx));
     fs::remove_dir_all(root.join("Livres")).unwrap();
     j.settle(cx);

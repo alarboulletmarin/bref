@@ -6,10 +6,10 @@ use crate::{logic::sharing, platform::export, views::nav::{Menu, Share}};
 impl Shell {
     pub(super) fn share_choices(&self, pane: usize) -> Vec<Share> {
         let Some(pane) = self.panes.get(pane) else { return Vec::new() };
-        if pane.tool.is_some() || pane.listing.is_some() || pane.figure.is_some() {
+        if pane.tool().is_some() || pane.listing().is_some() || pane.figure().is_some() {
             return Vec::new();
         }
-        match pane.file.as_ref().map(|file| &file.kind) {
+        match pane.file().map(|file| &file.kind) {
             None => vec![Share::MarkdownCopy, Share::PlainCopy, Share::MarkdownSave, Share::PlainSave, Share::Pdf],
             Some(FileKind::Drawing(_)) => vec![Share::SvgCopy, Share::SvgSave, Share::Png],
             Some(FileKind::Svg(_)) => vec![Share::SvgCopy, Share::SvgSave],

@@ -35,16 +35,12 @@ pub(super) fn crowded(many: bool, rects: &[layout::Rect], area: Size<Pixels>) ->
 /// What one tab holds: a note and its editor, what is shown in its place (image, diagram,
 /// table, list page), and the note's kanban view.
 pub(super) struct Pane {
-    /// A tool of the side panel shown as this tab (the graph, the calendar) instead of a file.
-    pub(super) tool: Option<Mode>,
+    /// What the tab shows (see `Shown`): read it with `file()`, `listing()`, `figure()`, `tool()`.
+    pub(super) shown: Shown,
     /// Holds the focus as soon as one of the pane's views has it: that is what makes it active. It
     /// holds it itself when the pane only shows an image.
     pub(super) zone: FocusHandle,
     pub(super) editor: Entity<Editor>,
-    /// File shown in place of the note, picked in the tree or the graph (`Shell::set_file`).
-    pub(super) file: Option<FileView>,
-    /// Mermaid diagram of the note, viewed large in its place.
-    pub(super) figure: Option<Entity<viewer::Viewer>>,
     /// File of the open note; `None` as long as a new note is not saved.
     pub(super) path: Option<PathBuf>,
     /// The file name follows the note's title (first line).
@@ -73,11 +69,33 @@ pub(super) struct Pane {
     pub(super) base: String,
     /// The note shown as a kanban board, when it is one.
     pub(super) board: kanban::Board,
-    /// List page shown in place of the note.
-    pub(super) listing: Option<nav::Listing>,
     /// What is shown now came from browsing (arrows in the tree, graph): the history
     /// ignores it until it is opened for good. See `preview` for the difference.
     pub(super) peek: bool,
+}
+
+/// What a tab shows. The layers are real: the note's text stays loaded under a file, and a list
+/// page or a figure lies over either (closing the cover brings back what was under it); a tool
+/// of the side panel (the graph, the calendar) is a tab of its own, which shows nothing else.
+// One per pane, built once and never copied: boxing the page would cost an indirection on every read.
+#[allow(clippy::large_enum_variant)]
+pub(super) enum Shown {
+    Page { base: Base, cover: Option<Cover> },
+    Tool(Mode),
+}
+
+/// What a page shows first: the note, or a file picked in the tree or the graph (`Shell::set_file`) in its place.
+pub(super) enum Base {
+    Note,
+    File(FileView),
+}
+
+/// What lies over the base and takes the input: one at a time.
+pub(super) enum Cover {
+    /// List page of a folder or a tag.
+    Listing(nav::Listing),
+    /// Mermaid diagram, formula or picture of the note, viewed large.
+    Figure(Entity<viewer::Viewer>),
 }
 
 /// A pane of the window: its tabs, left to right (indices in `Shell::panes`), and the one it shows.
@@ -119,6 +137,93 @@ pub(super) enum FileKind {
 }
 
 impl Pane {
+    pub(super) fn tool(&self) -> Option<Mode> {
+        match self.shown {
+            Shown::Tool(mode) => Some(mode),
+            Shown::Page { .. } => None,
+        }
+    }
+
+    /// The file shown in place of the note.
+    pub(super) fn file(&self) -> Option<&FileView> {
+        match &self.shown {
+            Shown::Page { base: Base::File(file), .. } => Some(file),
+            _ => None,
+        }
+    }
+
+    pub(super) fn file_mut(&mut self) -> Option<&mut FileView> {
+        match &mut self.shown {
+            Shown::Page { base: Base::File(file), .. } => Some(file),
+            _ => None,
+        }
+    }
+
+    pub(super) fn listing(&self) -> Option<&nav::Listing> {
+        match &self.shown {
+            Shown::Page { cover: Some(Cover::Listing(listing)), .. } => Some(listing),
+            _ => None,
+        }
+    }
+
+    pub(super) fn listing_mut(&mut self) -> Option<&mut nav::Listing> {
+        match &mut self.shown {
+            Shown::Page { cover: Some(Cover::Listing(listing)), .. } => Some(listing),
+            _ => None,
+        }
+    }
+
+    pub(super) fn figure(&self) -> Option<&Entity<viewer::Viewer>> {
+        match &self.shown {
+            Shown::Page { cover: Some(Cover::Figure(figure)), .. } => Some(figure),
+            _ => None,
+        }
+    }
+
+    /// The tab becomes a tool's (it had nothing else to show).
+    pub(super) fn set_tool(&mut self, mode: Mode) {
+        self.shown = Shown::Tool(mode);
+    }
+
+    /// Shows `file` in place of the note, or the note again (`None`); the cover stays. A tool shows nothing else: no effect.
+    pub(super) fn put_file(&mut self, file: Option<FileView>) {
+        if let Shown::Page { base, .. } = &mut self.shown {
+            *base = file.map_or(Base::Note, Base::File);
+        }
+    }
+
+    /// Puts `cover` over the base, in place of the one there. A tool shows nothing else: no effect.
+    pub(super) fn set_cover(&mut self, new: Cover) {
+        if let Shown::Page { cover, .. } = &mut self.shown {
+            *cover = Some(new);
+        }
+    }
+
+    /// Takes the cover off, whatever it is.
+    pub(super) fn clear_cover(&mut self) {
+        if let Shown::Page { cover, .. } = &mut self.shown {
+            *cover = None;
+        }
+    }
+
+    /// Takes the list page off, if that is the cover (a figure stays).
+    pub(super) fn take_listing(&mut self) -> Option<nav::Listing> {
+        match &mut self.shown {
+            Shown::Page { cover, .. } if matches!(cover, Some(Cover::Listing(_))) => match cover.take() {
+                Some(Cover::Listing(listing)) => Some(listing),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Takes the figure off, if that is the cover (a list page stays).
+    pub(super) fn clear_figure(&mut self) {
+        if self.figure().is_some() {
+            self.clear_cover();
+        }
+    }
+
     /// The displayed document; a file view takes precedence over the note kept underneath.
     /// Note operations and backlinks still use `path`.
     pub(super) fn displayed_path(&self) -> Option<&PathBuf> {
@@ -128,30 +233,35 @@ impl Pane {
     /// The note's own text is what the pane shows: no file and no list page in its place. (A tool or a
     /// figure can still cover it; callers that care test those too.)
     pub(super) fn shows_note(&self) -> bool {
-        self.file.is_none() && self.listing.is_none()
+        match &self.shown {
+            Shown::Page { base, cover } => matches!(base, Base::Note) && !matches!(cover, Some(Cover::Listing(_))),
+            // ponytail: kept as before the enum (a tool has no file or list page, so it "shows the note");
+            // callers that must exclude a tool test `tool()` too.
+            Shown::Tool(_) => true,
+        }
     }
 
     /// Path of the file shown in place of the note.
     pub(super) fn file_path(&self) -> Option<&PathBuf> {
-        self.file.as_ref().map(|file| &file.path)
+        self.file().map(|file| &file.path)
     }
 
     pub(super) fn drawing(&self) -> Option<&Entity<Canvas>> {
-        match &self.file {
+        match self.file() {
             Some(FileView { kind: FileKind::Drawing(canvas), .. }) => Some(canvas),
             _ => None,
         }
     }
 
     pub(super) fn viewer(&self) -> Option<&Entity<viewer::Viewer>> {
-        match &self.file {
+        match self.file() {
             Some(FileView { kind: FileKind::Svg(viewer), .. }) => Some(viewer),
             _ => None,
         }
     }
 
     pub(super) fn sheet(&self) -> Option<&Entity<Sheet>> {
-        match &self.file {
+        match self.file() {
             Some(FileView { kind: FileKind::Sheet(sheet), .. }) => Some(sheet),
             _ => None,
         }
@@ -166,21 +276,18 @@ impl Shell {
         Pane {
             zone: cx.focus_handle(),
             editor,
-            file: None,
-            figure: None,
+            shown: Shown::Page { base: Base::Note, cover: None },
             path: None,
             synced: true,
             h1: None,
             origin: None,
             preview: false,
-            tool: None,
             new_dir: None,
             fresh: false,
             dirty: false,
             canvas_dirty: false,
             base: String::new(),
             board: kanban::Board::new(cx),
-            listing: None,
             peek: false,
         }
     }
@@ -194,11 +301,11 @@ impl Shell {
     pub(super) fn focus_pane(&mut self, pane: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.active = pane.min(self.panes.len() - 1);
         self.show_active(cx);
-        if let Some(figure) = &self.pane().figure {
+        if let Some(figure) = self.pane().figure() {
             window.focus(&figure.focus_handle(cx));
             return cx.notify();
         }
-        match (&self.pane().listing, self.pane().file.as_ref().map(|file| &file.kind)) {
+        match (self.pane().listing(), self.pane().file().map(|file| &file.kind)) {
             (_, Some(FileKind::Sheet(sheet))) => window.focus(&sheet.focus_handle(cx)),
             (Some(listing), _) => window.focus(&listing.filter.focus_handle(cx)),
             (None, Some(FileKind::Drawing(canvas))) => window.focus(&canvas.focus_handle(cx)),
@@ -217,7 +324,7 @@ impl Shell {
     /// Input is somewhere in tab `tab`: its note, its file, its list or its figure.
     pub(super) fn tab_has_focus(&self, tab: usize, window: &Window, cx: &App) -> bool {
         let pane = &self.panes[tab];
-        let file = match pane.file.as_ref().map(|file| &file.kind) {
+        let file = match pane.file().map(|file| &file.kind) {
             Some(FileKind::Sheet(sheet)) => sheet.focus_handle(cx).is_focused(window),
             Some(FileKind::Drawing(canvas)) => canvas.focus_handle(cx).is_focused(window),
             Some(FileKind::Svg(viewer)) => viewer.focus_handle(cx).is_focused(window),
@@ -225,8 +332,8 @@ impl Shell {
         };
         file || pane.zone.is_focused(window)
             || pane.editor.focus_handle(cx).is_focused(window)
-            || pane.figure.as_ref().is_some_and(|figure| figure.focus_handle(cx).is_focused(window))
-            || pane.listing.as_ref().is_some_and(|listing| listing.filter.focus_handle(cx).is_focused(window))
+            || pane.figure().is_some_and(|figure| figure.focus_handle(cx).is_focused(window))
+            || pane.listing().is_some_and(|listing| listing.filter.focus_handle(cx).is_focused(window))
     }
 
     /// The active tab becomes the one its pane shows (code that sets `active` itself, as the
@@ -480,7 +587,7 @@ impl Shell {
     /// what opens next takes its place instead of a tab of its own, and an emptied note's file goes.
     pub(super) fn spare_tab(&self, cx: &App) -> bool {
         let pane = self.pane();
-        pane.tool.is_none() && (pane.preview || (pane.path.is_none() || pane.fresh) && pane.file.is_none() && pane.listing.is_none() && pane.editor.read(cx).text().is_empty())
+        pane.tool().is_none() && (pane.preview || (pane.path.is_none() || pane.fresh) && pane.file().is_none() && pane.listing().is_none() && pane.editor.read(cx).text().is_empty())
     }
 
     /// A tab for what is about to open: the active one if it is spare, otherwise a new one.
@@ -499,7 +606,7 @@ impl Shell {
                 // The note under a picture or a list page comes back to the front.
                 if self.pane().path.as_deref() == Some(path) {
                     self.set_file(None, cx);
-                    self.pane_mut().listing = None;
+                    self.pane_mut().take_listing();
                 }
                 // Coming back to it counts as an opening: the recent notes say so.
                 (self.pane_mut().peek, self.pane_mut().preview) = (false, false);
@@ -513,7 +620,7 @@ impl Shell {
                 self.open_note(path, cx);
                 // Nothing to show (an attachment, opened by the system; an unreadable file): the
                 // new tab goes away.
-                if !spare && self.pane().path.is_none() && self.pane().file.is_none() {
+                if !spare && self.pane().path.is_none() && self.pane().file().is_none() {
                     return self.close_tab(self.active, window, cx);
                 }
             }
@@ -747,7 +854,7 @@ impl Shell {
                     self.add_tab(window, cx);
                 }
                 match tool_of(path) {
-                    Some(tool) => self.pane_mut().tool = Some(tool),
+                    Some(tool) => self.pane_mut().set_tool(tool),
                     None => self.open_note(path, cx),
                 }
                 opened.push(self.active);
@@ -773,7 +880,7 @@ impl Shell {
                 .filter_map(|&tab| {
                     let pane = &self.panes[tab];
                     // A tool's tab is written `@graph`, `@calendar`.
-                    let path = match pane.tool {
+                    let path = match pane.tool() {
                         Some(tool) => format!("@{}", tool.name()),
                         None => pane.displayed_path()?.display().to_string(),
                     };
@@ -814,7 +921,7 @@ impl Shell {
     /// Shows `file` in the active pane in place of its note, or the note again (`None`). A table
     /// that is left keeps its place in the history and is saved first.
     pub(super) fn set_file(&mut self, file: Option<FileView>, cx: &mut Context<Self>) -> bool {
-        let leaving = self.pane().file.as_ref().is_some_and(|old| file.as_ref().is_none_or(|new| new.path != old.path));
+        let leaving = self.pane().file().is_some_and(|old| file.as_ref().is_none_or(|new| new.path != old.path));
         if leaving && self.pane().sheet().is_some() {
             // What `track` would have kept on the next render, while the table still existed.
             if !self.pane().peek {
@@ -832,7 +939,7 @@ impl Shell {
         if file.as_ref().is_some_and(|new| self.pane().file_path() != Some(&new.path)) && !self.pane().peek {
             self.grab = true;
         }
-        self.pane_mut().file = file;
+        self.pane_mut().put_file(file);
         true
     }
 }

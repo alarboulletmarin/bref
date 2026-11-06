@@ -49,7 +49,7 @@ each, all `impl Shell`:
 | `library.rs` | the vault: choosing, scanning, watching, icons, backup, trash |
 | `sync.rs` | git sync and cloning |
 | `sidebar.rs`, `files.rs`, `menu.rs`, `listing.rs` | the side panel, file operations, the context menu, list pages |
-| `docks.rs` | where each view of the panel lives: the left dock, the right dock, or a tab (`Pane::tool`). Each dock stacks its shown views (`Nav::left_shown`, `Nav::right_shown`, `Nav::folded`); each view has its own rows and scroll: the active one is in `Nav`, the others wait in `Nav::parked`, and drawing a section, its rows, or a press in it swaps its view in (`Nav::activate`). A header dragged (`ToolDragged`) lands with `place_tool` |
+| `docks.rs` | where each view of the panel lives: the left dock, the right dock, or a tab (`Shown::Tool`). Each dock stacks its shown views (`Nav::left_shown`, `Nav::right_shown`, `Nav::folded`); each view has its own rows and scroll: the active one is in `Nav`, the others wait in `Nav::parked`, and drawing a section, its rows, or a press in it swaps its view in (`Nav::activate`). A header dragged (`ToolDragged`) lands with `place_tool` |
 | `palette_open.rs` | every way the palette opens: notes, commands, outline, questions |
 | `help.rs`, `keymap.rs` | the help panel; the default shortcuts and their sections |
 | `travel.rs` | back and forward |
@@ -67,6 +67,7 @@ new tab (a preview or an empty tab is used in place); `open_note` loads into the
 is for code that has already chosen it (restoring, the history).
 The active tab is `self.pane()` / `self.pane_mut()`; `each_pane` and `in_pane` reach the others.
 `Pane::shows_note` is the one test for "the note's own text is shown" (no file, no list page in its place).
+`Pane::shown` is one `Shown`: a page (`Base`: the note or a `FileView` in its place, plus an optional `Cover`: a list page or a figure, one at a time, over either) or a `Tool`, which shows nothing else. Read it with `file()`, `listing()`, `figure()`, `tool()`.
 `Pane::displayed_path` identifies its current document, preferring `FileView` over the note kept
 underneath. The tree and graph use it; `Pane::path` stays the note's identity for editing and saving,
 and backlinks keep their own note anchor, separate from the displayed file and tree selection.

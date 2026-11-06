@@ -73,7 +73,7 @@ impl Shell {
         }
         self.nav.open = self.nav.open.iter().map(shift).collect();
         self.each_pane(|this| {
-            if let Some(file) = &mut this.pane_mut().file {
+            if let Some(file) = this.pane_mut().file_mut() {
                 file.path = shift(&file.path);
                 if let super::FileKind::Sheet(sheet) = &file.kind {
                     let moved = file.path.clone();

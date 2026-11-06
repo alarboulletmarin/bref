@@ -56,7 +56,7 @@ impl Shell {
     /// List of places in the note (label, byte), the one we are at preselected; with
     /// none, `none` says so.
     pub(super) fn open_places(&mut self, title: &str, none: &str, heads: Vec<(String, usize)>, window: &mut Window, cx: &mut Context<Self>) {
-        if self.vault.is_none() || self.pane().file.is_some() {
+        if self.vault.is_none() || self.pane().file().is_some() {
             return;
         }
         let before = self.pane().editor.read(cx).position();

@@ -34,12 +34,12 @@ impl Shell {
     /// What a tab is called: its file, its list page, or a new note's first line.
     pub(super) fn tab_name(&self, tab: usize, cx: &App) -> String {
         let pane = &self.panes[tab];
-        match pane.tool {
+        match pane.tool() {
             Some(Mode::Graph) => return tr("Graph", "Graphe").to_string(),
             Some(_) => return tr("Calendar", "Calendrier").to_string(),
             None => {}
         }
-        if let Some(listing) = &pane.listing {
+        if let Some(listing) = pane.listing() {
             return match nav::tag_of(&listing.of) {
                 Some(tag) => format!("#{tag}"),
                 None => vault::stem(&listing.of),

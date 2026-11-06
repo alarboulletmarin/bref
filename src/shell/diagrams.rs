@@ -149,7 +149,7 @@ impl Shell {
         })
         .detach();
         window.focus(&figure.focus_handle(cx));
-        self.pane_mut().figure = Some(figure);
+        self.pane_mut().set_cover(Cover::Figure(figure));
         cx.notify();
     }
 
@@ -159,7 +159,7 @@ impl Shell {
         let (Some(made), Some(dir)) = (logic::mermaid::to_diagram(source), self.diagram_dir().filter(|_| self.vault.is_some())) else { return };
         let name = self.pane().path.as_deref().map(vault::stem).unwrap_or_default();
         let name = if name.is_empty() { tr("Diagram", "Schéma").to_string() } else { format!("{name} - {}", tr("diagram", "schéma")) };
-        self.pane_mut().figure = None;
+        self.pane_mut().clear_figure();
         self.add_diagram(&dir, &name, made.diagram, window, cx);
         if made.skipped > 0 {
             let lines = format!("{} {}", made.skipped, if made.skipped == 1 { tr("line was not understood", "ligne n'a pas été comprise") } else { tr("lines were not understood", "lignes n'ont pas été comprises") });

@@ -431,7 +431,7 @@ fn tabs_close_in_bulk_from_their_menu(cx: &mut TestAppContext) {
     cx.run_until_parked();
     shell.read_with(cx, |s, cx| {
         assert_eq!((s.panes.len(), s.groups.len()), (1, 1));
-        assert!(s.pane().path.is_none() && s.pane().file.is_none() && s.pane().tool.is_none());
+        assert!(s.pane().path.is_none() && s.pane().file().is_none() && s.pane().tool().is_none());
         assert!(s.pane().editor.read(cx).text().is_empty());
     });
     assert!(fs::read_to_string(note("Alpha")).unwrap().ends_with("non enregistré"));
@@ -527,13 +527,13 @@ fn bulk_close_writes_pending_tables_and_diagrams(cx: &mut TestAppContext) {
     assert_eq!(Diagram::from_svg(&fs::read_to_string(&drawing).unwrap()).unwrap().shapes.len(), 1);
     shell.read_with(cx, |s, cx| {
         assert_eq!(s.panes.len(), 1);
-        assert!(s.pane().path.is_none() && s.pane().file.is_none() && s.pane().editor.read(cx).text().is_empty());
+        assert!(s.pane().path.is_none() && s.pane().file().is_none() && s.pane().editor.read(cx).text().is_empty());
     });
     assert!(anchor.is_file() && image.is_file() && csv.is_file() && drawing.is_file());
     // They come back the last closed first, the picture too; the first one takes the empty note's place.
     cx.simulate_keystrokes("secondary-alt-t secondary-alt-t secondary-alt-t");
     cx.run_until_parked();
     assert_eq!(shell.read_with(cx, |s, cx| s.tab_labels(0, cx)), vec!["Schéma", "Données", "Photo"]);
-    assert!(shell.read_with(cx, |s, _| matches!(s.pane().file.as_ref().map(|f| &f.kind), Some(FileKind::Image))));
+    assert!(shell.read_with(cx, |s, _| matches!(s.pane().file().map(|f| &f.kind), Some(FileKind::Image))));
     let _ = fs::remove_dir_all(&root);
 }

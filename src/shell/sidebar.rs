@@ -363,7 +363,7 @@ impl Shell {
         // of the note, and the panel keeps control.
         match self.shown_sheet() {
             Some(sheet) => window.focus(&sheet.focus_handle(cx)),
-            None if self.pane().file.is_none() => window.focus(&self.pane().editor.focus_handle(cx)),
+            None if self.pane().file().is_none() => window.focus(&self.pane().editor.focus_handle(cx)),
             None => {}
         }
         self.settle_nav(window, cx);
@@ -809,7 +809,7 @@ impl Shell {
         let panel = self.nav.panel;
         let unfolded = self.left_open();
         // A tool or file view is no note: the backlinks stay on the last one.
-        if !self.pane().preview && self.pane().tool.is_none() && self.pane().file.is_none() {
+        if !self.pane().preview && self.pane().tool().is_none() && self.pane().file().is_none() {
             self.nav.anchor = self.pane().path.clone();
         }
         let current = self.pane().displayed_path().cloned();

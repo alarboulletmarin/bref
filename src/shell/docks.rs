@@ -33,7 +33,7 @@ impl Render for ToolDragged {
 impl Shell {
     /// The tab that shows the tool, if it is open as one.
     pub(super) fn tool_tab(&self, mode: Mode) -> Option<usize> {
-        self.panes.iter().position(|pane| pane.tool == Some(mode))
+        self.panes.iter().position(|pane| pane.tool() == Some(mode))
     }
 
     /// The tools drawn in the left dock (or the right one), top to bottom: those shown there that
@@ -224,7 +224,7 @@ impl Shell {
         let mode = Some(self.nav.mode).filter(|m| m.tabs()).unwrap_or(Mode::Graph);
         if self.tool_tab(mode).is_none() {
             self.fresh_tab(window, cx);
-            self.pane_mut().tool = Some(mode);
+            self.pane_mut().set_tool(mode);
             self.refresh_graph(cx);
         }
         let tab = self.tool_tab(mode).unwrap_or(self.active);

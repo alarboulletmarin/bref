@@ -703,7 +703,7 @@ impl Shell {
         }
         // The list page closed with input in its filter or one of its cells: nothing
         // receives it anymore, it goes back to the note.
-        if active && self.pane().listing.is_none() && window.focused(cx).is_none() {
+        if active && self.pane().listing().is_none() && window.focused(cx).is_none() {
             window.focus(&self.pane().editor.focus_handle(cx));
         }
         if !board {
@@ -843,7 +843,7 @@ impl Shell {
             .tooltip(ui::widgets::tip(tr("Share / Export", "Partager / Exporter"), keys::of(cx, &ShareDocument), t))
             .absolute()
             // In an exceptionally narrow note, keep the centered formatting toggle reachable.
-            .map(|d| if self.pane().file.is_none() && self.pane().editor.read(cx).crowded_footer() {
+            .map(|d| if self.pane().file().is_none() && self.pane().editor.read(cx).crowded_footer() {
                 d.top(t.px(52.))
             } else { d.bottom_4() })
             .right_4()
@@ -856,26 +856,25 @@ impl Shell {
             if !self.set_file(None, cx) {
                 self.focus_pane(self.active, window, cx);
             }
-            self.pane_mut().listing = None;
-            self.pane_mut().figure = None;
-        }
+            self.pane_mut().clear_cover();
+                    }
         let note = div().flex_1().min_w_0().h_full().relative();
-        let listing = self.pane().listing.is_some().then(|| self.render_listing(cx));
-        let file = self.pane().file.as_ref().map(|file| (file.path.clone(), file.kind.clone()));
+        let listing = self.pane().listing().is_some().then(|| self.render_listing(cx));
+        let file = self.pane().file().map(|file| (file.path.clone(), file.kind.clone()));
         // A tool of the panel as this tab: it holds the input itself, never the hidden note under it.
-        let tool = self.pane().tool;
+        let tool = self.pane().tool();
         if tool.is_some() && self.pane().editor.focus_handle(cx).is_focused(window) {
             window.focus(&self.pane().zone);
         }
         // The views whose top room is empty: the strip can lie over it.
-        let free_top = tool.is_none() && self.pane().figure.is_none() && (listing.is_some() || board || matches!(file, None | Some((_, FileKind::Image))));
+        let free_top = tool.is_none() && self.pane().figure().is_none() && (listing.is_some() || board || matches!(file, None | Some((_, FileKind::Image))));
         let note = match file {
             _ if let Some(tool) = tool => note.flex().flex_col().child(match tool {
                 nav::Mode::Graph => div().flex_1().min_h_0().child(self.graph.clone()).into_any_element(),
                 _ => div().flex_1().min_h_0().pt(t.px(12.)).child(self.render_calendar(cx)).into_any_element(),
             }),
             _ if listing.is_some() => note.children(listing),
-            _ if let Some(figure) = self.pane().figure.clone() => {
+            _ if let Some(figure) = self.pane().figure().cloned() => {
                 figure.update(cx, |figure, _| figure.sync(t));
                 note.child(figure)
             }
@@ -909,7 +908,7 @@ impl Shell {
                 note.child(self.pane().editor.clone()).children(empty).children(talk).children(flip)
             }
         };
-        let note = note.when(!self.share_choices(pane).is_empty() && matches!(self.pane().file.as_ref().map(|f| &f.kind), None | Some(FileKind::Image)), |d| d.child(copy));
+        let note = note.when(!self.share_choices(pane).is_empty() && matches!(self.pane().file().map(|f| &f.kind), None | Some(FileKind::Image)), |d| d.child(copy));
         // While a tab or a file from the tree is dragged, the area that would receive it is tinted:
         // the whole pane, or the half a new pane would take.
         let tint = self.pane_aim.filter(|(over, _)| *over == group).map(|(_, zone)| {
