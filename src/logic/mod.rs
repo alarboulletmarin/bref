@@ -24,6 +24,7 @@ pub mod prefs;
 pub mod recall;
 pub mod relation;
 pub mod richtext;
+pub mod rows;
 pub mod state;
 pub mod sharing;
 pub mod table;
