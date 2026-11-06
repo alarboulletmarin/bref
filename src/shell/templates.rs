@@ -98,6 +98,9 @@ impl Shell {
 
     /// The template, filled with the open note's name, in place of the cursor.
     pub(super) fn insert_template(&mut self, template: &Path, cx: &mut Context<Self>) {
+        if !self.pane().shows_note() {
+            return;
+        }
         let text = match fs::read_to_string(template) {
             Ok(text) => text,
             Err(e) => return self.say(Tone::Failed, format!("{} : {}", tr("Template not read", "Modèle illisible"), crate::lang::io_reason(&e)), cx),

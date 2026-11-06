@@ -132,3 +132,18 @@ fn drops_journey(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, _| s.drop_aim.is_none()));
 }
+
+/// A tool tab (graph, tags…) shows a panel, not the note under it: a drop has no aim there.
+#[gpui::test]
+fn a_tool_tab_ignores_drops(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "drop-tool");
+    fs::write(root.join("Carnet.md"), "# Carnet\n\npremier\n").unwrap();
+    shell.update_in(cx, |s, window, cx| s.open(&root.join("Carnet.md"), window, cx));
+    cx.run_until_parked();
+    let at = gpui::point(gpui::px(200.), gpui::px(200.));
+    assert!(shell.read_with(cx, |s, cx| s.note_aim(0, at, 1, cx)).is_some(), "a note takes drops");
+    shell.update(cx, |s, _| s.pane_mut().set_tool(Mode::Graph));
+    assert!(shell.read_with(cx, |s, cx| s.note_aim(0, at, 1, cx)).is_none(), "a tool tab ignores them");
+    // Back to the note: the window saves its tabs when it goes, and must not hand a tool tab to the next test.
+    shell.update_in(cx, |s, window, cx| s.open(&root.join("Carnet.md"), window, cx));
+}

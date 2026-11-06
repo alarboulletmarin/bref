@@ -230,14 +230,13 @@ impl Pane {
         self.file_path().or(self.path.as_ref())
     }
 
-    /// The note's own text is what the pane shows: no file and no list page in its place. (A tool or a
-    /// figure can still cover it; callers that care test those too.)
+    /// The note's own text is what the pane shows: no file, no tool and no list page in its place. (A
+    /// figure can still cover it; callers that care test it too.)
     pub(super) fn shows_note(&self) -> bool {
         match &self.shown {
             Shown::Page { base, cover } => matches!(base, Base::Note) && !matches!(cover, Some(Cover::Listing(_))),
-            // ponytail: kept as before the enum (a tool has no file or list page, so it "shows the note");
-            // callers that must exclude a tool test `tool()` too.
-            Shown::Tool(_) => true,
+            // A tool tab shows its panel, not the note: drops, templates and the note's lists leave it alone.
+            Shown::Tool(_) => false,
         }
     }
 

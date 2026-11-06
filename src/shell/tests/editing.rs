@@ -751,3 +751,22 @@ fn formatting_journey(cx: &mut TestAppContext) {
     assert_eq!(Prefs::parse(&Prefs::parse("bar=off").to_text()).bar, "off");
     assert!(!Prefs::parse("").to_text().contains("bar="));
 }
+
+/// A tool tab does not take a template into the note hidden under it.
+#[gpui::test]
+fn a_tool_tab_ignores_template_inserts(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "tpl-tool");
+    fs::write(root.join("Carnet.md"), "# Carnet\n").unwrap();
+    fs::write(root.join("Modele.md"), "ajout").unwrap();
+    shell.update_in(cx, |s, window, cx| s.open(&root.join("Carnet.md"), window, cx));
+    cx.run_until_parked();
+    let text = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string());
+    shell.update(cx, |s, cx| s.insert_template(&root.join("Modele.md"), cx));
+    assert!(text(cx).contains("ajout"), "a note takes the template");
+    let before = text(cx);
+    shell.update(cx, |s, _| s.pane_mut().set_tool(Mode::Graph));
+    shell.update(cx, |s, cx| s.insert_template(&root.join("Modele.md"), cx));
+    assert_eq!(text(cx), before, "a tool tab ignores it");
+    // Back to the note: the window saves its tabs when it goes, and must not hand a tool tab to the next test.
+    shell.update_in(cx, |s, window, cx| s.open(&root.join("Carnet.md"), window, cx));
+}
