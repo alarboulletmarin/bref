@@ -337,6 +337,8 @@ fn mermaid_blocks(text: &str) -> Vec<String> {
     let mut blocks = Vec::new();
     let mut current = String::new();
     let mut open = false;
+    // Same pairing as `markdown::walk`: a mermaid fence never closed is pushed nowhere, so it opens
+    // nothing. Kept as a loop of its own because it needs the text of the block, not the place of lines.
     for line in text.lines() {
         if crate::logic::markdown::is_fence(line) {
             if open {

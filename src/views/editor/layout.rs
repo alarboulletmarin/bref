@@ -797,7 +797,8 @@ impl Editor {
                     && grid::geometry(&mut grid::Cache::default(), &text_system, &look, room, &lines).same(geom)
             })
         });
-        // A ``` without a closing fence opens no block: otherwise each ``` typed would
+        // The same pairing as `markdown::walk`, with one more thing it cannot know: the fence being
+        // typed (`orphan`) is left out of the count. A ``` without a closing fence opens no block: otherwise each ``` typed would
         // switch the whole rest of the note to code, hence restyle it. If
         // there is one too many, it is the one being typed (the cursor is on the line of the
         // last change), otherwise the last: a cursor merely resting on a fence of a closed

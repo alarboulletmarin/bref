@@ -198,6 +198,15 @@ const BROKEN: Pixels = px(20.);
 // not followed; allow the link's target if someone needs it.
 /// The picture file written `path` in a note: in the note's folder, at the vault root (the last of
 /// `dirs`), then by its name anywhere in the vault (`images`); never outside the vault.
+/// Whether the line starting at `line_start` is inside a code block, or is the one that closes it
+/// (the state *before* the line, which is why it differs from `markdown::walk` on a closing fence:
+/// `walk` marks fences themselves as not code). On every other line the two agree, and a ``` without a
+/// closing fence opens no block for either (`editor_and_walk_agree_on_fences`). Pairing is
+/// done by parity, without walking the text: the editor asks it for one line at a time.
+fn in_code_at(content: &str, line_start: usize) -> bool {
+    content[..line_start].lines().filter(|l| md::is_fence(l)).count() % 2 == 1 && content[line_start..].lines().any(md::is_fence)
+}
+
 /// Test: set by the hand-run benchmarks, which measure the reuse instead of checking it.
 #[cfg(test)]
 pub static MEASURING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -737,10 +746,9 @@ impl Editor {
         self.content[..at].lines().filter(|l| md::is_fence(l)).count()
     }
 
-    /// A ``` without a closing fence does not open a block, as in `layout`.
+    /// Whether the line starting at `line_start` is inside a code block, or is the one that closes it.
     fn in_code(&self, line_start: usize) -> bool {
-        self.fences_before(line_start) % 2 == 1
-            && self.content[line_start..].lines().any(md::is_fence)
+        in_code_at(&self.content, line_start)
     }
 
     // ----- Search in the note -----
@@ -825,4 +833,38 @@ mod tests {
         assert_eq!(table_lead(Wide::Column, px(952.), text), px(0.));
     }
 
+}
+
+#[cfg(test)]
+mod fence_tests {
+    use super::*;
+
+    /// The editor's idea of "inside a code block" and `markdown::walk`'s agree, whatever the fences:
+    /// closed blocks, a stray ``` at the end or in the middle, empty blocks, fences with a language.
+    #[test]
+    fn editor_and_walk_agree_on_fences() {
+        let layouts = [
+            "a\n```\nb\n```\nc",
+            "a\n```\nb",
+            "```\nb\n```\n```\nc",
+            "```\na\n```\n```\nb\n```\n```\nc\nd",
+            "```\n```\ntext\n```",
+            "x\n```rust\nfn a() {}\n```\ny\n```mermaid\ngraph TD\n",
+            "```",
+            "",
+            "t\n\n```\n\n```\n\nu\n",
+            "```\na\n```\n```\n```\nb",
+        ];
+        for text in layouts {
+            let mut inside_before = false;
+            for line in md::walk(text) {
+                if !line.fence {
+                    assert_eq!(in_code_at(text, line.at), line.code, "{text:?}, line at {}", line.at);
+                } else if inside_before {
+                    assert!(in_code_at(text, line.at), "closing fence of {text:?} at {}", line.at);
+                }
+                inside_before = line.code;
+            }
+        }
+    }
 }

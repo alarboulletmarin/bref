@@ -45,7 +45,9 @@ fn extent(text: &str, lines: &[(usize, usize)], i: usize) -> usize {
     let at = |k: usize| &text[lines[k].0..lines[k].1];
     let last = lines.len() - 1;
     let line = at(i);
-    // A block opened and never closed runs to the end of the note.
+    // A block opened and never closed runs to the end of the note. This is not `markdown::walk`'s rule
+    // (a stray ``` opens nothing there): the block handle starts on a fence line and must grab
+    // whatever follows it, so that dragging or deleting the block never leaves half of one behind.
     if md::is_fence(line) {
         return (i + 1..=last).find(|&k| md::is_fence(at(k))).unwrap_or(last);
     }

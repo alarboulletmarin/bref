@@ -137,6 +137,8 @@ impl Editor {
         while at <= sel.end {
             let lr = self.line_range(at);
             let line = &self.content[lr.clone()];
+            // The pairing of `markdown::walk` (a ``` opens a block only if another follows), kept inline
+            // because the walk starts at the selection, not at the top of the note.
             if md::is_fence(line) {
                 code = !code && self.content[lr.end..].lines().any(md::is_fence);
             } else if !code && self.is_table_line(&lr) {
