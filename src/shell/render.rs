@@ -3,6 +3,14 @@
 use crate::platform::config;
 use super::*;
 
+/// Registers several actions on an element, each with its own body (`this`, `window` and `cx`
+/// are the names given in the header): `on_action` is typed per action, so a loop cannot do it.
+macro_rules! on_actions {
+    ($d:expr, $cx:expr, |$this:ident, $window:ident, $c:ident| $($action:ty => $body:expr),* $(,)?) => {
+        $d$(.on_action($cx.listener(|$this, _: &$action, $window, $c| $body)))*
+    };
+}
+
 /// The number in the comments badge: "9+" beyond nine, so that it stays round.
 pub(super) fn badge_label(count: usize) -> String {
     if count > 9 { "9+".into() } else { count.to_string() }
@@ -189,26 +197,27 @@ impl Render for Shell {
                     cx.notify();
                 }
             }))
-            .on_action(cx.listener(|this, _: &nav::ShowTree, window, cx| {
-                this.show_nav(Mode::Tree, false, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &nav::ShowRecent, window, cx| {
-                this.show_nav(Mode::Recent, false, window, cx)
-            }))
             .on_action(cx.listener(|this, _: &nav::NewFolder, window, cx| this.new_folder(window, cx)))
-            .on_action(cx.listener(|this, _: &nav::ShowGraph, window, cx| {
-                this.show_nav(Mode::Graph, false, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &nav::ShowTags, window, cx| {
-                this.show_nav(Mode::Tags, false, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &nav::ShowCalendar, window, cx| {
-                this.show_nav(Mode::Calendar, false, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &nav::ShowLinks, window, cx| {
-                this.show_nav(Mode::Links, false, window, cx)
-            }))
             .on_action(cx.listener(|this, _: &nav::ToggleFull, window, cx| this.toggle_full(window, cx)))
+            // The same gesture for several actions: one line each.
+            .map(|d| {
+                on_actions!(d, cx, |this, window, cx|
+                    nav::ShowTree => this.show_nav(Mode::Tree, false, window, cx),
+                    nav::ShowRecent => this.show_nav(Mode::Recent, false, window, cx),
+                    nav::ShowGraph => this.show_nav(Mode::Graph, false, window, cx),
+                    nav::ShowTags => this.show_nav(Mode::Tags, false, window, cx),
+                    nav::ShowCalendar => this.show_nav(Mode::Calendar, false, window, cx),
+                    nav::ShowLinks => this.show_nav(Mode::Links, false, window, cx),
+                    PaneLeft => this.focus_side(Side::Left, window, cx),
+                    PaneRight => this.focus_side(Side::Right, window, cx),
+                    PaneUp => this.focus_side(Side::Up, window, cx),
+                    PaneDown => this.focus_side(Side::Down, window, cx),
+                    TabToLeft => this.tab_to_side(Side::Left, window, cx),
+                    TabToRight => this.tab_to_side(Side::Right, window, cx),
+                    TabToUp => this.tab_to_side(Side::Up, window, cx),
+                    TabToDown => this.tab_to_side(Side::Down, window, cx),
+                )
+            })
             // Panel separator: it follows the pointer as long as the button is held.
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
                 // A border between panes, likewise.
@@ -269,14 +278,6 @@ impl Render for Shell {
                     this.focus_group(second, window, cx)
                 }
             }))
-            .on_action(cx.listener(|this, _: &PaneLeft, window, cx| this.focus_side(Side::Left, window, cx)))
-            .on_action(cx.listener(|this, _: &PaneRight, window, cx| this.focus_side(Side::Right, window, cx)))
-            .on_action(cx.listener(|this, _: &PaneUp, window, cx| this.focus_side(Side::Up, window, cx)))
-            .on_action(cx.listener(|this, _: &PaneDown, window, cx| this.focus_side(Side::Down, window, cx)))
-            .on_action(cx.listener(|this, _: &TabToLeft, window, cx| this.tab_to_side(Side::Left, window, cx)))
-            .on_action(cx.listener(|this, _: &TabToRight, window, cx| this.tab_to_side(Side::Right, window, cx)))
-            .on_action(cx.listener(|this, _: &TabToUp, window, cx| this.tab_to_side(Side::Up, window, cx)))
-            .on_action(cx.listener(|this, _: &TabToDown, window, cx| this.tab_to_side(Side::Down, window, cx)))
             .on_action(cx.listener(|this, _: &MoveTool, window, cx| this.move_tool(window, cx)))
             .on_action(cx.listener(|this, _: &ToolAsTab, window, cx| this.tool_as_tab(window, cx)))
             .on_action(cx.listener(|this, _: &EvenPanes, _, cx| {
