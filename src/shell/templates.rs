@@ -84,7 +84,7 @@ impl Shell {
             }
         };
         let path = dir.join(format!("{name}.md"));
-        if path.exists() {
+        if vault::name_taken(&dir, &format!("{name}.md")).is_some() {
             self.say(Tone::Failed, format!("{} « {name} »", tr("A note already has the name", "Une note porte déjà le nom")), cx);
             return None;
         }
@@ -124,7 +124,7 @@ impl Shell {
             let Some(root) = this.vault.clone() else { return };
             let dir = vault::template_dir(&root, &this.dirs).unwrap_or_else(|| root.join("Templates"));
             let path = dir.join(format!("{name}.md"));
-            if path.exists() {
+            if vault::name_taken(&dir, &format!("{name}.md")).is_some() {
                 return this.say(Tone::Failed, format!("{} « {name} »", tr("A template already has the name", "Un modèle porte déjà le nom")), cx);
             }
             match fs::create_dir_all(&dir).and_then(|()| vault::write(&path, &text)) {

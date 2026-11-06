@@ -159,7 +159,7 @@ impl Shell {
     /// Clones the repository into a new folder of `parent`, which becomes the open vault.
     pub(super) fn clone_to(&mut self, url: String, parent: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         let into = parent.join(git::folder_of(&url));
-        if into.exists() {
+        if vault::name_taken(&parent, &git::folder_of(&url)).is_some() {
             let taken = tr("Not cloned: this folder already exists:", "Clonage impossible : ce dossier existe déjà :");
             return self.say(Tone::Failed, format!("{taken} {}", into.display()), cx);
         }

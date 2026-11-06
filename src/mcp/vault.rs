@@ -244,12 +244,9 @@ pub fn read_text(path: &Path) -> Result<(String, String), String> {
     Ok((text, rev))
 }
 
-/// A file of this name, ignoring case, already in `dir`.
+/// A file `name.extension` (ignoring case) already in `dir`.
 pub fn name_taken(dir: &Path, name: &str, extension: &str) -> Option<PathBuf> {
-    let want = name.to_lowercase();
-    fs::read_dir(dir).ok()?.flatten().map(|entry| entry.path()).find(|path| {
-        path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case(extension)) && vault::stem(path).to_lowercase() == want
-    })
+    vault::name_taken(dir, &format!("{name}.{extension}"))
 }
 
 fn disk_kind(kind: io::ErrorKind) -> String {

@@ -559,7 +559,7 @@ impl Shell {
             Some(path) => self.open(&path, window, cx),
             None => {
                 self.fresh_tab(window, cx);
-                self.new_note(format!("# {name}\n\n"), cx);
+                self.new_note(vault::new_note_text(&name), cx);
                 window.focus(&self.pane().editor.focus_handle(cx));
             }
         }

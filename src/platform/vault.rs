@@ -225,13 +225,37 @@ pub fn clean_name(name: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_string())
 }
 
-/// Moves or renames, never overwriting what already has that name.
+/// The entry of `dir` called `file` (a file name), ignoring case: the file systems of Windows and
+/// macOS do, so a name that differs only by case is taken there, and would be a trap elsewhere.
+pub fn name_taken(dir: &Path, file: &str) -> Option<PathBuf> {
+    let want = file.to_lowercase();
+    fs::read_dir(dir).ok()?.flatten().find(|entry| entry.file_name().to_string_lossy().to_lowercase() == want).map(|entry| entry.path())
+}
+
+/// `to` is the name of something that is not `from` (only the case of its own name may change).
+pub fn taken_by_other(from: &Path, to: &Path) -> bool {
+    let taken = to.parent().zip(to.file_name()).and_then(|(dir, file)| name_taken(dir, &file.to_string_lossy()));
+    taken.is_some_and(|other| other != from)
+}
+
+/// Moves or renames, never overwriting what already has that name. Only the case of
 pub fn rename(from: &Path, to: &Path) -> io::Result<()> {
-    if to.exists() {
+    if taken_by_other(from, to) {
         let taken = tr("this name is already taken", "ce nom est déjà pris");
         return Err(io::Error::new(io::ErrorKind::AlreadyExists, taken));
     }
     fs::rename(from, to)
+}
+
+/// Text of a new note called `name`: its title and a blank line to write under it.
+pub fn new_note_text(name: &str) -> String {
+    format!("# {name}\n\n")
+}
+
+/// Where the note goes when its title says `title`: the file follows the title only if it did
+/// until now (`synced`). `None`: it keeps its name. The caller still refuses a name that is taken.
+pub fn title_rename(path: &Path, title: &str, synced: bool) -> Option<PathBuf> {
+    (synced && stem(path) != title).then(|| path.with_file_name(format!("{title}.md")))
 }
 
 /// Renames a note and returns its path. If its name followed its title, the
@@ -537,7 +561,7 @@ pub fn capture(root: &Path, name: &str, text: &str) -> io::Result<PathBuf> {
     let path = found.unwrap_or_else(|| root.join(&file));
     let mut body = match fs::read_to_string(&path) {
         Ok(body) => body,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => format!("# {name}\n\n"),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => new_note_text(name),
         Err(e) => return Err(e),
     };
     if !body.ends_with('\n') {
@@ -612,11 +636,7 @@ pub fn save(
 ) -> io::Result<PathBuf> {
     let title = title_of(content);
     let target = match current {
-        Some(p) if !synced || stem(p) == title => p.to_path_buf(),
-        Some(p) => {
-            let renamed = p.with_file_name(format!("{title}.md"));
-            if renamed.exists() { p.to_path_buf() } else { renamed }
-        }
+        Some(p) => title_rename(p, &title, synced).filter(|to| !taken_by_other(p, to)).unwrap_or_else(|| p.to_path_buf()),
         None => (1..)
             .map(|n| match n {
                 1 => dir.join(format!("{title}.md")),
@@ -658,6 +678,28 @@ mod tests {
         assert_eq!(capture(&root, "2026-10-11", "une idée").unwrap(), filed);
         assert_eq!(fs::read_to_string(&filed).unwrap(), "# 2026-10-11\n\nsans fin de ligne\n- une idée\n");
         assert_eq!(fs::read_to_string(root.join(".trash/2026-10-11.md")).unwrap(), "jetée");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_name_is_taken_whatever_its_case() {
+        let root = env::temp_dir().join(format!("bref-taken-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("Dossier")).unwrap();
+        fs::write(root.join("Plan.md"), "# Plan\n\n").unwrap();
+        assert_eq!(name_taken(&root, "plan.MD"), Some(root.join("Plan.md")));
+        assert_eq!(name_taken(&root, "dossier"), Some(root.join("Dossier")));
+        assert_eq!((name_taken(&root, "Autre.md"), name_taken(&root.join("absent"), "x")), (None, None));
+        // Another file refuses the name, even in other letters; the file itself may change case.
+        fs::write(root.join("B.md"), "").unwrap();
+        assert!(rename(&root.join("B.md"), &root.join("pLAN.md")).is_err());
+        rename(&root.join("B.md"), &root.join("b.md")).unwrap();
+        assert!(root.join("b.md").exists());
+        // The title renames the file only while it follows it; the empty-ish names stay as they are.
+        let path = root.join("Plan.md");
+        assert_eq!(title_rename(&path, "Autre", true), Some(root.join("Autre.md")));
+        assert_eq!((title_rename(&path, "Autre", false), title_rename(&path, "Plan", true)), (None, None));
+        assert_eq!(new_note_text("Plan"), "# Plan\n\n");
         let _ = fs::remove_dir_all(&root);
     }
 

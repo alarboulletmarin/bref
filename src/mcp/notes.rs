@@ -356,7 +356,7 @@ pub fn create_note(vault: &mut Vault, args: &Value) -> Outcome {
         };
         markdown::fill(&text, &name, &date_name(clock::today()), &time_name(clock::clock())).0
     } else {
-        let mut body = format!("# {name}\n\n");
+        let mut body = files::new_note_text(&name);
         if let Some(text) = arg_opt(args, "text") {
             body.push_str(text.trim_start_matches('\n'));
             if !body.ends_with('\n') {
@@ -443,12 +443,11 @@ fn follow_title(vault: &mut Vault, path: &Path, before: &str, after: &str) -> (s
         return (path.to_path_buf(), false, None, 0);
     };
     let old = files::stem(path);
-    if title == old {
+    let Some(dest) = files::title_rename(path, &title, true) else {
         vault.rescan();
         return (path.to_path_buf(), false, None, 0);
-    }
-    let dest = path.with_file_name(format!("{title}.md"));
-    if dest.exists() {
+    };
+    if files::taken_by_other(path, &dest) {
         vault.rescan();
         return (path.to_path_buf(), false, Some("this name is already taken".into()), 0);
     }
@@ -572,7 +571,7 @@ pub fn rename_note(vault: &mut Vault, args: &Value) -> Outcome {
         old_file.clone()
     };
     let dest = dir.join(&file_name);
-    if dest != path && dest.exists() {
+    if dest != path && files::taken_by_other(&path, &dest) {
         return Outcome::err(format!("a file already has the name `{}` ({})", files::stem(&dest), vault::rel(&vault.root, &dest)));
     }
     if dest != path
@@ -682,11 +681,11 @@ pub fn daily_note(vault: &mut Vault, args: &Value) -> Outcome {
                 };
                 markdown::fill(&text, &name, &name, &time_name(clock::clock())).0
             }
-            None => format!("# {name}\n\n"),
+            None => files::new_note_text(&name),
         };
         let path = vault.root.join(format!("{name}.md"));
-        if path.exists() {
-            return Outcome::err(format!("a note already has the name `{name}` ({})", vault::rel(&vault.root, &path)));
+        if let Some(taken) = vault::name_taken(&vault.root, &name, "md") {
+            return Outcome::err(format!("a note already has the name `{name}` ({})", vault::rel(&vault.root, &taken)));
         }
         if let Err(message) = files::write(&path, &body).map_err(disk) {
             return Outcome::err(message);
