@@ -265,6 +265,27 @@ pub enum EditorEvent {
 /// What the footer counter depends on: the text version and the selection.
 type CountKey = (u64, Option<Range<usize>>);
 
+/// What the window around the note asks of it, set by the shell through `Editor::set_chrome`
+/// (never written field by field, and only when it changes).
+#[derive(Clone, Copy, PartialEq)]
+pub struct Chrome {
+    /// Number of buttons the window puts in the corner, right of the counter.
+    pub corner: usize,
+    /// The note is the active pane's: a single formatting bar for the whole window.
+    pub bar_here: bool,
+    /// Left edge (in the window) of the window buttons floating over the top right corner, where the app draws them:
+    /// a first line reaching under it starts lower (`place`).
+    pub pill: Option<Pixels>,
+    /// Top room kept free for the shell's window handle: the text never starts above it.
+    pub strip: Pixels,
+}
+
+impl Default for Chrome {
+    fn default() -> Self {
+        Chrome { corner: 1, bar_here: true, pill: None, strip: px(0.) }
+    }
+}
+
 pub struct Editor {
     focus: FocusHandle,
     content: String,
@@ -375,17 +396,10 @@ pub struct Editor {
     /// The text counted last, its version and its counts: on a keystroke, only the changed
     /// lines are recounted (`crate::logic::search::recount`).
     tally: Option<(u64, String, (usize, usize))>,
-    /// Number of buttons the window puts in the corner, right of the counter.
-    pub corner: usize,
+    /// What the shell's window chrome asks of the note (see `Chrome`).
+    chrome: Chrome,
     /// The formatting bar: what it offers, where it sits, folded or open.
     bar: BarState,
-    /// The note is the active pane's: a single formatting bar for the whole window.
-    pub bar_here: bool,
-    /// Left edge (in the window) of the window buttons floating over the top right corner, where the app draws them:
-    /// a first line reaching under it starts lower (`place`).
-    pub pill: Option<Pixels>,
-    /// Top room kept free for the shell's window handle: the text never starts above it.
-    pub strip: Pixels,
     /// Top margin of the text in the last `place`: `TOP`, or `PILL_CLEAR`.
     top: Pixels,
     /// Changes when everything must be redone (other note, theme, images): nothing is reused.
@@ -434,6 +448,13 @@ impl Focusable for Editor {
 }
 
 impl Editor {
+    /// Takes the window chrome; nothing happens when it is the one already held.
+    pub fn set_chrome(&mut self, chrome: Chrome) {
+        if self.chrome != chrome {
+            self.chrome = chrome;
+        }
+    }
+
     pub fn new(theme: Theme, cx: &mut Context<Self>) -> Self {
         Self {
             focus: cx.focus_handle(),
@@ -495,11 +516,8 @@ impl Editor {
             rows_revision: 0,
             counted: None,
             tally: None,
-            corner: 1,
+            chrome: Chrome::default(),
             bar: BarState::default(),
-            bar_here: true,
-            pill: None,
-            strip: px(0.),
             top: TOP,
             epoch: 0,
             dmg: None,

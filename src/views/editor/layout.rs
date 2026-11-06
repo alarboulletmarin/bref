@@ -1460,7 +1460,7 @@ impl Editor {
         // can still pass under them; that is worth no gap at the top of every note.
         let narrow = self.width + SIDE * 2. >= bounds.size.width;
         let text_right = bounds.left() + (bounds.size.width + self.width) / 2.;
-        self.top = if narrow && self.pill.is_some_and(|left| text_right > left) { PILL_CLEAR } else { TOP.max(self.strip) };
+        self.top = if narrow && self.chrome.pill.is_some_and(|left| text_right > left) { PILL_CLEAR } else { TOP.max(self.chrome.strip) };
         if reveal {
             let c = self.cursor();
             if let Some(r) = self.row_at(c) {

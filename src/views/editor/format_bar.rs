@@ -104,13 +104,13 @@ impl Editor {
     // ponytail: the counter's room is estimated (7.4 px per character at 12 px, spaces and middle dots count more than letters) rather than measured.
     pub(super) fn bar_place(&mut self) -> Option<Bar> {
         let width = f32::from(self.viewport.size.width);
-        if !self.theme.bar || !self.bar_here || width == 0. {
+        if !self.theme.bar || !self.chrome.bar_here || width == 0. {
             return None;
         }
         // At the interface's scale, like the counter and the buttons around.
         let (u, bar) = (self.theme.ui, BAR_WIDTH * self.theme.ui);
         let counts = (self.counts().chars().count() as f32 * 7.4 + 16.) * u;
-        let x = (width / 2. - bar / 2.).min(width - (12. + 34. * self.corner as f32) * u - counts - 8. * u - bar);
+        let x = (width / 2. - bar / 2.).min(width - (12. + 34. * self.chrome.corner as f32) * u - counts - 8. * u - bar);
         Some(if x >= 8. * u { Bar::Inline(x) } else { Bar::Compact })
     }
 

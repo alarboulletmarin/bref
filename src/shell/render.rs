@@ -607,12 +607,8 @@ impl Shell {
         let strip = client && !barred;
         // A tab bar puts the note below the window buttons: its text no longer steps down for them.
         let pill = (client && !barred && group == self.corner_group()).then(|| window.viewport_size().width - self.nav.left() - px(8.) - t.px(PILL_W));
-        self.pane().editor.update(cx, |e, _| {
-            e.corner = 1 + talk.is_some() as usize + boards as usize;
-            e.bar_here = active;
-            e.pill = pill;
-            e.strip = if strip { t.px(STRIP) } else { px(0.) };
-        });
+        let chrome = Chrome { corner: 1 + talk.is_some() as usize + boards as usize, bar_here: active, pill, strip: if strip { t.px(STRIP) } else { px(0.) } };
+        self.pane().editor.update(cx, |e, _| e.set_chrome(chrome));
         // The comments column takes what the panel and the note leave it, 270 px at
         // most; short of 140 px, it does not show (its button stays, a wider window brings it back).
         let column = (active && !said.is_empty() && !self.comments_shut)

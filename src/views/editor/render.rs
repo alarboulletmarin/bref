@@ -7,7 +7,7 @@ impl Render for Editor {
         // Left of the buttons the window puts in the corner (copy, comments).
         // The count is truncated in a narrow note, instead of going out on the left.
         let t = self.theme;
-        let after = (12. + 34. * self.corner as f32) * t.ui;
+        let after = (12. + 34. * self.chrome.corner as f32) * t.ui;
         // The formatting bar, in the middle of the page, apart from the counter, which stays at the right.
         self.bar.at = self.bar_place();
         let folded = self.bar.at == Some(Bar::Compact);

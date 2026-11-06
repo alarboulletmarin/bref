@@ -70,7 +70,7 @@ use gpui::{
 
 use canvas::{Canvas, CanvasEvent};
 use diagram::Diagram;
-use editor::{Editor, EditorEvent};
+use editor::{Chrome, Editor, EditorEvent};
 use graph::{Graph, GraphEvent};
 use history::{History, Place, Shown};
 use markdown::Link;
