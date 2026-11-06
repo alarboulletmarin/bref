@@ -305,6 +305,76 @@ pub fn keys<E: InteractiveElement, V: 'static>(el: E, cx: &Context<V>, line: fn(
     moves.into_iter().fold(el, |el, (on, act)| on(el, cx, line, changed, act))
 }
 
+/// A view that edits a `Line` and takes the system's text input (keyboard, IME composition) for it.
+/// `line_input!(View)` turns this into the `EntityInputHandler` the window needs: the palette and the
+/// grid cell share it. (The `Field` keeps its own: it also places the input method's window under the text.)
+pub trait LineInput: Sized + 'static {
+    /// The line being edited, if there is one.
+    fn line(&self) -> Option<&Line>;
+    fn line_mut(&mut self) -> Option<&mut Line>;
+    /// The text changed: refresh what depends on it.
+    fn edited(&mut self, cx: &mut Context<Self>);
+    /// Text arrives while no line is edited (a grid cell that is only selected): begin an empty edit,
+    /// so the text goes through the same path as any other. False: this text begins nothing.
+    fn start(&mut self, _text: &str, _cx: &mut Context<Self>) -> bool {
+        false
+    }
+}
+
+/// Implements `gpui::EntityInputHandler` for a `LineInput`.
+macro_rules! line_input {
+    ($view:ty) => {
+        impl gpui::EntityInputHandler for $view {
+            fn text_for_range(&mut self, range: std::ops::Range<usize>, _: &mut Option<std::ops::Range<usize>>, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> Option<String> {
+                Some($crate::ui::line::LineInput::line(self)?.text_utf16(range))
+            }
+
+            fn selected_text_range(&mut self, _: bool, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> Option<gpui::UTF16Selection> {
+                Some($crate::ui::line::LineInput::line(self).map_or(gpui::UTF16Selection { range: 0..0, reversed: false }, |line| line.utf16()))
+            }
+
+            fn marked_text_range(&self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> Option<std::ops::Range<usize>> {
+                $crate::ui::line::LineInput::line(self)?.marked_utf16()
+            }
+
+            fn unmark_text(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) {
+                if let Some(line) = $crate::ui::line::LineInput::line_mut(self) {
+                    line.unmark();
+                }
+            }
+
+            fn replace_text_in_range(&mut self, range: Option<std::ops::Range<usize>>, text: &str, _: &mut gpui::Window, cx: &mut gpui::Context<Self>) {
+                if $crate::ui::line::LineInput::line(self).is_none() && !$crate::ui::line::LineInput::start(self, text, cx) {
+                    return;
+                }
+                if let Some(line) = $crate::ui::line::LineInput::line_mut(self) {
+                    line.commit(range, text);
+                    $crate::ui::line::LineInput::edited(self, cx);
+                }
+            }
+
+            fn replace_and_mark_text_in_range(&mut self, range: Option<std::ops::Range<usize>>, text: &str, selected: Option<std::ops::Range<usize>>, _: &mut gpui::Window, cx: &mut gpui::Context<Self>) {
+                if $crate::ui::line::LineInput::line(self).is_none() && !$crate::ui::line::LineInput::start(self, text, cx) {
+                    return;
+                }
+                if let Some(line) = $crate::ui::line::LineInput::line_mut(self) {
+                    line.compose(range, text, selected);
+                    $crate::ui::line::LineInput::edited(self, cx);
+                }
+            }
+
+            fn bounds_for_range(&mut self, _: std::ops::Range<usize>, _: gpui::Bounds<gpui::Pixels>, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> Option<gpui::Bounds<gpui::Pixels>> {
+                None
+            }
+
+            fn character_index_for_point(&mut self, _: gpui::Point<gpui::Pixels>, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> Option<usize> {
+                None
+            }
+        }
+    };
+}
+pub(crate) use line_input;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,73 +479,3 @@ mod tests {
         assert_eq!(line.text_utf16(0..2), "xz");
     }
 }
-
-/// A view that edits a `Line` and takes the system's text input (keyboard, IME composition) for it.
-/// `line_input!(View)` turns this into the `EntityInputHandler` the window needs: the palette and the
-/// grid cell share it. (The `Field` keeps its own: it also places the input method's window under the text.)
-pub trait LineInput: Sized + 'static {
-    /// The line being edited, if there is one.
-    fn line(&self) -> Option<&Line>;
-    fn line_mut(&mut self) -> Option<&mut Line>;
-    /// The text changed: refresh what depends on it.
-    fn edited(&mut self, cx: &mut Context<Self>);
-    /// Text arrives while no line is edited (a grid cell that is only selected): begin an empty edit,
-    /// so the text goes through the same path as any other. False: this text begins nothing.
-    fn start(&mut self, _text: &str, _cx: &mut Context<Self>) -> bool {
-        false
-    }
-}
-
-/// Implements `gpui::EntityInputHandler` for a `LineInput`.
-macro_rules! line_input {
-    ($view:ty) => {
-        impl gpui::EntityInputHandler for $view {
-            fn text_for_range(&mut self, range: std::ops::Range<usize>, _: &mut Option<std::ops::Range<usize>>, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> Option<String> {
-                Some($crate::ui::line::LineInput::line(self)?.text_utf16(range))
-            }
-
-            fn selected_text_range(&mut self, _: bool, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> Option<gpui::UTF16Selection> {
-                Some($crate::ui::line::LineInput::line(self).map_or(gpui::UTF16Selection { range: 0..0, reversed: false }, |line| line.utf16()))
-            }
-
-            fn marked_text_range(&self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> Option<std::ops::Range<usize>> {
-                $crate::ui::line::LineInput::line(self)?.marked_utf16()
-            }
-
-            fn unmark_text(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) {
-                if let Some(line) = $crate::ui::line::LineInput::line_mut(self) {
-                    line.unmark();
-                }
-            }
-
-            fn replace_text_in_range(&mut self, range: Option<std::ops::Range<usize>>, text: &str, _: &mut gpui::Window, cx: &mut gpui::Context<Self>) {
-                if $crate::ui::line::LineInput::line(self).is_none() && !$crate::ui::line::LineInput::start(self, text, cx) {
-                    return;
-                }
-                if let Some(line) = $crate::ui::line::LineInput::line_mut(self) {
-                    line.commit(range, text);
-                    $crate::ui::line::LineInput::edited(self, cx);
-                }
-            }
-
-            fn replace_and_mark_text_in_range(&mut self, range: Option<std::ops::Range<usize>>, text: &str, selected: Option<std::ops::Range<usize>>, _: &mut gpui::Window, cx: &mut gpui::Context<Self>) {
-                if $crate::ui::line::LineInput::line(self).is_none() && !$crate::ui::line::LineInput::start(self, text, cx) {
-                    return;
-                }
-                if let Some(line) = $crate::ui::line::LineInput::line_mut(self) {
-                    line.compose(range, text, selected);
-                    $crate::ui::line::LineInput::edited(self, cx);
-                }
-            }
-
-            fn bounds_for_range(&mut self, _: std::ops::Range<usize>, _: gpui::Bounds<gpui::Pixels>, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> Option<gpui::Bounds<gpui::Pixels>> {
-                None
-            }
-
-            fn character_index_for_point(&mut self, _: gpui::Point<gpui::Pixels>, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> Option<usize> {
-                None
-            }
-        }
-    };
-}
-pub(crate) use line_input;
