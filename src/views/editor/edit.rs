@@ -6,13 +6,13 @@ use super::*;
 /// last is kept whole: each of the others only keeps what sets it
 /// apart from the next, i.e. a few bytes per keystroke rather than a copy of the note.
 #[derive(Default)]
-pub(super) struct History {
+pub(super) struct Snapshots {
     pub(super) last: Option<(String, Range<usize>)>,
     /// (start of the difference, its length in the next state, its text here, selection).
     pub(super) earlier: Vec<(usize, usize, String, Range<usize>)>,
 }
 
-impl History {
+impl Snapshots {
     pub(super) fn push(&mut self, text: String, sel: Range<usize>) {
         if let Some((old, old_sel)) = self.last.replace((text, sel)) {
             let new = self.last.as_ref().unwrap().0.as_bytes();
@@ -27,7 +27,7 @@ impl History {
                 tail -= 1;
             }
             self.earlier.push((start, new.len() - tail - start, old[start..old.len() - tail].to_string(), old_sel));
-            if self.earlier.len() >= 200 {
+            if self.earlier.len() >= crate::logic::undo::DEPTH {
                 self.earlier.remove(0);
             }
         }
@@ -55,7 +55,7 @@ impl Editor {
         if (boundary || stale) && !self.held {
             self.undo.push(self.content.clone(), self.sel.clone());
         }
-        self.redo = History::default();
+        self.redo = Snapshots::default();
         self.last_edit = Some(Instant::now());
     }
 
@@ -175,7 +175,15 @@ impl Editor {
         }
     }
 
-    pub fn restore(&mut self, redo: bool, cx: &mut Context<Self>) {
+    pub fn undo(&mut self, cx: &mut Context<Self>) {
+        self.restore(false, cx)
+    }
+
+    pub fn redo(&mut self, cx: &mut Context<Self>) {
+        self.restore(true, cx)
+    }
+
+    fn restore(&mut self, redo: bool, cx: &mut Context<Self>) {
         let (from, to) = if redo {
             (&mut self.redo, &mut self.undo)
         } else {

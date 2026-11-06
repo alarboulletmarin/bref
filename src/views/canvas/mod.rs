@@ -11,6 +11,9 @@ mod render;
 
 use std::ops::Range;
 
+/// Whole copies of the diagram are kept, so fewer steps than the other surfaces.
+const UNDO_DEPTH: usize = 100;
+
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, ElementInputHandler, EntityInputHandler,
     EventEmitter, FocusHandle, Focusable, FontStyle, FontWeight, Hsla, MouseButton, MouseDownEvent, MouseMoveEvent,
@@ -23,6 +26,7 @@ use crate::{
     logic::diagram::{self, Anchor, Cmd, Diagram, End, Form, Route, Slot},
     logic::library::{self, Preset},
     logic::relation::Relation,
+    logic::undo::History,
     logic::richtext::{self, Span},
     ui::line::{self as input, Line as Input, To},
     ui::widgets::{button, tip},
@@ -281,8 +285,7 @@ pub struct Canvas {
     link_pick: Relation,
     /// The library is open, with what is typed to search it.
     library: Option<String>,
-    undo: Vec<Diagram>,
-    redo: Vec<Diagram>,
+    history: History<Diagram>,
     /// The pointer's shape, depending on what it hovers and what is dragged.
     hand: CursorStyle,
     bounds: Bounds<Pixels>,
@@ -327,8 +330,7 @@ impl Canvas {
             shape_pick: Form::Rect,
             link_pick: Relation::Navigable,
             library: None,
-            undo: Vec::new(),
-            redo: Vec::new(),
+            history: History::capped(UNDO_DEPTH),
             hand: CursorStyle::Arrow,
             bounds: Bounds::default(),
             exported: false,
@@ -363,7 +365,7 @@ impl Canvas {
     /// Whether a gesture is in progress, and how many steps of undo there are.
     #[cfg(test)]
     pub fn gesture(&self) -> (bool, usize) {
-        (self.drag != Drag::None, self.undo.len())
+        (self.drag != Drag::None, self.history.len())
     }
 
     /// Where the handle on side `side` (top, right, bottom, left) of a shape is, in the window.
@@ -497,11 +499,7 @@ impl Canvas {
     // ponytail: undo keeps whole copies of the diagram (100 max): a
     // diagram weighs a few KB. Switch to an operation log if they grow.
     fn remember(&mut self) {
-        self.undo.push(self.diagram.clone());
-        if self.undo.len() > 100 {
-            self.undo.remove(0);
-        }
-        self.redo.clear();
+        self.history.record(self.diagram.clone());
     }
 
     fn changed(&mut self, cx: &mut Context<Self>) {
@@ -511,14 +509,24 @@ impl Canvas {
         cx.notify();
     }
 
-    fn restore(&mut self, redo: bool, cx: &mut Context<Self>) {
-        let (from, to) = if redo { (&mut self.redo, &mut self.undo) } else { (&mut self.undo, &mut self.redo) };
-        if let Some(diagram) = from.pop() {
-            to.push(std::mem::replace(&mut self.diagram, diagram));
-            (self.editing, self.drag, self.slot) = (None, Drag::None, Slot::Middle);
-            self.selected.clear();
-            self.changed(cx);
+    fn undo(&mut self, cx: &mut Context<Self>) {
+        if let Some(diagram) = self.history.undo() {
+            self.history.undone(std::mem::replace(&mut self.diagram, diagram));
+            self.restored(cx);
         }
+    }
+
+    fn redo(&mut self, cx: &mut Context<Self>) {
+        if let Some(diagram) = self.history.redo() {
+            self.history.redone(std::mem::replace(&mut self.diagram, diagram));
+            self.restored(cx);
+        }
+    }
+
+    fn restored(&mut self, cx: &mut Context<Self>) {
+        (self.editing, self.drag, self.slot) = (None, Drag::None, Slot::Middle);
+        self.selected.clear();
+        self.changed(cx);
     }
 
     /// The key that opens the menu of relationships, and the one that picks the n-ary association in it.

@@ -187,8 +187,7 @@ impl Sheet {
         self.format = loaded.format;
         self.table = loaded.table;
         self.stamp = loaded.stamp;
-        self.undo.clear();
-        self.redo.clear();
+        self.history.clear();
         self.edit = None;
         self.dirty = false;
         self.fresh_table();

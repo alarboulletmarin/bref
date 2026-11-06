@@ -29,6 +29,7 @@ pub mod richtext;
 pub mod rows;
 pub mod state;
 pub mod tree;
+pub mod undo;
 pub mod sharing;
 pub mod table;
 pub mod uml;

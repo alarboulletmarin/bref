@@ -267,7 +267,7 @@ impl Canvas {
         if turned {
             self.changed(cx);
         } else {
-            self.undo.pop();
+            self.history.cancel();
         }
     }
 

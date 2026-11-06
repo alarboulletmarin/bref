@@ -468,8 +468,8 @@ impl Canvas {
             .border_color(t.border)
             .shadow(t.lifted())
             .occlude()
-            .child(button("d-undo", "c-undo.svg", false, t).when(self.undo.is_empty(), |b| b.opacity(0.4)).tooltip(tip(tr("Undo", "Annuler"), undo, t)).on_click(cx.listener(|this, _, _, cx| this.restore(false, cx))))
-            .child(button("d-redo", "c-redo.svg", false, t).when(self.redo.is_empty(), |b| b.opacity(0.4)).tooltip(tip(tr("Redo", "Rétablir"), redo, t)).on_click(cx.listener(|this, _, _, cx| this.restore(true, cx))))
+            .child(button("d-undo", "c-undo.svg", false, t).when(!self.history.can_undo(), |b| b.opacity(0.4)).tooltip(tip(tr("Undo", "Annuler"), undo, t)).on_click(cx.listener(|this, _, _, cx| this.undo(cx))))
+            .child(button("d-redo", "c-redo.svg", false, t).when(!self.history.can_redo(), |b| b.opacity(0.4)).tooltip(tip(tr("Redo", "Rétablir"), redo, t)).on_click(cx.listener(|this, _, _, cx| this.redo(cx))))
             .when(!self.diagram.messages().is_empty(), |d| {
                 d.child(button("d-numbered", "d-seq-number.svg", self.diagram.numbered, t).tooltip(tip(tr("Number the messages", "Numéroter les messages"), String::new(), t)).on_click(cx.listener(|this, _, _, cx| this.toggle_numbers(cx))))
             })

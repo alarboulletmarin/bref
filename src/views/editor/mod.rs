@@ -247,8 +247,8 @@ pub struct Editor {
     /// dragging extends it word by word or line by line.
     anchor: Option<(Range<usize>, bool)>,
     goal_x: Option<Pixels>,
-    undo: History,
-    redo: History,
+    undo: Snapshots,
+    redo: Snapshots,
     last_edit: Option<Instant>,
     /// Where the last change started (`usize::MAX` after a load or an undo): the ``` there is the one being typed.
     edited_at: usize,
@@ -414,8 +414,8 @@ impl Editor {
             selecting: false,
             anchor: None,
             goal_x: None,
-            undo: History::default(),
-            redo: History::default(),
+            undo: Snapshots::default(),
+            redo: Snapshots::default(),
             last_edit: None,
             edited_at: usize::MAX,
             notes: Rc::from([]),
@@ -512,8 +512,8 @@ impl Editor {
         self.reversed = false;
         self.more.clear();
         self.marked = None;
-        self.undo = History::default();
-        self.redo = History::default();
+        self.undo = Snapshots::default();
+        self.redo = Snapshots::default();
         self.last_edit = None;
         self.edited_at = usize::MAX;
         self.scroll_y = px(0.);
@@ -778,7 +778,7 @@ mod tests {
     #[test]
     fn history_returns_each_state() {
         let states = ["", "é", "éa", "éa\nligne", "a\nligne", "a\nligné"];
-        let mut history = History::default();
+        let mut history = Snapshots::default();
         for (i, state) in states.iter().enumerate() {
             history.push(state.to_string(), i..i);
         }

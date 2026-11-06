@@ -2,7 +2,6 @@
 
 use super::*;
 
-pub(super) const UNDO_DEPTH: usize = 200;
 
 /// An edit gesture, and its inverse: undo applies the inverse and gets the gesture back.
 pub(super) enum Change {
@@ -46,7 +45,7 @@ impl Sheet {
     /// Number of gestures that can be undone.
     #[cfg(test)]
     pub fn undo_len(&self) -> usize {
-        self.undo.len()
+        self.history.len()
     }
 
     pub(super) fn begin_edit(&mut self, text: Option<&str>, cx: &mut Context<Self>) {
@@ -147,25 +146,34 @@ impl Sheet {
 
     /// Applies gestures together: a single "undo" reverts them.
     pub(super) fn commit(&mut self, changes: Vec<Change>, cx: &mut Context<Self>) {
-        let mut back: Vec<Change> = changes.into_iter().map(|c| self.apply(c)).collect();
-        back.reverse();
-        self.undo.push(back);
-        if self.undo.len() > UNDO_DEPTH {
-            self.undo.remove(0);
-        }
-        self.redo.clear();
+        let back = self.invert(changes);
+        self.history.record(back);
         self.settle(cx);
     }
 
-    pub(super) fn restore(&mut self, redo: bool, cx: &mut Context<Self>) {
+    pub(super) fn undo(&mut self, cx: &mut Context<Self>) {
         self.finish(cx);
-        let Some(batch) = (if redo { self.redo.pop() } else { self.undo.pop() }) else {
-            return;
-        };
+        if let Some(batch) = self.history.undo() {
+            let back = self.invert(batch);
+            self.history.undone(back);
+            self.settle(cx);
+        }
+    }
+
+    pub(super) fn redo(&mut self, cx: &mut Context<Self>) {
+        self.finish(cx);
+        if let Some(batch) = self.history.redo() {
+            let back = self.invert(batch);
+            self.history.redone(back);
+            self.settle(cx);
+        }
+    }
+
+    /// Applies a batch and gets the batch that undoes it.
+    fn invert(&mut self, batch: Vec<Change>) -> Vec<Change> {
         let mut back: Vec<Change> = batch.into_iter().map(|c| self.apply(c)).collect();
         back.reverse();
-        if redo { &mut self.undo } else { &mut self.redo }.push(back);
-        self.settle(cx);
+        back
     }
 
     pub(super) fn settle(&mut self, cx: &mut Context<Self>) {

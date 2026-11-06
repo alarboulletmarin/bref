@@ -363,9 +363,9 @@ fn an_outside_write_while_typing_is_merged(cx: &mut TestAppContext) {
     let cursor = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).view().0);
     assert_eq!(cursor, both.find(" tapée").unwrap() + " tapée".len(), "the cursor stays where the user types");
     // Undo takes back the agent's change in one step, and only it.
-    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.restore(false, cx)));
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.undo(cx)));
     assert_eq!(text(cx), "# Plan\n\nPremière ligne tapée\nDeuxième ligne\n");
-    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.restore(true, cx)));
+    shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.redo(cx)));
     save(cx);
     assert_eq!(fs::read_to_string(&path).unwrap(), both);
 

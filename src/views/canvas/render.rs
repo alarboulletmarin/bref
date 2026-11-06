@@ -46,8 +46,8 @@ impl Render for Canvas {
             .on_action(cx.listener(|this, _: &SelectUp, _, cx| if this.editing.is_some() { this.vertical(false, true, cx) } else { this.nudge(0., -1., cx) }))
             .on_action(cx.listener(|this, _: &SelectDown, _, cx| if this.editing.is_some() { this.vertical(true, true, cx) } else { this.nudge(0., 1., cx) }))
             .on_action(cx.listener(|this, _: &NextText, _, cx| this.next_text(cx)))
-            .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
-            .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
+            .on_action(cx.listener(|this, _: &Undo, _, cx| this.undo(cx)))
+            .on_action(cx.listener(|this, _: &Redo, _, cx| this.redo(cx)))
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &Paste, _, cx| {

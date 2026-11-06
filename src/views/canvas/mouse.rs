@@ -491,8 +491,8 @@ impl Canvas {
                     self.diagram.remove(&[id]);
                     self.selected.clear();
                     // A click on a handle changed nothing: it is no step of undo either.
-                    if self.undo.last().is_some_and(|d| d.shapes == self.diagram.shapes && d.links == self.diagram.links) {
-                        self.undo.pop();
+                    if self.history.last().is_some_and(|d| d.shapes == self.diagram.shapes && d.links == self.diagram.links) {
+                        self.history.cancel();
                     }
                 } else {
                     self.selected = vec![id];

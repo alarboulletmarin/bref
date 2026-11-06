@@ -140,8 +140,8 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(false, cx)))
         .on_action(cx.listener(|this, _: &Cut, _, cx| this.copy(true, cx)))
         .on_action(cx.listener(|this, _: &Paste, _, cx| this.each(cx, |this, cx| this.paste(cx))))
-        .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(false, cx)))
-        .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(true, cx)))
+        .on_action(cx.listener(|this, _: &Undo, _, cx| this.undo(cx)))
+        .on_action(cx.listener(|this, _: &Redo, _, cx| this.redo(cx)))
         // The bar's keys that also work from the note while it is open; its others are on the bar.
         .on_action(cx.listener(|this, _: &Find, window, cx| this.open_find(false, window, cx)))
         .on_action(cx.listener(|this, _: &FindReplace, window, cx| this.open_find(true, window, cx)))
