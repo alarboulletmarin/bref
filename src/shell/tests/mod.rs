@@ -21,6 +21,7 @@ mod find_bar;
 mod vault_find;
 mod keyboard;
 mod keycaps;
+mod layers;
 mod layout;
 mod motion;
 mod shortcuts_page;
@@ -41,46 +42,16 @@ use gpui::{Hsla, TestAppContext};
 
 static CONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// The layers only depend downwards: `logic` and `platform` never see gpui nor the layers
-/// above them, `ui` never sees the views, and the views never see the shell, whose code stays
-/// in `src/shell`. See ARCHITECTURE.md.
-#[test]
-fn layers_only_depend_downwards() {
-    // Spelled in two pieces: this file lives in src/shell, and the scan reads the source.
-    let server = concat!("crate::", "mcp");
-    let rules: &[(&str, &[&str])] = &[
-        ("src/logic", &["gpui", "crate::platform", "crate::ui", "crate::views", "crate::shell", server]),
-        ("src/platform", &["gpui", "crate::ui", "crate::views", "crate::shell", server]),
-        ("src/ui", &["crate::views", "crate::shell", "impl Shell", server]),
-        ("src/views", &["crate::shell", "impl Shell", server]),
-        ("src/shell", &[server]),
-        // The server uses logic, platform and the pure parts of ui. It never sees a window.
-        ("src/mcp", &["gpui", "crate::views", "crate::shell", "impl Shell"]),
-    ];
-    fn files(dir: &Path) -> Vec<PathBuf> {
-        let entries = fs::read_dir(dir).unwrap().map(|entry| entry.unwrap().path());
-        entries.flat_map(|path| if path.is_dir() { files(&path) } else { vec![path] }).collect()
-    }
-    for (dir, banned) in rules {
-        for path in files(Path::new(dir)) {
-            let code = fs::read_to_string(&path).unwrap();
-            // Comments may name anything; only code counts.
-            let code: String = code.lines().map(|l| l.split("//").next().unwrap()).collect::<Vec<_>>().join("\n");
-            for word in *banned {
-                assert!(!code.contains(word), "{} uses `{word}`", path.display());
-            }
-        }
-    }
+/// Every file under `dir`, folders walked.
+fn files(dir: &Path) -> Vec<PathBuf> {
+    let entries = fs::read_dir(dir).unwrap().map(|entry| entry.unwrap().path());
+    entries.flat_map(|path| if path.is_dir() { files(&path) } else { vec![path] }).collect()
 }
 
 /// The shapes come from the theme (`t.small()`, `t.large()`, `t.lifted()`, `t.floating()`, `t.hover`): a view that
 /// writes a raw radius, a raw shadow or a hover in the colour of the lines brings back the drift of seven radii.
 #[test]
 fn shapes_come_from_the_theme() {
-    fn files(dir: &Path) -> Vec<PathBuf> {
-        let entries = fs::read_dir(dir).unwrap().map(|entry| entry.unwrap().path());
-        entries.flat_map(|path| if path.is_dir() { files(&path) } else { vec![path] }).collect()
-    }
     let banned = [".rounded(px(", ".rounded(t.px(", "BoxShadow", ".shadow_sm", ".shadow_md", ".shadow_lg", ".shadow_xs", ".shadow_2xs", ".shadow_none", "s.bg(t.border)"];
     for path in files(Path::new("src/views")).into_iter().chain(files(Path::new("src/shell"))).chain(files(Path::new("src/ui"))) {
         if path.starts_with("src/shell/tests") || path.ends_with("theme.rs") || path.extension().is_none_or(|e| e != "rs") {
@@ -100,10 +71,6 @@ fn shapes_come_from_the_theme() {
 /// a text of the app. Action labels stay in the infinitive.
 #[test]
 fn french_says_vous() {
-    fn files(dir: &Path) -> Vec<PathBuf> {
-        let entries = fs::read_dir(dir).unwrap().map(|entry| entry.unwrap().path());
-        entries.flat_map(|path| if path.is_dir() { files(&path) } else { vec![path] }).collect()
-    }
     let tu = [" tes ", " ton ", " ta ", "Tes ", "Ton ", " tu ", "Tu ", "-toi", " t'", "réessaie", "vérifie ", "installe-le", "Tape ", "Écris ", " écris ", "Ouvre ", "Choisis ", " fais ", "Rouvre-", "commence-"];
     for path in files(Path::new("src")).into_iter().filter(|p| !p.starts_with("src/shell/tests") && p.extension().is_some_and(|e| e == "rs")) {
         let code = fs::read_to_string(&path).unwrap();
