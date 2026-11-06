@@ -105,6 +105,31 @@ pub enum Form {
 }
 
 impl Form {
+    /// Size of a new shape of this form: the one source for the canvas, the library, Mermaid and MCP.
+    pub fn default_size(self) -> (f32, f32) {
+        match self {
+            Form::Text => (80., LINE),
+            Form::Actor => (40., 80.),
+            Form::Cylinder => (80., 100.),
+            Form::Branch => (40., 40.),
+            Form::Package => (220., 150.),
+            Form::Frame => (260., 170.),
+            Form::Lane => (160., 320.),
+            Form::Ellipse | Form::Diamond => (120., 80.),
+            Form::Lifeline => (110., 276.),
+            Form::Dot => (20., 20.),
+            Form::Final => (26., 26.),
+            Form::Pin => (14., 14.),
+            Form::Bar => (90., 8.),
+            Form::Exit | Form::Terminate => (24., 24.),
+            Form::Divider => (200., 10.),
+            Form::Composite | Form::Node => (300., 200.),
+            Form::Row => (420., 140.),
+            Form::Fragment => (280., 140.),
+            _ => (140., 60.),
+        }
+    }
+
     pub const ALL: [(Form, &str); 26] = [
         (Form::Rect, "rect"),
         (Form::Round, "round"),
@@ -1685,5 +1710,19 @@ mod tests {
         assert!(!d.reverse(999) && !d.reverse(a));
         let held = d.add_link(End::Shape(a), End::Mid(id), Head::None, Route::Straight);
         assert!(!d.reverse(held));
+    }
+}
+
+#[cfg(test)]
+mod default_size_tests {
+    use super::*;
+
+    #[test]
+    fn one_default_size_for_every_source() {
+        assert_eq!(Form::Lifeline.default_size(), (110., 276.));
+        assert_eq!(Form::Package.default_size(), (220., 150.));
+        let p = |form| crate::logic::library::presets().into_iter().find(|p| p.form == form).map(|p| (p.w, p.h));
+        assert_eq!(p(Form::Lifeline), Some(Form::Lifeline.default_size()));
+        assert_eq!(p(Form::Package), Some(Form::Package.default_size()));
     }
 }

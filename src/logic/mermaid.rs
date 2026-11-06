@@ -367,8 +367,8 @@ fn sequence(lines: &[&str]) -> Converted {
     let lives: Vec<u32> = names
         .iter()
         .map(|(_, label)| {
-            let w = (Diagram::guess_width(label) + 28.).max(110.).ceil();
-            let id = d.add_shape(Form::Lifeline, snap(x), 30., w, 276.);
+            let w = (Diagram::guess_width(label) + 28.).max(Form::Lifeline.default_size().0).ceil();
+            let id = d.add_shape(Form::Lifeline, snap(x), 30., w, Form::Lifeline.default_size().1);
             x += w + 110.;
             if let Some(shape) = d.shape_mut(id) {
                 shape.text = label.clone();

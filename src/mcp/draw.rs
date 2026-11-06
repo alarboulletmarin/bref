@@ -544,24 +544,7 @@ fn add_shape(diagram: &mut Diagram, spec: &Value) -> Result<(u32, bool), String>
 
 fn size_of(form: Form, text: &str, w: Option<f32>, h: Option<f32>) -> (f32, f32) {
     let lines: Vec<String> = if text.is_empty() { Vec::new() } else { text.split('\n').map(str::to_string).collect() };
-    let min = match form {
-        Form::Dot => (20., 20.),
-        Form::Final => (26., 26.),
-        Form::Pin => (14., 14.),
-        Form::Bar => (90., 8.),
-        Form::Exit | Form::Terminate => (24., 24.),
-        Form::Actor => (40., 80.),
-        Form::Branch => (40., 40.),
-        Form::Lifeline => (110., 200.),
-        Form::Divider => (200., 10.),
-        Form::Package => (220., 160.),
-        Form::Frame | Form::Composite => (300., 200.),
-        Form::Node => (300., 200.),
-        Form::Lane => (200., 280.),
-        Form::Row => (420., 140.),
-        Form::Fragment => (280., 140.),
-        _ => (120., 48.),
-    };
+    let min = form.default_size();
     let (fw, fh) = diagram::fit(&lines, min);
     (w.unwrap_or(fw), h.unwrap_or(fh))
 }

@@ -181,17 +181,7 @@ fn usual(tool: Tool) -> (f32, f32) {
         return library::presets().get(i).map_or((140., 60.), |p| (p.w, p.h));
     }
     let Tool::Shape(form) = tool else { return (140., 60.) };
-    match form {
-        Form::Text => (80., diagram::LINE),
-        Form::Actor => (40., 80.),
-        Form::Cylinder => (80., 100.),
-        Form::Branch => (40., 40.),
-        Form::Package => (220., 150.),
-        Form::Frame => (260., 170.),
-        Form::Lane => (160., 320.),
-        Form::Ellipse | Form::Diamond => (120., 80.),
-        _ => (140., 60.),
-    }
+    form.default_size()
 }
 
 /// The form a shape tool draws, and what is written in it to begin with.
