@@ -130,6 +130,21 @@ fn names_aliases_and_a_change_on_disk() {
 }
 
 #[test]
+fn renaming_keeps_the_folder_unless_given() {
+    let root = scratch();
+    write(&root, "Sub/A.md", "# A\n");
+    write(&root, "B.md", "# B\n");
+    let mut vault = open(&root);
+    assert_eq!(ok(notes::rename_note(&mut vault, &json!({"note": "Sub/A.md", "name": "B"})))["path"], "Sub/B.md");
+    assert!(root.join("B.md").exists());
+    assert_eq!(ok(notes::rename_note(&mut vault, &json!({"note": "Sub/B.md", "name": "É 🌿"})))["path"], "Sub/É 🌿.md");
+    assert_eq!(ok(notes::rename_note(&mut vault, &json!({"note": "Sub/É 🌿.md", "folder": "Box"})))["path"], "Box/É 🌿.md");
+    assert_eq!(ok(notes::rename_note(&mut vault, &json!({"note": "Box/É 🌿.md", "name": "C", "folder": "."})))["path"], "C.md");
+    assert!(err(notes::rename_note(&mut vault, &json!({"note": "C", "name": "B"}))).contains("already"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn editing_renames_and_comments_follow_the_app() {
     let root = scratch();
     write(&root, "Old.md", "# Old\n\nbody\n");
