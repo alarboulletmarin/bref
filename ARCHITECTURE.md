@@ -75,7 +75,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 
 | To change… | Go to |
 |---|---|
-| how Markdown is read (headings, links, tags, styles) | `logic/markdown/` (`mod.rs`; `tables.rs`, `lists.rs`, `front.rs`, `dates.rs`, `search.rs`) |
+| how Markdown is read (headings, links, tags, styles) | `logic/markdown/` (`mod.rs`; `tables.rs` with the comment `Scope`, `lists.rs`, `front.rs`, `dates.rs`, `search.rs`; `walk.rs`: the one walk over the lines outside code blocks, a stray ``` opens nothing; `wiki.rs`: `WikiLink` reads `target#anchor|alias`, `rewrite_wikilinks` is the one rewriter) |
 | CSV/TSV parsing and writing | `logic/table.rs` |
 | embedded sections (`![[Note#Heading]]`: reading the line, finding the section, rewriting links to a renamed heading) | `logic/embed.rs`; laid out and drawn by `views/editor/embed.rs` (a read-only `Editor` per section, framed under its line) |
 | formulas of the cells of a table (parser, evaluator, numbers as written) | `logic/formula.rs`; shown by `views/editor/grid.rs` (`results`, `Shown`), written and completed by `views/editor/formulas.rs` |

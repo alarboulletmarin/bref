@@ -107,7 +107,7 @@ impl Editor {
             self.push_undo(true);
             for cell in cells.iter().rev() {
                 let text = self.content[cell.clone()].to_string();
-                self.edit(cell.clone(), &format!("{{=={text}==}}{{>><<}}"), cx);
+                self.edit(cell.clone(), &md::comment_on(&text, ""), cx);
             }
             return self.move_to(first + len + 9, cx);
         }
@@ -118,7 +118,7 @@ impl Editor {
         }
         let text = self.content[sel.clone()].to_string();
         self.push_undo(true);
-        self.edit(sel.clone(), &format!("{{=={text}==}}{{>><<}}"), cx);
+        self.edit(sel.clone(), &md::comment_on(&text, ""), cx);
         self.move_to(sel.start + text.len() + 9, cx);
     }
 
@@ -153,14 +153,14 @@ impl Editor {
         let Some(pick) = self.live_pick(range.start).cloned() else { return };
         let visible = md::visible_rows(&rows);
         let (names, cols) = md::scopes(&rows);
-        let name = if pick.rows.len() >= visible && pick.cols.len() >= rows[0].len() {
-            "Table".to_string()
+        let scope = if pick.rows.len() >= visible && pick.cols.len() >= rows[0].len() {
+            md::Scope::Table
         } else if pick.rows.len() >= visible {
             cols[pick.cols.start].clone()
         } else {
             names[pick.rows.start].clone()
         };
-        let head = format!("{{>>{name}: ");
+        let head = scope.opening();
         // A blank line keeps other apps from reading the comment as one more row.
         let after = &self.content[range.end..];
         let tail = if after.is_empty() || after == "\n" || after.starts_with("\n\n") { "" } else { "\n" };

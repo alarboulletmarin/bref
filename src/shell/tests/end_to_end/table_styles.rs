@@ -150,7 +150,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(text(cx), format!("{}\n\n{{>>Column \"Âge\": en années<<}}\n\nsuite", grid.trim_end_matches("\n\nsuite")));
     let note = text(cx);
     let said = markdown::all_comments(&note);
-    assert_eq!((said[0].noted, said[0].scope.as_str(), said[0].said), ("", "Column Âge", "en années"));
+    assert_eq!((said[0].noted, said[0].scope.as_ref().map(ToString::to_string), said[0].said), ("", Some("Column Âge".to_string()), "en années"));
     cx.simulate_keystrokes("secondary-shift-m");
     assert_eq!(text(cx), grid, "resolving a comment on its own removes its line");
     start(cx, grid);

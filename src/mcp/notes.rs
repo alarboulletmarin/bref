@@ -282,7 +282,7 @@ fn embeds(vault: &Vault, text: &str) -> Vec<Value> {
 fn comments_of(text: &str) -> Vec<Value> {
     markdown::all_comments(text)
         .into_iter()
-        .map(|note| json!({"passage": note.noted, "comment": note.said, "scope": note.scope}))
+        .map(|note| json!({"passage": note.noted, "comment": note.said, "scope": note.scope.map(|s| s.to_string()).unwrap_or_default()}))
         .collect()
 }
 
@@ -778,15 +778,7 @@ fn comment_on(text: &str, passage: &str, comment: &str) -> Result<String, String
     let line_end = text[*start..].find('\n').map(|i| *start + i).unwrap_or(text.len());
     let in_cell = *start + passage.len() <= line_end && markdown::is_table_line(&text[line_start..line_end]);
     let said = if in_cell { comment.replace('|', "\\|") } else { comment.to_string() };
-    let mut out = String::with_capacity(text.len() + said.len() + 12);
-    out.push_str(&text[..*start]);
-    out.push_str("{==");
-    out.push_str(passage);
-    out.push_str("==}{>>");
-    out.push_str(&said);
-    out.push_str("<<}");
-    out.push_str(&text[*start + passage.len()..]);
-    Ok(out)
+    Ok(format!("{}{}{}", &text[..*start], markdown::comment_on(passage, &said), &text[*start + passage.len()..]))
 }
 
 fn vault_note(vault: &Vault, args: &Value) -> Result<std::path::PathBuf, Outcome> {

@@ -142,7 +142,100 @@ pub fn visible_rows(rows: &[Vec<String>]) -> usize {
 }
 
 /// The names of a table's rows and of its columns, see `scopes`.
-pub type Scopes = (Vec<String>, Vec<String>);
+pub type Scopes = (Vec<Scope>, Vec<Scope>);
+
+/// What a row or a column is called: its first cell, or its place when that is empty.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Label {
+    /// The text, and which one it is (from 1) when several rows begin alike.
+    Text(String, Option<usize>),
+    /// Place from 1, for an empty text.
+    Place(usize),
+}
+
+/// What a comment is about in a table. A comment line under a table starts with `written()` and `: `
+/// (`Table: …`, `Row "Léa": …`, `Column 2: …`); the panel says `Display` (`Row Léa`, `Cell C2`).
+/// `Header` and `Cell` are the commented cells themselves: never written on a comment line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Scope {
+    Table,
+    Row(Label),
+    Column(Label),
+    /// Column (from 0) of the header.
+    Header(usize),
+    /// Column and row (from 0).
+    Cell(usize, usize),
+}
+
+impl std::fmt::Display for Scope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = |f: &mut std::fmt::Formatter<'_>, kind: &str, label: &Label| match label {
+            Label::Text(text, None) => write!(f, "{kind} {text}"),
+            Label::Text(text, Some(nth)) => write!(f, "{kind} {text} ({nth})"),
+            Label::Place(n) => write!(f, "{kind} {n}"),
+        };
+        match self {
+            Scope::Table => f.write_str("Table"),
+            Scope::Row(l) => label(f, "Row", l),
+            Scope::Column(l) => label(f, "Column", l),
+            Scope::Header(c) => write!(f, "Header {}", column_letters(*c)),
+            Scope::Cell(c, r) => write!(f, "Cell {}{r}", column_letters(*c)),
+        }
+    }
+}
+
+impl Scope {
+    /// How a comment line names it, quotes around a text: `Row "Léa" (2)`.
+    pub fn written(&self) -> String {
+        let label = |kind: &str, label: &Label| match label {
+            Label::Text(text, None) => format!("{kind} \"{text}\""),
+            Label::Text(text, Some(nth)) => format!("{kind} \"{text}\" ({nth})"),
+            Label::Place(n) => format!("{kind} {n}"),
+        };
+        match self {
+            Scope::Row(l) => label("Row", l),
+            Scope::Column(l) => label("Column", l),
+            other => other.to_string(),
+        }
+    }
+
+    /// The start of a comment line about it: `{>>Row "Léa": `.
+    pub fn opening(&self) -> String {
+        format!("{{>>{}: ", self.written())
+    }
+
+    /// What follows the scope on a comment line's body (the line without its `{>>`), if it starts with it.
+    pub fn said<'a>(&self, body: &'a str) -> Option<&'a str> {
+        body.strip_prefix(&format!("{}: ", self.written()))
+    }
+
+    /// The scope a comment starts with, and what follows it: `Table: …`, `Row "Léa": …`,
+    /// `Row "Léa" (2): …`, `Row 3: …`, the same for `Column`. `None` for a comment about something else.
+    pub fn parse(said: &str) -> Option<(Scope, &str)> {
+        if let Some(rest) = said.strip_prefix("Table: ") {
+            return Some((Scope::Table, rest));
+        }
+        let (make, tail): (fn(Label) -> Scope, &str) = match (said.strip_prefix("Row "), said.strip_prefix("Column ")) {
+            (Some(t), _) => (Scope::Row, t),
+            (_, Some(t)) => (Scope::Column, t),
+            _ => return None,
+        };
+        let digits = |t: &str| t.bytes().take_while(u8::is_ascii_digit).count();
+        let Some(quoted) = tail.strip_prefix('"') else {
+            let n = digits(tail);
+            let rest = tail[n..].strip_prefix(": ").filter(|_| n > 0)?;
+            return Some((make(Label::Place(tail[..n].parse().ok()?)), rest));
+        };
+        // The text ends at the first `": ` or `" (n): `.
+        let plain = quoted.find("\": ").map(|i| (i, i + 3, None));
+        let numbered = quoted.match_indices("\" (").find_map(|(i, _)| {
+            let after = i + 3 + digits(&quoted[i + 3..]);
+            (after > i + 3 && quoted[after..].starts_with("): ")).then(|| (i, after + 3, quoted[i + 3..after].parse().ok()))
+        });
+        let (i, rest, nth) = [plain, numbered].into_iter().flatten().min_by_key(|(i, ..)| *i)?;
+        Some((make(Label::Text(quoted[..i].to_string(), nth)), &quoted[rest..]))
+    }
+}
 
 /// What a comment under a table can start with, to say what it is about: for each visible row
 /// `Row "Léa"` (`Row "Léa" (2)` when several rows begin alike, `Row 3` for an empty first
@@ -150,7 +243,7 @@ pub type Scopes = (Vec<String>, Vec<String>);
 /// the content, not from a position: a sort leaves the comment with its row.
 pub fn scopes(rows: &[Vec<String>]) -> Scopes {
     let first = |v: usize| rows[if v == 0 { 0 } else { v + 1 }].first().map_or("", |c| c.as_str());
-    let named = |label: &str, text: &str, nth: usize| if text.is_empty() { format!("{label} {nth}") } else { format!("{label} \"{text}\"") };
+    let named = |text: &str, place: usize, nth: Option<usize>| if text.is_empty() { Label::Place(place) } else { Label::Text(text.to_string(), nth) };
     let tall = if rows.len() > 1 { visible_rows(rows) } else { rows.len() };
     // How many rows begin with each text, and how many of those came before.
     let mut total: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
@@ -160,11 +253,10 @@ pub fn scopes(rows: &[Vec<String>]) -> Scopes {
         .map(|v| {
             let nth = seen.entry(first(v)).or_default();
             *nth += 1;
-            let name = named("Row", first(v), v + 1);
-            if total[first(v)] > 1 && !first(v).is_empty() { format!("{name} ({nth})") } else { name }
+            Scope::Row(named(first(v), v + 1, (total[first(v)] > 1).then_some(*nth)))
         })
         .collect();
-    let cols = rows.first().map_or(Vec::new(), |head| head.iter().enumerate().map(|(c, text)| named("Column", text, c + 1)).collect());
+    let cols = rows.first().map_or(Vec::new(), |head| head.iter().enumerate().map(|(c, text)| Scope::Column(named(text, c + 1, None))).collect());
     (names, cols)
 }
 
@@ -203,17 +295,17 @@ pub fn retarget(
         .map(|line| {
             let indent = &line[..line.len() - line.trim_start().len()];
             let Some(body) = line.trim().strip_prefix("{>>") else { return Some(line.to_string()) };
-            if body.starts_with("Table: ") {
+            if Scope::Table.said(body).is_some() {
                 return (!table_gone).then(|| line.to_string());
             }
             let hit = [(&old.0, rows, &new.0), (&old.1, cols, &new.1)].into_iter().find_map(|(names, moved, fresh)| {
                 names.iter().enumerate().find_map(|(i, name)| {
-                    body.strip_prefix(&format!("{name}: ")).map(|rest| (moved.get(i).copied().flatten().and_then(|j| fresh.get(j)), rest))
+                    name.said(body).map(|rest| (moved.get(i).copied().flatten().and_then(|j| fresh.get(j)), rest))
                 })
             });
             match hit {
                 None => Some(line.to_string()),
-                Some((Some(name), rest)) if !table_gone => Some(format!("{indent}{{>>{name}: {rest}")),
+                Some((Some(name), rest)) if !table_gone => Some(format!("{indent}{}{rest}", name.opening())),
                 Some(_) => None,
             }
         })

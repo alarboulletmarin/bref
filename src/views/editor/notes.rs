@@ -53,8 +53,8 @@ impl Editor {
         };
         for lr in self.comment_lines_after(range.end) {
             let body = self.content[lr.clone()].trim().trim_start_matches("{>>");
-            let named = |list: &[String]| list.iter().position(|name| body.starts_with(&format!("{name}: ")));
-            if body.starts_with("Table: ") {
+            let named = |list: &[md::Scope]| list.iter().position(|name| name.said(body).is_some());
+            if md::Scope::Table.said(body).is_some() {
                 note(Target::Table, &lr);
             } else if let Some(v) = named(&names) {
                 note(Target::Row(v), &lr);

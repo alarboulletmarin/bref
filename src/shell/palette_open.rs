@@ -45,7 +45,7 @@ impl Shell {
         let said = markdown::all_comments(self.pane().editor.read(cx).text())
             .into_iter()
             .map(|n| {
-                let who = if n.noted.is_empty() { n.scope.clone() } else { n.noted.to_string() };
+                let who = if n.noted.is_empty() { n.scope.as_ref().map_or(String::new(), ToString::to_string) } else { n.noted.to_string() };
                 (if who.is_empty() { n.said.to_string() } else { format!("{who} — {}", n.said) }, n.at)
             })
             .collect();
