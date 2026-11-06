@@ -592,8 +592,17 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         // The extension points are under the name, behind a separator that stays inside the ellipse.
         let pay = &d.shapes[1];
         assert_eq!(pay.text, "Pay\n---\nextension points\nby card");
-        let rule = svg.lines().find(|l| l.starts_with("<path d=\"M") && l.contains('H') && !l.contains('L') && !l.contains('C')).unwrap();
-        let (x0, x1) = rule.trim_start_matches("<path d=\"M").split_once("\"").unwrap().0.split_once(' ').map(|(x, rest)| (x.parse::<f32>().unwrap(), rest.split_once('H').unwrap().1.parse::<f32>().unwrap())).unwrap();
+        // A rule is a horizontal segment, `M x0 yLx1 y`, with its ends in the ellipse's box.
+        let segment = |l: &str| -> Option<(f32, f32, f32)> {
+            let d = l.strip_prefix("<path d=\"M")?.split_once('"')?.0;
+            let (from, to) = d.split_once('L')?;
+            let (x0, y0) = from.split_once(' ')?;
+            let (x1, y1) = to.split_once(' ')?;
+            let (x0, y0, x1, y1) = (x0.parse::<f32>().ok()?, y0.parse::<f32>().ok()?, x1.parse::<f32>().ok()?, y1.parse::<f32>().ok()?);
+            (y0 == y1 && y0 > pay.y && y0 < pay.y + pay.h && x0 > pay.x && x1 < pay.x + pay.w && x0 < x1).then_some((x0, x1, y0))
+        };
+        let rule = svg.lines().find(|l| segment(l).is_some()).unwrap();
+        let (x0, x1, _) = segment(rule).unwrap();
         assert!(x0 > pay.x && x1 < pay.x + pay.w, "{rule}");
         assert!(svg.contains(">«include»</text>") && svg.contains(">«extend»</text>") && svg.contains(">Customer</text>") && svg.contains(">Shop</text>"), "{svg}");
         cx.simulate_keystrokes("escape escape");
