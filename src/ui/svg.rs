@@ -18,19 +18,30 @@ pub const MAX_PIXELS: f32 = 16e6;
 
 /// System fonts and the app's; a missing font (Helvetica, Arial on
 /// Linux…) is replaced by the app's text font, never by whichever comes first.
+/// Building it is expensive: it is kept, and rebuilt only when the fonts of the settings change.
 pub fn fonts() -> Arc<usvg::fontdb::Database> {
-    static DB: LazyLock<Arc<usvg::fontdb::Database>> = LazyLock::new(|| {
+    static CACHE: Mutex<Option<((&str, &str), Arc<usvg::fontdb::Database>)>> = Mutex::new(None);
+    let (sans, mono) = (crate::ui::assets::sans(), crate::ui::assets::mono());
+    let mut slot = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    refreshed(&mut slot, (sans, mono), || {
         let mut db = usvg::fontdb::Database::new();
         // The app's fonts first: for an equal name, they come before the system's, which are
         // reread from disk for each piece of text (ten times slower).
         crate::ui::assets::FONT_FILES.iter().for_each(|data| db.load_font_data(data.to_vec()));
         db.load_system_fonts();
-        db.set_sans_serif_family(crate::ui::assets::sans());
-        db.set_serif_family(crate::ui::assets::sans());
-        db.set_monospace_family(crate::ui::assets::mono());
+        db.set_sans_serif_family(sans);
+        db.set_serif_family(sans);
+        db.set_monospace_family(mono);
         Arc::new(db)
-    });
-    DB.clone()
+    })
+}
+
+/// The value kept in `slot` for `key`, built (and kept) when the key changed.
+fn refreshed<K: PartialEq + Copy, V: Clone>(slot: &mut Option<(K, V)>, key: K, build: impl FnOnce() -> V) -> V {
+    match slot {
+        Some((k, v)) if *k == key => v.clone(),
+        _ => slot.insert((key, build())).1.clone(),
+    }
 }
 
 fn options() -> usvg::Options<'static> {
@@ -494,6 +505,16 @@ fn measure<'a>(words: impl Iterator<Item = &'a (String, Style)>) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fonts_are_rebuilt_only_when_the_setting_changes() {
+        let (mut slot, mut built) = (None, 0);
+        let mut get = |key| super::refreshed(&mut slot, key, || { built += 1; built });
+        assert_eq!((get(("a", "m")), get(("a", "m"))), (1, 1));
+        assert_eq!(get(("b", "m")), 2);
+        assert_eq!(get(("b", "n")), 3);
+        assert_eq!(get(("b", "n")), 3);
+    }
+
     use super::*;
 
     #[test]
