@@ -1,25 +1,20 @@
 //! Line-by-line Markdown analysis: pure functions, no dependency on the UI.
 
 
-mod dates;
 mod front;
 mod lists;
-mod search;
 mod tables;
 mod walk;
 mod wiki;
 
-pub use dates::*;
 pub use front::*;
 pub use lists::*;
-pub use search::*;
 pub use tables::*;
 pub use walk::{Line, lines as walk};
 pub use wiki::{WikiLink, rewrite as rewrite_wikilinks};
 
 use std::ops::Range;
 
-use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -937,133 +932,6 @@ mod tests {
     }
 
     #[test]
-    fn finds_links() {
-        let l = links("voir [[Ma note|alias]] et #projet/x sur https://a.b/c).");
-        assert_eq!(l[0].1, Link::Wiki("Ma note".into()));
-        assert_eq!(l[1].1, Link::Tag("projet/x".into()));
-        assert_eq!(l[2].1, Link::Url("https://a.b/c".into()));
-        assert!(links("a#b et #123").is_empty());
-                // List page: front matter keys make the columns, in order of appearance.
-        let (dune, emma) = ("---\nauteur: Herbert\nnote: 9\ntags: [sf, désert]\n---\n# Dune", "---\nnote: 10\nlu: oui\n---\n");
-        assert_eq!(front_keys(dune), ["auteur", "note", "tags"]);
-        let (keys, rows) = list_table(&[dune, emma, "# Sans en-tête"]);
-        assert_eq!(keys, ["auteur", "note", "tags", "lu"]);
-        assert_eq!(rows, [vec!["Herbert", "9", "sf, désert", ""], vec!["", "10", "", "oui"], vec![""; 4]]);
-        use std::cmp::Ordering::{Greater, Less};
-        assert_eq!((cell_order("9", "10"), cell_order("b", "A"), cell_order("", "z"), cell_order("1,5", "1.25")), (Less, Greater, Greater, Greater));
-                // Replacements: the text as is, or a regular expression and its groups.
-        let put = |query: &str, with: &str, word, regex| replacements("Le chat, le chien.\nle rat", query, with, FindOptions { word, regex, ..Default::default() });
-        assert_eq!(put("le", "un", true, false), [(0..2, "un".to_string()), (9..11, "un".into()), (19..21, "un".into())]);
-        assert_eq!(put(r"le (\w+)", "$1 (le)", false, true), [(0..7, "chat (le)".to_string()), (9..17, "chien (le)".into()), (19..25, "rat (le)".into())]);
-        assert_eq!(put("^le", "x", false, true).len(), 2);
-        assert_eq!(put("ch|ra", "", true, true), []);
-        assert!(put("(", "", false, true).is_empty() && put("x*", "", false, true).is_empty());
-        assert_eq!(replacements("A a", "a", "b", FindOptions { case: true, regex: true, ..Default::default() }), [(2..3, "b".to_string())]);
-        // A regular expression that does not compile is said; text is never one, nor an empty search.
-        let opts = |word, regex| FindOptions { word, regex, ..Default::default() };
-        assert!(broken("(", opts(false, true)) && broken("[a", opts(true, true)) && !broken("a*", opts(false, true)) && !broken("(", opts(false, false)) && !broken("", opts(false, true)));
-        // Replacing with what contains the search does not loop; `$1` without a group is empty.
-        assert_eq!(put("le", "lele", true, false).len(), 3);
-        assert_eq!(put("le", "${1}x", true, true)[0].1, "x");
-        let all = Swap { query: "le".into(), with: "un".into(), options: FindOptions { word: true, ..Default::default() } };
-        assert_eq!(swap_except("Le chat, le chien.", &all, &[]), Some(("un chat, un chien.".into(), 2)));
-        assert_eq!(swap_except("rien", &all, &[]), None);
-                // Comment names: by content, numbered when the first cells are alike, by position when empty.
-        let grid = |rows: &[&[&str]]| rows.iter().map(|r| r.iter().map(|c| c.to_string()).collect::<Vec<_>>()).collect::<Vec<_>>();
-        let rows = grid(&[&["Nom", "", "Âge"], &["---", "---", "---"], &["Léa", "", "1"], &["Léa", "", "2"], &["", "", ""]]);
-        let (names, cols) = scopes(&rows);
-        let written = |list: &[Scope]| list.iter().map(Scope::written).collect::<Vec<_>>();
-        assert_eq!(written(&names), ["Row \"Nom\"", "Row \"Léa\" (1)", "Row \"Léa\" (2)", "Row 4"]);
-        assert_eq!(written(&cols), ["Column \"Nom\"", "Column 2", "Column \"Âge\""]);
-        // What a scope writes, `parse` reads back: also for texts that look like the syntax, except `": ` and
-        // `" (1): ` inside a name, where the first one wins (a name is cut at the first).
-        for text in ["", "a", "Léa", "a\" (", "日本 😀", " x ", "\\|", "[[x]]", "(1)", "3"] {
-            for nth in [None, Some(1), Some(12)] {
-                for scope in [Scope::Row(Label::Text(text.into(), nth)), Scope::Column(Label::Text(text.into(), nth))] {
-                    let line = format!("{}tail: x", scope.opening().trim_start_matches("{>>"));
-                    assert_eq!(Scope::parse(&line), Some((scope.clone(), "tail: x")), "{text:?} {nth:?}");
-                    assert_eq!(scope.said(&line), Some("tail: x"));
-                }
-            }
-        }
-        for place in [Scope::Row(Label::Place(3)), Scope::Column(Label::Place(120)), Scope::Table] {
-            let line = format!("{}x", place.opening().trim_start_matches("{>>"));
-            assert_eq!(Scope::parse(&line), Some((place.clone(), "x")), "{place}");
-        }
-                // A line follows its row when it is renamed or moved up, goes with it when it is deleted, and the others stay.
-        let old = (names.clone(), cols.clone());
-        let after = grid(&[&["Nom", "", "Âge"], &["---", "---", "---"], &["Léa", "", "2"], &["", "", ""]]);
-        let new = scopes(&after);
-        let lines = ["{>>Row \"Léa\" (1): a<<}", "{>>Row \"Léa\" (2): b<<}", "{>>Column 2: c<<}", "{>>Table: d<<}", "{>>libre<<}", "  {>>Row 4: e<<}"];
-        let moved = [Some(0), None, Some(1), Some(2)];
-        let kept = [Some(0), Some(1), Some(2)];
-        assert_eq!(
-            retarget(&lines, &old, &new, (&moved, &kept), false),
-            [None, Some("{>>Row \"Léa\": b<<}".to_string()), Some(lines[2].to_string()), Some(lines[3].to_string()), Some(lines[4].to_string()), Some("  {>>Row 3: e<<}".to_string())]
-        );
-        assert_eq!(retarget(&lines, &old, &new, (&[None; 4], &[None; 3]), true), [None, None, None, None, Some(lines[4].to_string()), None]);
-                // Comments: the text, the comment, and where the whole starts; not in code.
-        let line = "un {==mot **fort**==}{>>à revoir<<} et {==deux==}{>><<} {==seul==}";
-        assert_eq!(comments(line), [(3..36, 6..18, 24..33), (40..56, 43..47, 53..53)]);
-        let note = format!("# T\n{line}\n```\n{line}\n```");
-        let found: Vec<_> = all_comments(&note).into_iter().map(|n| (n.noted, n.said, n.at, n.inside)).collect();
-        assert_eq!(found, [("mot **fort**", "à revoir", 7, 28), ("deux", "", 44, 57)]);
-                // A comment on its own has nothing commented, and a full one is not counted twice.
-        assert_eq!(comments("a {>>seul<<} b {==x==}{>>y<<}"), [(2..12, 2..2, 5..9), (15..29, 18..19, 25..26)]);
-        assert_eq!(comments("{>>pas fini"), []);
-                // Where a comment is: in a cell, a header, or a line under a table named by what it is about.
-        let table = "| a | b |\n| - | - |\n| {==x==}{>>1<<} | y |\n| u | {==v==}{>>2<<} |\n\n{>>Row \"x\" (2): trois<<}\n\n{>>Column 2: quatre<<}\n\n{>>Table: cinq<<}\n\n{>>libre<<}";
-        let scopes: Vec<_> = all_comments(table).into_iter().map(|n| (n.scope, n.said)).collect();
-        let scopes: Vec<_> = scopes.into_iter().map(|(scope, said)| (scope.map(|s| s.to_string()), said)).collect();
-        assert_eq!(scopes, [("Cell A1", "1"), ("Cell B2", "2"), ("Row x (2)", "trois"), ("Column 2", "quatre"), ("Table", "cinq")].map(|(s, w)| (Some(s.to_string()), w)).into_iter().chain([(None, "libre")]).collect::<Vec<_>>());
-        assert_eq!(Scope::parse("Row \"a\": b\": c"), Some((Scope::Row(Label::Text("a".into(), None)), "b\": c")));
-        assert_eq!(Scope::parse("Column \"\": x"), Some((Scope::Column(Label::Text("".into(), None)), "x")));
-        assert_eq!((Scope::parse("Row x: y"), Scope::parse("Rowing: y"), Scope::parse("Table:x")), (None, None, None));
-        // The comment written next to its parser is read back whole.
-        let commented = comment_on("a b", "x|y");
-        assert_eq!(comments(&commented), [(0..commented.len(), 3..6, 12..15)]);
-        assert_eq!(comments(&comment_on("a", "")).len(), 1);
-        assert_eq!((column_letters(0), column_letters(25), column_letters(26), column_letters(701), column_letters(702)), ("A".into(), "Z".into(), "AA".into(), "ZZ".into(), "AAA".into()));
-        let mut flags = vec![0u16; line.len()];
-        inline(line, 0, &mut flags);
-        assert!(flags[3..6].iter().all(|f| *f == DIM) && flags[6] == 0 && flags[12] == BOLD);
-        assert!(flags[18..24].iter().all(|f| *f == DIM) && flags[24..33].iter().all(|f| *f == DIM | ITALIC | QUIET) && flags[36] == 0);
-                // Dates after `@`. October 9, 2026 is a Friday.
-        let today = (2026, 10, 9);
-        assert_eq!((day_number((1970, 1, 1)), day_number((2000, 3, 1)), day_of(day_number((2024, 2, 29)))), (0, 11_017, (2024, 2, 29)));
-        assert_eq!(day_of(day_number((2026, 12, 31)) + 1), (2027, 1, 1));
-                // October 2026 starts on a Thursday and has 31 days; February 2024 has 29.
-        assert_eq!((month(2026, 10, true), month(2026, 10, false), month(2024, 2, true)), ((3, 31), (4, 31), (3, 29)));
-        assert_eq!((add_months((2026, 1, 31), 1), add_months((2026, 12, 5), 1), add_months((2026, 1, 5), -1)), ((2026, 2, 28), (2027, 1, 5), (2025, 12, 5)));
-        let found = |q: &str| dates(q, today).into_iter().map(|(_, fr, date)| (fr, date)).collect::<Vec<_>>();
-        assert_eq!(found("").len(), 10);
-        assert_eq!(found("dem"), [("demain", (2026, 10, 10))]);
-        assert_eq!(found("Aujourd’"), [("aujourd'hui", today)]);
-        assert_eq!(found("yes"), [("hier", (2026, 10, 8))]);
-        assert_eq!(found("vendredi"), [("vendredi", (2026, 10, 16))]);
-        assert_eq!(found("mon"), [("lundi", (2026, 10, 12))]);
-        assert_eq!(found("t").len(), 4);
-        assert_eq!(found("2026-11-02"), [("", (2026, 11, 2))]);
-        assert!(found("2026-02-30").is_empty() && found("2026-1-2").is_empty() && found("zz").is_empty());
-                // `[text](address)`: a single link, over its whole range; neither an image nor a path.
-        let l = links("lire [la doc](https://a.b/c#d) et ![img](https://a.b/i.png)");
-        assert_eq!(l[0], (5..30, Link::Url("https://a.b/c#d".into())));
-        assert_eq!(l[1], (41..58, Link::Url("https://a.b/i.png".into())));
-        assert_eq!(l.len(), 2);
-        assert!(links("[x](fichier.md) [y]( ) [a [b](c)").is_empty());
-        assert_eq!(web_link("[la doc](mailto:a@b.c) suite"), Some((1..7, 9..21)));
-        assert!(is_url("https://a.b") && !is_url("https://") && !is_url("https://a b") && !is_url("a.b"));
-        let mut flags = vec![0u16; 31];
-        inline("lire [la doc](https://a.b/c#d).", 0, &mut flags);
-        assert!(flags[5] == DIM && flags[6..12].iter().all(|f| *f == LINK) && flags[12..14] == [DIM; 2]
-            && flags[14..29].iter().all(|f| *f == DIM | QUIET) && flags[29] == DIM && flags[30] == 0);
-        assert_eq!(index("```\n#b [[z]]").1, ["z"]);
-        let (tags, wikis) = index("#A\n```\n#b [[z]]\n```\n#a #c [[X]] [[x|alias]] [[Y]]");
-        assert_eq!(tags, vec!["a", "c"]);
-        assert_eq!(wikis, vec!["x", "y"]);
-    }
-
-    #[test]
     fn relinks_renamed_notes() {
         let text = "[[Test]] et [[test|alias]], [[ Test#titre]] `[[Test]]`\n```\n[[Test]]\n```\n[[Testé]] [[Test]]";
         let want = "[[Essai]] et [[Essai|alias]], [[ Essai#titre]] `[[Test]]`\n```\n[[Test]]\n```\n[[Testé]] [[Essai]]";
@@ -1317,64 +1185,6 @@ mod tests {
             [(1, "Un", 0), (3, "Trois ##", third), (2, "Deux", text.find("## Deux").unwrap()), (1, "après un bloc jamais fermé", text.rfind("# ").unwrap())]
         );
         assert!(headings("```\n# a\n```\n```\n# b\n```").is_empty());
-    }
-
-    #[test]
-    fn finds_passages() {
-        let text = "Été, été. L'ÉTÉ d'**été**\nétés";
-        assert_eq!(find(text, "été", false, false).len(), 5);
-        assert_eq!(find(text, "été", true, false).len(), 3);
-        assert_eq!(find(text, "été", false, true).len(), 4);
-        let bold = find(text, "**été**", true, true);
-        assert_eq!((bold.len(), bold[0].clone()), (1, text.find("**").unwrap()..text.find('\n').unwrap()));
-        assert_eq!(find("aaaa", "aa", true, false), [0..2, 2..4]);
-        assert!(find(text, "", false, false).is_empty() && find("", "a", false, false).is_empty());
-        // A letter that grows when lowercased ("İ": two characters) shifts nothing.
-        let found = find("İstanbul", "stan", false, false);
-        assert_eq!((found.len(), found[0].clone()), (1, "İ".len().."İstan".len()));
-    }
-
-    #[test]
-    fn counts_words_and_characters() {
-        assert_eq!(counts(""), (0, 0));
-        assert_eq!(counts("# Été\n\nl'idée, **déjà** 2 fois\n"), (5, 28));
-        assert_eq!(counts("👨‍👩‍👧 ok"), (1, 4));
-                // Recounting only the changed lines gives the counts of the whole text.
-        let texts = ["", "a", "un mot\n", "un mot\ndeux\n", "un mot\r\ndeux\r\n", "un mot\ndeux mots\n", "un\n\ndeux\n", "été\nl'idée 👨‍👩‍👧\nfin", "un mot\ndeux\ntrois\n", "x\r", "x\r\n", "\n", "\n\n", "deux\n"];
-        for old in texts {
-            for new in texts {
-                assert_eq!(recount(old, counts(old), new), counts(new), "{old:?} -> {new:?}");
-            }
-        }
-                // A long text, compared by blocks: a keystroke at the start, in the middle, at the end, and a line removed.
-        let long: String = (0..2000).map(|i| format!("ligne {i} d'été\n")).collect();
-        for at in [0, 7, long.len() / 2, long.len() - 1, long.len()] {
-            let typed = format!("{}mot {}", &long[..at], &long[at..]);
-            assert_eq!(recount(&long, counts(&long), &typed), counts(&typed), "keystroke at {at}");
-            assert_eq!(recount(&typed, counts(&typed), &long), counts(&long), "indent at {at}");
-        }
-                // Random edits (always the same): insert, delete, replace, anywhere.
-        let bits = ["a", " ", "\n", "\r\n", "\r", "é", "👨‍👩‍👧", "l'idée", "3.14", "mot mot\n", "", "\n\n"];
-        let mut seed = 42u64;
-        let mut next = |n: usize| {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            (seed >> 33) as usize % n.max(1)
-        };
-        let (mut text, mut known) = (String::new(), (0, 0));
-        for step in 0..3000 {
-            let cut = |t: &str, mut i: usize| {
-                while !t.is_char_boundary(i) {
-                    i -= 1;
-                }
-                i
-            };
-            let from = cut(&text, next(text.len() + 1));
-            let to = cut(&text, (from + next(6)).min(text.len())).max(from);
-            let fresh = format!("{}{}{}", &text[..from], bits[next(bits.len())], &text[to..]);
-            known = recount(&text, known, &fresh);
-            assert_eq!(known, counts(&fresh), "edit {step}: {text:?} -> {fresh:?}");
-            text = fresh;
-        }
     }
 
     #[test]

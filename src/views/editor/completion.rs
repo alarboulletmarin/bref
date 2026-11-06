@@ -37,7 +37,7 @@ pub(super) enum Choice<'a> {
     Name(&'a str),
     Command(&'static Command),
         /// Day offered after `@`: its English and French name, its date.
-    Date(&'static str, &'static str, md::Date),
+    Date(&'static str, &'static str, crate::logic::dates::Date),
     /// In a formula: a function or a name, then a column (its letter and its header).
     Word(&'static Word),
     Column(&'static str, &'a str),
@@ -142,7 +142,7 @@ impl Editor {
         if !starts_word || !query.chars().all(|ch| ch.is_alphanumeric() || matches!(ch, '-' | '\'' | '’')) || self.in_code(line) {
             return None;
         }
-        let items = md::dates(query, crate::platform::clock::today()).into_iter().map(|(en, fr, date)| Choice::Date(en, fr, date));
+        let items = crate::logic::dates::dates(query, crate::platform::clock::today()).into_iter().map(|(en, fr, date)| Choice::Date(en, fr, date));
         Some((c - query.len(), items.collect()))
     }
 

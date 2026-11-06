@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use crate::logic::markdown::{self, Date};
+use crate::logic::dates::Date;
 use crate::logic::note::Note;
 use crate::{lang::date_name, lang::tr};
 
@@ -23,14 +23,14 @@ pub struct Recalled {
 /// they exist, then a note untouched for a long time. That one is drawn at
 /// random from the date: the same all day, another the next day.
 pub fn recall(notes: &[Note], today: Date, now: SystemTime) -> Vec<Recalled> {
-    let day = markdown::day_number(today);
-    let past = [markdown::day_of(day - 7), markdown::add_months(today, -1), markdown::add_months(today, -12)];
+    let day = crate::logic::dates::day_number(today);
+    let past = [crate::logic::dates::day_of(day - 7), crate::logic::dates::add_months(today, -1), crate::logic::dates::add_months(today, -12)];
     let mut found: Vec<Recalled> = past
         .iter()
         .filter_map(|&date| {
             let name = date_name(date);
             let note = notes.iter().find(|n| n.name == name)?;
-            Some(Recalled { path: note.path.clone(), name, days: day - markdown::day_number(date) })
+            Some(Recalled { path: note.path.clone(), name, days: day - crate::logic::dates::day_number(date) })
         })
         .collect();
     let age = |note: &Note| now.duration_since(note.mtime).unwrap_or(Duration::ZERO).as_secs() as i64 / 86_400;
@@ -66,8 +66,8 @@ pub fn ago(days: i64) -> String {
 pub fn long_date(date: Date) -> String {
     let (_, month, day) = date;
     // 1 January 1970 was a Thursday: Monday is 0.
-    let weekday = markdown::DAYS[3 + (markdown::day_number(date) + 3).rem_euclid(7) as usize];
-    let months = markdown::MONTHS[month as usize - 1];
+    let weekday = crate::logic::dates::DAYS[3 + (crate::logic::dates::day_number(date) + 3).rem_euclid(7) as usize];
+    let months = crate::logic::dates::MONTHS[month as usize - 1];
     if tr("en", "fr") == "fr" {
         return format!("{} {day}{} {}", weekday.1, if day == 1 { "er" } else { "" }, months.1);
     }

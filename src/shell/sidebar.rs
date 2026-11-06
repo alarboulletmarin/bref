@@ -12,7 +12,7 @@ use gpui::{
 };
 use crate::{
     ui::widgets::{button, tip},
-    logic::markdown::{self, Date},
+    logic::dates::Date,
     logic::wiki,
     views::palette::{Palette, PaletteEvent, Setting},
     lang::tr,
@@ -194,8 +194,8 @@ impl Shell {
 
     /// Calendar: moves the chosen day by `days` days, or by `months` months.
     pub(super) fn day_step(&mut self, days: i64, months: i32, cx: &mut Context<Self>) {
-        let moved = markdown::day_of(markdown::day_number(self.nav.day()) + days);
-        self.nav.set_day(markdown::add_months(moved, months));
+        let moved = crate::logic::dates::day_of(crate::logic::dates::day_number(self.nav.day()) + days);
+        self.nav.set_day(crate::logic::dates::add_months(moved, months));
         cx.notify();
     }
 
@@ -213,10 +213,10 @@ impl Shell {
         let (year, month, chosen) = self.nav.day();
         // The week starts on Monday in French, on Sunday in English.
         let monday = tr("sunday", "monday") == "monday";
-        let (lead, days) = markdown::month(year, month, monday);
+        let (lead, days) = crate::logic::dates::month(year, month, monday);
         let names: HashSet<&str> = self.notes.iter().map(|n| n.name.as_str()).collect();
         let (today, open) = (crate::platform::clock::today(), self.pane().path.as_deref().map(vault::stem));
-        let (en, fr) = markdown::MONTHS[month as usize - 1];
+        let (en, fr) = crate::logic::dates::MONTHS[month as usize - 1];
         let step = |id: &'static str, icon: &'static str, by: i32, cx: &mut Context<Self>| {
             button(id, icon, false, t).on_click(cx.listener(move |this, _, _, cx| this.day_step(0, by, cx)))
         };
@@ -240,10 +240,10 @@ impl Shell {
         let initials = if monday { tr("MTWTFSS", "LMMJVSD") } else { tr("SMTWTFS", "DLMMJVS") };
         let week = initials.chars().map(|c| cell().h(t.px(30.)).text_color(t.soft).text_size(t.px(11.)).child(c.to_string()));
         // Whole weeks: the last days of the previous month and the first of the next fill the grid.
-        let first = markdown::day_number((year, month, 1));
+        let first = crate::logic::dates::day_number((year, month, 1));
         let trail = (7 - (lead + days) % 7) % 7;
         let cells = (-(lead as i64)..i64::from(days + trail)).map(|offset| {
-            let date = markdown::day_of(first + offset);
+            let date = crate::logic::dates::day_of(first + offset);
             let inside = date.1 == month;
             let name = crate::lang::date_name(date);
             let has = names.contains(name.as_str());

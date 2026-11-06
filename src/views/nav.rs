@@ -16,7 +16,7 @@ use gpui::{
 use crate::{
     ui::theme::Theme, views::editor,
     views::field::Field,
-    logic::markdown::{Date, Link},
+    logic::{dates::Date, markdown::Link},
     lang::tr,
     platform::vault,
 };

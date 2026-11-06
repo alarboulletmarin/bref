@@ -706,7 +706,7 @@ fn parse_date(text: &str) -> Result<(i32, u32, u32), String> {
     match (year, month, day, parts.next()) {
         // A day the calendar has comes back unchanged from a day number: 2026-02-30 does not.
         (Some(year), Some(month), Some(day), None)
-            if (1..=12).contains(&month) && markdown::day_of(markdown::day_number((year, month, day))) == (year, month, day) =>
+            if (1..=12).contains(&month) && crate::logic::dates::day_of(crate::logic::dates::day_number((year, month, day))) == (year, month, day) =>
         {
             Ok((year, month, day))
         }

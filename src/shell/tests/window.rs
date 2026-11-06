@@ -210,7 +210,7 @@ fn empty_page(cx: &mut TestAppContext) {
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
     let _config = isolated_config(&root);
-    let week = date_name(markdown::day_of(markdown::day_number(today()) - 7));
+    let week = date_name(crate::logic::dates::day_of(crate::logic::dates::day_number(today()) - 7));
     let (daily, old) = (root.join(format!("{week}.md")), root.join("Ancienne.md"));
     fs::write(&daily, format!("# {week}\n")).unwrap();
     fs::write(&old, "# Ancienne\n").unwrap();

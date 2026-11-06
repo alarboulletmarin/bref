@@ -11,7 +11,7 @@ use super::*;
 use editor::{Find, FindCase, FindRegex, FindReplace, FindSwitch, FindWord, ReplaceAll, ReplaceInVault};
 use field::{Field, FieldEvent};
 use gpui::{HighlightStyle, ScrollStrategy, StyledText, Task, UniformListScrollHandle, uniform_list};
-use markdown::{Hit, Swap};
+use crate::logic::search::{Hit, Swap};
 
 /// The notes where the search was found, each with its matches.
 pub(super) struct Group {
@@ -33,7 +33,7 @@ pub(super) struct VaultFind {
     with: Entity<Field>,
     /// The replace line shows.
     replace: bool,
-    options: markdown::FindOptions,
+    options: crate::logic::search::FindOptions,
     groups: Vec<Group>,
     /// Notes whose matches are hidden under their header.
     folded: HashSet<PathBuf>,
@@ -133,7 +133,7 @@ impl Shell {
             query,
             with,
             replace: false,
-            options: markdown::FindOptions::default(),
+            options: crate::logic::search::FindOptions::default(),
             groups: Vec::new(),
             folded: HashSet::new(),
             dismissed: HashSet::new(),
@@ -170,7 +170,7 @@ impl Shell {
             find.dismissed.clear();
             find.sel = 0;
         }
-        if swap.query.is_empty() || markdown::broken(&swap.query, swap.options) {
+        if swap.query.is_empty() || crate::logic::search::broken(&swap.query, swap.options) {
             (find.groups, find.busy) = (Vec::new(), None);
             return cx.notify();
         }
@@ -178,7 +178,7 @@ impl Shell {
         // Sorted in the background too: the keystroke only copies the list.
         let work = cx.background_executor().spawn(async move {
             notes.sort_by_cached_key(|(path, name, _)| (name.to_lowercase(), path.clone()));
-            let found = notes.into_iter().map(|(path, name, body)| (markdown::hits(&body, &swap), path, name, body));
+            let found = notes.into_iter().map(|(path, name, body)| (crate::logic::search::hits(&body, &swap), path, name, body));
             found.filter(|(hits, ..)| !hits.is_empty()).map(|(hits, path, name, body)| Group { path, name, body, hits }).collect::<Vec<_>>()
         });
         find.busy = Some(cx.spawn(async move |this, cx| {
@@ -254,7 +254,7 @@ impl Shell {
             Some(path) => {
                 let skip = find.skipped(&path);
                 self.flush(cx);
-                let found = self.notes.iter().find(|note| note.path == path).and_then(|note| markdown::swap_except(&note.body, &swap, &skip));
+                let found = self.notes.iter().find(|note| note.path == path).and_then(|note| crate::logic::search::swap_except(&note.body, &swap, &skip));
                 if let Some((text, count)) = found {
                     self.swap_notes(vec![(path, text, count)], cx);
                 }
@@ -265,14 +265,14 @@ impl Shell {
 
     /// Replace in the whole vault: counts first, and writes only once the count
     /// is accepted. Each rewritten note is kept as it was, to undo everything.
-    pub(super) fn replace_in_vault(&mut self, swap: markdown::Swap, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn replace_in_vault(&mut self, swap: crate::logic::search::Swap, window: &mut Window, cx: &mut Context<Self>) {
         // The open note is saved first: the replacement starts from what is on screen.
         self.flush(cx);
         // The matches set aside in the panel's results of this same search stay as they are.
         let panel = self.vault_find.as_ref().filter(|find| find.asked.as_ref().is_some_and(|asked| (&asked.query, asked.options) == (&swap.query, swap.options)));
         let skip = |path: &Path| panel.map_or_else(Vec::new, |find| find.skipped(path));
         let found: Vec<(PathBuf, String, usize)> = (self.notes.iter())
-            .filter_map(|note| markdown::swap_except(&note.body, &swap, &skip(&note.path)).map(|(text, count)| (note.path.clone(), text, count)))
+            .filter_map(|note| crate::logic::search::swap_except(&note.body, &swap, &skip(&note.path)).map(|(text, count)| (note.path.clone(), text, count)))
             .collect();
         let count: usize = found.iter().map(|(.., count)| count).sum();
         if count == 0 {
@@ -369,7 +369,7 @@ impl Shell {
     }
 
     /// Case, whole words, regular expression: switched, searched again.
-    fn vault_flip(&mut self, option: markdown::FindOption, cx: &mut Context<Self>) {
+    fn vault_flip(&mut self, option: crate::logic::search::FindOption, cx: &mut Context<Self>) {
         if let Some(find) = &mut self.vault_find {
             find.options.flip(option);
         }
@@ -413,7 +413,7 @@ impl Shell {
         let (hits, notes) = find.counts();
         let said = if swap.query.is_empty() {
             tr("Search the text of every note", "Chercher dans le texte de toutes les notes").to_string()
-        } else if markdown::broken(&swap.query, swap.options) {
+        } else if crate::logic::search::broken(&swap.query, swap.options) {
             tr("Invalid expression", "Expression invalide").to_string()
         } else if find.busy.is_some() && find.groups.is_empty() {
             tr("Searching…", "Recherche…").to_string()
@@ -480,9 +480,9 @@ impl Shell {
             .key_context("Find")
             .on_action(cx.listener(|this, _: &Find, window, cx| this.open_vault_find(window, cx)))
             .on_action(cx.listener(|this, _: &FindReplace, window, cx| this.vault_flip_replace(window, cx)))
-            .on_action(cx.listener(|this, _: &FindCase, _, cx| this.vault_flip(markdown::FindOption::Case, cx)))
-            .on_action(cx.listener(|this, _: &FindWord, _, cx| this.vault_flip(markdown::FindOption::Word, cx)))
-            .on_action(cx.listener(|this, _: &FindRegex, _, cx| this.vault_flip(markdown::FindOption::Regex, cx)))
+            .on_action(cx.listener(|this, _: &FindCase, _, cx| this.vault_flip(crate::logic::search::FindOption::Case, cx)))
+            .on_action(cx.listener(|this, _: &FindWord, _, cx| this.vault_flip(crate::logic::search::FindOption::Word, cx)))
+            .on_action(cx.listener(|this, _: &FindRegex, _, cx| this.vault_flip(crate::logic::search::FindOption::Regex, cx)))
             .on_action(cx.listener(|this, _: &FindSwitch, window, cx| this.vault_switch(window, cx)))
             .on_action(cx.listener(|this, _: &palette::Prev, _, cx| this.vault_step(false, cx)))
             .on_action(cx.listener(|this, _: &palette::Next, _, cx| this.vault_step(true, cx)))
@@ -532,7 +532,7 @@ impl Shell {
                 Row::Hit(g, h) => {
                     let (group, hit) = (&find.groups[g], &find.groups[g].hits[h]);
                     let shown = group.body[hit.at.start..hit.at.end.min(hit.span.end)].chars().count();
-                    let (text, at) = markdown::excerpt(&group.body, hit, room.saturating_sub(shown + 3).clamp(3, 40));
+                    let (text, at) = crate::logic::search::excerpt(&group.body, hit, room.saturating_sub(shown + 3).clamp(3, 40));
                     let marked = StyledText::new(text).with_highlights([(at, HighlightStyle { background_color: Some(t.selection), ..Default::default() })]);
                     div()
                         .id(("vault-hit", i))

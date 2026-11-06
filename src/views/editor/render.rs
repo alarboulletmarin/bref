@@ -147,9 +147,9 @@ impl Render for Editor {
         .on_action(cx.listener(|this, _: &FindReplace, window, cx| this.open_find(true, window, cx)))
         .on_action(cx.listener(|this, _: &FindNext, window, cx| this.find_step(true, window, cx)))
         .on_action(cx.listener(|this, _: &FindPrev, window, cx| this.find_step(false, window, cx)))
-        .on_action(cx.listener(|this, _: &FindCase, _, cx| this.find_flip(crate::logic::markdown::FindOption::Case, cx)))
-        .on_action(cx.listener(|this, _: &FindWord, _, cx| this.find_flip(crate::logic::markdown::FindOption::Word, cx)))
-        .on_action(cx.listener(|this, _: &FindRegex, _, cx| this.find_flip(crate::logic::markdown::FindOption::Regex, cx)))
+        .on_action(cx.listener(|this, _: &FindCase, _, cx| this.find_flip(crate::logic::search::FindOption::Case, cx)))
+        .on_action(cx.listener(|this, _: &FindWord, _, cx| this.find_flip(crate::logic::search::FindOption::Word, cx)))
+        .on_action(cx.listener(|this, _: &FindRegex, _, cx| this.find_flip(crate::logic::search::FindOption::Regex, cx)))
         .on_action(cx.listener(|this, _: &Cancel, _, cx| {
             // The color badges close first.
             if std::mem::take(&mut this.bar.swatches) || std::mem::take(&mut this.bar.open) {

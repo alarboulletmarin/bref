@@ -217,7 +217,7 @@ pub enum EditorEvent {
     /// The same, with Shift: to open in the other pane.
     OpenAside(Link),
     /// Replace across the whole vault what the search bar looks for.
-    Swap(md::Swap),
+    Swap(crate::logic::search::Swap),
     /// Right click in the note: where, the link found there, whether it targets a comment, and whether the keys opened it.
     Menu(Point<Pixels>, Option<Link>, bool, bool),
     /// Click on a block handle: its menu, at that spot.
@@ -341,7 +341,7 @@ pub struct Editor {
     /// Footer counter, kept as long as the text and the selection do not move.
     counted: Option<(CountKey, String)>,
     /// The text counted last, its version and its counts: on a keystroke, only the changed
-    /// lines are recounted (`md::recount`).
+    /// lines are recounted (`crate::logic::search::recount`).
     tally: Option<(u64, String, (usize, usize))>,
     /// Number of buttons the window puts in the corner, right of the counter.
     pub corner: usize,
@@ -631,8 +631,8 @@ impl Editor {
         let label = if self.sel.is_empty() {
             let whole = match &self.tally {
                 Some((version, _, whole)) if *version == self.version => *whole,
-                Some((_, old, was)) => md::recount(old, *was, &self.content),
-                None => md::counts(&self.content),
+                Some((_, old, was)) => crate::logic::search::recount(old, *was, &self.content),
+                None => crate::logic::search::counts(&self.content),
             };
             if self.tally.as_ref().is_none_or(|(version, ..)| *version != self.version) {
                 // ponytail: a copy of the text for the next recount; keep the counts in `splice` if it weighs.
@@ -640,7 +640,7 @@ impl Editor {
             }
             both(whole)
         } else {
-            format!("{} {}", tr("Selection:", "Sélection :"), both(md::counts(&self.content[self.sel.clone()])))
+            format!("{} {}", tr("Selection:", "Sélection :"), both(crate::logic::search::counts(&self.content[self.sel.clone()])))
         };
         self.counted = Some((key, label.clone()));
         label

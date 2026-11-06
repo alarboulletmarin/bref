@@ -77,7 +77,8 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 
 | To change… | Go to |
 |---|---|
-| how Markdown is read (headings, links, tags, styles) | `logic/markdown/` (`mod.rs`; `tables.rs` with the comment `Scope`, `lists.rs`, `front.rs`, `dates.rs`, `search.rs`; `walk.rs`: the one walk over the lines outside code blocks, a stray ``` opens nothing; `wiki.rs`: `WikiLink` reads `target#anchor|alias`, `rewrite_wikilinks` is the one rewriter) |
+| how Markdown is read (headings, links, tags, styles) | `logic/markdown/` (`mod.rs`; `tables.rs` with the comment `Scope`, `lists.rs`, `front.rs`; `walk.rs`: the one walk over the lines outside code blocks, a stray ``` opens nothing; `wiki.rs`: `WikiLink` reads `target#anchor|alias`, `rewrite_wikilinks` is the one rewriter) |
+| dates (day numbers, calendar months, the dates offered after `@`), find and replace, word counts | `logic/dates.rs`, `logic/search.rs` |
 | CSV/TSV parsing and writing | `logic/table.rs` |
 | zooming around a point, with each surface's limits (viewer, canvas, graph) | `logic/zoom.rs` (`zoom_at`, `wheel`, `Limits`) |
 | undo and redo of the canvas and the grid (two capped stacks) | `logic/undo.rs` (`History`); the text editor keeps its own compressed stack (`Snapshots` in `views/editor/edit.rs`) with the same depth |

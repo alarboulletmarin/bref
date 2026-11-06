@@ -7,7 +7,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
     // `@` offers days: the chosen one becomes a link to its daily note.
     // An e-mail address does not open the list.
-    let tomorrow = date_name(markdown::day_of(markdown::day_number(today()) + 1));
+    let tomorrow = date_name(crate::logic::dates::day_of(crate::logic::dates::day_number(today()) + 1));
     j.load(cx, "", 0);
     cx.simulate_input("voir @dem");
     cx.simulate_keystrokes("enter");

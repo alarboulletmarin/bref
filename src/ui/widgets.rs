@@ -4,7 +4,7 @@ use gpui::{AnyView, App, Context, Div, InteractiveElement, MouseButton, SharedSt
 
 use crate::{
     lang::tr,
-    logic::markdown::{FindOption, FindOptions},
+    logic::search::{FindOption, FindOptions},
     ui::theme::Theme,
 };
 

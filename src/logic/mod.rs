@@ -4,6 +4,7 @@
 pub mod block;
 pub mod commands;
 pub mod daily;
+pub mod dates;
 pub mod dock;
 pub mod diagram;
 pub mod embed;
@@ -20,6 +21,7 @@ pub mod mermaid;
 pub mod markdown;
 pub mod note;
 pub mod rank;
+pub mod search;
 pub mod wiki;
 pub mod xml;
 pub mod zoom;
