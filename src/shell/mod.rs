@@ -314,7 +314,7 @@ impl Shell {
                 this.restore_panes(tree, saved, panes.starts_with("v3 "), &root, window, cx);
                 this.panes_saved = this.panes_state();
                 if this.nav.panel() == Panel::Full {
-                    window.focus(&this.nav.focus());
+                    window.focus(this.nav.focus());
                 }
             }
             None => window.focus(&this.focus),

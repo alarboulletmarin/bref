@@ -38,7 +38,7 @@ impl Shell {
         }
         self.put_tool(mode);
         self.nav.set_needs_reveal(true);
-        window.focus(&self.nav.focus());
+        window.focus(self.nav.focus());
         self.refresh_graph(cx);
         self.settle_nav(window, cx);
     }
@@ -73,7 +73,7 @@ impl Shell {
         let editor = self.pane().editor.focus_handle(cx);
         match self.nav.panel() {
             Panel::Rail if self.nav.focus().contains_focused(window, cx) => window.focus(&editor),
-            Panel::Full if editor.is_focused(window) => window.focus(&self.nav.focus()),
+            Panel::Full if editor.is_focused(window) => window.focus(self.nav.focus()),
             _ => {}
         }
         self.nav.save();
@@ -130,9 +130,9 @@ impl Shell {
             return Vec::new();
         };
         match self.nav.mode() {
-            Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.images, &self.nav.open()),
+            Mode::Tree => tree_rows(root, &self.notes, &self.dirs, &self.images, self.nav.open()),
             Mode::Graph | Mode::Calendar | Mode::Search => Vec::new(),
-            Mode::Tags => tag_rows(&self.notes, &self.nav.open()),
+            Mode::Tags => tag_rows(&self.notes, self.nav.open()),
             Mode::Links => (self.nav.anchor().iter())
                 .flat_map(|target| wiki::backlinks(&self.notes, target))
                 .map(|n| Row { path: n.path.clone(), name: n.name.clone(), depth: 0, dir: None })
@@ -393,7 +393,7 @@ impl Shell {
         let prompt = cx.new(|cx| Palette::prompt(label, text, theme, cx));
         cx.subscribe_in(&prompt, window, move |this, _, event, window, cx| {
             this.palette = None;
-            window.focus(&this.nav.focus());
+            window.focus(this.nav.focus());
             if let PaletteEvent::Submit(text) = event
                 && let Some(name) = vault::clean_name(text)
             {
@@ -719,7 +719,7 @@ impl Shell {
                                     this.nav.set_sel(Some(target.clone()));
                                 }
                                 // A tag has only one entry: the list of its notes.
-                                window.focus(&this.nav.focus());
+                                window.focus(this.nav.focus());
                                 if this.vault.as_ref().is_some_and(|root| target.starts_with(root)) || tag_of(&target).is_some() {
                                     this.show_menu(Menu { at: e.position, target: Some(target.clone()), ..Default::default() }, window, cx);
                                 }
@@ -1374,7 +1374,7 @@ impl Shell {
                 }
             }))
             .key_context("Nav")
-            .when(keys_here, |d| d.track_focus(&self.nav.focus()))
+            .when(keys_here, |d| d.track_focus(self.nav.focus()))
             .on_action(cx.listener(|this, _: &Prev, window, cx| this.nav_step(false, window, cx)))
             .on_action(cx.listener(|this, _: &Next, window, cx| this.nav_step(true, window, cx)))
             .on_action(cx.listener(|this, _: &Fold, window, cx| this.nav_fold(false, window, cx)))

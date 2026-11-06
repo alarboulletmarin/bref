@@ -76,7 +76,7 @@ impl Shell {
             true => self.hide_tool(mode, window, cx),
             false => {
                 self.nav.stack_tool(mode, &tabs);
-                window.focus(&self.nav.focus());
+                window.focus(self.nav.focus());
                 self.refresh_graph(cx);
                 self.settle_nav(window, cx);
             }
@@ -135,7 +135,7 @@ impl Shell {
     pub(super) fn place_tool(&mut self, mode: Mode, right: bool, at: usize, window: &mut Window, cx: &mut Context<Self>) {
         let tabs = self.tabbed();
         self.nav.place_tool(mode, right, at, &tabs);
-        window.focus(&self.nav.focus());
+        window.focus(self.nav.focus());
         self.refresh_graph(cx);
         self.settle_nav(window, cx);
     }

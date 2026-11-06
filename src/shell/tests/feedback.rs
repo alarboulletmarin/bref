@@ -150,7 +150,7 @@ fn a_corrupt_picture_opened_alone_says_so(cx: &mut TestAppContext) {
         // As when it is picked in the panel: the focus is there, not in the note, which would take over again.
         shell.update_in(cx, |s, window, cx| {
             s.open_note(&path, cx);
-            window.focus(&s.nav.focus());
+            window.focus(s.nav.focus());
         });
         for _ in 0..6 {
             cx.executor().advance_clock(Duration::from_millis(500));

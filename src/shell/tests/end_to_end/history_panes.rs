@@ -61,7 +61,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         // A preview does not enter the history: "back" returns to where we came from, and
         // "forward" still leads to the table.
     shell.update_in(cx, |s, window, cx| {
-        window.focus(&s.nav.focus());
+        window.focus(s.nav.focus());
         s.preview_note(&hist_b, window, cx);
     });
     assert_eq!(seen(cx), on_note(&hist_b));

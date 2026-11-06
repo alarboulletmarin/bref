@@ -54,7 +54,7 @@ impl Shell {
             FieldEvent::Done => this.board_commit(true, window, cx),
             FieldEvent::Cancel => {
                 this.pane_mut().board.close_field();
-                window.focus(&this.pane().board.focus());
+                window.focus(this.pane().board.focus());
                 cx.notify();
             }
             FieldEvent::Changed => {}
@@ -89,7 +89,7 @@ impl Shell {
         );
         match slot {
             Slot::New(c) if again && written => self.board_write(Slot::New(c), window, cx),
-            _ => window.focus(&self.pane().board.focus()),
+            _ => window.focus(self.pane().board.focus()),
         }
         cx.notify();
     }
@@ -335,7 +335,7 @@ impl Shell {
         div()
             .id("board")
             .key_context("Board")
-            .track_focus(&self.pane().board.focus())
+            .track_focus(self.pane().board.focus())
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.pane().editor.update(cx, |e, cx| e.restore(false, cx))))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.pane().editor.update(cx, |e, cx| e.restore(true, cx))))
             .on_action(cx.listener(|this, _: &CardUp, _, cx| this.board_walk((0, -1), cx)))
@@ -407,7 +407,7 @@ impl Shell {
                 cx.notify();
             }))
             .child(header)
-            .child(div().id("board-columns").flex_1().min_h_0().flex().gap_3().overflow_x_scroll().track_scroll(&self.pane().board.scroll()).children(shown).child(more))
+            .child(div().id("board-columns").flex_1().min_h_0().flex().gap_3().overflow_x_scroll().track_scroll(self.pane().board.scroll()).children(shown).child(more))
     }
 }
 /// While a card is held, the pointer over this zone says where it would land: before the

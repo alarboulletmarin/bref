@@ -696,7 +696,7 @@ impl Shell {
         // board hides the note, which must no longer receive keystrokes.
         let board = self.board_shown(cx);
         if board && self.pane().editor.focus_handle(cx).is_focused(window) {
-            window.focus(&self.pane().board.focus());
+            window.focus(self.pane().board.focus());
         }
         if !cx.has_active_drag() {
             self.pane_mut().board.set_drag(None);

@@ -59,6 +59,12 @@ impl Field {
         cx.notify();
     }
 
+    /// The text as it is, all selected: the next keystroke replaces it.
+    pub fn select_all(&mut self, cx: &mut Context<Self>) {
+        self.line.select_all();
+        cx.notify();
+    }
+
     /// The text, replaced, all selected: the next keystroke replaces it.
     pub fn set(&mut self, text: &str, cx: &mut Context<Self>) {
         self.line = Line::new(text);

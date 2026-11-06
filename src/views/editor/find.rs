@@ -122,11 +122,11 @@ impl Editor {
             Some((_, text)) if !text.contains('\n') => find.query.update(cx, |field, cx| field.set(&text, cx)),
             Some((range, _)) => (find.span, find.inside) = (Some(range), true),
             // Opened again on the same search: all selected, typing replaces it.
-            None if !was_open => find.query.update(cx, |field, cx| field.set(&field.text().to_string(), cx)),
+            None if !was_open => find.query.update(cx, |field, cx| field.select_all(cx)),
             None => {}
         }
         if !was_open {
-            find.with.update(cx, |field, cx| field.set(&field.text().to_string(), cx));
+            find.with.update(cx, |field, cx| field.select_all(cx));
         }
         find.replace = replace;
         window.focus(&find.aim(was_open || picked_any, cx));

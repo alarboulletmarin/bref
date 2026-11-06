@@ -145,7 +145,7 @@ fn the_current_file_is_separate_from_tree_selection(cx: &mut TestAppContext) {
     shell.update_in(cx, |s, window, cx| {
         s.nav.clear_marked();
         s.nav.set_sel(Some(root.join("Drawing.svg")));
-        window.focus(&s.nav.focus());
+        window.focus(s.nav.focus());
         cx.notify();
     });
     cx.simulate_keystrokes("down");
