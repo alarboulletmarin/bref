@@ -330,14 +330,7 @@ pub fn relink(root: Option<&Path>, notes: &mut [Note], old: &str, new: &str) -> 
 pub fn trash(root: &Path, path: &Path) -> io::Result<PathBuf> {
     let bin = root.join(".trash");
     fs::create_dir_all(&bin)?;
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let free = (1..)
-        .map(|n| match n {
-            1 => bin.join(&*name),
-            n => bin.join(format!("{n} {name}")),
-        })
-        .find(|p| !p.exists())
-        .unwrap();
+    let free = free_name(&bin, path.file_name().unwrap_or_default(), path.is_dir());
     fs::rename(path, &free)?;
     Ok(free)
 }
@@ -389,27 +382,35 @@ pub fn trashed(root: &Path) -> Vec<PathBuf> {
 /// Takes `path` out of the trash and puts it back at the vault root (the trash does not keep
 /// where it came from), under its name, numbered if taken: nothing is overwritten.
 pub fn restore(root: &Path, path: &Path) -> io::Result<PathBuf> {
-    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-    let extension = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
-    let free = (1..)
-        .map(|n| match n {
-            1 => root.join(format!("{stem}{extension}")),
-            n => root.join(format!("{stem} {n}{extension}")),
-        })
-        .find(|p| !p.exists())
-        .unwrap();
+    let free = free_name(root, path.file_name().unwrap_or_default(), path.is_dir());
     fs::rename(path, &free)?;
     Ok(free)
 }
 
-/// Free path in `dir` for a file `name.extension`: the name is followed
-/// by a number if already taken.
+/// Free path in `dir` for `name.extension` (no dot if `extension` is empty): the name is followed
+/// by a number if taken, `name 2.extension`, `name 3.extension`… Nothing is overwritten. Case is
+/// ignored (see `name_taken`), and a dangling link counts as taken.
 pub fn free_path(dir: &Path, name: &str, extension: &str) -> PathBuf {
-    let numbered = (1..).map(|n| match n {
-        1 => dir.join(format!("{name}.{extension}")),
-        n => dir.join(format!("{name} {n}.{extension}")),
-    });
-    numbered.into_iter().find(|p| !p.exists()).unwrap()
+    let taken: HashSet<String> = fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.file_name().to_string_lossy().to_lowercase()).collect();
+    let dot = if extension.is_empty() { "" } else { "." };
+    (1..)
+        .map(|n| if n == 1 { format!("{name}{dot}{extension}") } else { format!("{name} {n}{dot}{extension}") })
+        .find(|file| !taken.contains(&file.to_lowercase()) && dir.join(file).symlink_metadata().is_err())
+        .map(|file| dir.join(file))
+        .unwrap()
+}
+
+/// `free_path`, created empty in the same step (`create_new`): two writers choosing a name at once
+/// never share it, the second one gets the next number.
+pub fn create_free(dir: &Path, name: &str, extension: &str) -> io::Result<(PathBuf, fs::File)> {
+    loop {
+        let path = free_path(dir, name, extension);
+        match fs::File::create_new(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 /// File name (without extension) taken from the first non-empty line.
@@ -435,23 +436,13 @@ pub struct Imported {
     pub files: usize,
 }
 
-/// A free name in `dir`: `name.ext`, then `name 2.ext`, `name 3.ext`… Nothing is ever overwritten.
+/// A free name in `dir` for a dropped item: a file keeps its extension, a folder's name is whole.
 fn free_name(dir: &Path, name: &std::ffi::OsStr, folder: bool) -> PathBuf {
     let as_path = Path::new(name);
-    let (stem, ext) = match (folder, as_path.extension()) {
-        (false, Some(ext)) => (as_path.file_stem().unwrap_or(name).to_string_lossy().into_owned(), Some(ext.to_string_lossy().into_owned())),
-        _ => (name.to_string_lossy().into_owned(), None),
-    };
-    (1..)
-        .map(|n| {
-            let numbered = if n == 1 { stem.clone() } else { format!("{stem} {n}") };
-            dir.join(match &ext {
-                Some(ext) => format!("{numbered}.{ext}"),
-                None => numbered,
-            })
-        })
-        .find(|path| !path.exists() && path.symlink_metadata().is_err())
-        .unwrap()
+    match (folder, as_path.extension()) {
+        (false, Some(ext)) => free_path(dir, &as_path.file_stem().unwrap_or(name).to_string_lossy(), &ext.to_string_lossy()),
+        _ => free_path(dir, &name.to_string_lossy(), ""),
+    }
 }
 
 /// Copies `from` to `to`: a file is first written under a hidden name then renamed, so an interrupted
@@ -522,15 +513,12 @@ pub fn import(sources: &[PathBuf], dir: &Path) -> (Vec<Imported>, Vec<String>) {
 /// Saves a pasted image in `dir`, under a free name, and returns that name.
 pub fn save_image(dir: &Path, extension: &str, bytes: &[u8]) -> io::Result<String> {
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    let name = (1..)
-        .map(|n| match n {
-            1 => format!("image-{stamp}.{extension}"),
-            n => format!("image-{stamp}-{n}.{extension}"),
-        })
-        .find(|name| !dir.join(name).exists())
-        .unwrap();
-    fs::write(dir.join(&name), bytes)?;
-    Ok(name)
+    let (path, mut file) = create_free(dir, &format!("image-{stamp}"), extension)?;
+    if let Err(e) = file.write_all(bytes) {
+        let _ = fs::remove_file(&path);
+        return Err(e);
+    }
+    Ok(path.file_name().unwrap_or_default().to_string_lossy().into_owned())
 }
 
 /// Appends the line `text` at the bottom of the note named `name` (the daily note), wherever it is
@@ -637,15 +625,15 @@ pub fn save(
     let title = title_of(content);
     let target = match current {
         Some(p) => title_rename(p, &title, synced).filter(|to| !taken_by_other(p, to)).unwrap_or_else(|| p.to_path_buf()),
-        None => (1..)
-            .map(|n| match n {
-                1 => dir.join(format!("{title}.md")),
-                n => dir.join(format!("{title} {n}.md")),
-            })
-            .find(|p| !p.exists())
-            .unwrap(),
+        None => create_free(dir, &title, "md")?.0,
     };
-    write(&target, content)?;
+    if let Err(e) = write(&target, content) {
+        // A name reserved for a new note is not left empty behind a failed write.
+        if current.is_none() {
+            let _ = fs::remove_file(&target);
+        }
+        return Err(e);
+    }
     if let Some(old) = current
         && old != target
     {
@@ -700,6 +688,29 @@ mod tests {
         assert_eq!(title_rename(&path, "Autre", true), Some(root.join("Autre.md")));
         assert_eq!((title_rename(&path, "Autre", false), title_rename(&path, "Plan", true)), (None, None));
         assert_eq!(new_note_text("Plan"), "# Plan\n\n");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn free_names_are_numbered_and_reserved() {
+        let root = env::temp_dir().join(format!("bref-free-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        assert_eq!(free_path(&root, "Note", "md"), root.join("Note.md"));
+        // Reserved at once: the next asker gets the next number; case is ignored.
+        let (first, _) = create_free(&root, "Note", "md").unwrap();
+        let (second, _) = create_free(&root, "note", "MD").unwrap();
+        let (third, _) = create_free(&root, "Note", "md").unwrap();
+        assert_eq!((first, second, third), (root.join("Note.md"), root.join("note 2.MD"), root.join("Note 3.md")));
+        assert_eq!(free_path(&root, "Dossier", ""), root.join("Dossier"));
+        // A new note takes the number, and a failed write leaves no empty file behind.
+        fs::write(root.join("Idée.md"), "# Idée\n").unwrap();
+        let made = save(&root, None, false, "# Idée\nautre").unwrap();
+        assert_eq!(made, root.join("Idée 2.md"));
+        refuse_writes(&root.join("Idée 3.md"), true);
+        assert!(save(&root, None, false, "# Idée\nencore").is_err());
+        refuse_writes(&root.join("Idée 3.md"), false);
+        assert!(!root.join("Idée 3.md").exists());
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -790,7 +801,7 @@ mod tests {
         fs::write(&c, "autre").unwrap();
         trash(&root, &c).unwrap();
         assert_eq!(fs::read_to_string(root.join(".trash/C.md")).unwrap(), "# A\n");
-        assert_eq!(fs::read_to_string(root.join(".trash/2 C.md")).unwrap(), "autre");
+        assert_eq!(fs::read_to_string(root.join(".trash/C 2.md")).unwrap(), "autre");
         fs::write(root.join("vide/Photo.PNG"), "").unwrap();
         let (notes, dirs, images) = scan(&root);
         assert_eq!((notes.len(), dirs), (2, vec![root.join("vide")]));

@@ -7,7 +7,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use super::vault::free_path;
+use super::vault::create_free;
 use crate::lang::tr;
 
 /// Backup: the whole vault (trash included) in a `<vault> <date>.tar.gz` archive
@@ -23,14 +23,14 @@ pub fn backup(root: &Path, dir: &Path, date: &str) -> io::Result<PathBuf> {
     if dir.starts_with(root) {
         return Err(io::Error::other(tr("choose a folder outside the vault", "choisir un dossier hors du coffre")));
     }
-    let to = free_path(dir, &format!("{} {date}", name.to_string_lossy()), "tar.gz");
-    let written = fs::File::create_new(&to).and_then(|file| {
+    let (to, file) = create_free(dir, &format!("{} {date}", name.to_string_lossy()), "tar.gz")?;
+    let written = (|| {
         let mut gz = flate2::write::GzEncoder::new(io::BufWriter::new(file), flate2::Compression::default());
         tar_entry(&mut gz, root, &name.to_string_lossy())?;
         // The end of a tar: two empty blocks.
         gz.write_all(&[0; 1024])?;
         gz.finish()?.into_inner().map_err(|e| e.into_error())?.sync_all()
-    });
+    })();
     if let Err(e) = written {
         // An incomplete archive must not pass for a backup.
         let _ = fs::remove_file(&to);

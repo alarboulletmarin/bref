@@ -129,17 +129,9 @@ pub fn conflict_path(path: &Path, date: &str, host: &str) -> PathBuf {
 /// `conflict_path`, numbered when that name is taken: nothing is overwritten.
 pub fn free_conflict_path(path: &Path, date: &str, host: &str) -> PathBuf {
     let named = conflict_path(path, date, host);
-    let mut other = named.clone();
-    let mut n = 1;
-    while other.exists() {
-        n += 1;
-        let stem = named.file_stem().unwrap_or_default().to_string_lossy().to_string();
-        other = named.with_file_name(match named.extension() {
-            Some(extension) => format!("{stem} {n}.{}", extension.to_string_lossy()),
-            None => format!("{stem} {n}"),
-        });
-    }
-    other
+    let stem = named.file_stem().unwrap_or_default().to_string_lossy();
+    let extension = named.extension().map(|e| e.to_string_lossy()).unwrap_or_default();
+    super::vault::free_path(named.parent().unwrap_or(Path::new("")), &stem, &extension)
 }
 
 /// What git wrote when failing, reduced to one sentence: a refused connection and an unreachable
