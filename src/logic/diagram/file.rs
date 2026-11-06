@@ -364,6 +364,50 @@ mod tests {
         format!("<svg>\n<metadata id=\"bref-diagram\">\n{}</metadata>\n</svg>\n", xml(source))
     }
 
+    /// A diagram that draws everything the SVG writer knows: every form, fills, dashes, heads, texts
+    /// at the ends, a numbered sequence with a bar, a destroy cross and a fragment, styled and class texts.
+    fn rich_sample() -> Diagram {
+        let mut d = Diagram::blank();
+        for (i, (form, _)) in Form::ALL.iter().enumerate() {
+            let (w, h) = form.default_size();
+            let id = d.add_shape(*form, (i % 8) as f32 * 300., (i / 8) as f32 * 260. - 600., w, h);
+            let s = d.shape_mut(id).unwrap();
+            s.text = format!("{form:?} *it* **b**\n---\n+ x: int");
+            (s.color, s.fill, s.dashed) = ((i % 4) as u8, i % 3 == 0, i % 5 == 0);
+        }
+        let a = d.add_shape(Form::Rect, 0., 800., 200., 80.);
+        d.shape_mut(a).unwrap().text = "Shape\n---\n+ area(): f32\n---\n~~old~~ `List<T>` <&>".into();
+        let b = d.add_shape(Form::Ellipse, 400., 800., 120., 80.);
+        let l = d.add_link(End::Shape(a), End::Shape(b), Head::Triangle, Route::Elbow);
+        let link = d.link_mut(l).unwrap();
+        (link.text, link.start_text, link.end_text, link.color, link.dashed) = ("*calls*\nsecond".into(), "1..*".into(), "role\n+x".into(), 2, true);
+        link.start = Head::Diamond;
+        let lives: Vec<u32> = (0..3).map(|i| d.add_shape(Form::Lifeline, 100. + 180. * i as f32, 1000., 100., 200.)).collect();
+        let frag = d.add_shape(Form::Fragment, 60., 1060., 500., 100.);
+        d.shape_mut(frag).unwrap().text = "alt\n[ok]\n[else]".into();
+        let mut say = Vec::new();
+        for (from, to, end, dashed, text) in [(0, 1, Head::TriangleFull, false, "call"), (1, 2, Head::Arrow, true, "«create»"), (2, 1, Head::Arrow, true, "back"), (1, 2, Head::TriangleFull, false, "«destroy»")] {
+            let id = d.add_link(End::Life(lives[from]), End::Life(lives[to]), Head::None, Route::Straight);
+            let link = d.link_mut(id).unwrap();
+            (link.end, link.dashed, link.text) = (end, dashed, text.into());
+            say.push(id);
+        }
+        d.numbered = true;
+        d.set_parent(say[0], Some(frag));
+        d.normalise();
+        d
+    }
+
+    #[test]
+    fn svg_of_a_rich_sample_is_unchanged() {
+        let svg = rich_sample().to_svg(COLORS[0]);
+        let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/src/logic/diagram/fixtures/rich.svg");
+        if std::env::var_os("BLESS").is_some() {
+            std::fs::write(fixture, &svg).unwrap();
+        }
+        assert!(svg == std::fs::read_to_string(fixture).unwrap(), "to_svg changed: compare with {fixture}");
+    }
+
     #[test]
     fn keeps_the_lines_it_cannot_read() {
         let shape = "shape 1 rect 0 0 100 60 0 0 0 A";

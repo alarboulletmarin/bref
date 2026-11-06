@@ -1,0 +1,205 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2552" height="1792" viewBox="-16 -616 2552 1792" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" font-family="sans-serif" font-size="14">
+<path d="M2 -600L138 -600C139.1 -600 140 -599.1 140 -598L140 -542C140 -540.9 139.1 -540 138 -540L2 -540C0.9 -540 0 -540.9 0 -542L0 -598C0 -599.1 0.9 -600 2 -600Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15" stroke-dasharray="6 4"/>
+<path d="M0 -572H140" stroke="#7d8590"/>
+<text x="70" y="-580" text-anchor="middle" fill="#7d8590" stroke="none"><tspan font-weight="bold">Rect </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
+<text x="8" y="-554" fill="#7d8590" stroke="none">+ x: int</text>
+<path d="M314 -600L426 -600C433.7 -600 440 -593.7 440 -586L440 -554C440 -546.3 433.7 -540 426 -540L314 -540C306.3 -540 300 -546.3 300 -554L300 -586C300 -593.7 306.3 -600 314 -600Z" stroke="#e5534b"/>
+<path d="M300 -572H440" stroke="#e5534b"/>
+<text x="370" y="-580" text-anchor="middle" fill="#e5534b" stroke="none"><tspan font-weight="bold">Round </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
+<text x="308" y="-554" fill="#e5534b" stroke="none">+ x: int</text>
+<path d="M720 -560C720 -537.9 693.1 -520 660 -520C626.9 -520 600 -537.9 600 -560C600 -582.1 626.9 -600 660 -600C693.1 -600 720 -582.1 720 -560Z" stroke="#d98e2b"/>
+<path d="M600 -560H720" stroke="#d98e2b"/>
+<text x="660" y="-568" text-anchor="middle" fill="#d98e2b" stroke="none"><tspan>Ellipse </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="660" y="-542" text-anchor="middle" fill="#d98e2b" stroke="none">+ x: int</text>
+<path d="M960 -600L1020 -560L960 -520L900 -560Z" stroke="#3fa45b" fill="#3fa45b" fill-opacity="0.15"/>
+<text x="960" y="-573" text-anchor="middle" fill="#3fa45b" stroke="none"><tspan>Diamond </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="960" y="-555" text-anchor="middle" fill="#3fa45b" stroke="none">---</text>
+<text x="960" y="-537" text-anchor="middle" fill="#3fa45b" stroke="none">+ x: int</text>
+<text x="1200" y="-586" fill="#7d8590" stroke="none"><tspan>Text </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="1200" y="-568" fill="#7d8590" stroke="none">---</text>
+<text x="1200" y="-550" fill="#7d8590" stroke="none">+ x: int</text>
+<path d="M1500 -588C1500 -594.6 1517.9 -600 1540 -600C1562.1 -600 1580 -594.6 1580 -588L1580 -512C1580 -505.4 1562.1 -500 1540 -500C1517.9 -500 1500 -505.4 1500 -512Z" stroke="#e5534b" stroke-dasharray="6 4"/>
+<path d="M1500 -588C1500 -581.4 1517.9 -576 1540 -576C1562.1 -576 1580 -581.4 1580 -588" stroke="#e5534b" stroke-dasharray="6 4"/>
+<text x="1540" y="-563" text-anchor="middle" fill="#e5534b" stroke="none"><tspan>Cylinder </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="1540" y="-545" text-anchor="middle" fill="#e5534b" stroke="none">---</text>
+<text x="1540" y="-527" text-anchor="middle" fill="#e5534b" stroke="none">+ x: int</text>
+<path d="M1831.2 -588.8C1831.2 -582.6 1826.2 -577.6 1820 -577.6C1813.8 -577.6 1808.8 -582.6 1808.8 -588.8C1808.8 -595 1813.8 -600 1820 -600C1826.2 -600 1831.2 -595 1831.2 -588.8Z" stroke="#d98e2b" fill="#d98e2b" fill-opacity="0.15"/>
+<path d="M1820 -577.6L1820 -550.4" stroke="#d98e2b"/>
+<path d="M1800 -569.6L1840 -569.6" stroke="#d98e2b"/>
+<path d="M1800 -520L1820 -550.4L1840 -520" stroke="#d98e2b"/>
+<text x="1820" y="-502" text-anchor="middle" fill="#d98e2b" stroke="none"><tspan>Actor </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="1820" y="-484" text-anchor="middle" fill="#d98e2b" stroke="none">---</text>
+<text x="1820" y="-466" text-anchor="middle" fill="#d98e2b" stroke="none">+ x: int</text>
+<path d="M2100 -600L2228 -600L2240 -588L2240 -540L2100 -540Z" stroke="#3fa45b"/>
+<path d="M2228 -600L2228 -588L2240 -588" stroke="#3fa45b"/>
+<text x="2170" y="-583" text-anchor="middle" fill="#3fa45b" stroke="none"><tspan>Note </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="2170" y="-565" text-anchor="middle" fill="#3fa45b" stroke="none">---</text>
+<text x="2170" y="-547" text-anchor="middle" fill="#3fa45b" stroke="none">+ x: int</text>
+<path d="M20 -340L40 -320L20 -300L0 -320Z" stroke="#7d8590"/>
+<text x="20" y="-282" text-anchor="middle" fill="#7d8590" stroke="none"><tspan>Branch </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="20" y="-264" text-anchor="middle" fill="#7d8590" stroke="none">---</text>
+<text x="20" y="-246" text-anchor="middle" fill="#7d8590" stroke="none">+ x: int</text>
+<path d="M300 -340L453.7 -340L453.7 -322L520 -322L520 -190L300 -190Z" stroke="#e5534b" fill="#e5534b" fill-opacity="0.15"/>
+<text x="306" y="-325" fill="#e5534b" stroke="none"><tspan font-weight="bold">Package </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
+<text x="308" y="-304" fill="#e5534b" stroke="none">---</text>
+<text x="308" y="-286" fill="#e5534b" stroke="none">+ x: int</text>
+<path d="M602 -340L858 -340C859.1 -340 860 -339.1 860 -338L860 -172C860 -170.9 859.1 -170 858 -170L602 -170C600.9 -170 600 -170.9 600 -172L600 -338C600 -339.1 600.9 -340 602 -340Z" stroke="#d98e2b" stroke-dasharray="6 4"/>
+<text x="608" y="-320" fill="#d98e2b" stroke="none"><tspan font-weight="bold">Frame </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
+<text x="608" y="-302" fill="#d98e2b" stroke="none">---</text>
+<text x="608" y="-284" fill="#d98e2b" stroke="none">+ x: int</text>
+<path d="M902 -340L1058 -340C1059.1 -340 1060 -339.1 1060 -338L1060 -22C1060 -20.9 1059.1 -20 1058 -20L902 -20C900.9 -20 900 -20.9 900 -22L900 -338C900 -339.1 900.9 -340 902 -340Z" stroke="#3fa45b"/>
+<path d="M900 -314L1060 -314" stroke="#3fa45b"/>
+<text x="980" y="-322" text-anchor="middle" fill="#3fa45b" stroke="none"><tspan font-weight="bold">Lane </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
+<text x="908" y="-294" fill="#3fa45b" stroke="none">---</text>
+<text x="908" y="-276" fill="#3fa45b" stroke="none">+ x: int</text>
+<path d="M1220 -330C1220 -324.5 1215.5 -320 1210 -320C1204.5 -320 1200 -324.5 1200 -330C1200 -335.5 1204.5 -340 1210 -340C1215.5 -340 1220 -335.5 1220 -330Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="1210" y="-302" text-anchor="middle" fill="#7d8590" stroke="none"><tspan>Dot </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="1210" y="-284" text-anchor="middle" fill="#7d8590" stroke="none">---</text>
+<text x="1210" y="-266" text-anchor="middle" fill="#7d8590" stroke="none">+ x: int</text>
+<path d="M1526 -327C1526 -319.8 1520.2 -314 1513 -314C1505.8 -314 1500 -319.8 1500 -327C1500 -334.2 1505.8 -340 1513 -340C1520.2 -340 1526 -334.2 1526 -327Z" stroke="#e5534b"/>
+<path d="M1522 -327C1522 -322 1518 -318 1513 -318C1508 -318 1504 -322 1504 -327C1504 -332 1508 -336 1513 -336C1518 -336 1522 -332 1522 -327Z" stroke="#e5534b" fill="#e5534b"/>
+<text x="1513" y="-296" text-anchor="middle" fill="#e5534b" stroke="none"><tspan>Final </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="1513" y="-278" text-anchor="middle" fill="#e5534b" stroke="none">---</text>
+<text x="1513" y="-260" text-anchor="middle" fill="#e5534b" stroke="none">+ x: int</text>
+<path d="M1800 -340L1824 -316M1824 -340L1800 -316" stroke="#d98e2b"/>
+<text x="1812" y="-298" text-anchor="middle" fill="#d98e2b" stroke="none"><tspan>Terminate </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="1812" y="-280" text-anchor="middle" fill="#d98e2b" stroke="none">---</text>
+<text x="1812" y="-262" text-anchor="middle" fill="#d98e2b" stroke="none">+ x: int</text>
+<path d="M2100 -340L2190 -340L2190 -332L2100 -332Z" stroke="#3fa45b" fill="#3fa45b" stroke-dasharray="6 4"/>
+<text x="2145" y="-314" text-anchor="middle" fill="#3fa45b" stroke="none"><tspan>Bar </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="2145" y="-296" text-anchor="middle" fill="#3fa45b" stroke="none">---</text>
+<text x="2145" y="-278" text-anchor="middle" fill="#3fa45b" stroke="none">+ x: int</text>
+<path d="M24 -68C24 -61.4 18.6 -56 12 -56C5.4 -56 0 -61.4 0 -68C0 -74.6 5.4 -80 12 -80C18.6 -80 24 -74.6 24 -68Z" stroke="#7d8590"/>
+<path d="M7.2 -72.8L16.8 -63.2M16.8 -72.8L7.2 -63.2" stroke="#7d8590"/>
+<text x="12" y="-38" text-anchor="middle" fill="#7d8590" stroke="none"><tspan>Exit </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="12" y="-20" text-anchor="middle" fill="#7d8590" stroke="none">---</text>
+<text x="12" y="-2" text-anchor="middle" fill="#7d8590" stroke="none">+ x: int</text>
+<path d="M314 -80L586 -80C593.7 -80 600 -73.7 600 -66L600 106C600 113.7 593.7 120 586 120L314 120C306.3 120 300 113.7 300 106L300 -66C300 -73.7 306.3 -80 314 -80Z" stroke="#e5534b"/>
+<path d="M300 -54L600 -54" stroke="#e5534b"/>
+<text x="450" y="-62" text-anchor="middle" fill="#e5534b" stroke="none"><tspan font-weight="bold">Composite </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
+<text x="308" y="-34" fill="#e5534b" stroke="none">---</text>
+<text x="308" y="-16" fill="#e5534b" stroke="none">+ x: int</text>
+<path d="M600 -75L800 -75" stroke="#d98e2b" fill="#d98e2b" fill-opacity="0.15"/>
+<text x="700" y="-88" text-anchor="middle" fill="#d98e2b" stroke="none"><tspan>Divider </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="700" y="-70" text-anchor="middle" fill="#d98e2b" stroke="none">---</text>
+<text x="700" y="-52" text-anchor="middle" fill="#d98e2b" stroke="none">+ x: int</text>
+<path d="M902 -80L1008 -80C1009.1 -80 1010 -79.1 1010 -78L1010 -46C1010 -44.9 1009.1 -44 1008 -44L902 -44C900.9 -44 900 -44.9 900 -46L900 -78C900 -79.1 900.9 -80 902 -80Z" stroke="#3fa45b"/>
+<path d="M955 -44L955 168" stroke="#3fa45b" stroke-dasharray="6 4"/>
+<text x="955" y="-75" text-anchor="middle" fill="#3fa45b" stroke="none"><tspan>Lifeline </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="955" y="-57" text-anchor="middle" fill="#3fa45b" stroke="none">---</text>
+<text x="955" y="-39" text-anchor="middle" fill="#3fa45b" stroke="none">+ x: int</text>
+<path d="M1202 -80L1478 -80C1479.1 -80 1480 -79.1 1480 -78L1480 58C1480 59.1 1479.1 60 1478 60L1202 60C1200.9 60 1200 59.1 1200 58L1200 -78C1200 -79.1 1200.9 -80 1202 -80Z" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M1200 -80L1359.2 -80L1359.2 -69L1350.2 -60L1200 -60Z" stroke="#7d8590" stroke-dasharray="6 4"/>
+<text x="1206" y="-65" fill="#7d8590" stroke="none"><tspan font-weight="bold">Fragment </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
+<text x="1367.2" y="-65" fill="#7d8590" stroke="none">---</text>
+<path d="M1514 -80L1626 -80C1633.7 -80 1640 -73.7 1640 -66L1640 -34C1640 -26.3 1633.7 -20 1626 -20L1514 -20C1506.3 -20 1500 -26.3 1500 -34L1500 -66C1500 -73.7 1506.3 -80 1514 -80Z" stroke="#e5534b" fill="#e5534b" fill-opacity="0.15"/>
+<path d="M1624 -38L1624 -30M1618 -30L1630 -30M1618 -30L1618 -24M1624 -30L1624 -24M1630 -30L1630 -24" stroke="#e5534b"/>
+<text x="1570" y="-63" text-anchor="middle" fill="#e5534b" stroke="none"><tspan>Behavior </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="1570" y="-45" text-anchor="middle" fill="#e5534b" stroke="none">---</text>
+<text x="1570" y="-27" text-anchor="middle" fill="#e5534b" stroke="none">+ x: int</text>
+<path d="M1800 -80L1814 -80L1814 -66L1800 -66Z" stroke="#d98e2b"/>
+<text x="1807" y="-48" text-anchor="middle" fill="#d98e2b" stroke="none"><tspan>Pin </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="1807" y="-30" text-anchor="middle" fill="#d98e2b" stroke="none">---</text>
+<text x="1807" y="-12" text-anchor="middle" fill="#d98e2b" stroke="none">+ x: int</text>
+<path d="M2102 -80L2518 -80C2519.1 -80 2520 -79.1 2520 -78L2520 58C2520 59.1 2519.1 60 2518 60L2102 60C2100.9 60 2100 59.1 2100 58L2100 -78C2100 -79.1 2100.9 -80 2102 -80Z" stroke="#3fa45b"/>
+<path d="M2200 -80L2200 60" stroke="#3fa45b"/>
+<text x="2106" y="-5" fill="#3fa45b" stroke="none"><tspan font-weight="bold">Row </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
+<text x="2208" y="-60" fill="#3fa45b" stroke="none">---</text>
+<text x="2208" y="-42" fill="#3fa45b" stroke="none">+ x: int</text>
+<path d="M2 180L138 180C139.1 180 140 180.9 140 182L140 238C140 239.1 139.1 240 138 240L2 240C0.9 240 0 239.1 0 238L0 182C0 180.9 0.9 180 2 180Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M118 186L130 186L130 198L118 198Z" stroke="#7d8590"/>
+<path d="M114 188L122 188L122 191L114 191Z" stroke="#7d8590"/>
+<path d="M114 193L122 193L122 196L114 196Z" stroke="#7d8590"/>
+<text x="70" y="197" text-anchor="middle" fill="#7d8590" stroke="none"><tspan>Component </tspan><tspan font-style="italic">it</tspan><tspan> </tspan><tspan font-weight="bold">b</tspan></text>
+<text x="70" y="215" text-anchor="middle" fill="#7d8590" stroke="none">---</text>
+<text x="70" y="233" text-anchor="middle" fill="#7d8590" stroke="none">+ x: int</text>
+<path d="M300 192L588 192L588 380L300 380Z" stroke="#e5534b" stroke-dasharray="6 4"/>
+<path d="M300 192L312 180L600 180L588 192" stroke="#e5534b" stroke-dasharray="6 4"/>
+<path d="M588 380L600 368L600 180M588 192L600 180" stroke="#e5534b" stroke-dasharray="6 4"/>
+<text x="308" y="212" fill="#e5534b" stroke="none"><tspan font-weight="bold">Node </tspan><tspan font-weight="bold" font-style="italic">it</tspan><tspan font-weight="bold"> b</tspan></text>
+<text x="308" y="230" fill="#e5534b" stroke="none">---</text>
+<text x="308" y="248" fill="#e5534b" stroke="none">+ x: int</text>
+<path d="M2 800L198 800C199.1 800 200 800.9 200 802L200 878C200 879.1 199.1 880 198 880L2 880C0.9 880 0 879.1 0 878L0 802C0 800.9 0.9 800 2 800Z" stroke="#7d8590"/>
+<path d="M0 828H200" stroke="#7d8590"/>
+<path d="M0 854H200" stroke="#7d8590"/>
+<text x="100" y="820" text-anchor="middle" font-weight="bold" fill="#7d8590" stroke="none">Shape</text>
+<text x="8" y="846" fill="#7d8590" stroke="none">+ area(): f32</text>
+<text x="8" y="872" fill="#7d8590" stroke="none"><tspan text-decoration="line-through">old</tspan><tspan> </tspan><tspan font-family="monospace">List&lt;T&gt;</tspan><tspan> &lt;&amp;&gt;</tspan></text>
+<path d="M520 840C520 862.1 493.1 880 460 880C426.9 880 400 862.1 400 840C400 817.9 426.9 800 460 800C493.1 800 520 817.9 520 840Z" stroke="#7d8590"/>
+<path d="M102 -80L198 -80C199.1 -80 200 -79.1 200 -78L200 -46C200 -44.9 199.1 -44 198 -44L102 -44C100.9 -44 100 -44.9 100 -46L100 -78C100 -79.1 100.9 -80 102 -80Z" stroke="#7d8590"/>
+<path d="M150 -44L150 168" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M282 -80L378 -80C379.1 -80 380 -79.1 380 -78L380 -46C380 -44.9 379.1 -44 378 -44L282 -44C280.9 -44 280 -44.9 280 -46L280 -78C280 -79.1 280.9 -80 282 -80Z" stroke="#7d8590"/>
+<path d="M330 -44L330 168" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M462 18L558 18C559.1 18 560 18.9 560 20L560 52C560 53.1 559.1 54 558 54L462 54C460.9 54 460 53.1 460 52L460 20C460 18.9 460.9 18 462 18Z" stroke="#7d8590"/>
+<path d="M510 54L510 138" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M62 1060L558 1060C559.1 1060 560 1060.9 560 1062L560 1158C560 1159.1 559.1 1160 558 1160L62 1160C60.9 1160 60 1159.1 60 1158L60 1062C60 1060.9 60.9 1060 62 1060Z" stroke="#7d8590"/>
+<path d="M60 1060L108 1060L108 1071L99 1080L60 1080Z" stroke="#7d8590"/>
+<text x="66" y="1075" font-weight="bold" fill="#7d8590" stroke="none">alt</text>
+<text x="116" y="1075" fill="#7d8590" stroke="none">[ok]</text>
+<path d="M325 -8H335V138H325Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M505 54H515V80H505Z" stroke="#7d8590" fill="#7d8590" fill-opacity="0.15"/>
+<path d="M500 114L520 134M520 114L500 134" stroke="#7d8590"/>
+<path d="M216 840L388 840" stroke="#d98e2b" stroke-dasharray="6 4"/>
+<path d="M200 840L208 835L216 840L208 845Z" stroke="#d98e2b"/>
+<path d="M400 840L388 846L388 834Z" stroke="#d98e2b"/>
+<text x="300" y="816" text-anchor="middle" font-style="italic" fill="#d98e2b" stroke="none">calls</text>
+<text x="300" y="834" text-anchor="middle" fill="#d98e2b" stroke="none">second</text>
+<text x="224" y="834" fill="#d98e2b" stroke="none">1..*</text>
+<text x="380" y="816" text-anchor="end" fill="#d98e2b" stroke="none">role</text>
+<text x="380" y="834" text-anchor="end" fill="#d98e2b" stroke="none">+x</text>
+<path d="M150 -8L313 -8" stroke="#7d8590"/>
+<path d="M325 -8L313 -2L313 -14Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="237.5" y="-14" text-anchor="middle" fill="#7d8590" stroke="none">1: call</text>
+<path d="M335 36L460 36" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M450 41L460 36L450 31" stroke="#7d8590"/>
+<text x="397.5" y="30" text-anchor="middle" fill="#7d8590" stroke="none">2: «create»</text>
+<path d="M505 80L335 80" stroke="#7d8590" stroke-dasharray="6 4"/>
+<path d="M345 75L335 80L345 85" stroke="#7d8590"/>
+<text x="420" y="74" text-anchor="middle" fill="#7d8590" stroke="none">3: back</text>
+<path d="M335 124L498 124" stroke="#7d8590"/>
+<path d="M510 124L498 130L498 118Z" stroke="#7d8590" fill="#7d8590"/>
+<text x="422.5" y="118" text-anchor="middle" fill="#7d8590" stroke="none">4: «destroy»</text>
+<metadata id="bref-diagram">
+version 10
+rich 1
+numbered 1
+shape 1 rect 0 -600 140 60 0 1 1 Rect *it* **b**\n---\n+ x: int
+shape 2 round 300 -600 140 60 1 0 0 Round *it* **b**\n---\n+ x: int
+shape 3 ellipse 600 -600 120 80 2 0 0 Ellipse *it* **b**\n---\n+ x: int
+shape 4 diamond 900 -600 120 80 3 1 0 Diamond *it* **b**\n---\n+ x: int
+shape 5 text 1200 -600 80 18 0 0 0 Text *it* **b**\n---\n+ x: int
+shape 6 cylinder 1500 -600 80 100 1 0 1 Cylinder *it* **b**\n---\n+ x: int
+shape 7 actor 1800 -600 40 80 2 1 0 Actor *it* **b**\n---\n+ x: int
+shape 8 note 2100 -600 140 60 3 0 0 Note *it* **b**\n---\n+ x: int
+shape 9 branch 0 -340 40 40 0 0 0 Branch *it* **b**\n---\n+ x: int
+shape 10 package 300 -340 220 150 1 1 0 Package *it* **b**\n---\n+ x: int
+shape 11 frame 600 -340 260 170 2 0 1 Frame *it* **b**\n---\n+ x: int
+shape 12 lane 900 -340 160 320 3 0 0 Lane *it* **b**\n---\n+ x: int
+shape 13 dot 1200 -340 20 20 0 1 0 Dot *it* **b**\n---\n+ x: int
+shape 14 final 1500 -340 26 26 1 0 0 Final *it* **b**\n---\n+ x: int
+shape 15 terminate 1800 -340 24 24 2 0 0 Terminate *it* **b**\n---\n+ x: int
+shape 16 bar 2100 -340 90 8 3 1 1 Bar *it* **b**\n---\n+ x: int
+shape 17 exit 0 -80 24 24 0 0 0 Exit *it* **b**\n---\n+ x: int
+shape 18 composite 300 -80 300 200 1 0 0 Composite *it* **b**\n---\n+ x: int
+shape 19 divider 600 -80 200 10 2 1 0 Divider *it* **b**\n---\n+ x: int
+shape 20 lifeline 900 -80 110 248 3 0 0 Lifeline *it* **b**\n---\n+ x: int
+shape 21 fragment 1200 -80 280 140 0 0 1 Fragment *it* **b**\n---\n+ x: int
+shape 22 behavior 1500 -80 140 60 1 1 0 Behavior *it* **b**\n---\n+ x: int
+shape 23 pin 1800 -80 14 14 2 0 0 Pin *it* **b**\n---\n+ x: int
+shape 24 row 2100 -80 420 140 3 0 0 Row *it* **b**\n---\n+ x: int
+shape 25 component 0 180 140 60 0 1 0 Component *it* **b**\n---\n+ x: int
+shape 26 node 300 180 300 200 1 0 1 Node *it* **b**\n---\n+ x: int
+shape 27 rect 0 800 200 80 0 0 0 Shape\n---\n+ area(): f32\n---\n~~old~~ `List&lt;T&gt;` &lt;&amp;&gt;
+shape 28 ellipse 400 800 120 80 0 0 0 
+shape 30 lifeline 100 -80 100 248 0 0 0 
+shape 31 lifeline 280 -80 100 248 0 0 0 
+shape 32 lifeline 460 18 100 120 0 0 0 
+shape 33 fragment 60 1060 500 100 0 0 0 alt\n[ok]\n[else]
+link 29 s27 s28 diamond triangle elbow 2 1 *calls*\nsecond
+link 34 l30 l31 none solidtriangle straight 0 0 call
+link 35 l31 l32 none arrow straight 0 1 «create»
+link 36 l32 l31 none arrow straight 0 1 back
+link 37 l31 l32 none solidtriangle straight 0 0 «destroy»
+ends 29 1..*	role\n+x	0	0
+</metadata>
+</svg>
