@@ -48,16 +48,7 @@ pub fn image_name(path: &Path) -> String {
 /// Edges `(i, j)`, `i < j`, without duplicates: wikilinks targeting a note of the
 /// vault, and shown images. Images are numbered after notes.
 pub fn edges(notes: &[Note], images: &[PathBuf]) -> Vec<(usize, usize)> {
-    let mut by_name: HashMap<String, usize> = HashMap::new();
-    for (i, note) in notes.iter().enumerate() {
-        by_name.entry(note.name.to_lowercase()).or_insert(i);
-    }
-    // An alias does not take a name's place.
-    for (i, note) in notes.iter().enumerate() {
-        for alias in note.aliases.iter() {
-            by_name.entry(alias.to_lowercase()).or_insert(i);
-        }
-    }
+    let mut by_name = crate::logic::wiki::by_key(notes.iter());
     for (i, image) in images.iter().enumerate() {
         by_name.entry(image_name(image).to_lowercase()).or_insert(notes.len() + i);
     }
@@ -657,6 +648,13 @@ mod tests {
         let mut notes = vec![note("Appli", &[]), note("Journal", &["bref app"])];
         notes[0].aliases = vec!["Bref App".into()].into();
         assert_eq!(edges(&notes, &[]), [(0, 1)]);
+    }
+
+    #[test]
+    fn a_name_beats_an_alias_of_an_earlier_note() {
+        let mut notes = vec![note("Autre", &[]), note("Cible", &[]), note("Source", &["cible"])];
+        notes[0].aliases = vec!["Cible".into()].into();
+        assert_eq!(edges(&notes, &[]), [(1, 2)]);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! What a `[[link]]` means in a vault: which note it names, which notes point back at one,
 //! and when a rename must leave the links alone. Pure: the shell does the writing.
 
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use super::markdown::{self, Link};
 use super::note::Note;
@@ -20,6 +20,21 @@ pub fn resolve<'a>(
         .filter(live)
         .find(|n| n.name.to_lowercase() == wanted)
         .or_else(|| notes.iter().filter(live).find(|n| n.answers(&wanted)))
+}
+
+/// Every key a `[[link]]` can use (lowercase name or alias) with the position of the note it
+/// reaches, in the order of `resolve`: a name before an alias, the first note on a tie.
+pub fn by_key<'a>(notes: impl Iterator<Item = &'a Note> + Clone) -> HashMap<String, usize> {
+    let mut keys = HashMap::new();
+    for (i, note) in notes.clone().enumerate() {
+        keys.entry(note.name.to_lowercase()).or_insert(i);
+    }
+    for (i, note) in notes.enumerate() {
+        for alias in note.aliases.iter() {
+            keys.entry(alias.to_lowercase()).or_insert(i);
+        }
+    }
+    keys
 }
 
 /// Backlinks: the notes whose `[[wikilink]]` targets note `target`, by name order. When two
@@ -118,6 +133,22 @@ mod tests {
             link_line("vu [[bref app]]", &notes[0]),
             Some("vu [[bref app]]")
         );
+    }
+
+    #[test]
+    fn keys_follow_resolve_order() {
+        let mut notes = vec![note("Autre", &[]), note("Cible", &[]), note("Cible", &[])];
+        notes[0].aliases = vec!["Cible".into(), "Pseudo".into()].into();
+        notes[1].aliases = vec!["pseudo".into()].into();
+        let keys = by_key(notes.iter());
+        // The name of a note beats the alias of another, whatever their order; the first of two names wins.
+        assert_eq!(keys["cible"], 1);
+        // Two aliases alike: the first note.
+        assert_eq!(keys["pseudo"], 0);
+        for key in ["cible", "pseudo", "autre"] {
+            assert_eq!(resolve(&notes, key, |_| false).map(|n| &n.path), Some(&notes[keys[key]].path), "{key}");
+        }
+        assert!(by_key([].into_iter()).is_empty());
     }
 
     #[test]
