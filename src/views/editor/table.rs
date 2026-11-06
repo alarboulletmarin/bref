@@ -88,11 +88,6 @@ impl TableOp {
         }
     }
 
-    /// A CSV's sheet can do it: everything but deleting the table and swapping rows and columns.
-    pub fn in_sheet(self) -> bool {
-        !matches!(self, TableOp::DeleteTable | TableOp::Transpose)
-    }
-
     /// The action that does the same from the keyboard.
     pub fn action(self) -> Box<dyn gpui::Action> {
         match self {

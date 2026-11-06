@@ -15,31 +15,13 @@ use crate::{
     ui::theme::Theme,
     ui::line::{self, Line},
     ui::widgets::keycaps,
-    views::editor::TableOp,
     logic::markdown::ListStyle,
     logic::rank::{contains_all, fuzzy, snippet},
-    views::sheet::Pick,
     lang::{fold, tr},
 };
 
 /// Height of a row of the list.
 const ROW: f32 = 38.;
-
-fn vault_label() -> &'static str {
-    tr("Change vault…", "Changer de coffre…")
-}
-
-fn diagram_label() -> &'static str {
-    tr("New diagram", "Nouveau schéma")
-}
-
-fn folder_label() -> &'static str {
-    tr("New folder", "Nouveau dossier")
-}
-
-fn import_label() -> &'static str {
-    tr("Import a diagram (Excalidraw, draw.io)…", "Importer un schéma (Excalidraw, draw.io)…")
-}
 
 fn updates_label(on: bool) -> &'static str {
     if on {
@@ -57,46 +39,6 @@ fn install_label(version: &str) -> String {
     format!("{} {version}", tr("Update Bref to", "Mettre à jour Bref vers"))
 }
 
-pub fn sync_label() -> &'static str {
-    tr("Sync the vault (git)", "Synchroniser le coffre (git)")
-}
-
-pub fn clone_label() -> &'static str {
-    tr("Clone a vault from a git address…", "Cloner un coffre depuis une adresse git…")
-}
-
-fn backup_label() -> &'static str {
-    tr("Back up the vault…", "Sauvegarder le coffre…")
-}
-
-fn capture_label() -> &'static str {
-    tr("Set up the quick capture shortcut", "Créer le raccourci de capture rapide")
-}
-
-fn terminal_label() -> &'static str {
-    tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")
-}
-
-fn trash_label() -> &'static str {
-    tr("Restore from the trash…", "Restaurer depuis la corbeille…")
-}
-
-pub fn back_label() -> &'static str {
-    tr("Back: what was shown before", "Précédent : ce qui était affiché avant")
-}
-
-pub fn forward_label() -> &'static str {
-    tr("Forward: what was shown after", "Suivant : ce qui était affiché après")
-}
-
-fn today_label() -> &'static str {
-    tr("Today's note", "Note du jour")
-}
-
-fn board_label() -> &'static str {
-    tr("New kanban board", "Nouveau tableau kanban")
-}
-
 fn undo_swap_label() -> &'static str {
     tr("Undo the replacement in the vault", "Annuler le remplacement dans le coffre")
 }
@@ -108,18 +50,6 @@ fn list_label(style: ListStyle) -> &'static str {
         ListStyle::Task => tr("Turn into a task list", "Transformer en liste de tâches"),
         ListStyle::Text => tr("Turn into plain text", "Transformer en texte simple"),
     }
-}
-
-fn comments_label() -> &'static str {
-    tr("Comments of the note", "Commentaires de la note")
-}
-
-fn outline_label() -> &'static str {
-    tr("Outline of the note", "Plan de la note")
-}
-
-fn help_label() -> &'static str {
-    tr("Keyboard shortcuts, about", "Raccourcis clavier, à propos")
 }
 
 /// Appearance setting offered by the palette.
@@ -189,46 +119,17 @@ pub enum PaletteEvent {
     /// An app command: the name of its action.
     Run(&'static str),
     Create(String),
-    ChangeVault,
-    Help,
-    NewDiagram,
-    NewFolder,
-    ImportDiagram,
     Setting(Setting),
-    /// Setting or gesture of the shown table.
-    Table(Pick),
     /// The chosen lines of the note, as a list or as text.
     Restyle(ListStyle),
-    /// A gesture on the table under the cursor.
-    Grid(TableOp),
     /// A note born from a template, a template inserted, or the note saved as a template.
     Template(TemplateAct),
     /// Turns the new-version check on or off.
     ToggleUpdates,
     /// Checks for a new version right now.
     CheckUpdate,
-    /// List of the note's headings.
-    Outline,
-    /// List of the note's comments.
-    Comments,
     /// Undoes the last vault-wide replacement.
     UndoSwap,
-    /// Creates a note that opens as a kanban board.
-    NewBoard,
-    /// Opens or creates the daily note.
-    Today,
-    /// Back (`false`) or forward (`true`) in what has been shown.
-    Travel(bool),
-    /// Lists the vault's trash, to restore an item from it.
-    Trash,
-    /// Archives the vault into a folder to choose.
-    Backup,
-    Sync,
-    CloneVault,
-    /// Opens the system terminal in the vault folder.
-    Terminal,
-    /// Binds capture (`bref --capture`) to a desktop shortcut.
-    CaptureKey,
     /// Installs the new version.
     InstallUpdate,
     /// Text submitted in an input field, or choice submitted in a list.
@@ -244,31 +145,12 @@ enum Item {
     /// Note whose text, not name, matches the search.
     Text(usize),
     Create,
-    Vault,
-    Help,
-    Diagram,
-    Folder,
-    Import,
     Updates,
     Check,
     Install,
-    Outline,
-    Comments,
     UndoSwap,
-    Board,
-    Today,
-    Back,
-    Forward,
-    Trash,
-    Backup,
-    Sync,
-    CloneVault,
-    Terminal,
-    CaptureKey,
     Setting(Setting),
-    Table(Pick),
     Restyle(ListStyle),
-    Grid(TableOp),
     Template(TemplateAct),
     /// An app command (`commands`), by its index.
     Command(usize),
@@ -295,12 +177,8 @@ pub struct Palette {
     updates: Option<bool>,
     /// Number of the new version the app can install by itself.
     installable: Option<String>,
-    /// A table is shown: its settings are searched here.
-    table: bool,
     /// A note is shown: its lines can become a list.
     lists: bool,
-    /// The cursor is in a Markdown table: its rows and columns are managed from here.
-    cells: bool,
     /// A vault replacement can be undone.
     undo_swap: bool,
     /// The commands the view can do, the view's own first (the first `here`): the
@@ -366,9 +244,7 @@ impl Palette {
             choices: false,
             updates: None,
             installable: None,
-            table: false,
             lists: false,
-            cells: false,
             undo_swap: false,
             commands: Vec::new(),
             here: 0,
@@ -404,20 +280,8 @@ impl Palette {
         self
     }
 
-    pub fn with_cells(mut self, here: bool) -> Self {
-        self.cells = here;
-        self.refresh();
-        self
-    }
-
     pub fn with_lists(mut self, shown: bool) -> Self {
         self.lists = shown;
-        self.refresh();
-        self
-    }
-
-    pub fn with_table(mut self, shown: bool) -> Self {
-        self.table = shown;
         self.refresh();
         self
     }
@@ -599,22 +463,9 @@ impl Palette {
         if !q.is_empty() && !q.starts_with('#') && !exact {
             items.push(Item::Create);
         }
-        for (label, item) in [(vault_label(), Item::Vault), (help_label(), Item::Help)] {
-            if command(&q, label) {
-                items.push(item);
-            }
-        }
-        // Like the settings: offered only when searched for.
-        for (label, item) in [(diagram_label(), Item::Diagram), (folder_label(), Item::Folder), (import_label(), Item::Import)] {
-            if !q.is_empty() && command(&q, label) {
-                items.push(item);
-            }
-        }
-        for (label, item) in [(outline_label(), Item::Outline), (comments_label(), Item::Comments), (board_label(), Item::Board), (today_label(), Item::Today), (back_label(), Item::Back), (forward_label(), Item::Forward), (trash_label(), Item::Trash), (backup_label(), Item::Backup), (sync_label(), Item::Sync), (clone_label(), Item::CloneVault), (terminal_label(), Item::Terminal), (capture_label(), Item::CaptureKey)] {
-            if !q.is_empty() && command(&q, label) {
-                items.push(item);
-            }
-        }
+        // Offered even when nothing is typed: the vault and the help.
+        let pinned = |c: &crate::logic::commands::Command| c.pinned && command(&q, c.label);
+        items.extend((0..self.commands.len()).filter(|&i| pinned(&self.commands[i])).map(Item::Command));
         if self.undo_swap && !q.is_empty() && command(&q, undo_swap_label()) {
             items.push(Item::UndoSwap);
         }
@@ -633,18 +484,10 @@ impl Palette {
         if self.updates.is_some() && !q.is_empty() && command(&q, check_label()) {
             items.push(Item::Check);
         }
-        if self.table && !q.is_empty() {
-            items.extend(
-                Pick::ALL.into_iter().filter(|p| command(&q, p.label())).map(Item::Table),
-            );
-        }
-        if (self.cells || self.table) && !q.is_empty() {
-            let shown = |op: &TableOp| (self.cells || op.in_sheet()) && command(&q, op.label());
-            items.extend(TableOp::ALL.into_iter().filter(shown).map(Item::Grid));
-        }
         if !q.is_empty() {
-            let acts = [TemplateAct::New, TemplateAct::Insert, TemplateAct::Save];
-            items.extend(acts.into_iter().filter(|a| (*a == TemplateAct::New || self.lists) && command(&q, a.label())).map(Item::Template));
+            if self.lists {
+                items.extend([TemplateAct::Insert, TemplateAct::Save].into_iter().filter(|a| command(&q, a.label())).map(Item::Template));
+            }
         }
         if self.lists && !q.is_empty() {
             items.extend(
@@ -654,24 +497,13 @@ impl Palette {
                     .map(Item::Restyle),
             );
         }
-        // The app's commands, by what they do; those the palette already offers under another
-        // name (table gestures, outline, daily note…) are not there twice.
+        // The app's commands, by what they do (the pinned ones are above already).
         if !q.is_empty() {
-            let doubled = |name: &str| {
-                name.starts_with("editor::Table")
-                    || name.starts_with("sheet::Pick")
-                    || matches!(
-                        name,
-                        "app::Outline" | "app::Today" | "app::OpenVault" | "app::GoBack" | "app::GoForward" | "app::SyncVault" | "app::ToggleHelp"
-                            | "app::NewDiagram" | "nav::NewFolder" | "app::NewFromTemplate" | "app::ChooseTheme" | "editor::ListBullet"
-                            | "editor::ListOrdered" | "editor::ListTask"
-                    )
-            };
-            let found = (0..self.commands.len()).filter(|&i| !doubled(self.commands[i].action) && command(&q, self.commands[i].label));
+            let found = (0..self.commands.len()).filter(|&i| !self.commands[i].pinned && command(&q, self.commands[i].label));
             items.extend(found.take(8).map(Item::Command));
         }
         // The settings do not clutter the list until searched for.
-        for setting in [Setting::Theme, Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar, Setting::Motion] {
+        for setting in [Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar, Setting::Motion] {
             if !q.is_empty() && command(&q, setting.label()) {
                 items.push(Item::Setting(setting));
             }
@@ -701,31 +533,12 @@ impl Palette {
         cx.emit(match self.items.get(index) {
             Some(Item::Note(i) | Item::Text(i)) => PaletteEvent::Open(self.entries[*i].path.clone()),
             Some(Item::Create) => PaletteEvent::Create(self.query.text.trim().to_string()),
-            Some(Item::Vault) => PaletteEvent::ChangeVault,
-            Some(Item::Help) => PaletteEvent::Help,
-            Some(Item::Diagram) => PaletteEvent::NewDiagram,
-            Some(Item::Folder) => PaletteEvent::NewFolder,
-            Some(&Item::Table(pick)) => PaletteEvent::Table(pick),
             Some(&Item::Restyle(style)) => PaletteEvent::Restyle(style),
-            Some(&Item::Grid(op)) => PaletteEvent::Grid(op),
             Some(&Item::Command(n)) => PaletteEvent::Run(self.commands[n].action),
             Some(&Item::Template(act)) => PaletteEvent::Template(act),
-            Some(Item::Import) => PaletteEvent::ImportDiagram,
             Some(Item::Updates) => PaletteEvent::ToggleUpdates,
             Some(Item::Check) => PaletteEvent::CheckUpdate,
-            Some(Item::Outline) => PaletteEvent::Outline,
-            Some(Item::Comments) => PaletteEvent::Comments,
             Some(Item::UndoSwap) => PaletteEvent::UndoSwap,
-            Some(Item::Board) => PaletteEvent::NewBoard,
-            Some(Item::Today) => PaletteEvent::Today,
-            Some(Item::Back) => PaletteEvent::Travel(false),
-            Some(Item::Forward) => PaletteEvent::Travel(true),
-            Some(Item::Trash) => PaletteEvent::Trash,
-            Some(Item::Backup) => PaletteEvent::Backup,
-            Some(Item::Sync) => PaletteEvent::Sync,
-            Some(Item::CloneVault) => PaletteEvent::CloneVault,
-            Some(Item::Terminal) => PaletteEvent::Terminal,
-            Some(Item::CaptureKey) => PaletteEvent::CaptureKey,
             Some(Item::Install) => PaletteEvent::InstallUpdate,
             Some(Item::Setting(setting)) => PaletteEvent::Setting(*setting),
             None => PaletteEvent::Dismiss,
@@ -779,7 +592,10 @@ impl Palette {
             .when(!on, |d| d.hover(|s| s.bg(t.hover)))
             .child(svg().path(c.icon).size(t.px(16.)).flex_none().text_color(if on { t.accent } else { t.soft }))
             .child(div().flex_1().min_w_0().truncate().child(c.label))
-            .child(keycaps(&c.keys, t, on).flex_none())
+            .child(keycaps(&c.keys, t, on).debug_selector({
+                let action = c.action;
+                move || format!("command-keys-{action}")
+            }).flex_none())
             .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| this.confirm(i, cx)));
         div().flex().flex_col().children(title).child(row)
     }
@@ -834,7 +650,7 @@ impl Render for Palette {
         let rows = self.items.iter().enumerate().skip(first).take(14).map(|(i, item)| {
             if let &Item::Command(n) = item {
                 // Without typing anything, commands go by group, each under its title.
-                let grouped = self.query.text.trim().is_empty();
+                let grouped = self.query.text.trim().is_empty() && (self.commands_only || n < self.here);
                 let group = self.commands[n].group;
                 let same = |prev: Option<&Item>| matches!(prev, Some(&Item::Command(m)) if self.commands[m].group == group);
                 let header = grouped && (i == first || !same(i.checked_sub(1).and_then(|p| self.items.get(p))));
@@ -861,39 +677,15 @@ impl Render for Palette {
                     format!("{} « {} »", tr("Create", "Créer"), self.query.text.trim()),
                     tr("new note", "nouvelle note").into(),
                 ),
-                Item::Vault => (vault_label().to_string(), crate::ui::keys::of(cx, &crate::actions::OpenVault)),
-                Item::Help => (help_label().to_string(), crate::ui::keys::of(cx, &crate::actions::ToggleHelp)),
-                Item::Diagram => (diagram_label().to_string(), crate::ui::keys::of(cx, &crate::actions::NewDiagram)),
-                Item::Folder => (folder_label().to_string(), crate::ui::keys::of(cx, &crate::views::nav::NewFolder)),
-                Item::Import => (import_label().to_string(), String::new()),
                 Item::Updates => (updates_label(self.updates.unwrap_or(true)).to_string(), String::new()),
                 Item::Check => (check_label().to_string(), String::new()),
-                Item::Outline => (outline_label().to_string(), crate::ui::keys::of(cx, &crate::actions::Outline)),
-                Item::Comments => (comments_label().to_string(), String::new()),
                 &Item::Restyle(style) => (list_label(style).to_string(), String::new()),
-                &Item::Grid(op) => (op.label().to_string(), crate::ui::keys::of(cx, op.action().as_ref())),
                 &Item::Command(n) => (self.commands[n].label.to_string(), self.commands[n].keys.clone()),
-                &Item::Template(act) => (act.label().to_string(), if act == TemplateAct::New { crate::ui::keys::of(cx, &crate::actions::NewFromTemplate) } else { String::new() }),
+                &Item::Template(act) => (act.label().to_string(), String::new()),
                 Item::UndoSwap => (undo_swap_label().to_string(), String::new()),
-                Item::Board => (board_label().to_string(), String::new()),
-                Item::Today => (today_label().to_string(), crate::ui::keys::of(cx, &crate::actions::Today)),
-                Item::Back => (back_label().to_string(), crate::ui::keys::of(cx, &crate::actions::GoBack)),
-                Item::Forward => (forward_label().to_string(), crate::ui::keys::of(cx, &crate::actions::GoForward)),
-                Item::Trash => (trash_label().to_string(), String::new()),
-                Item::Backup => (backup_label().to_string(), String::new()),
-                Item::Sync => (sync_label().to_string(), crate::ui::keys::of(cx, &crate::actions::SyncVault)),
-                Item::CloneVault => (clone_label().to_string(), String::new()),
-                Item::Terminal => (terminal_label().to_string(), String::new()),
-                Item::CaptureKey => (capture_label().to_string(), String::new()),
                 Item::Install => (install_label(self.installable.as_deref().unwrap_or_default()), String::new()),
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
-                Item::Table(pick) => (pick.label().to_string(), String::new()),
             };
-            // Where the detail is a shortcut, not a description.
-            let shortcut = matches!(
-                item,
-                Item::Vault | Item::Help | Item::Diagram | Item::Folder | Item::Outline | Item::Grid(_) | Item::Template(_) | Item::Today | Item::Back | Item::Forward | Item::Sync
-            );
             let note = matches!(item, Item::Note(_));
             let age = match item {
                 Item::Note(n) => self.entries[*n].days.map(crate::lang::age),
@@ -934,16 +726,14 @@ impl Render for Palette {
                             .when(matches!(item, Item::Text(_)), |d| d.flex_none().max_w(t.px(220.)))
                             .child(label),
                     )
-                    .child(if shortcut {
-                        keycaps(&detail, t, i == self.selected).debug_selector(move || format!("palette-detail-{i}")).flex_none()
-                    } else {
+                    .child(
                         div()
                             .truncate()
                             .when(!matches!(item, Item::Text(_)), |d| d.flex_none())
                             .text_color(if i == self.selected { t.text } else { t.soft })
                             .text_size(t.font_small())
-                            .child(detail)
-                    })
+                            .child(detail),
+                    )
                 })
                 .children(age.map(|age| soft(div()).debug_selector(move || format!("palette-age-{i}")).flex_none().w(t.px(56.)).text_right().child(age)))
                 .on_mouse_down(

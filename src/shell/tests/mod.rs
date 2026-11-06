@@ -24,6 +24,7 @@ mod keycaps;
 mod layout;
 mod motion;
 mod shortcuts_page;
+mod palette_commands;
 mod panel_rows;
 mod canvas_text;
 mod current_file;

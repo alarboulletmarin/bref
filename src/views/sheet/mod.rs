@@ -81,8 +81,6 @@ pub enum Pick {
 }
 
 impl Pick {
-    pub const ALL: [Pick; 5] = [Pick::Delimiter, Pick::Encoding, Pick::Header, Pick::CopyAs, Pick::Export];
-
     /// The action the app listens to to open the choice: it bubbles up to it from any focus.
     pub fn action(self) -> Box<dyn Action> {
         match self {

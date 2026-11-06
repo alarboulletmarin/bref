@@ -1,4 +1,4 @@
-//! The command table: one entry per action, from which the palette's catalogue, the default
+//! The command table: one entry per action, from which the palette's commands, the default
 //! shortcuts (`keymap::defaults`) and the help's text and editable shortcuts all derive. The
 //! action is a type, so an entry that names no action does not compile.
 
@@ -25,6 +25,8 @@ pub(super) struct CommandSpec {
     pub group: Option<Group>,
     pub help: Option<&'static str>,
     pub editable: bool,
+    /// The palette lists it even when nothing is typed.
+    pub pinned: bool,
     pub keys: Vec<Key>,
 }
 
@@ -43,6 +45,10 @@ impl CommandSpec {
     }
     fn help(mut self, help: &'static str) -> Self {
         self.help = Some(help);
+        self
+    }
+    fn pinned(mut self) -> Self {
+        self.pinned = true;
         self
     }
     /// Its shortcut can be changed (the help lists it).
@@ -65,11 +71,8 @@ impl CommandSpec {
 }
 
 fn s<A: Action>() -> CommandSpec {
-    CommandSpec { action: A::name_for_type(), label: None, icon: "", group: None, help: None, editable: false, keys: Vec::new() }
+    CommandSpec { action: A::name_for_type(), label: None, icon: "", group: None, help: None, editable: false, pinned: false, keys: Vec::new() }
 }
-
-/// The palette's entry for a command: the action's name, its label, its icon, its group.
-pub(super) type Entry = (&'static str, &'static str, &'static str, Group);
 
 /// Every command, in the palette's order: group by group, then the actions it does not offer.
 /// `word`: the key that moves by word (Alt on macOS, Ctrl elsewhere).
@@ -278,6 +281,8 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .help(tr("Find and replace in the note", "Chercher et remplacer dans la note")).edit()
             .key_in("secondary-r", ctx::EDITOR)
             .key_in("secondary-r", ctx::FIND),
+        s::<ShowComments>()
+            .label(tr("Comments of the note", "Commentaires de la note")).icon("c-comment.svg").group(Note),
         s::<Outline>()
             .label(tr("Outline of the note", "Plan de la note")).icon("c-outline.svg").group(Note)
             .help(tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")).edit()
@@ -333,6 +338,10 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .label(tr("New diagram", "Nouveau schéma")).icon("d-rect.svg").group(Create)
             .help(tr("New diagram: an SVG file in the vault", "Nouveau schéma : un fichier SVG du coffre")).edit()
             .key_in("secondary-shift-d", ctx::SHELL),
+        s::<ImportDiagram>()
+            .label(tr("Import a diagram (Excalidraw, draw.io)…", "Importer un schéma (Excalidraw, draw.io)…")).icon("diagram.svg").group(Create),
+        s::<NewBoard>()
+            .label(tr("New kanban board", "Nouveau tableau kanban")).icon("board.svg").group(Create),
         s::<nav::NewFolder>()
             .label(tr("New folder", "Nouveau dossier")).icon("folder-plus.svg").group(Create)
             .help(tr("New folder (also in the palette)", "Nouveau dossier (aussi dans la palette)")).edit()
@@ -429,13 +438,23 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .help(tr("Panel on the whole window", "Panneau en pleine fenêtre")).edit()
             .key_in("secondary-m", ctx::SHELL),
         s::<SyncVault>()
-            .label(tr("Sync the vault", "Synchroniser le coffre")).icon("backup.svg").group(Vault)
+            .label(tr("Sync the vault (git)", "Synchroniser le coffre (git)")).icon("backup.svg").group(Vault)
             .help(tr("Sync the vault with git: commit, receive, merge, send; a conflict keeps both versions as two notes", "Synchroniser le coffre par git : commiter, recevoir, fusionner, envoyer ; un conflit garde les deux versions en deux notes")).edit()
             .key("secondary-shift-s"),
         s::<OpenVault>()
-            .label(tr("Change vault", "Changer de coffre")).icon("tree.svg").group(Vault)
+            .label(tr("Change vault…", "Changer de coffre…")).icon("tree.svg").group(Vault).pinned()
             .help(tr("Change vault", "Changer de coffre")).edit()
             .key("secondary-o"),
+        s::<RestoreTrash>()
+            .label(tr("Restore from the trash…", "Restaurer depuis la corbeille…")).icon("trash.svg").group(Vault),
+        s::<BackupVault>()
+            .label(tr("Back up the vault…", "Sauvegarder le coffre…")).icon("backup.svg").group(Vault),
+        s::<CloneVault>()
+            .label(tr("Clone a vault from a git address…", "Cloner un coffre depuis une adresse git…")).icon("folder-plus.svg").group(Vault),
+        s::<OpenTerminal>()
+            .label(tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")).icon("code.svg").group(Vault),
+        s::<SetUpCapture>()
+            .label(tr("Set up the quick capture shortcut", "Créer le raccourci de capture rapide")).icon("plus.svg").group(Vault),
         s::<ChooseTheme>()
             .label(tr("Theme…", "Thème…")).icon("theme.svg").group(Look),
         s::<ZoomIn>()
@@ -452,7 +471,7 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .help(tr("Default text size", "Taille du texte d'origine")).edit()
             .key("secondary-0"),
         s::<ToggleHelp>()
-            .label(tr("Keyboard shortcuts", "Raccourcis clavier")).icon("help.svg").group(App)
+            .label(tr("Keyboard shortcuts, about", "Raccourcis clavier, à propos")).icon("help.svg").group(App).pinned()
             .help(tr("This help", "Cette aide")).edit()
             .key("f1")
             .key("secondary-/"),
@@ -821,11 +840,6 @@ pub(super) fn specs() -> Vec<CommandSpec> {
     BlockOp::ALL.into_iter().for_each(|op| help(op.action(), op.effect()));
     TableOp::ALL.into_iter().for_each(|op| help(op.action(), op.label()));
     all
-}
-
-/// The commands the palette offers: those with a label.
-pub(super) fn catalog() -> Vec<Entry> {
-    specs().into_iter().filter_map(|spec| Some((spec.action, spec.label?, spec.icon, spec.group?))).collect()
 }
 
 /// The default shortcuts. For the same keys, the last binding wins at equal depth, and one with

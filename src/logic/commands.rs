@@ -41,7 +41,7 @@ impl Group {
 }
 
 /// An offered command: its action (by name), its label, its icon, its group, its keys
-/// in effect (empty: none).
+/// in effect (empty: none), and whether the palette lists it even when nothing is typed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Command {
     pub action: &'static str,
@@ -49,6 +49,7 @@ pub struct Command {
     pub icon: &'static str,
     pub group: Group,
     pub keys: String,
+    pub pinned: bool,
 }
 
 /// Commands sorted by group, the view's (`here`) first; within a group, the
@@ -112,7 +113,7 @@ mod tests {
     use super::*;
 
     fn command(action: &'static str, group: Group) -> Command {
-        Command { action, label: action, icon: "", group, keys: String::new() }
+        Command { action, label: action, icon: "", group, keys: String::new(), pinned: false }
     }
 
     #[test]

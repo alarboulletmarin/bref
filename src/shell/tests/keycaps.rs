@@ -185,9 +185,10 @@ fn keycaps_in_palette_and_empty_page(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("coffre");
     cx.run_until_parked();
+    // The vault's commands, each a row with its badges at the right.
     let mut shown = 0;
-    for i in 0..14 {
-        let (Some(row), Some(caps)) = (cx.debug_bounds(leak(format!("palette-item-{i}"))), cx.debug_bounds(leak(format!("palette-detail-{i}")))) else { continue };
+    for action in ["app::OpenVault", "app::SyncVault", "app::BackupVault", "app::CloneVault", "app::OpenTerminal"] {
+        let (Some(row), Some(caps)) = (cx.debug_bounds(leak(format!("command-{action}"))), cx.debug_bounds(leak(format!("command-keys-{action}")))) else { continue };
         shown += 1;
         assert!(caps.left() >= row.left() && caps.right() <= row.right() + px(0.5), "{caps:?} outside {row:?}");
         assert!(caps.size.height <= row.size.height, "{caps:?} {row:?}");

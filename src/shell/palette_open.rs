@@ -120,9 +120,7 @@ impl Shell {
         let theme = self.theme;
         let updates = self.prefs.updates;
         let installable = self.update.as_ref().filter(|r| r.asset.is_some()).map(|r| r.version.clone());
-        let table = self.shown_sheet().is_some();
         let lists = self.pane().shows_note() && !self.board_shown(cx);
-        let cells = lists && self.pane().editor.read(cx).in_table();
         let swap = !self.swapped.is_empty();
         let (commands, here) = self.palette_commands(window, cx);
         let context = self.here_group(cx).1;
@@ -130,9 +128,7 @@ impl Shell {
             Palette::new(entries, query, theme, cx)
                 .with_root(root)
                 .with_updates(updates, installable)
-                .with_table(table)
                 .with_lists(lists)
-                .with_cells(cells)
                 .with_undo_swap(swap)
                 .with_commands(commands, here, context)
         });
@@ -146,27 +142,11 @@ impl Shell {
                 PaletteEvent::Open(path) if aside => this.open_aside(path, window, cx),
                 PaletteEvent::Open(path) => this.open(path, window, cx),
                 PaletteEvent::Create(name) => this.open_wiki(name, window, cx),
-                PaletteEvent::ChangeVault => this.choose_vault(window, cx),
-                PaletteEvent::Help => this.set_help(true, window, cx),
-                PaletteEvent::NewDiagram => this.new_diagram(window, cx),
-                PaletteEvent::NewFolder => this.new_folder(window, cx),
-                PaletteEvent::Table(pick) => this.choose_table(*pick, window, cx),
-                PaletteEvent::ImportDiagram => this.import_diagram(window, cx),
                 PaletteEvent::Setting(setting) => this.choose_setting(*setting, window, cx),
                 PaletteEvent::ToggleUpdates => this.toggle_updates(cx),
                 PaletteEvent::CheckUpdate => this.check_now(cx),
-                PaletteEvent::Outline => this.open_outline(window, cx),
-                PaletteEvent::Comments => this.open_comments(window, cx),
                 PaletteEvent::Template(TemplateAct::Save) => this.save_as_template(window, cx),
                 PaletteEvent::Template(act) => this.open_templates(*act, window, cx),
-                PaletteEvent::Grid(op) => {
-                    // The gesture goes to what is shown: a CSV's sheet, or the note.
-                    match this.shown_sheet() {
-                        Some(sheet) => window.focus(&sheet.focus_handle(cx)),
-                        None => window.focus(&this.pane().editor.focus_handle(cx)),
-                    }
-                    window.dispatch_action(op.action(), cx);
-                }
                 PaletteEvent::Run(name) => {
                     match &back {
                         Some(back) => window.focus(back),
@@ -181,18 +161,6 @@ impl Shell {
                     this.pane().editor.update(cx, |e, cx| e.restyle(*style, cx));
                 }
                 PaletteEvent::UndoSwap => this.undo_swap(cx),
-                PaletteEvent::NewBoard => {
-                    this.fresh_tab(window, cx);
-                    this.new_note(kanban::new_board(), cx);
-                }
-                PaletteEvent::Today => this.open_today(window, cx),
-                PaletteEvent::Travel(forward) => this.travel(*forward, window, cx),
-                PaletteEvent::Trash => this.open_trash(window, cx),
-                PaletteEvent::Backup => this.choose_backup(window, cx),
-                PaletteEvent::Sync => this.git_sync(window, cx),
-                PaletteEvent::CloneVault => this.ask_clone(window, cx),
-                PaletteEvent::Terminal => this.open_terminal(cx),
-                PaletteEvent::CaptureKey => this.capture_shortcut(cx),
                 PaletteEvent::InstallUpdate => this.install_update(cx),
                 // Closed without a choice: we get back what the pane showed, table or diagram included.
                 PaletteEvent::Dismiss => this.focus_pane(this.active, window, cx),
@@ -212,14 +180,14 @@ impl Shell {
         use commands::Group;
         let available: std::collections::HashSet<&str> = window.available_actions(cx).iter().map(|action| action.name()).collect();
         let here = self.here_group(cx).0;
-        let list = command_table::catalog()
+        let list = command_table::specs()
             .into_iter()
-            .filter(|(action, ..)| available.contains(action))
+            .filter(|spec| available.contains(spec.action))
             // Gestures of a block, a table or a diagram only count there: elsewhere, they would do nothing.
-            .filter(|&(_, _, _, group)| !matches!(group, Group::Block | Group::Table | Group::Diagram) || Some(group) == here)
-            .filter_map(|(action, label, icon, group)| {
-                let keys = keys::of(cx, cx.build_action(action, None).ok()?.as_ref());
-                Some(commands::Command { action, label, icon, group, keys })
+            .filter(|spec| !matches!(spec.group, Some(Group::Block | Group::Table | Group::Diagram)) || spec.group == here)
+            .filter_map(|spec| {
+                let keys = keys::of(cx, cx.build_action(spec.action, None).ok()?.as_ref());
+                Some(commands::Command { action: spec.action, label: spec.label?, icon: spec.icon, group: spec.group?, keys, pinned: spec.pinned })
             })
             .collect();
         commands::arrange(list, here)

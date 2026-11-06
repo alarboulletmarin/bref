@@ -261,6 +261,17 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
             .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
             .on_action(cx.listener(|this, _: &ExportPdf, _, cx| this.export_pdf(cx)))
+            .on_action(cx.listener(|this, _: &ImportDiagram, window, cx| this.import_diagram(window, cx)))
+            .on_action(cx.listener(|this, _: &ShowComments, window, cx| this.open_comments(window, cx)))
+            .on_action(cx.listener(|this, _: &NewBoard, window, cx| {
+                this.fresh_tab(window, cx);
+                this.new_note(kanban::new_board(), cx);
+            }))
+            .on_action(cx.listener(|this, _: &RestoreTrash, window, cx| this.open_trash(window, cx)))
+            .on_action(cx.listener(|this, _: &BackupVault, window, cx| this.choose_backup(window, cx)))
+            .on_action(cx.listener(|this, _: &CloneVault, window, cx| this.ask_clone(window, cx)))
+            .on_action(cx.listener(|this, _: &OpenTerminal, _, cx| this.open_terminal(cx)))
+            .on_action(cx.listener(|this, _: &SetUpCapture, _, cx| this.capture_shortcut(cx)))
             .on_action(cx.listener(|this, _: &ShareDocument, window, cx| this.show_share(window, cx)))
             .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
             .on_action(cx.listener(|this, _: &Today, window, cx| this.open_today(window, cx)))
