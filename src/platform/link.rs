@@ -55,7 +55,9 @@ fn open_at(file: &Path, asked: Arc<Mutex<Vec<Asked>>>, signal: Arc<Signal>) -> i
     writeln!(options.open(file)?, "{} {secret}", listener.local_addr()?.port())?;
     thread::Builder::new().name("agent door".into()).spawn(move || {
         for stream in listener.incoming().flatten() {
-            let _ = serve(stream, &secret, &asked, &signal);
+            if let Err(e) = serve(stream, &secret, &asked, &signal) {
+                eprintln!("bref: agent door: {e}");
+            }
         }
     })?;
     Ok(())

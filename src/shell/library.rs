@@ -20,7 +20,10 @@ impl Shell {
         }
         let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
         let signal = Arc::new(signal::Signal::default());
-        if platform::link::open(asked.clone(), signal.clone()).is_err() {
+        if let Err(e) = platform::link::open(asked.clone(), signal.clone()) {
+            eprintln!("bref: agent door closed: {e}");
+            let why = crate::lang::io_reason(&e);
+            self.say(Tone::Failed, format!("{} {why}", tr("An agent cannot make Bref show a note:", "Un agent ne peut pas faire afficher une note :")), cx);
             return;
         }
         cx.spawn_in(window, async move |this, cx| {

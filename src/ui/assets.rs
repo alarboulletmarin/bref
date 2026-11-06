@@ -51,7 +51,10 @@ pub fn needs_system_font(c: char) -> bool {
 }
 
 pub fn init_fonts(cx: &mut App) {
-    cx.text_system().add_fonts(FONT_FILES.iter().map(|f| Cow::Borrowed(*f)).collect()).ok();
+    // The app still runs on system fonts, but the user should be able to learn why it looks different.
+    if let Err(e) = cx.text_system().add_fonts(FONT_FILES.iter().map(|f| Cow::Borrowed(*f)).collect()) {
+        eprintln!("bref: bundled fonts not loaded: {e}");
+    }
     FAMILIES.get_or_init(|| {
         let names: &'static [String] = cx.text_system().all_font_names().leak();
         names.iter().map(String::as_str).collect()
