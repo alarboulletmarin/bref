@@ -6,6 +6,7 @@ pub mod commands;
 pub mod daily;
 pub mod diagram;
 pub mod embed;
+pub mod files;
 pub mod formula;
 pub mod graph;
 pub mod history;
