@@ -103,7 +103,7 @@ impl Shell {
         self.say_undoable(Tone::Done, format!("{} « {name} »", tr("Moved to the trash:", "Mis à la corbeille :")), Some((trashed, path.to_path_buf())), cx);
         self.history.remove(path);
         let gone = |p: &PathBuf| p.starts_with(path);
-        self.forget_notes(&gone);
+        self.forget_notes(gone);
         self.dirs.retain(|d| !gone(d));
         self.images.retain(|p| !gone(p));
         self.recent.retain(|p| !gone(p));

@@ -19,6 +19,9 @@ impl NoteKey {
     }
 }
 
+/// Tags, links and aliases of a text.
+pub type Indexed = (Arc<[String]>, Arc<[NoteKey]>, Arc<[String]>);
+
 #[derive(Clone)]
 pub struct Note {
     pub name: String,
@@ -48,7 +51,7 @@ pub fn lowered(text: &Arc<str>) -> Arc<str> {
 impl Note {
         /// Tags, links and aliases of a note's text. A template has none: what it writes
         /// between `{{ }}` or after `#` is not its own.
-    pub fn index(text: &str, template: bool) -> (Arc<[String]>, Arc<[NoteKey]>, Arc<[String]>) {
+    pub fn index(text: &str, template: bool) -> Indexed {
         if template {
             return (Arc::from([]), Arc::from([]), Arc::from([]));
         }
