@@ -55,7 +55,7 @@ fn the_vault_search(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-f");
     cx.simulate_input("zèbre");
     cx.simulate_keystrokes("secondary-shift-f");
-    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel())), (nav::Mode::Search, nav::Panel::Split));
+    assert_eq!(shell.read_with(cx, |s, _| s.panel_view()), (nav::Mode::Search, nav::Panel::Split));
     assert_eq!(keys_in(&shell, cx), "query");
     // Three matches in two notes: Alpha (its two lines) then Beta; Gamma is not listed.
     assert_eq!(state(&shell, cx), Some(("zèbre".into(), 3, 2, 5, 0)));
@@ -105,7 +105,6 @@ fn the_vault_search(cx: &mut TestAppContext) {
     // Escape: the keys go back to the note, the panel stays on its results.
     cx.simulate_keystrokes("secondary-shift-f escape");
     assert_eq!((keys_in(&shell, cx), shell.read_with(cx, |s, _| s.nav.mode())), ("note", nav::Mode::Search));
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Notes changed under the results: written, deleted, renamed outside the app; a note that cannot be written.
@@ -113,12 +112,6 @@ fn the_vault_search(cx: &mut TestAppContext) {
 #[gpui::test]
 fn the_vault_search_follows_the_notes(cx: &mut TestAppContext) {
     let (root, shell, cx, _config) = start(cx, "vault-find-changes");
-    let settle = |cx: &mut Cx| {
-        for _ in 0..2 {
-            cx.executor().advance_clock(Duration::from_secs(3));
-            cx.run_until_parked();
-        }
-    };
     // Empty vault: said, nothing listed.
     cx.simulate_keystrokes("secondary-shift-f");
     cx.simulate_input("mot");
@@ -126,21 +119,21 @@ fn the_vault_search_follows_the_notes(cx: &mut TestAppContext) {
     // Notes come from outside: found at the next scan.
     fs::write(root.join("Un.md"), "# Un\n\nun mot\n").unwrap();
     fs::write(root.join("Deux.md"), "# Deux\n\nun mot, deux mots\n").unwrap();
-    settle(cx);
+    watch(cx);
     assert_eq!(state(&shell, cx).map(|s| (s.1, s.2)), Some((3, 2)));
     // Deleted, renamed outside the app: the results follow.
     fs::remove_file(root.join("Un.md")).unwrap();
     fs::rename(root.join("Deux.md"), root.join("Trois.md")).unwrap();
-    settle(cx);
+    watch(cx);
     assert_eq!(state(&shell, cx).map(|s| (s.1, s.2)), Some((2, 1)));
     // A result whose note went away before the scan: said, nothing opens.
     fs::remove_file(root.join("Trois.md")).unwrap();
     cx.simulate_keystrokes("down enter");
     assert!(shell.read_with(cx, |s, _| s.told(Tone::Failed, "n'est plus là")));
-    settle(cx);
+    watch(cx);
     // A search that does not compile, one that finds nothing.
     fs::write(root.join("Quatre.md"), "# Quatre\n\nmot\n").unwrap();
-    settle(cx);
+    watch(cx);
     cx.simulate_keystrokes("secondary-shift-f");
     cx.simulate_input("(");
     cx.simulate_keystrokes("alt-r");
@@ -155,7 +148,7 @@ fn the_vault_search_follows_the_notes(cx: &mut TestAppContext) {
         let folder = root.join("Lecture seule");
         fs::create_dir(&folder).unwrap();
         fs::write(folder.join("Cinq.md"), "# Cinq\n\nmot\n").unwrap();
-        settle(cx);
+        watch(cx);
         fs::set_permissions(&folder, fs::Permissions::from_mode(0o555)).unwrap();
         let readonly = fs::write(folder.join("essai"), "").is_err();
         cx.simulate_keystrokes("secondary-shift-f secondary-a");
@@ -170,7 +163,6 @@ fn the_vault_search_follows_the_notes(cx: &mut TestAppContext) {
         }
         fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The panel's search holds in the panel: every width of window and of panel, the largest zoom; the count never
@@ -214,7 +206,6 @@ fn the_vault_search_holds_its_place(cx: &mut TestAppContext) {
             }
         }
     }
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// 5 000 notes: a keystroke in the search does not wait for the results, which come in the background.
@@ -235,5 +226,4 @@ fn the_vault_search_of_5000_notes(cx: &mut TestAppContext) {
     let started = shell.read_with(cx, |s, cx| s.vault_state(cx)).map(|s| (s.1, s.2));
     assert_eq!(started, Some((0, 0)), "the keystroke waited for the results");
     assert_eq!(state(&shell, cx).map(|s| (s.1, s.2)), Some((111, 111)));
-    let _ = fs::remove_dir_all(&root);
 }

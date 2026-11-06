@@ -349,7 +349,7 @@ fn an_outside_write_while_typing_is_merged(cx: &mut TestAppContext) {
         cx.simulate_input(typed);
     };
     let save = |cx: &mut gpui::VisualTestContext| {
-        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.executor().advance_clock(SAVED);
         cx.run_until_parked();
     };
 

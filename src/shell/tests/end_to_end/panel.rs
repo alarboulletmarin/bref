@@ -8,9 +8,9 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
     // Tree: Ctrl+E opens it and gives it focus; the arrows show a preview (or the tab of a note
     // already open), which does not count as an opening.
-    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.executor().advance_clock(SAVED);
     cx.simulate_keystrokes("secondary-e up");
-    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel())), (Mode::Tree, Panel::Split));
+    assert_eq!(shell.read_with(cx, |s, _| s.panel_view()), (Mode::Tree, Panel::Split));
     assert_eq!(text(cx), "# Courses\n\n- lait #maison\n[[Test]]");
     // Courses is open in a tab already: that tab is shown, without counting as an opening.
     assert!(shell.read_with(cx, |s, _| !s.pane().preview && s.recent[0] == root.join("Idées.md")));
@@ -30,7 +30,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // New note from the tree: filed in the selection's folder.
     cx.simulate_keystrokes("secondary-n");
     cx.simulate_input("# Sous");
-    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.executor().advance_clock(SAVED);
     cx.run_until_parked();
     assert!(root.join("Projets/Sous.md").is_file());
 
@@ -48,7 +48,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
 
     // Recent notes, full screen (Ctrl+M), then Escape gives back the room and focus to the note.
     cx.simulate_keystrokes("secondary-shift-t secondary-m");
-    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel())), (Mode::Recent, Panel::Full));
+    assert_eq!(shell.read_with(cx, |s, _| s.panel_view()), (Mode::Recent, Panel::Full));
     cx.simulate_keystrokes("down escape");
     assert_eq!(shell.read_with(cx, |s, _| s.nav.panel()), Panel::Split);
     assert_eq!(text(cx), "# Sous");
@@ -62,7 +62,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("cou");
     cx.simulate_keystrokes("enter secondary-g");
     cx.run_until_parked();
-    assert_eq!(shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel())), (Mode::Graph, Panel::Split));
+    assert_eq!(shell.read_with(cx, |s, _| s.panel_view()), (Mode::Graph, Panel::Split));
     assert_eq!(shell.read_with(cx, |s, cx| s.graph.read(cx).size()), (5, 2));
     // A node dragged with the mouse follows the pointer.
     let spot = |cx: &mut gpui::VisualTestContext| {

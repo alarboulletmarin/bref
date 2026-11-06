@@ -11,8 +11,7 @@ fn drops_journey(cx: &mut TestAppContext) {
         0x15, 0xc4, 0x89, 0, 0, 0, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xff, 0xff, 0x3f, 0, 0x05, 0xfe, 0x02, 0xfe, 0xa7,
         0x35, 0x81, 0x84, 0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
     ];
-    let base = std::env::temp_dir().join(format!("bref-drop-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&base);
+    let base = TempDir::new("drop");
     let (root, ext) = (base.join("coffre"), base.join("dehors"));
     fs::create_dir_all(root.join("Dossier")).unwrap();
     fs::create_dir_all(ext.join("Photos/été")).unwrap();
@@ -132,5 +131,4 @@ fn drops_journey(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, _| s.drop_aim.is_none()));
-    let _ = fs::remove_dir_all(&base);
 }

@@ -43,7 +43,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
 
     // Editable shortcuts: Enter on a help line waits for keys, the
     // following ones become the shortcut, right away and in the `keys` file.
-    let (mode, panel) = shell.read_with(cx, |s, _| (s.nav.mode(), s.nav.panel()));
+    let (mode, panel) = shell.read_with(cx, |s, _| s.panel_view());
     let keys_of = |cx: &mut gpui::VisualTestContext, action: &str| {
         let row = rows(cx).into_iter().find(|row| row.action == Some(action)).unwrap();
         (row.keys, row.changed)
@@ -116,8 +116,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(shell.read_with(cx, |s, _| s.palette.is_some()));
     cx.simulate_keystrokes("escape");
     shell.update(cx, |s, cx| {
-        s.nav.show_alone(mode);
-        s.nav.set_panel(panel);
+        s.show_panel(mode, panel, cx);
         cx.notify();
     });
     cx.run_until_parked();

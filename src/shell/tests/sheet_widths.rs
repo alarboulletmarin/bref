@@ -205,5 +205,4 @@ fn the_columns_take_the_width_the_user_gives_them(cx: &mut TestAppContext) {
     assert_eq!(chosen, vec![None; 4]);
     assert_eq!(now[0], auto[0], "automatic again");
     assert!(!tables().contains("renamed.csv"), "{:?}", tables());
-    fs::remove_dir_all(&root).ok();
 }

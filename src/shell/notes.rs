@@ -3,6 +3,9 @@
 use crate::platform::config;
 use super::*;
 
+/// How long typing must pause before the note is saved.
+pub(super) const SAVE_DELAY: Duration = Duration::from_millis(400);
+
 impl Shell {
     /// Copies the whole note to the clipboard.
     /// Copies the note; with `block`, only the code block the cursor is in,
@@ -455,7 +458,7 @@ impl Shell {
                 self.save_gen += 1;
                 let generation = self.save_gen;
                 cx.spawn(async move |this, cx| {
-                    cx.background_executor().timer(Duration::from_millis(400)).await;
+                    cx.background_executor().timer(SAVE_DELAY).await;
                     this.update(cx, |this, cx| {
                         if this.save_gen == generation {
                             this.flush(cx);

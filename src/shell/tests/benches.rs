@@ -36,8 +36,7 @@ fn skipped(var: &str) {
 #[ignore]
 fn sheet_fuzz(cx: &mut TestAppContext) {
     let Ok(from) = std::env::var("BREF_CSV_DIR") else { return skipped("BREF_CSV_DIR") };
-    let root = std::env::temp_dir().join(format!("bref-fuzz-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("fuzz");
     let _config = isolated_config(&root);
     let mut files = Vec::new();
     for entry in fs::read_dir(&from).unwrap().flatten() {
@@ -108,7 +107,6 @@ fn sheet_fuzz(cx: &mut TestAppContext) {
         }
         within("   slowest gesture", worst, OPENING);
     }
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// A big CSV transformed: copy and export in each format, opening of the resulting Markdown note,
@@ -117,8 +115,7 @@ fn sheet_fuzz(cx: &mut TestAppContext) {
 #[ignore]
 fn sheet_convert(cx: &mut TestAppContext) {
     let Ok(from) = std::env::var("BREF_CSV") else { return skipped("BREF_CSV") };
-    let root = std::env::temp_dir().join(format!("bref-convert-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("convert");
     let _config = isolated_config(&root);
     let file = root.join("gros.csv");
     fs::copy(&from, &file).unwrap();
@@ -188,7 +185,6 @@ fn sheet_convert(cx: &mut TestAppContext) {
         cx.run_until_parked();
         within(&format!("   in the pasted note, {what:6}"), start.elapsed(), GESTURE);
     }
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// Cost of a note containing a Markdown table of n rows.
@@ -197,8 +193,7 @@ fn sheet_convert(cx: &mut TestAppContext) {
 fn md_table_scale(cx: &mut TestAppContext) {
     // Tests redo the whole layout after each reuse, to check it: not here, we measure.
     unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
-    let root = std::env::temp_dir().join(format!("bref-mdscale-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("mdscale");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -265,7 +260,6 @@ fn md_table_scale(cx: &mut TestAppContext) {
             println!("         saving the note ({} MB): {:?}", fs::metadata(&file).map_or(0, |m| m.len()) >> 20, start.elapsed());
         }
     }
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// Keystrokes in a big note, for a profiler: `cargo test --release --locked -- --ignored profile_typing`.
@@ -274,8 +268,7 @@ fn md_table_scale(cx: &mut TestAppContext) {
 fn profile_typing(cx: &mut TestAppContext) {
     // Tests redo the whole layout after each reuse, to check it: not here, we measure.
     unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
-    let root = std::env::temp_dir().join(format!("bref-profile-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("profile");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -304,7 +297,6 @@ fn profile_typing(cx: &mut TestAppContext) {
     }
     within("300 keystrokes in a row", start.elapsed(), GESTURE * 60);
     println!("layouts (full, reused, in a big table): {:?}", shell.read_with(cx, |s, cx| s.pane().editor.read(cx).layouts()));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// Synthetic vault, always the same: `notes` notes of 30 lines spread over 40
@@ -417,7 +409,6 @@ fn bench_scale(cx: &mut TestAppContext) {
         // The window and its watcher go before the next vault.
         cx.update(|_, cx| cx.windows().iter().for_each(|w| { w.update(cx, |_, window, _| window.remove_window()).ok(); }));
         cx.run_until_parked();
-        fs::remove_dir_all(&root).unwrap();
     }
     println!("\n| notes | scan (ms) | rescan (ms) | fingerprint (ms) | startup (ms) | open 5000 l. (ms) | keystroke 5000 l. (ms) | save 5000 l. (ms) | palette: open (ms) | palette: one letter (ms) | note written elsewhere, main thread (ms) | memory (MB) |");
     println!("|---|---|---|---|---|---|---|---|---|---|---|---|");
@@ -502,7 +493,6 @@ fn bench(cx: &mut TestAppContext) {
             ..Default::default()
         })
     });
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// Notes that embed sections of another: opening, and a keystroke next to them (`BREF_EMBEDS` = how many).
@@ -511,8 +501,7 @@ fn bench(cx: &mut TestAppContext) {
 #[ignore]
 fn embed_scale(cx: &mut TestAppContext) {
     unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
-    let root = std::env::temp_dir().join(format!("bref-embed-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("embed");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -550,7 +539,6 @@ fn embed_scale(cx: &mut TestAppContext) {
         within("   opening", opened, OPENING);
         within("   a keystroke", start.elapsed() / 20, GESTURE);
     }
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// A hundred tabs of 20 KB notes, each shown once: time to open, to switch, a keystroke, and the
@@ -597,7 +585,6 @@ fn hundred_tabs(cx: &mut TestAppContext) {
     }
     println!("memory now +{} MB", rss() - before);
     within("keystroke with 100 tabs", start.elapsed() / 50, GESTURE);
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Fades cost nothing on typing: a keystroke right after the panel toggled (fading in), and the
@@ -653,7 +640,6 @@ fn motion_cost(cx: &mut TestAppContext) {
         }
         within(&format!("motion {motion}: unfold then fold"), start.elapsed() / 100, GESTURE);
     }
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// A board of 1,000 cards in one column: time of a frame (a forced refresh) and of the opening.
@@ -661,9 +647,7 @@ fn motion_cost(cx: &mut TestAppContext) {
 #[gpui::test]
 #[ignore]
 fn board_frame(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-board-frame-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("board-frame");
     let _config = isolated_config(&root);
     let note = root.join("Mille.md");
     let cards: String = (0..1000).map(|i| format!("- [{}] Carte {i}\n", if i % 3 == 0 { 'x' } else { ' ' })).collect();
@@ -685,7 +669,6 @@ fn board_frame(cx: &mut TestAppContext) {
     }
     frames.sort();
     spread("frame", &frames);
-    fs::remove_dir_all(&root).ok();
 }
 
 /// A note with 100 comments, caret moving from one to the next: time of a frame.
@@ -693,9 +676,7 @@ fn board_frame(cx: &mut TestAppContext) {
 #[gpui::test]
 #[ignore]
 fn comments_frame(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-comments-frame-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("comments-frame");
     let _config = isolated_config(&root);
     let note = root.join("Cent.md");
     let lines: String = (0..100).map(|i| format!("Ligne {i} avec {{==un passage==}}{{>>commentaire {i}<<}} au milieu.\n")).collect();
@@ -717,7 +698,6 @@ fn comments_frame(cx: &mut TestAppContext) {
     }
     frames.sort();
     spread("100 comments, frame after a caret move", &frames);
-    fs::remove_dir_all(&root).ok();
 }
 
 /// The graph on 5,000 notes with about 15,000 links: the window opens on it, the background
@@ -758,7 +738,6 @@ fn graph_frame(cx: &mut TestAppContext) {
     }
     frames.sort();
     spread("graph frame", &frames);
-    fs::remove_dir_all(&root).ok();
 }
 
 /// The shortcuts panel open on a small vault: time of a forced frame and of a wheel step over the list.
@@ -766,9 +745,7 @@ fn graph_frame(cx: &mut TestAppContext) {
 #[gpui::test]
 #[ignore]
 fn help_scroll(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-help-scroll-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("help-scroll");
     fs::write(root.join("Note.md"), "# Note\n\ntexte\n").unwrap();
     let _config = isolated_config(&root);
     cx.update(bind_keys);
@@ -821,7 +798,6 @@ fn help_scroll(cx: &mut TestAppContext) {
         })
     });
     println!("scrolled: {:?}", shell.read_with(cx, |s, _| s.help.scroll.offset()));
-    fs::remove_dir_all(&root).ok();
 }
 
 /// The list page of a folder of 1,000 notes: time of a frame (a forced refresh).
@@ -859,5 +835,4 @@ fn listing_frame(cx: &mut TestAppContext) {
         shell.update(cx, |s, cx| assert_eq!(s.listed(cx).unwrap().1.len(), 1000));
     }
     within("rows only (listed)", begin.elapsed() / 20, GESTURE);
-    fs::remove_dir_all(&root).ok();
 }

@@ -66,8 +66,7 @@ fn keycaps_widget(cx: &mut TestAppContext) {
 /// column, whichever line; a shortcut being typed or removed keeps the same button.
 #[gpui::test]
 fn keycaps_in_help(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-keycaps-help-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("keycaps-help");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -118,15 +117,13 @@ fn keycaps_in_help(cx: &mut TestAppContext) {
     cx.simulate_click(at, gpui::Modifiers::none());
     cx.run_until_parked();
     assert_eq!(bounds_of(cx, key).size, before.size);
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// The context menu: the badges are pinned right of the label, never over it, in a window as
 /// narrow as it gets; an entry with no shortcut draws no badge.
 #[gpui::test]
 fn keycaps_in_menu(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-keycaps-menu-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("keycaps-menu");
     fs::write(root.join("Note.md"), "# Note\n").unwrap();
     let _config = isolated_config(&root);
     cx.update(bind_keys);
@@ -163,15 +160,13 @@ fn keycaps_in_menu(cx: &mut TestAppContext) {
         });
         cx.run_until_parked();
     }
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// The palette and the empty page: a shortcut in the detail of a row, selected or not; the row
 /// of an item with no shortcut has no badge.
 #[gpui::test]
 fn keycaps_in_palette_and_empty_page(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-keycaps-palette-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("keycaps-palette");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -197,5 +192,4 @@ fn keycaps_in_palette_and_empty_page(cx: &mut TestAppContext) {
     }
     assert!(shown >= 1, "no row with a shortcut");
     cx.simulate_keystrokes("escape");
-    fs::remove_dir_all(&root).unwrap();
 }

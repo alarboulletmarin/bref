@@ -182,7 +182,6 @@ fn a_label_is_edited_like_text(cx: &mut TestAppContext) {
     assert!(writing(cx).is_some());
     press(cx, canvas.read_with(cx, |c, _| c.spot(400., 300.)), gpui::Modifiers::none(), 1);
     assert_eq!((writing(cx), canvas.read_with(cx, |c, _| c.picked())), (None, 0));
-    let _ = fs::remove_dir_all(root);
 }
 
 /// The cursor is where the glyphs are drawn: at each zoom, a centred line is around the middle of its
@@ -261,7 +260,6 @@ fn the_cursor_follows_the_glyphs_in_classes_arrows_and_at_any_zoom(cx: &mut Test
     let saved = Diagram::from_svg(&fs::read_to_string(&path).unwrap()).unwrap();
     let saved = saved.link(link).unwrap();
     assert_eq!((saved.text.as_str(), saved.start_text.as_str()), ("paie\nou\nchaque mois", "0..1"));
-    let _ = fs::remove_dir_all(root);
 }
 
 /// An input method composes in a label: each step replaces the previous one, underlined, until it is

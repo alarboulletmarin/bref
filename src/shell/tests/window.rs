@@ -7,7 +7,7 @@ use super::*;
 /// the count after that.
 #[gpui::test]
 fn badge_is_drawn_up_to_nine(cx: &mut TestAppContext) {
-    let (root, shell, cx, _config) = start(cx, "badge-drawn");
+    let (_root, shell, cx, _config) = start(cx, "badge-drawn");
     let width = |cx: &mut gpui::VisualTestContext, n: usize| {
         let note = format!("# T\n\n{}\n", (0..n).map(|i| format!("mot{{=={i}==}}{{>>c{i}<<}}")).collect::<Vec<_>>().join(" "));
         shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(note, 0, cx)));
@@ -20,7 +20,6 @@ fn badge_is_drawn_up_to_nine(cx: &mut TestAppContext) {
     assert_eq!(drawn[1], drawn[2], "one digit: the same round badge up to nine: {drawn:?}");
     assert!(drawn[3] > drawn[2], "ten shows `9+`, wider than a digit: {drawn:?}");
     assert!(drawn[3..].iter().all(|w| *w == drawn[3]), "`9+` whatever the count: {drawn:?}");
-    let _ = fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -52,9 +51,7 @@ fn folded_bar_button_hides_what_it_covers() {
 /// and reported, the others apply.
 #[gpui::test]
 fn keys_survive_a_restart(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-keys-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("keys");
     let _config = isolated_config(&root);
     config::keep(config::File::Keys, "nav::ShowTags=secondary-shift-y\nno::Such=f8\n");
     cx.update(bind_keys);
@@ -68,16 +65,13 @@ fn keys_survive_a_restart(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-shift-y");
     assert_eq!(shell.read_with(cx, |s, _| s.nav.mode()), nav::Mode::Tags);
     // A file from before this version, or empty: the original shortcuts.
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The second pane comes back at launch, with its width; a vanished file, or a config
 /// from before panes, leaves a single pane.
 #[gpui::test]
 fn panes_come_back(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-panes-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("panes");
     let _config = isolated_config(&root);
     let (left, right) = (root.join("Gauche.md"), root.join("Droite.md"));
     fs::write(&left, "# Gauche\n").unwrap();
@@ -93,15 +87,12 @@ fn panes_come_back(cx: &mut TestAppContext) {
     assert_eq!(open, (0, "row(0.4 0, 0.6 1)".to_string(), vec![Some(left.clone()), Some(right.clone())]));
     cx.simulate_input("x");
     assert_eq!(shell.read_with(cx, |s, cx| s.panes[0].editor.read(cx).text().to_string()), "# Gauche\nx");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Without a vault, the welcome screen creates one with a click, in `Notes` of the home folder.
 #[gpui::test]
 fn starts_in_a_new_vault(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-start-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("start");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -117,16 +108,13 @@ fn starts_in_a_new_vault(cx: &mut TestAppContext) {
     if !cfg!(windows) {
         assert_eq!(vault::shown(&notes), "~/Notes");
     }
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A note opens on its body: the first key does not break the front matter and does not
 /// rename the note after its title, which would rewrite the other notes' links.
 #[gpui::test]
 fn opens_on_the_body(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-body-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("body");
     let _config = isolated_config(&root);
     let plan = root.join("Plan.md");
     fs::write(&plan, "---\ntags: [a]\n---\n# Plan\n\nÉtapes\n").unwrap();
@@ -136,7 +124,7 @@ fn opens_on_the_body(cx: &mut TestAppContext) {
     let (_shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), vec![plan.clone()], window, cx));
     cx.run_until_parked();
     cx.simulate_input("x");
-    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.executor().advance_clock(SAVED);
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(&plan).unwrap(), "---\ntags: [a]\n---\n# Plan\n\nxÉtapes\n");
     assert_eq!(fs::read_to_string(root.join("Accueil.md")).unwrap(), "# Accueil\n\n[[Plan]]\n");
@@ -144,27 +132,24 @@ fn opens_on_the_body(cx: &mut TestAppContext) {
     // A new note written then emptied leaves nothing behind when leaving.
     cx.simulate_keystrokes("secondary-n");
     cx.simulate_input("Brouillon");
-    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.executor().advance_clock(SAVED);
     cx.run_until_parked();
     assert!(root.join("Brouillon.md").is_file());
     cx.simulate_keystrokes("secondary-a backspace");
-    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.executor().advance_clock(SAVED);
     cx.run_until_parked();
     cx.simulate_keystrokes("secondary-n");
     cx.run_until_parked();
     let mut notes: Vec<_> = fs::read_dir(&root).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name()).filter(|n| n.to_string_lossy().ends_with(".md")).collect();
     notes.sort();
     assert_eq!(notes, ["Accueil.md", "Plan.md"]);
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Capture (`bref --capture`): a line typed, Enter, it is in the daily note
 /// and the window has closed. Escape closes without writing anything.
 #[gpui::test]
 fn capture_window(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-capture-window-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("capture-window");
     let _config = isolated_config(&root);
     let note = root.join(format!("{}.md", date_name(today())));
     cx.update(bind_keys);
@@ -212,16 +197,13 @@ fn capture_window(cx: &mut TestAppContext) {
     }
     assert!(fs::read_to_string(&note).unwrap().ends_with(&format!("- {}\n", long.trim())));
     assert_eq!(closed.get(), 3);
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The empty page: today's date, the useful keys and the notes to revisit, under the line
 /// where one writes. Everything fits in a narrow window, and disappears on the first keystroke.
 #[gpui::test]
 fn empty_page(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-empty-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("empty");
     let _config = isolated_config(&root);
     let week = date_name(crate::logic::dates::day_of(crate::logic::dates::day_number(today()) - 7));
     let (daily, old) = (root.join(format!("{week}.md")), root.join("Ancienne.md"));
@@ -287,7 +269,6 @@ fn empty_page(cx: &mut TestAppContext) {
     cx.simulate_click(at, gpui::Modifiers::none());
     cx.run_until_parked();
     assert_eq!(text_of(cx), "x");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A long note at three widths: the text scrolls behind the band at the bottom of the note, which
@@ -295,9 +276,7 @@ fn empty_page(cx: &mut TestAppContext) {
 /// stays above the band, never under them.
 #[gpui::test]
 fn bottom_band_keeps_the_text_clear(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-band-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("band");
     let _config = isolated_config(&root);
     let lines: String = (0..200).map(|i| format!("Ligne {i} du texte\n")).collect();
     let note = root.join("Longue.md");
@@ -331,16 +310,13 @@ fn bottom_band_keeps_the_text_clear(cx: &mut TestAppContext) {
             assert!(caret.y + px(10.) <= band.top(), "{width} {step}: the cursor stays above the band {caret:?} {band:?}");
         }
     }
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The new-version banner is a row of the window under the panes: it never covers the formatting bar (inline, or
 /// folded and open with its colour badges), the counter or the note, whatever the width, the panel or the version.
 #[gpui::test]
 fn update_banner_stays_clear_of_the_formatting_bar(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-banner-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("banner");
     let _config = isolated_config(&root);
     let note = root.join("Note.md");
     fs::write(&note, "un mot ici\n").unwrap();
@@ -429,16 +405,13 @@ fn update_banner_stays_clear_of_the_formatting_bar(cx: &mut TestAppContext) {
       }
     }
     assert_eq!(checked, 2 * 2 * 7 * 4);
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Where the app draws the window buttons (Linux), they float over the top right corner: the panel header, on the whole window,
 /// keeps its four buttons clear of them, and a narrow note starts under them, whatever the panel, the width or the language.
 #[gpui::test]
 fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-pill-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("pill");
     let _config = isolated_config(&root);
     let note = root.join("Titre.md");
     fs::write(&note, "# Un titre très très très long qui passe à la ligne dans une fenêtre étroite\n\nTexte\n").unwrap();
@@ -459,8 +432,7 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
     let top = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.pane().editor.read(cx).top_margin());
     // The panel on the whole window: its four buttons end where the window buttons begin, from a phone width to a very wide window.
     shell.update(cx, |s, cx| {
-        s.nav.show_alone(nav::Mode::Tree);
-        s.nav.set_panel(nav::Panel::Full);
+        s.show_panel(nav::Mode::Tree, nav::Panel::Full, cx);
         cx.notify();
     });
     for width in [320., 420., 860., 1600.] {
@@ -510,7 +482,6 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
         // Wide enough: the text starts right under the handle strip, which is as high as the window buttons.
         assert!(pane.top() + top >= pill && (narrow || top == px(40.)), "{window}: the text starts at {top:?}, the window buttons end at {pill:?}");
     }
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Where the app draws the window buttons, no tab and no comment column goes under them: in a window of 420, 860
@@ -518,9 +489,7 @@ fn window_buttons_leave_the_header_and_the_title_clear(cx: &mut TestAppContext) 
 /// end before the buttons or start below them.
 #[gpui::test]
 fn window_buttons_have_the_top_row_to_themselves(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-pill-row-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("pill-row");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -558,7 +527,6 @@ fn window_buttons_have_the_top_row_to_themselves(cx: &mut TestAppContext) {
         }
     }
     assert!(seen > 0, "the comments column was never open");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Where the app draws its title bar, there is always a place to grab the window: in every layout, the top row of each pane
@@ -566,9 +534,7 @@ fn window_buttons_have_the_top_row_to_themselves(cx: &mut TestAppContext) {
 /// title and the empty part of the rail. The text never starts under the strip.
 #[gpui::test]
 fn the_window_can_always_be_grabbed_at_the_top(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-grab-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("grab");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -645,7 +611,6 @@ fn the_window_can_always_be_grabbed_at_the_top(cx: &mut TestAppContext) {
     panel(cx, nav::Panel::Split);
     check("two panes, panel", 2, cx);
     assert_eq!(seen, 8, "{report:?}");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Atelier: the notes and the panel are sheets on the ground, 8 px of it between two sheets and at the window's edges
@@ -715,7 +680,6 @@ fn sheets_lie_on_the_ground_with_eight_pixels_between(cx: &mut TestAppContext) {
         check("zoomed", 1600., true, 2, cx);
     }
     assert_eq!(seen, 10);
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The interface follows the note's zoom, from 85 % to 150 % of its size at 16: the rail's buttons, the panel's
@@ -882,9 +846,7 @@ fn clear_at_a_glance(cx: &mut TestAppContext) {
 /// button apart (at 480 px the rail scrolls, so the layout is the same).
 #[gpui::test]
 fn rail_groups_keep_their_order_and_room(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-rail-groups-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("rail-groups");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);

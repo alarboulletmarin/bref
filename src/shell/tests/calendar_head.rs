@@ -5,9 +5,7 @@ use super::*;
 /// the last cell; at 420, 860 and 1,600 px and at zoom 11, 16 and 32.
 #[gpui::test]
 fn the_calendar_stays_inside_its_sheet(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-calendar-head-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("calendar-head");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -19,9 +17,8 @@ fn the_calendar_stays_inside_its_sheet(cx: &mut TestAppContext) {
         shell
     });
     cx.run_until_parked();
-    shell.update(cx, |s, _| {
-        s.nav.show_alone(Mode::Calendar);
-        s.nav.set_panel(Panel::Split);
+    shell.update(cx, |s, cx| {
+        s.show_panel(Mode::Calendar, Panel::Split, cx);
     });
     let settle = |cx: &mut gpui::VisualTestContext| {
         for _ in 0..4 {
@@ -52,5 +49,4 @@ fn the_calendar_stays_inside_its_sheet(cx: &mut TestAppContext) {
             }
         }
     }
-    fs::remove_dir_all(&root).ok();
 }

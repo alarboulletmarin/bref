@@ -77,7 +77,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("![[sch");
     cx.simulate_keystrokes("enter");
     assert!(text(cx).ends_with("![[Schéma.svg]]"));
-    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.executor().advance_clock(SAVED);
     cx.run_until_parked();
 
     // `/` commands: the list filters by name or label; Enter inserts the
@@ -1093,8 +1093,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         let before: std::collections::HashSet<_> = fs::read_dir(&root).unwrap().flatten().map(|e| e.path()).collect();
         shell.update_in(cx, |s, window, cx| {
             s.nav.set_sel(Some(drawing.clone()));
-            s.nav.show_alone(crate::views::nav::Mode::Tree);
-            s.nav.set_panel(crate::views::nav::Panel::Split);
+            s.show_panel(crate::views::nav::Mode::Tree, crate::views::nav::Panel::Split, cx);
             s.new_diagram(window, cx);
         });
         cx.run_until_parked();
@@ -1481,6 +1480,6 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     }
     fs::remove_file(&styled).unwrap();
     j.settle(cx);
-    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.executor().advance_clock(SAVED);
     cx.run_until_parked();
 }

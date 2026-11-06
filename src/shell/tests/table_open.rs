@@ -1,10 +1,8 @@
 use super::*;
 use crate::views::sheet::summary;
 
-fn window<'a>(cx: &'a mut TestAppContext, tag: &str, files: &[(&str, &[u8])]) -> (PathBuf, Entity<Shell>, &'a mut gpui::VisualTestContext, std::sync::MutexGuard<'static, ()>) {
-    let root = std::env::temp_dir().join(format!("bref-table-open-{tag}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+fn window<'a>(cx: &'a mut TestAppContext, tag: &str, files: &[(&str, &[u8])]) -> (TempDir, Entity<Shell>, &'a mut gpui::VisualTestContext, std::sync::MutexGuard<'static, ()>) {
+    let root = TempDir::new(&format!("table-open-{tag}"));
     let config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -177,5 +175,4 @@ fn an_input_method_composes_in_a_cell_and_in_the_palette(cx: &mut TestAppContext
     assert_eq!((typed(cx), cx.update(|window, cx| palette.update(cx, |p, cx| p.marked_text_range(window, cx)))), ("にほ".to_string(), Some(0..2)));
     cx.update(|window, cx| palette.update(cx, |p, cx| p.replace_text_in_range(None, "日本", window, cx)));
     assert_eq!(typed(cx), "日本");
-    let _ = fs::remove_dir_all(root);
 }

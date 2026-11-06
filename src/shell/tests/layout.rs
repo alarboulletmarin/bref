@@ -6,8 +6,7 @@ use super::*;
 /// compared (in `Editor::layout`, under test) with a full layout.
 #[gpui::test]
 fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-reuse-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("reuse");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -65,5 +64,4 @@ fn layout_reuse_matches_full_layout(cx: &mut TestAppContext) {
     }
     println!("layouts: {full} full, {reused} reused, {inside} of them in a very big table");
     assert!(inside > 20 || steps < 200, "few reuses in a very big table: {inside}");
-    fs::remove_dir_all(&root).unwrap();
 }

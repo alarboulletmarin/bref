@@ -42,6 +42,45 @@ use gpui::{Hsla, TestAppContext};
 
 static CONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// The vault watcher looks at the disk every 2 s (`shell/library.rs`): a little more than one round.
+// ponytail: copied from library.rs, whose timers are not exported; export them there and use them here.
+pub(super) const WATCH: Duration = Duration::from_secs(3);
+/// A note's autosave (`SAVE_DELAY`) with some margin; the table's, 400 ms too, fires within it.
+pub(super) const SAVED: Duration = notes::SAVE_DELAY.saturating_add(Duration::from_millis(100));
+
+/// Lets the vault watcher see what changed on disk: two of its rounds, the window drawn after each.
+pub(super) fn watch(cx: &mut gpui::VisualTestContext) {
+    for _ in 0..2 {
+        cx.executor().advance_clock(WATCH);
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+    }
+}
+
+/// Frames until the layout settles, without the clock moving (toasts and fades keep their time).
+pub(super) fn settle(cx: &mut gpui::VisualTestContext) {
+    for _ in 0..4 {
+        cx.run_until_parked();
+        cx.update(|window, _| window.refresh());
+    }
+    cx.run_until_parked();
+}
+
+/// What tests ask of the panel and what they set up in it, so that they do not reach into `Nav`.
+impl Shell {
+    /// The panel's tool and its size: (tool, panel mode).
+    pub(super) fn panel_view(&self) -> (crate::views::nav::Mode, crate::views::nav::Panel) {
+        (self.nav.mode(), self.nav.panel())
+    }
+
+    /// Shows `mode` alone in the panel, in `panel` mode.
+    pub(super) fn show_panel(&mut self, mode: crate::views::nav::Mode, panel: crate::views::nav::Panel, cx: &mut Context<Self>) {
+        self.nav.show_alone(mode);
+        self.nav.set_panel(panel);
+        cx.notify();
+    }
+}
+
 /// Every file under `dir`, folders walked.
 fn files(dir: &Path) -> Vec<PathBuf> {
     let entries = fs::read_dir(dir).unwrap().map(|entry| entry.unwrap().path());
@@ -96,11 +135,41 @@ fn isolated_config(root: &Path) -> std::sync::MutexGuard<'static, ()> {
     guard
 }
 
+/// A temporary folder named after the test and the process, empty at the start and removed when it goes out of
+/// scope, so a failing test leaves nothing behind either. It reads as a `PathBuf`.
+pub(super) struct TempDir(PathBuf);
+
+impl TempDir {
+    pub(super) fn new(name: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("bref-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        Self(path)
+    }
+}
+
+impl std::ops::Deref for TempDir {
+    type Target = PathBuf;
+    fn deref(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for TempDir {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
 /// A shell on a fresh vault in a temporary folder.
-pub(super) fn start<'a>(cx: &'a mut TestAppContext, name: &str) -> (PathBuf, Entity<Shell>, &'a mut gpui::VisualTestContext, std::sync::MutexGuard<'static, ()>) {
-    let root = std::env::temp_dir().join(format!("bref-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+pub(super) fn start<'a>(cx: &'a mut TestAppContext, name: &str) -> (TempDir, Entity<Shell>, &'a mut gpui::VisualTestContext, std::sync::MutexGuard<'static, ()>) {
+    let root = TempDir::new(name);
     let config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);

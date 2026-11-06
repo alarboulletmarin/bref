@@ -48,7 +48,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("enter secondary-home end");
     for letter in ["X", "Y"] {
         cx.simulate_input(letter);
-        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.executor().advance_clock(SAVED);
         cx.run_until_parked();
     }
     assert!(root.join("TestsXY.md").is_file() && !root.join("TestsX.md").exists());
@@ -119,7 +119,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     fs::write(root.join("Idées.md"), "# Idées\n\nréécrite\n").unwrap();
     shell.update(cx, |s, cx| s.open_note(&root.join("Idées.md"), cx));
     fs::write(root.join("Idées.md"), "# Idées\n\nréécrite ailleurs\n").unwrap();
-    cx.executor().advance_clock(Duration::from_secs(3));
+    cx.executor().advance_clock(WATCH);
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, _| s.notes.iter().any(|n| n.name == "Ailleurs")));
     assert_eq!(text(cx), "# Idées\n\nréécrite ailleurs\n");
@@ -131,13 +131,13 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.update(|window, cx| window.focus(&shell.read(cx).pane().editor.focus_handle(cx)));
     cx.simulate_keystrokes("secondary-end");
     cx.simulate_input("suite");
-    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.executor().advance_clock(SAVED);
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(root.join("brouillon.md")).unwrap(), "texte\nsuite");
     cx.simulate_keystrokes("secondary-home");
     cx.simulate_input("# Titre");
     cx.simulate_keystrokes("enter");
-    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.executor().advance_clock(SAVED);
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(root.join("Titre.md")).unwrap(), "# Titre\ntexte\nsuite");
     assert!(!root.join("brouillon.md").exists());

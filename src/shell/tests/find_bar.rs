@@ -52,7 +52,7 @@ fn inside(a: Bounds<Pixels>, b: Bounds<Pixels>) -> bool {
     a.left() >= b.left() && a.right() <= b.right() && a.top() >= b.top() && a.bottom() <= b.bottom()
 }
 
-fn opened<'a>(cx: &'a mut TestAppContext, name: &str, text: &str) -> (PathBuf, Entity<Shell>, &'a mut Cx, std::sync::MutexGuard<'static, ()>) {
+fn opened<'a>(cx: &'a mut TestAppContext, name: &str, text: &str) -> (TempDir, Entity<Shell>, &'a mut Cx, std::sync::MutexGuard<'static, ()>) {
     let (root, shell, cx, config) = start(cx, name);
     fs::write(root.join("Note.md"), text).unwrap();
     shell.update(cx, |s, cx| {
@@ -68,7 +68,7 @@ fn opened<'a>(cx: &'a mut TestAppContext, name: &str, text: &str) -> (PathBuf, E
 /// middle of typing closes it, the search kept for next time; Replace all is one undo step, redone whole.
 #[gpui::test]
 fn one_bar_two_modes(cx: &mut TestAppContext) {
-    let (root, shell, cx, _config) = opened(cx, "find-modes", "Été été ÉTÉ été\n");
+    let (_root, shell, cx, _config) = opened(cx, "find-modes", "Été été ÉTÉ été\n");
     cx.simulate_keystrokes("secondary-f");
     assert_eq!(keys_in(&shell, cx), "query");
     cx.simulate_input("été");
@@ -112,14 +112,13 @@ fn one_bar_two_modes(cx: &mut TestAppContext) {
     assert_eq!(finding(&shell, cx).map(|f| f.0), Some("ÉT".into()));
     cx.simulate_input("ÉTÉ");
     assert_eq!(finding(&shell, cx), Some(("ÉTÉ".into(), 1, 1)));
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The search field takes an input method: composed text shows as typed and searches once committed; a dead
 /// key followed by a letter gives one accented letter.
 #[gpui::test]
 fn the_search_takes_an_input_method(cx: &mut TestAppContext) {
-    let (root, shell, cx, _config) = opened(cx, "find-ime", "café 東京 tôt\n");
+    let (_root, shell, cx, _config) = opened(cx, "find-ime", "café 東京 tôt\n");
     cx.simulate_keystrokes("secondary-f");
     let query = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).find_fields().unwrap().0);
     // Japanese: « とうきょう » composed, then committed as « 東京 ».
@@ -137,14 +136,13 @@ fn the_search_takes_an_input_method(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("home");
     cx.simulate_input("t");
     assert_eq!(finding(&shell, cx), Some(("tôt".into(), 1, 1)));
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The bar stays in its pane at every width, the count never overlaps the toggles (none to 10 000 matches,
 /// and the longest message), and a long search scrolls in its field instead of widening the bar.
 #[gpui::test]
 fn the_bar_holds_its_place(cx: &mut TestAppContext) {
-    let (root, shell, cx, _config) = opened(cx, "find-measures", "a\n");
+    let (_root, shell, cx, _config) = opened(cx, "find-measures", "a\n");
     cx.simulate_keystrokes("secondary-r");
     cx.simulate_input("a");
     let check = |cx: &mut Cx, what: &str| {
@@ -214,14 +212,13 @@ fn the_bar_holds_its_place(cx: &mut TestAppContext) {
     cx.update(|window, _| window.refresh());
     cx.run_until_parked();
     assert_eq!(scrolled(cx), px(0.));
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Replacing at the edges: an empty replacement, one that holds the search, `$1` with no group, the last
 /// match (it goes round to the first), regular expressions that match nothing wide (`^`, `a*`).
 #[gpui::test]
 fn replace_at_the_edges(cx: &mut TestAppContext) {
-    let (root, shell, cx, _config) = opened(cx, "find-edges", "a b a\n");
+    let (_root, shell, cx, _config) = opened(cx, "find-edges", "a b a\n");
     // `a` → `aa`: each one once, no endless loop.
     cx.simulate_keystrokes("secondary-r");
     cx.simulate_input("a");
@@ -253,7 +250,6 @@ fn replace_at_the_edges(cx: &mut TestAppContext) {
         cx.simulate_input(query);
         assert_eq!(finding(&shell, cx).map(|f| f.2), Some(n), "{query}");
     }
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Ctrl+R replaces in the note and nowhere else; the recent notes moved to Ctrl+Shift+T, from the note as from
@@ -287,7 +283,6 @@ fn the_keys_of_the_bar(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-r");
     assert_eq!(mode(cx), nav::Mode::Recent);
     assert_eq!(finding(&shell, cx), None);
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Two panes: the bar belongs to the pane where it was opened.
@@ -306,5 +301,4 @@ fn the_bar_belongs_to_its_pane(cx: &mut TestAppContext) {
     assert_eq!((found(cx, 0), found(cx, 1)), (None, Some(("b".into(), 1, 1))));
     let (bar, left, right) = (cx.debug_bounds("find-bar").unwrap(), cx.debug_bounds("pane-0").unwrap(), cx.debug_bounds("pane-1").unwrap());
     assert!(inside(bar, right) && apart(bar, left), "{bar:?} in {right:?}");
-    let _ = fs::remove_dir_all(&root);
 }

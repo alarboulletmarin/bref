@@ -30,7 +30,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(text(cx), "# Test\n1. un\n2. deux\n- [x] tâche\n- [ ] suite");
 
     // Autosave, named after the title.
-    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.executor().advance_clock(SAVED);
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(root.join("Test.md")).unwrap(), text(cx));
 
@@ -43,7 +43,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Recent: the last opened note first, in the app as in the config.
     let recent = shell.read_with(cx, |s, _| s.recent.clone());
     assert_eq!(recent, [root.join("Courses.md"), root.join("Test.md")]);
-    assert_eq!(config::load_config(), (Some(root.clone()), recent));
+    assert_eq!(config::load_config(), (Some(root.to_path_buf()), recent));
     let names = shell.read_with(cx, |s, _| {
         s.by_recency().iter().map(|n| n.name.clone()).collect::<Vec<_>>()
     });

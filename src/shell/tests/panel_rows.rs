@@ -59,7 +59,6 @@ fn the_tree_lines_names_up_after_an_icon(cx: &mut TestAppContext) {
     assert!((row.size.height - ui * 28.).abs() < px(0.5), "{row:?}");
     assert!(folder.left() - panel.left() >= px(16.), "{folder:?} {panel:?}");
     assert!((inside.left() - folder.left() - px(16.)).abs() < px(0.5), "{inside:?} {folder:?}");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The recent list: while the folder is shown, the name is whole (as wide as the same name alone); the folder
@@ -114,7 +113,6 @@ fn the_recent_name_keeps_its_room_before_its_folder(cx: &mut TestAppContext) {
         }
     }
     assert!(seen_folder && seen_hidden, "the widths should show the folder at least once and hide it at least once");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The vault search: the field has a line of its own, the panel's full width, so its hint is whole at 260 px
@@ -140,7 +138,6 @@ fn the_vault_search_field_has_its_own_line(cx: &mut TestAppContext) {
             assert!(field.size.width >= px(160.), "{width}: hint cut: {field:?}");
         }
     }
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Other files than notes carry their extension next to the name: whole and on the name's line at every panel
@@ -179,5 +176,4 @@ fn a_file_keeps_its_extension_whole_when_its_name_is_cut(cx: &mut TestAppContext
             assert!(bounds(cx, "nav-ext-note.v2".into()).is_none() && bounds(cx, "nav-ext-Dossier.v2".into()).is_none());
         }
     }
-    let _ = fs::remove_dir_all(&root);
 }

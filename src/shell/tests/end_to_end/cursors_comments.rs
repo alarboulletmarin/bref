@@ -113,8 +113,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let lay = |cx: &mut gpui::VisualTestContext, width: f32, mode: Mode, panel: Panel, list: f32| {
         cx.simulate_resize(size(px(width), px(600.)));
         shell.update(cx, |s, cx| {
-            s.nav.show_alone(mode);
-            s.nav.set_panel(panel);
+            s.show_panel(mode, panel, cx);
             s.nav.set_list_w(px(list));
             cx.notify();
         });
@@ -157,8 +156,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     within(cx, "calendar", "nav-panel");
     cx.simulate_resize(whole);
     shell.update(cx, |s, cx| {
-        s.nav.show_alone(before.0);
-        s.nav.set_panel(before.1);
+        s.show_panel(before.0, before.1, cx);
         s.nav.set_list_w(before.2);
         cx.notify();
     });

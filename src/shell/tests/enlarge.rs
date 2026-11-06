@@ -62,15 +62,7 @@ impl Page {
         let len = text.len();
         self.shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(text.to_string(), len, cx)));
         self.shell.update_in(cx, |s, window, cx| window.focus(&s.pane().editor.focus_handle(cx)));
-        self.settle(cx);
-    }
-
-    fn settle(&self, cx: &mut gpui::VisualTestContext) {
-        for _ in 0..4 {
-            cx.run_until_parked();
-            cx.update(|window, _| window.refresh());
-        }
-        cx.run_until_parked();
+        settle(cx);
     }
 
     fn found(&self, cx: &mut gpui::VisualTestContext) -> Found {
@@ -99,9 +91,7 @@ impl Page {
 
 #[gpui::test]
 fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-enlarge-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("enlarge");
     let _config = isolated_config(&root);
     for (name, bytes) in [
         ("un.png", png(1, 1)),
@@ -182,7 +172,7 @@ fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
     let now = page.found(cx);
     assert_eq!((now[0].3, now[1].3), (false, true), "only the picture under the pointer shows its button");
     cx.simulate_click(found[1].2.center(), Modifiers::none());
-    page.settle(cx);
+    settle(cx);
     let svg = page.viewer(cx).expect("the second picture opens");
     assert!(svg.0 && !svg.1, "{svg:?}: the SVG is read");
     cx.simulate_keystrokes("escape");
@@ -192,7 +182,7 @@ fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
     page.load(cx, "![](grand.png)\nfin");
     let found = page.found(cx);
     cx.simulate_click(found[0].1.center(), Modifiers::none());
-    page.settle(cx);
+    settle(cx);
     assert!(page.viewer(cx).is_none());
 
     // Raster viewer: opens fitted, zoom keys and bounds, wheel toward the pointer, drag, Escape.
@@ -201,7 +191,7 @@ fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
         let found = page.found(cx);
         page.hover(cx, found[0].1.origin + point(px(5.), px(5.)));
         cx.simulate_click(found[0].2.center(), Modifiers::none());
-        page.settle(cx);
+        settle(cx);
         let (loaded, failed, fit, _) = page.viewer(cx).unwrap_or_else(|| panic!("{what}: not opened"));
         assert!(loaded && !failed && fit > 0. && fit <= 1., "{what}: {:?}", page.viewer(cx));
         cx.simulate_keystrokes("+");
@@ -215,7 +205,7 @@ fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
         }
         assert_eq!(page.viewer(cx).unwrap().2, 8., "{what}: maximum zoom");
         cx.simulate_keystrokes("0");
-        page.settle(cx);
+        settle(cx);
         assert_eq!(page.viewer(cx).unwrap().2, fit, "{what}: fit");
         // The wheel with Ctrl zooms around the pointer: the point under it stays there.
         let (zoom, pan) = (page.viewer(cx).unwrap().2, page.viewer(cx).unwrap().3);
@@ -251,7 +241,7 @@ fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
             page.load(cx, &format!("{line}\nfin"));
             let found = page.found(cx);
             cx.simulate_click(found[0].2.center(), Modifiers::none());
-            page.settle(cx);
+            settle(cx);
             let (loaded, failed, ..) = page.viewer(cx).unwrap_or_else(|| panic!("{what}: not opened"));
             assert!(loaded && !failed, "{what} ({theme})");
             cx.simulate_keystrokes("escape");
@@ -277,22 +267,19 @@ fn picture_formula_and_figure_enlarge_from_a_button(cx: &mut TestAppContext) {
             s.pane_mut().set_cover(Cover::Figure(figure));
             cx.notify();
         });
-        page.settle(cx);
+        settle(cx);
         let (loaded, failed, ..) = page.viewer(cx).unwrap();
         assert!(!loaded && failed, "{name}");
         cx.simulate_keystrokes("escape");
         assert!(page.viewer(cx).is_none(), "{name}");
     }
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Between an edit and the next paint the lines still hold the old text's offsets: a pointer move or
 /// a click there used to slice the new text with them and panic (Windows: the process aborted).
 #[gpui::test]
 fn pointer_events_between_an_edit_and_the_layout_do_not_panic(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-stale-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("stale");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -310,7 +297,6 @@ fn pointer_events_between_an_edit_and_the_layout_do_not_panic(cx: &mut TestAppCo
                 e.pointer(window, cx);
             })
         });
-        page.settle(cx);
+        settle(cx);
     }
-    let _ = fs::remove_dir_all(&root);
 }

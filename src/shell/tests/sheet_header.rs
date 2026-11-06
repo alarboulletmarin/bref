@@ -5,9 +5,7 @@ use super::*;
 /// at 420, 860 and 1,600 px and at zoom 11, 16 and 32.
 #[gpui::test]
 fn the_table_head_stays_above_the_grid(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-sheet-header-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("sheet-header");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -65,5 +63,4 @@ fn the_table_head_stays_above_the_grid(cx: &mut TestAppContext) {
             }
         }
     }
-    fs::remove_dir_all(&root).ok();
 }

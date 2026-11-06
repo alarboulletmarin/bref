@@ -175,8 +175,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
 
     // The tree's « nouvelle note » button saves at the vault root, even with a folder selected.
     shell.update_in(cx, |s, _, cx| {
-        s.nav.set_panel(Panel::Split);
-        s.nav.show_alone(Mode::Tree);
+        s.show_panel(Mode::Tree, Panel::Split, cx);
         s.nav.set_sel(Some(root.join("Projets")));
         s.flush(cx);
     });

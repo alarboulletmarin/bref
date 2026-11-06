@@ -2,12 +2,6 @@
 
 use super::*;
 
-fn settle(cx: &mut gpui::VisualTestContext) {
-    cx.run_until_parked();
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-}
-
 fn state(shell: &Entity<Shell>, cx: &mut gpui::VisualTestContext) -> (Option<PathBuf>, bool, String) {
     shell.read_with(cx, |s, cx| (s.pane().path.clone(), s.pane().dirty, s.pane().editor.read(cx).text().to_string()))
 }

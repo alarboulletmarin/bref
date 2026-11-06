@@ -154,7 +154,6 @@ fn tabs_open_switch_close_and_come_back(cx: &mut TestAppContext) {
     let tab = again.read_with(cx2, |s, _| s.groups[0].tabs[31]);
     let last = cx2.debug_bounds(leak(format!("tab-{tab}"))).unwrap();
     assert!(last.right() <= bar.right() + px(0.5), "{last:?} out of {bar:?}");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The arrows in the tree preview notes in a single tab, in italics, that the next note browsed
@@ -203,7 +202,6 @@ fn the_tree_previews_in_a_single_tab(cx: &mut TestAppContext) {
     shell.update_in(cx, |s, window, cx| s.open(&root.join("rapport.pdf"), window, cx));
     assert_eq!(tabs(&shell, cx, 0).0.len(), 4);
     assert_eq!(shell.read_with(cx, |s, _| s.opened.last().cloned()), Some(root.join("rapport.pdf")));
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The bar is a row of pills on the ground: twelve tabs with long titles (one without a space), at 420, 860 and
@@ -211,9 +209,7 @@ fn the_tree_previews_in_a_single_tab(cx: &mut TestAppContext) {
 /// of the window buttons, and the row stops before the buttons.
 #[gpui::test]
 fn tabs_are_pills_that_stay_clear_of_the_window_buttons(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-tab-pills-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("tab-pills");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -274,7 +270,6 @@ fn tabs_are_pills_that_stay_clear_of_the_window_buttons(cx: &mut TestAppContext)
             }
         }
     }
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A failed atomic write must leave the actual editor alive, including its undo history.
@@ -316,7 +311,6 @@ fn failed_save_keeps_the_tab_and_its_edits(cx: &mut TestAppContext) {
     assert!(!shell.read_with(cx, |s, _| s.panes.iter().any(|p| p.editor == editor)));
     cx.simulate_keystrokes("secondary-alt-t");
     assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).text().to_string()), format!("{original} UNSAVED CHANGES"));
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Right click on a tab, or the palette: close it, the others, the pane or every file. Each tab is
@@ -466,7 +460,6 @@ fn tabs_close_in_bulk_from_their_menu(cx: &mut TestAppContext) {
     let path = shell.read_with(cx, |s, _| s.panes[kept].path.clone());
     shell.update_in(cx, |s, window, cx| s.close_other_tabs(kept, window, cx));
     shell.read_with(cx, |s, _| assert_eq!((s.panes.len(), s.pane().path.clone()), (1, path)));
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// Closing in bulk over a diagram, a picture and a table whose cell is still typed, its save
@@ -535,5 +528,4 @@ fn bulk_close_writes_pending_tables_and_diagrams(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(shell.read_with(cx, |s, cx| s.tab_labels(0, cx)), vec!["Schéma", "Données", "Photo"]);
     assert!(shell.read_with(cx, |s, _| matches!(s.pane().file().map(|f| &f.kind), Some(FileKind::Image))));
-    let _ = fs::remove_dir_all(&root);
 }

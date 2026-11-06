@@ -4,9 +4,7 @@ use super::*;
 /// a long title without a space, 1,000 cards, at 420, 860 and 1,600 px and at zoom 11, 16 and 32.
 #[gpui::test]
 fn the_board_header_stays_above_the_columns(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-board-header-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("board-header");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -47,5 +45,4 @@ fn the_board_header_stays_above_the_columns(cx: &mut TestAppContext) {
             assert!(column.bottom() <= sheet.bottom(), "{what}: column {column:?} leaves the sheet");
         }
     }
-    fs::remove_dir_all(&root).ok();
 }

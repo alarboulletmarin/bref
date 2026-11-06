@@ -10,10 +10,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     // Tags: Ctrl+T lists the vault's tags; Right expands the first, Down
     // previews a note that carries it.
     fs::write(root.join("Tagué.md"), "# Tagué\n\n#alpha\n").unwrap();
-    for _ in 0..2 {
-        cx.executor().advance_clock(Duration::from_secs(3));
-        cx.run_until_parked();
-    }
+    watch(cx);
     cx.simulate_keystrokes("secondary-t down right down");
     cx.run_until_parked();
     assert_eq!(shell.read_with(cx, |s, _| s.nav.mode()), Mode::Tags);
@@ -222,8 +219,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     assert_eq!(text(cx), "# 2026-10-01\n\n");
     assert!(cx.debug_bounds("day-2026-9-30").is_some() && cx.debug_bounds("day-2026-11-1").is_some());
     shell.update(cx, |s, cx| {
-        s.nav.show_alone(before.1);
-        s.nav.set_panel(before.2);
+        s.show_panel(before.1, before.2, cx);
         s.open_note(before.0.as_ref().unwrap(), cx);
     });
     // Once left, the daily note is saved like any note that has a title.

@@ -43,7 +43,6 @@ fn failures_stay_and_name_the_file(cx: &mut TestAppContext) {
     assert_eq!(said.0, Tone::Failed);
     assert!(said.1.contains("Fantôme.md") && said.1.ends_with("introuvable"), "{said:?}");
     assert!(!said.1.contains("os error"), "{said:?}");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The trash says so, and its message undoes it: the note goes back where it was, a name taken meanwhile is refused.
@@ -53,13 +52,7 @@ fn the_trash_says_so_and_can_be_undone(cx: &mut TestAppContext) {
     fs::create_dir(root.join("Projets")).unwrap();
     let note = root.join("Projets/Plan.md");
     fs::write(&note, "# Plan\n").unwrap();
-    let settle = |cx: &mut gpui::VisualTestContext| {
-        for _ in 0..2 {
-            cx.executor().advance_clock(Duration::from_secs(3));
-            cx.run_until_parked();
-        }
-    };
-    settle(cx);
+    watch(cx);
     shell.update(cx, |s, cx| s.trash(&root, &note, cx));
     assert!(!note.exists() && root.join(".trash/Plan.md").is_file());
     assert!(shell.read_with(cx, |s, _| s.told(Tone::Done, "Mis à la corbeille : « Plan.md »")));
@@ -94,7 +87,6 @@ fn the_trash_says_so_and_can_be_undone(cx: &mut TestAppContext) {
     let at = cx.debug_bounds("toast-undo").unwrap().center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert_eq!(fs::read_to_string(dir.join("a b.md")).unwrap(), "# a b\n");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A figure or a picture that cannot be read says so under its source, in words; a good one says nothing.
@@ -106,14 +98,11 @@ fn unreadable_figures_and_pictures_say_so(cx: &mut TestAppContext) {
     let good = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20"/></svg>"#;
     fs::write(root.join("bonne.svg"), good).unwrap();
     fs::write(root.join("cassé.svg"), "<svg pas du svg").unwrap();
-    for _ in 0..2 {
-        cx.executor().advance_clock(Duration::from_secs(3));
-        cx.run_until_parked();
-    }
+    watch(cx);
     let said = |cx: &mut gpui::VisualTestContext, text: &str| {
         shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(text.to_string(), text.len(), cx)));
         for _ in 0..6 {
-            cx.executor().advance_clock(Duration::from_millis(500));
+            cx.executor().advance_clock(SAVED);
             cx.update(|window, _| window.refresh());
             cx.run_until_parked();
         }
@@ -133,7 +122,6 @@ fn unreadable_figures_and_pictures_say_so(cx: &mut TestAppContext) {
     // Two bad diagrams and a good one, in the order of the note; the cursor in the bad one waits until it leaves.
     let three = "```mermaid\nfaux\n```\n\n```mermaid\nsequenceDiagram\nA->>B: x\n```\n\n```mermaid\nfaux aussi\n```\n";
     assert_eq!(said(cx, three), ["Figure illisible", "Figure illisible"]);
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A picture opened alone that cannot be read says so, instead of an empty pane for ever.
@@ -153,7 +141,7 @@ fn a_corrupt_picture_opened_alone_says_so(cx: &mut TestAppContext) {
             window.focus(s.nav.focus());
         });
         for _ in 0..6 {
-            cx.executor().advance_clock(Duration::from_millis(500));
+            cx.executor().advance_clock(SAVED);
             cx.update(|window, _| window.refresh());
             cx.run_until_parked();
         }
@@ -163,15 +151,12 @@ fn a_corrupt_picture_opened_alone_says_so(cx: &mut TestAppContext) {
     assert!(!open(cx, "bonne.png"), "a good picture says nothing");
     assert!(open(cx, "cassée.png"), "a corrupt one says so");
     assert!(open(cx, "vide.png"), "and a file of 0 bytes");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A vault that is gone (the config points to a missing folder) is said on the welcome page, narrow or wide, until another is opened.
 #[gpui::test]
 fn a_missing_vault_is_said_on_the_welcome_page(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-lost-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("lost");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -196,7 +181,6 @@ fn a_missing_vault_is_said_on_the_welcome_page(cx: &mut TestAppContext) {
     cx.simulate_click(at, gpui::Modifiers::none());
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, _| s.vault.is_some() && s.lost.is_none()));
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// An import says how many items it could not draw, in the singular and the plural, and nothing when all came.
@@ -222,16 +206,6 @@ fn an_import_counts_what_it_leaves_out(cx: &mut TestAppContext) {
     assert_eq!(import(cx, "traits.excalidraw", &format!(r#"{{"elements":[{}]}}"#, stroke(12))), [(Tone::Info, "12 éléments non importés".to_string())]);
     let broken = import(cx, "cassé.excalidraw", "pas du json");
     assert!(matches!(broken.as_slice(), [(Tone::Failed, said)] if said.starts_with("Import impossible")), "{broken:?}");
-    let _ = fs::remove_dir_all(&root);
-}
-
-/// Frames until the layout settles.
-fn settle(cx: &mut gpui::VisualTestContext) {
-    for _ in 0..4 {
-        cx.executor().advance_clock(Duration::from_millis(500));
-        cx.update(|window, _| window.refresh());
-        cx.run_until_parked();
-    }
 }
 
 /// A list page of 300 notes builds only the rows near the window; scrolled to the end and back,
@@ -278,13 +252,12 @@ fn a_long_list_page_draws_the_rows_in_view(cx: &mut TestAppContext) {
         drawn(cx);
     }
     assert!(cx.debug_bounds("list-cell-0-1").is_some(), "back at the first row");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// An empty panel says so, in each of its lists, inside the panel; the wide and the narrow window alike.
 #[gpui::test]
 fn an_empty_panel_says_so(cx: &mut TestAppContext) {
-    let (root, shell, cx, _config) = start(cx, "empty-panel");
+    let (_root, shell, cx, _config) = start(cx, "empty-panel");
     shell.update(cx, |s, cx| {
         s.nav.set_panel(nav::Panel::Split);
         cx.notify();
@@ -304,15 +277,12 @@ fn an_empty_panel_says_so(cx: &mut TestAppContext) {
             assert!(said.size.width < panel.size.width, "{width} {mode:?}: the text has no margin in {panel:?}");
         }
     }
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A list that has something in it says nothing.
 #[gpui::test]
 fn a_panel_with_notes_says_nothing(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-full-panel-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("full-panel");
     fs::write(root.join("Une.md"), "# Une\n\n#tag [[Une]]\n").unwrap();
     let _config = isolated_config(&root);
     cx.update(bind_keys);
@@ -322,14 +292,12 @@ fn a_panel_with_notes_says_nothing(cx: &mut TestAppContext) {
         |window, cx| Shell::new(Some(root), vec![], window, cx)
     });
     shell.update(cx, |s, cx| {
-        s.nav.set_panel(nav::Panel::Split);
-        s.nav.show_alone(nav::Mode::Tree);
+        s.show_panel(nav::Mode::Tree, nav::Panel::Split, cx);
         cx.notify();
     });
     settle(cx);
     assert!(cx.debug_bounds("nav-panel").is_some());
     assert!(cx.debug_bounds("nav-empty").is_none(), "a vault with a note has a tree");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// The palette says when nothing matches; a result list says nothing.
@@ -338,10 +306,7 @@ fn the_palette_says_when_nothing_matches(cx: &mut TestAppContext) {
     let (root, shell, cx, _config) = start(cx, "palette-empty");
     fs::write(root.join("Courses.md"), "# Courses\n\nlait\n").unwrap();
     shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load("# Courses\n\nlait\n".into(), 0, cx)));
-    for _ in 0..2 {
-        cx.executor().advance_clock(Duration::from_secs(3));
-        cx.run_until_parked();
-    }
+    watch(cx);
     // Nothing typed says nothing; a command search that matches nothing is said, inside the palette.
     cx.simulate_keystrokes("secondary-p");
     cx.run_until_parked();
@@ -352,7 +317,6 @@ fn the_palette_says_when_nothing_matches(cx: &mut TestAppContext) {
     let said = cx.debug_bounds("palette-empty").expect("no result is said");
     assert!(said.left() >= panel.left() && said.right() <= panel.right(), "{said:?} in {panel:?}");
     cx.simulate_keystrokes("escape");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A list page with no row, empty or filtered to nothing, says so.
@@ -364,7 +328,6 @@ fn an_empty_list_page_says_so(cx: &mut TestAppContext) {
     shell.update_in(cx, |s, window, cx| s.open_listing(dir, window, cx));
     settle(cx);
     assert!(cx.debug_bounds("list-empty").is_some(), "a folder with no note");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A board with no column says so and offers the way to add one, instead of a lone « + ».
@@ -385,7 +348,6 @@ fn an_empty_board_says_so(cx: &mut TestAppContext) {
     cx.simulate_click(gpui::point(said.center().x, said.center().y + px(14.)), gpui::Modifiers::none());
     settle(cx);
     assert!(shell.read_with(cx, |s, _| s.pane().board.field().is_some()), "a click on « Add a column » asks for its name");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A list page whose filter keeps no row says so (a fresh page: the other test left a folder with no note).
@@ -394,10 +356,7 @@ fn a_filter_that_keeps_nothing_says_so(cx: &mut TestAppContext) {
     let (root, shell, cx, _config) = start(cx, "filtered-list");
     fs::create_dir(root.join("Livres")).unwrap();
     fs::write(root.join("Livres/Dune.md"), "---\nauteur: Herbert\n---\n# Dune\n").unwrap();
-    for _ in 0..2 {
-        cx.executor().advance_clock(Duration::from_secs(3));
-        cx.run_until_parked();
-    }
+    watch(cx);
     let dir = root.join("Livres");
     shell.update_in(cx, |s, window, cx| s.open_listing(dir, window, cx));
     settle(cx);
@@ -405,7 +364,6 @@ fn a_filter_that_keeps_nothing_says_so(cx: &mut TestAppContext) {
     cx.simulate_input("zzzz");
     settle(cx);
     assert!(cx.debug_bounds("list-empty").is_some(), "the filter keeps no row");
-    let _ = fs::remove_dir_all(&root);
 }
 
 /// A vault that cannot be read says so instead of looking empty, at every width, and offers another vault; given
@@ -498,5 +456,4 @@ fn an_unreadable_vault_or_folder_says_so(cx: &mut TestAppContext) {
     mode(&root.join(long), 0o755);
     shell.update(cx, |s, cx| s.rescan(&root, cx));
     assert!(reason(cx).is_empty());
-    let _ = fs::remove_dir_all(&root);
 }

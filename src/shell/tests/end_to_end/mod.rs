@@ -29,7 +29,7 @@ use super::*;
 /// What every chapter works on: the window's shell and the vault on disk.
 pub(super) struct Journey {
     pub shell: Entity<Shell>,
-    pub root: PathBuf,
+    pub root: TempDir,
 }
 
 impl Journey {
@@ -51,10 +51,15 @@ impl Journey {
 
     /// Lets the vault watcher see what changed on disk.
     pub fn settle(&self, cx: &mut gpui::VisualTestContext) {
-        for _ in 0..2 {
-            cx.executor().advance_clock(Duration::from_secs(3));
-            cx.run_until_parked();
-        }
+        super::watch(cx);
+    }
+}
+
+/// Runs one chapter; a panic (a failed assertion) is kept with the chapter's name instead of ending the test.
+fn chapter(failed: &mut Vec<(&'static str, String)>, name: &'static str, run: impl FnOnce()) {
+    if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)) {
+        let why = panic.downcast_ref::<String>().cloned().or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()));
+        failed.push((name, why.unwrap_or_else(|| "panicked".into())));
     }
 }
 
@@ -62,8 +67,7 @@ impl Journey {
 /// Full keyboard run: typing, lists, saving, palette, wikilink.
 #[gpui::test]
 fn end_to_end(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-e2e-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("e2e");
     fs::write(root.join("Courses.md"), "# Courses\n\n- lait #maison\n").unwrap();
     fs::create_dir(root.join("Projets")).unwrap();
     fs::write(root.join("Projets/Plan.md"), "# Plan\n\n[[Courses]]\n").unwrap();
@@ -86,28 +90,37 @@ fn end_to_end(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     let j = Journey { shell, root };
-    writing::run(&j, cx);
-    settings::run(&j, cx);
-    panel::run(&j, cx);
-    files::run(&j, cx);
-    media::run(&j, cx);
-    let here = vault_views::run(&j, cx);
-    diagrams::run(&j, cx);
-    md_tables::run(&j, cx);
-    blocks::headings(&j, cx);
-    blocks::tags(&j, cx);
-    blocks::run(&j, cx);
-    outline::run(&j, cx);
-    boards::run(&j, cx, &here);
-    cursors_comments::run(&j, cx);
-    dates_lists::run(&j, cx);
-    table_handles::run(&j, cx);
-    table_styles::run(&j, cx);
-    table_formulas::run(&j, cx);
-    embeds::run(&j, cx);
-    find_mouse::run(&j, cx);
-    csv::run(&j, cx);
-    history_panes::run(&j, cx);
-    git_sync::run(&j, cx);
-    fs::remove_dir_all(&j.root).unwrap();
+    // One session, for speed: a chapter that fails does not stop the next ones, and every failure is
+    // reported at the end, by chapter. A chapter that fails may leave the session in a state that fails
+    // the following ones: read the list from the top.
+    let mut failed = Vec::new();
+    chapter(&mut failed, "writing", || writing::run(&j, cx));
+    chapter(&mut failed, "settings", || settings::run(&j, cx));
+    chapter(&mut failed, "panel", || panel::run(&j, cx));
+    chapter(&mut failed, "files", || files::run(&j, cx));
+    chapter(&mut failed, "media", || media::run(&j, cx));
+    let mut here = None;
+    chapter(&mut failed, "vault_views", || here = Some(vault_views::run(&j, cx)));
+    chapter(&mut failed, "diagrams", || diagrams::run(&j, cx));
+    chapter(&mut failed, "md_tables", || md_tables::run(&j, cx));
+    chapter(&mut failed, "blocks (headings)", || blocks::headings(&j, cx));
+    chapter(&mut failed, "blocks (tags)", || blocks::tags(&j, cx));
+    chapter(&mut failed, "blocks", || blocks::run(&j, cx));
+    chapter(&mut failed, "outline", || outline::run(&j, cx));
+    match &here {
+        Some(here) => chapter(&mut failed, "boards", || boards::run(&j, cx, here)),
+        None => failed.push(("boards", "skipped: it needs what vault_views returns".into())),
+    }
+    chapter(&mut failed, "cursors_comments", || cursors_comments::run(&j, cx));
+    chapter(&mut failed, "dates_lists", || dates_lists::run(&j, cx));
+    chapter(&mut failed, "table_handles", || table_handles::run(&j, cx));
+    chapter(&mut failed, "table_styles", || table_styles::run(&j, cx));
+    chapter(&mut failed, "table_formulas", || table_formulas::run(&j, cx));
+    chapter(&mut failed, "embeds", || embeds::run(&j, cx));
+    chapter(&mut failed, "find_mouse", || find_mouse::run(&j, cx));
+    chapter(&mut failed, "csv", || csv::run(&j, cx));
+    chapter(&mut failed, "history_panes", || history_panes::run(&j, cx));
+    chapter(&mut failed, "git_sync", || git_sync::run(&j, cx));
+    let report: Vec<String> = failed.iter().map(|(name, why)| format!("- {name}: {why}")).collect();
+    assert!(failed.is_empty(), "{} chapter(s) failed:\n{}", failed.len(), report.join("\n"));
 }

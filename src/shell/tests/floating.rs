@@ -14,7 +14,7 @@ fn the_palette_and_the_menu_keep_their_rows(cx: &mut TestAppContext) {
     let deep = root.join("Un dossier au nom assez long pour ne pas tenir").join("et un sous-dossier");
     fs::create_dir_all(&deep).unwrap();
     let long = "x".repeat(120);
-    for (dir, name) in [(&root, "Liste".to_string()), (&root, long.clone()), (&root, "列表 日本語 のノート".into()), (&root, "Liste 🎉 émoji".into()), (&deep, "Liste profonde".into())] {
+    for (dir, name) in [(&*root, "Liste".to_string()), (&*root, long.clone()), (&*root, "列表 日本語 のノート".into()), (&*root, "Liste 🎉 émoji".into()), (&deep, "Liste profonde".into())] {
         fs::write(dir.join(format!("{name}.md")), format!("# {name}\n\n#etiquette\n")).unwrap();
     }
     for i in 0..30 {
@@ -87,5 +87,4 @@ fn the_palette_and_the_menu_keep_their_rows(cx: &mut TestAppContext) {
             settle(cx);
         }
     }
-    let _ = fs::remove_dir_all(&root);
 }
