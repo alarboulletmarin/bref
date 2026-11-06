@@ -145,6 +145,21 @@ fn renaming_keeps_the_folder_unless_given() {
 }
 
 #[test]
+fn a_table_can_be_renamed() {
+    let root = scratch();
+    write(&root, "Sub/data.csv", "a,b\n1,2\n");
+    write(&root, "N.md", "see [[data.csv]]\n");
+    let mut vault = open(&root);
+    assert_eq!(ok(notes::rename_note(&mut vault, &json!({"note": "Sub/data.csv", "name": "sales"})))["path"], "Sub/sales.csv");
+    assert!(root.join("Sub/sales.csv").exists() && !root.join("Sub/data.csv").exists());
+    assert_eq!(fs::read_to_string(root.join("N.md")).unwrap(), "see [[sales.csv]]\n");
+    write(&root, "t.TSV", "a\tb\n");
+    let mut vault = open(&root);
+    assert_eq!(ok(notes::rename_note(&mut vault, &json!({"note": "t.TSV", "name": "u"})))["path"], "u.TSV");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn editing_renames_and_comments_follow_the_app() {
     let root = scratch();
     write(&root, "Old.md", "# Old\n\nbody\n");

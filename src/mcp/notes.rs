@@ -539,7 +539,7 @@ pub fn rename_note(vault: &mut Vault, args: &Value) -> Outcome {
     let path = path;
     let old_file = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let old_stem = files::stem(&path);
-    let image = files::is_image(&path) || files::is_attachment(&path) || vault.diagrams.iter().any(|p| p == &path);
+    let image = files::is_image(&path) || files::is_table(&path) || files::is_attachment(&path) || vault.diagrams.iter().any(|p| p == &path);
     let name = arg_opt(args, "name").map(|n| n.to_string());
     let folder = arg_opt(args, "folder").map(|n| n.to_string());
     if name.is_none() && folder.is_none() {
