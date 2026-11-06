@@ -29,7 +29,10 @@ pub fn load(path: &Path, forced: Option<Format>) -> Result<Loaded, String> {
     // task with a "loading" state if files of several hundred MB get opened.
     let bytes = fs::read(path).map_err(fail)?;
     let format = forced.or_else(|| kept(path).format).unwrap_or_else(|| table::detect(&bytes));
-    let table = Table::parse(table::decode(bytes, format.encoding), format.delimiter);
+    // Checked after decoding: Latin-1 and UTF-16 text is longer than the file.
+    let too_big = || format!("{} : {}", path.display(), tr("file too large", "fichier trop gros"));
+    let text = table::decode_within(bytes, format.encoding, table::MAX_BYTES).ok_or_else(too_big)?;
+    let table = Table::parse(text, format.delimiter);
     Ok(Loaded { table, format, stamp: stamp_of(path) })
 }
 

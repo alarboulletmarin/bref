@@ -125,6 +125,12 @@ pub fn detect_encoding(bytes: &[u8]) -> Encoding {
     }
 }
 
+/// `decode`, but `None` when the text is longer than `max` bytes: Latin-1 and UTF-16 grow when
+/// decoded, so the size of the file on disk does not bound the size of the text.
+pub fn decode_within(bytes: Vec<u8>, enc: Encoding, max: usize) -> Option<String> {
+    Some(decode(bytes, enc)).filter(|text| text.len() <= max)
+}
+
 /// Decodes losslessly: valid UTF-8 reuses the buffer (zero copy).
 pub fn decode(mut bytes: Vec<u8>, enc: Encoding) -> String {
     match enc {
@@ -951,6 +957,17 @@ mod tests {
             assert_eq!(encode(&s, e).unwrap(), all, "{}", e.label());
         }
         assert_eq!(decode(vec![0x81, 0x8D], Encoding::Windows1252), "\u{81}\u{8D}");
+    }
+
+    #[test]
+    fn decoded_text_longer_than_the_limit_is_refused() {
+        // Latin-1 `é` is one byte on disk and two once decoded.
+        let bytes = vec![0xE9; 10];
+        assert_eq!(decode_within(bytes.clone(), Encoding::Latin1, 20).map(|t| t.len()), Some(20));
+        assert!(decode_within(bytes, Encoding::Latin1, 19).is_none());
+        // UTF-16 `€` (2 bytes) is three bytes in UTF-8.
+        assert!(decode_within(vec![0xAC, 0x20, 0xAC, 0x20], Encoding::Utf16Le, 5).is_none());
+        assert!(decode_within(Vec::new(), Encoding::Utf8, 0).is_some());
     }
 
     #[test]
