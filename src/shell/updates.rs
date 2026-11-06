@@ -1,5 +1,6 @@
 //! New versions: the daily check, the banner, installing.
 
+use crate::platform::config;
 use super::*;
 
 impl Shell {
@@ -79,7 +80,7 @@ impl Shell {
     /// Turns the new-version check on or off, and remembers the choice.
     pub(super) fn toggle_updates(&mut self, cx: &mut Context<Self>) {
         self.prefs.updates = !self.prefs.updates;
-        vault::save_settings(&self.prefs.to_text());
+        config::keep(config::File::Settings, &self.prefs.to_text());
         self.update = None;
         self.check_updates(cx);
         cx.notify();

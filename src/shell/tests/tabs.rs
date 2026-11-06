@@ -1,5 +1,6 @@
 //! Tabs: several files open in a pane, one shown, reached and closed from the keys, kept at restart.
 
+use crate::platform::config;
 use super::*;
 
 /// The tabs of pane `group`, by file, and the index of the one shown.
@@ -139,7 +140,7 @@ fn tabs_open_switch_close_and_come_back(cx: &mut TestAppContext) {
 
     // The tabs come back at the next start, in their order, the shown one shown; a file gone
     // since is dropped without a word.
-    let saved = vault::load_file("panes");
+    let saved = config::load(config::File::Panes);
     assert!(saved.starts_with("v3 0\n") && saved.contains(&format!("{}\t{}", note("Alpha").display(), root.join("Ici/Plan.md").display())), "{saved}");
     fs::remove_file(root.join("Ici/Plan.md")).unwrap();
     let recent = vec![note("Gamma")];

@@ -1,5 +1,6 @@
 //! Notes: opening, previewing, creating, saving, renaming with their title, links and wikilinks.
 
+use crate::platform::config;
 use super::*;
 
 impl Shell {
@@ -250,7 +251,7 @@ impl Shell {
             self.notes.retain(|n| n.path != path);
             self.recent.retain(|p| *p != path);
             if let Some(root) = &self.vault {
-                vault::save_config(root, &self.recent);
+                config::save_config(root, &self.recent);
             }
             self.history.remove(&path);
             self.pane_mut().path = None;

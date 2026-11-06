@@ -19,7 +19,7 @@ use std::{
 
 use serde_json::{Value, json};
 
-use super::vault::{Signal, config_dir};
+use super::{config::{self, File}, signal::Signal};
 
 /// The answer to an agent: a sentence when the window could not show the file.
 pub type Answer = Result<(), String>;
@@ -34,7 +34,7 @@ pub struct Asked {
 pub const NOT_OPEN: &str = "Bref is not open: start it to see the file";
 
 fn door() -> PathBuf {
-    config_dir().join("bref/agent")
+    config::path(File::Agent)
 }
 
 /// Opens the door: each request lands in `asked`, and `signal` is raised for it.

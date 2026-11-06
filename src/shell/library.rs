@@ -1,5 +1,6 @@
 //! The vault: choosing it, scanning and watching it, icons, backup, trash, terminal.
 
+use crate::platform::{config, signal, terminal, backup};
 use super::*;
 
 impl Shell {
@@ -18,7 +19,7 @@ impl Shell {
             return;
         }
         let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let signal = Arc::new(vault::Signal::default());
+        let signal = Arc::new(signal::Signal::default());
         if platform::link::open(asked.clone(), signal.clone()).is_err() {
             return;
         }
@@ -69,7 +70,7 @@ impl Shell {
     // Tests install no watcher: their clock is simulated.
     pub(super) fn watch(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
-            let changed = Arc::new(vault::Signal::default());
+            let changed = Arc::new(signal::Signal::default());
             let mut watched: Option<(PathBuf, Option<notify::RecommendedWatcher>)> = None;
             let mut last = None;
             let mut pause = Duration::from_secs(2);
@@ -222,7 +223,7 @@ impl Shell {
         self.images.clear();
         self.recent.clear();
         self.new_note(String::new(), cx);
-        vault::save_config(&root, &[]);
+        config::save_config(&root, &[]);
         window.focus(&self.pane().editor.focus_handle(cx));
         // The index (names, tags) is built off the UI thread.
         cx.spawn(async move |this, cx| {
@@ -319,7 +320,7 @@ impl Shell {
         self.recent.insert(0, path.to_path_buf());
         self.recent.truncate(200);
         if let Some(root) = &self.vault {
-            vault::save_config(root, &self.recent);
+            config::save_config(root, &self.recent);
         }
     }
 
@@ -356,7 +357,7 @@ impl Shell {
         let Some(root) = self.vault.clone() else {
             return;
         };
-        if !vault::open_terminal(&root) {
+        if !terminal::open_terminal(&root) {
             let hint = tr("No terminal found: name yours in $TERMINAL", "Aucun terminal trouvé : nommer le vôtre dans $TERMINAL");
             self.say(Tone::Failed, hint, cx);
         }
@@ -389,7 +390,7 @@ impl Shell {
         self.say(Tone::Busy, tr("Backing up the vault…", "Sauvegarde du coffre…"), cx);
         let date = date_name(today());
         cx.spawn(async move |this, cx| {
-            let done = cx.background_executor().spawn(async move { vault::backup(&root, &dir, &date) }).await;
+            let done = cx.background_executor().spawn(async move { backup::backup(&root, &dir, &date) }).await;
             this.update(cx, |this, cx| match done {
                 Ok(to) => this.say(Tone::Done, format!("{} {}", tr("Backup saved:", "Sauvegarde enregistrée :"), to.display()), cx),
                 Err(e) => this.say(Tone::Failed, format!("{} : {}", tr("Backup failed", "Sauvegarde impossible"), crate::lang::io_reason(&e)), cx),

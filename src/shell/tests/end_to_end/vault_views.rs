@@ -1,5 +1,6 @@
 //! Tags, backlinks, front matter, trash, replace in vault, list pages, calendar, backup, search, daily note.
 
+use crate::platform::config;
 use super::*;
 
 /// Returns the note open before the vault-wide replace, where the board chapter comes back.
@@ -16,7 +17,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     cx.simulate_keystrokes("secondary-t down right down");
     cx.run_until_parked();
     assert_eq!(shell.read_with(cx, |s, _| s.nav.mode), Mode::Tags);
-    assert!(vault::load_layout().starts_with("tags split"));
+    assert!(config::load(config::File::Layout).starts_with("tags split"));
     let (tagged, previewed) = shell.read_with(cx, |s, _| {
         let tag = s.notes.iter().flat_map(|n| n.tags.iter()).min().unwrap().clone();
         let has = |n: &&Note| n.tags.contains(&tag);
@@ -42,7 +43,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
         shell.read_with(cx, |s, _| s.nav.rows.iter().map(|r| r.name.clone()).collect::<Vec<_>>())
     };
     assert_eq!(rows(cx), ["Source A", "Source B"]);
-    assert!(vault::load_layout().starts_with("links split"));
+    assert!(config::load(config::File::Layout).starts_with("links split"));
     cx.simulate_keystrokes("down");
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, _| s.pane().path.as_ref().is_some_and(|p| p.to_string_lossy().contains("Source"))));

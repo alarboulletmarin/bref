@@ -1,5 +1,6 @@
 //! Quick copy, the help panel, editable shortcuts, themes, fonts and text size.
 
+use crate::platform::config;
 use super::*;
 
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
@@ -63,7 +64,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_keystrokes("secondary-shift-y");
     assert_eq!(editing(cx), None);
     assert_eq!(keys_of(cx, "nav::ShowGraph"), (format!("{MOD}+Maj+Y"), true));
-    assert_eq!(vault::load_file("keys"), "nav::ShowGraph=secondary-shift-y\n");
+    assert_eq!(config::load(config::File::Keys), "nav::ShowGraph=secondary-shift-y\n");
     cx.simulate_keystrokes("escape escape");
     assert!(!shell.read_with(cx, |s, _| s.help.open));
     // Without restarting: the old keys do nothing anymore, the new ones act.
@@ -105,12 +106,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let at = cx.debug_bounds("key-reset-nav::ShowGraph").unwrap().center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert_eq!(keys_of(cx, "nav::ShowGraph"), (graph, false));
-    assert_eq!(vault::load_file("keys"), "app::OpenPalette=\n");
+    assert_eq!(config::load(config::File::Keys), "app::OpenPalette=\n");
     // « Tout rétablir »: nothing changed anymore.
     let at = cx.debug_bounds("keys-reset").unwrap().center();
     cx.simulate_click(at, gpui::Modifiers::none());
     assert!(shell.read_with(cx, |s, _| s.changes.is_empty()));
-    assert_eq!(vault::load_file("keys"), "");
+    assert_eq!(config::load(config::File::Keys), "");
     cx.simulate_keystrokes("escape escape secondary-p");
     assert!(shell.read_with(cx, |s, _| s.palette.is_some()));
     cx.simulate_keystrokes("escape");
@@ -145,7 +146,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(mono(), ".SystemUIFont");
     cx.simulate_keystrokes("secondary-= secondary-= secondary--");
     assert_eq!(shell.read_with(cx, |s, _| s.theme.size), 17.);
-    assert_eq!(vault::load_settings(), "theme=Bref Light\nfont=\nmono=.SystemUIFont\nsize=17\n");
+    assert_eq!(config::load(config::File::Settings), "theme=Bref Light\nfont=\nmono=.SystemUIFont\nsize=17\n");
     cx.simulate_keystrokes("secondary-0");
     assert_eq!(shell.read_with(cx, |s, _| s.theme.size), 16.);
     cx.simulate_input("!");

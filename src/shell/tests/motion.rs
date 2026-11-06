@@ -1,5 +1,6 @@
 //! Motion: short fades when the panel, the format bar or a folder opens; `motion=off` makes them instant.
 
+use crate::platform::config;
 use super::*;
 
 #[gpui::test]
@@ -45,7 +46,7 @@ fn fades_never_move_or_delay_anything(cx: &mut TestAppContext) {
     };
     choose(cx, "down enter");
     assert!(shell.read_with(cx, |s, _| s.prefs.motion == "off" && !s.theme.motion));
-    assert!(vault::load_settings().contains("motion=off\n"));
+    assert!(config::load(config::File::Settings).contains("motion=off\n"));
     assert_eq!(panel(cx), on);
     // Escape takes the previewed choice back; the first choice turns them on again.
     choose(cx, "up escape");

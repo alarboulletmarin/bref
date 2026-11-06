@@ -1,5 +1,6 @@
 //! Quick capture: a one-line window (`bref --capture`) and its system shortcut.
 
+use crate::platform::{config, shortcut};
 use super::*;
 
 /// The capture window (`bref --capture`, to bind to a desktop shortcut): one input
@@ -16,7 +17,7 @@ pub(super) struct Capture {
 
 impl Capture {
     pub(super) fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let prefs = Prefs::parse(&vault::load_settings());
+        let prefs = Prefs::parse(&config::load(config::File::Settings));
         apply_fonts(&prefs);
         let theme = Theme::of(&prefs, window.appearance());
         let field = Self::ask(tr("Add to today's note", "Ajouter à la note du jour").into(), "", theme, window, cx);
@@ -59,15 +60,15 @@ impl Shell {
             return;
         };
         cx.spawn(async move |this, cx| {
-            let made = cx.background_executor().spawn(async move { vault::capture_shortcut(&exe) }).await;
+            let made = cx.background_executor().spawn(async move { shortcut::capture_shortcut(&exe) }).await;
             this.update(cx, |this, cx| {
                 let told = match made {
-                    vault::Shortcut::Bound(keys) => format!("{} : {keys}", tr("Quick capture, from anywhere", "Capture rapide, depuis n'importe où")),
-                    vault::Shortcut::Unbound(keys) => format!(
+                    shortcut::Shortcut::Bound(keys) => format!("{} : {keys}", tr("Quick capture, from anywhere", "Capture rapide, depuis n'importe où")),
+                    shortcut::Shortcut::Unbound(keys) => format!(
                         "{keys} {}",
                         tr("is taken: choose the keys of “Bref: capture” in Settings › Keyboard", "est pris : choisir les touches de « Bref : capture » dans Réglages › Clavier")
                     ),
-                    vault::Shortcut::Manual(command) => {
+                    shortcut::Shortcut::Manual(command) => {
                         cx.write_to_clipboard(ClipboardItem::new_string(command));
                         tr("Capture command copied: paste it into a new shortcut of your system settings", "Commande de capture copiée : la coller dans un nouveau raccourci des réglages du système").to_string()
                     }

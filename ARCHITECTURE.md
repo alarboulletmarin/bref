@@ -80,7 +80,10 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | embedded sections (`![[Note#Heading]]`: reading the line, finding the section, rewriting links to a renamed heading) | `logic/embed.rs`; laid out and drawn by `views/editor/embed.rs` (a read-only `Editor` per section, framed under its line) |
 | formulas of the cells of a table (parser, evaluator, numbers as written) | `logic/formula.rs`; shown by `views/editor/grid.rs` (`results`, `Shown`), written and completed by `views/editor/formulas.rs` |
 | diagrams (shapes, arrows, SVG with its source) and their import | `logic/diagram/` (`file.rs`: the SVG and its source; `hold.rs`: what a package or a frame holds; `pick.rs`: what a click grabs); Mermaid class, sequence and state diagrams turned into canvas diagrams (`logic/mermaid.rs`); relationships (`logic/relation.rs`), class notation (`logic/uml.rs`), `logic/import.rs`; styled text of their labels: `logic/richtext.rs` (the marks of `markdown::emphasis`); the editor: `views/canvas/` |
-| the vault on disk (scan, save, rename, trash, config files) | `platform/vault.rs` |
+| the vault on disk (scan, save, rename, trash) | `platform/vault.rs` |
+| the app's config files (`File`, one `config_dir`, old-name fallback) | `platform/config.rs` |
+| wake-up signal of the watcher and the door | `platform/signal.rs` |
+| system terminal, capture shortcut (GNOME), vault backup (tar.gz) | `platform/terminal.rs`, `platform/shortcut.rs`, `platform/backup.rs` |
 | git commands, update check | `platform/git.rs`, `platform/update.rs` |
 | a note saved as PDF | `ui/print.rs` (A4 pages as SVG, text kept as `<text>`, pure), `platform/pdf.rs` (svg2pdf, links), `Shell::export_pdf` in `shell/print.rs` (dialog, pictures and embeds read, free name) |
 | the window's door for `bref mcp` (`show`) | `platform/link.rs` (127.0.0.1 and a secret in `<config>/bref/agent`), `Shell::listen` in `shell/library.rs` |

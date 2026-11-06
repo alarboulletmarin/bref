@@ -1,5 +1,6 @@
 //! Docks: the side panel's tools on the left or the right of the panes, or as a tab.
 
+use crate::platform::config;
 use super::*;
 use crate::actions::{MoveTool, ToolAsTab};
 
@@ -192,7 +193,7 @@ fn tools_stacked_folded_and_dragged(cx: &mut TestAppContext) {
 fn the_layout_file_old_new_and_odd(cx: &mut TestAppContext) {
     let (root, _shell, cx, _config) = start(cx, "docks-file");
     let read = |cx: &mut gpui::VisualTestContext, text: &str| {
-        vault::save_layout(text);
+        config::keep(config::File::Layout, text);
         let (shell, cx2) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
         cx2.run_until_parked();
         shell.read_with(cx2, |s, _| (s.nav.left_shown.clone(), s.nav.right.clone(), s.nav.right_shown.clone()))

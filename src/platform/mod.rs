@@ -1,10 +1,15 @@
 //! The outside world: disk, processes, network and the operating system. No gpui here.
 
+pub mod backup;
 pub mod clock;
+pub mod config;
 pub mod export;
 pub mod git;
 pub mod link;
 pub mod pdf;
+pub mod shortcut;
+pub mod signal;
+pub mod terminal;
 pub mod update;
 pub mod vault;
 

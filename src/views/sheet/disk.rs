@@ -1,5 +1,6 @@
 //! The file behind the grid: loading, the format remembered per file, saving in the background, reloading what changed elsewhere.
 
+use crate::platform::config;
 use super::*;
 
 /// A setting or an edit waits this long before being written to disk.
@@ -76,7 +77,7 @@ pub(super) fn kept(path: &Path) -> Kept {
     let Some(key) = path.to_str() else {
         return Kept::default();
     };
-    vault::load_file("tables").lines().filter_map(read_line).find(|(k, _)| *k == key).map(|(_, kept)| kept).unwrap_or_default()
+    config::load(config::File::Tables).lines().filter_map(read_line).find(|(k, _)| *k == key).map(|(_, kept)| kept).unwrap_or_default()
 }
 
 /// Changes what is kept for this file; the config file is only written if it changes.
@@ -84,14 +85,14 @@ fn keep(path: &Path, change: impl FnOnce(&mut Kept)) {
     let Some(key) = path.to_str().filter(|k| !k.contains(['\t', '\n'])) else {
         return;
     };
-    let text = vault::load_file("tables");
+    let text = config::load(config::File::Tables);
     let mut kept = text.lines().filter_map(read_line).find(|(k, _)| *k == key).map(|(_, kept)| kept).unwrap_or_default();
     change(&mut kept);
     let mut lines: Vec<String> = text.lines().filter(|l| l.split('\t').next() != Some(key)).map(String::from).collect();
     lines.extend(write_line(key, &kept));
     let new = lines.join("\n");
     if new != text {
-        vault::save_file("tables", &new);
+        config::keep(config::File::Tables, &new);
     }
 }
 
@@ -105,8 +106,8 @@ pub(super) fn remember_widths(path: &Path, chosen: &[Option<f32>]) {
 
 /// `from` (a table, or a folder holding some) became `to` inside the app: what is kept for its tables follows.
 pub fn move_tables(from: &Path, to: &Path) {
-    if let Some(text) = moved_lines(&vault::load_file("tables"), from, to) {
-        vault::save_file("tables", &text);
+    if let Some(text) = moved_lines(&config::load(config::File::Tables), from, to) {
+        config::keep(config::File::Tables, &text);
     }
 }
 

@@ -1,5 +1,6 @@
 //! The help panel: every shortcut by section, searchable, and editable in place.
 
+use crate::platform::config;
 use super::*;
 
 /// The help panel: open or not, its search field, the row picked with the keyboard, and the
@@ -170,7 +171,7 @@ impl Shell {
             self.say(Tone::Info, tr("The system may keep these keys for itself.", "Le système garde peut-être ces touches pour lui."), cx);
         }
         self.rebind(cx);
-        vault::save_file("keys", &keys::write(&self.changes));
+        config::keep(config::File::Keys, &keys::write(&self.changes));
     }
 
     /// Restores the original keys of one action, or of all.
@@ -181,7 +182,7 @@ impl Shell {
         }
         self.help.edit = None;
         self.rebind(cx);
-        vault::save_file("keys", &keys::write(&self.changes));
+        config::keep(config::File::Keys, &keys::write(&self.changes));
     }
 
     /// Applies `changes`: the bindings in effect change right away, without restarting.

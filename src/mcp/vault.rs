@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     logic::{rank, wiki},
     logic::note::Note,
-    platform::vault::{self, Signal},
+    platform::{signal::Signal, vault},
 };
 
 use super::disk;

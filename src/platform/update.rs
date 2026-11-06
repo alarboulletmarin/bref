@@ -12,7 +12,8 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-use crate::{lang::tr, platform::vault};
+use super::config;
+use crate::lang::tr;
 use crate::platform::command;
 
 const DAY: u64 = 24 * 3600;
@@ -73,13 +74,13 @@ fn curl(url: &str) -> Command {
 /// reread instead of redoing the request. Blocking: run off the UI thread.
 pub fn check() -> Option<Release> {
     let now = now();
-    let (at, known) = parse_state(&vault::load_file("update"));
+    let (at, known) = parse_state(&config::load(config::File::Update));
     let installable = asset_name().is_some();
     let waiting_for_files = !known.version.is_empty() && known.asset.is_none() && installable;
     let latest = if at <= now && now - at < if waiting_for_files { HOUR } else { DAY } {
         known
     } else if let Some(found) = fetch() {
-        vault::save_file("update", &state_text(now, &found));
+        config::keep(config::File::Update, &state_text(now, &found));
         found
     } else {
         // Offline, or without `curl`: nothing is recorded, the next start tries again.
@@ -93,7 +94,7 @@ pub fn check() -> Option<Release> {
 /// off the UI thread.
 pub fn check_now() -> Option<Release> {
     let found = fetch()?;
-    vault::save_file("update", &state_text(now(), &found));
+    config::keep(config::File::Update, &state_text(now(), &found));
     Some(found)
 }
 

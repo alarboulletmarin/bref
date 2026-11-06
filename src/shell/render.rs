@@ -1,5 +1,6 @@
 //! Drawing the window: title bar, panes, empty page, badges, resize edges.
 
+use crate::platform::config;
 use super::*;
 
 /// The number in the comments badge: "9+" beyond nine, so that it stays round.
@@ -136,7 +137,7 @@ impl Render for Shell {
             // The pane layout is saved as soon as it changes.
             let state = self.panes_state();
             if state != self.panes_saved {
-                vault::save_file("panes", &state);
+                config::keep(config::File::Panes, &state);
                 self.panes_saved = state;
             }
             let toasts = self.render_toasts(cx);

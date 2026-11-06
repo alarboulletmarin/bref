@@ -1,5 +1,6 @@
 //! Back and forward, shortcuts shown in menus, two panes.
 
+use crate::platform::config;
 use super::*;
 
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
@@ -219,7 +220,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_mouse_up(half, MouseButton::Left, gpui::Modifiers::none());
     assert_eq!(shown(cx), sides(1, &["D", "B"]));
         // The layout is remembered: the width, and what each pane shows.
-    assert_eq!(vault::load_file("panes"), format!("v3 row(0.5 0, 0.5 1)\n*{}\n*{}\n", pane("D").display(), pane("B").display()));
+    assert_eq!(config::load(config::File::Panes), format!("v3 row(0.5 0, 0.5 1)\n*{}\n*{}\n", pane("D").display(), pane("B").display()));
     cx.simulate_keystrokes("secondary-w");
-    assert_eq!(vault::load_file("panes"), format!("v3 0\n*{}\n", pane("D").display()));
+    assert_eq!(config::load(config::File::Panes), format!("v3 0\n*{}\n", pane("D").display()));
 }

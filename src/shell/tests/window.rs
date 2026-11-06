@@ -1,5 +1,6 @@
 //! The window around the notes: badge, format bar, saved shortcuts and panes, first launch, quick capture, empty page.
 
+use crate::platform::config;
 use super::*;
 use crate::shell::render::badge_label;
 
@@ -42,7 +43,7 @@ fn keys_survive_a_restart(cx: &mut TestAppContext) {
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
     let _config = isolated_config(&root);
-    vault::save_file("keys", "nav::ShowTags=secondary-shift-y\nno::Such=f8\n");
+    config::keep(config::File::Keys, "nav::ShowTags=secondary-shift-y\nno::Such=f8\n");
     cx.update(bind_keys);
     cx.update(init_fonts);
     let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
@@ -68,7 +69,7 @@ fn panes_come_back(cx: &mut TestAppContext) {
     let (left, right) = (root.join("Gauche.md"), root.join("Droite.md"));
     fs::write(&left, "# Gauche\n").unwrap();
     fs::write(&right, "# Droite\n").unwrap();
-    vault::save_file("panes", &format!("0.4\n{}\n", right.display()));
+    config::keep(config::File::Panes, &format!("0.4\n{}\n", right.display()));
     cx.update(bind_keys);
     cx.update(init_fonts);
     // The right note is the last opened: the first pane takes the next one.

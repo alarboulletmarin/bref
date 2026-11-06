@@ -1,5 +1,6 @@
 //! File operations from the side panel: new folder, move, rename, trash, and what follows on disk.
 
+use crate::platform::config;
 use std::path::{Path, PathBuf};
 use gpui::{Context, Window};
 use crate::{
@@ -139,7 +140,7 @@ impl Shell {
     /// After a move or a deletion: config, completion and graph up to date.
     pub(super) fn files_changed(&mut self, cx: &mut Context<Self>) {
         if let Some(root) = &self.vault {
-            vault::save_config(root, &self.recent);
+            config::save_config(root, &self.recent);
         }
         self.calm();
         self.push_names(cx);

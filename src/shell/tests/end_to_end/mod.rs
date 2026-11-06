@@ -23,6 +23,7 @@ mod csv;
 mod history_panes;
 mod git_sync;
 
+use crate::platform::config;
 use super::*;
 
 /// What every chapter works on: the window's shell and the vault on disk.
@@ -69,12 +70,12 @@ fn end_to_end(cx: &mut TestAppContext) {
         // The test config must not touch the user's.
     let _config = isolated_config(&root);
         // What a version named "encre" left is read again as long as nothing exists under the new name.
-    let old = vault::config_dir().join("encre");
+    let old = config::legacy_path(config::File::Config).parent().unwrap().to_path_buf();
     fs::create_dir_all(&old).unwrap();
     fs::write(old.join("config"), format!("{}\n", root.display())).unwrap();
     fs::write(old.join("layout"), "graph split 260 0").unwrap();
-    assert_eq!(vault::load_config().0, Some(root.clone()));
-    assert_eq!(vault::load_layout(), "graph split 260 0");
+    assert_eq!(config::load_config().0, Some(root.clone()));
+    assert_eq!(config::load(config::File::Layout), "graph split 260 0");
     fs::remove_dir_all(&old).unwrap();
 
     cx.update(bind_keys);

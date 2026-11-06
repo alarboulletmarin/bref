@@ -1,5 +1,6 @@
 //! Measures, not checks: run by hand with `cargo test --release --locked -- --ignored --nocapture <name>`.
 
+use crate::platform::config;
 use super::*;
 
 /// Opens each file of the `BREF_CSV_DIR` folder in the table (copied, nothing of the user's
@@ -319,7 +320,7 @@ fn bench_scale(cx: &mut TestAppContext) {
         let _ = fs::remove_dir_all(&root);
         synthetic_vault(&root, notes);
         let _config = isolated_config(&root);
-        vault::save_layout("tree split 260 0");
+        config::keep(config::File::Layout, "tree split 260 0");
 
         let start = Instant::now();
         let scanned = vault::scan(&root);
@@ -401,7 +402,7 @@ fn bench(cx: &mut TestAppContext) {
     let root = std::env::temp_dir().join(format!("bref-bench-{}", std::process::id()));
     synthetic_vault(&root, 2000);
     let _config = isolated_config(&root);
-    vault::save_layout("tree split 260 0");
+    config::keep(config::File::Layout, "tree split 260 0");
 
     let start = Instant::now();
     let scanned = vault::scan(&root);
@@ -573,7 +574,7 @@ fn motion_cost(cx: &mut TestAppContext) {
     let root = std::env::temp_dir().join(format!("bref-motion-{}", std::process::id()));
     synthetic_vault(&root, 5000);
     let _config = isolated_config(&root);
-    vault::save_layout("tree split 260 0");
+    config::keep(config::File::Layout, "tree split 260 0");
     cx.update(bind_keys);
     cx.update(init_fonts);
     let (shell, cx) = cx.add_window_view({
@@ -700,7 +701,7 @@ fn graph_frame(cx: &mut TestAppContext) {
         fs::write(dir.join(format!("Note {i}.md")), format!("# Note {i}\n\n{body}")).unwrap();
     }
     let _config = isolated_config(&root);
-    vault::save_layout("graph split 260 0");
+    config::keep(config::File::Layout, "graph split 260 0");
     cx.update(bind_keys);
     cx.update(init_fonts);
     let start = Instant::now();

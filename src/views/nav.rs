@@ -1,6 +1,7 @@
 //! Navigation: an always-visible icon rail, and a panel (vault
 //! tree, recent notes, graph or tags) that shares the window with the note.
 
+use crate::platform::config;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     hash::Hash,
@@ -407,7 +408,7 @@ pub struct Nav {
 impl Nav {
     /// Restores the panel as it was when the app closed.
     pub fn new(focus: FocusHandle) -> Self {
-        let saved = vault::load_layout();
+        let saved = config::load(config::File::Layout);
         let mut words = saved.split_whitespace();
         let mode = words.next().and_then(Mode::named).unwrap_or_default();
         // Then, in any order, what an older file does not have: the right dock.
@@ -491,7 +492,7 @@ impl Nav {
             folded.sort_by_key(|m| m.name());
             line += &format!(" fold={}", names(&mut folded.into_iter()));
         }
-        vault::save_layout(&format!("{line}\n"));
+        config::keep(config::File::Layout, &format!("{line}\n"));
     }
 
     /// The tool's view comes into `Nav`, the active one's goes to wait.

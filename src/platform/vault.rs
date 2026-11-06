@@ -6,90 +6,15 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use super::signal::Signal;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::{logic::markdown, lang::tr};
 use crate::logic::note::Note;
-
-/// The user's configuration folder, per platform.
-pub fn config_dir() -> PathBuf {
-    let var = |key: &str| env::var_os(key).map(PathBuf::from);
-    let dir = if cfg!(windows) {
-        var("APPDATA")
-    } else if cfg!(target_os = "macos") {
-        var("HOME").map(|home| home.join("Library/Application Support"))
-    } else {
-        var("XDG_CONFIG_HOME").or_else(|| var("HOME").map(|home| home.join(".config")))
-    };
-    dir.unwrap_or_default()
-}
-
-fn config_path() -> PathBuf {
-    config_dir().join("bref/config")
-}
-
-/// (vault, open notes from most recent to oldest): one line each.
-pub fn load_config() -> (Option<PathBuf>, Vec<PathBuf>) {
-    // Falls back to the config of the app's old name; it is never rewritten.
-    let text = fs::read_to_string(config_path())
-        .or_else(|_| fs::read_to_string(config_dir().join("encre/config")))
-        .unwrap_or_default();
-    let mut lines = text.lines().filter(|l| !l.is_empty()).map(PathBuf::from);
-    (lines.next(), lines.collect())
-}
-
-pub fn save_config(vault: &Path, recent: &[PathBuf]) {
-    let path = config_path();
-    let text: String = std::iter::once(vault)
-        .chain(recent.iter().map(PathBuf::as_path))
-        .map(|p| format!("{}\n", p.display()))
-        .collect();
-    let result = path
-        .parent()
-        .map_or(Ok(()), fs::create_dir_all)
-        .and_then(|_| fs::write(&path, text));
-    if let Err(e) = result {
-        eprintln!("bref: {} ({}): {e}", tr("config not saved", "config non enregistrée"), path.display());
-    }
-}
-
-pub fn load_file(name: &str) -> String {
-    // Same fallback as for the config: settings left under the old name are read again.
-    fs::read_to_string(config_dir().join("bref").join(name))
-        .or_else(|_| fs::read_to_string(config_dir().join("encre").join(name)))
-        .unwrap_or_default()
-}
-
-pub fn save_file(name: &str, text: &str) {
-    let path = config_dir().join("bref").join(name);
-    // Mere convenience: if writing fails, the app will reopen with its original settings.
-    let _ = path.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(path, text));
-}
-
-/// Layout of the navigation panel, kept as is on one line.
-pub fn load_layout() -> String {
-    load_file("layout")
-}
-
-pub fn save_layout(text: &str) {
-    save_file("layout", text)
-}
-
-/// Chosen appearance (theme, fonts, size): one `key=value` line per setting.
-pub fn load_settings() -> String {
-    load_file("settings")
-}
-
-pub fn save_settings(text: &str) {
-    save_file("settings", text)
-}
 
 /// Folder offered for a first vault: `Notes` in the user's Documents, or
 /// in their home folder if they have no Documents.
@@ -250,44 +175,6 @@ fn matters(root: &Path, event: &Event) -> bool {
             .is_ok_and(|rel| rel.components().any(|c| c.as_os_str().to_string_lossy().starts_with('.')))
     };
     !event.kind.is_access() && (event.paths.is_empty() || !event.paths.iter().all(hidden))
-}
-
-/// A signal that wakes the task waiting on it, without it having to poll: the system's
-/// thread raises it, the task sleeps until then.
-#[derive(Default)]
-pub struct Signal {
-    raised: AtomicBool,
-    waker: std::sync::Mutex<Option<std::task::Waker>>,
-}
-
-impl Signal {
-    pub fn raise(&self) {
-        self.raised.store(true, Ordering::Release);
-        if let Some(waker) = self.waker.lock().unwrap().take() {
-            waker.wake();
-        }
-    }
-
-    /// True, and the signal drops, if it was raised since the last call.
-    pub fn take(&self) -> bool {
-        self.raised.swap(false, Ordering::AcqRel)
-    }
-
-    /// Waits until the signal is raised (true) or `deadline` passes (false).
-    pub async fn wait<D: std::future::Future<Output = ()> + Unpin>(&self, mut deadline: D) -> bool {
-        std::future::poll_fn(|cx| {
-            if self.take() {
-                return std::task::Poll::Ready(true);
-            }
-            *self.waker.lock().unwrap() = Some(cx.waker().clone());
-            // Raised in the meantime, before the waker is in place: it is not missed.
-            if self.take() {
-                return std::task::Poll::Ready(true);
-            }
-            std::pin::Pin::new(&mut deadline).poll(cx).map(|()| false)
-        })
-        .await
-    }
 }
 
 /// Asks the system to report any change in the vault: `changed` is raised
@@ -500,238 +387,6 @@ pub fn move_icons(icons: &mut HashMap<PathBuf, String>, from: &Path, to: &Path) 
 pub fn relocate_icons(root: &Path, from: &Path, to: &Path) -> io::Result<()> {
     let mut icons = load_icons(root);
     if move_icons(&mut icons, from, to) { save_icons(root, &icons) } else { Ok(()) }
-}
-
-/// The commands to try, in order, to open a terminal in `dir` under the system
-/// `os` (`std::env::consts::OS`): the program and its arguments. `preferred` is the terminal
-/// the user names in `$TERMINAL`.
-pub fn terminals(os: &str, dir: &str, preferred: Option<&str>) -> Vec<(String, Vec<String>)> {
-    let command = |program: &str, args: &[&str]| (program.to_string(), args.iter().map(|a| a.to_string()).collect());
-    match os {
-        "macos" => vec![command("open", &["-a", "Terminal", dir])],
-        // Windows Terminal if installed, otherwise the classic console.
-        "windows" => vec![command("wt", &["-d", dir]), command("cmd", &["/c", "start", "cmd"])],
-        // Linux has no single answer. Those that merely notify an already running instance
-        // ignore the current folder: it is given to them as an argument.
-        _ => {
-            let mut all: Vec<_> = preferred.iter().map(|p| command(p, &[])).collect();
-            all.extend([
-                command("xdg-terminal-exec", &[]),
-                command("x-terminal-emulator", &[]),
-                command("gnome-terminal", &["--working-directory", dir]),
-                command("ptyxis", &["--new-window", "-d", dir]),
-                command("kgx", &["--working-directory", dir]),
-                command("konsole", &["--workdir", dir]),
-                command("kitty", &[]),
-                command("alacritty", &[]),
-                command("foot", &[]),
-                command("wezterm", &["start", "--cwd", dir]),
-                command("xterm", &[]),
-            ]);
-            all
-        }
-    }
-}
-
-/// Opens the system terminal in `dir`: the first of `terminals` that starts. False if
-/// none is installed. Tests open nothing.
-pub fn open_terminal(dir: &Path) -> bool {
-    let preferred = env::var("TERMINAL").ok().filter(|t| !t.trim().is_empty());
-    let found = terminals(env::consts::OS, &dir.to_string_lossy(), preferred.as_deref());
-    !cfg!(test)
-        && found.into_iter().any(|(program, args)| {
-            // No console for the launcher (`cmd /c start`); the terminal opens its own.
-            let child = crate::platform::command(&program).args(args).current_dir(dir).stdin(std::process::Stdio::null()).spawn();
-            // Once the terminal is closed, its process is reaped: no zombie while Bref runs.
-            child.map(|mut child| std::thread::spawn(move || child.wait())).is_ok()
-        })
-}
-
-/// Keys offered for capture; free on a stock GNOME.
-const CAPTURE_KEYS: &str = "<Super><Shift>n";
-const GNOME_KEYS: &str = "org.gnome.settings-daemon.plugins.media-keys";
-/// A path of our own in GNOME's custom shortcuts: asking again doubles nothing.
-const GNOME_PATH: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/bref-capture/";
-
-/// What asking for a capture shortcut gave.
-#[derive(Debug, PartialEq)]
-pub enum Shortcut {
-    /// Set in the desktop settings: the keys, as read.
-    Bound(String),
-    /// Set without keys, the offered ones being taken: here they are, to choose in the settings.
-    Unbound(String),
-    /// This desktop cannot be set from here: the command to bind yourself.
-    Manual(String),
-}
-
-/// Binds `exe --capture` to a desktop shortcut, never taking keys already
-/// in use. Under GNOME it is done from here; elsewhere the command is returned, to bind by hand.
-/// Blocking (a few `gsettings` calls): run off the UI thread. Tests
-/// touch no setting.
-pub fn capture_shortcut(exe: &Path) -> Shortcut {
-    let exe = exe.to_string_lossy();
-    let command = if exe.contains(' ') { format!("'{exe}' --capture") } else { format!("{exe} --capture") };
-    let gnome = !cfg!(test) && env::var("XDG_CURRENT_DESKTOP").is_ok_and(|desktop| desktop.contains("GNOME"));
-    gnome.then(|| gnome_shortcut(&command)).flatten().unwrap_or(Shortcut::Manual(command))
-}
-
-/// What `gsettings` answers, if it is there and accepts.
-fn gsettings(args: &[&str]) -> Option<String> {
-    let out = crate::platform::command("gsettings").args(args).stdin(std::process::Stdio::null()).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-/// GNOME's custom shortcut "Bref: capture": created with `CAPTURE_KEYS` if nothing
-/// uses them, otherwise without keys. If it already exists, only its command is updated (the
-/// binary may have moved): the keys the user gave it stay.
-fn gnome_shortcut(command: &str) -> Option<Shortcut> {
-    let entry = format!("{GNOME_KEYS}.custom-keybinding:{GNOME_PATH}");
-    let list = gsettings(&["get", GNOME_KEYS, "custom-keybindings"])?;
-    let quoted = |text: &str| format!("'{}'", text.replace('\'', "\\'"));
-    let Some(longer) = with_keybinding(&list, GNOME_PATH) else {
-        gsettings(&["set", &entry, "command", &quoted(command)])?;
-        let keys = gsettings(&["get", &entry, "binding"])?;
-        let keys = keys.trim_matches('\'');
-        return Some(if keys.is_empty() { Shortcut::Unbound(spell_keys(CAPTURE_KEYS)) } else { Shortcut::Bound(spell_keys(keys)) });
-    };
-    // Taken: by a system shortcut, or by another custom shortcut.
-    let wanted = format!("'{}'", CAPTURE_KEYS.to_lowercase());
-    let others = list.split('\'').skip(1).step_by(2).filter_map(|path| gsettings(&["get", &format!("{GNOME_KEYS}.custom-keybinding:{path}"), "binding"]));
-    let taken = gsettings(&["list-recursively"]).is_some_and(|all| all.to_lowercase().contains(&wanted))
-        || others.into_iter().any(|keys| keys.to_lowercase() == wanted);
-    gsettings(&["set", &entry, "name", &quoted(tr("Bref: capture", "Bref : capture"))])?;
-    gsettings(&["set", &entry, "command", &quoted(command)])?;
-    if !taken {
-        gsettings(&["set", &entry, "binding", &quoted(CAPTURE_KEYS)])?;
-    }
-    gsettings(&["set", GNOME_KEYS, "custom-keybindings", &longer])?;
-    Some(if taken { Shortcut::Unbound(spell_keys(CAPTURE_KEYS)) } else { Shortcut::Bound(spell_keys(CAPTURE_KEYS)) })
-}
-
-/// The `['a', 'b']` list from `gsettings` (or `@as []`, empty) with `path` added; `None` if it
-/// is already there.
-fn with_keybinding(list: &str, path: &str) -> Option<String> {
-    let mut paths: Vec<&str> = list.split('\'').skip(1).step_by(2).collect();
-    if paths.contains(&path) {
-        return None;
-    }
-    paths.push(path);
-    Some(format!("[{}]", paths.iter().map(|p| format!("'{p}'")).collect::<Vec<_>>().join(", ")))
-}
-
-/// `<Super><Shift>n`, as GNOME writes it, as read: `Super+Shift+N`.
-fn spell_keys(keys: &str) -> String {
-    let parts = keys.split(['<', '>']).filter(|part| !part.is_empty()).map(|part| match part {
-        "Shift" => tr("Shift", "Maj").to_string(),
-        "Primary" | "Control" => "Ctrl".to_string(),
-        _ => {
-            let mut chars = part.chars();
-            chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default()
-        }
-    });
-    parts.collect::<Vec<_>>().join("+")
-}
-
-/// Backup: the whole vault (trash included) in a `<vault> <date>.tar.gz` archive
-/// in folder `dir`, numbered if the name is taken. Blocking: run off the UI thread.
-// The archive is written here rather than by the system's `tar`: on Windows, both the one
-// Windows ships and Git for Windows' crash (access violation) on a name outside the ANSI
-// code page, such as `中文.md`. flate2 compresses; the tar format is a few headers.
-pub fn backup(root: &Path, dir: &Path, date: &str) -> io::Result<PathBuf> {
-    let Some(name) = root.file_name() else {
-        return Err(io::Error::other(tr("this vault has no parent folder", "ce coffre n'a pas de dossier parent")));
-    };
-    // Inside the vault, the archive would contain itself.
-    if dir.starts_with(root) {
-        return Err(io::Error::other(tr("choose a folder outside the vault", "choisir un dossier hors du coffre")));
-    }
-    let to = free_path(dir, &format!("{} {date}", name.to_string_lossy()), "tar.gz");
-    let written = fs::File::create_new(&to).and_then(|file| {
-        let mut gz = flate2::write::GzEncoder::new(io::BufWriter::new(file), flate2::Compression::default());
-        tar_entry(&mut gz, root, &name.to_string_lossy())?;
-        // The end of a tar: two empty blocks.
-        gz.write_all(&[0; 1024])?;
-        gz.finish()?.into_inner().map_err(|e| e.into_error())?.sync_all()
-    });
-    if let Err(e) = written {
-        // An incomplete archive must not pass for a backup.
-        let _ = fs::remove_file(&to);
-        return Err(e);
-    }
-    Ok(to)
-}
-
-/// Writes `path` into the tar under `name`, and a folder's contents after it, by name.
-fn tar_entry(out: &mut impl Write, path: &Path, name: &str) -> io::Result<()> {
-    let meta = fs::symlink_metadata(path)?;
-    let mtime = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
-    #[cfg(unix)]
-    let mode = std::os::unix::fs::PermissionsExt::mode(&meta.permissions()) & 0o7777;
-    #[cfg(not(unix))]
-    let mode = if meta.is_dir() { 0o755 } else { 0o644 };
-    if meta.is_symlink() {
-        let target = fs::read_link(path)?;
-        return tar_header(out, name, b'2', mode, 0, mtime, &target.to_string_lossy().replace('\\', "/"));
-    }
-    if meta.is_dir() {
-        tar_header(out, &format!("{name}/"), b'5', mode, 0, mtime, "")?;
-        let mut entries: Vec<_> = fs::read_dir(path)?.collect::<io::Result<_>>()?;
-        entries.sort_by_key(|e| e.file_name());
-        for entry in entries {
-            tar_entry(out, &entry.path(), &format!("{name}/{}", entry.file_name().to_string_lossy()))?;
-        }
-        return Ok(());
-    }
-    let mut file = fs::File::open(path)?;
-    let size = file.metadata()?.len();
-    tar_header(out, name, b'0', mode, size, mtime, "")?;
-    // Exactly `size` bytes, even if the file changes meanwhile: the header has already said how many.
-    let copied = io::copy(&mut io::Read::take(&mut file, size), out)?;
-    io::copy(&mut io::Read::take(io::repeat(0), size - copied), out)?;
-    out.write_all(&vec![0; (512 - size % 512) as usize % 512])
-}
-
-/// A ustar header; preceded by a pax one (UTF-8 by definition) when the name, the link
-/// or the size does not fit in its field.
-fn tar_header(out: &mut impl Write, name: &str, kind: u8, mode: u32, size: u64, mtime: u64, link: &str) -> io::Result<()> {
-    let fits = |s: &str, n: usize| s.is_ascii() && s.len() <= n;
-    let mut pax = String::new();
-    for (key, value, needed) in [("path", name, !fits(name, 100)), ("linkpath", link, !fits(link, 100)), ("size", &size.to_string(), size >= 1 << 33)] {
-        if needed {
-            // Each record starts with its own length, digits included.
-            let body = format!(" {key}={value}\n");
-            let mut len = body.len() + 1;
-            while (len.to_string().len() + body.len()) != len {
-                len = len.to_string().len() + body.len();
-            }
-            pax.push_str(&format!("{len}{body}"));
-        }
-    }
-    if !pax.is_empty() {
-        tar_header(out, "././@PaxHeader", b'x', 0o644, pax.len() as u64, mtime, "")?;
-        out.write_all(pax.as_bytes())?;
-        out.write_all(&vec![0; (512 - pax.len() % 512) % 512])?;
-    }
-    let mut block = [0u8; 512];
-    let mut put = |at: usize, len: usize, bytes: &[u8]| {
-        let n = bytes.len().min(len);
-        block[at..at + n].copy_from_slice(&bytes[..n]);
-    };
-    // Past the field: the pax header above has the whole of it.
-    let ascii = |s: &str| s.chars().map(|c| if c.is_ascii() { c } else { '_' }).collect::<String>();
-    put(0, 100, ascii(name).as_bytes());
-    put(100, 8, format!("{:07o}\0", mode).as_bytes());
-    put(108, 8, b"0000000\0");
-    put(116, 8, b"0000000\0");
-    put(124, 12, format!("{:011o}\0", size.min((1 << 33) - 1)).as_bytes());
-    put(136, 12, format!("{:011o}\0", mtime.min((1 << 33) - 1)).as_bytes());
-    put(148, 8, b"        ");
-    put(156, 1, &[kind]);
-    put(157, 100, ascii(link).as_bytes());
-    put(257, 8, b"ustar\x0000");
-    let sum: u32 = block.iter().map(|&b| b as u32).sum();
-    block[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
-    out.write_all(&block)
 }
 
 /// Contents of the vault's trash, most recently modified first.
@@ -1027,45 +682,6 @@ mod tests {
     }
 
     #[test]
-    fn gnome_shortcut_list_gains_the_capture_once() {
-        let path = "/org/gnome/x/bref-capture/";
-        assert_eq!(with_keybinding("@as []", path).as_deref(), Some("['/org/gnome/x/bref-capture/']"));
-        assert_eq!(with_keybinding("['/org/gnome/x/custom0/', '/org/gnome/x/custom1/']", path).as_deref(), Some("['/org/gnome/x/custom0/', '/org/gnome/x/custom1/', '/org/gnome/x/bref-capture/']"));
-        // Already there: nothing to add, the request can repeat without doubling anything.
-        assert_eq!(with_keybinding("['/org/gnome/x/custom0/', '/org/gnome/x/bref-capture/']", path), None);
-    }
-
-    #[test]
-    fn gnome_keys_are_spelled_like_the_others() {
-        assert_eq!(spell_keys("<Super><Shift>n"), "Super+Maj+N");
-        assert_eq!(spell_keys("<Primary><Alt>space"), "Ctrl+Alt+Space");
-        assert_eq!(spell_keys("F9"), "F9");
-    }
-
-    /// The real `gsettings`, on throwaway settings (key-value file in a temporary
-    /// folder): `cargo test -- --ignored gnome_shortcut_is_registered`, on a GNOME machine.
-    #[test]
-    #[ignore]
-    fn gnome_shortcut_is_registered() {
-        let dir = std::env::temp_dir().join(format!("bref-gsettings-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        unsafe {
-            std::env::set_var("GSETTINGS_BACKEND", "keyfile");
-            std::env::set_var("XDG_CONFIG_HOME", &dir);
-        }
-        assert_eq!(gnome_shortcut("/usr/bin/bref --capture"), Some(Shortcut::Bound("Super+Maj+N".into())));
-        let saved = fs::read_to_string(dir.join("glib-2.0/settings/keyfile")).unwrap();
-        assert!(saved.contains("command='/usr/bin/bref --capture'") && saved.contains("binding='<Super><Shift>n'"), "{saved}");
-        // Asked again after the binary moved: the command follows, the chosen key stays.
-        gsettings(&["set", &format!("{GNOME_KEYS}.custom-keybinding:{GNOME_PATH}"), "binding", "<Super>F9"]).unwrap();
-        assert_eq!(gnome_shortcut("/opt/bref --capture"), Some(Shortcut::Bound("Super+F9".into())));
-        let saved = fs::read_to_string(dir.join("glib-2.0/settings/keyfile")).unwrap();
-        assert!(saved.contains("command='/opt/bref --capture'") && saved.matches("bref-capture").count() == 2, "{saved}");
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
     fn capture_appends_a_line_to_the_note_of_the_day() {
         let root = std::env::temp_dir().join(format!("bref-capture-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -1086,46 +702,6 @@ mod tests {
         assert_eq!(fs::read_to_string(&filed).unwrap(), "# 2026-10-11\n\nsans fin de ligne\n- une idée\n");
         assert_eq!(fs::read_to_string(root.join(".trash/2026-10-11.md")).unwrap(), "jetée");
         let _ = fs::remove_dir_all(&root);
-    }
-
-    /// Runs a future on the current thread, which sleeps between wakeups.
-    fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
-        struct Unpark(std::thread::Thread);
-        impl std::task::Wake for Unpark {
-            fn wake(self: Arc<Self>) {
-                self.0.unpark();
-            }
-        }
-        let waker = Arc::new(Unpark(std::thread::current())).into();
-        let mut cx = std::task::Context::from_waker(&waker);
-        let mut future = std::pin::pin!(future);
-        loop {
-            if let std::task::Poll::Ready(value) = future.as_mut().poll(&mut cx) {
-                return value;
-            }
-            std::thread::park_timeout(std::time::Duration::from_secs(5));
-        }
-    }
-
-    #[test]
-    fn signal_wakes_a_sleeping_task() {
-        let signal = Arc::new(Signal::default());
-        // Raised before the wait: no sleep. Dropped afterwards.
-        signal.raise();
-        assert!(block_on(signal.wait(std::future::pending())));
-        assert!(!signal.take());
-        // Deadline passed, no signal: false.
-        assert!(!block_on(signal.wait(std::future::ready(()))));
-        // Raised by another thread while the task sleeps.
-        let other = signal.clone();
-        let thread = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            other.raise();
-        });
-        let start = std::time::Instant::now();
-        assert!(block_on(signal.wait(std::future::pending())));
-        assert!(start.elapsed() < std::time::Duration::from_secs(4));
-        thread.join().unwrap();
     }
 
     #[test]
@@ -1238,43 +814,6 @@ mod tests {
         assert_eq!(fs::read_to_string(root.join(ICONS)).unwrap(), "idea\tProjets/Idées.md\nrocket\tProjets\n");
         assert_eq!(load_icons(&root), icons);
         fs::remove_dir_all(&root).unwrap();
-    }
-
-    #[test]
-    fn picks_the_terminal_of_the_system() {
-        let programs = |os, preferred| terminals(os, "/coffre", preferred).into_iter().map(|(p, _)| p).collect::<Vec<_>>();
-        assert_eq!(terminals("macos", "/coffre", None), [("open".to_string(), vec!["-a".to_string(), "Terminal".into(), "/coffre".into()])]);
-        assert_eq!(programs("windows", Some("kitty")), ["wt", "cmd"]);
-        // `$TERMINAL` comes first; without it, the desktop's choice first.
-        assert_eq!(programs("linux", Some("foot"))[..2], ["foot", "xdg-terminal-exec"]);
-        assert_eq!(programs("linux", None)[0], "xdg-terminal-exec");
-        let gnome = terminals("linux", "/coffre", None).into_iter().find(|(p, _)| p == "gnome-terminal").unwrap();
-        assert_eq!(gnome.1, ["--working-directory", "/coffre"]);
-    }
-
-    #[test]
-    fn backs_up_the_vault() {
-        let base = env::temp_dir().join(format!("bref-backup-{}", std::process::id()));
-        let (root, out) = (base.join("Mon coffre"), base.join("sauvegardes"));
-        fs::create_dir_all(root.join(".trash")).unwrap();
-        fs::create_dir_all(&out).unwrap();
-        fs::write(root.join("A.md"), "# A\n").unwrap();
-        fs::write(root.join(".trash/Vieux.md"), "jeté").unwrap();
-        fs::write(root.join("abz文cd.md"), "# abz文cd\n").unwrap();
-        let first = backup(&root, &out, "2026-10-09").unwrap();
-        assert_eq!(first, out.join("Mon coffre 2026-10-09.tar.gz"));
-        // Same day: a second archive, the first one stays.
-        assert_eq!(backup(&root, &out, "2026-10-09").unwrap(), out.join("Mon coffre 2026-10-09 2.tar.gz"));
-        let mut listed = Vec::new();
-        io::Read::read_to_end(&mut flate2::read::GzDecoder::new(fs::File::open(&first).unwrap()), &mut listed).unwrap();
-        let listed = String::from_utf8_lossy(&listed);
-        assert!(listed.contains("Mon coffre/A.md") && listed.contains("Mon coffre/.trash/Vieux.md") && listed.contains("jeté"), "{listed}");
-        // A name outside the ANSI code page goes in a pax header: Windows' `tar` crashed on it.
-        assert!(listed.contains("path=Mon coffre/abz文cd.md\n"), "{listed}");
-        // Inside the vault, the archive would contain itself: refused, nothing is written.
-        assert!(backup(&root, &root.join(".trash"), "2026-10-09").is_err());
-        assert_eq!(fs::read_dir(root.join(".trash")).unwrap().count(), 1);
-        fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
@@ -1442,10 +981,12 @@ mod tests {
         // No simulated clock here: the system takes a few milliseconds (FSEvents, a bit more).
         fs::write(root.join("neuve.md"), "x").unwrap();
         let start = std::time::Instant::now();
-        while !changed.raised.load(Ordering::Acquire) && start.elapsed() < std::time::Duration::from_secs(10) {
+        let mut seen = changed.take();
+        while !seen && start.elapsed() < std::time::Duration::from_secs(10) {
             std::thread::sleep(std::time::Duration::from_millis(50));
+            seen = changed.take();
         }
-        assert!(changed.take(), "no event in 10 s");
+        assert!(seen, "no event in 10 s");
         fs::remove_dir_all(&root).unwrap();
     }
 

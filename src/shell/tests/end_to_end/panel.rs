@@ -1,5 +1,6 @@
 //! The side panel: tree, new note in a folder, divider, recent notes, graph.
 
+use crate::platform::config;
 use super::*;
 
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
@@ -41,7 +42,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
         cx.simulate_mouse_up(at(to), MouseButton::Left, gpui::Modifiers::none());
     };
     drag(cx, 302., 450.);
-    assert_eq!(vault::load_layout(), "tree split 410 0\n");
+    assert_eq!(config::load(config::File::Layout), "tree split 410 0\n");
     drag(cx, 452., 60.);
     assert_eq!(shell.read_with(cx, |s, _| s.nav.panel), Panel::Rail);
 
@@ -53,7 +54,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert_eq!(text(cx), "# Sous");
     // Asking again for the shown mode: first focus, then collapsing to the rail.
     cx.simulate_keystrokes("secondary-shift-t secondary-shift-t");
-    assert_eq!(vault::load_layout(), "recent rail 410 0\n");
+    assert_eq!(config::load(config::File::Layout), "recent rail 410 0\n");
 
     // Graph: one edge per resolved wikilink. Tab walks the notes linked to the
     // open note, as a preview; Enter opens the selected one.

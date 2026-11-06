@@ -21,7 +21,6 @@ use std::{
 
 use serde_json::{Value, json};
 
-use crate::platform::vault as files;
 
 const PARSE: i32 = -32700;
 const INVALID: i32 = -32600;
@@ -162,7 +161,7 @@ impl Server {
                 Ok(vault) => (Some(vault), String::new()),
                 Err(message) => (None, message),
             },
-            None => match files::load_config().0 {
+            None => match crate::platform::config::load_config().0 {
                 None => (None, "no vault: open one in Bref, or pass `--vault`".into()),
                 Some(path) if !path.is_dir() => (None, format!("the vault in the config no longer exists (`{}`); pass `--vault`", path.display())),
                 Some(path) => match vault::Vault::open(path) {

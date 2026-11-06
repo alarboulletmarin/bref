@@ -30,6 +30,7 @@ mod toasts;
 mod travel;
 mod updates;
 
+use crate::platform::config;
 use capture::*;
 use drops::*;
 use help::*;
@@ -216,7 +217,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let prefs = Prefs::parse(&vault::load_settings());
+        let prefs = Prefs::parse(&config::load(config::File::Settings));
         apply_fonts(&prefs);
         let theme = Theme::of(&prefs, window.appearance());
         let pane = Self::new_pane(theme, window, cx);
@@ -309,7 +310,7 @@ impl Shell {
                 this.recent = recent.into_iter().filter(|p| p.is_file()).collect();
                 // The tabs of last time, those whose file is still there; the older formats left
                 // the first pane to the most recent note.
-                let panes = vault::load_file("panes");
+                let panes = config::load(config::File::Panes);
                 let (tree, saved) = read_panes(&panes);
                 this.restore_panes(tree, saved, panes.starts_with("v3 "), &root, window, cx);
                 this.panes_saved = this.panes_state();
@@ -339,7 +340,7 @@ impl Shell {
         }));
         // Changed shortcuts; a faulty line of the file is dropped and reported.
         let open = editable();
-        let (changes, faults) = keys::read(&vault::load_file("keys"), &this.bound, &|action| open.contains(action));
+        let (changes, faults) = keys::read(&config::load(config::File::Keys), &this.bound, &|action| open.contains(action));
         if !changes.is_empty() {
             this.changes = changes;
             this.rebind(cx);
@@ -363,7 +364,7 @@ pub fn run() {
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.on_window_closed(|cx| cx.quit()).detach();
 
-        let (vault, recent) = vault::load_config();
+        let (vault, recent) = config::load_config();
         let lost = vault.clone().filter(|v| !v.is_dir());
         let vault = vault.filter(|v| v.is_dir());
         // `bref --capture`: the input line alone, in a small undecorated window.

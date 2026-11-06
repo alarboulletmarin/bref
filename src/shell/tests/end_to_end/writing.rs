@@ -1,5 +1,6 @@
 //! Typing, lists, autosave, the palette, recent notes, update checks, wikilinks.
 
+use crate::platform::config;
 use super::*;
 
 pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
@@ -42,7 +43,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Recent: the last opened note first, in the app as in the config.
     let recent = shell.read_with(cx, |s, _| s.recent.clone());
     assert_eq!(recent, [root.join("Courses.md"), root.join("Test.md")]);
-    assert_eq!(vault::load_config(), (Some(root.clone()), recent));
+    assert_eq!(config::load_config(), (Some(root.clone()), recent));
     let names = shell.read_with(cx, |s, _| {
         s.by_recency().iter().map(|n| n.name.clone()).collect::<Vec<_>>()
     });
@@ -65,12 +66,12 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     cx.simulate_input("mises à jour");
     cx.simulate_keystrokes("down enter");
     assert!(shell.read_with(cx, |s, _| !s.prefs.updates && s.update.is_none()));
-    assert!(vault::load_settings().ends_with("updates=off\n"));
+    assert!(config::load(config::File::Settings).ends_with("updates=off\n"));
     cx.simulate_keystrokes("secondary-p");
     cx.simulate_input("mises à jour");
     cx.simulate_keystrokes("down enter");
     assert!(shell.read_with(cx, |s, _| s.prefs.updates));
-    assert!(!vault::load_settings().contains("updates"));
+    assert!(!config::load(config::File::Settings).contains("updates"));
 
     // Install the new version: the palette offers it when the app can do it alone.
     // Tests install nothing: the failure leaves the app in place, with its message.

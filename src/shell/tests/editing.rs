@@ -1,5 +1,6 @@
 //! Editing journeys: `/` commands, block handles, inline formatting and its bar, templates.
 
+use crate::platform::config;
 use super::*;
 
 /// What can be done is found without knowing it: the command palette (F10, or ">"), which
@@ -747,7 +748,7 @@ fn formatting_journey(cx: &mut TestAppContext) {
     choose(cx, "down enter");
     assert!(shell.read_with(cx, |s, _| s.prefs.bar == "off" && !s.theme.bar));
     assert!(!shell.read_with(cx, |s, cx| s.pane().editor.read(cx).bar_shown()) && cx.debug_bounds("counts").is_some());
-    assert!(vault::load_settings().contains("bar=off\n"));
+    assert!(config::load(config::File::Settings).contains("bar=off\n"));
     // Escape during the list: the previewed choice is taken back.
     choose(cx, "up escape");
     assert!(shell.read_with(cx, |s, _| s.prefs.bar == "off"));

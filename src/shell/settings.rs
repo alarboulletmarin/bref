@@ -1,5 +1,6 @@
 //! Settings: theme, fonts, text size and the other choices of the palette.
 
+use crate::platform::config;
 use super::*;
 
 impl Shell {
@@ -82,7 +83,7 @@ impl Shell {
             if !matches!(event, PaletteEvent::Preview(_)) {
                 this.palette = None;
                 window.focus(&this.pane().editor.focus_handle(cx));
-                vault::save_settings(&this.prefs.to_text());
+                config::keep(config::File::Settings, &this.prefs.to_text());
             }
             this.restyle(window, cx);
         })
@@ -96,7 +97,7 @@ impl Shell {
     pub(super) fn resize_text(&mut self, by: Option<f32>, window: &mut Window, cx: &mut Context<Self>) {
         let size = by.map_or(Prefs::SIZE, |by| self.prefs.size + by);
         self.prefs = Prefs::parse(&Prefs { size, ..self.prefs.clone() }.to_text());
-        vault::save_settings(&self.prefs.to_text());
+        config::keep(config::File::Settings, &self.prefs.to_text());
         self.restyle(window, cx);
     }
 }
