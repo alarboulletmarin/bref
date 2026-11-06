@@ -129,13 +129,16 @@ fn isolated_config(root: &Path) -> crate::platform::config::Isolated {
     crate::platform::config::isolate(root)
 }
 
-/// A temporary folder named after the test and the process, empty at the start and removed when it goes out of
+/// A temporary folder named after the test, the process and a counter, empty at the start and removed when it goes out of
 /// scope, so a failing test leaves nothing behind either. It reads as a `PathBuf`.
 pub(super) struct TempDir(PathBuf);
 
 impl TempDir {
     pub(super) fn new(name: &str) -> Self {
-        let path = std::env::temp_dir().join(format!("bref-{name}-{}", std::process::id()));
+        // A counter besides the name: two tests may pick the same name and run at the same time.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("bref-{name}-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
         Self(path)
