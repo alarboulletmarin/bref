@@ -40,8 +40,6 @@ use super::*;
 use crate::{logic::block, ui::theme::contrast, views::editor::grid};
 use gpui::{Hsla, TestAppContext};
 
-static CONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 /// The vault watcher looks at the disk every 2 s (`shell/library.rs`): a little more than one round.
 // ponytail: copied from library.rs, whose timers are not exported; export them there and use them here.
 pub(super) const WATCH: Duration = Duration::from_secs(3);
@@ -125,14 +123,10 @@ fn french_says_vous() {
     }
 }
 
-/// The config folder is global to the process (environment variables): a test that moves it under
-/// `root` holds the lock until it ends, so that another does not move it while it uses it.
-fn isolated_config(root: &Path) -> std::sync::MutexGuard<'static, ()> {
-    let guard = CONFIG.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    for key in ["XDG_CONFIG_HOME", "HOME", "APPDATA", "USERPROFILE"] {
-        unsafe { std::env::set_var(key, root.join(".config")) };
-    }
-    guard
+/// The config folder is global to the process: a test that moves it under `root` holds the guard
+/// until it ends, so that another does not move it while it uses it.
+fn isolated_config(root: &Path) -> crate::platform::config::Isolated {
+    crate::platform::config::isolate(root)
 }
 
 /// A temporary folder named after the test and the process, empty at the start and removed when it goes out of
@@ -168,7 +162,7 @@ impl Drop for TempDir {
 }
 
 /// A shell on a fresh vault in a temporary folder.
-pub(super) fn start<'a>(cx: &'a mut TestAppContext, name: &str) -> (TempDir, Entity<Shell>, &'a mut gpui::VisualTestContext, std::sync::MutexGuard<'static, ()>) {
+pub(super) fn start<'a>(cx: &'a mut TestAppContext, name: &str) -> (TempDir, Entity<Shell>, &'a mut gpui::VisualTestContext, crate::platform::config::Isolated) {
     let root = TempDir::new(name);
     let config = isolated_config(&root);
     cx.update(bind_keys);

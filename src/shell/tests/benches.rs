@@ -192,7 +192,7 @@ fn sheet_convert(cx: &mut TestAppContext) {
 #[ignore]
 fn md_table_scale(cx: &mut TestAppContext) {
     // Tests redo the whole layout after each reuse, to check it: not here, we measure.
-    unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
+    crate::views::editor::MEASURING.store(true, std::sync::atomic::Ordering::Relaxed);
     let root = TempDir::new("mdscale");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
@@ -267,7 +267,7 @@ fn md_table_scale(cx: &mut TestAppContext) {
 #[ignore]
 fn profile_typing(cx: &mut TestAppContext) {
     // Tests redo the whole layout after each reuse, to check it: not here, we measure.
-    unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
+    crate::views::editor::MEASURING.store(true, std::sync::atomic::Ordering::Relaxed);
     let root = TempDir::new("profile");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
@@ -328,7 +328,7 @@ fn resident_mb() -> Option<u64> {
 #[ignore]
 fn bench_scale(cx: &mut TestAppContext) {
     // Tests redo the whole layout after each reuse, to check it: not here, we measure.
-    unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
+    crate::views::editor::MEASURING.store(true, std::sync::atomic::Ordering::Relaxed);
     let sizes: Vec<usize> = std::env::var("BREF_BENCH_NOTES")
         .map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect())
         .unwrap_or_else(|_| vec![1000, 5000, 20000]);
@@ -421,7 +421,7 @@ fn bench_scale(cx: &mut TestAppContext) {
 #[ignore]
 fn bench(cx: &mut TestAppContext) {
     // Tests redo the whole layout after each reuse, to check it: not here, we measure.
-    unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
+    crate::views::editor::MEASURING.store(true, std::sync::atomic::Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!("bref-bench-{}", std::process::id()));
     synthetic_vault(&root, 2000);
     let _config = isolated_config(&root);
@@ -500,7 +500,7 @@ fn bench(cx: &mut TestAppContext) {
 #[gpui::test]
 #[ignore]
 fn embed_scale(cx: &mut TestAppContext) {
-    unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
+    crate::views::editor::MEASURING.store(true, std::sync::atomic::Ordering::Relaxed);
     let root = TempDir::new("embed");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
@@ -593,7 +593,7 @@ fn hundred_tabs(cx: &mut TestAppContext) {
 #[gpui::test]
 #[ignore]
 fn motion_cost(cx: &mut TestAppContext) {
-    unsafe { std::env::set_var("BREF_NO_COMPARE", "1") };
+    crate::views::editor::MEASURING.store(true, std::sync::atomic::Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!("bref-motion-{}", std::process::id()));
     synthetic_vault(&root, 5000);
     let _config = isolated_config(&root);

@@ -198,6 +198,10 @@ const BROKEN: Pixels = px(20.);
 // not followed; allow the link's target if someone needs it.
 /// The picture file written `path` in a note: in the note's folder, at the vault root (the last of
 /// `dirs`), then by its name anywhere in the vault (`images`); never outside the vault.
+/// Test: set by the hand-run benchmarks, which measure the reuse instead of checking it.
+#[cfg(test)]
+pub static MEASURING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// What the editors look names up in, built once per change of the vault and shared (`Rc`) by
 /// every tab and embed.
 #[derive(Default)]
@@ -493,7 +497,7 @@ impl Editor {
             laid: None,
             force_full: false,
             #[cfg(test)]
-            compare: std::env::var("BREF_NO_COMPARE").is_err(),
+            compare: !MEASURING.load(std::sync::atomic::Ordering::Relaxed),
             #[cfg(test)]
             counts: (0, 0, 0),
             laid_out: None,

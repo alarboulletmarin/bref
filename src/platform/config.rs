@@ -64,16 +64,58 @@ fn from_environment() -> PathBuf {
 }
 
 /// The user's configuration folder, per platform. Read from the environment once; tests
-/// move it under a temporary folder (`isolated_config`), so they read it each time.
+/// move it under a temporary folder (`isolate`).
 pub fn config_dir() -> PathBuf {
     #[cfg(test)]
-    return from_environment();
+    return match isolated_root() {
+        Some(root) => root.join(".config"),
+        None => from_environment(),
+    };
     #[cfg(not(test))]
     {
         static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         DIR.get_or_init(from_environment).clone()
     }
 }
+
+/// The user's home folder (`USERPROFILE` on Windows, `HOME` elsewhere).
+pub fn home() -> Option<PathBuf> {
+    #[cfg(test)]
+    if let Some(root) = isolated_root() {
+        return Some(root.join(".config"));
+    }
+    env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)
+}
+
+/// Where tests put the home and config folders (both `<root>/.config`, as the environment variables
+/// they replaced did), if one does.
+#[cfg(test)]
+static ISOLATED: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+/// One test at a time moves the folders: the others wait for the guard to drop.
+#[cfg(test)]
+static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Tests never touch the user's real folders: the last isolated root stays in force after its guard
+/// drops (a window torn down later still writes its files there), and before any test isolated one,
+/// a throwaway folder stands in.
+#[cfg(test)]
+fn isolated_root() -> Option<PathBuf> {
+    let set = ISOLATED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+    set.or_else(|| Some(env::temp_dir().join(format!("bref-test-home-{}", std::process::id()))))
+}
+
+/// Test: the config and home folders live under `root`, and no other test moves them until the guard
+/// drops. No environment variable is touched (changing it while other threads read it is unsound);
+/// the override is process-wide, not per thread, so that threads a test starts see it too.
+#[cfg(test)]
+pub fn isolate(root: &Path) -> Isolated {
+    let turn = TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    *ISOLATED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(root.to_path_buf());
+    Isolated(turn)
+}
+
+#[cfg(test)]
+pub struct Isolated(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
 
 /// Where `file` lives.
 pub fn path(file: File) -> PathBuf {
@@ -118,4 +160,20 @@ pub fn save_config(vault: &Path, recent: &[PathBuf]) {
         .map(|p| format!("{}\n", p.display()))
         .collect();
     keep(File::Config, &text);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn isolation_moves_the_folders_and_never_uses_the_real_ones() {
+        let root = Path::new("/tmp/bref-isolated-test");
+        {
+            let _guard = isolate(root);
+            assert_eq!((config_dir(), home()), (root.join(".config"), Some(root.join(".config"))));
+            assert_eq!(path(File::Keys), root.join(".config").join(FOLDER).join("keys"));
+            assert_ne!(config_dir(), from_environment(), "never the user's folder");
+        }
+    }
 }

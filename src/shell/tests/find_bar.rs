@@ -52,7 +52,7 @@ fn inside(a: Bounds<Pixels>, b: Bounds<Pixels>) -> bool {
     a.left() >= b.left() && a.right() <= b.right() && a.top() >= b.top() && a.bottom() <= b.bottom()
 }
 
-fn opened<'a>(cx: &'a mut TestAppContext, name: &str, text: &str) -> (TempDir, Entity<Shell>, &'a mut Cx, std::sync::MutexGuard<'static, ()>) {
+fn opened<'a>(cx: &'a mut TestAppContext, name: &str, text: &str) -> (TempDir, Entity<Shell>, &'a mut Cx, crate::platform::config::Isolated) {
     let (root, shell, cx, config) = start(cx, name);
     fs::write(root.join("Note.md"), text).unwrap();
     shell.update(cx, |s, cx| {

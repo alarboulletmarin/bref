@@ -1,7 +1,7 @@
 use super::*;
 use crate::views::sheet::summary;
 
-fn window<'a>(cx: &'a mut TestAppContext, tag: &str, files: &[(&str, &[u8])]) -> (TempDir, Entity<Shell>, &'a mut gpui::VisualTestContext, std::sync::MutexGuard<'static, ()>) {
+fn window<'a>(cx: &'a mut TestAppContext, tag: &str, files: &[(&str, &[u8])]) -> (TempDir, Entity<Shell>, &'a mut gpui::VisualTestContext, crate::platform::config::Isolated) {
     let root = TempDir::new(&format!("table-open-{tag}"));
     let config = isolated_config(&root);
     cx.update(bind_keys);

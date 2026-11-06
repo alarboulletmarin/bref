@@ -118,6 +118,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("bref-gsettings-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
+        // The child process `gsettings` reads these two variables: only the environment reaches it, so this
+        // ignored test (run by hand, alone) keeps `set_var`.
         unsafe {
             std::env::set_var("GSETTINGS_BACKEND", "keyfile");
             std::env::set_var("XDG_CONFIG_HOME", &dir);

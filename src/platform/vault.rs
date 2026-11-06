@@ -2,7 +2,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    env, fs,
+    fs,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -19,14 +19,14 @@ use crate::logic::note::Note;
 /// Folder offered for a first vault: `Notes` in the user's Documents, or
 /// in their home folder if they have no Documents.
 pub fn default_vault() -> Option<PathBuf> {
-    let home = env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)?;
+    let home = super::config::home()?;
     let documents = home.join("Documents");
     Some(if documents.is_dir() { documents } else { home }.join("Notes"))
 }
 
 /// A path as shown: the home folder shortened to `~` outside Windows.
 pub fn shown(path: &Path) -> String {
-    let home = env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
+    let home = super::config::home();
     match home.as_deref().and_then(|home| path.strip_prefix(home).ok()) {
         Some(rest) if !cfg!(windows) => format!("~/{}", rest.display()),
         _ => path.display().to_string(),
@@ -676,6 +676,7 @@ pub fn save(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
 
     #[test]
     fn capture_appends_a_line_to_the_note_of_the_day() {
