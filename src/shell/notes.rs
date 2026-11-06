@@ -266,7 +266,7 @@ impl Shell {
     // ponytail: synchronous rewrite, limited to the notes the index says link to
     // `old`; move to a background task if a note is linked from hundreds of others.
     pub(super) fn relink(&mut self, old: &str, new: &str, cx: &mut Context<Self>) -> bool {
-        let done = vault::relink(self.vault.as_deref(), &mut self.notes, old, new);
+        let done = self.relink_notes(old, new);
         let changed = done.rewritten;
         // A note that could not be rewritten keeps its old links: say which, the others went on.
         for (path, e) in done.failed {
@@ -294,7 +294,7 @@ impl Shell {
     // typing a heading rewrites them at each save, which is as often as the note is written.
     fn follow_heading(&mut self, path: &Path, before: &str, after: &str, cx: &mut Context<Self>) {
         let Some((was, now)) = embed::renamed_heading(before, after) else { return };
-        let rewritten = vault::follow_heading(self.vault.as_deref(), &mut self.notes, path, &was, &now);
+        let rewritten = self.follow_heading_notes(path, &was, &now);
         for pane in 0..self.panes.len() {
             if pane != self.active && self.panes[pane].path.as_ref().is_some_and(|p| rewritten.contains(p)) {
                 self.in_pane(pane, |this| this.reload(cx));

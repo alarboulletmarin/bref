@@ -310,6 +310,18 @@ impl Shell {
         Some(note.set_text(text, template))
     }
 
+    /// `[[old]]` links rewritten to `new` in the notes that link to it (on disk and in the index). The
+    /// caller follows with `graph_changed` if some note was rewritten.
+    pub(super) fn relink_notes(&mut self, old: &str, new: &str) -> vault::Relinked {
+        vault::relink(self.vault.as_deref(), &mut self.notes, old, new)
+    }
+
+    /// The same for a renamed heading (`[[Note#old]]` → `[[Note#new]]`); the graph links notes, not
+    /// headings, so it stays as it is. Returns the notes rewritten.
+    pub(super) fn follow_heading_notes(&mut self, path: &Path, was: &str, now: &str) -> Vec<PathBuf> {
+        vault::follow_heading(self.vault.as_deref(), &mut self.notes, path, was, now)
+    }
+
     /// The notes `gone` says leave the index.
     pub(super) fn forget_notes(&mut self, gone: impl Fn(&PathBuf) -> bool) {
         self.notes.retain(|n| !gone(&n.path));
@@ -490,5 +502,26 @@ impl Shell {
         window.focus(&palette.focus_handle(cx));
         self.palette = Some(palette);
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// `Shell::notes` changes only in this file (`replace_notes`, `put_note`…), which keep the graph
+    /// in step: nowhere else writes it or lends it out mutably.
+    #[test]
+    fn notes_are_written_only_in_the_library() {
+        let writes = ["&mut self.notes", "self.notes =", "self.notes.push", "self.notes.insert", "self.notes.retain", "self.notes.sort", "self.notes.iter_mut", "self.notes.clear", "self.notes.extend", "self.notes.remove"];
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/shell");
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|e| e != "rs") || path.file_name().is_some_and(|n| n == "library.rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            for write in writes {
+                assert!(!text.contains(write), "{} writes the index with `{write}`: go through library.rs", path.display());
+            }
+        }
     }
 }
