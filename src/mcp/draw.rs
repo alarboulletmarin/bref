@@ -210,7 +210,7 @@ pub fn library_value(family: Option<&str>) -> Result<Value, String> {
         .map(|preset| {
             json!({
                 "family": family_key(preset.family),
-                "form": form_name(preset.form),
+                "form": preset.form.name(),
                 "name": preset.name,
                 "text": preset.text,
                 "w": preset.w,
@@ -647,11 +647,7 @@ fn resolve_key(key: &str, keys: &HashMap<String, u32>) -> Result<u32, String> {
 }
 
 fn form_of(name: &str) -> Result<Form, String> {
-    Form::ALL.iter().find(|(_, known)| *known == name).map(|(form, _)| *form).ok_or_else(|| format!("unknown form `{name}`"))
-}
-
-fn form_name(form: Form) -> &'static str {
-    Form::ALL.iter().find(|(known, _)| *known == form).map(|(_, name)| *name).unwrap_or("rect")
+    Form::named(name).ok_or_else(|| format!("unknown form `{name}`"))
 }
 
 fn head_of(name: &str) -> Result<Head, String> {
@@ -885,7 +881,7 @@ fn described(diagram: &Diagram, path: &str, read_only: bool) -> Value {
         .map(|shape| {
             json!({
                 "id": shape.id,
-                "form": form_name(shape.form),
+                "form": shape.form.name(),
                 "text": shape.text,
                 "x": shape.x,
                 "y": shape.y,

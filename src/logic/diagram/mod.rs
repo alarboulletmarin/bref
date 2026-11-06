@@ -130,6 +130,16 @@ impl Form {
         }
     }
 
+    /// The form a name in a file or an MCP call stands for.
+    pub fn named(name: &str) -> Option<Form> {
+        Form::ALL.iter().find(|(_, known)| *known == name).map(|(form, _)| *form)
+    }
+
+    /// The name of this form in a file and in MCP.
+    pub fn name(self) -> &'static str {
+        Form::ALL.iter().find(|(form, _)| *form == self).map_or("rect", |(_, name)| name)
+    }
+
     pub const ALL: [(Form, &str); 26] = [
         (Form::Rect, "rect"),
         (Form::Round, "round"),

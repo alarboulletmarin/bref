@@ -1,6 +1,7 @@
 //! The diagram file: its drawing as SVG, and its source in `<metadata>`, read and written.
 
 use super::*;
+use crate::logic::xml;
 
 impl Diagram {
     /// The diagram file: its drawing as SVG, and its source in `<metadata>`.
@@ -27,8 +28,8 @@ impl Diagram {
             // One style for the whole line: on the `<text>`; several: a `<tspan>` for each run.
             let uniform = spans.windows(2).all(|w| w[0].style == w[1].style);
             let (attrs, body) = match uniform {
-                true => (style_attrs(spans[0].style), xml(&spans.iter().map(|s| s.text.as_str()).collect::<String>())),
-                false => (String::new(), spans.iter().map(|s| format!("<tspan{}>{}</tspan>", style_attrs(s.style), xml(&s.text))).collect()),
+                true => (style_attrs(spans[0].style), xml::escape(&spans.iter().map(|s| s.text.as_str()).collect::<String>())),
+                false => (String::new(), spans.iter().map(|s| format!("<tspan{}>{}</tspan>", style_attrs(s.style), xml::escape(&s.text))).collect()),
             };
             let _ = writeln!(out, "<text x=\"{}\" y=\"{}\"{anchor}{attrs} fill=\"{ink}\" stroke=\"none\">{body}</text>", num(x), num(y + FONT));
         };
@@ -87,13 +88,12 @@ impl Diagram {
                 }
             }
         }
-        let _ = write!(out, "<metadata id=\"bref-diagram\">\n{}</metadata>\n</svg>\n", xml(&self.source()));
+        let _ = write!(out, "<metadata id=\"bref-diagram\">\n{}</metadata>\n</svg>\n", xml::escape(&self.source()));
         out
     }
 
     /// The source: its version, then one line per element, text last, then the lines kept as found.
     fn source(&self) -> String {
-        let name = |form: Form| Form::ALL.iter().find(|(f, _)| *f == form).map_or("rect", |(_, n)| n);
         let tip = |head: Head| Head::ALL.iter().find(|(h, _)| *h == head).map_or("none", |(_, n)| n);
         let end = |end: End| match end {
             End::Shape(id) => format!("s{id}"),
@@ -105,7 +105,7 @@ impl Diagram {
         let text = |text: &str| text.replace('\\', "\\\\").replace('\n', "\\n");
         let mut out = format!("version {}\n{}{}", self.needed(), if self.rich { "rich 1\n" } else { "" }, if self.numbered { "numbered 1\n" } else { "" });
         for s in &self.shapes {
-            let _ = writeln!(out, "shape {} {} {} {} {} {} {} {} {} {}", s.id, name(s.form), num(s.x), num(s.y), num(s.w), num(s.h), s.color, s.fill as u8, s.dashed as u8, text(&s.text));
+            let _ = writeln!(out, "shape {} {} {} {} {} {} {} {} {} {}", s.id, s.form.name(), num(s.x), num(s.y), num(s.w), num(s.h), s.color, s.fill as u8, s.dashed as u8, text(&s.text));
         }
         for l in &self.links {
             let route = Route::ALL.iter().find(|(r, _)| *r == l.route).map_or("straight", |(_, n)| n);
@@ -211,7 +211,7 @@ impl Diagram {
                     let n = |i: usize| f.get(i)?.parse::<f32>().ok();
                     diagram.shapes.push(Shape {
                         id: f.first()?.parse().ok()?,
-                        form: Form::ALL.iter().find(|(_, name)| Some(name) == f.get(1)).map(|(form, _)| *form)?,
+                        form: Form::named(f.get(1)?)?,
                         x: n(2)?,
                         y: n(3)?,
                         w: n(4)?,
@@ -338,10 +338,6 @@ fn num(v: f32) -> String {
     if v.fract() == 0. { format!("{v:.0}") } else { format!("{v:.1}") }
 }
 
-fn xml(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
-}
-
 fn path_d(path: &[Cmd]) -> String {
     let mut d = String::new();
     for cmd in path {
@@ -361,7 +357,7 @@ mod tests {
 
     /// A diagram file around `source`, as another version of Bref would have written it.
     fn file(source: &str) -> String {
-        format!("<svg>\n<metadata id=\"bref-diagram\">\n{}</metadata>\n</svg>\n", xml(source))
+        format!("<svg>\n<metadata id=\"bref-diagram\">\n{}</metadata>\n</svg>\n", xml::escape(source))
     }
 
     /// A diagram that draws everything the SVG writer knows: every form, fills, dashes, heads, texts

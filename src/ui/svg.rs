@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 
+use crate::logic::xml;
 use resvg::{tiny_skia, usvg};
 
 use crate::ui::assets::Fonts;
@@ -302,18 +303,14 @@ fn tspan(text: &str, s: &Style) -> String {
     s.strike.then(|| deco.push("line-through"));
     format!(
         r#"<tspan font-family="{}" font-size="{}" font-weight="{}" font-style="{}" fill="{}"{}>{}</tspan>"#,
-        escape(&s.family),
+        xml::attr(&s.family),
         s.size,
         if s.bold { "bold" } else { "normal" },
         if s.italic { "italic" } else { "normal" },
-        escape(&s.color),
+        xml::attr(&s.color),
         if deco.is_empty() { String::new() } else { format!(r#" text-decoration="{}""#, deco.join(" ")) },
-        escape(text),
+        xml::attr(text),
     )
-}
-
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 /// The pieces of text under `node`, in order, with their style.

@@ -17,6 +17,7 @@ pub mod markdown;
 pub mod note;
 pub mod rank;
 pub mod wiki;
+pub mod xml;
 pub mod prefs;
 pub mod recall;
 pub mod relation;

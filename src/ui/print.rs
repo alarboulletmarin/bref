@@ -8,6 +8,7 @@
 use std::fmt::Write as _;
 use std::sync::LazyLock;
 
+use crate::logic::xml;
 use base64::Engine as _;
 use ttf_parser::Face;
 use unicode_width::UnicodeWidthChar;
@@ -323,10 +324,6 @@ fn wrap(glyphs: &[Glyph], width: f32, anywhere: bool) -> Vec<std::ops::Range<usi
     lines
 }
 
-fn escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
-}
-
 /// Height of a line of `font`, and the distance from its top to its baseline.
 fn metrics(font: Font) -> (f32, f32) {
     let lh = font.size * LEAD;
@@ -382,7 +379,7 @@ fn draw_line(svg: &mut String, links: &mut Vec<([f32; 4], String)>, text: &Inlin
                 size(style, font),
                 if style & md::ITALIC != 0 { "italic" } else { "normal" },
                 if deco.is_empty() { String::new() } else { format!(r#" text-decoration="{}""#, deco.join(" ")) },
-                escape(&shown)
+                xml::attr(&shown)
             );
         }
         if let Some(l) = link {
@@ -639,7 +636,7 @@ impl Rows {
                         }
                         Kind::Ordered => {
                             let number = line[spaces..marker].trim_end();
-                            format!(r#"<text x="{x:.2}" y="{base:.2}" font-family="{SANS}" font-size="{BODY}" fill="{}">{}</text>"#, ink.soft, escape(number))
+                            format!(r#"<text x="{x:.2}" y="{base:.2}" font-family="{SANS}" font-size="{BODY}" fill="{}">{}</text>"#, ink.soft, xml::attr(number))
                         }
                         _ => format!(r#"<circle cx="{:.2}" cy="{:.2}" r="1.8" fill="{}"/>"#, x + 4., lh / 2., ink.soft),
                     };
