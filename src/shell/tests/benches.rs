@@ -1,7 +1,33 @@
-//! Measures, not checks: run by hand with `cargo test --release --locked -- --ignored --nocapture <name>`.
+//! Manual measurements, not regular tests: run by hand with
+//! `cargo test --release --locked -- --ignored --nocapture <name>`. Each one prints its numbers, then checks
+//! them against a deliberately generous ceiling (`GESTURE`, `OPENING`): a hang or a complexity blow-up fails,
+//! machine noise does not. Compare the printed numbers by eye for finer regressions. The two that read a user's
+//! files (`sheet_fuzz`, `sheet_convert`) say so and pass without doing anything when their variable is unset.
 
 use crate::platform::config;
 use super::*;
+
+/// Ceiling for one gesture, one keystroke or one frame (about a thousand times what we see).
+const GESTURE: Duration = Duration::from_secs(5);
+/// Ceiling for opening a big note, scanning a big vault or any whole pass over a big file.
+const OPENING: Duration = Duration::from_secs(60);
+
+/// Prints a measure and fails when it is over its ceiling.
+fn within(what: &str, took: Duration, ceiling: Duration) {
+    println!("{what}: {took:?} (ceiling {ceiling:?})");
+    assert!(took <= ceiling, "{what}: {took:?} is over {ceiling:?}");
+}
+
+/// The median and the worst of sorted frame times, each against `GESTURE` (twice for the worst).
+fn spread(what: &str, sorted: &[Duration]) {
+    within(&format!("{what}, median"), sorted[sorted.len() / 2], GESTURE);
+    within(&format!("{what}, worst"), *sorted.last().unwrap(), GESTURE * 2);
+}
+
+/// A manual measurement that needs a file of the person's: say why nothing ran.
+fn skipped(var: &str) {
+    println!("skipped: set {var} to run this measurement");
+}
 
 /// Opens each file of the `BREF_CSV_DIR` folder in the table (copied, nothing of the user's
 /// is changed), times the opening, then chains random gestures: a crash shows here.
@@ -9,7 +35,7 @@ use super::*;
 #[gpui::test]
 #[ignore]
 fn sheet_fuzz(cx: &mut TestAppContext) {
-    let Ok(from) = std::env::var("BREF_CSV_DIR") else { return };
+    let Ok(from) = std::env::var("BREF_CSV_DIR") else { return skipped("BREF_CSV_DIR") };
     let root = std::env::temp_dir().join(format!("bref-fuzz-{}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
     let _config = isolated_config(&root);
@@ -47,7 +73,7 @@ fn sheet_fuzz(cx: &mut TestAppContext) {
             }
         });
         cx.run_until_parked();
-        println!("{:?}: opening + display {:?}", file.file_name().unwrap(), start.elapsed());
+        within(&format!("{:?}: opening + display", file.file_name().unwrap()), start.elapsed(), OPENING);
         let sheet = shell.read_with(cx, |s, _| s.shown_sheet().expect("table shown"));
         let mut worst = Duration::ZERO;
         for step in 0..600 {
@@ -80,7 +106,7 @@ fn sheet_fuzz(cx: &mut TestAppContext) {
             worst = worst.max(begin.elapsed());
             assert!(step < 10_000);
         }
-        println!("   slowest gesture: {worst:?}");
+        within("   slowest gesture", worst, OPENING);
     }
     fs::remove_dir_all(&root).unwrap();
 }
@@ -90,7 +116,7 @@ fn sheet_fuzz(cx: &mut TestAppContext) {
 #[gpui::test]
 #[ignore]
 fn sheet_convert(cx: &mut TestAppContext) {
-    let Ok(from) = std::env::var("BREF_CSV") else { return };
+    let Ok(from) = std::env::var("BREF_CSV") else { return skipped("BREF_CSV") };
     let root = std::env::temp_dir().join(format!("bref-convert-{}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
     let _config = isolated_config(&root);
@@ -109,7 +135,7 @@ fn sheet_convert(cx: &mut TestAppContext) {
         window.focus(&s.shown_sheet().unwrap().focus_handle(cx));
     });
     cx.run_until_parked();
-    println!("opening {from}: {:?}", start.elapsed());
+    within(&format!("opening {from}"), start.elapsed(), OPENING);
     let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
     cx.simulate_keystrokes("secondary-a");
     for (name, style) in [("TSV", table::Style::Tsv), ("CSV", table::Style::Csv(b',')), ("Markdown", table::Style::Markdown), ("JSON", table::Style::Json)] {
@@ -136,15 +162,15 @@ fn sheet_convert(cx: &mut TestAppContext) {
         window.focus(&s.pane().editor.focus_handle(cx));
     });
     cx.run_until_parked();
-    println!("opening the Markdown note: {:?}", start.elapsed());
+    within("opening the Markdown note", start.elapsed(), OPENING);
     let start = Instant::now();
     cx.simulate_input("a");
     cx.run_until_parked();
-    println!("one keystroke inside: {:?}", start.elapsed());
+    within("one keystroke inside", start.elapsed(), GESTURE);
     let start = Instant::now();
     cx.simulate_keystrokes("down");
     cx.run_until_parked();
-    println!("down arrow inside: {:?}", start.elapsed());
+    within("down arrow inside", start.elapsed(), GESTURE);
     // Paste the TSV of a big table into a fresh note.
     let tsv: String = (0..300_000).map(|i| format!("{i}\tProduit {}\t{}\n", i % 977, i % 99)).collect();
     cx.write_to_clipboard(ClipboardItem::new_string(tsv));
@@ -155,12 +181,12 @@ fn sheet_convert(cx: &mut TestAppContext) {
     let start = Instant::now();
     cx.simulate_keystrokes("secondary-v");
     cx.run_until_parked();
-    println!("pasting 300,000 TSV lines into a note: {:?}", start.elapsed());
+    within("pasting 300,000 TSV lines into a note", start.elapsed(), OPENING);
     for what in ["a", "down", "up", "enter"] {
         let start = Instant::now();
         if what.len() == 1 { cx.simulate_input(what) } else { cx.simulate_keystrokes(what) }
         cx.run_until_parked();
-        println!("   in the pasted note, {what:6}: {:?}", start.elapsed());
+        within(&format!("   in the pasted note, {what:6}"), start.elapsed(), GESTURE);
     }
     fs::remove_dir_all(&root).unwrap();
 }
@@ -205,7 +231,8 @@ fn md_table_scale(cx: &mut TestAppContext) {
         let start = Instant::now();
         cx.simulate_input("a");
         cx.run_until_parked();
-        println!("{n:6} lines: opening {opened:?} · one keystroke {:?}", start.elapsed());
+        within(&format!("{n:6} lines: opening"), opened, OPENING);
+        within("         one keystroke", start.elapsed(), GESTURE);
         let start = Instant::now();
         for _ in 0..20 {
             cx.simulate_event(gpui::ScrollWheelEvent {
@@ -215,7 +242,7 @@ fn md_table_scale(cx: &mut TestAppContext) {
             });
             cx.run_until_parked();
         }
-        println!("         scrolling: {:?} per gesture", start.elapsed() / 20);
+        within("         scrolling, per gesture", start.elapsed() / 20, GESTURE);
         if std::env::var("BREF_TYPING").is_ok() {
             let start = Instant::now();
             for _ in 0..30 {
@@ -270,10 +297,12 @@ fn profile_typing(cx: &mut TestAppContext) {
     };
     shell.update(cx, |s, cx| s.pane().editor.update(cx, |e, cx| e.load(format!("# Grosse\n\n{big}"), 100, cx)));
     cx.run_until_parked();
+    let start = Instant::now();
     for _ in 0..300 {
         cx.simulate_input("a");
         cx.run_until_parked();
     }
+    within("300 keystrokes in a row", start.elapsed(), GESTURE * 60);
     println!("layouts (full, reused, in a big table): {:?}", shell.read_with(cx, |s, cx| s.pane().editor.read(cx).layouts()));
     fs::remove_dir_all(&root).unwrap();
 }
@@ -381,6 +410,9 @@ fn bench_scale(cx: &mut TestAppContext) {
         cx.run_until_parked();
         let outside = copy + start.elapsed();
         let _ = synced;
+        for (what, took, ceiling) in [("scan", scan, OPENING), ("rescan", rescan, OPENING), ("fingerprint", fingerprint, OPENING), ("startup", startup, OPENING), ("open", open, OPENING), ("keystroke", typing, GESTURE), ("save", saved, OPENING), ("palette", palette, GESTURE), ("palette letter", letter, GESTURE), ("note written elsewhere", outside, OPENING)] {
+            within(&format!("{notes} notes, {what}"), took, ceiling);
+        }
         rows.push(format!("| {notes} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {memory} |", ms(scan), ms(rescan), ms(fingerprint), ms(startup), ms(open), ms(typing), ms(saved), ms(palette), ms(letter), ms(outside)));
         // The window and its watcher go before the next vault.
         cx.update(|_, cx| cx.windows().iter().for_each(|w| { w.update(cx, |_, window, _| window.remove_window()).ok(); }));
@@ -406,10 +438,10 @@ fn bench(cx: &mut TestAppContext) {
 
     let start = Instant::now();
     let scanned = vault::scan(&root);
-    println!("vault scan: {:?}", start.elapsed());
+    within("vault scan", start.elapsed(), OPENING);
     let start = Instant::now();
     let again = vault::rescan(&root, &scanned.0);
-    println!("new scan, nothing changed: {:?}", start.elapsed());
+    within("new scan, nothing changed", start.elapsed(), OPENING);
     assert_eq!(again.0.len(), scanned.0.len());
 
     cx.update(bind_keys);
@@ -427,7 +459,7 @@ fn bench(cx: &mut TestAppContext) {
             act(cx);
             cx.run_until_parked();
         }
-        println!("{what}: {:?} per gesture", start.elapsed() / 20);
+        within(what, start.elapsed() / 20, GESTURE);
     };
     time("keystroke", cx, &|cx| cx.simulate_input("a"));
     time("down arrow", cx, &|cx| cx.simulate_keystrokes("down"));
@@ -514,7 +546,9 @@ fn embed_scale(cx: &mut TestAppContext) {
         }
         let shown = shell.read_with(cx, |s, cx| s.pane().editor.read(cx).embeds_shown());
         let found = shown.iter().filter(|(_, why, _)| why.is_none()).count();
-        println!("{n:3} embeds ({found} shown): opening {opened:?} · a keystroke {:?}", start.elapsed() / 20);
+        println!("{n:3} embeds ({found} shown)");
+        within("   opening", opened, OPENING);
+        within("   a keystroke", start.elapsed() / 20, GESTURE);
     }
     fs::remove_dir_all(&root).unwrap();
 }
@@ -540,7 +574,7 @@ fn hundred_tabs(cx: &mut TestAppContext) {
         cx.simulate_input("a");
         cx.run_until_parked();
     }
-    println!("keystroke with 1 tab: {:?}", start.elapsed() / 50);
+    within("keystroke with 1 tab", start.elapsed() / 50, GESTURE);
     let before = rss();
     let start = Instant::now();
     for n in 1..100 {
@@ -548,19 +582,21 @@ fn hundred_tabs(cx: &mut TestAppContext) {
         shell.update_in(cx, |s, window, cx| s.open(&path, window, cx));
         cx.run_until_parked();
     }
-    println!("open 100 tabs, each drawn: {:?}; memory +{} MB", start.elapsed(), rss() - before);
+    println!("memory +{} MB", rss() - before);
+    within("open 100 tabs, each drawn", start.elapsed(), OPENING);
     let start = Instant::now();
     for _ in 0..100 {
         cx.simulate_keystrokes("ctrl-tab");
         cx.run_until_parked();
     }
-    println!("switch: {:?} per tab", start.elapsed() / 100);
+    within("switch, per tab", start.elapsed() / 100, GESTURE);
     let start = Instant::now();
     for _ in 0..50 {
         cx.simulate_input("a");
         cx.run_until_parked();
     }
-    println!("keystroke with 100 tabs: {:?}; memory now +{} MB", start.elapsed() / 50, rss() - before);
+    println!("memory now +{} MB", rss() - before);
+    within("keystroke with 100 tabs", start.elapsed() / 50, GESTURE);
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -595,7 +631,7 @@ fn motion_cost(cx: &mut TestAppContext) {
             cx.simulate_input("a");
             cx.run_until_parked();
         }
-        println!("motion {motion}: keystroke {:?}", start.elapsed() / 50);
+        within(&format!("motion {motion}: keystroke"), start.elapsed() / 50, GESTURE);
         let mut worst = std::time::Duration::ZERO;
         for _ in 0..50 {
             shell.update_in(cx, |s, window, cx| s.show_nav(Mode::Tree, true, window, cx));
@@ -604,7 +640,7 @@ fn motion_cost(cx: &mut TestAppContext) {
             worst = worst.max(start.elapsed());
             cx.run_until_parked();
         }
-        println!("motion {motion}: keystroke during the panel's fade, worst {worst:?}");
+        within(&format!("motion {motion}: keystroke during the panel's fade, worst"), worst, GESTURE);
         shell.update_in(cx, |s, window, cx| s.show_nav(Mode::Tree, false, window, cx));
         cx.run_until_parked();
         let start = Instant::now();
@@ -615,7 +651,7 @@ fn motion_cost(cx: &mut TestAppContext) {
             });
             cx.run_until_parked();
         }
-        println!("motion {motion}: unfold then fold {:?}", start.elapsed() / 100);
+        within(&format!("motion {motion}: unfold then fold"), start.elapsed() / 100, GESTURE);
     }
     fs::remove_dir_all(&root).unwrap();
 }
@@ -639,7 +675,7 @@ fn board_frame(cx: &mut TestAppContext) {
     let start = Instant::now();
     shell.update(cx, |s, cx| s.open_note(&note, cx));
     cx.run_until_parked();
-    println!("opening + first frame: {:?}", start.elapsed());
+    within("opening + first frame", start.elapsed(), OPENING);
     let mut frames = Vec::new();
     for _ in 0..20 {
         let begin = Instant::now();
@@ -648,7 +684,7 @@ fn board_frame(cx: &mut TestAppContext) {
         frames.push(begin.elapsed());
     }
     frames.sort();
-    println!("frame: median {:?}, worst {:?}", frames[10], frames[19]);
+    spread("frame", &frames);
     fs::remove_dir_all(&root).ok();
 }
 
@@ -680,7 +716,7 @@ fn comments_frame(cx: &mut TestAppContext) {
         frames.push(begin.elapsed());
     }
     frames.sort();
-    println!("100 comments, frame after a caret move: median {:?}, worst {:?}", frames[10], frames[19]);
+    spread("100 comments, frame after a caret move", &frames);
     fs::remove_dir_all(&root).ok();
 }
 
@@ -707,7 +743,7 @@ fn graph_frame(cx: &mut TestAppContext) {
     let start = Instant::now();
     let (shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
     cx.run_until_parked();
-    println!("startup + arrangement + first frame: {:?}", start.elapsed());
+    within("startup + arrangement + first frame", start.elapsed(), OPENING);
     println!("graph (nodes, edges): {:?}", shell.read_with(cx, |s, cx| s.graph.read(cx).size()));
     let mut frames = Vec::new();
     for i in 0..21 {
@@ -715,13 +751,13 @@ fn graph_frame(cx: &mut TestAppContext) {
         cx.update(|window, _| window.refresh());
         cx.run_until_parked();
         if i == 0 {
-            println!("first forced frame: {:?}", begin.elapsed());
+            within("first forced frame", begin.elapsed(), OPENING);
         } else {
             frames.push(begin.elapsed());
         }
     }
     frames.sort();
-    println!("graph frame: median {:?}, worst {:?}", frames[10], frames[19]);
+    spread("graph frame", &frames);
     fs::remove_dir_all(&root).ok();
 }
 
@@ -753,7 +789,7 @@ fn help_scroll(cx: &mut TestAppContext) {
             all.push(begin.elapsed());
         }
         all.sort();
-        println!("{what}: median {:?}, worst {:?}", all[20], all[39]);
+        spread(what, &all);
     };
     time("frame without help", cx, &|cx| {
         shell.update_in(cx, |s, window, cx| s.set_help(false, window, cx));
@@ -808,7 +844,7 @@ fn listing_frame(cx: &mut TestAppContext) {
     let start = Instant::now();
     shell.update_in(cx, |s, window, cx| s.open_listing(dir.clone(), window, cx));
     cx.run_until_parked();
-    println!("opening + first frame: {:?}", start.elapsed());
+    within("opening + first frame", start.elapsed(), OPENING);
     let mut frames = Vec::new();
     for _ in 0..20 {
         let begin = Instant::now();
@@ -817,11 +853,11 @@ fn listing_frame(cx: &mut TestAppContext) {
         frames.push(begin.elapsed());
     }
     frames.sort();
-    println!("frame: median {:?}, worst {:?}", frames[10], frames[19]);
+    spread("frame", &frames);
     let begin = Instant::now();
     for _ in 0..20 {
         shell.update(cx, |s, cx| assert_eq!(s.listed(cx).unwrap().1.len(), 1000));
     }
-    println!("rows only (listed): {:?}", begin.elapsed() / 20);
+    within("rows only (listed)", begin.elapsed() / 20, GESTURE);
     fs::remove_dir_all(&root).ok();
 }
