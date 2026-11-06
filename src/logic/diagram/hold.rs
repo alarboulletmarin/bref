@@ -170,7 +170,7 @@ impl Diagram {
             Form::Row => 20.,
             Form::Node => DEPTH + 6. + LINE * form.1 as f32 + 12.,
             Form::Package => 18. + 16.,
-            Form::Lane | Form::Composite => LANE + 16.,
+            f if f.header().is_some() => LANE + 16.,
             _ => 6. + LINE * form.1 as f32 + 12.,
         };
         let grid = |v: f32, up: bool| if up { (v / GRID).ceil() * GRID } else { (v / GRID).floor() * GRID };

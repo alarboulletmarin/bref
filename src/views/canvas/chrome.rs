@@ -168,7 +168,7 @@ impl Canvas {
     pub(super) fn context_entries(&self) -> Vec<Ctx> {
         let links = self.selected.iter().any(|id| self.diagram.link(*id).is_some());
         let single = self.selected.len() == 1;
-        let alone = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| matches!(s.form, Form::Round | Form::Composite)));
+        let alone = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| s.form.round_outline()));
         let holder = matches!(self.selected[..], [id] if self.diagram.shape(id).is_some_and(|s| s.form.holds()) && !self.diagram.children(id).is_empty());
         if self.selected.is_empty() {
             return vec![Ctx::Text, Ctx::All, Ctx::Fit];

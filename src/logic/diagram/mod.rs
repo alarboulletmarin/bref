@@ -130,6 +130,21 @@ impl Form {
         }
     }
 
+    /// Whether the text is written under the shape rather than in it.
+    pub fn label_below(self) -> bool {
+        matches!(self, Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Pin)
+    }
+
+    /// Whether the outline has a corner radius to set (the inspector offers it).
+    pub fn round_outline(self) -> bool {
+        matches!(self, Form::Round | Form::Composite)
+    }
+
+    /// Height of the header where the name is written, for the forms that have one on top.
+    pub fn header(self) -> Option<f32> {
+        matches!(self, Form::Lane | Form::Composite).then_some(LANE)
+    }
+
     /// The form a name in a file or an MCP call stands for.
     pub fn named(name: &str) -> Option<Form> {
         Form::ALL.iter().find(|(_, known)| *known == name).map(|(form, _)| *form)
@@ -731,8 +746,8 @@ impl Shape {
                     (Form::Row, i) => (self.x + ROW.min(self.w) + 8., self.y + 6. + LINE * (i - 1) as f32, false),
                     // In the front face of a node, under its top.
                     (Form::Node, i) => (self.x + 8., self.y + DEPTH.min(self.w / 3.).min(self.h / 3.) + 6. + LINE * i as f32, false),
-                    (Form::Lane | Form::Composite, 0) => (cx, self.y + (LANE - LINE) / 2., true),
-                    (Form::Lane | Form::Composite, i) => (self.x + 8., self.y + LANE + 6. + LINE * (i - 1) as f32, false),
+                    (f, 0) if f.header().is_some() => (cx, self.y + (LANE - LINE) / 2., true),
+                    (f, i) if f.header().is_some() => (self.x + 8., self.y + LANE + 6. + LINE * (i - 1) as f32, false),
                     (_, i) => (self.x + 8., self.y + 6. + LINE * i as f32, false),
                 };
                 out.push(TextLine { x, y, text, centered, bold: index == 0, index });
@@ -743,7 +758,7 @@ impl Shape {
         let (x, top, centered) = match self.form {
             Form::Text => (self.x, self.y, false),
             // Under the stick figure.
-            Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Pin => (cx, self.y + self.h + 4., true),
+            f if f.label_below() => (cx, self.y + self.h + 4., true),
             _ => (cx, cy - height / 2., true),
         };
         let placed = lines.into_iter().enumerate();
@@ -1372,7 +1387,7 @@ impl Diagram {
                 let tall = LINE * s.text.split('\n').count() as f32 + 4.;
                 return (s.x - room, s.y - tall, s.x + s.w + room, s.y + s.h + tall);
             }
-            let below = if matches!(s.form, Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Pin) { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
+            let below = if s.form.label_below() { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
             (s.x, s.y, s.x + s.w, s.y + s.h + below)
         });
         let drawn = || self.links.iter().zip(traces).filter_map(|(l, t)| Some((l, t.as_ref()?)));
