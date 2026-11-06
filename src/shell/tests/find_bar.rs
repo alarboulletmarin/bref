@@ -30,7 +30,7 @@ fn keys_in(shell: &Entity<Shell>, cx: &mut Cx) -> &'static str {
 fn texts(shell: &Entity<Shell>, cx: &mut Cx) -> (String, String) {
     shell.read_with(cx, |s, cx| {
         let (query, with) = s.pane().editor.read(cx).find_fields().unwrap();
-        (query.read(cx).line.text.clone(), with.read(cx).line.text.clone())
+        (query.read(cx).text().to_string(), with.read(cx).text().to_string())
     })
 }
 

@@ -68,13 +68,10 @@ impl Shell {
                         this.key_edit(action, cx);
                     }
                 } else if let field::FieldEvent::Cancel = event {
-                    if find.read(cx).line.text.is_empty() {
+                    if find.read(cx).text().is_empty() {
                         this.set_help(false, window, cx);
                     } else {
-                        find.update(cx, |find, cx| {
-                            find.line = line::Line::default();
-                            cx.notify();
-                        });
+                        find.update(cx, |find, cx| find.clear(cx));
                     }
                 }
             })
@@ -204,7 +201,7 @@ impl Shell {
 
     /// The help rows the search keeps.
     pub(super) fn help_rows(&self, cx: &App) -> keys::Sections {
-        let query = self.help.find.as_ref().map(|find| find.read(cx).line.text.clone()).unwrap_or_default();
+        let query = self.help.find.as_ref().map(|find| find.read(cx).text().to_string()).unwrap_or_default();
         let mut sections = keys::filter(help_sections(&self.bound, &self.changes), &query);
         // Opened on a table or a diagram, the panel starts with its keys.
         if let Some(at) = self.here(cx).and_then(|here| sections.iter().position(|(title, _)| *title == here)) {
@@ -258,7 +255,7 @@ impl Shell {
         let t = self.theme;
         let rows = self.help_rows(cx);
         let none = rows.is_empty();
-        let asked = self.help.find.as_ref().is_some_and(|find| !find.read(cx).line.text.is_empty());
+        let asked = self.help.find.as_ref().is_some_and(|find| !find.read(cx).text().is_empty());
         let small = |id: String, text: &'static str| {
             div()
                 .id(gpui::SharedString::from(id.clone()))

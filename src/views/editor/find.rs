@@ -31,13 +31,13 @@ pub(super) struct Finder {
 
 impl Finder {
     pub(super) fn query(&self, cx: &App) -> String {
-        self.query.read(cx).line.text.clone()
+        self.query.read(cx).text().to_string()
     }
 
     /// The field that takes the keys: the replacement when it shows and the search is settled (`ready`: the bar
     /// was open, or the selection made it), otherwise the search.
     fn aim(&self, ready: bool, cx: &App) -> FocusHandle {
-        let to = if self.replace && ready && !self.query.read(cx).line.text.is_empty() { &self.with } else { &self.query };
+        let to = if self.replace && ready && !self.query.read(cx).text().is_empty() { &self.with } else { &self.query };
         to.focus_handle(cx)
     }
 
@@ -71,7 +71,7 @@ impl Editor {
     /// The bar's search, open or kept: what the vault search starts from.
     pub fn search(&self, cx: &App) -> Option<md::Swap> {
         let find = self.find.as_ref().or(self.found.as_ref())?;
-        let with = find.with.read(cx).line.text.clone();
+        let with = find.with.read(cx).text().to_string();
         Some(md::Swap { query: find.query(cx), with, case: find.case, word: find.word, regex: find.regex })
     }
 
@@ -122,11 +122,11 @@ impl Editor {
             Some((_, text)) if !text.contains('\n') => find.query.update(cx, |field, cx| field.set(&text, cx)),
             Some((range, _)) => (find.span, find.inside) = (Some(range), true),
             // Opened again on the same search: all selected, typing replaces it.
-            None if !was_open => find.query.update(cx, |field, cx| field.set(&field.line.text.clone(), cx)),
+            None if !was_open => find.query.update(cx, |field, cx| field.set(&field.text().to_string(), cx)),
             None => {}
         }
         if !was_open {
-            find.with.update(cx, |field, cx| field.set(&field.line.text.clone(), cx));
+            find.with.update(cx, |field, cx| field.set(&field.text().to_string(), cx));
         }
         find.replace = replace;
         window.focus(&find.aim(was_open || picked_any, cx));
@@ -209,7 +209,7 @@ impl Editor {
     /// The matches found and what replaces each; `None` without a "Replace" line.
     pub(super) fn replacements(&self, cx: &App) -> Option<Vec<(Range<usize>, String)>> {
         let find = self.find.as_ref().filter(|find| find.replace)?;
-        let with = find.with.read(cx).line.text.clone();
+        let with = find.with.read(cx).text().to_string();
         let scope = find.scope(self.content.len());
         let inside = |(hit, _): &(Range<usize>, String)| scope.as_ref().is_none_or(|scope| scope.start <= hit.start && hit.end <= scope.end);
         Some(md::replacements(&self.content, &find.query(cx), &with, find.case, find.word, find.regex).into_iter().filter(inside).collect())
@@ -241,7 +241,7 @@ impl Editor {
     /// the bar's settings.
     pub(super) fn replace_in_vault(&mut self, cx: &mut Context<Self>) {
         let Some(find) = self.find.as_ref().filter(|find| find.replace) else { return };
-        let (query, with) = (find.query(cx), find.with.read(cx).line.text.clone());
+        let (query, with) = (find.query(cx), find.with.read(cx).text().to_string());
         if !query.is_empty() {
             cx.emit(EditorEvent::Swap(md::Swap { query, with, case: find.case, word: find.word, regex: find.regex }));
         }
@@ -300,7 +300,7 @@ impl Editor {
         let (t, find) = (self.theme, self.find.as_ref()?);
         let keys = |action: &dyn gpui::Action| crate::ui::keys::of(cx, action);
         let field = |id: &'static str, field: &Entity<Field>, hint: &'static str| {
-            let (on, empty) = (field.focus_handle(cx).is_focused(window), field.read(cx).line.text.is_empty());
+            let (on, empty) = (field.focus_handle(cx).is_focused(window), field.read(cx).text().is_empty());
             crate::ui::widgets::field_frame(id, field.clone(), on, empty, hint, t)
         };
         let toggle = |id, label, on, name, keys| crate::ui::widgets::toggle(id, label, on, name, keys, t);

@@ -25,7 +25,7 @@ pub enum FieldEvent {
 
 pub struct Field {
     focus: FocusHandle,
-    pub line: Line,
+    line: Line,
     theme: Theme,
     /// The text as last drawn, to place the cursor on a click and the input method's window.
     layout: Option<TextLayout>,
@@ -46,6 +46,17 @@ impl Field {
     pub fn scrolling(mut self) -> Self {
         self.scrolls = true;
         self
+    }
+
+    /// What is typed.
+    pub fn text(&self) -> &str {
+        &self.line.text
+    }
+
+    /// Nothing typed.
+    pub fn clear(&mut self, cx: &mut Context<Self>) {
+        self.line = Line::default();
+        cx.notify();
     }
 
     /// The text, replaced, all selected: the next keystroke replaces it.

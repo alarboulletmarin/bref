@@ -58,7 +58,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // Refused, with the reason: a single key that types, a key reserved for text.
     cx.simulate_keystrokes("a");
     assert!(matches!(editing(cx), Some((_, Some(KeyIssue::Refused(_))))));
-    assert_eq!(shell.read_with(cx, |s, cx| s.help.find.as_ref().unwrap().read(cx).line.text.clone()), "graphe des notes", "the key is not typed");
+    assert_eq!(shell.read_with(cx, |s, cx| s.help.find.as_ref().unwrap().read(cx).text().to_string()), "graphe des notes", "the key is not typed");
     cx.simulate_keystrokes("enter");
     assert!(matches!(editing(cx), Some((_, Some(KeyIssue::Refused(_))))));
     cx.simulate_keystrokes("secondary-shift-y");

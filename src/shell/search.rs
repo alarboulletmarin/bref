@@ -55,7 +55,7 @@ pub(super) struct VaultFind {
 
 impl VaultFind {
     fn swap(&self, cx: &App) -> Swap {
-        let (query, with) = (self.query.read(cx).line.text.clone(), self.with.read(cx).line.text.clone());
+        let (query, with) = (self.query.read(cx).text().to_string(), self.with.read(cx).text().to_string());
         Swap { query, with, case: self.case, word: self.word, regex: self.regex }
     }
 
@@ -104,7 +104,7 @@ impl Shell {
             self.vault_find = Some(self.new_vault_find(window, cx));
         }
         let find = self.vault_find.as_mut().unwrap();
-        let query = seed.as_ref().map_or_else(|| find.query.read(cx).line.text.clone(), |seed| seed.query.clone());
+        let query = seed.as_ref().map_or_else(|| find.query.read(cx).text().to_string(), |seed| seed.query.clone());
         find.query.update(cx, |field, cx| field.set(&query, cx));
         if let Some(seed) = seed {
             find.with.update(cx, |field, cx| field.set(&seed.with, cx));
@@ -363,7 +363,7 @@ impl Shell {
     pub(super) fn vault_state(&self, cx: &App) -> Option<(String, usize, usize, usize, usize)> {
         let find = self.vault_find.as_ref()?;
         let (hits, notes) = find.counts();
-        Some((find.query.read(cx).line.text.clone(), hits, notes, find.rows().len(), find.sel))
+        Some((find.query.read(cx).text().to_string(), hits, notes, find.rows().len(), find.sel))
     }
 
     /// The two fields of the vault search, for a test.
@@ -388,7 +388,7 @@ impl Shell {
     fn vault_flip_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(find) = &mut self.vault_find {
             find.replace ^= true;
-            let ready = find.replace && !find.query.read(cx).line.text.is_empty();
+            let ready = find.replace && !find.query.read(cx).text().is_empty();
             window.focus(&if ready { &find.with } else { &find.query }.focus_handle(cx));
         }
         cx.notify();
@@ -413,7 +413,7 @@ impl Shell {
         let find = self.vault_find.as_ref().unwrap();
         let keys = |action: &dyn gpui::Action| keys::of(cx, action);
         let field = |id: &'static str, field: &Entity<Field>, hint: &'static str| {
-            let (on, empty) = (field.focus_handle(cx).is_focused(window), field.read(cx).line.text.is_empty());
+            let (on, empty) = (field.focus_handle(cx).is_focused(window), field.read(cx).text().is_empty());
             ui::widgets::field_frame(id, field.clone(), on, empty, hint, t)
         };
         let flip = |which: usize| cx.listener(move |this, _: &gpui::ClickEvent, _, cx| this.vault_flip(which, cx));

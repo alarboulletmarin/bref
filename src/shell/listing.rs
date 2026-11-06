@@ -9,7 +9,6 @@ use gpui::{
 };
 use crate::{
     views::field::{Field, FieldEvent},
-    ui::line::Line,
     logic::markdown::{self},
     lang::tr,
     platform::vault,
@@ -33,10 +32,7 @@ impl Shell {
         // Escape clears the filter.
         cx.subscribe(&filter, |_, filter, event: &FieldEvent, cx| {
             if let FieldEvent::Cancel = event {
-                filter.update(cx, |filter, cx| {
-                    filter.line = Line::default();
-                    cx.notify();
-                });
+                filter.update(cx, |filter, cx| filter.clear(cx));
             }
         })
         .detach();
@@ -59,7 +55,7 @@ impl Shell {
             cells.insert(0, note.name.clone());
             (note.path.clone(), cells)
         };
-        let filter = &filter.read(cx).line.text;
+        let filter = filter.read(cx).text();
         let mut rows: Vec<(PathBuf, Vec<String>)> = inside.iter().zip(cells).map(named).filter(|(_, cells)| markdown::row_kept(&keys, cells, filter)).collect();
         let by = (*by).min(keys.len() - 1);
         rows.sort_by(|a, b| markdown::cell_order(&a.1[by], &b.1[by]).then_with(|| markdown::cell_order(&a.1[0], &b.1[0])));
@@ -117,7 +113,7 @@ impl Shell {
         self.list_close(window, cx);
         // The open note is saved first: it is the file being rewritten.
         self.flush(cx);
-        let value = field.read(cx).line.text.clone();
+        let value = field.read(cx).text().to_string();
         let Ok(old) = fs::read_to_string(&path) else {
             return self.say(super::Tone::Failed, format!("{} {}", tr("Cannot read", "Impossible de lire"), path.display()), cx);
         };
@@ -219,7 +215,7 @@ impl Shell {
             lines.push(div().min_h(t.px(ROW)).flex().items_center().rounded(t.small()).hover(|s| s.bg(t.hover)).children(shown));
         }
         lines.push(div().flex_none().h(row * (count - to) as f32));
-        let asked = !filter.read(cx).line.text.is_empty();
+        let asked = !filter.read(cx).text().is_empty();
         let hint = div().absolute().left(t.px(6.)).top_0().text_color(t.soft).child(tr("Filter… (key:text for one column)", "Filtrer… (clé:texte pour une colonne)"));
         let filter_box = div()
             .id("list-filter")

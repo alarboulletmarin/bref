@@ -77,7 +77,7 @@ impl Shell {
         let Some((slot, field)) = self.pane_mut().board.field.take() else {
             return;
         };
-        let typed = field.read(cx).line.text.clone();
+        let typed = field.read(cx).text().to_string();
         let written = !typed.trim().is_empty();
         self.board_edit(
             |text| match slot {
