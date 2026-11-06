@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use crate::{
     lang::{date_name, time_name},
     logic::{
-        daily, embed, markdown,
+        embed, markdown,
         embed::Anchor,
         markdown::Link,
         rank,
@@ -715,13 +715,7 @@ fn parse_date(text: &str) -> Result<(i32, u32, u32), String> {
 }
 
 fn daily_template(vault: &Vault) -> Option<std::path::PathBuf> {
-    let named: Vec<(std::path::PathBuf, String)> = vault
-        .notes
-        .iter()
-        .filter(|n| vault.is_template(n))
-        .map(|n| (n.path.clone(), n.name.clone()))
-        .collect();
-    daily::pick(named.iter().map(|(path, stem)| (path.clone(), stem.as_str())))
+    files::daily_template(vault.notes.iter().filter(|n| vault.is_template(n)).map(|n| n.path.clone()))
 }
 
 pub fn add_comment(vault: &mut Vault, args: &Value) -> Outcome {

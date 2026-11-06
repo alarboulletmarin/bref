@@ -64,6 +64,20 @@ pub fn in_templates(root: &Path, path: &Path) -> bool {
     parts.next_back().is_some() && parts.next().is_some_and(|first| is_template_dir(&first.as_os_str().to_string_lossy()))
 }
 
+/// The daily note template among the templates: the one called `Daily`, `Journal`, `Today`, `Note du jour`…
+pub fn daily_template(templates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    let named: Vec<(PathBuf, String)> = templates.into_iter().map(|path| {
+        let name = stem(&path);
+        (path, name)
+    }).collect();
+    crate::logic::daily::pick(named.iter().map(|(path, name)| (path.clone(), name.as_str())))
+}
+
+/// Path of `path` relative to the vault, with `/` even on Windows.
+pub fn rel(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root).unwrap_or(path).to_string_lossy().replace('\\', "/")
+}
+
 /// True the first time this folder is entered. A symbolic link that points back up to a
 /// parent folder (or two links to the same one) must neither loop nor duplicate notes.
 fn first_visit(visited: &mut HashSet<PathBuf>, dir: &Path) -> bool {

@@ -15,11 +15,7 @@ impl Shell {
 
     /// The daily note template: the one called `Daily`, `Journal`, `Today`, `Note du jour`…
     pub(super) fn daily_template(&self) -> Option<PathBuf> {
-        let named: Vec<(PathBuf, String)> = self.templates().into_iter().map(|path| {
-            let stem = vault::stem(&path);
-            (path, stem)
-        }).collect();
-        logic::daily::pick(named.iter().map(|(path, stem)| (path.clone(), stem.as_str())))
+        vault::daily_template(self.templates())
     }
 
     /// A template to choose, then, for a new note, its name; or, to insert it, nothing else.

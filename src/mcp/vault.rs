@@ -220,10 +220,7 @@ pub fn suggest(notes: &[Note], query: &str) -> Option<String> {
     best.filter(|(score, _)| *score > 0).map(|(_, name)| name.to_string())
 }
 
-/// Path of `path` relative to the vault, with `/` even on Windows.
-pub fn rel(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root).unwrap_or(path).to_string_lossy().replace('\\', "/")
-}
+pub use crate::platform::vault::rel;
 
 pub fn folder(root: &Path, path: &Path) -> String {
     path.parent().and_then(|dir| dir.strip_prefix(root).ok()).map(|dir| dir.to_string_lossy().replace('\\', "/")).unwrap_or_default()
