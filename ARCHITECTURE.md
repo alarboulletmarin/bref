@@ -66,6 +66,7 @@ What the user opens goes through `Shell::open`: the tab that already shows the f
 new tab (a preview or an empty tab is used in place); `open_note` loads into the active tab and
 is for code that has already chosen it (restoring, the history).
 The active tab is `self.pane()` / `self.pane_mut()`; `each_pane` and `in_pane` reach the others.
+`Pane::shows_note` is the one test for "the note's own text is shown" (no file, no list page in its place).
 `Pane::displayed_path` identifies its current document, preferring `FileView` over the note kept
 underneath. The tree and graph use it; `Pane::path` stays the note's identity for editing and saving,
 and backlinks keep their own note anchor, separate from the displayed file and tree selection.

@@ -45,7 +45,7 @@ impl Shell {
                 None => vault::stem(&listing.of),
             };
         }
-        if let Some(path) = pane.file_path().or(pane.path.as_ref()) {
+        if let Some(path) = pane.displayed_path() {
             return vault::stem(path);
         }
         let first = pane.editor.read(cx).text().lines().next().unwrap_or_default().trim_start_matches('#').trim();
@@ -64,7 +64,7 @@ impl Shell {
             .map(|(&tab, name)| {
                 let pane = &self.panes[tab];
                 let twin = names.iter().filter(|other| *other == name).count() > 1;
-                let folder = pane.file_path().or(pane.path.as_ref()).and_then(|p| p.parent()).and_then(|p| p.file_name());
+                let folder = pane.displayed_path().and_then(|p| p.parent()).and_then(|p| p.file_name());
                 match folder.filter(|_| twin) {
                     Some(folder) => format!("{name} · {}", folder.to_string_lossy()),
                     None => name.clone(),

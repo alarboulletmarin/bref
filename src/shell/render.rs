@@ -651,7 +651,7 @@ impl Shell {
         // click leads to the comment, ready to be edited; the check mark resolves it.
         // ponytail: the note is reread on every render (a search for `{==`); keep the
         // list from one version of the text to the next if very long notes suffer from it.
-        let said: Vec<(String, String, usize, usize, usize, String)> = match self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx) {
+        let said: Vec<(String, String, usize, usize, usize, String)> = match self.pane().shows_note() && !self.board_shown(cx) {
             true => markdown::all_comments(self.pane().editor.read(cx).text()).into_iter().map(|n| (n.noted.into(), n.said.into(), n.at, n.inside, n.end, n.scope.map_or(String::new(), |s| s.to_string()))).collect(),
             false => Vec::new(),
         };
@@ -713,7 +713,7 @@ impl Shell {
                 window.focus(&self.pane().editor.focus_handle(cx));
             }
         }
-        let boards = kanban::is_board(self.pane().editor.read(cx).text()) && self.pane().file.is_none() && self.pane().listing.is_none();
+        let boards = kanban::is_board(self.pane().editor.read(cx).text()) && self.pane().shows_note();
         let flip = boards.then(|| {
             ui::widgets::button("board-toggle", "board.svg", board, t)
                 .tooltip(ui::widgets::tip(if board { tr("Show the text", "Voir le texte") } else { tr("Show the board", "Voir le tableau") }, String::new(), t))

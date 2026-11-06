@@ -15,7 +15,7 @@ use crate::views::field::{Field, FieldEvent};
 impl Shell {
     /// The open note is shown as a board: it is one, and its text was not asked for.
     pub(super) fn board_shown(&self, cx: &gpui::App) -> bool {
-        self.pane().file.is_none() && self.pane().listing.is_none() && !self.pane().board.text && is_board(self.pane().editor.read(cx).text())
+        self.pane().shows_note() && !self.pane().board.text && is_board(self.pane().editor.read(cx).text())
     }
 
     /// Switches from the board to the note's text, and back; the choice holds while it stays open.

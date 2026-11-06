@@ -121,7 +121,7 @@ impl Shell {
         let updates = self.prefs.updates;
         let installable = self.update.as_ref().filter(|r| r.asset.is_some()).map(|r| r.version.clone());
         let table = self.shown_sheet().is_some();
-        let lists = self.pane().file.is_none() && self.pane().listing.is_none() && !self.board_shown(cx);
+        let lists = self.pane().shows_note() && !self.board_shown(cx);
         let cells = lists && self.pane().editor.read(cx).in_table();
         let swap = !self.swapped.is_empty();
         let (commands, here) = self.palette_commands(window, cx);

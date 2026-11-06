@@ -39,6 +39,15 @@ pub(super) struct KeyEdit {
 
 pub(super) const KOFI: &str = "https://ko-fi.com/T6T01WC5ZC";
 
+/// What the help is about (see `Shell::looking_at`).
+enum Looking {
+    Sheet,
+    Drawing,
+    Nothing,
+    NoteTable,
+    Block,
+}
+
 impl Shell {
     /// Shows or hides the shortcuts panel; focus follows.
     pub(super) fn set_help(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -205,34 +214,42 @@ impl Shell {
         sections
     }
 
-    /// The help section about what is shown: a CSV table, a diagram, a table
-    /// of the note under the cursor; none for an ordinary note, the help starts with notes.
-    pub(super) fn here(&self, cx: &App) -> Option<&'static str> {
+    /// What the help and the palette are about: a CSV table, a diagram, nothing (a picture, a list
+    /// page, a board: no text under the cursor), a table of the note, or the note's block. One chain
+    /// for both, so that they agree (a board hides its text, so it no longer offers table help).
+    fn looking_at(&self, cx: &App) -> Looking {
         if self.shown_sheet().is_some() {
-            Some(tr("CSV tables", "Tableaux CSV"))
+            Looking::Sheet
         } else if self.pane().drawing().is_some() {
-            Some(tr("Diagrams", "Schémas"))
-        } else if self.pane().file.is_none() && self.pane().listing.is_none() && self.pane().editor.read(cx).in_table() {
-            Some(tr("Tables in a note", "Tableaux d'une note"))
+            Looking::Drawing
+        } else if !self.pane().shows_note() || self.board_shown(cx) {
+            Looking::Nothing
+        } else if self.pane().editor.read(cx).in_table() {
+            Looking::NoteTable
         } else {
-            None
+            Looking::Block
         }
     }
 
-    /// The group of commands for what is being looked at, and its name for the palette field: a CSV
-    /// table, a diagram, a table of the note under the cursor, otherwise the cursor's block.
+    /// The help section about what is shown; none for an ordinary note, the help starts with notes.
+    pub(super) fn here(&self, cx: &App) -> Option<&'static str> {
+        match self.looking_at(cx) {
+            Looking::Sheet => Some(tr("CSV tables", "Tableaux CSV")),
+            Looking::Drawing => Some(tr("Diagrams", "Schémas")),
+            Looking::NoteTable => Some(tr("Tables in a note", "Tableaux d'une note")),
+            Looking::Nothing | Looking::Block => None,
+        }
+    }
+
+    /// The group of commands for what is being looked at, and its name for the palette field.
     pub(super) fn here_group(&self, cx: &App) -> (Option<commands::Group>, &'static str) {
         use commands::Group;
-        if self.shown_sheet().is_some() {
-            (Some(Group::Table), tr("CSV table", "Tableau CSV"))
-        } else if self.pane().drawing().is_some() {
-            (Some(Group::Diagram), tr("Diagram", "Schéma"))
-        } else if self.pane().file.is_some() || self.pane().listing.is_some() || self.board_shown(cx) {
-            (None, "")
-        } else if self.pane().editor.read(cx).in_table() {
-            (Some(Group::Table), tr("Table", "Tableau"))
-        } else {
-            (Some(Group::Block), "Note")
+        match self.looking_at(cx) {
+            Looking::Sheet => (Some(Group::Table), tr("CSV table", "Tableau CSV")),
+            Looking::Drawing => (Some(Group::Diagram), tr("Diagram", "Schéma")),
+            Looking::Nothing => (None, ""),
+            Looking::NoteTable => (Some(Group::Table), tr("Table", "Tableau")),
+            Looking::Block => (Some(Group::Block), "Note"),
         }
     }
 

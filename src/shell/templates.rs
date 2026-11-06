@@ -109,7 +109,7 @@ impl Shell {
 
     /// The open note, saved as a template: its title becomes `{{title}}`.
     pub(super) fn save_as_template(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.vault.is_none() || self.pane().file.is_some() || self.pane().listing.is_some() {
+        if self.vault.is_none() || !self.pane().shows_note() {
             return;
         }
         self.flush(cx);

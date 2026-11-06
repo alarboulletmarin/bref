@@ -56,7 +56,10 @@ pub(super) struct Pane {
     /// If its title changes, links to that name follow when it is left.
     pub(super) origin: Option<String>,
     /// The note shown is only a preview: it counts as open only
-    /// once you enter it (focus or keystroke).
+    /// once you enter it (focus or keystroke). Differs from `peek`: `preview` is a property of the
+    /// tab (italic, one per group, replaced by the next note browsed) and lasts until the note is
+    /// entered; `peek` only says the history must ignore what is shown now, and is dropped by any
+    /// opening, entered or not.
     pub(super) preview: bool,
     /// Folder to save the new note in; the vault by default.
     pub(super) new_dir: Option<PathBuf>,
@@ -72,8 +75,8 @@ pub(super) struct Pane {
     pub(super) board: kanban::Board,
     /// List page shown in place of the note.
     pub(super) listing: Option<nav::Listing>,
-    /// What is shown is only a preview (arrows in the tree, graph): the history
-    /// ignores it until it is opened for good.
+    /// What is shown now came from browsing (arrows in the tree, graph): the history
+    /// ignores it until it is opened for good. See `preview` for the difference.
     pub(super) peek: bool,
 }
 
@@ -120,6 +123,12 @@ impl Pane {
     /// Note operations and backlinks still use `path`.
     pub(super) fn displayed_path(&self) -> Option<&PathBuf> {
         self.file_path().or(self.path.as_ref())
+    }
+
+    /// The note's own text is what the pane shows: no file and no list page in its place. (A tool or a
+    /// figure can still cover it; callers that care test those too.)
+    pub(super) fn shows_note(&self) -> bool {
+        self.file.is_none() && self.listing.is_none()
     }
 
     /// Path of the file shown in place of the note.
