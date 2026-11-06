@@ -55,7 +55,7 @@ pub fn vault_info(vault: &Vault) -> Outcome {
         "diagram_version": crate::logic::diagram::VERSION,
         "unreadable": vault.unreadable.iter().map(|(path, kind)| json!({
             "path": vault::rel(&vault.root, path),
-            "error": disk(std::io::Error::new(*kind, "")),
+            "error": disk(std::io::Error::from(*kind)),
         })).collect::<Vec<_>>(),
     }))
 }

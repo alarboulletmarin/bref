@@ -94,22 +94,9 @@ pub(super) fn arg_usize(args: &Value, key: &str) -> Option<usize> {
     args.get(key).and_then(|v| v.as_u64()).map(|n| n as usize)
 }
 
-/// Why a disk operation failed, in the words the app already uses, in English.
+/// Why a disk operation failed: the app's own words (the server speaks English, `lang::speak_english`).
 pub(super) fn disk(error: io::Error) -> String {
-    use io::ErrorKind::*;
-    match error.kind() {
-        PermissionDenied => "permission denied",
-        NotFound => "not found",
-        AlreadyExists => "this name is already taken",
-        ReadOnlyFilesystem => "the disk is read-only",
-        StorageFull => "the disk is full",
-        InvalidFilename => "invalid name",
-        NotADirectory => "not a folder",
-        IsADirectory => "this is a folder",
-        DirectoryNotEmpty => "the folder is not empty",
-        _ => return error.to_string(),
-    }
-    .into()
+    crate::lang::io_reason(&error)
 }
 
 /// Runs the server on the process's standard streams. `0` when the client closes stdin.

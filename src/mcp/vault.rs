@@ -253,7 +253,7 @@ pub fn name_taken(dir: &Path, name: &str, extension: &str) -> Option<PathBuf> {
 }
 
 fn disk_kind(kind: io::ErrorKind) -> String {
-    disk(io::Error::new(kind, ""))
+    disk(io::Error::from(kind))
 }
 
 /// Rewrites `[[old]]` into `[[new]]` in every note that links to it, unless another note
