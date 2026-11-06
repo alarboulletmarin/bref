@@ -31,20 +31,69 @@ pub fn lowered(text: &Arc<str>) -> Arc<str> {
 }
 
 impl Note {
-        /// Stores the note's new text, and returns the old one.
-    pub fn set_body(&mut self, text: Arc<str>) -> Arc<str> {
-        self.lower = lowered(&text);
-        std::mem::replace(&mut self.body, text)
+        /// Tags, links and aliases of a note's text. A template has none: what it writes
+        /// between `{{ }}` or after `#` is not its own.
+    pub fn index(text: &str, template: bool) -> (Arc<[String]>, Arc<[String]>, Arc<[String]>) {
+        if template {
+            return (Arc::from([]), Arc::from([]), Arc::from([]));
+        }
+        let (tags, links) = markdown::index(text);
+        (tags.into(), links.into(), markdown::aliases(text).into())
     }
 
-        /// Tags and links of a note's text, ready to be stored in it.
-    pub fn index(text: &str) -> (Arc<[String]>, Arc<[String]>) {
-        let (tags, links) = markdown::index(text);
-        (tags.into(), links.into())
+        /// A note read from its text: the one way to build everything derived from it.
+    pub fn from_text(name: String, path: PathBuf, mtime: SystemTime, text: Arc<str>, template: bool) -> Note {
+        let (tags, links, aliases) = Note::index(&text, template);
+        Note { name, path, tags, links, aliases, mtime, lower: lowered(&text), body: text }
+    }
+
+        /// Stores the note's new text with all that derives from it, and returns the old text.
+    pub fn set_text(&mut self, text: Arc<str>, template: bool) -> Arc<str> {
+        (self.tags, self.links, self.aliases) = Note::index(&text, template);
+        self.lower = lowered(&text);
+        std::mem::replace(&mut self.body, text)
     }
 
         /// A link written `key` (lowercase) targets this note: by its name, or by an alias.
     pub fn answers(&self, key: &str) -> bool {
         self.name.to_lowercase() == key || self.aliases.iter().any(|alias| alias.to_lowercase() == key)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEXT: &str = "---\naliases: [Pseudo]\n---\n# A\n#étiquette [[Cible]]\n";
+
+    fn note(text: &str, template: bool) -> Note {
+        Note::from_text("A".into(), "/v/A.md".into(), SystemTime::UNIX_EPOCH, Arc::from(text), template)
+    }
+
+    #[test]
+    fn from_text_derives_everything() {
+        let n = note(TEXT, false);
+        assert_eq!((&n.tags[..], &n.links[..], &n.aliases[..]), (&["étiquette".to_string()][..], &["cible".to_string()][..], &["Pseudo".to_string()][..]));
+        assert_eq!(&*n.lower, TEXT.to_lowercase());
+        // A template keeps the text and nothing derived from it; empty text is fine.
+        let t = note(TEXT, true);
+        assert!(t.tags.is_empty() && t.links.is_empty() && t.aliases.is_empty() && *t.body == *TEXT);
+        let e = note("", false);
+        assert!(e.tags.is_empty() && e.links.is_empty() && e.aliases.is_empty());
+    }
+
+    #[test]
+    fn set_text_leaves_nothing_stale() {
+        let mut n = note(TEXT, false);
+        let old = n.set_text(Arc::from("# A\nMOT\n"), false);
+        assert_eq!(*old, *TEXT);
+        assert!(n.tags.is_empty() && n.links.is_empty() && n.aliases.is_empty());
+        assert_eq!((&*n.body, &*n.lower), ("# A\nMOT\n", "# a\nmot\n"));
+        // The same note rewritten as a template drops its aliases, tags and links.
+        n.set_text(Arc::from(TEXT), true);
+        assert!(n.tags.is_empty() && n.links.is_empty() && n.aliases.is_empty());
+        // And back: the same as a fresh read.
+        n.set_text(Arc::from(TEXT), false);
+        assert_eq!(n.aliases[..], ["Pseudo".to_string()]);
     }
 }

@@ -273,13 +273,14 @@ impl Shell {
             targets.iter().map(|n| n.path.clone()).collect()
         };
         let mut changed = Vec::new();
+        let root = self.vault.clone();
         for note in self.notes.iter_mut().filter(|n| paths.contains(&n.path)) {
             let rewritten = fs::read_to_string(&note.path)
                 .ok()
                 .and_then(|text| markdown::relink(&text, old, new))
                 .filter(|text| vault::write(&note.path, text).is_ok());
             if let Some(text) = rewritten {
-                (note.tags, note.links) = Note::index(&text);
+                note.set_text(text.as_str().into(), root.as_ref().is_some_and(|r| vault::in_templates(r, &note.path)));
                 changed.push(note.path.clone());
                 self.graph_stale = true;
             }
@@ -302,7 +303,7 @@ impl Shell {
     // typing a heading rewrites them at each save, which is as often as the note is written.
     fn follow_heading(&mut self, path: &Path, before: &str, after: &str, cx: &mut Context<Self>) {
         let Some((was, now)) = embed::renamed_heading(before, after) else { return };
-        let rewritten = vault::follow_heading(&mut self.notes, path, &was, &now);
+        let rewritten = vault::follow_heading(self.vault.as_deref(), &mut self.notes, path, &was, &now);
         for pane in 0..self.panes.len() {
             if pane != self.active && self.panes[pane].path.as_ref().is_some_and(|p| rewritten.contains(p)) {
                 self.in_pane(pane, |this| this.reload(cx));
@@ -401,32 +402,17 @@ impl Shell {
                 self.pane_mut().dirty = false;
                 self.pane_mut().base = content.clone();
                 self.calm();
-                let (tags, links) = markdown::index(&content);
-                // A template has neither tags nor links.
-                let (tags, links) = if vault::in_templates(&root, &path) { (Vec::new(), Vec::new()) } else { (tags, links) };
                 let old = self.pane().path.clone();
+                let fresh = Note::from_text(vault::stem(&path), path.clone(), SystemTime::now(), Arc::from(content), vault::in_templates(&root, &path));
                 // The graph only changes if the note is new, renamed or linked differently.
                 let known = self.notes.iter().find(|n| Some(&n.path) == old.as_ref());
-                if known.is_none_or(|n| n.path != path || n.links[..] != links[..]) {
+                if known.is_none_or(|n| n.path != path || n.links != fresh.links || n.aliases != fresh.aliases) {
                     self.graph_stale = true;
                 }
                 // The text as it was last saved, to see which heading was renamed.
                 let before = self.notes.iter().find(|n| Some(&n.path) == old.as_ref()).map(|n| n.body.clone());
                 self.notes.retain(|n| Some(&n.path) != old.as_ref() && n.path != path);
-                let body: Arc<str> = Arc::from(content);
-                self.notes.insert(
-                    0,
-                    Note {
-                        name: vault::stem(&path),
-                        tags: tags.into(),
-                        links: links.into(),
-                        aliases: markdown::aliases(&body).into(),
-                        mtime: SystemTime::now(),
-                        path: path.clone(),
-                        lower: logic::note::lowered(&body),
-                        body,
-                    },
-                );
+                self.notes.insert(0, fresh);
                 if old.as_ref() != Some(&path) {
                     // Renamed by its title, the note keeps its icon.
                     if let Some(icon) = old.as_ref().and_then(|old| self.icons.remove(old)) {

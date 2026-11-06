@@ -16,7 +16,7 @@ use std::{
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::{logic::markdown, lang::tr};
-use crate::logic::note::{Note, lowered};
+use crate::logic::note::Note;
 
 /// The user's configuration folder, per platform.
 pub fn config_dir() -> PathBuf {
@@ -360,20 +360,15 @@ pub fn rescan_full(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec
         }
     }
     let note = |(path, mtime): &(PathBuf, SystemTime)| {
-        let (tags, links, aliases, body, lower) = match known.get(path.as_path()) {
-            Some(note) if note.mtime == *mtime => (note.tags.clone(), note.links.clone(), note.aliases.clone(), note.body.clone(), note.lower.clone()),
+        let template = in_templates(root, path);
+        match known.get(path.as_path()) {
+            // Unchanged on disk: the text we have is still right.
+            Some(old) if old.mtime == *mtime => Note::from_text(stem(path), path.clone(), *mtime, old.body.clone(), template),
             _ => {
-                let text = fs::read_to_string(path).unwrap_or_default();
-                let (tags, links) = markdown::index(&text);
-                let body = Arc::from(text);
-                let lower = lowered(&body);
-                (tags.into(), links.into(), markdown::aliases(&body).into(), body, lower)
+                let text = Arc::from(fs::read_to_string(path).unwrap_or_default());
+                Note::from_text(stem(path), path.clone(), *mtime, text, template)
             }
-        };
-        // A template has no tags, links or aliases: what it writes between `{{ }}` or after `#` is not its own.
-        let (tags, links, aliases) =
-            if in_templates(root, path) { (Vec::new().into(), Vec::new().into(), Vec::new().into()) } else { (tags, links, aliases) };
-        Note { name: stem(path), tags, links, aliases, mtime: *mtime, path: path.clone(), body, lower }
+        }
     };
     let mut notes: Vec<Note> = files.iter().map(note).collect();
     notes.sort_by_key(|note| std::cmp::Reverse(note.mtime));
@@ -431,7 +426,7 @@ pub fn retitle(path: &Path, old: &str, new: &str) -> io::Result<()> {
 
 /// Heading `was` of the note at `path` is now `now`: the other notes that link to it, `[[Note#was]]` and
 /// `![[Note#was]]`, are rewritten on disk and re-indexed. Returns the notes rewritten.
-pub fn follow_heading(notes: &mut [Note], path: &Path, was: &str, now: &str) -> Vec<PathBuf> {
+pub fn follow_heading(root: Option<&Path>, notes: &mut [Note], path: &Path, was: &str, now: &str) -> Vec<PathBuf> {
     let (name, key) = (stem(path), stem(path).to_lowercase());
     let mut rewritten = Vec::new();
     for note in notes.iter_mut().filter(|n| n.path != path && n.links.contains(&key)) {
@@ -441,7 +436,7 @@ pub fn follow_heading(notes: &mut [Note], path: &Path, was: &str, now: &str) -> 
             .filter(|(_, count)| *count > 0)
             .filter(|(text, _)| write(&note.path, text).is_ok());
         if let Some((text, _)) = fresh {
-            (note.tags, note.links) = Note::index(&text);
+            note.set_text(text.as_str().into(), root.is_some_and(|r| in_templates(r, &note.path)));
             rewritten.push(note.path.clone());
         }
     }

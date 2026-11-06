@@ -129,9 +129,8 @@ impl Shell {
             return self.say(super::Tone::Failed, format!("{} {} : {}", tr("Not rewritten:", "Non réécrite :"), path.display(), crate::lang::io_reason(&e)), cx);
         }
         if let Some(note) = self.notes.iter_mut().find(|note| note.path == path) {
-            (note.tags, note.links) = crate::logic::note::Note::index(&new);
-            note.aliases = markdown::aliases(&new).into();
-            note.set_body(new.as_str().into());
+            let template = self.vault.as_ref().is_some_and(|r| vault::in_templates(r, &note.path));
+            note.set_text(new.as_str().into(), template);
         }
         self.graph_stale = true;
         self.refresh_graph(cx);

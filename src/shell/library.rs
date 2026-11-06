@@ -160,10 +160,10 @@ impl Shell {
         mut images: Vec<PathBuf>,
         cx: &mut Context<Self>,
     ) {
-        // Same notes, same tags, same links? Each reread note is compared with the one we had
+        // Same notes, same tags, links and aliases? Each reread note is compared with the one we had
         // under its path, without copying or sorting anything.
         let had: std::collections::HashMap<&Path, &Note> = self.notes.iter().map(|n| (n.path.as_path(), n)).collect();
-        let same = notes.len() == had.len() && notes.iter().all(|n| had.get(n.path.as_path()).is_some_and(|o| o.tags == n.tags && o.links == n.links));
+        let same = notes.len() == had.len() && notes.iter().all(|n| had.get(n.path.as_path()).is_some_and(|o| o.tags == n.tags && o.links == n.links && o.aliases == n.aliases));
         dirs.sort();
         self.dirs.sort();
         images.sort();

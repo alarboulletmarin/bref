@@ -307,6 +307,7 @@ impl Shell {
     /// Writes the new text of each note, and keeps the old one.
     pub(super) fn swap_notes(&mut self, found: Vec<(PathBuf, String, usize)>, cx: &mut Context<Self>) {
         self.swapped.clear();
+        let root = self.vault.clone();
         let mut count = 0;
         for (path, text, hits) in found {
             let Some(note) = self.notes.iter_mut().find(|note| note.path == path) else {
@@ -317,8 +318,8 @@ impl Shell {
                 continue;
             }
             count += hits;
-            (note.tags, note.links) = Note::index(&text);
-            self.swapped.push((path, note.set_body(Arc::from(text.as_str())), text));
+            let old = note.set_text(Arc::from(text.as_str()), root.as_ref().is_some_and(|r| vault::in_templates(r, &note.path)));
+            self.swapped.push((path, old, text));
         }
         self.after_swap(cx);
         let done = format!("{} {count} · notes : {} ({})", tr("Replaced:", "Remplacés :"), self.swapped.len(), tr("the palette can undo it", "la palette peut l'annuler"));
@@ -329,13 +330,13 @@ impl Shell {
     /// except those changed since, left as they are.
     pub(super) fn undo_swap(&mut self, cx: &mut Context<Self>) {
         self.flush(cx);
+        let root = self.vault.clone();
         let (mut back, mut kept) = (0, 0);
         for (path, old, new) in std::mem::take(&mut self.swapped) {
             let same = fs::read_to_string(&path).is_ok_and(|now| now == new);
             if same && vault::write(&path, old.as_bytes()).is_ok() {
                 if let Some(note) = self.notes.iter_mut().find(|note| note.path == path) {
-                    (note.tags, note.links) = Note::index(&old);
-                    note.set_body(old);
+                    note.set_text(old, root.as_ref().is_some_and(|r| vault::in_templates(r, &note.path)));
                 }
                 back += 1;
             } else {
