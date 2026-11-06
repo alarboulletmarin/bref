@@ -5,7 +5,6 @@
 mod benches;
 mod board_header;
 mod calendar_head;
-mod command_names;
 mod canvas_nesting;
 mod sheet_header;
 mod sheet_widths;

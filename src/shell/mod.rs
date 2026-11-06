@@ -4,6 +4,7 @@
 
 mod board;
 mod capture;
+mod command_table;
 mod diagrams;
 mod docks;
 mod drops;

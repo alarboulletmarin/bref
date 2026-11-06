@@ -212,7 +212,7 @@ impl Shell {
         use commands::Group;
         let available: std::collections::HashSet<&str> = window.available_actions(cx).iter().map(|action| action.name()).collect();
         let here = self.here_group(cx).0;
-        let list = commands::catalog()
+        let list = command_table::catalog()
             .into_iter()
             .filter(|(action, ..)| available.contains(action))
             // Gestures of a block, a table or a diagram only count there: elsewhere, they would do nothing.
