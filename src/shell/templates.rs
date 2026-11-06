@@ -80,7 +80,7 @@ impl Shell {
             }
         };
         let path = dir.join(format!("{name}.md"));
-        if vault::name_taken(&dir, &format!("{name}.md")).is_some() {
+        if vault::name_taken(dir, &format!("{name}.md")).is_some() {
             self.say(Tone::Failed, format!("{} « {name} »", tr("A note already has the name", "Une note porte déjà le nom")), cx);
             return None;
         }
