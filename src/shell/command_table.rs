@@ -4,8 +4,18 @@
 
 use super::*;
 use commands::Group::{self, *};
-use gpui::Action;
+use gpui::{Action, Div};
 use keys::context as ctx;
+
+/// What an action does to the window: the table registers it on the window's element.
+pub(super) type Handler = fn(&mut Shell, &mut Window, &mut Context<Shell>);
+
+/// Registers the handler of one action type on an element (one instance per action type).
+type Bind = fn(Div, &Context<Shell>, Handler) -> Div;
+
+fn bind<A: Action>(element: Div, cx: &Context<Shell>, handler: Handler) -> Div {
+    element.on_action(cx.listener(move |this, _: &A, window, cx| handler(this, window, cx)))
+}
 
 /// A default key, with the context where it applies (`None`: everywhere).
 #[derive(Clone, Debug)]
@@ -28,6 +38,9 @@ pub(super) struct CommandSpec {
     /// The palette lists it even when nothing is typed.
     pub pinned: bool,
     pub keys: Vec<Key>,
+    /// What the window does when the action arrives (none: a view handles it).
+    handler: Option<Handler>,
+    bind: Bind,
 }
 
 impl CommandSpec {
@@ -51,6 +64,11 @@ impl CommandSpec {
         self.pinned = true;
         self
     }
+    /// What the window does on this action.
+    fn does(mut self, handler: Handler) -> Self {
+        self.handler = Some(handler);
+        self
+    }
     /// Its shortcut can be changed (the help lists it).
     fn edit(mut self) -> Self {
         self.editable = true;
@@ -71,7 +89,7 @@ impl CommandSpec {
 }
 
 fn s<A: Action>() -> CommandSpec {
-    CommandSpec { action: A::name_for_type(), label: None, icon: "", group: None, help: None, editable: false, pinned: false, keys: Vec::new() }
+    CommandSpec { action: A::name_for_type(), label: None, icon: "", group: None, help: None, editable: false, pinned: false, keys: Vec::new(), handler: None, bind: bind::<A> }
 }
 
 /// Every command, in the palette's order: group by group, then the actions it does not offer.
@@ -197,14 +215,19 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .label(tr("Reset the column widths", "Remettre les largeurs des colonnes")).icon("table.svg").group(Table)
             .help(tr("Table: reset the column widths", "Tableau : remettre les largeurs des colonnes")).edit(),
         s::<sheet::PickDelimiter>()
+            .does(|this, window, cx| this.choose_table(Pick::Delimiter, window, cx))
             .label(tr("Change the delimiter…", "Changer le délimiteur…")).icon("table.svg").group(Table),
         s::<sheet::PickEncoding>()
+            .does(|this, window, cx| this.choose_table(Pick::Encoding, window, cx))
             .label(tr("Change the encoding…", "Changer l'encodage…")).icon("table.svg").group(Table),
         s::<sheet::PickHeader>()
+            .does(|this, window, cx| this.choose_table(Pick::Header, window, cx))
             .label(tr("Header row…", "Ligne d'en-tête…")).icon("table.svg").group(Table),
         s::<sheet::PickCopyAs>()
+            .does(|this, window, cx| this.choose_table(Pick::CopyAs, window, cx))
             .label(tr("Copy the table as…", "Copier le tableau en…")).icon("copy.svg").group(Table),
         s::<sheet::PickExport>()
+            .does(|this, window, cx| this.choose_table(Pick::Export, window, cx))
             .label(tr("Export the table…", "Exporter le tableau…")).icon("export.svg").group(Table),
         s::<canvas::SelectAll>()
             .label(tr("Select everything", "Tout sélectionner")).icon("d-select.svg").group(Diagram)
@@ -282,37 +305,51 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .key_in("secondary-r", ctx::EDITOR)
             .key_in("secondary-r", ctx::FIND),
         s::<ShowComments>()
+            .does(|this, window, cx| this.open_comments(window, cx))
             .label(tr("Comments of the note", "Commentaires de la note")).icon("c-comment.svg").group(Note),
         s::<Outline>()
+            .does(|this, window, cx| this.open_outline(window, cx))
             .label(tr("Outline of the note", "Plan de la note")).icon("c-outline.svg").group(Note)
             .help(tr("Outline: jump to a heading of the note", "Plan : aller à un titre de la note")).edit()
             .key("secondary-shift-o"),
         s::<ShareDocument>()
+            .does(|this, window, cx| this.show_share(window, cx))
             .label(tr("Share / Export the current document", "Partager / Exporter le document courant")).icon("export.svg").group(Note)
             .help(tr("Share / Export: copy the whole note as Markdown or plain text, save a copy; SVG/PNG for diagrams, table formats", "Partager / Exporter : copier toute la note en Markdown ou texte brut, enregistrer une copie ; SVG/PNG pour les schémas, formats de tableaux")).edit()
             .key("secondary-alt-e"),
         s::<CopyAll>()
+            .does(|this, _, cx| this.copy_all(true, cx))
             .label(tr("Copy the whole note", "Copier toute la note")).icon("copy.svg").group(Note)
             .help(tr("Copy the code block, else the note", "Copier le bloc de code, sinon la note")).edit()
             .key("secondary-shift-c"),
         s::<ExportPdf>()
+            .does(|this, _, cx| this.export_pdf(cx))
             .label(tr("Save the note as PDF…", "Enregistrer la note en PDF…")).icon("export.svg").group(Note)
             .help(tr("Save the note as PDF (A4, unsaved edits included); pictures, figures and embeds that cannot be printed are listed", "Enregistrer la note en PDF (A4, modifications non enregistrées comprises) ; les images, figures et incorporations impossibles à imprimer sont signalées")).edit(),
+        // The row menu's entries, from the palette, on the file of the active pane.
         s::<nav::OpenAside>()
+            .does(|this, window, cx| this.file_do(nav::Do::OpenAside, window, cx))
             .label(tr("Open in the other pane", "Ouvrir dans l'autre volet")).icon("c-split.svg").group(Note),
         s::<nav::CopyLink>()
+            .does(|this, window, cx| this.file_do(nav::Do::CopyLink, window, cx))
             .label(tr("Copy the [[link]] of the note", "Copier le [[lien]] de la note")).icon("link.svg").group(Note),
         s::<nav::CopyPath>()
+            .does(|this, window, cx| this.file_do(nav::Do::CopyPath, window, cx))
             .label(tr("Copy the path of the note", "Copier le chemin de la note")).icon("copy.svg").group(Note),
         s::<nav::CopyRelative>()
+            .does(|this, window, cx| this.file_do(nav::Do::CopyRelative, window, cx))
             .label(tr("Copy the relative path of the note", "Copier le chemin relatif de la note")).icon("copy.svg").group(Note),
         s::<nav::Reveal>()
+            .does(|this, window, cx| this.file_do(nav::Do::Reveal, window, cx))
             .label(commands::reveal_label()).icon("export.svg").group(Note),
         s::<nav::MoveTo>()
+            .does(|this, window, cx| this.file_do(nav::Do::MoveTo, window, cx))
             .label(tr("Move the note to a folder…", "Déplacer la note vers un dossier…")).icon("folder-plus.svg").group(Note),
         s::<nav::SetIcon>()
+            .does(|this, window, cx| this.file_do(nav::Do::Icon, window, cx))
             .label(tr("Icon of the note…", "Icône de la note…")).icon("heart.svg").group(Note),
         s::<nav::ShowFolder>()
+            .does(|this, window, cx| this.file_do(nav::Do::List, window, cx))
             .label(tr("Show the note's folder as a list", "Afficher le dossier de la note en liste")).icon("list-bullet.svg").group(Note),
         // A gesture made on the kanban board is undone from the board.
         s::<editor::Undo>()
@@ -328,21 +365,30 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .key_in("secondary-shift-z", ctx::BOARD)
             .key_in("secondary-y", ctx::BOARD),
         s::<NewNote>()
+            .does(|this, window, cx| this.new_note_here(window, cx))
             .label(tr("New note", "Nouvelle note")).icon("file-plus.svg").group(Create)
             .help(tr("New note", "Nouvelle note")).edit()
             .key("secondary-n"),
         s::<NewFromTemplate>()
+            .does(|this, window, cx| this.open_templates(TemplateAct::New, window, cx))
             .label(tr("New note from a template", "Nouvelle note depuis un modèle")).icon("file-plus.svg").group(Create)
             .help(tr("New note from a template (a note of the Templates folder: {{title}} {{date}} {{time}} {{cursor}})", "Nouvelle note depuis un modèle (une note du dossier Templates ou Modèles : {{title}} {{date}} {{time}} {{cursor}})")).edit(),
         s::<NewDiagram>()
+            .does(|this, window, cx| this.new_diagram(window, cx))
             .label(tr("New diagram", "Nouveau schéma")).icon("d-rect.svg").group(Create)
             .help(tr("New diagram: an SVG file in the vault", "Nouveau schéma : un fichier SVG du coffre")).edit()
             .key_in("secondary-shift-d", ctx::SHELL),
         s::<ImportDiagram>()
+            .does(|this, window, cx| this.import_diagram(window, cx))
             .label(tr("Import a diagram (Excalidraw, draw.io)…", "Importer un schéma (Excalidraw, draw.io)…")).icon("diagram.svg").group(Create),
         s::<NewBoard>()
+            .does(|this, window, cx| {
+                this.fresh_tab(window, cx);
+                this.new_note(kanban::new_board(), cx);
+            })
             .label(tr("New kanban board", "Nouveau tableau kanban")).icon("board.svg").group(Create),
         s::<nav::NewFolder>()
+            .does(|this, window, cx| this.new_folder(window, cx))
             .label(tr("New folder", "Nouveau dossier")).icon("folder-plus.svg").group(Create)
             .help(tr("New folder (also in the palette)", "Nouveau dossier (aussi dans la palette)")).edit()
             .key_in("secondary-shift-n", ctx::SHELL),
@@ -351,193 +397,278 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .help(tr("On the line of an embed: open its note, at the section", "Sur la ligne d'une incorporation : ouvrir sa note, à la section")).edit()
             .key_in("alt-enter", ctx::EDITOR),
         s::<Today>()
+            .does(|this, window, cx| this.open_today(window, cx))
             .label(tr("Today's note", "Note du jour")).icon("c-calendar.svg").group(Go)
             .help(tr("Today's note: open it, or create it", "Note du jour : l'ouvrir, ou la créer")).edit()
             .key("secondary-j"),
         s::<SearchVault>()
+            .does(|this, window, cx| this.open_vault_find(window, cx))
             .label(tr("Search the whole vault", "Chercher dans tout le coffre")).icon("find-text.svg").group(Go)
             .help(tr("Search the text of the whole vault, in the panel: matches note by note, replace", "Chercher dans le texte de tout le coffre, dans le panneau : passages note par note, remplacer")).edit()
             .key("secondary-shift-f"),
         s::<nav::ShowTree>()
+            .does(|this, window, cx| this.show_nav(Mode::Tree, false, window, cx))
             .label(tr("Vault tree", "Arbre du coffre")).icon("tree.svg").group(Go)
             .help(tr("Vault tree", "Arbre du coffre")).edit()
             .key_in("secondary-e", ctx::SHELL),
         s::<nav::ShowRecent>()
+            .does(|this, window, cx| this.show_nav(Mode::Recent, false, window, cx))
             .label(tr("Recent notes", "Notes récentes")).icon("clock.svg").group(Go)
             .help(tr("Recent notes", "Notes récentes")).edit()
             .key_in("secondary-shift-t", ctx::SHELL),
         s::<nav::ShowGraph>()
+            .does(|this, window, cx| this.show_nav(Mode::Graph, false, window, cx))
             .label(tr("Graph of the notes", "Graphe des notes")).icon("graph.svg").group(Go)
             .help(tr("Graph of the notes", "Graphe des notes")).edit()
             .key_in("secondary-g", ctx::SHELL),
         s::<nav::ShowTags>()
+            .does(|this, window, cx| this.show_nav(Mode::Tags, false, window, cx))
             .label("Tags").icon("tag.svg").group(Go)
             .help("Tags").edit()
             .key_in("secondary-t", ctx::SHELL),
         s::<nav::ShowLinks>()
+            .does(|this, window, cx| this.show_nav(Mode::Links, false, window, cx))
             .label(tr("Backlinks", "Rétroliens")).icon("backlink.svg").group(Go)
             .help(tr("Backlinks: the notes that link to this one", "Rétroliens : les notes qui mènent à celle-ci")).edit()
             .key_in("secondary-l", ctx::SHELL),
         s::<nav::ShowCalendar>()
+            .does(|this, window, cx| this.show_nav(Mode::Calendar, false, window, cx))
             .label(tr("Calendar", "Calendrier")).icon("c-calendar.svg").group(Go)
             .help(tr("Calendar: arrows, Page Up/Down for the month, Enter opens the day (a dot marks the days with a note)", "Calendrier : flèches, Page haut/bas pour le mois, Entrée ouvre le jour (un point marque les jours qui ont une note)")).edit()
             .key_in("secondary-shift-j", ctx::SHELL),
         // On macOS, Alt+arrow traverses words: brackets, as in a browser.
         s::<GoBack>()
+            .does(|this, window, cx| this.travel(false, window, cx))
             .label(tr("Back", "Précédent")).icon("chevron-left.svg").group(Go)
             .help(tr("Back: what was shown before, at the same place (also the mouse button, and the rail)", "Précédent : ce qui était affiché avant, au même endroit (aussi le bouton de la souris, et le rail)")).edit()
             .key(if cfg!(target_os = "macos") { "cmd-[" } else { "alt-left" }),
         s::<GoForward>()
+            .does(|this, window, cx| this.travel(true, window, cx))
             .label(tr("Forward", "Suivant")).icon("chevron-right.svg").group(Go)
             .help(tr("Forward: what was shown after going back", "Suivant : ce qui était affiché après un retour")).edit()
             .key(if cfg!(target_os = "macos") { "cmd-]" } else { "alt-right" }),
         s::<SplitPane>()
+            .does(|this, window, cx| this.split(Side::Right, window, cx))
             .label(tr("Split the pane to the right", "Découper le volet à droite")).icon("c-split.svg").group(Go)
             .help(tr("Split the pane: a new one on its right, opened on the palette to choose what goes there", "Découper le volet : un nouveau à sa droite, ouvert sur la palette pour choisir ce qui y va")).edit()
             .key("secondary-\\"),
         s::<SplitDown>()
+            .does(|this, window, cx| this.split(Side::Down, window, cx))
             .label(tr("Split the pane below", "Découper le volet en dessous")).icon("c-split-down.svg").group(Go)
             .help(tr("Split the pane: a new one below it", "Découper le volet : un nouveau en dessous")).edit()
             .key("secondary-alt-\\"),
         s::<TabToLeft>()
+            .does(|this, window, cx| this.tab_to_side(Side::Left, window, cx))
             .label(tr("Move the tab to the pane on the left", "Déplacer l'onglet vers le volet de gauche")).icon("c-left.svg").group(Go)
             .help(tr("Move the tab to the pane on the left (split off if there is none)", "Déplacer l'onglet vers le volet de gauche (découpé s'il n'y en a pas)")).edit(),
         s::<TabToRight>()
+            .does(|this, window, cx| this.tab_to_side(Side::Right, window, cx))
             .label(tr("Move the tab to the pane on the right", "Déplacer l'onglet vers le volet de droite")).icon("c-right.svg").group(Go)
             .help(tr("Move the tab to the pane on the right (split off if there is none)", "Déplacer l'onglet vers le volet de droite (découpé s'il n'y en a pas)")).edit(),
         s::<TabToUp>()
+            .does(|this, window, cx| this.tab_to_side(Side::Up, window, cx))
             .label(tr("Move the tab to the pane above", "Déplacer l'onglet vers le volet du dessus")).icon("c-up.svg").group(Go)
             .help(tr("Move the tab to the pane above (split off if there is none)", "Déplacer l'onglet vers le volet du dessus (découpé s'il n'y en a pas)")).edit(),
         s::<TabToDown>()
+            .does(|this, window, cx| this.tab_to_side(Side::Down, window, cx))
             .label(tr("Move the tab to the pane below", "Déplacer l'onglet vers le volet du dessous")).icon("c-down.svg").group(Go)
             .help(tr("Move the tab to the pane below (split off if there is none)", "Déplacer l'onglet vers le volet du dessous (découpé s'il n'y en a pas)")).edit(),
         s::<CloseOtherTabs>()
+            .does(|this, window, cx| this.close_other_tabs(this.active, window, cx))
             .label(tr("Close the other tabs of the pane", "Fermer les autres onglets du volet")).icon("close.svg").group(Go)
             .help(tr("Close the other tabs of the pane, each saved first; one that fails to save stays open", "Fermer les autres onglets du volet, chacun enregistré d'abord ; celui qui échoue reste ouvert")).edit(),
         s::<CloseTabsInPane>()
+            .does(|this, window, cx| this.close_tabs_in_pane(this.group(), window, cx))
             .label(tr("Close all the tabs of the pane", "Fermer tous les onglets du volet")).icon("close.svg").group(Go)
             .help(tr("Close all the tabs of the pane; the other panes keep theirs", "Fermer tous les onglets du volet ; les autres volets gardent les leurs")).edit(),
         s::<CloseAllFiles>()
+            .does(|this, window, cx| this.close_all_files(window, cx))
             .label(tr("Close all files (every pane)", "Fermer tous les fichiers (tous les volets)")).icon("close.svg").group(Go)
             .help(tr("Close all files, in every pane, without deleting any; the window is left on a new empty note", "Fermer tous les fichiers, dans tous les volets, sans en supprimer aucun ; la fenêtre reste sur une note vide")).edit(),
         s::<EvenPanes>()
+            .does(|this, _, cx| {
+                this.layout.even();
+                cx.notify();
+            })
             .label(tr("Even out the panes", "Égaliser les volets")).icon("c-split.svg").group(Go)
             .help(tr("Give every pane the same room", "Donner la même place à chaque volet")).edit(),
         s::<MoveTool>()
+            .does(|this, window, cx| this.move_tool(window, cx))
             .label(tr("Move the panel's view to the other dock", "Déplacer la vue du panneau dans l'autre dock")).icon("c-right.svg").group(Go)
             .help(tr("Move the panel's view to the other dock (left or right of the panes); the rail shows or hides it where it lives", "Déplacer la vue du panneau dans l'autre dock (à gauche ou à droite des volets) ; le rail la montre ou la cache là où elle est")).edit(),
         s::<ToolAsTab>()
+            .does(|this, window, cx| this.tool_as_tab(window, cx))
             .label(tr("Open the graph or the calendar as a tab", "Ouvrir le graphe ou le calendrier dans un onglet")).icon("c-split.svg").group(Go)
             .help(tr("Open the graph or the calendar as a tab; closing the tab gives it back to its dock", "Ouvrir le graphe ou le calendrier dans un onglet ; fermer l'onglet le rend à son dock")).edit(),
         s::<MaximizePane>()
+            .does(|this, _, cx| this.toggle_zoom(cx))
             .label(tr("Pane on the whole window, and back", "Volet sur toute la fenêtre, et retour")).icon("expand.svg").group(Go)
             .help(tr("The pane on the whole window, and back (the others keep what they hold)", "Le volet sur toute la fenêtre, et retour (les autres gardent ce qu'ils ont)")).edit()
             .key("alt-shift-enter"),
         s::<nav::ToggleFull>()
+            .does(|this, window, cx| this.toggle_full(window, cx))
             .label(tr("Panel on the whole window", "Panneau sur toute la fenêtre")).icon("expand.svg").group(Go)
             .help(tr("Panel on the whole window", "Panneau en pleine fenêtre")).edit()
             .key_in("secondary-m", ctx::SHELL),
         s::<SyncVault>()
+            .does(|this, window, cx| this.git_sync(window, cx))
             .label(tr("Sync the vault (git)", "Synchroniser le coffre (git)")).icon("backup.svg").group(Vault)
             .help(tr("Sync the vault with git: commit, receive, merge, send; a conflict keeps both versions as two notes", "Synchroniser le coffre par git : commiter, recevoir, fusionner, envoyer ; un conflit garde les deux versions en deux notes")).edit()
             .key("secondary-shift-s"),
         s::<OpenVault>()
+            .does(|this, window, cx| this.choose_vault(window, cx))
             .label(tr("Change vault…", "Changer de coffre…")).icon("tree.svg").group(Vault).pinned()
             .help(tr("Change vault", "Changer de coffre")).edit()
             .key("secondary-o"),
         s::<RestoreTrash>()
+            .does(|this, window, cx| this.open_trash(window, cx))
             .label(tr("Restore from the trash…", "Restaurer depuis la corbeille…")).icon("trash.svg").group(Vault),
         s::<BackupVault>()
+            .does(|this, window, cx| this.choose_backup(window, cx))
             .label(tr("Back up the vault…", "Sauvegarder le coffre…")).icon("backup.svg").group(Vault),
         s::<CloneVault>()
+            .does(|this, window, cx| this.ask_clone(window, cx))
             .label(tr("Clone a vault from a git address…", "Cloner un coffre depuis une adresse git…")).icon("folder-plus.svg").group(Vault),
         s::<OpenTerminal>()
+            .does(|this, _, cx| this.open_terminal(cx))
             .label(tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")).icon("code.svg").group(Vault),
         s::<SetUpCapture>()
+            .does(|this, _, cx| this.capture_shortcut(cx))
             .label(tr("Set up the quick capture shortcut", "Créer le raccourci de capture rapide")).icon("plus.svg").group(Vault),
         s::<ChooseTheme>()
+            .does(|this, window, cx| {
+                this.choose_setting(Setting::Theme, window, cx)
+            })
             .label(tr("Theme…", "Thème…")).icon("theme.svg").group(Look),
         s::<ZoomIn>()
+            .does(|this, window, cx| this.resize_text(Some(1.), window, cx))
             .label(tr("Bigger text", "Texte plus grand")).icon("c-zoom-in.svg").group(Look)
             .help(tr("Bigger text; the panel, menus and help follow, up to 150 %", "Texte plus grand ; le panneau, les menus et l'aide suivent, jusqu'à 150 %")).edit()
             .key("secondary-=")
             .key("secondary-+"),
         s::<ZoomOut>()
+            .does(|this, window, cx| this.resize_text(Some(-1.), window, cx))
             .label(tr("Smaller text", "Texte plus petit")).icon("c-zoom-out.svg").group(Look)
             .help(tr("Smaller text; the interface follows, down to 85 %", "Texte plus petit ; l'interface suit, jusqu'à 85 %")).edit()
             .key("secondary--"),
         s::<ZoomReset>()
+            .does(|this, window, cx| this.resize_text(None, window, cx))
             .label(tr("Default text size", "Taille du texte d'origine")).icon("c-zoom-reset.svg").group(Look)
             .help(tr("Default text size", "Taille du texte d'origine")).edit()
             .key("secondary-0"),
         s::<ToggleHelp>()
+            .does(|this, window, cx| {
+                this.set_help(!this.help.open, window, cx)
+            })
             .label(tr("Keyboard shortcuts, about", "Raccourcis clavier, à propos")).icon("help.svg").group(App).pinned()
             .help(tr("This help", "Cette aide")).edit()
             .key("f1")
             .key("secondary-/"),
         s::<Quit>()
+            .does(|this, window, cx| {
+                cx.stop_propagation();
+                if this.may_close_window(window, cx) {
+                    cx.quit();
+                }
+            })
             .label(tr("Quit Bref", "Quitter Bref")).icon("c-quit.svg").group(App)
             .help(tr("Save and quit; stay open if saving fails", "Enregistrer et quitter ; rester ouvert si l’enregistrement échoue")).edit()
             .key("secondary-q"),
         s::<OpenPalette>()
+            .does(|this, window, cx| {
+                this.open_palette("", window, cx)
+            })
             .help(tr("Find by name or text, create, filter by #tag", "Chercher par nom ou texte, créer, filtrer par #tag")).edit()
             .key("secondary-p"),
         s::<CloseHelp>()
+            .does(|this, window, cx| {
+                if this.help.open {
+                    this.set_help(false, window, cx)
+                } else if this.pane().zone.is_focused(window) && this.has_note(cx) {
+                    // A pane that only shows an image: Escape goes back to its note.
+                    window.focus(&this.pane().editor.focus_handle(cx));
+                }
+            })
             .key_in("escape", ctx::SHELL),
+        // Ctrl+1 and Ctrl+2: the first and second panes, in reading order.
         s::<FocusLeft>()
+            .does(|this, window, cx| {
+                let first = this.layout.panes()[0];
+                this.focus_group(first, window, cx)
+            })
             .help(tr("Go to the first pane", "Aller au premier volet")).edit()
             .key("secondary-1"),
         s::<FocusRight>()
+            .does(|this, window, cx| {
+                if let Some(&second) = this.layout.panes().get(1) {
+                    this.zoomed = None;
+                    this.focus_group(second, window, cx)
+                }
+            })
             .help(tr("Go to the second pane", "Aller au deuxième volet")).edit()
             .key("secondary-2"),
         // Ctrl+Alt+arrows belong to the desktop (workspaces) on Linux: Alt+Shift there.
         s::<PaneLeft>()
+            .does(|this, window, cx| this.focus_side(Side::Left, window, cx))
             .help(tr("Go to the pane on the left", "Aller au volet de gauche")).edit()
             .key(if cfg!(target_os = "macos") { "cmd-alt-left" } else { "alt-shift-left" }),
         s::<PaneRight>()
+            .does(|this, window, cx| this.focus_side(Side::Right, window, cx))
             .help(tr("Go to the pane on the right", "Aller au volet de droite")).edit()
             .key(if cfg!(target_os = "macos") { "cmd-alt-right" } else { "alt-shift-right" }),
         s::<PaneUp>()
+            .does(|this, window, cx| this.focus_side(Side::Up, window, cx))
             .help(tr("Go to the pane above", "Aller au volet du dessus")).edit()
             .key(if cfg!(target_os = "macos") { "cmd-alt-up" } else { "alt-shift-up" }),
         s::<PaneDown>()
+            .does(|this, window, cx| this.focus_side(Side::Down, window, cx))
             .help(tr("Go to the pane below", "Aller au volet du dessous")).edit()
             .key(if cfg!(target_os = "macos") { "cmd-alt-down" } else { "alt-shift-down" }),
         s::<ClosePane>()
+            .does(|this, window, cx| { this.close_pane(window, cx); })
             .help(tr("Save and close the focused tab; keep it open if saving fails", "Enregistrer et fermer l'onglet actif ; le garder ouvert si l'enregistrement échoue")).edit()
             .key("secondary-w"),
         s::<ReopenTab>()
+            .does(|this, window, cx| this.reopen_tab(window, cx))
             .help(tr("Reopen the last closed tab", "Rouvrir le dernier onglet fermé")).edit()
             .key("secondary-alt-t"),
         s::<NextTab>()
+            .does(|this, window, cx| this.cycle_tab(true, window, cx))
             .help(tr("Next tab", "Onglet suivant")).edit()
             .key("ctrl-tab"),
         s::<PrevTab>()
+            .does(|this, window, cx| this.cycle_tab(false, window, cx))
             .help(tr("Previous tab", "Onglet précédent")).edit()
             .key("ctrl-shift-tab"),
         s::<MoveTabLeft>()
+            .does(|this, _, cx| this.move_tab(false, cx))
             .help(tr("Move the tab one place to the left", "Déplacer l'onglet d'un cran à gauche")).edit()
             .key("ctrl-shift-pageup"),
         s::<MoveTabRight>()
+            .does(|this, _, cx| this.move_tab(true, cx))
             .help(tr("Move the tab one place to the right", "Déplacer l'onglet d'un cran à droite")).edit()
             .key("ctrl-shift-pagedown"),
         // The command palette: F10, like the menu bar of a desktop app.
         s::<ToggleCommands>()
+            .does(|this, window, cx| this.open_commands(window, cx))
             .help(tr("Command palette: every command, found by what it does (also the first button of the rail, or > in the palette)", "Palette des commandes : toutes les commandes, trouvées par ce qu'elles font (aussi le premier bouton du rail, ou > dans la palette)")).edit()
             .key("f10")
             .key("secondary-shift-p"),
         // From button to button, where Tab has no other use (the note indents with it). In the window's own
         // context: a binding with none counts as the deepest and would take Tab from the views that use it.
         s::<FocusNext>()
+            .does(|_, window, _| window.focus_next())
             .help(tr("From the panel: go from button to button (Shift+Tab: back); Enter or Space presses it", "Depuis le panneau : aller de bouton en bouton (Maj+Tab : revenir) ; Entrée ou Espace l'actionne")).edit()
             .key_in("tab", ctx::SHELL),
         s::<ui::widgets::Press>()
             .key_in("enter", ctx::BUTTON),
         s::<FocusPrev>()
+            .does(|_, window, _| window.focus_prev())
             .help(tr("Back to the previous button", "Revenir au bouton précédent")).edit()
             .key_in("shift-tab", ctx::SHELL),
         // The context menu of the selected row or of the cursor, as on every desktop.
         s::<ContextMenu>()
+            .does(|this, window, cx| this.menu_from_keys(window, cx))
             .help(tr("The same menu from the keys, for the selected row or the cursor: arrows, Enter, Esc", "Le même menu au clavier, pour la ligne choisie ou le curseur : flèches, Entrée, Échap")).edit()
             .key("shift-f10")
             .key("menu"),
@@ -564,7 +695,15 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .key_in("tab", ctx::CANVAS),
         s::<canvas::Confirm>()
             .key_in("enter", ctx::CANVAS),
+        // Escape in a diagram where nothing is in progress anymore: back to the note, if its
+        // tab has one under it.
         s::<canvas::Cancel>()
+            .does(|this, window, cx| {
+                if this.has_note(cx) {
+                    window.focus(&this.pane().editor.focus_handle(cx));
+                    cx.notify();
+                }
+            })
             .key_in("escape", ctx::CANVAS),
         // Table (CSV, TSV): arrows, selection with Shift, input, clipboard, undo.
         s::<sheet::Left>()
@@ -824,7 +963,13 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<kanban::CardRemove>()
             .help(tr("Board: remove the card, or the column with its cards (undone with the board's undo)", "Tableau : retirer la carte, ou la colonne avec ses cartes (annulé par l'annulation du tableau)")).edit()
             .key_in("delete", ctx::BOARD),
+        // Escape in the note, when it has nothing to close: the right-click menu.
         s::<editor::Cancel>()
+            .does(|this, window, cx| {
+                this.dismiss_failures();
+                this.close_icons(window, cx);
+                this.close_menu(window, cx);
+            })
             .key_in("escape", ctx::EDITOR),
         s::<editor::ListBullet>()
             .help(tr("Selected lines: bulleted list (again: plain text)", "Lignes choisies : liste à puces (encore : texte)")).edit(),
@@ -843,6 +988,14 @@ pub(super) fn specs() -> Vec<CommandSpec> {
     BlockOp::ALL.into_iter().for_each(|op| help(op.action(), op.effect()));
     TableOp::ALL.into_iter().for_each(|op| help(op.action(), op.label()));
     all
+}
+
+/// Puts the window's handlers on its element: every entry that has one.
+pub(super) fn register(element: Div, cx: &Context<Shell>) -> Div {
+    // The table does not change: its handlers are gathered once, not at every frame.
+    static HANDLERS: std::sync::OnceLock<Vec<(Bind, Handler)>> = std::sync::OnceLock::new();
+    let all = HANDLERS.get_or_init(|| specs().into_iter().filter_map(|spec| Some((spec.bind, spec.handler?))).collect());
+    all.iter().fold(element, |element, (bind, handler)| bind(element, cx, *handler))
 }
 
 /// The label of an action, from the table (it panics if the entry has none: a bug in the table).

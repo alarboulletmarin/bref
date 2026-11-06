@@ -51,7 +51,7 @@ each, all `impl Shell`:
 | `sidebar.rs`, `files.rs`, `menu.rs`, `listing.rs` | the side panel, file operations, the context menu, list pages |
 | `docks.rs` | the shell side of the panel's tools: where each view lives is `Nav`'s (`dock_tools`, `put_tool`, `stack_tool`, `hide_tool`, `place_tool`, `toggle_fold`, which take the tools open as tabs, `Shown::Tool`); this file gathers those tabs (`Pane::tool`), moves focus and refreshes after each, and holds `ToolDragged`. Each dock stacks its shown views (`Nav::left_shown`, `Nav::right_shown`, `Nav::folded`); each view has its own rows and scroll: the active one is in `Nav`, the others wait in `Nav::parked` (`Nav::activate`) |
 | `palette_open.rs` | every way the palette opens: notes, commands, outline, questions |
-| `help.rs`, `keymap.rs` | the help panel; `keymap.rs`: the help's layout (sections, text rows) and the installation of the shortcuts; `command_table.rs`: the command table, one `CommandSpec` per action (typed: label, icon, group, help line, editable flag, default keys), from which the palette's catalog, `defaults` and the help's lines derive |
+| `help.rs`, `keymap.rs` | the help panel; `keymap.rs`: the help's layout (sections, text rows) and the installation of the shortcuts; `command_table.rs`: the command table, one `CommandSpec` per action (typed: label, icon, group, help line, editable flag, default keys, and what the window does on the action), from which the palette's commands, `defaults`, the help's lines, the context menu's labels and the window's action handlers derive |
 | `travel.rs` | back and forward |
 | `search.rs`, `templates.rs`, `tables.rs`, `diagrams.rs`, `board.rs`, `drops.rs`, `capture.rs`, `print.rs` | one feature each |
 | `sharing.rs` | the document-aware Share / Export menu, clipboard formats and save-copy dialog; pure text conversion in `logic/sharing.rs`, atomic no-replace copies in `platform/export.rs` |
@@ -107,7 +107,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | the tree, recent notes, calendar | `views/nav.rs` (state), `shell/sidebar.rs` (drawing) |
 | the command palette | `views/palette.rs`, `shell/palette_open.rs` |
 | the CSV/TSV grid | `views/sheet/` (`disk.rs` loading and saving, `edit.rs`, `clipboard.rs`, `mouse.rs`, `render.rs`) |
-| a shortcut | `shell/command_table.rs` (one `CommandSpec`: action, label, icon, group, help, editable, keys), `shell/keymap.rs` (`help_sections` layout), `ui/keys.rs` (how keys are read and shown; `keys::context`: the key-context names) |
+| a shortcut | `shell/command_table.rs` (one `CommandSpec`: action, label, icon, group, help, editable, keys, handler), `shell/keymap.rs` (`help_sections` layout), `ui/keys.rs` (how keys are read and shown; `keys::context`: the key-context names) |
 | the test of a feature | `shell/tests/` (`end_to_end/` is one session, one file per chapter) |
 | the user guide | `book/src/` (an mdBook); `shortcuts.md` is written from `help_sections` by the test `shortcuts_page_is_current` |
 | the MCP server (`bref mcp`) | `src/mcp/` (`mod.rs` the protocol, `notes.rs`, `draw.rs`, `guide.rs`); `main` routes `mcp` before the window. A session over pipes is `tests/mcp.rs` |

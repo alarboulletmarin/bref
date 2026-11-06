@@ -3,14 +3,6 @@
 use crate::platform::config;
 use super::*;
 
-/// Registers several actions on an element, each with its own body (`this`, `window` and `cx`
-/// are the names given in the header): `on_action` is typed per action, so a loop cannot do it.
-macro_rules! on_actions {
-    ($d:expr, $cx:expr, |$this:ident, $window:ident, $c:ident| $($action:ty => $body:expr),* $(,)?) => {
-        $d$(.on_action($cx.listener(|$this, _: &$action, $window, $c| $body)))*
-    };
-}
-
 /// The number in the comments badge: "9+" beyond nine, so that it stays round.
 pub(super) fn badge_label(count: usize) -> String {
     if count > 9 { "9+".into() } else { count.to_string() }
@@ -177,47 +169,8 @@ impl Render for Shell {
                 d.rounded(crate::ui::theme::frame_radius()).border_1().border_color(t.border).shadow(crate::ui::theme::frame_shadow(SHADOW / 2.))
             })
             .track_focus(&self.focus)
-            .on_action(cx.listener(|this, _: &OpenPalette, window, cx| {
-                this.open_palette("", window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &Quit, window, cx| {
-                cx.stop_propagation();
-                if this.may_close_window(window, cx) {
-                    cx.quit();
-                }
-            }))
-            .on_action(cx.listener(|this, _: &NewNote, window, cx| this.new_note_here(window, cx)))
-            .on_action(cx.listener(|this, _: &NewFromTemplate, window, cx| this.open_templates(TemplateAct::New, window, cx)))
-            .on_action(cx.listener(|this, _: &NewDiagram, window, cx| this.new_diagram(window, cx)))
-            // Escape in a diagram where nothing is in progress anymore: back to the note, if its
-            // tab has one under it.
-            .on_action(cx.listener(|this, _: &canvas::Cancel, window, cx| {
-                if this.has_note(cx) {
-                    window.focus(&this.pane().editor.focus_handle(cx));
-                    cx.notify();
-                }
-            }))
-            .on_action(cx.listener(|this, _: &nav::NewFolder, window, cx| this.new_folder(window, cx)))
-            .on_action(cx.listener(|this, _: &nav::ToggleFull, window, cx| this.toggle_full(window, cx)))
-            // The same gesture for several actions: one line each.
-            .map(|d| {
-                on_actions!(d, cx, |this, window, cx|
-                    nav::ShowTree => this.show_nav(Mode::Tree, false, window, cx),
-                    nav::ShowRecent => this.show_nav(Mode::Recent, false, window, cx),
-                    nav::ShowGraph => this.show_nav(Mode::Graph, false, window, cx),
-                    nav::ShowTags => this.show_nav(Mode::Tags, false, window, cx),
-                    nav::ShowCalendar => this.show_nav(Mode::Calendar, false, window, cx),
-                    nav::ShowLinks => this.show_nav(Mode::Links, false, window, cx),
-                    PaneLeft => this.focus_side(Side::Left, window, cx),
-                    PaneRight => this.focus_side(Side::Right, window, cx),
-                    PaneUp => this.focus_side(Side::Up, window, cx),
-                    PaneDown => this.focus_side(Side::Down, window, cx),
-                    TabToLeft => this.tab_to_side(Side::Left, window, cx),
-                    TabToRight => this.tab_to_side(Side::Right, window, cx),
-                    TabToUp => this.tab_to_side(Side::Up, window, cx),
-                    TabToDown => this.tab_to_side(Side::Down, window, cx),
-                )
-            })
+            // The commands of the window: each table entry that does something.
+            .map(|d| command_table::register(d, cx))
             // Panel separator: it follows the pointer as long as the button is held.
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
                 // A border between panes, likewise.
@@ -253,60 +206,6 @@ impl Render for Shell {
                     }
                 }),
             )
-            .on_action(cx.listener(|this, _: &sheet::PickDelimiter, window, cx| this.choose_table(Pick::Delimiter, window, cx)))
-            .on_action(cx.listener(|this, _: &sheet::PickEncoding, window, cx| this.choose_table(Pick::Encoding, window, cx)))
-            .on_action(cx.listener(|this, _: &sheet::PickHeader, window, cx| this.choose_table(Pick::Header, window, cx)))
-            .on_action(cx.listener(|this, _: &sheet::PickCopyAs, window, cx| this.choose_table(Pick::CopyAs, window, cx)))
-            .on_action(cx.listener(|this, _: &sheet::PickExport, window, cx| this.choose_table(Pick::Export, window, cx)))
-            .on_action(cx.listener(|this, _: &OpenVault, window, cx| this.choose_vault(window, cx)))
-            .on_action(cx.listener(|this, _: &CopyAll, _, cx| this.copy_all(true, cx)))
-            .on_action(cx.listener(|this, _: &ExportPdf, _, cx| this.export_pdf(cx)))
-            .on_action(cx.listener(|this, _: &ImportDiagram, window, cx| this.import_diagram(window, cx)))
-            .on_action(cx.listener(|this, _: &ShowComments, window, cx| this.open_comments(window, cx)))
-            .on_action(cx.listener(|this, _: &NewBoard, window, cx| {
-                this.fresh_tab(window, cx);
-                this.new_note(kanban::new_board(), cx);
-            }))
-            .on_action(cx.listener(|this, _: &RestoreTrash, window, cx| this.open_trash(window, cx)))
-            .on_action(cx.listener(|this, _: &BackupVault, window, cx| this.choose_backup(window, cx)))
-            .on_action(cx.listener(|this, _: &CloneVault, window, cx| this.ask_clone(window, cx)))
-            .on_action(cx.listener(|this, _: &OpenTerminal, _, cx| this.open_terminal(cx)))
-            .on_action(cx.listener(|this, _: &SetUpCapture, _, cx| this.capture_shortcut(cx)))
-            .on_action(cx.listener(|this, _: &ShareDocument, window, cx| this.show_share(window, cx)))
-            .on_action(cx.listener(|this, _: &Outline, window, cx| this.open_outline(window, cx)))
-            .on_action(cx.listener(|this, _: &Today, window, cx| this.open_today(window, cx)))
-            .on_action(cx.listener(|this, _: &SyncVault, window, cx| this.git_sync(window, cx)))
-            .on_action(cx.listener(|this, _: &SplitPane, window, cx| this.split(Side::Right, window, cx)))
-            .on_action(cx.listener(|this, _: &SplitDown, window, cx| this.split(Side::Down, window, cx)))
-            // Ctrl+1 and Ctrl+2: the first and second panes, in reading order.
-            .on_action(cx.listener(|this, _: &FocusLeft, window, cx| {
-                let first = this.layout.panes()[0];
-                this.focus_group(first, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &FocusRight, window, cx| {
-                if let Some(&second) = this.layout.panes().get(1) {
-                    this.zoomed = None;
-                    this.focus_group(second, window, cx)
-                }
-            }))
-            .on_action(cx.listener(|this, _: &MoveTool, window, cx| this.move_tool(window, cx)))
-            .on_action(cx.listener(|this, _: &ToolAsTab, window, cx| this.tool_as_tab(window, cx)))
-            .on_action(cx.listener(|this, _: &EvenPanes, _, cx| {
-                this.layout.even();
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &MaximizePane, _, cx| this.toggle_zoom(cx)))
-            .on_action(cx.listener(|this, _: &ClosePane, window, cx| { this.close_pane(window, cx); }))
-            .on_action(cx.listener(|this, _: &CloseOtherTabs, window, cx| this.close_other_tabs(this.active, window, cx)))
-            .on_action(cx.listener(|this, _: &CloseTabsInPane, window, cx| this.close_tabs_in_pane(this.group(), window, cx)))
-            .on_action(cx.listener(|this, _: &CloseAllFiles, window, cx| this.close_all_files(window, cx)))
-            .on_action(cx.listener(|this, _: &ReopenTab, window, cx| this.reopen_tab(window, cx)))
-            .on_action(cx.listener(|this, _: &NextTab, window, cx| this.cycle_tab(true, window, cx)))
-            .on_action(cx.listener(|this, _: &PrevTab, window, cx| this.cycle_tab(false, window, cx)))
-            .on_action(cx.listener(|this, _: &MoveTabLeft, _, cx| this.move_tab(false, cx)))
-            .on_action(cx.listener(|this, _: &MoveTabRight, _, cx| this.move_tab(true, cx)))
-            .on_action(cx.listener(|this, _: &GoBack, window, cx| this.travel(false, window, cx)))
-            .on_action(cx.listener(|this, _: &GoForward, window, cx| this.travel(true, window, cx)))
             // The mouse back and forward buttons.
             .on_mouse_down(
                 MouseButton::Navigate(gpui::NavigationDirection::Back),
@@ -316,43 +215,6 @@ impl Render for Shell {
                 MouseButton::Navigate(gpui::NavigationDirection::Forward),
                 cx.listener(|this, _, window, cx| this.travel(true, window, cx)),
             )
-            .on_action(cx.listener(|this, _: &SearchVault, window, cx| this.open_vault_find(window, cx)))
-            .on_action(cx.listener(|this, _: &ChooseTheme, window, cx| {
-                this.choose_setting(Setting::Theme, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ZoomIn, window, cx| this.resize_text(Some(1.), window, cx)))
-            .on_action(cx.listener(|this, _: &ZoomOut, window, cx| this.resize_text(Some(-1.), window, cx)))
-            .on_action(cx.listener(|this, _: &ZoomReset, window, cx| this.resize_text(None, window, cx)))
-            .on_action(cx.listener(|this, _: &ToggleHelp, window, cx| {
-                this.set_help(!this.help.open, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ToggleCommands, window, cx| this.open_commands(window, cx)))
-            // Escape in the note, when it has nothing to close: the right-click menu.
-            .on_action(cx.listener(|this, _: &editor::Cancel, window, cx| {
-                this.dismiss_failures();
-                this.close_icons(window, cx);
-                this.close_menu(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &ContextMenu, window, cx| this.menu_from_keys(window, cx)))
-            .on_action(|_: &FocusNext, window, _| window.focus_next())
-            .on_action(|_: &FocusPrev, window, _| window.focus_prev())
-            // The row menu's entries, from the palette, on the file of the active pane.
-            .on_action(cx.listener(|this, _: &nav::OpenAside, window, cx| this.file_do(nav::Do::OpenAside, window, cx)))
-            .on_action(cx.listener(|this, _: &nav::SetIcon, window, cx| this.file_do(nav::Do::Icon, window, cx)))
-            .on_action(cx.listener(|this, _: &nav::ShowFolder, window, cx| this.file_do(nav::Do::List, window, cx)))
-            .on_action(cx.listener(|this, _: &nav::CopyLink, window, cx| this.file_do(nav::Do::CopyLink, window, cx)))
-            .on_action(cx.listener(|this, _: &nav::CopyPath, window, cx| this.file_do(nav::Do::CopyPath, window, cx)))
-            .on_action(cx.listener(|this, _: &nav::CopyRelative, window, cx| this.file_do(nav::Do::CopyRelative, window, cx)))
-            .on_action(cx.listener(|this, _: &nav::Reveal, window, cx| this.file_do(nav::Do::Reveal, window, cx)))
-            .on_action(cx.listener(|this, _: &nav::MoveTo, window, cx| this.file_do(nav::Do::MoveTo, window, cx)))
-            .on_action(cx.listener(|this, _: &CloseHelp, window, cx| {
-                if this.help.open {
-                    this.set_help(false, window, cx)
-                } else if this.pane().zone.is_focused(window) && this.has_note(cx) {
-                    // A pane that only shows an image: Escape goes back to its note.
-                    window.focus(&this.pane().editor.focus_handle(cx));
-                }
-            }))
             .key_context(crate::ui::keys::context::SHELL)
             .child(body)
             // Its own row under the panes, never over the note's footer (counter, formatting bar).
