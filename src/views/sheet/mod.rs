@@ -26,9 +26,9 @@ use std::{
 };
 
 use gpui::{
-    Action, App, Bounds, ClipboardItem, Context, ElementInputHandler, EntityInputHandler, EventEmitter, FocusHandle,
+    Action, App, Bounds, ClipboardItem, Context, ElementInputHandler, EventEmitter, FocusHandle,
     Focusable, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point,
-    ScrollWheelEvent, Stateful, UTF16Selection, Window, actions, canvas, div, prelude::*, px,
+    ScrollWheelEvent, Stateful, Window, actions, canvas, div, prelude::*, px,
 };
 
 use crate::{

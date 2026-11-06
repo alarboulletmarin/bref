@@ -139,3 +139,43 @@ fn a_table_opened_in_the_second_pane_stays(cx: &mut TestAppContext) {
     frames(cx);
     assert!(shell.read_with(cx, |s, cx| s.shown_sheet().unwrap().read(cx).table().row(0).join("|").contains('x')));
 }
+
+/// An input method composes in a grid cell and in the palette's field: each step replaces the previous
+/// one and stays marked until it is committed; the first step of a cell that is only selected begins its
+/// edit (and replaces its content, as typing does).
+#[gpui::test]
+fn an_input_method_composes_in_a_cell_and_in_the_palette(cx: &mut TestAppContext) {
+    use gpui::EntityInputHandler;
+    let (root, shell, cx, _config) = window(cx, "ime", &[("data.csv", b"x,y\n1,2\n")]);
+    open(&shell, cx, &root, "data.csv");
+    let sheet = shell.read_with(cx, |s, _| s.shown_sheet().unwrap());
+    let text = |cx: &mut gpui::VisualTestContext| sheet.read_with(cx, |s, _| s.edit_text().map(str::to_string));
+    let marked = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| sheet.update(cx, |s, cx| s.marked_text_range(window, cx)));
+    let compose = |cx: &mut gpui::VisualTestContext, range: Option<std::ops::Range<usize>>, s: &str| {
+        cx.update(|window, cx| sheet.update(cx, |sh, cx| sh.replace_and_mark_text_in_range(range, s, None, window, cx)));
+    };
+    // Control characters begin nothing; a composition does.
+    cx.update(|window, cx| sheet.update(cx, |s, cx| s.replace_text_in_range(None, "\n", window, cx)));
+    assert_eq!(text(cx), None);
+    compose(cx, None, "k");
+    compose(cx, None, "か");
+    assert_eq!((text(cx).as_deref(), marked(cx)), (Some("か"), Some(0..1)));
+    compose(cx, Some(0..1), "かん");
+    assert_eq!((text(cx).as_deref(), marked(cx)), (Some("かん"), Some(0..2)));
+    cx.update(|window, cx| sheet.update(cx, |s, cx| s.replace_text_in_range(Some(0..2), "漢", window, cx)));
+    assert_eq!((text(cx).as_deref(), marked(cx)), (Some("漢"), None));
+    // Given up: the empty step ends the composition and leaves what came before.
+    compose(cx, None, "a");
+    compose(cx, Some(1..2), "");
+    assert_eq!((text(cx).as_deref(), marked(cx)), (Some("漢"), None));
+
+    cx.simulate_keystrokes("escape ctrl-p");
+    let palette = shell.read_with(cx, |s, _| s.palette.clone().unwrap());
+    let typed = |cx: &mut gpui::VisualTestContext| palette.read_with(cx, |p, _| p.typed_text().to_string());
+    cx.update(|window, cx| palette.update(cx, |p, cx| p.replace_and_mark_text_in_range(None, "に", None, window, cx)));
+    cx.update(|window, cx| palette.update(cx, |p, cx| p.replace_and_mark_text_in_range(None, "にほ", None, window, cx)));
+    assert_eq!((typed(cx), cx.update(|window, cx| palette.update(cx, |p, cx| p.marked_text_range(window, cx)))), ("にほ".to_string(), Some(0..2)));
+    cx.update(|window, cx| palette.update(cx, |p, cx| p.replace_text_in_range(None, "日本", window, cx)));
+    assert_eq!(typed(cx), "日本");
+    let _ = fs::remove_dir_all(root);
+}

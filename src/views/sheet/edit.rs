@@ -42,6 +42,12 @@ impl Sheet {
         self.mono.get(col).copied().unwrap_or(false)
     }
 
+    /// The text of the cell being edited.
+    #[cfg(test)]
+    pub fn edit_text(&self) -> Option<&str> {
+        self.edit.as_ref().map(|e| e.text.as_str())
+    }
+
     /// Number of gestures that can be undone.
     #[cfg(test)]
     pub fn undo_len(&self) -> usize {
@@ -63,16 +69,6 @@ impl Sheet {
         let (r, c) = self.cursor;
         if *self.table.cell(r, c) != *edit.text {
             self.commit(vec![Change::Set(vec![(r, c, edit.text)])], cx);
-        }
-        cx.notify();
-    }
-
-    pub(super) fn typed(&mut self, text: &str, cx: &mut Context<Self>) {
-        match &mut self.edit {
-            Some(edit) => edit.insert(text),
-            // Typing on a cell replaces its content, as in a spreadsheet.
-            None if !text.chars().all(char::is_control) => self.begin_edit(Some(text), cx),
-            None => {}
         }
         cx.notify();
     }

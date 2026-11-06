@@ -1,13 +1,13 @@
 //! Palette (Ctrl+P): note search, `#tag` filter, creation, vault.
 //! Also serves as a plain input field (folder name, new name).
 
-use std::{ops::Range, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, App, Bounds, Context, ElementInputHandler, EntityInputHandler,
-    EventEmitter, FocusHandle, Focusable, MouseButton, Pixels, Point, UTF16Selection, Window,
+    Animation, AnimationExt, App, Context, ElementInputHandler,
+    EventEmitter, FocusHandle, Focusable, MouseButton, Pixels, Window,
     actions, canvas, div, ease_out_quint, prelude::*, px, svg,
 };
 
@@ -484,6 +484,12 @@ impl Palette {
     }
 
     #[cfg(test)]
+    /// What is typed.
+    #[cfg(test)]
+    pub fn typed_text(&self) -> &str {
+        &self.query.text
+    }
+
     pub fn listed(&self) -> usize {
         self.items.len()
     }
@@ -725,83 +731,25 @@ impl Palette {
             None => PaletteEvent::Dismiss,
         });
     }
+}
 
-    fn typed(&mut self, text: &str, cx: &mut Context<Self>) {
-        self.query.insert(text);
+impl crate::ui::line::LineInput for Palette {
+    fn line(&self) -> Option<&Line> {
+        Some(&self.query)
+    }
+
+    fn line_mut(&mut self) -> Option<&mut Line> {
+        Some(&mut self.query)
+    }
+
+    fn edited(&mut self, cx: &mut Context<Self>) {
         self.refresh();
         self.preview(cx);
         cx.notify();
     }
 }
 
-// ponytail: input reduced to "append at the end" (no movable cursor nor
-// IME composition in the palette); enough for a search query.
-impl EntityInputHandler for Palette {
-    fn text_for_range(
-        &mut self,
-        _: Range<usize>,
-        _: &mut Option<Range<usize>>,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<String> {
-        None
-    }
-
-    fn selected_text_range(
-        &mut self,
-        _: bool,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<UTF16Selection> {
-        Some(self.query.utf16())
-    }
-
-    fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        None
-    }
-
-    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {}
-
-    fn replace_text_in_range(
-        &mut self,
-        _: Option<Range<usize>>,
-        text: &str,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.typed(text, cx);
-    }
-
-    fn replace_and_mark_text_in_range(
-        &mut self,
-        _: Option<Range<usize>>,
-        text: &str,
-        _: Option<Range<usize>>,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.typed(text, cx);
-    }
-
-    fn bounds_for_range(
-        &mut self,
-        _: Range<usize>,
-        _: Bounds<Pixels>,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<Bounds<Pixels>> {
-        None
-    }
-
-    fn character_index_for_point(
-        &mut self,
-        _: Point<Pixels>,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<usize> {
-        None
-    }
-}
+crate::ui::line::line_input!(Palette);
 
 impl Palette {
     /// A command: its icon, its label, its keys one by one; above, the title of its group
