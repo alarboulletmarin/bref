@@ -21,11 +21,7 @@ pub struct Look {
 
 impl Look {
     pub fn of(t: &crate::ui::theme::Theme) -> Self {
-        let hex = |c: gpui::Hsla| {
-            let c = gpui::Rgba::from(c);
-            let [r, g, b] = [c.r, c.g, c.b].map(|v| (v * 255.) as u8);
-            format!("#{r:02x}{g:02x}{b:02x}")
-        };
+        let hex = crate::ui::theme::hex;
         Look {
             dark: t.bg.l < 0.5,
             bg: hex(t.bg),

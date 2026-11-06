@@ -14,7 +14,7 @@ use std::ops::Range;
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, ElementInputHandler, EntityInputHandler,
     EventEmitter, FocusHandle, Focusable, FontStyle, FontWeight, Hsla, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PathBuilder, Pixels, Point, Rgba, ScrollWheelEvent, SharedString, StrikethroughStyle, TextRun, UTF16Selection, UnderlineStyle,
+    MouseUpEvent, PathBuilder, Pixels, Point, ScrollWheelEvent, SharedString, StrikethroughStyle, TextRun, UTF16Selection, UnderlineStyle,
     Window, actions, canvas, div, fill, font, point, prelude::*, px, quad, rgb, size, svg,
 };
 
@@ -641,9 +641,8 @@ impl EntityInputHandler for Canvas {
 /// Theme text colour as `0xrrggbb`, for the neutral stroke of a diagram
 /// drawn outside the canvas.
 pub fn neutral(theme: Theme) -> u32 {
-    let c = Rgba::from(theme.text);
-    let byte = |v: f32| (v * 255.) as u32;
-    byte(c.r) << 16 | byte(c.g) << 8 | byte(c.b)
+    let [r, g, b] = crate::ui::theme::rgb8(theme.text);
+    (r as u32) << 16 | (g as u32) << 8 | b as u32
 }
 
 

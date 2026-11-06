@@ -88,14 +88,7 @@ struct Ink {
 impl Ink {
     fn new() -> Self {
         let t = theme::Theme::of(&crate::logic::prefs::Prefs::parse("theme=Bref Light"), gpui::WindowAppearance::Light);
-        let rgb = |c: gpui::Hsla| {
-            let c = gpui::Rgba::from(c);
-            [c.r, c.g, c.b].map(|v| (v * 255.).round() as u8)
-        };
-        let hex = |c: gpui::Hsla| {
-            let [r, g, b] = rgb(c);
-            format!("#{r:02x}{g:02x}{b:02x}")
-        };
+        let (rgb, hex) = (theme::rgb8, theme::hex);
         let mut look = figure::Look::of(&t);
         look.font = SANS.into();
         look.fonts = crate::ui::assets::APP_FONTS;

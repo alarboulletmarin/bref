@@ -822,14 +822,7 @@ impl Editor {
             .is_ok();
         let mut lang = String::new();
         // Mermaid diagrams and LaTeX formulas: drawn once, reused afterwards.
-        let rgb = |c: Hsla| {
-            let c = Rgba::from(c);
-            [c.r, c.g, c.b].map(|v| (v * 255.) as u8)
-        };
-        let hex = |c: Hsla| {
-            let [r, g, b] = rgb(c);
-            format!("#{r:02x}{g:02x}{b:02x}")
-        };
+        let (rgb, hex) = (crate::ui::theme::rgb8, crate::ui::theme::hex);
         let look = figure::Look::of(&t);
         // A figure's key, and the key of its source alone.
         let key = |kind: u8, source: &str| {

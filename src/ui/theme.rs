@@ -345,6 +345,18 @@ pub fn callout_hue(label: &str) -> f32 {
     }
 }
 
+/// The color as three 8-bit channels, each rounded to the nearest.
+pub fn rgb8(c: Hsla) -> [u8; 3] {
+    let c = c.to_rgb();
+    [c.r, c.g, c.b].map(|v| (v * 255.).round() as u8)
+}
+
+/// The color as `#rrggbb` (opaque; see `rgb8`).
+pub fn hex(c: Hsla) -> String {
+    let [r, g, b] = rgb8(c);
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
 /// Relative luminance of a color, in the WCAG sense.
 fn luminance(color: Hsla) -> f32 {
     let c = color.to_rgb();
@@ -570,12 +582,22 @@ mod tests {
     fn ground_table() {
         for (name, _) in THEMES {
             let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
-            let hex = |c: Hsla| {
-                let c = c.to_rgb();
-                format!("#{:02x}{:02x}{:02x}", (c.r * 255.).round() as u8, (c.g * 255.).round() as u8, (c.b * 255.).round() as u8)
-            };
             println!("{name}: ground {} sheet {} ratio {:.3} text/ground {:.2} soft/ground {:.2} accent/ground {:.2}", hex(t.ground), hex(t.bg), contrast(t.ground, t.bg), contrast(t.text, t.ground), contrast(t.soft, t.ground), contrast(t.accent, t.ground));
         }
+    }
+
+    #[test]
+    fn hex_rounds_to_the_nearest_channel_on_edge_values() {
+        let h = |h, s, l| hex(Hsla { h, s, l, a: 1. });
+        assert_eq!(h(0., 0., 0.), "#000000");
+        assert_eq!(h(0., 0., 1.), "#ffffff");
+        assert_eq!(h(0.7, 0., 0.5), "#808080"); // 127.5 rounds up, not down to 7f
+        assert_eq!(h(0., 1., 0.5), "#ff0000");
+        assert_eq!(h(1., 1., 0.5), "#ff0000"); // hue 360 is hue 0
+        assert_eq!(h(1. / 3., 1., 0.5), "#00ff00");
+        assert_eq!(h(2. / 3., 1., 0.5), "#0000ff");
+        assert_eq!(h(0., 1., 0.25), "#800000");
+        assert_eq!(rgb8(Hsla { h: 0.3, s: 0.4, l: 0.5, a: 0.2 }), rgb8(Hsla { h: 0.3, s: 0.4, l: 0.5, a: 1. }));
     }
 
     #[test]

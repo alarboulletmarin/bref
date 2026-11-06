@@ -10,7 +10,7 @@ use std::time::SystemTime;
 
 use gpui::{
     App, Asset, Bounds, ContentMask, Context, Corners, CursorStyle, FocusHandle, Focusable, Image, ImageFormat,
-    ImgResourceLoader, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, RenderImage, Resource, Rgba,
+    ImgResourceLoader, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, RenderImage, Resource,
     ScrollWheelEvent, Window, canvas, div, fill, point, prelude::*, px,
 };
 use resvg::usvg;
@@ -237,8 +237,7 @@ impl Viewer {
     }
 
     fn bg(&self) -> [u8; 3] {
-        let c = Rgba::from(self.theme.bg);
-        [c.r, c.g, c.b].map(|v| (v * 255.).round() as u8)
+        crate::ui::theme::rgb8(self.theme.bg)
     }
 
     /// Zooms around this point of the view (pixels from its corner).
