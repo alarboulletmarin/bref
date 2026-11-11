@@ -31,6 +31,7 @@
 # Your vault
 
 - [Files on disk](vault.md)
+- [Vault health](health.md)
 - [Syncing a vault](sync.md)
 - [Settings and appearance](settings.md)
 - [Updates](updates.md)

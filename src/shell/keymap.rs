@@ -55,6 +55,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 p("terminal", tr("Open a terminal in the vault", "Ouvrir un terminal dans le coffre")),
                 k!(SyncVault),
                 p("clone", tr("Clone a vault from a git address (also on the welcome screen)", "Cloner un coffre depuis une adresse git (aussi sur l'écran d'accueil)")),
+                p(tr("health", "santé"), tr("Vault health: broken links, orphans, unused pictures, empty notes, conflict copies, fixed in one click (nothing is deleted)", "Santé du coffre : liens cassés, orphelins, images inutilisées, notes vides, copies de conflit, corrigés en un clic (rien n'est supprimé)")),
                 t(tr("A cloud folder", "Un dossier synchronisé"), tr("iCloud, Dropbox, Google Drive, Syncthing: put the vault there, nothing else; never a git repository inside one", "iCloud, Dropbox, Google Drive, Syncthing : y poser le coffre, rien d'autre ; jamais un dépôt git dans un tel dossier")),
                 k!(ShareDocument),
                 k!(CopyAll),

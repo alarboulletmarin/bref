@@ -21,7 +21,7 @@ A message says what was sent and received, or why it failed. The sync button of 
 ### Conflicts
 
 - Two computers that changed different notes, or different parts of the same note, are merged without a question.
-- When the same lines changed on both sides, both versions are kept, as Dropbox and Syncthing do. The note keeps the version of this computer. The other one is written next to it as `Note (conflict 2026-10-09 laptop).md`, and the sync completes.
+- When the same lines changed on both sides, both versions are kept, as Dropbox and Syncthing do. The note keeps the version of this computer. The other one is written next to it as `Note (conflict 2026-10-09 laptop).md`, and the sync completes. The [vault health](health.md) page lists these copies, to compare and keep one.
 - You never get `<<<<<<<` markers in a note.
 - A note deleted on one side and edited on the other stays, edited.
 - A note renamed on one side and edited on the other is a conflict two copies cannot settle: the sync stops, changes nothing, and asks you to merge with git yourself.
