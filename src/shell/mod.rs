@@ -9,6 +9,7 @@ mod diagrams;
 mod docks;
 mod drops;
 mod files;
+mod health;
 mod help;
 mod keymap;
 mod library;
@@ -143,6 +144,11 @@ struct Shell {
     graph: Entity<Graph>,
     /// Notes or their links changed since the graph was last computed.
     graph_stale: bool,
+    /// The vault health page: a scan is running, the index changed since the last one began, and
+    /// how many broken links there were when the page was last looked at (the palette's dot).
+    health_running: bool,
+    health_stale: bool,
+    health_seen: Option<usize>,
     palette: Option<Entity<Palette>>,
     vault: Option<PathBuf>,
     /// The first read of the vault is still running: the watcher waits for it, rather than read
@@ -291,6 +297,9 @@ impl Shell {
             nav,
             graph,
             graph_stale: true,
+            health_running: false,
+            health_stale: true,
+            health_seen: None,
             palette: None,
             vault: None,
             scanning: false,

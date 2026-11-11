@@ -42,6 +42,9 @@ impl Shell {
             Some(_) => return tr("Calendar", "Calendrier").to_string(),
             None => {}
         }
+        if pane.health().is_some() {
+            return super::health::title().to_string();
+        }
         if let Some(listing) = pane.listing() {
             return match nav::tag_of(listing.of()) {
                 Some(tag) => format!("#{tag}"),

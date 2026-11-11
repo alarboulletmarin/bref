@@ -319,7 +319,7 @@ impl Shell {
         }
         // The list page closed with input in its filter or one of its cells: nothing
         // receives it anymore, it goes back to the note.
-        if active && self.pane().listing().is_none() && window.focused(cx).is_none() {
+        if active && !self.pane().listed() && window.focused(cx).is_none() {
             window.focus(&self.pane().editor.focus_handle(cx));
         }
         if !board {
@@ -809,7 +809,10 @@ impl Shell {
             self.pane_mut().clear_cover();
                     }
         let note = div().flex_1().min_w_0().h_full().relative();
-        let listing = self.pane().listing().is_some().then(|| self.render_listing(cx));
+        let listing = match self.pane().health() {
+            Some(_) => Some(self.render_health(cx)),
+            None => self.pane().listing().is_some().then(|| self.render_listing(cx).into_any_element()),
+        };
         let file = self.pane().file().map(|file| (file.path.clone(), file.kind.clone()));
         // A tool of the panel as this tab: it holds the input itself, never the hidden note under it.
         let tool = self.pane().tool();

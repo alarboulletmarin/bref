@@ -123,12 +123,14 @@ impl Shell {
         let swap = !self.swapped.is_empty();
         let (commands, here) = self.palette_commands(window, cx);
         let context = self.here_group(cx).1;
+        let dot = self.health_dot().then(<crate::actions::VaultHealth as gpui::Action>::name_for_type);
         let palette = cx.new(|cx| {
             Palette::new(entries, query, theme, cx)
                 .with_root(root)
                 .with_updates(updates, installable)
                 .with_lists(lists)
                 .with_undo_swap(swap)
+                .with_dot(dot)
                 .with_commands(commands, here, context)
         });
         // A command chosen in the palette goes to what had input before it.
