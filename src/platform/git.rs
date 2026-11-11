@@ -397,6 +397,13 @@ mod tests {
         assert_eq!(conflict_path(Path::new("dir/Note.md"), "2026-10-09", "laptop"), Path::new("dir/Note (conflict 2026-10-09 laptop).md"));
         assert_eq!(conflict_path(Path::new("Note.md"), "2026-10-09", ""), Path::new("Note (conflict 2026-10-09).md"));
         assert_eq!(conflict_path(Path::new("sans extension"), "2026-10-09", "pc"), Path::new("sans extension (conflict 2026-10-09 pc)"));
+        // Vault health knows these copies by their name: keep the two in step.
+        for (host, stem) in [("laptop", "Note"), ("", "Mon (projet)")] {
+            let copy = conflict_path(&Path::new("dir").join(format!("{stem}.md")), "2026-10-09", host);
+            let copy = copy.file_stem().unwrap().to_string_lossy();
+            assert_eq!(crate::logic::health::conflict_of(&copy), Some(stem));
+            assert_eq!(crate::logic::health::conflict_of(&format!("{copy} 2")), Some(stem));
+        }
     }
 
     #[test]
