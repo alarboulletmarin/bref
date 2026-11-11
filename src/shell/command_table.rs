@@ -516,10 +516,18 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .help(tr("Sync the vault with git: commit, receive, merge, send; a conflict keeps both versions as two notes", "Synchroniser le coffre par git : commiter, recevoir, fusionner, envoyer ; un conflit garde les deux versions en deux notes")).edit()
             .key("secondary-shift-s"),
         s::<OpenVault>()
-            .does(|this, window, cx| this.choose_vault(window, cx))
-            .label(tr("Change vault…", "Changer de coffre…")).icon("tree.svg").group(Vault).pinned()
-            .help(tr("Change vault", "Changer de coffre")).edit()
+            .does(|this, window, cx| this.open_vaults(window, cx))
+            .label(tr("Switch vault: the vaults opened before, or another folder", "Changer de coffre : ceux déjà ouverts, ou un autre dossier")).icon("tree.svg").group(Vault).pinned()
+            .help(tr("Switch vault: the vaults opened before, each with its tabs, panes, panel and recent notes; or another folder", "Changer de coffre : ceux déjà ouverts, chacun avec ses onglets, volets, panneau et notes récentes ; ou un autre dossier")).edit()
             .key("secondary-o"),
+        s::<NameVault>()
+            .does(|this, window, cx| this.name_vault(window, cx))
+            .label(tr("Name this vault…", "Nommer ce coffre…")).icon("tree.svg").group(Vault)
+            .help(tr("Name this vault: a short name for the switcher", "Nommer ce coffre : un nom court pour la liste des coffres")).edit(),
+        s::<ColorVault>()
+            .does(|this, window, cx| this.color_vault(window, cx))
+            .label(tr("Colour of this vault…", "Couleur de ce coffre…")).icon("theme.svg").group(Vault)
+            .help(tr("Colour of this vault: a band at the top of the rail, to see at a glance where you write", "Couleur de ce coffre : une bande en haut du rail, pour voir d'un coup d'œil où vous écrivez")).edit(),
         s::<RestoreTrash>()
             .does(|this, window, cx| this.open_trash(window, cx))
             .label(tr("Restore from the trash…", "Restaurer depuis la corbeille…")).icon("trash.svg").group(Vault),
@@ -808,6 +816,15 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<palette::ConfirmAside>()
             .help(tr("In the palette: open the chosen note in the other pane", "Dans la palette : ouvrir la note choisie dans l'autre volet")).edit()
             .key_in("secondary-enter", ctx::PALETTE),
+        s::<palette::RemoveChoice>()
+            .help(tr("In the vault switcher: take the vault off the list (its folder stays)", "Dans la liste des coffres : retirer le coffre de la liste (son dossier reste)")).edit()
+            .key_in("shift-delete", ctx::PALETTE),
+        s::<palette::ChoiceUp>()
+            .help(tr("In the vault switcher: move the vault up", "Dans la liste des coffres : monter le coffre")).edit()
+            .key_in("alt-up", ctx::PALETTE),
+        s::<palette::ChoiceDown>()
+            .help(tr("In the vault switcher: move the vault down", "Dans la liste des coffres : descendre le coffre")).edit()
+            .key_in("alt-down", ctx::PALETTE),
         s::<palette::Dismiss>()
             .key_in("escape", ctx::PALETTE),
         s::<editor::Backspace>()

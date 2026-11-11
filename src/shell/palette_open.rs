@@ -107,6 +107,7 @@ impl Shell {
                 tags: n.tags.clone(),
                 days: now.duration_since(n.mtime).ok().map(|age| age.as_secs() / 86_400),
                 body: n.body.clone(),
+                ..Entry::default()
             })
             // The vault's other files (tables, images, diagrams) are also found by their name.
             .chain(self.images.iter().map(|path| Entry {
@@ -163,7 +164,7 @@ impl Shell {
                 PaletteEvent::InstallUpdate => this.install_update(cx),
                 // Closed without a choice: we get back what the pane showed, table or diagram included.
                 PaletteEvent::Dismiss => this.focus_pane(this.active, window, cx),
-                PaletteEvent::Submit(_) | PaletteEvent::Preview(_) => {}
+                PaletteEvent::Submit(_) | PaletteEvent::Preview(_) | PaletteEvent::Remove(_) | PaletteEvent::Shift(..) => {}
             }
             cx.notify();
         })

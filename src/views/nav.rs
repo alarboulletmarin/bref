@@ -302,7 +302,21 @@ pub struct Nav {
 impl Nav {
     /// Restores the panel as it was when the app closed.
     pub fn new(focus: FocusHandle) -> Self {
-        let saved = dock::parse(&config::load(config::File::Layout));
+        Self::from_line(focus, &config::load(config::File::Layout))
+    }
+
+    /// The panel another vault had (`line`, as `line()` writes it): its views, docks and widths come back;
+    /// what pointed into the vault left (selection, open folders) is reset.
+    pub fn restore(&mut self, line: &str) {
+        let native_bar = self.native_bar;
+        *self = Self::from_line(self.focus.clone(), line);
+        self.native_bar = native_bar;
+        self.save();
+    }
+
+    /// The panel as `line()` wrote it; an empty or unknown line gives the default panel.
+    fn from_line(focus: FocusHandle, line: &str) -> Self {
+        let saved = dock::parse(line);
         Self {
             focus,
             mode: saved.mode,
@@ -337,6 +351,11 @@ impl Nav {
     }
 
     pub fn save(&self) {
+        config::keep(config::File::Layout, &format!("{}\n", self.line()));
+    }
+
+    /// The panel on one line: the left view, the panel's state and widths, then the docks.
+    pub fn line(&self) -> String {
         let layout = dock::Layout {
             mode: self.left_mode(),
             panel: self.panel,
@@ -348,7 +367,7 @@ impl Nav {
             right_w: f32::from(self.right_w),
             folded: self.folded.clone(),
         };
-        config::keep(config::File::Layout, &format!("{}\n", dock::write(&layout)));
+        dock::write(&layout)
     }
 
     pub fn focus(&self) -> &FocusHandle {
