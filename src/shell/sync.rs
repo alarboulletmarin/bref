@@ -175,7 +175,7 @@ impl Shell {
             let done = cx.background_executor().spawn(async move { git::clone(&url, &target) }).await;
             this.update_in(cx, |this, window, cx| match done {
                 Ok(()) => {
-                    this.set_vault(into, window, cx);
+                    this.switch_to(into, window, cx);
                     this.say(Tone::Done, tr("Vault cloned", "Coffre cloné"), cx)
                 }
                 Err(e) => this.say(Tone::Failed, format!("{} : {}", tr("Not cloned", "Clonage impossible"), e.text()), cx),

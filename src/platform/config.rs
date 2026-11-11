@@ -33,11 +33,15 @@ pub enum File {
     Crash,
     /// Door of the agent (port and secret).
     Agent,
+    /// The vaults opened so far, to switch between them (`logic::vaults::read`).
+    Vaults,
+    /// What vault `id` had on screen when it was left (`logic::vaults::read_session`).
+    Session(u32),
 }
 
 impl File {
-    fn name(self) -> &'static str {
-        match self {
+    fn name(self) -> String {
+        let name = match self {
             File::Config => "config",
             File::Layout => "layout",
             File::Settings => "settings",
@@ -47,7 +51,10 @@ impl File {
             File::Panes => "panes",
             File::Crash => "crash",
             File::Agent => "agent",
-        }
+            File::Vaults => "vaults",
+            File::Session(id) => return format!("session-{id}"),
+        };
+        name.to_string()
     }
 }
 
@@ -155,6 +162,11 @@ pub fn keep(file: File, text: &str) {
     if let Err(e) = save(file, text) {
         eprintln!("bref: {} ({}): {e}", tr("config not saved", "config non enregistrée"), path(file).display());
     }
+}
+
+/// Removes `file`: a vault taken off the list leaves no session behind.
+pub fn forget(file: File) {
+    let _ = fs::remove_file(path(file));
 }
 
 /// (vault, open notes from most recent to oldest): one line each.

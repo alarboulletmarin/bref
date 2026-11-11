@@ -32,6 +32,7 @@ mod templates;
 mod toasts;
 mod travel;
 mod updates;
+mod vaults;
 
 use crate::platform::config;
 use capture::*;
@@ -205,6 +206,9 @@ struct Shell {
     settings: settings_page::SettingsPage,
     /// What was shown, for "back" and "forward".
     history: History,
+    /// The vaults opened so far (`logic::vaults`), and the back and forward of those left in this session.
+    vaults: Vec<logic::vaults::Known>,
+    histories: std::collections::HashMap<PathBuf, History>,
     /// The bindings in effect, and what the user changed in the default shortcuts.
     bound: Vec<keys::Bind>,
     changes: keys::Changes,
@@ -330,6 +334,8 @@ impl Shell {
             help: Help::default(),
             settings: settings_page::SettingsPage::new(cx),
             history: History::default(),
+            vaults: logic::vaults::read(&config::load(config::File::Vaults)),
+            histories: Default::default(),
             bound: defaults(),
             changes: keys::Changes::new(),
         };

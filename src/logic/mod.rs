@@ -37,3 +37,4 @@ pub mod undo;
 pub mod sharing;
 pub mod table;
 pub mod uml;
+pub mod vaults;
