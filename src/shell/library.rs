@@ -221,6 +221,7 @@ impl Shell {
         self.closed.clear();
         self.vault = Some(root.clone());
         self.lost = None;
+        self.remember_vault(&root);
         self.icons = vault::load_icons(&root);
         self.replace_notes(Vec::new(), true);
         self.dirs.clear();
@@ -244,6 +245,7 @@ impl Shell {
                     this.replace_notes(notes, true);
                     this.dirs = dirs;
                     this.images = images;
+                    this.count_notes();
                     this.index_changed(cx);
                     cx.notify();
                 }
@@ -257,7 +259,7 @@ impl Shell {
     /// opened as is, nothing is written to it.
     pub(super) fn create_vault(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         match fs::create_dir_all(&root) {
-            Ok(()) => self.set_vault(root, window, cx),
+            Ok(()) => self.switch_to(root, window, cx),
             Err(e) => {
                 let what = tr("Cannot create the vault", "Impossible de créer le coffre");
                 self.say(Tone::Failed, format!("{what} {} : {}", root.display(), crate::lang::io_reason(&e)), cx);
@@ -276,7 +278,7 @@ impl Shell {
             if let Ok(Ok(Some(paths))) = paths.await
                 && let Some(root) = paths.into_iter().next()
             {
-                this.update_in(cx, |this, window, cx| this.set_vault(root, window, cx))
+                this.update_in(cx, |this, window, cx| this.switch_to(root, window, cx))
                     .ok();
             }
         })

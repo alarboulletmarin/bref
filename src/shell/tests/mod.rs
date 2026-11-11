@@ -20,6 +20,7 @@ mod floating;
 mod find_bar;
 mod vault_find;
 mod vault_health;
+mod vault_switch;
 mod keyboard;
 mod keycaps;
 mod layers;
