@@ -8,7 +8,7 @@ On first launch, Bref asks for a **vault**: the folder that holds your notes.
 - **Open another folder…** picks an existing one. Dropping a folder on the welcome screen does the same.
 - **Clone a vault from a git address…** fetches a vault kept in git. See [Syncing a vault](sync.md).
 
-That is the only setup. Bref remembers the vault and the last note you had open. `Ctrl + O` changes the vault at any time.
+That is the only setup. Bref remembers the vault and the last note you had open. `Ctrl + O` changes the vault at any time, and lists the [vaults you opened before](vault.md#several-vaults).
 
 On Linux, you can put Bref one key away: bind the command `bref` in your desktop settings (GNOME: Settings → Keyboard → Custom Shortcuts).
 
