@@ -181,8 +181,9 @@ impl Shell {
             self.index_changed(cx);
             cx.notify();
         } else {
-            // No name, tag or link changed, but the text may have: search follows it.
+            // No name, tag or link changed, but the text may have: search and the health page follow it.
             self.replace_notes(notes, false);
+            self.refresh_health(cx);
         }
         self.each_pane(|this| {
             // The shown table was rewritten elsewhere: it is reread if nothing is pending here.
@@ -283,7 +284,7 @@ impl Shell {
     }
 
     /// Everything that must follow a change of the index (`notes`, `images`): the names offered
-    /// by the editors, and the graph. Call it after the change, never set `graph_stale` by hand.
+    /// by the editors, the graph and the health page. Call it after the change, never set `graph_stale` by hand.
     pub(super) fn index_changed(&mut self, cx: &mut Context<Self>) {
         self.push_names(cx);
         self.graph_changed(cx);
@@ -292,7 +293,7 @@ impl Shell {
     /// Only the graph follows: for a rewrite of note text, which leaves the names as they are
     /// (`index_changed` when a name, an alias or an image may have changed).
     pub(super) fn graph_changed(&mut self, cx: &mut Context<Self>) {
-        self.graph_stale = true;
+        (self.graph_stale, self.health_stale) = (true, true);
         self.refresh_graph(cx);
     }
 
@@ -303,6 +304,8 @@ impl Shell {
     pub(super) fn replace_notes(&mut self, notes: Vec<Note>, graph_changed: bool) {
         self.notes = notes;
         self.graph_stale |= graph_changed;
+        // Any text may empty a note or break its front matter: the health page looks again.
+        self.health_stale = true;
     }
 
     /// The text of the note at `path` rewritten in the index (not on disk); its previous text,
@@ -310,26 +313,28 @@ impl Shell {
     pub(super) fn edit_note_text(&mut self, path: &Path, text: Arc<str>) -> Option<Arc<str>> {
         let template = self.vault.as_ref().is_some_and(|r| vault::in_templates(r, path));
         let note = self.notes.iter_mut().find(|note| note.path == path)?;
-        self.graph_stale = true;
+        (self.graph_stale, self.health_stale) = (true, true);
         Some(note.set_text(text, template))
     }
 
     /// `[[old]]` links rewritten to `new` in the notes that link to it (on disk and in the index). The
     /// caller follows with `graph_changed` if some note was rewritten.
     pub(super) fn relink_notes(&mut self, old: &str, new: &str) -> vault::Relinked {
+        self.health_stale = true;
         vault::relink(self.vault.as_deref(), &mut self.notes, old, new)
     }
 
     /// The same for a renamed heading (`[[Note#old]]` → `[[Note#new]]`); the graph links notes, not
     /// headings, so it stays as it is. Returns the notes rewritten.
     pub(super) fn follow_heading_notes(&mut self, path: &Path, was: &str, now: &str) -> Vec<PathBuf> {
+        self.health_stale = true;
         vault::follow_heading(self.vault.as_deref(), &mut self.notes, path, was, now)
     }
 
     /// The notes `gone` says leave the index.
     pub(super) fn forget_notes(&mut self, gone: impl Fn(&PathBuf) -> bool) {
         self.notes.retain(|n| !gone(&n.path));
-        self.graph_stale = true;
+        (self.graph_stale, self.health_stale) = (true, true);
     }
 
     /// Every note path moved by `shift` (a note or folder was renamed).
@@ -338,7 +343,7 @@ impl Shell {
             note.path = shift(&note.path);
             note.name = vault::stem(&note.path);
         }
-        self.graph_stale = true;
+        (self.graph_stale, self.health_stale) = (true, true);
     }
 
     /// `fresh` (just saved) becomes the first note, in place of the one at `old` and of any at
@@ -349,6 +354,8 @@ impl Shell {
         if known.is_none_or(|n| n.path != fresh.path || n.links != fresh.links || n.aliases != fresh.aliases) {
             self.graph_stale = true;
         }
+        // Any text may empty a note or break its front matter: the health page looks again.
+        self.health_stale = true;
         let before = known.map(|n| n.body.clone());
         self.notes.retain(|n| Some(&n.path) != old && n.path != fresh.path);
         self.notes.insert(0, fresh);

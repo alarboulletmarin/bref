@@ -45,6 +45,7 @@ impl Shell {
 
     /// Updates the graph if it is shown and the notes or their links changed.
     pub(super) fn refresh_graph(&mut self, cx: &mut Context<Self>) {
+        self.refresh_health(cx);
         if self.graph_stale && self.tool_shown(Mode::Graph) {
             self.graph_stale = false;
             let notes: Vec<Note> = self.notes.iter().filter(|n| !self.is_template(n)).cloned().collect();

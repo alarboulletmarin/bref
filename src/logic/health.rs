@@ -127,6 +127,28 @@ pub fn scan(vault: &Vault) -> Vec<Finding> {
     found
 }
 
+/// How many links name nothing, from the index alone (no text read): cheap enough to count each
+/// time the palette opens, for the dot on the health page's command. A link written twice in a
+/// note counts once, as the index keeps it.
+pub fn broken_count(vault: &Vault) -> usize {
+    let known = known_names(vault);
+    let templates: HashSet<String> = vault.notes.iter().filter(|n| (vault.template)(n)).map(|n| n.name.to_lowercase()).collect();
+    let live = vault.notes.iter().filter(|n| !(vault.template)(n));
+    live.flat_map(|n| n.links.iter()).filter(|link| !known.contains(link.as_str()) && !templates.contains(link.as_str())).count()
+}
+
+/// Every name a link can answer to, lowercase: notes, aliases, files and folders.
+fn known_names(vault: &Vault) -> HashSet<String> {
+    let mut known: HashSet<String> = HashSet::new();
+    for note in vault.notes.iter().filter(|n| !(vault.template)(n)) {
+        known.insert(note.name.to_lowercase());
+        known.extend(note.aliases.iter().map(|alias| alias.to_lowercase()));
+    }
+    known.extend(vault.files.iter().map(|file| file_key(&file.path)));
+    known.extend(vault.dirs.iter().map(|dir| file_key(dir)));
+    known
+}
+
 /// How many findings of each kind, in the page's order; kinds with none are left out.
 pub fn counts(found: &[Finding]) -> Vec<(Kind, usize)> {
     let mut counts: Vec<(Kind, usize)> = Vec::new();
@@ -261,13 +283,7 @@ fn file_key(path: &Path) -> String {
 
 /// Broken links and links to templates, line by line, outside code blocks and front matter.
 fn links(vault: &Vault, live: &[&Note]) -> Vec<Finding> {
-    let mut known: HashSet<String> = HashSet::new();
-    for note in live {
-        known.insert(note.name.to_lowercase());
-        known.extend(note.aliases.iter().map(|alias| alias.to_lowercase()));
-    }
-    known.extend(vault.files.iter().map(|file| file_key(&file.path)));
-    known.extend(vault.dirs.iter().map(|dir| file_key(dir)));
+    let known = known_names(vault);
     let templates: HashMap<String, &Note> =
         vault.notes.iter().filter(|n| (vault.template)(n)).map(|n| (n.name.to_lowercase(), n)).collect();
     let names: Vec<&str> = live.iter().map(|n| n.name.as_str()).chain(live.iter().flat_map(|n| n.aliases.iter().map(String::as_str))).collect();
@@ -635,6 +651,20 @@ mod tests {
         ];
         let files = [file("/v/c.png", 1, FileKind::Picture)];
         assert_eq!(of(&scan_of(&notes, &files, &[]), Kind::Orphan), [Finding::Orphan { note: "/v/Seule.md".into() }]);
+    }
+
+    #[test]
+    fn counts_broken_links_from_the_index() {
+        let notes = [
+            note("/v/A.md", "# A\n[[B]] [[Absente]] [[absente]] [[Modèle]] [[photo.png]]\n"),
+            note("/v/B.md", "# B\n[[Autre absente]]\n"),
+            note("/v/Templates/Modèle.md", "# {{title}}\n"),
+        ];
+        let files = [file("/v/photo.png", 1, FileKind::Picture)];
+        // `Absente` once (the index lowercases it), `Autre absente`; a template is not a broken link.
+        let vault = Vault { notes: &notes, files: &files, dirs: &[], template: &templates };
+        assert_eq!(broken_count(&vault), 2);
+        assert_eq!(broken_count(&vault), of(&scan(&vault), Kind::BrokenLink).len());
     }
 
     #[test]

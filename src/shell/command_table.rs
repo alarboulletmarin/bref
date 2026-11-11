@@ -523,6 +523,9 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<RestoreTrash>()
             .does(|this, window, cx| this.open_trash(window, cx))
             .label(tr("Restore from the trash…", "Restaurer depuis la corbeille…")).icon("trash.svg").group(Vault),
+        s::<VaultHealth>()
+            .does(|this, window, cx| this.open_health(window, cx))
+            .label(tr("Vault health: broken links, orphans, leftovers", "Santé du coffre : liens cassés, orphelins, restes")).icon("heart.svg").group(Vault),
         s::<BackupVault>()
             .does(|this, window, cx| this.choose_backup(window, cx))
             .label(tr("Back up the vault…", "Sauvegarder le coffre…")).icon("backup.svg").group(Vault),

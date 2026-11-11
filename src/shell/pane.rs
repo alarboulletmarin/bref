@@ -104,6 +104,8 @@ pub(super) enum Cover {
     Listing(nav::Listing),
     /// Mermaid diagram, formula or picture of the note, viewed large.
     Figure(Entity<viewer::Viewer>),
+    /// The vault health page (`shell/health.rs`).
+    Health(super::health::HealthPage),
 }
 
 /// A pane of the window: its tabs, left to right (indices in `Shell::panes`), and the one it shows.
@@ -196,6 +198,39 @@ impl Pane {
         }
     }
 
+    pub(super) fn health(&self) -> Option<&super::health::HealthPage> {
+        match &self.shown {
+            Shown::Page { cover: Some(Cover::Health(page)), .. } => Some(page),
+            _ => None,
+        }
+    }
+
+    pub(super) fn health_mut(&mut self) -> Option<&mut super::health::HealthPage> {
+        match &mut self.shown {
+            Shown::Page { cover: Some(Cover::Health(page)), .. } => Some(page),
+            _ => None,
+        }
+    }
+
+    /// A list page or the health page lies over the note: a page of its own, which hides the note.
+    pub(super) fn listed(&self) -> bool {
+        matches!(self.shown, Shown::Page { cover: Some(Cover::Listing(_) | Cover::Health(_)), .. })
+    }
+
+    /// Takes the list page or the health page off, if one is the cover (a figure stays): the note
+    /// comes back.
+    pub(super) fn drop_pages(&mut self) {
+        self.take_page();
+    }
+
+    /// Takes the list page or the health page off and returns it, to put it back after a reload.
+    pub(super) fn take_page(&mut self) -> Option<Cover> {
+        match &mut self.shown {
+            Shown::Page { cover, .. } if matches!(cover, Some(Cover::Listing(_) | Cover::Health(_))) => cover.take(),
+            _ => None,
+        }
+    }
+
     pub(super) fn figure(&self) -> Option<&Entity<viewer::Viewer>> {
         match &self.shown {
             Shown::Page { cover: Some(Cover::Figure(figure)), .. } => Some(figure),
@@ -229,17 +264,6 @@ impl Pane {
         }
     }
 
-    /// Takes the list page off, if that is the cover (a figure stays).
-    pub(super) fn take_listing(&mut self) -> Option<nav::Listing> {
-        match &mut self.shown {
-            Shown::Page { cover, .. } if matches!(cover, Some(Cover::Listing(_))) => match cover.take() {
-                Some(Cover::Listing(listing)) => Some(listing),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
     /// Takes the figure off, if that is the cover (a list page stays).
     pub(super) fn clear_figure(&mut self) {
         if self.figure().is_some() {
@@ -257,7 +281,7 @@ impl Pane {
     /// figure can still cover it; callers that care test it too.)
     pub(super) fn shows_note(&self) -> bool {
         match &self.shown {
-            Shown::Page { base, cover } => matches!(base, Base::Note) && !matches!(cover, Some(Cover::Listing(_))),
+            Shown::Page { base, cover } => matches!(base, Base::Note) && !matches!(cover, Some(Cover::Listing(_) | Cover::Health(_))),
             // A tool tab shows its panel, not the note: drops, templates and the note's lists leave it alone.
             Shown::Tool(_) | Shown::Settings => false,
         }
@@ -341,6 +365,7 @@ impl Shell {
         match (self.pane().listing(), self.pane().file().map(|file| &file.kind)) {
             (_, Some(FileKind::Sheet(sheet))) => window.focus(&sheet.focus_handle(cx)),
             (Some(listing), _) => window.focus(&listing.filter().focus_handle(cx)),
+            (None, _) if let Some(health) = self.pane().health() => window.focus(&health.focus),
             (None, Some(FileKind::Drawing(canvas))) => window.focus(&canvas.focus_handle(cx)),
             (None, Some(FileKind::Svg(viewer))) => window.focus(&viewer.focus_handle(cx)),
             (None, Some(FileKind::Image)) => window.focus(&self.pane().zone),
@@ -367,6 +392,7 @@ impl Shell {
             || pane.editor.focus_handle(cx).is_focused(window)
             || pane.figure().is_some_and(|figure| figure.focus_handle(cx).is_focused(window))
             || pane.listing().is_some_and(|listing| listing.filter().focus_handle(cx).is_focused(window))
+            || pane.health().is_some_and(|health| health.focus.is_focused(window))
     }
 
     /// The active tab becomes the one its pane shows (code that sets `active` itself, as the
@@ -618,7 +644,7 @@ impl Shell {
     /// what opens next takes its place instead of a tab of its own, and an emptied note's file goes.
     pub(super) fn spare_tab(&self, cx: &App) -> bool {
         let pane = self.pane();
-        pane.page() && (pane.preview || (pane.path.is_none() || pane.fresh) && pane.file().is_none() && pane.listing().is_none() && pane.editor.read(cx).text().is_empty())
+        pane.page() && (pane.preview || (pane.path.is_none() || pane.fresh) && pane.file().is_none() && !pane.listed() && pane.editor.read(cx).text().is_empty())
     }
 
     /// A tab for what is about to open: the active one if it is spare, otherwise a new one.
@@ -637,7 +663,7 @@ impl Shell {
                 // The note under a picture or a list page comes back to the front.
                 if self.pane().path.as_deref() == Some(path) {
                     self.set_file(None, cx);
-                    self.pane_mut().take_listing();
+                    self.pane_mut().drop_pages();
                 }
                 // Coming back to it counts as an opening: the recent notes say so.
                 (self.pane_mut().peek, self.pane_mut().preview) = (false, false);

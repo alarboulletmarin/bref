@@ -11,7 +11,6 @@ pub mod embed;
 pub mod files;
 pub mod formula;
 pub mod graph;
-#[allow(dead_code)] // used by the vault health page, next step of #36
 pub mod health;
 pub mod history;
 pub mod import;
