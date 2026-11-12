@@ -89,7 +89,9 @@ impl Shell {
                     cx.background_executor().timer(pause).await;
                     false
                 };
-                let Ok(state) = this.update(cx, |this, _| this.vault.clone().map(|root| (root, this.save_gen)))
+                // A vault still being read for the first time is left alone: on a slow disk that read
+                // outlasts the pause, and a second one beside it would cost its time and its memory twice.
+                let Ok(state) = this.update(cx, |this, _| this.vault.clone().filter(|_| !this.scanning).map(|root| (root, this.save_gen)))
                 else {
                     return;
                 };
@@ -227,6 +229,7 @@ impl Shell {
         config::save_config(&root, &[]);
         window.focus(&self.pane().editor.focus_handle(cx));
         // The index (names, tags) is built off the UI thread.
+        self.scanning = true;
         cx.spawn(async move |this, cx| {
             let scan_root = root.clone();
             let (notes, dirs, images, unreadable) = cx
@@ -235,6 +238,7 @@ impl Shell {
                 .await;
             this.update(cx, |this, cx| {
                 if this.vault.as_ref() == Some(&root) {
+                    this.scanning = false;
                     this.unreadable = unreadable;
                     this.replace_notes(notes, true);
                     this.dirs = dirs;

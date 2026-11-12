@@ -144,6 +144,9 @@ struct Shell {
     graph_stale: bool,
     palette: Option<Entity<Palette>>,
     vault: Option<PathBuf>,
+    /// The first read of the vault is still running: the watcher waits for it, rather than read
+    /// every note a second time next to it.
+    scanning: bool,
     notes: Vec<Note>,
     /// Vault folders, including those that contain no note.
     dirs: Vec<PathBuf>,
@@ -287,6 +290,7 @@ impl Shell {
             graph_stale: true,
             palette: None,
             vault: None,
+            scanning: false,
             notes: Vec::new(),
             dirs: Vec::new(),
             images: Vec::new(),
