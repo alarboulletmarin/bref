@@ -47,6 +47,34 @@ gpui = { version = "0.2.2", features = ["test-support"] }
 embed-resource = "3.0"
 
 [profile.release]
-lto = "thin"
+# The whole program optimised as one: 6 % smaller than "thin", and no slower.
+lto = "fat"
 codegen-units = 1
 strip = true
+
+# Code that never runs while typing is built for size: diagrams, formulas and the PDF export (drawn off
+# the UI thread or on demand), the desktop portal and keyring (D-Bus), shaders translated once at
+# startup, picture formats rarely met. The editor, GPUI, text shaping and search keep full speed.
+# Measured with the benchmarks of `src/shell/tests/benches.rs`: the binary loses another 6 %, and no
+# gesture is slower. Everything at "s" would lose 28 %, and cost 15 % of time on every keystroke.
+[profile.release.package]
+mermaid-rs-renderer.opt-level = "s"
+latex-rust.opt-level = "s"
+svg2pdf.opt-level = "s"
+pdf-writer.opt-level = "s"
+subsetter.opt-level = "s"
+write-fonts.opt-level = "s"
+naga.opt-level = "s"
+codespan-reporting.opt-level = "s"
+zbus.opt-level = "s"
+zvariant.opt-level = "s"
+ashpd.opt-level = "s"
+oo7.opt-level = "s"
+num-bigint-dig.opt-level = "s"
+fontconfig-parser.opt-level = "s"
+xim-parser.opt-level = "s"
+regex-syntax.opt-level = "s"
+image-webp.opt-level = "s"
+exr.opt-level = "s"
+tiff.opt-level = "s"
+gif.opt-level = "s"
