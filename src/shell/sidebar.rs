@@ -807,7 +807,7 @@ impl Shell {
                 self.nav.set_rows(self.nav_rows());
                 self.nav.set_rows_from(source);
             }
-            if std::mem::take(&mut self.nav.needs_reveal())
+            if self.nav.take_reveal()
                 && let Some(ix) = self.selected_row()
             {
                 self.nav.scroll().scroll_to_item(ix, ScrollStrategy::Center);
