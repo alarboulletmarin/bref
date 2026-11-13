@@ -3,7 +3,6 @@
 use super::*;
 use gpui::{ClipboardItem, Image, ImageFormat};
 
-#[cfg(unix)]
 #[gpui::test]
 fn a_picture_that_cannot_be_saved_is_told(cx: &mut TestAppContext) {
     use std::os::unix::fs::PermissionsExt;

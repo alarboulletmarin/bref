@@ -295,10 +295,10 @@ fn an_unreadable_folder_does_not_hide_the_rest() {
     write(&root, "Ok.md", "# Ok\n");
     fs::create_dir(root.join("locked")).unwrap();
     write(&root, "locked/No.md", "# No\n");
-    let mut perms = fs::metadata(root.join("locked")).unwrap().permissions();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(root.join("locked")).unwrap().permissions();
         perms.set_mode(0o0);
         fs::set_permissions(root.join("locked"), perms).unwrap();
     }

@@ -148,9 +148,13 @@ fn private_dir() -> io::Result<PathBuf> {
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
     for n in 0..100 {
         let dir = std::env::temp_dir().join(format!("bref-update-{}-{stamp:x}-{n}", std::process::id()));
-        let mut builder = DirBuilder::new();
+        let builder = DirBuilder::new();
         #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        let builder = {
+            let mut builder = builder;
+            std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+            builder
+        };
         match builder.create(&dir) {
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
             made => return made.map(|()| dir),

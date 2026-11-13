@@ -13,15 +13,15 @@ pub mod terminal;
 pub mod update;
 pub mod vault;
 
-use std::{ffi::OsStr, fs, process::Command};
+use std::{ffi::OsStr, process::Command};
 
 /// The NVIDIA Vulkan driver (package `nvidia-utils`) takes about 2 s to give up
 /// when no NVIDIA card is plugged in: the loader is asked to ignore it.
 #[cfg(target_os = "linux")]
 pub fn skip_absent_nvidia_driver() {
-    let has_nvidia = fs::read_dir("/sys/bus/pci/devices").is_ok_and(|devices| {
+    let has_nvidia = std::fs::read_dir("/sys/bus/pci/devices").is_ok_and(|devices| {
         devices.flatten().any(|d| {
-            fs::read_to_string(d.path().join("vendor")).is_ok_and(|v| v.trim() == "0x10de")
+            std::fs::read_to_string(d.path().join("vendor")).is_ok_and(|v| v.trim() == "0x10de")
         })
     });
     if !has_nvidia && std::env::var_os("VK_LOADER_DRIVERS_DISABLE").is_none() {
