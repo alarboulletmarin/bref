@@ -249,6 +249,10 @@ impl AssetSource for Assets {
             "replace-all.svg" => r#"<path d="M2.5 3.5H7.5M2.5 7H7.5M2.5 10.5H7.5"/><path d="M9 3.5H10.5A2.5 2.5 0 0 1 13 6V12M10.8 10L13 12.2L15.2 10"/>"#,
             "in-selection.svg" => r#"<path d="M5 3H3.5V13H5M11 3H12.5V13H11"/><path d="M6 6.5H10M6 9.5H9"/>"#,
             "sync.svg" => r#"<path d="M12.6 6.5A4.8 4.8 0 0 0 3.9 5.4M3.5 2.8V5.6H6.3M3.4 9.5A4.8 4.8 0 0 0 12.1 10.6M12.5 13.2V10.4H9.7"/>"#,
+            // A toothed wheel: the settings.
+            "gear.svg" => {
+                r#"<circle cx="8" cy="8" r="2"/><path d="M6.9 2.5H9.1L9.5 4.1L10.9 4.9L12.5 4.4L13.6 6.3L12.4 7.4V8.6L13.6 9.7L12.5 11.6L10.9 11.1L9.5 11.9L9.1 13.5H6.9L6.5 11.9L5.1 11.1L3.5 11.6L2.4 9.7L3.6 8.6V7.4L2.4 6.3L3.5 4.4L5.1 4.9L6.5 4.1Z"/>"#
+            }
             "theme.svg" => {
                 r#"<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="black"/>"#
             }

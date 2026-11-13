@@ -6,7 +6,7 @@ use crate::{logic::sharing, platform::export, views::nav::{Menu, Share}};
 impl Shell {
     pub(super) fn share_choices(&self, pane: usize) -> Vec<Share> {
         let Some(pane) = self.panes.get(pane) else { return Vec::new() };
-        if pane.tool().is_some() || pane.listing().is_some() || pane.figure().is_some() {
+        if !pane.page() || pane.listing().is_some() || pane.figure().is_some() {
             return Vec::new();
         }
         match pane.file().map(|file| &file.kind) {

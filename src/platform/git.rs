@@ -216,6 +216,12 @@ pub fn linked(root: &Path) -> Result<bool, Fail> {
     Ok(!run(root, &["remote"])?.is_empty())
 }
 
+/// The address the vault syncs with (its first remote), read locally: no network.
+pub fn remote(root: &Path) -> Option<String> {
+    let name = run(root, &["remote"]).ok()?.lines().next()?.to_string();
+    run(root, &["remote", "get-url", &name]).ok().filter(|url| !url.is_empty())
+}
+
 /// Refuses a repository in an unusual state, before touching it.
 fn usual(root: &Path) -> Result<(), Fail> {
     let dir = PathBuf::from(run(root, &["rev-parse", "--absolute-git-dir"])?);

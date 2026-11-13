@@ -34,6 +34,9 @@ impl Shell {
     /// What a tab is called: its file, its list page, or a new note's first line.
     pub(super) fn tab_name(&self, tab: usize, cx: &App) -> String {
         let pane = &self.panes[tab];
+        if pane.settings() {
+            return tr("Settings", "Réglages").to_string();
+        }
         match pane.tool() {
             Some(Mode::Graph) => return tr("Graph", "Graphe").to_string(),
             Some(_) => return tr("Calendar", "Calendrier").to_string(),

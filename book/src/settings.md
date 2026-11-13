@@ -1,13 +1,49 @@
 # Settings and appearance
 
-Every choice is a command of the palette: type its name, and see the result at once.
+Every choice Bref offers is in one place: the **Settings** tab. Open it with `Ctrl + ,`, the gear at the bottom of the rail, or `settings` in the palette.
+
+## The settings tab
+
+It opens as a tab of the active pane, like a note. Put it next to a note to try a theme on real text.
+
+- **Sections** on the left: Appearance, Editor, Files & links, Sync & backup, Agents, Shortcuts, Updates & about. In a narrow pane they go above, as a row.
+- **Each setting** shows its name, one line on what it changes when that is not obvious, and its current value: pills for a few choices, a switch for on and off, cards for the themes, a button for an action.
+- **Applied at once**, and saved in the [`settings` file](#the-settings-file). There is no OK or Cancel.
+- **Search**: type anywhere on the page, or click the field at the top. It finds a setting in every section, by its name, its line or one of its values (`dracula`, `wide`). `Enter` goes to the first one found.
+- `Esc` clears the search, then closes the tab.
+- The tab comes back after a restart, with the other tabs.
+- Without a vault (welcome screen), there is no tab to open: open or create a vault first.
+
+| Keys | On the settings page |
+|---|---|
+| `Up` / `Down` | the previous or next setting; past the last one of a section, into the next section |
+| `Tab` / `Shift + Tab` | the next or previous section; from the search field, back to the settings |
+| `Left` / `Right` | the previous or next choice: theme, page width, wide tables, text size; off or on for a switch |
+| `Enter` / `Space` | change it: the next choice, the other side of a switch, or what its button does |
+| a letter | starts a search |
+| `Esc` | clears the search, then closes the tab |
+
+**The palette commands stay.** `theme`, `font`, `page width`, `wide tables`, `formatting bar`, `animations` and `updates` still work: the tab is the map, the palette the shortcut. `theme` in the palette still previews each theme as you move through the list.
+
+**Edited by hand.** If you change the `settings` file while Bref runs, opening the tab again (`Ctrl + ,`) reads it and applies it.
+
+### What each section holds
+
+- **Appearance**: the theme, the font of the app and of the code, the text size, the animations.
+- **Editor**: the page width, wide tables, the formatting bar.
+- **Files & links**: the vault (its folder, **Open another…**, **Clone…**), where new notes and daily notes go, the trash (**Restore…**), the [configuration folder](vault.md#configuration-files).
+- **Sync & backup**: git (the server the vault syncs with, the time of the last sync, **Sync now**, or **Connect…** for a vault not linked yet), and a backup of the whole vault. See [Syncing a vault](sync.md).
+- **Agents**: what [`bref mcp`](agents.md) gives an agent, **Read and write** or **Read only**, and the configuration to copy: the JSON for Claude Desktop, Cursor, VS Code and the others, and the command for Claude Code. Both name this copy of Bref by its full path. **Copy** puts it on the clipboard.
+- **Shortcuts**: how many you changed, and the list itself (the help panel, `F1`), where you [change them](#changing-a-shortcut).
+- **Updates & about**: the version, **Check now**, the daily check on or off (see [Updates](updates.md)), the guide, the code and Ko-fi.
 
 ## Theme
 
-The half-filled circle at the bottom of the rail, or `theme` in the palette.
+The cards of **Appearance** in the settings tab, the half-filled circle at the bottom of the rail, or `theme` in the palette.
 
 - 13 themes: Bref Dark and Bref Light, Dracula, One Dark, Gruvbox (dark and light), Nord, Catppuccin (Mocha and Latte), Tokyo Night, Rosé Pine, Solarized (dark and light).
-- Each theme is applied as you move through the list, so you see it before choosing. `Enter` keeps it, `Esc` goes back to the one you had.
+- In the settings tab, each card shows the theme's page, text and accent. A click, or `Left` and `Right` on the row, applies it at once, the tab included.
+- In the palette, each theme is applied as you move through the list, so you see it before choosing. `Enter` keeps it, `Esc` goes back to the one you had.
 - `Default` follows the light or dark setting of your system, with Bref Light or Bref Dark.
 - In every theme, links, secondary text and the titles of colored panels are adjusted to a contrast of at least 4.5:1 (WCAG AA).
 
@@ -22,21 +58,21 @@ The half-filled circle at the bottom of the rail, or `theme` in the palette.
 
 Bref carries IBM Plex Sans (text), IBM Plex Mono (code) and IBM Plex Serif (page titles), under the SIL Open Font License (`assets/fonts/`). So it looks the same everywhere, with nothing to install.
 
-- Type `font` in the palette to choose another font, for the app or for the code, among those installed on your system. Type in the list to filter it.
+- **Change…** next to **App font** or **Code font** in the settings tab, or `font` in the palette, lists the fonts installed on your system. Type in the list to filter it.
 - Ideograms and emoji, which Plex does not draw, come from a font of your system.
 - A variable font cannot be emboldened. See [Troubleshooting](troubleshooting.md#bold-text-is-not-bold).
 
 ## Text size
 
-`Ctrl + +` and `Ctrl + -` change the size, `Ctrl + 0` restores the default.
+`Ctrl + +` and `Ctrl + -` change the size, `Ctrl + 0` restores the default. In the settings tab, **Text size** has the same buttons, and shows the size of the interface in percent.
 
 Headings, code and the width of the text column scale with it. The interface around the note (panel, rail, menus, palette, help) follows too, from 85 % to 150 %, so it stays usable at either end.
 
 ## Page width
 
-`page width` in the palette sets how wide the text column is: narrow, normal, wide, or the full window.
+**Page width** in the **Editor** section, or `page width` in the palette, sets how wide the text column is: narrow, normal, wide, or the full window.
 
-`wide tables` in the palette chooses what a table wider than the text does:
+**Wide tables**, or `wide tables` in the palette, chooses what a table wider than the text does:
 
 - **center** (the default): it spills out on both sides of the column, centered on the window;
 - **column**: it stays in the column, and scrolls sideways.
@@ -45,8 +81,8 @@ A small table keeps its own size, and nothing goes past the window.
 
 ## Formatting bar and animations
 
-- `formatting bar` in the palette shows or hides the [formatting bar](writing.md#the-formatting-bar) under the note.
-- `animations` in the palette turns the short fades off. When on, the panel, the formatting bar and a folder of the tree fade in over about 0.13 s as they open. Nothing moves on typing, scrolling or the caret, and no fade delays a result. Hovers and closing are instant.
+- **Formatting bar** (a switch in **Editor**), or `formatting bar` in the palette, shows or hides the [formatting bar](writing.md#the-formatting-bar) under the note.
+- **Animations** (a switch in **Appearance**), or `animations` in the palette, turns the short fades off. When on, the panel, the formatting bar and a folder of the tree fade in over about 0.13 s as they open. Nothing moves on typing, scrolling or the caret, and no fade delays a result. Hovers and closing are instant.
 
 ## Language
 
@@ -56,20 +92,20 @@ French if the system language is French, English otherwise. Bref asks the system
 
 These choices are kept in a file named `settings`, in the [configuration folder](vault.md#configuration-files). It holds one `key=value` per line:
 
-| Key | Values | Set by |
-|---|---|---|
-| `theme` | the name of a theme | `theme` |
-| `font`, `mono` | the font of the app, of the code | `font` |
-| `size` | the text size | `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` |
-| `page` | `narrow`, `normal`, `wide`, `full` | `page width` |
-| `wide` | `column`, `center` | `wide tables` |
-| `bar` | `on`, `off` | `formatting bar` |
-| `motion` | `on`, `off` | `animations` |
-| `updates` | `off` to stop the daily check | `updates`, see [Updates](updates.md) |
+| Key | Values | In the settings tab | In the palette |
+|---|---|---|---|
+| `theme` | the name of a theme | Appearance › **Theme** | `theme` |
+| `font`, `mono` | the font of the app, of the code | Appearance › **App font**, **Code font** | `font` |
+| `size` | the text size | Appearance › **Text size** | `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` |
+| `page` | `narrow`, `normal`, `wide`, `full` | Editor › **Page width** | `page width` |
+| `wide` | `column`, `center` | Editor › **Wide tables** | `wide tables` |
+| `bar` | `on`, `off` | Editor › **Formatting bar** | `formatting bar` |
+| `motion` | `on`, `off` | Appearance › **Animations** | `animations` |
+| `updates` | `off` to stop the daily check | Updates & about › **Check for updates** | `updates`, see [Updates](updates.md) |
 
 ## Changing a shortcut
 
-The help panel (`F1`) lists every shortcut, and lets you give any of them other keys.
+The help panel (`F1`, or **Open the list** in the **Shortcuts** section of the settings tab) lists every shortcut, and lets you give any of them other keys.
 
 - **Change**: click the keys of a row, or move to it with `Down` and press `Enter`. The row waits, and the next combination you press becomes its shortcut, at once. `Esc` cancels. `Backspace` leaves the action with no shortcut.
 - **Conflicts**: a combination already used where the action applies is not taken. The row says by which action. `Enter` (**Replace**) gives it to the new one, and the other is left without a shortcut. The same keys in two views that never meet (a table and a diagram) are not a conflict.

@@ -195,6 +195,7 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
         (
             tr("Appearance", "Apparence"),
             vec![
+                k!(OpenSettings),
                 p(tr("theme", "thème"), tr("Theme, previewed as you browse", "Thème, en aperçu pendant le choix")),
                 p(tr("font", "police"), tr("Font of the app / of the code", "Police de l'app / du code")),
                 p(tr("page width", "largeur de page"), tr("Width of the text column: narrow, normal, wide, full", "Largeur de la colonne de texte : étroite, normale, large, pleine")),

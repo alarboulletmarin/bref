@@ -21,6 +21,7 @@ mod print;
 mod render;
 mod search;
 mod settings;
+mod settings_page;
 mod sharing;
 mod sidebar;
 mod sync;
@@ -194,6 +195,8 @@ struct Shell {
     copied: bool,
     /// The help panel, open or not.
     help: Help,
+    /// The settings page: its section, search and picked row (the tab itself is `Shown::Settings`).
+    settings: settings_page::SettingsPage,
     /// What was shown, for "back" and "forward".
     history: History,
     /// The bindings in effect, and what the user changed in the default shortcuts.
@@ -316,6 +319,7 @@ impl Shell {
             edge: None,
             copied: false,
             help: Help::default(),
+            settings: settings_page::SettingsPage::new(cx),
             history: History::default(),
             bound: defaults(),
             changes: keys::Changes::new(),

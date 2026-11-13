@@ -11,7 +11,7 @@ impl Shell {
     /// Copies the note; with `block`, only the code block the cursor is in,
     /// if there is one.
     pub(super) fn copy_all(&mut self, block: bool, cx: &mut Context<Self>) {
-        if self.pane().file().is_some() || self.pane().tool().is_some() || self.pane().listing().is_some() || self.pane().figure().is_some() { return; }
+        if self.pane().file().is_some() || !self.pane().page() || self.pane().listing().is_some() || self.pane().figure().is_some() { return; }
         let editor = self.pane().editor.read(cx);
         let code = editor.code_at_cursor().filter(|_| block);
         let text = code.unwrap_or(editor.text()).to_string();

@@ -779,7 +779,7 @@ impl Shell {
             self.nav.activate(first);
         }
         // A tool or file view is no note: the backlinks stay on the last one.
-        if !self.pane().preview && self.pane().tool().is_none() && self.pane().file().is_none() {
+        if !self.pane().preview && self.pane().page() && self.pane().file().is_none() {
             self.nav.set_anchor(self.pane().path.clone());
         }
         let current = self.pane().displayed_path().cloned();
@@ -974,6 +974,12 @@ impl Shell {
             .child(button("nav-theme", "theme.svg", false, t).tooltip(tip(tr("Choose a theme…", "Choisir un thème…"), String::new(), t)).on_click(cx.listener(
                 |this, _, window, cx| this.choose_setting(Setting::Theme, window, cx),
             )))
+            .child(
+                button("nav-settings", "gear.svg", self.pane().settings(), t)
+                    .debug_selector(|| "nav-settings".into())
+                    .tooltip(tip(tr("Settings", "Réglages"), keys(&crate::actions::OpenSettings), t))
+                    .on_click(cx.listener(|this, _, window, cx| this.open_settings(None, window, cx))),
+            )
             .child(
                 button("nav-help", "help.svg", false, t)
                     .debug_selector(|| "nav-help".into())
