@@ -95,7 +95,7 @@ pub fn counts(out: &str) -> Option<(usize, usize)> {
 
 /// `ls-files -u -z`: each conflicting file, and which of its three versions exist
 /// (the common ancestor, ours, theirs).
-pub fn unmerged(out: &str) -> Vec<(String, [bool; 3])> {
+fn unmerged(out: &str) -> Vec<(String, [bool; 3])> {
     let mut files: Vec<(String, [bool; 3])> = Vec::new();
     for entry in out.split('\0').filter(|entry| !entry.is_empty()) {
         let Some((meta, path)) = entry.split_once('\t') else { continue };
@@ -116,7 +116,7 @@ pub fn unmerged(out: &str) -> Vec<(String, [bool; 3])> {
 
 /// Where to write the other side's version of a conflicting note: next to it, as Dropbox
 /// and Syncthing do.
-pub fn conflict_path(path: &Path, date: &str, host: &str) -> PathBuf {
+fn conflict_path(path: &Path, date: &str, host: &str) -> PathBuf {
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     let mark = if host.is_empty() { format!("conflict {date}") } else { format!("conflict {date} {host}") };
     let name = match path.extension() {

@@ -135,7 +135,7 @@ impl Form {
     }
 
     /// Whether the text is written under the shape rather than in it.
-    pub fn label_below(self) -> bool {
+    fn label_below(self) -> bool {
         matches!(self, Form::Actor | Form::Branch | Form::Dot | Form::Final | Form::Terminate | Form::Bar | Form::Exit | Form::Pin)
     }
 
@@ -700,12 +700,12 @@ impl Shape {
     /// A compartment box is written from the top, its first compartment
     /// centered and bold (the class name), the next ones left-aligned.
     #[cfg(test)]
-    pub fn text_lines(&self) -> (Vec<TextLine<'_>>, Vec<f32>) {
+    fn text_lines(&self) -> (Vec<TextLine<'_>>, Vec<f32>) {
         self.text_lines_for(false)
     }
 
     /// `text_lines`, for a diagram that reads styles (`rich`) or not.
-    pub fn text_lines_for(&self, rich: bool) -> (Vec<TextLine<'_>>, Vec<f32>) {
+    fn text_lines_for(&self, rich: bool) -> (Vec<TextLine<'_>>, Vec<f32>) {
         let (cx, cy) = self.center();
         let lines: Vec<&str> = self.text.split('\n').collect();
         let mut rules = Vec::new();
@@ -791,7 +791,7 @@ impl Shape {
 
     /// Where a line parallel to side `out` (a unit direction), `spread` away from the middle, meets the
     /// outline: the arrow's way out when it shares the side with others. Never past the side's end.
-    pub fn border_beside(&self, out: (f32, f32), spread: f32) -> (f32, f32) {
+    fn border_beside(&self, out: (f32, f32), spread: f32) -> (f32, f32) {
         let (cx, cy) = self.center();
         let (a, b) = ((self.w / 2.).max(1.), (self.h / 2.).max(1.));
         // Along the exit's axis: `depth` is the half size there, `wide` the half size across.
@@ -853,7 +853,7 @@ pub fn head(head: Head, tip: (f32, f32), u: (f32, f32)) -> (Vec<(f32, f32)>, boo
 
 /// Path of a head set at `tip`, for a stroke arriving in the unit direction `u`: the path, whether
 /// it is filled, and by how much to shorten the stroke so it stops at its base.
-pub fn head_path(kind: Head, tip: (f32, f32), u: (f32, f32)) -> (Vec<Cmd>, bool, f32) {
+fn head_path(kind: Head, tip: (f32, f32), u: (f32, f32)) -> (Vec<Cmd>, bool, f32) {
     let n = (-u.1, u.0);
     let at = |back: f32, side: f32| (tip.0 - u.0 * back + n.0 * side, tip.1 - u.1 * back + n.1 * side);
     // An arc of a circle of radius `r` around `c`, from angle `a0` to `a1` (0 = along the stroke, backwards).

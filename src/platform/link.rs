@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 use super::{config::{self, File}, signal::Signal};
 
 /// The answer to an agent: a sentence when the window could not show the file.
-pub type Answer = Result<(), String>;
+type Answer = Result<(), String>;
 
 /// A file the agent asks the window to show, and where to send the window's answer.
 pub struct Asked {
@@ -31,7 +31,7 @@ pub struct Asked {
 }
 
 /// What `bref mcp` says when no window answers: the file is written all the same.
-pub const NOT_OPEN: &str = "Bref is not open: start it to see the file";
+const NOT_OPEN: &str = "Bref is not open: start it to see the file";
 
 fn door() -> PathBuf {
     config::path(File::Agent)

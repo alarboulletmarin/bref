@@ -365,7 +365,7 @@ pub fn zone(x: f32, y: f32, w: f32, h: f32, band: f32) -> Zone {
 }
 
 /// Share of the width the left pane can take.
-pub const PANE_RATIO: std::ops::RangeInclusive<f32> = 0.2..=0.8;
+const PANE_RATIO: std::ops::RangeInclusive<f32> = 0.2..=0.8;
 
 /// The saved layout (file `panes`): the left pane's share, then each pane's tabs and the position
 /// of the one it shows. Reads the two older formats too: a share then the second pane's file

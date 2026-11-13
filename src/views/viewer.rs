@@ -41,7 +41,7 @@ const FLYING: usize = 8;
 const ZOOM: zoom::Limits = zoom::Limits::new(0.05, 8.);
 
 /// The SVG read, made readable and parsed, in a theme's colors.
-pub struct Doc {
+struct Doc {
     tree: usvg::Tree,
     id: u64,
 }

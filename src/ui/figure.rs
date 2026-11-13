@@ -97,7 +97,7 @@ pub fn png(svg: &str, fonts: crate::ui::assets::Fonts, scale: f32, ground: u32) 
 /// memory is rendered there at scale 1, hence blurry, and with red and blue
 /// swapped (only loading a file puts them back in order): we enlarge it
 /// twice and swap the two colours in advance.
-pub fn sharpen(svg: &str) -> Option<Figure> {
+fn sharpen(svg: &str) -> Option<Figure> {
     let body = &svg[svg.find("<svg")?..];
     let head = &body[..body.find('>')?];
     let dim = |name: &str| {

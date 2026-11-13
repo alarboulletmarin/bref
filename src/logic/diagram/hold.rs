@@ -39,7 +39,7 @@ impl Diagram {
     }
 
     /// The topmost shape that holds others and covers this point, apart from `except`.
-    pub fn container_at(&self, x: f32, y: f32, except: &[u32]) -> Option<u32> {
+    fn container_at(&self, x: f32, y: f32, except: &[u32]) -> Option<u32> {
         self.shapes.iter().rev().find(|s| s.form.holds() && s.contains(x, y) && !except.contains(&s.id)).map(|s| s.id)
     }
 

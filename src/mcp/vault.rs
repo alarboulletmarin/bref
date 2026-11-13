@@ -197,7 +197,7 @@ fn is_diagram(path: &Path) -> bool {
 }
 
 /// The note whose name is closest to `query`, when one clearly contains the other.
-pub fn suggest(notes: &[Note], query: &str) -> Option<String> {
+fn suggest(notes: &[Note], query: &str) -> Option<String> {
     let q = query.to_lowercase();
     let mut best: Option<(i32, &str)> = None;
     for note in notes {

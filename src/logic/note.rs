@@ -20,7 +20,7 @@ impl NoteKey {
 }
 
 /// Tags, links and aliases of a text.
-pub type Indexed = (Arc<[String]>, Arc<[NoteKey]>, Arc<[String]>);
+type Indexed = (Arc<[String]>, Arc<[NoteKey]>, Arc<[String]>);
 
 #[derive(Clone)]
 pub struct Note {

@@ -19,8 +19,8 @@ use crate::{
 };
 
 /// Inner padding of a cell, and stroke thickness.
-pub const PAD_X: Pixels = px(10.);
-pub const PAD_Y: Pixels = px(5.);
+const PAD_X: Pixels = px(10.);
+const PAD_Y: Pixels = px(5.);
 pub const LINE: Pixels = px(1.);
 /// Text width of a column whose cells are short or empty, and the narrowest
 /// it is given: below that, the table scrolls.
@@ -159,7 +159,7 @@ fn longest(line: &WrappedLine) -> Pixels {
 /// line if the page allows it; otherwise short columns keep their width and long ones
 /// share the rest, without going below their longest word; and if even the words do not
 /// fit, the longest are cut. `narrow`: longest word; `wide`: text on one line.
-pub fn column_widths(narrow: &[f32], wide: &[f32], avail: f32) -> Vec<f32> {
+fn column_widths(narrow: &[f32], wide: &[f32], avail: f32) -> Vec<f32> {
     let total = |v: &[f32]| v.iter().sum::<f32>();
     if total(wide) <= avail {
         return wide.to_vec();

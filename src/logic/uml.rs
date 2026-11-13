@@ -156,7 +156,7 @@ impl Member {
 
     /// Whether this is an operation.
     #[cfg(test)]
-    pub fn is_operation(&self) -> bool {
+    fn is_operation(&self) -> bool {
         self.params.is_some()
     }
 

@@ -250,7 +250,7 @@ fn mark_tag(rest: &str, closing: bool) -> Option<usize> {
 }
 
 /// The number (in `MARKS`) of an opening `<mark>`'s color, 0 for `<mark>` and for `==`.
-pub fn mark_color(open: &str) -> usize {
+fn mark_color(open: &str) -> usize {
     MARKS.iter().position(|name| open == format!("<mark class=\"{name}\">")).unwrap_or(0)
 }
 

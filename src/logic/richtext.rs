@@ -22,7 +22,7 @@ pub struct Span {
 
 impl Span {
     #[cfg(test)]
-    pub fn is_plain(&self) -> bool {
+    fn is_plain(&self) -> bool {
         self.style == Style::default()
     }
 }

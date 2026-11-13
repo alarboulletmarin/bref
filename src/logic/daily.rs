@@ -7,7 +7,7 @@ use crate::lang::fold;
 pub const NAMES: [&str; 5] = ["daily", "journal", "today", "note du jour", "aujourd'hui"];
 
 /// Whether a template file of this name is the daily note's template.
-pub fn is_daily_name(stem: &str) -> bool {
+fn is_daily_name(stem: &str) -> bool {
     NAMES.contains(&fold(stem).as_str())
 }
 
