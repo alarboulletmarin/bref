@@ -1,0 +1,2 @@
+# Fixtures compared byte for byte with what the code writes: no CRLF on a Windows checkout.
+src/logic/diagram/fixtures/* text eol=lf
