@@ -63,6 +63,26 @@ fn chapter(failed: &mut Vec<(&'static str, String)>, name: &'static str, run: im
     }
 }
 
+/// What the session says when chapters failed: how many, then each one with its message; none when all passed.
+fn report(failed: &[(&'static str, String)]) -> Option<String> {
+    let lines: Vec<String> = failed.iter().map(|(name, why)| format!("- {name}: {why}")).collect();
+    (!failed.is_empty()).then(|| format!("{} chapter(s) failed:\n{}", failed.len(), lines.join("\n")))
+}
+
+/// A failed chapter does not stop the session: the next ones run, and the report names every failed one
+/// with its message, whether the panic carried a formatted or a plain text.
+#[test]
+fn a_failed_chapter_does_not_hide_the_next() {
+    let mut failed = Vec::new();
+    let mut ran = Vec::new();
+    chapter(&mut failed, "un", || panic!("formatted {}", 1));
+    chapter(&mut failed, "deux", || ran.push("deux"));
+    chapter(&mut failed, "trois", || panic!("plain"));
+    assert_eq!(ran, ["deux"]);
+    assert_eq!(report(&failed).as_deref(), Some("2 chapter(s) failed:\n- un: formatted 1\n- trois: plain"));
+    assert_eq!(report(&[]), None);
+}
+
 /// `secondary` = Cmd on macOS, Ctrl elsewhere, as in `bind_keys`.
 /// Full keyboard run: typing, lists, saving, palette, wikilink.
 #[gpui::test]
@@ -121,6 +141,7 @@ fn end_to_end(cx: &mut TestAppContext) {
     chapter(&mut failed, "csv", || csv::run(&j, cx));
     chapter(&mut failed, "history_panes", || history_panes::run(&j, cx));
     chapter(&mut failed, "git_sync", || git_sync::run(&j, cx));
-    let report: Vec<String> = failed.iter().map(|(name, why)| format!("- {name}: {why}")).collect();
-    assert!(failed.is_empty(), "{} chapter(s) failed:\n{}", failed.len(), report.join("\n"));
+    if let Some(report) = report(&failed) {
+        panic!("{report}");
+    }
 }
