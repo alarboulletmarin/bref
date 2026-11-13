@@ -28,7 +28,7 @@ fn frames(cx: &mut gpui::VisualTestContext) {
 }
 
 fn open(shell: &Entity<Shell>, cx: &mut gpui::VisualTestContext, root: &Path, name: &str) {
-    let (notes, dirs, images) = vault::scan(root);
+    let (notes, dirs, images) = vault::rescan(root, &[]);
     shell.update(cx, |s, cx| {
         s.sync(notes, dirs, images, cx);
         s.open_note(&root.join(name), cx);

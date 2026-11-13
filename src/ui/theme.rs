@@ -236,13 +236,11 @@ impl Theme {
     }
 
     /// The radius of a sheet laid on the ground: the note, the panel, the tools.
-    #[allow(dead_code)] // used by the views from step 3 of #91
     pub fn sheet(&self) -> Pixels {
         self.px(12.)
     }
 
     /// The radius of a tinted band inside a sheet (`code_bg`): kanban columns, table headers.
-    #[allow(dead_code)] // used by the views from step 3 of #91
     pub fn band(&self) -> Pixels {
         self.px(10.)
     }

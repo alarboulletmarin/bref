@@ -66,7 +66,7 @@ fn commands_are_found(cx: &mut TestAppContext) {
     // On a CSV table, opened from the palette: it stays shown and takes input. Help and the menu
     // start with its keys, the empty palette offers its gestures.
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(&root);
+        let (notes, dirs, images) = vault::rescan(&root, &[]);
         s.sync(notes, dirs, images, cx);
     });
     cx.simulate_keystrokes("secondary-p");
@@ -247,7 +247,7 @@ fn templates_journey(cx: &mut TestAppContext) {
     };
     let rescan = |cx: &mut gpui::VisualTestContext| {
         shell.update(cx, |s, cx| {
-            let (notes, dirs, images) = vault::scan(&root);
+            let (notes, dirs, images) = vault::rescan(&root, &[]);
             s.sync(notes, dirs, images, cx);
         });
         cx.run_until_parked();

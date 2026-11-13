@@ -88,10 +88,6 @@ impl Shell {
         cx.notify();
     }
 
-    pub(super) fn open_palette(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_palette(query, window, cx)
-    }
-
     pub(super) fn show_palette(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_none() {
             return;

@@ -932,7 +932,7 @@ impl Shell {
                 button("nav-search", "search.svg", false, t)
                     .debug_selector(|| "nav-search".into())
                     .tooltip(tip(tr("Find or create a note", "Chercher ou créer une note"), keys(&crate::actions::OpenPalette), t))
-                    .on_click(cx.listener(|this, _, window, cx| this.open_palette("", window, cx))),
+                    .on_click(cx.listener(|this, _, window, cx| this.show_palette("", window, cx))),
             )
             .child(
                 button("nav-new", "plus.svg", false, t)

@@ -11,7 +11,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let original = "id,name,score\n3,Zoé,10\n1,Max,\n2,Léa,9\n";
     fs::write(&cols, original).unwrap();
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(root);
+        let (notes, dirs, images) = vault::rescan(root, &[]);
         s.sync(notes, dirs, images, cx);
         s.open_note(&cols, cx);
     });
@@ -96,7 +96,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let one = root.join("une.csv");
     fs::write(&one, "a,b\n").unwrap();
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(root);
+        let (notes, dirs, images) = vault::rescan(root, &[]);
         s.sync(notes, dirs, images, cx);
         s.open_note(&one, cx);
     });
@@ -114,7 +114,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let csv = root.join("data.csv");
     fs::write(&csv, b"nom;age\nAna\xefs;31\nBob;27\n").unwrap();
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(root);
+        let (notes, dirs, images) = vault::rescan(root, &[]);
         s.sync(notes, dirs, images, cx);
         s.open_note(&csv, cx);
     });
@@ -208,7 +208,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let long = root.join("long.csv");
     fs::write(&long, (0..400).map(|i| format!("{i};a{i};b{i};c{i}\n")).collect::<String>()).unwrap();
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(root);
+        let (notes, dirs, images) = vault::rescan(root, &[]);
         s.sync(notes, dirs, images, cx);
         s.open_note(&long, cx);
     });
@@ -242,7 +242,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     let fonts = root.join("fonts.csv");
     fs::write(&fonts, "id,ville,age\nA-1,Saint-Rémy-de-Provence,30\nA-2,Lyon,-4\n").unwrap();
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(root);
+        let (notes, dirs, images) = vault::rescan(root, &[]);
         s.sync(notes, dirs, images, cx);
         s.open_note(&fonts, cx);
     });

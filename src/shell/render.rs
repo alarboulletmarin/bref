@@ -435,15 +435,15 @@ impl Shell {
             .debug_selector(|| "window-pill".into())
             .map(drag_window)
             .when(controls.minimize, |d| {
-                d.child(icon_button("minimize", "minimize.svg", t).on_click(|_, window, _| window.minimize_window()))
+                d.child(icon_button("minimize", "minimize.svg", t.hover, t).on_click(|_, window, _| window.minimize_window()))
             })
             .when(controls.maximize, |d| {
                 let icon = if window.is_maximized() { "restore.svg" } else { "maximize.svg" };
-                d.child(icon_button("maximize", icon, t).on_click(|_, window, _| window.zoom_window()))
+                d.child(icon_button("maximize", icon, t.hover, t).on_click(|_, window, _| window.zoom_window()))
             })
             // Closing is the one button that warns: its hover is the red of the callout recipe.
             .child(
-                icon_button_over("close", "close.svg", t.danger_hover(), t)
+                icon_button("close", "close.svg", t.danger_hover(), t)
                     .on_click(cx.listener(|this, _, window, cx| {
                         if this.may_close_window(window, cx) {
                             window.remove_window();

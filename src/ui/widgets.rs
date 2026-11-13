@@ -224,18 +224,13 @@ pub fn page_head(t: Theme, id: &'static str, size: f32, title: String, summary: 
 }
 
 /// A tinted band inside a sheet: groups what lies in it (a kanban column, a table header) without a line.
-#[allow(dead_code)] // used by the views from step 3 of #91
 pub fn band(t: Theme) -> Div {
     div().bg(t.code_bg).rounded(t.band())
 }
 
-/// Round icon button: window controls, note copy; 24 px, the smallest target a finger or a shaky hand hits.
-pub fn icon_button(id: &'static str, icon: &'static str, t: Theme) -> gpui::Stateful<gpui::Div> {
-    icon_button_over(id, icon, t.hover, t)
-}
-
-/// The same, with its own colour under the pointer (the close button's red).
-pub fn icon_button_over(id: &'static str, icon: &'static str, over: gpui::Hsla, t: Theme) -> gpui::Stateful<gpui::Div> {
+/// Round icon button: window controls; 24 px, the smallest target a finger or a shaky hand hits. `over` is its colour
+/// under the pointer (`hover`, or the close button's red).
+pub fn icon_button(id: &'static str, icon: &'static str, over: gpui::Hsla, t: Theme) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .debug_selector(move || id.to_string())

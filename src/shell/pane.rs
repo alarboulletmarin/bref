@@ -717,7 +717,7 @@ impl Shell {
     /// shown twice, so it cannot take the one being left.
     pub(super) fn split(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
         if self.vault.is_some() && self.add_pane(side, window, cx) {
-            self.open_palette("", window, cx);
+            self.show_palette("", window, cx);
         }
     }
 

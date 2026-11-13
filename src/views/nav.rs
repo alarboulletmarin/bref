@@ -871,7 +871,6 @@ impl Listing {
     }
 }
 
-pub use crate::logic::commands::reveal_label;
 pub use crate::logic::tree::{Row, tag_of, tag_rows, tree_rows};
 pub use crate::logic::rows::{ellipsize, share, split_ext};
 

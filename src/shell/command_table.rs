@@ -581,7 +581,7 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .key("secondary-q"),
         s::<OpenPalette>()
             .does(|this, window, cx| {
-                this.open_palette("", window, cx)
+                this.show_palette("", window, cx)
             })
             .help(tr("Find by name or text, create, filter by #tag", "Chercher par nom ou texte, créer, filtrer par #tag")).edit()
             .key("secondary-p"),
