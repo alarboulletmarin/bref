@@ -298,12 +298,27 @@ impl Shell {
         }
     }
 
-    /// What the tab shown by `group` keeps for its drawing: its comments and the one under the
-    /// caret, the focus rules of the board and of the list page, what the window around asks of
-    /// the note (`Chrome`), the room the comments column takes.
+    /// What the tab shown by `group` keeps for its drawing: the note back when it has the input, its
+    /// comments and the one under the caret, the focus rules of the board and of the list page, what
+    /// the window around asks of the note (`Chrome`), the room the comments column takes.
     fn settle_pane(&mut self, _pane: usize, group: usize, active: bool, client: bool, window: &mut Window, cx: &mut Context<Self>) {
         let t = self.theme;
         let barred = self.groups[group].tabs.len() > 1;
+        // The file or the cover picked in the panel goes away as soon as the note takes the input again.
+        if self.pane().editor.focus_handle(cx).is_focused(window) {
+            if !self.set_file(None, cx) {
+                self.focus_pane(self.active, window, cx);
+            }
+            self.pane_mut().clear_cover();
+        }
+        // A tool of the panel as this tab holds the input itself, never the hidden note under it.
+        if self.pane().tool().is_some() && self.pane().editor.focus_handle(cx).is_focused(window) {
+            window.focus(&self.pane().zone);
+        }
+        // The settings likewise: what had the keys over them (the palette of a font) gives them back to the page.
+        if self.pane().settings() && self.pane().editor.focus_handle(cx).is_focused(window) {
+            window.focus(&self.settings.focus);
+        }
         let board = self.board_shown(cx);
         // ponytail: the note is reread at each change (a search for `{==`); keep the
         // list from one version of the text to the next if very long notes suffer from it.
@@ -811,26 +826,11 @@ impl Shell {
             .rounded(t.large())
             .occlude()
             .on_click(cx.listener(|this, _, window, cx| this.show_share(window, cx)));
-        // The image picked in the panel; it goes away as soon as the note takes over again.
-        if self.pane().editor.focus_handle(cx).is_focused(window) {
-            if !self.set_file(None, cx) {
-                self.focus_pane(self.active, window, cx);
-            }
-            self.pane_mut().clear_cover();
-                    }
         let note = div().flex_1().min_w_0().h_full().relative();
         let listing = self.pane().listing().is_some().then(|| self.render_listing(cx));
         let file = self.pane().file().map(|file| (file.path.clone(), file.kind.clone()));
-        // A tool of the panel as this tab: it holds the input itself, never the hidden note under it.
         let tool = self.pane().tool();
-        if tool.is_some() && self.pane().editor.focus_handle(cx).is_focused(window) {
-            window.focus(&self.pane().zone);
-        }
-        // The settings likewise: what had the keys over them (the palette of a font) gives them back to the page.
         let settings = self.pane().settings();
-        if settings && self.pane().editor.focus_handle(cx).is_focused(window) {
-            window.focus(&self.settings.focus);
-        }
         // The views whose top room is empty: the strip can lie over it.
         let free_top = tool.is_none() && !settings && self.pane().figure().is_none() && (listing.is_some() || board || matches!(file, None | Some((_, FileKind::Image))));
         let note = match file {
