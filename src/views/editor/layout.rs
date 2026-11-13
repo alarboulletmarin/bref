@@ -746,7 +746,10 @@ impl Editor {
                     }
                     i += n.max(1);
                 }
-                let (laid, big, counts) = (self.laid.take(), std::mem::take(&mut self.big), self.counts);
+                // The full layout starts from nothing.
+                let counts = self.counts;
+                self.laid = None;
+                self.big.clear();
                 self.force_full = true;
                 self.relayout(bounds, window, cx);
                 self.force_full = false;
@@ -760,7 +763,6 @@ impl Editor {
                         "line {i}: {a:?} against {b:?}"
                     );
                 }
-                let _ = (laid, big);
             }
             // A picture still loading changes its line's height: we will come back to it.
             self.laid_out = (!self.loading).then_some(key);

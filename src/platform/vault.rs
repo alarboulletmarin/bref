@@ -151,14 +151,8 @@ pub fn watch(root: &Path, changed: Arc<Signal>) -> Option<RecommendedWatcher> {
     Some(watcher)
 }
 
-/// All the vault's notes (recursive, hidden folders ignored), most recent
-/// first, all its folders, even empty, and its other files: images and tables.
-#[cfg(test)]
-pub fn scan(root: &Path) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
-    rescan(root, &[])
-}
-
-/// Like `scan`, without rereading the notes of `known` whose date has not changed.
+/// All the vault's notes (recursive, hidden folders ignored), most recent first, all its folders, even empty,
+/// and its other files: images and tables. The notes of `known` whose date has not changed are not reread.
 pub fn rescan(root: &Path, known: &[Note]) -> (Vec<Note>, Vec<PathBuf>, Vec<PathBuf>) {
     let (notes, dirs, images, _) = rescan_full(root, known);
     (notes, dirs, images)
@@ -809,7 +803,7 @@ mod tests {
         assert_eq!(save(&root, Some(&b), true, "# A 2\n").unwrap(), b);
         assert_eq!(save(&root, Some(&b), false, "# Z\n").unwrap(), b);
         assert_eq!(fs::read_to_string(&b).unwrap(), "# Z\n");
-        assert_eq!(scan(&root).0.len(), 2);
+        assert_eq!(rescan(&root, &[]).0.len(), 2);
         // Front matter: the name comes from the title after it, and renaming touches only that title.
         let meta = "---\ntitle: autre\n---\n";
         let c = save(&root, None, true, &format!("{meta}# Fiche\n---\n")).unwrap();
@@ -872,7 +866,7 @@ mod tests {
         assert_eq!(fs::read_to_string(root.join(".trash/C.md")).unwrap(), "# A\n");
         assert_eq!(fs::read_to_string(root.join(".trash/C 2.md")).unwrap(), "autre");
         fs::write(root.join("vide/Photo.PNG"), "").unwrap();
-        let (notes, dirs, images) = scan(&root);
+        let (notes, dirs, images) = rescan(&root, &[]);
         assert_eq!((notes.len(), dirs), (2, vec![root.join("vide")]));
         // Each note keeps its text as is, and the same in lowercase for search.
         assert!(notes.iter().all(|n| !n.body.is_empty()));
@@ -987,7 +981,7 @@ mod tests {
         fs::write(root.join("a/b/Note.md"), "# Note\n").unwrap();
         std::os::unix::fs::symlink(&root, root.join("a/b/loop")).unwrap();
         std::os::unix::fs::symlink(root.join("a"), root.join("alias")).unwrap();
-        let (notes, dirs, _) = scan(&root);
+        let (notes, dirs, _) = rescan(&root, &[]);
         assert_eq!(notes.len(), 1, "{:?}", notes.iter().map(|n| &n.path).collect::<Vec<_>>());
         assert!(dirs.len() <= 3, "{dirs:?}");
         // The fingerprint, too, is computed without looping and does not move.

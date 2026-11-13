@@ -37,7 +37,7 @@ fn the_table_head_stays_above_the_grid(cx: &mut TestAppContext) {
         assert_eq!(shell.read_with(cx, |s, _| s.theme.size), zoom);
         for file in [&long, &empty, &one, &wide] {
             shell.update(cx, |s, cx| {
-                let (notes, dirs, images) = vault::scan(&root);
+                let (notes, dirs, images) = vault::rescan(&root, &[]);
                 s.sync(notes, dirs, images, cx);
                 s.open_note(file, cx);
             });

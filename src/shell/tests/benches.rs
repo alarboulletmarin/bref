@@ -149,7 +149,7 @@ fn sheet_convert(cx: &mut TestAppContext) {
     println!("exported note: {} MB", fs::metadata(&exported).map_or(0, |m| m.len()) >> 20);
     let start = Instant::now();
     shell.update(cx, |s, cx| {
-        let (notes, dirs, images) = vault::scan(&root);
+        let (notes, dirs, images) = vault::rescan(&root, &[]);
         s.sync(notes, dirs, images, cx);
     });
     println!("rescan of the vault with this note: {:?}", start.elapsed());
@@ -344,7 +344,7 @@ fn bench_scale(cx: &mut TestAppContext) {
         config::keep(config::File::Layout, "tree split 260 0");
 
         let start = Instant::now();
-        let scanned = vault::scan(&root);
+        let scanned = vault::rescan(&root, &[]);
         let scan = start.elapsed();
         let start = Instant::now();
         let again = vault::rescan(&root, &scanned.0);
@@ -434,7 +434,7 @@ fn bench(cx: &mut TestAppContext) {
     config::keep(config::File::Layout, "tree split 260 0");
 
     let start = Instant::now();
-    let scanned = vault::scan(&root);
+    let scanned = vault::rescan(&root, &[]);
     within("vault scan", start.elapsed(), OPENING);
     let start = Instant::now();
     let again = vault::rescan(&root, &scanned.0);

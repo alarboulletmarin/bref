@@ -411,7 +411,7 @@ impl Shell {
                 groups[2].push((tr("Copy relative path", "Copier le chemin relatif"), Do::CopyRelative));
             }
             if !many {
-                groups[2].push((reveal_label(), Do::Reveal));
+                groups[2].push((crate::logic::commands::reveal_label(), Do::Reveal));
             }
             if is_dir && !many && tree {
                 groups[0].push((tr("Show as a list", "Afficher en liste"), Do::List));

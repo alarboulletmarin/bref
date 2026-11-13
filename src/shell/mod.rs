@@ -49,7 +49,7 @@ use crate::ui::{self,
     assets::{Assets, FAMILIES, init_fonts, logo},
     figure, line,
     theme::{Page, THEMES, Theme, Wide},
-    widgets::{drag_window, icon_button, icon_button_over, keycaps},
+    widgets::{drag_window, icon_button, keycaps},
 };
 use crate::views::{canvas, editor, field, graph, kanban, nav, palette, sheet, viewer};
 

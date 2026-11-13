@@ -495,7 +495,7 @@ impl Shell {
     pub(super) fn follow(&mut self, link: &Link, window: &mut Window, cx: &mut Context<Self>) {
         match link {
             Link::Url(url) => cx.open_url(url),
-            Link::Tag(tag) => self.open_palette(&format!("#{tag}"), window, cx),
+            Link::Tag(tag) => self.show_palette(&format!("#{tag}"), window, cx),
             // A folder reads as a list page, when no note bears its name.
             Link::Wiki(name) if self.wiki_path(name).is_none() && self.wiki_file(name).is_none() => match self.wiki_dir(name) {
                 Some(dir) => self.open_listing(dir, window, cx),

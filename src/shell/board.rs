@@ -277,7 +277,7 @@ impl Shell {
                 .child(div().child(add).on_drag_move(aim(pane, c, count, false, cx)));
             let rest = div().debug_selector(|| format!("column-rest-{c}")).flex_1().min_h(px(24.)).on_drag_move(aim(pane, c, count, false, cx));
             shown.push(
-                div()
+                crate::ui::widgets::band(t)
                     .debug_selector(|| format!("column-{c}"))
                     .relative()
                     .flex_1()
@@ -285,8 +285,6 @@ impl Shell {
                     .max_w(px(COLUMN))
                     .when(c == 0, |d| d.child(measure))
                     .p(px(10.))
-                    .rounded(t.band())
-                    .bg(t.code_bg)
                     .flex()
                     .flex_col()
                     .gap_2()
@@ -297,7 +295,7 @@ impl Shell {
             );
         }
         let more = match field_at(Slot::NewColumn) {
-            Some(field) => div().flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().rounded(t.band()).bg(t.code_bg).border_1().border_color(t.accent).flex().child(field).into_any_element(),
+            Some(field) => crate::ui::widgets::band(t).flex_1().min_w(px(NARROW)).max_w(px(COLUMN)).h(px(36.)).p_2().border_1().border_color(t.accent).flex().child(field).into_any_element(),
             // No column at all: a lone « + » would float in the empty page, so the board says what it lacks.
             None if all.is_empty() => div()
                 .debug_selector(|| "board-empty".into())

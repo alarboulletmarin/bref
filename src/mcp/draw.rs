@@ -402,8 +402,6 @@ fn build(from: &Value) -> Result<(Diagram, usize), String> {
     let links = from.get("links").and_then(|v| v.as_array()).cloned().unwrap_or_default();
     let mut diagram = Diagram::blank();
     let mut keys = HashMap::new();
-    let mut made_shapes = Vec::new();
-    let mut made_links = Vec::new();
     let mut unplaced = Vec::new();
     for shape in shapes {
         let (id, placed) = add_shape(&mut diagram, shape)?;
@@ -413,7 +411,6 @@ fn build(from: &Value) -> Result<(Diagram, usize), String> {
         if !placed {
             unplaced.push(id);
         }
-        made_shapes.push(id);
         if let Some(holder) = shape.get("in") {
             let parent = resolve_id(holder, &keys, &diagram)?;
             if !diagram.set_parent(id, Some(parent)) {
@@ -426,7 +423,6 @@ fn build(from: &Value) -> Result<(Diagram, usize), String> {
         if let Some(key) = link.get("key").and_then(|v| v.as_str()) {
             keys.insert(key.to_string(), id);
         }
-        made_links.push(id);
     }
     lay_out(&mut diagram, &unplaced);
     // Outer fragments first: an inner one then goes inside the operand its messages are in.
@@ -437,7 +433,6 @@ fn build(from: &Value) -> Result<(Diagram, usize), String> {
         }
     }
     diagram.normalise();
-    let _ = (made_shapes, made_links);
     Ok((diagram, 0))
 }
 

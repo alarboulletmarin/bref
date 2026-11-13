@@ -13,7 +13,7 @@ fn the_columns_take_the_width_the_user_gives_them(cx: &mut TestAppContext) {
     fs::write(&csv, &original).unwrap();
     let open = |cx: &mut gpui::VisualTestContext, path: &Path| {
         shell.update(cx, |s, cx| {
-            let (notes, dirs, images) = vault::scan(&root);
+            let (notes, dirs, images) = vault::rescan(&root, &[]);
             s.sync(notes, dirs, images, cx);
             s.open_note(path, cx);
         });
