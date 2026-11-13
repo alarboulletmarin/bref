@@ -868,7 +868,7 @@ mod tests {
         fs::write(root.join("vide/Photo.PNG"), "").unwrap();
         let (notes, dirs, images) = rescan(&root, &[]);
         assert_eq!((notes.len(), dirs), (2, vec![root.join("vide")]));
-        // Each note keeps its text as is, and the same in lowercase for search.
+        // Each note keeps its text as written.
         assert!(notes.iter().all(|n| !n.body.is_empty()));
         assert_eq!(images, [root.join("vide/Photo.PNG")]);
         assert_eq!(clean_name(" ../a:b. "), Some("ab".into()));

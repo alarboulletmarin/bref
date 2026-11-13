@@ -71,9 +71,9 @@ fn end_to_end(cx: &mut TestAppContext) {
     fs::write(root.join("Courses.md"), "# Courses\n\n- lait #maison\n").unwrap();
     fs::create_dir(root.join("Projets")).unwrap();
     fs::write(root.join("Projets/Plan.md"), "# Plan\n\n[[Courses]]\n").unwrap();
-        // The test config must not touch the user's.
+    // The test config must not touch the user's.
     let _config = isolated_config(&root);
-        // What a version named "encre" left is read again as long as nothing exists under the new name.
+    // What a version named "encre" left is read again as long as nothing exists under the new name.
     let old = config::legacy_path(config::File::Config).parent().unwrap().to_path_buf();
     fs::create_dir_all(&old).unwrap();
     fs::write(old.join("config"), format!("{}\n", root.display())).unwrap();

@@ -26,24 +26,24 @@ type Indexed = (Arc<[String]>, Arc<[NoteKey]>, Arc<[String]>);
 pub struct Note {
     pub name: String,
     pub path: PathBuf,
-        // Tags, links and aliases are shared: copying a note (vault reread, comparison)
-        // does not copy its lists.
+    // Tags, links and aliases are shared: copying a note (vault reread, comparison)
+    // does not copy its lists.
     pub tags: Arc<[String]>,
-        /// Notes targeted by its `[[wikilinks]]`, lowercase.
+    /// Notes targeted by its `[[wikilinks]]`, lowercase.
     pub links: Arc<[NoteKey]>,
-        /// Its other names (`aliases` key of the front matter), as written.
+    /// Its other names (`aliases` key of the front matter), as written.
     pub aliases: Arc<[String]>,
     pub mtime: SystemTime,
-        /// Whole text of the note, for full-text search: searched as written, whatever the case
-        /// (`rank::Words`), so it is kept once.
-        // ponytail: all the vault's text stays in memory (5,000 notes of 6 KB: 30 MB);
-        // move to an on-disk index if much bigger vaults show up.
+    /// Whole text of the note, for full-text search: searched as written, whatever the case
+    /// (`rank::Words`), so it is kept once.
+    // ponytail: all the vault's text stays in memory (5,000 notes of 6 KB: 30 MB);
+    // move to an on-disk index if much bigger vaults show up.
     pub body: Arc<str>,
 }
 
 impl Note {
-        /// Tags, links and aliases of a note's text. A template has none: what it writes
-        /// between `{{ }}` or after `#` is not its own.
+    /// Tags, links and aliases of a note's text. A template has none: what it writes
+    /// between `{{ }}` or after `#` is not its own.
     pub fn index(text: &str, template: bool) -> Indexed {
         if template {
             return (Arc::from([]), Arc::from([]), Arc::from([]));
@@ -52,19 +52,19 @@ impl Note {
         (tags.into(), links.iter().map(|l| NoteKey::of(l)).collect(), markdown::aliases(text).into())
     }
 
-        /// A note read from its text: the one way to build everything derived from it.
+    /// A note read from its text: the one way to build everything derived from it.
     pub fn from_text(name: String, path: PathBuf, mtime: SystemTime, text: Arc<str>, template: bool) -> Note {
         let (tags, links, aliases) = Note::index(&text, template);
         Note { name, path, tags, links, aliases, mtime, body: text }
     }
 
-        /// Stores the note's new text with all that derives from it, and returns the old text.
+    /// Stores the note's new text with all that derives from it, and returns the old text.
     pub fn set_text(&mut self, text: Arc<str>, template: bool) -> Arc<str> {
         (self.tags, self.links, self.aliases) = Note::index(&text, template);
         std::mem::replace(&mut self.body, text)
     }
 
-        /// A link written `key` targets this note: by its name, or by an alias.
+    /// A link written `key` targets this note: by its name, or by an alias.
     pub fn answers(&self, key: &NoteKey) -> bool {
         NoteKey::of(&self.name) == *key || self.aliases.iter().any(|alias| NoteKey::of(alias) == *key)
     }

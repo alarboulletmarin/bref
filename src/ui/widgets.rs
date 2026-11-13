@@ -1,4 +1,6 @@
-//! Small widgets shared by the views: icon buttons, tooltips, and the window-drag handle.
+//! Small pieces of the look shared by the views: surfaces (sheet, floating card, popover, band),
+//! buttons, pills and toggles, tooltips and keycaps, titles, find options, fades, and the window-drag
+//! handle.
 
 use gpui::{AnyView, App, Context, Div, InteractiveElement, MouseButton, SharedString, Stateful, Window, div, prelude::*, svg};
 

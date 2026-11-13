@@ -29,7 +29,7 @@ pub fn day_of(days: i64) -> Date {
 pub fn month(year: i32, month: u32, monday: bool) -> (u32, u32) {
     let first = day_number((year, month, 1));
     let next = if month == 12 { (year + 1, 1, 1) } else { (year, month + 1, 1) };
-        // January 1st 1970 was a Thursday: Monday is 0.
+    // January 1st 1970 was a Thursday: Monday is 0.
     let weekday = (first + 3 + i64::from(!monday)).rem_euclid(7);
     (weekday as u32, (day_number(next) - first) as u32)
 }
@@ -71,7 +71,7 @@ pub fn dates(query: &str, today: Date) -> Vec<(&'static str, &'static str, Date)
     let typed = || {
         let mut parts = query.split('-').map(|p| p.parse::<u32>().ok());
         let date = (parts.next()??.try_into().ok()?, parts.next()??, parts.next()??);
-                // A date that exists: it survives the round trip.
+        // A date that exists: it survives the round trip.
         (parts.next().is_none() && query.len() == 10 && day_of(day_number(date)) == date).then_some(("", "", date))
     };
     let named = DAYS.iter().enumerate().filter(|(_, (en, fr))| en.starts_with(&query) || fr.starts_with(&query));
@@ -80,7 +80,7 @@ pub fn dates(query: &str, today: Date) -> Vec<(&'static str, &'static str, Date)
             0 => 0,
             1 => 1,
             2 => -1,
-                        // January 1st 1970 was a Thursday: Monday is 0.
+            // January 1st 1970 was a Thursday: Monday is 0.
             _ => (i as i64 - 3 - (now + 3).rem_euclid(7) - 1).rem_euclid(7) + 1,
         };
         (en, fr, day_of(now + ahead))

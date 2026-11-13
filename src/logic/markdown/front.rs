@@ -24,7 +24,7 @@ pub fn body_start(text: &str) -> usize {
     let start = front_matter(text);
     let rest = &text[start..];
     let Some(title) = rest.find('\n') else {
-                // A single line, with no ending: the cursor follows it, as it was left.
+        // A single line, with no ending: the cursor follows it, as it was left.
         return text.len();
     };
     let mut at = start + title + 1;
@@ -86,7 +86,7 @@ pub fn set_front(text: &str, key: &str, value: &str) -> String {
     }
     let lines: Vec<&str> = text[..block].split_inclusive('\n').collect();
     let rest_of = |line: &str| Some(line.strip_prefix(key)?.strip_prefix(':')?.trim().to_string());
-        // The key spans its line, plus those of its dash list.
+    // The key spans its line, plus those of its dash list.
     let (first, rest) = match lines.iter().enumerate().skip(1).find_map(|(i, line)| Some((i, rest_of(line)?))) {
         Some(found) => found,
         None if value.is_empty() => return text.to_string(),
@@ -103,7 +103,7 @@ pub fn set_front(text: &str, key: &str, value: &str) -> String {
         (_, false) => format!("{key}: {value}{end}"),
     };
     let head: String = lines[..first].concat() + &written + &lines[first + 1 + dashes..].concat();
-        // Only the opening and closing lines are left: no more front matter.
+    // Only the opening and closing lines are left: no more front matter.
     let emptied = head.lines().count() == 2;
     format!("{}{}", if emptied { "" } else { &head }, &text[block..])
 }

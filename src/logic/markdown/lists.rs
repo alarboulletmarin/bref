@@ -4,9 +4,9 @@ use super::*;
 
 #[derive(PartialEq, Debug)]
 pub enum Enter {
-        /// Text to insert at the cursor.
+    /// Text to insert at the cursor.
     Insert(String),
-        /// Empty item: the line is emptied to leave the list.
+    /// Empty item: the line is emptied to leave the list.
     Clear,
 }
 
@@ -113,11 +113,11 @@ pub fn restyle(block: &str, to: ListStyle) -> (String, Vec<(usize, usize)>) {
     let touched = lines.iter().filter_map(|(_, kind)| *kind);
     let target = if touched.clone().next().is_some() && touched.clone().all(same) { ListStyle::Text } else { to };
     let (mut out, mut spans) = (Vec::with_capacity(lines.len()), Vec::with_capacity(lines.len()));
-        // Rank of the last item at each indent, for numbering.
+    // Rank of the last item at each indent, for numbering.
     let mut counts: Vec<(usize, usize)> = Vec::new();
     for (line, kind) in lines {
         let Some(kind) = kind else {
-                        // An empty line lets numbering run on; any other block interrupts it.
+            // An empty line lets numbering run on; any other block interrupts it.
             if !line.trim().is_empty() {
                 counts.clear();
             }
@@ -161,7 +161,7 @@ pub fn renumber(text: &str, cursor: usize) -> Option<(String, usize)> {
     }
     let cur = starts.partition_point(|&s| s <= cursor).saturating_sub(1);
     let ordered = |i: usize| classify(lines[i], false).0 == Kind::Ordered;
-        // After an item is deleted, the list to fix starts below the cursor.
+    // After an item is deleted, the list to fix starts below the cursor.
     let anchor = [cur, cur + 1]
         .into_iter()
         .find(|&i| i < lines.len() && ordered(i))?;

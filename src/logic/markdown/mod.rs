@@ -29,7 +29,7 @@ pub enum Kind {
     Code,
     Rule,
     Table,
-        /// Line of the front matter block: neither heading nor rule, whatever it contains.
+    /// Line of the front matter block: neither heading nor rule, whatever it contains.
     Meta,
 }
 
@@ -182,7 +182,7 @@ pub fn links(line: &str) -> Vec<(Range<usize>, Link)> {
             i += e + 2;
             continue;
         }
-                // `![…](…)` is an image, not a link.
+        // `![…](…)` is an image, not a link.
         if b[i] == b'[' && (i == 0 || b[i - 1] != b'!')
             && let Some((_, url)) = web_link(rest)
         {
@@ -282,7 +282,7 @@ pub fn emphasis(line: &str, from: usize, flags: &mut [u16]) {
     let b = line.as_bytes();
     let alnum = |i: Option<usize>| i.and_then(|i| b.get(i)).is_some_and(u8::is_ascii_alphanumeric);
     let mut active = 0u16;
-        // The current highlight opened with `<mark>` (otherwise with `==`): it closes the same way.
+    // The current highlight opened with `<mark>` (otherwise with `==`): it closes the same way.
     let mut tagged = false;
     let mut i = from;
     while i < b.len() {
@@ -315,12 +315,12 @@ pub fn emphasis(line: &str, from: usize, flags: &mut [u16]) {
         };
         if flag != 0 {
             let underscore = b[i] == b'_';
-                        // `==`: not stuck to a word (`abc==` of an address), nor the `{==` `==}` of a comment.
+            // `==`: not stuck to a word (`abc==` of an address), nor the `{==` `==}` of a comment.
             let sound = |at: usize| b.get(at.wrapping_sub(1)) != Some(&b'{') && b.get(at + 2) != Some(&b'}');
             let ok = if flag == UNDER {
                 n == 4 || rest[n..].contains("</u>")
             } else if flag == HIGHLIGHT && rest.starts_with('<') {
-                                // `<mark>`: an opening one that has its closing one, or the closing one of the one that opened.
+                // `<mark>`: an opening one that has its closing one, or the closing one of the one that opened.
                 active & flag != 0 || rest[n..].contains("</mark>")
             } else if flag == HIGHLIGHT {
                 if active & flag == 0 {
@@ -362,7 +362,7 @@ fn links_and_comments(line: &str, from: usize, flags: &mut [u16]) {
         }
         match link {
             Link::Tag(_) => flags[r].iter_mut().for_each(|f| *f |= TAG),
-                        // `[text](address)`: the text is the link, the rest fades.
+            // `[text](address)`: the text is the link, the rest fades.
             Link::Url(_) => match web_link(&line[r.start..]) {
                 Some((text, address)) => {
                     flags[r.clone()].iter_mut().for_each(|f| *f |= DIM);
@@ -378,7 +378,7 @@ fn links_and_comments(line: &str, from: usize, flags: &mut [u16]) {
             }
         }
     }
-        // A comment: its text keeps its styles (the editor highlights it), the rest fades.
+    // A comment: its text keeps its styles (the editor highlights it), the rest fades.
     for (whole, noted, said) in comments(line) {
         if whole.start < from || flags[whole.start] & CODE != 0 {
             continue;
@@ -409,7 +409,7 @@ pub fn highlights(line: &str, table: bool) -> Vec<(Range<usize>, usize)> {
             while j < f.len() && f[j] & HIGHLIGHT != 0 {
                 j += 1;
             }
-                        // The closing mark, and the marks of another style before it, do not carry the background.
+            // The closing mark, and the marks of another style before it, do not carry the background.
             let mut end = j;
             while end > i && f[end - 1] & DIM != 0 {
                 end -= 1;
@@ -486,7 +486,7 @@ pub fn unmark(line: &str, flags: &[u16], sel: Range<usize>, flag: u16) -> Option
         match touching {
             Some(i) => i,
             None => {
-                                // `**|**`: an empty span, the cursor between its marks.
+                // `**|**`: an empty span, the cursor between its marks.
                 return delimiters(flag).iter().find_map(|(open, close)| {
                     (line[..at].ends_with(open) && line[at..].starts_with(close)).then(|| (at - open.len()..at, at..at + close.len()))
                 });
@@ -508,7 +508,7 @@ pub fn unmark(line: &str, flags: &[u16], sel: Range<usize>, flag: u16) -> Option
         e += 1;
     }
     let mut signs: Vec<(String, &str)> = delimiters(flag).iter().map(|(open, close)| (open.to_string(), *close)).collect();
-        // A color highlight is written `<mark class="…">…</mark>`.
+    // A color highlight is written `<mark class="…">…</mark>`.
     if flag == HIGHLIGHT
         && let Some(m) = line[..s].rfind("<mark")
         && mark_tag(&line[m..], false) == Some(s - m)
@@ -516,7 +516,7 @@ pub fn unmark(line: &str, flags: &[u16], sel: Range<usize>, flag: u16) -> Option
         signs.push((line[m..s].to_string(), "</mark>"));
     }
     signs.iter().find_map(|(open, close)| {
-                // The closing mark carries the style of the bytes it closes: it is in the span, or just after.
+        // The closing mark carries the style of the bytes it closes: it is in the span, or just after.
         let inside = e >= close.len() && line[..e].ends_with(close) && flags[e - close.len()..e].iter().all(|f| f & DIM != 0);
         [inside.then(|| e - close.len()), Some(e)].into_iter().flatten().find_map(|end| {
             (line[..s].ends_with(open.as_str()) && line[end..].starts_with(close)).then(|| (s - open.len()..s, end..end + close.len()))
@@ -567,7 +567,7 @@ pub fn code(line: &str, lang: &str, flags: &mut [u16]) {
                 escaped = !escaped && x == '\\';
             }
             match end {
-                                // In Rust, `'a` is a lifetime: only `'x'` or `'\n'` is a character.
+                // In Rust, `'a` is a lifetime: only `'x'` or `'\n'` is a character.
                 Some(n) if rust && c == '\'' && rest[..n].chars().count() > 3 && !rest[1..].starts_with('\\') => {
                     (1, 0)
                 }
@@ -624,7 +624,7 @@ const SYMBOLS: &[(&str, &str)] = &[
 /// code and links: (start byte, replaced length, symbol). The text does not change.
 pub fn symbols(line: &str, from: usize, flags: &[u16]) -> Vec<(usize, usize, &'static str)> {
     let b = line.as_bytes();
-        // A symbol stuck to another operator (`-->`, `!==`, `<--`) stays as is.
+    // A symbol stuck to another operator (`-->`, `!==`, `<--`) stays as is.
     let glued = |i: Option<usize>| i.and_then(|i| b.get(i)).is_some_and(|c| b"-=<>!".contains(c));
     let mut out = Vec::new();
     let mut i = from;
@@ -673,8 +673,8 @@ pub fn math(line: &str) -> Option<(Range<usize>, &str, bool)> {
         let body = &line[start + n..];
         if let Some(len) = body.find(&"$$"[..n])
             && len > 0
-                        // Like pandoc: a `$` stuck to the formula, and not followed by a digit,
-                        // to leave "5 $ et 10 $" or "$5 et $10" alone.
+            // Like pandoc: a `$` stuck to the formula, and not followed by a digit,
+            // to leave "5 $ et 10 $" or "$5 et $10" alone.
             && (n == 2
                 || !(body.starts_with(' ')
                     || body[..len].ends_with(' ')
@@ -694,7 +694,7 @@ fn file_name(path: &str) -> &str {
 /// Tags and wikilinks (lowercase) of a whole note, outside code blocks, deduplicated.
 /// Displayed images appear in it by their file name.
 pub fn index(text: &str) -> (Vec<String>, Vec<String>) {
-        // Front matter tags (`tags: [a, b]`) count as the text's, with or without `#`.
+    // Front matter tags (`tags: [a, b]`) count as the text's, with or without `#`.
     let mut tags: Vec<String> = Vec::new();
     for tag in front_values(text, "tags") {
         let tag = tag.trim_start_matches('#').to_string();
@@ -745,7 +745,7 @@ fn reembed(text: &str, old: &str, new: &str) -> String {
             && !line[range.clone()].starts_with("![[")
             && file_name(&path).to_lowercase() == old
         {
-                        // The name as written: with its spaces, or as `%20`.
+            // The name as written: with its spaces, or as `%20`.
             let name = file_name(&path);
             let spot = [name.to_string(), name.replace(' ', "%20")]
                 .into_iter()
@@ -848,7 +848,7 @@ pub fn column_letters(c: usize) -> String {
 
 /// All the note's comments, outside code blocks.
 pub fn all_comments(text: &str) -> Vec<Note<'_>> {
-        // Almost no note has any: a single search says so, without reading the lines.
+    // Almost no note has any: a single search says so, without reading the lines.
     if !text.contains("{==") && !text.contains("{>>") {
         return Vec::new();
     }
@@ -881,17 +881,17 @@ mod tests {
     #[test]
     fn sets_a_front_matter_key() {
         let note = "---\nauteur: Herbert\ntags: [sf, roman]\nlu:\n  - 2020\n  - 2023\n---\n# Dune\n\nauteur: pas ici\n";
-                // Only one key changes, the rest of the file is the same to the byte.
+        // Only one key changes, the rest of the file is the same to the byte.
         assert_eq!(set_front(note, "auteur", " Frank Herbert "), note.replacen("auteur: Herbert", "auteur: Frank Herbert", 1));
         assert_eq!(set_front(note, "auteur", "Herbert"), note);
-                // A list stays a list, inline.
+        // A list stays a list, inline.
         assert_eq!(set_front(note, "tags", "sf,classique"), note.replace("[sf, roman]", "[sf, classique]"));
         assert_eq!(set_front(note, "lu", "2024"), note.replace("lu:\n  - 2020\n  - 2023\n", "lu: [2024]\n"));
-                // Missing key: added at the end of the front matter, created if there is none; empty: nothing.
+        // Missing key: added at the end of the front matter, created if there is none; empty: nothing.
         assert_eq!(set_front(note, "note", "9"), note.replace("---\n# Dune", "note: 9\n---\n# Dune"));
         assert_eq!(set_front("# Emma\n", "note", "10"), "---\nnote: 10\n---\n# Emma\n");
         assert_eq!(set_front("# Emma\n", "note", " "), "# Emma\n");
-                // Value emptied: the key goes, and the front matter with its last key.
+        // Value emptied: the key goes, and the front matter with its last key.
         assert_eq!(set_front(note, "lu", ""), note.replace("lu:\n  - 2020\n  - 2023\n", ""));
         assert_eq!(set_front("---\nnote: 9\n---\n# Emma\n", "note", ""), "# Emma\n");
         assert_eq!(set_front("---\r\nnote: 9\r\n---\r\n# Emma", "note", "8"), "---\r\nnote: 8\r\n---\r\n# Emma");
@@ -937,9 +937,9 @@ mod tests {
         let want = "[[Essai]] et [[Essai|alias]], [[ Essai#titre]] `[[Test]]`\n```\n[[Test]]\n```\n[[Testé]] [[Essai]]";
         assert_eq!(relink(text, "Test", "Essai").as_deref(), Some(want));
         assert_eq!(relink(text, "Autre", "Essai"), None);
-                // A stray fence opens no block: the links after it are renamed, as headings and embeds see them.
+        // A stray fence opens no block: the links after it are renamed, as headings and embeds see them.
         assert_eq!(relink("```\n[[Test]]", "Test", "Essai").as_deref(), Some("```\n[[Essai]]"));
-                // A renamed image: both spellings follow, the rest of the line too.
+        // A renamed image: both spellings follow, the rest of the line too.
         let text = "![a](img/Le%20chat.png \"t\") ![[le chat.png|300]] le chat.png";
         let want = "![a](img/Un%20chien.png \"t\") ![[Un chien.png|300]] le chat.png";
         assert_eq!(relink(text, "Le chat.png", "Un chien.png").as_deref(), Some(want));
@@ -964,22 +964,22 @@ mod tests {
     #[test]
     fn styles_highlight_and_underline() {
         let on = |line: &str| flags(line, 0);
-                // `==text==`: marks dimmed, text highlighted; `<u>text</u>`: underlined.
+        // `==text==`: marks dimmed, text highlighted; `<u>text</u>`: underlined.
         let f = on("a ==b c== d");
         assert!(f[2..4].iter().all(|x| *x == DIM) && f[4..7].iter().all(|x| *x == HIGHLIGHT) && f[7..9].iter().all(|x| *x == DIM | HIGHLIGHT) && f[9] == 0 && f[0] == 0);
         let f = on("a <u>b</u> c");
         assert!(f[2..5].iter().all(|x| *x == DIM) && f[5] == UNDER && f[6..10].iter().all(|x| *x == DIM | UNDER) && f[10] == 0);
-                // Not an operator `==`, nor a single `==`, nor a `<u>` never closed, nor a lone `</u>`.
+        // Not an operator `==`, nor a single `==`, nor a `<u>` never closed, nor a lone `</u>`.
         for line in ["a == b == c", "a ==b", "x==y==z", "====", "a === b ===", "<u>ouvert", "fermé</u>", "base64 abc== et def== fin", "?q==a&r==b"] {
             assert!(on(line).iter().all(|x| x & (HIGHLIGHT | UNDER) == 0 && *x & DIM == 0), "{line}: {:?}", on(line));
         }
-                // The `{==`…`==}` of a comment stay a comment, even next to a highlight.
+        // The `{==`…`==}` of a comment stay a comment, even next to a highlight.
         let line = "==a== puis {==mot==}{>>note<<} et ==b==";
         let f = on(line);
         assert!(f[2] == HIGHLIGHT && f[line.find("mot").unwrap()] == 0 && f[line.find("b==").unwrap()] == HIGHLIGHT, "{f:?}");
         let f = on("==a {==mot==}{>>n<<}");
         assert!(f.iter().all(|x| x & HIGHLIGHT == 0), "an opener without a clean closer: {f:?}");
-                // In inline code, nothing changes; with other styles, flags add up.
+        // In inline code, nothing changes; with other styles, flags add up.
         assert!(on("`==a==` `<u>b</u>`").iter().all(|x| x & (HIGHLIGHT | UNDER) == 0));
         let f = on("**==a <u>é</u>==**");
         assert_eq!(f[4] & (BOLD | HIGHLIGHT), BOLD | HIGHLIGHT);
@@ -1001,7 +1001,7 @@ mod tests {
     #[test]
     fn highlights_in_color() {
         let on = |line: &str| flags(line, 0);
-                // `<mark>` and `<mark class="color">` highlight like `==`, marks dimmed; an unknown color is not a color.
+        // `<mark>` and `<mark class="color">` highlight like `==`, marks dimmed; an unknown color is not a color.
         for line in ["a <mark>b c</mark> d", "a <mark class=\"green\">b c</mark> d"] {
             let f = on(line);
             let at = line.find("b c").unwrap();
@@ -1010,10 +1010,10 @@ mod tests {
         for line in ["<mark class=\"rouge\">x</mark>", "<mark>jamais fermé", "</mark> seul", "<markdown>x</mark>", "<mark class=\"green>x</mark>"] {
             assert!(on(line).iter().all(|x| x & HIGHLIGHT == 0), "{line}");
         }
-                // A highlight opened by `==` does not close with `</mark>`, nor the reverse.
+        // A highlight opened by `==` does not close with `</mark>`, nor the reverse.
         assert!(on("==a</mark> b==")[2..].iter().take(8).all(|x| x & HIGHLIGHT != 0));
         assert!(on("<mark>a== b</mark>").iter().skip(6).take(5).all(|x| x & HIGHLIGHT != 0));
-                // The colors read for painting, and the marks written.
+        // The colors read for painting, and the marks written.
         let line = "a ==b== <mark class=\"blue\">c</mark> <mark>d</mark> <mark class=\"purple\">é</mark>";
         let got: Vec<_> = highlights(line, false).into_iter().map(|(r, color)| (&line[r], color)).collect();
         assert_eq!(got, [("b", 0), ("c", 2), ("d", 0), ("é", 4)]);
@@ -1040,7 +1040,7 @@ mod tests {
         assert_eq!(found("==a **b** c== d", false), ["a **b** c"]);
         assert_eq!(found("**==a==**", false), ["a"]);
         assert_eq!(found("| ==Titre== | autre | ==é🙂== |", true), ["Titre", "é🙂"]);
-                // Nothing to paint: no `==`, a single one, an address, a comment, code.
+        // Nothing to paint: no `==`, a single one, an address, a comment, code.
         for line in ["", "a b", "a == b", "abc== et def==", "{==mot==}{>>n<<}", "`==a==`", "==a"] {
             assert!(found(line, false).is_empty(), "{line}");
         }
@@ -1049,7 +1049,7 @@ mod tests {
     #[test]
     fn finds_the_marks_to_remove() {
         let cut = |line: &str, sel: Range<usize>, flag: u16| unmark(line, &flags(line, 0), sel, flag);
-                // A cursor in the span, at its edge, or between its marks; outside everything, nothing.
+        // A cursor in the span, at its edge, or between its marks; outside everything, nothing.
         assert_eq!(cut("a **bc** d", 5..5, BOLD), Some((2..4, 6..8)));
         assert_eq!(cut("a **bc** d", 4..4, BOLD), Some((2..4, 6..8)));
         assert_eq!(cut("a **bc** d", 6..6, BOLD), Some((2..4, 6..8)));
@@ -1057,14 +1057,14 @@ mod tests {
         assert_eq!(cut("a **bc** d", 0..0, BOLD), None);
         assert_eq!(cut("a **bc** d", 9..9, BOLD), None);
         assert_eq!(cut("a **bc** d", 8..8, BOLD), None);
-                // A selection: entirely in the span (marks included or not), otherwise nothing.
+        // A selection: entirely in the span (marks included or not), otherwise nothing.
         assert_eq!(cut("a **bc** d", 4..6, BOLD), Some((2..4, 6..8)));
         assert_eq!(cut("a **bc** d", 2..8, BOLD), Some((2..4, 6..8)));
         assert_eq!(cut("a **bc** d", 4..5, BOLD), Some((2..4, 6..8)));
         assert_eq!(cut("a **bc** d", 0..6, BOLD), None);
         assert_eq!(cut("a **bc** d", 4..10, BOLD), None);
         assert_eq!(cut("a **bc** d", 2..4, BOLD), None);
-                // Each style has its marks; another style is not removed.
+        // Each style has its marks; another style is not removed.
         assert_eq!(cut("~~x~~", 2..3, STRIKE), Some((0..2, 3..5)));
         assert_eq!(cut("==x==", 2..2, HIGHLIGHT), Some((0..2, 3..5)));
         assert_eq!(cut("<u>x</u>", 3..4, UNDER), Some((0..3, 4..8)));
@@ -1072,17 +1072,17 @@ mod tests {
         assert_eq!(cut("*x* et _y_", 1..1, ITALIC), Some((0..1, 2..3)));
         assert_eq!(cut("*x* et _y_", 8..8, ITALIC), Some((7..8, 9..10)));
         assert_eq!(cut("**x**", 2..3, ITALIC), None);
-                // Nested styles: bold around italic, and italic inside bold.
+        // Nested styles: bold around italic, and italic inside bold.
         assert_eq!(cut("**a *b* c**", 3..3, BOLD), Some((0..2, 9..11)));
         assert_eq!(cut("**a *b* c**", 5..5, BOLD), Some((0..2, 9..11)));
         assert_eq!(cut("**a *b* c**", 5..6, ITALIC), Some((4..5, 6..7)));
         assert_eq!(cut("<u>**é**</u>", 5..7, BOLD), Some((3..5, 7..9)));
         assert_eq!(cut("<u>**é**</u>", 5..7, UNDER), Some((0..3, 9..13)));
-                // Non-ASCII text around: bytes, not characters.
+        // Non-ASCII text around: bytes, not characters.
         let line = "日本 ==語 é🙂== fin";
         let at = line.find("é").unwrap();
         assert_eq!(cut(line, at..at, HIGHLIGHT), Some((line.find("==").unwrap()..line.find("==").unwrap() + 2, line.rfind("==").unwrap()..line.rfind("==").unwrap() + 2)));
-                // An unclosed span is not one.
+        // An unclosed span is not one.
         assert_eq!(cut("a **bc d", 5..5, BOLD), None);
         assert_eq!(cut("", 0..0, BOLD), None);
     }
@@ -1095,7 +1095,7 @@ mod tests {
         assert_eq!((f[0], f[4], f[8]), (KEYWORD, 0, 0));
         assert!(f[10..18].iter().all(|&x| x == STRING));
         assert_eq!((f[20], f[25]), (NUMBER, DIM | ITALIC | QUIET));
-                // A lifetime is not a string; `#` comments in Python, not in Rust.
+        // A lifetime is not a string; `#` comments in Python, not in Rust.
         let line = "fn f<'a>(x: &'a str) # '\\n'";
         let mut f = vec![0u16; line.len()];
         code(line, "rust", &mut f);
@@ -1109,7 +1109,7 @@ mod tests {
         let text = "a\n```rust\nun\ndeux\n```\nb\n```\nouvert";
         assert_eq!(code_block(text, 10).map(|r| &text[r]), Some("un\ndeux"));
         assert_eq!(code_block(text, 16).map(|r| &text[r]), Some("un\ndeux"));
-                // Outside a block, on a fence, or after a ``` never closed.
+        // Outside a block, on a fence, or after a ``` never closed.
         assert_eq!((code_block(text, 0), code_block(text, 3), code_block(text, 30)), (None, None, None));
     }
 
@@ -1143,7 +1143,7 @@ mod tests {
         let front = "---\ntags: [a]\n---\n";
         assert_eq!(body_start(&format!("{front}# Titre\n\nCorps\n")), format!("{front}# Titre\n\n").len());
         assert_eq!(body_start("# Titre\nCorps"), "# Titre\n".len());
-                // Nothing after the title: the end of the note.
+        // Nothing after the title: the end of the note.
         assert_eq!(body_start("# Titre\n\n"), "# Titre\n\n".len());
         assert_eq!(body_start("# Titre"), "# Titre".len());
         assert_eq!(body_start(""), 0);
@@ -1157,17 +1157,17 @@ mod tests {
         assert_eq!(front_matter(&text), block.len());
         assert_eq!(front_matter("---\r\na: 1\r\n...\r\nsuite"), "---\r\na: 1\r\n...\r\n".len());
         assert_eq!(front_matter("---\na: 1\n---"), "---\na: 1\n---".len());
-                // Not on line 1, or never closed: ordinary text (the `---` line stays a rule).
+        // Not on line 1, or never closed: ordinary text (the `---` line stays a rule).
         for plain in ["", "---", "---\na: 1\n", "\n---\na\n---\n", "# T\n---\na\n---\n", "----\na\n---\n"] {
             assert_eq!(front_matter(plain), 0, "{plain:?}");
         }
-                // No heading, tag or link to rewrite in the block; the rest of the note reads as before.
+        // No heading, tag or link to rewrite in the block; the rest of the note reads as before.
         assert_eq!(headings(&text), [(1, "Titre", block.len())]);
         let linked = "---\nvoir: \"[[Vieux]]\" #non\n---\n[[Vieux]] #oui\n".to_string();
         assert_eq!(index(&linked), (vec!["oui".to_string()], vec!["vieux".to_string()]));
         assert_eq!(relink(&linked, "vieux", "Neuf").unwrap(), "---\nvoir: \"[[Vieux]]\" #non\n---\n[[Neuf]] #oui\n");
         assert_eq!(relink("---\nvoir: \"[[Vieux]]\"\n---\nrien\n", "vieux", "Neuf"), None);
-                // Front matter tags and aliases, in their three spellings.
+        // Front matter tags and aliases, in their three spellings.
         let inline = "---\ntags: [projet, \"#idée\", projet]\naliases: Bref app, 'Bref'\ntagsx: [non]\n---\n#corps #projet\n";
         assert_eq!(index(inline).0, ["projet", "idée", "corps"]);
         assert_eq!(aliases(inline), ["Bref app", "Bref"]);
@@ -1191,17 +1191,17 @@ mod tests {
     fn fills_a_template() {
         let at = |t: &str| fill(t, "Plan", "2026-10-13", "09:05");
         assert_eq!(at("# {{title}}\n{{date}} {{time}}\n"), ("# Plan\n2026-10-13 09:05\n".to_string(), 24));
-                // The cursor: at the first mark, which disappears; without a mark, at the end.
+        // The cursor: at the first mark, which disappears; without a mark, at the end.
         assert_eq!(at("a {{cursor}}b {{cursor}}c"), ("a b c".to_string(), 2));
         assert_eq!(at("fin"), ("fin".to_string(), 3));
-                // Case and spaces do not count; an unknown word, or a brace never closed, stays.
+        // Case and spaces do not count; an unknown word, or a brace never closed, stays.
         assert_eq!(at("{{ Title }}|{{DATE}}|{{ time }}").0, "Plan|2026-10-13|09:05");
         assert_eq!(at("{{inconnu}} et {{title").0, "{{inconnu}} et {{title");
         assert_eq!(at("{{}} {{ }}").0, "{{}} {{ }}");
-                // What is inserted is not reread, and Unicode goes through: title with braces, accents, emojis.
+        // What is inserted is not reread, and Unicode goes through: title with braces, accents, emojis.
         assert_eq!(fill("{{title}}", "{{date}} é😀", "d", "t"), ("{{date}} é😀".to_string(), "{{date}} é😀".len()));
         assert_eq!(fill("é {{cursor}}😀 {{title}}", "日本", "", ""), ("é 😀 日本".to_string(), "é ".len()));
-                // Empty, and many braces: `{{{title}}}` leaves one brace on each side.
+        // Empty, and many braces: `{{{title}}}` leaves one brace on each side.
         assert_eq!(at(""), (String::new(), 0));
         assert_eq!(at("{{{title}}}").0, "{{{title}}}");
         assert_eq!(at("{{title}}{{title}}").0, "PlanPlan");
@@ -1210,15 +1210,15 @@ mod tests {
     #[test]
     fn makes_a_template_of_a_note() {
         assert_eq!(templatize("# Réunion\n\nOrdre du jour\n"), "# {{title}}\n\nOrdre du jour\n");
-                // No title: one is added; the front matter stays at the top; a `#` in a code block is not a heading.
+        // No title: one is added; the front matter stays at the top; a `#` in a code block is not a heading.
         assert_eq!(templatize("texte"), "# {{title}}\n\ntexte");
         assert_eq!(templatize("---\ntags: [a]\n---\n# Nom\nsuite"), "---\ntags: [a]\n---\n# {{title}}\nsuite");
         assert_eq!(templatize("---\ntags: [a]\n---\ntexte"), "---\ntags: [a]\n---\n# {{title}}\n\ntexte");
         assert_eq!(templatize("```\n# code\n```\n"), "# {{title}}\n\n```\n# code\n```\n");
         assert_eq!(templatize(""), "# {{title}}\n\n");
-                // A `##` is not the title; without a final line break, the title is still replaced.
+        // A `##` is not the title; without a final line break, the title is still replaced.
         assert_eq!(templatize("## Deux\n# Un"), "## Deux\n# {{title}}");
-                // Filled afterwards, it gives back a note titled with the chosen name.
+        // Filled afterwards, it gives back a note titled with the chosen name.
         assert_eq!(fill(&templatize("# Réunion\nx"), "Lundi", "", "").0, "# Lundi\nx");
     }
 
@@ -1226,34 +1226,34 @@ mod tests {
     fn restyles_lines_into_lists() {
         let to = |block: &str, style| restyle(block, style).0;
         assert_eq!(to("a\nb", ListStyle::Bullet), "- a\n- b");
-                // Indents kept, numbering per level.
+        // Indents kept, numbering per level.
         assert_eq!(to("- a\n  - b\n  - c\n- d", ListStyle::Ordered), "1. a\n  1. b\n  2. c\n2. d");
         assert_eq!(to("1. a\n   2. b", ListStyle::Bullet), "- a\n   - b");
-                // A checked box stays checked from one task to the other, not from one list to the other.
+        // A checked box stays checked from one task to the other, not from one list to the other.
         assert_eq!(to("- [x] a\n- [ ] b", ListStyle::Ordered), "1. a\n2. b");
         assert_eq!(to("- a\n- [x] b", ListStyle::Task), "- [ ] a\n- [x] b");
-                // A mixed selection takes the requested style; already in that style, it becomes text again.
+        // A mixed selection takes the requested style; already in that style, it becomes text again.
         assert_eq!(to("- a\n1. b\ntexte", ListStyle::Bullet), "- a\n- b\n- texte");
         assert_eq!(to("- a\n- b", ListStyle::Bullet), "a\nb");
         assert_eq!(to("- [x] a\n- [ ] b", ListStyle::Task), "a\nb");
         assert_eq!(to("  - a\n  - b", ListStyle::Text), "a\nb");
-                // Headings, tables, quotes, code and empty lines stay as they are.
+        // Headings, tables, quotes, code and empty lines stay as they are.
         let block = "# T\n\n```\ncode\n```\n| a |\n> q\ntexte\n\nsuite";
         assert_eq!(to(block, ListStyle::Bullet), "# T\n\n```\ncode\n```\n| a |\n> q\n- texte\n\n- suite");
         assert_eq!(to(block, ListStyle::Ordered), "# T\n\n```\ncode\n```\n| a |\n> q\n1. texte\n\n2. suite");
         assert_eq!(to("# T\n```\n- a\n```", ListStyle::Ordered), "# T\n```\n- a\n```");
-                // Four levels, and tabs for indent: one counter per level, which restarts when going back up.
+        // Four levels, and tabs for indent: one counter per level, which restarts when going back up.
         assert_eq!(to("- a\n\t- b\n\t\t- c\n\t\t\t- d\n\t\t- e\n- f", ListStyle::Ordered), "1. a\n\t1. b\n\t\t1. c\n\t\t\t1. d\n\t\t2. e\n2. f");
         assert_eq!(to("1. a\n    1. b\n        1. c\n            1. d", ListStyle::Task), "- [ ] a\n    - [ ] b\n        - [ ] c\n            - [ ] d");
-                // A single line, empty or made of spaces; a one-character text.
+        // A single line, empty or made of spaces; a one-character text.
         assert_eq!(to("", ListStyle::Bullet), "");
         assert_eq!(to("   ", ListStyle::Bullet), "   ");
         assert_eq!(to("é", ListStyle::Ordered), "1. é");
-                // A round trip gives back the original list.
+        // A round trip gives back the original list.
         let flat = "- a\n- b\n- c";
         assert_eq!(to(&to(flat, ListStyle::Ordered), ListStyle::Bullet), flat);
         assert_eq!(to(&to(flat, ListStyle::Task), ListStyle::Bullet), flat);
-                // Start of the content before and after, to restore the cursor.
+        // Start of the content before and after, to restore the cursor.
         assert_eq!(restyle("  - ab\n\ntexte", ListStyle::Ordered).1, vec![(4, 5), (0, 0), (0, 3)]);
     }
 
@@ -1272,27 +1272,27 @@ mod tests {
         assert_eq!(classify("| a | b |", false), (Kind::Table, 0));
         assert_eq!(callout("> [!NOTE] titre"), Some(2..9));
         assert_eq!(callout("> note"), None);
-                // An escaped `|` or one inside a link does not separate; the final `|` is optional.
+        // An escaped `|` or one inside a link does not separate; the final `|` is optional.
         let line = r"| a \| b | [[n|alias]] |  | fin";
         let found: Vec<&str> = cells(line).into_iter().map(|r| &line[r]).collect();
         assert_eq!(found, [r"a \| b", "[[n|alias]]", "", "fin"]);
         assert_eq!(cells("|   |")[0], 2..2);
 
-                // Aligned columns, dashes added under the header, rows completed.
+        // Aligned columns, dashes added under the header, rows completed.
         let (rows, added) = table("| Nom | Âge |\n| Élodie |");
         assert!(added);
         assert_eq!(format_table(&rows, ""), "| Nom    | Âge |\n| ------ | --- |\n| Élodie |     |");
-                // The requested alignment is kept; an already formatted table does not move.
+        // The requested alignment is kept; an already formatted table does not move.
         let text = "  | a   | b   |\n  | :-- | --: |\n  | 1   | 2   |";
         let (rows, added) = table(text);
         assert!(!added);
         assert_eq!(format_table(&rows, "  "), text);
         assert_eq!(format_table(&new_table(2, 2), ""), "|     |     |\n| --- | --- |\n|     |     |");
     }
-        /// Several hundred random tables (fixed seed): varied
-        /// cells (accents, ideographs, emojis, `\|`, aliased links, code, empty or
-        /// very long), irregular rows. The written table reads back identically,
-        /// keeps the same number of cells everywhere, and no longer moves once formatted.
+    /// Several hundred random tables (fixed seed): varied
+    /// cells (accents, ideographs, emojis, `\|`, aliased links, code, empty or
+    /// very long), irregular rows. The written table reads back identically,
+    /// keeps the same number of cells everywhere, and no longer moves once formatted.
     #[test]
     fn tables_survive_random_content() {
         const PIECES: &[&str] = &[
@@ -1313,7 +1313,7 @@ mod tests {
                 let n = next(4);
                 (0..n).map(|_| PIECES[next(PIECES.len())]).collect::<Vec<_>>().join(if next(2) == 0 { "" } else { " " })
             };
-                        // Irregular rows, without a final `|` one time in four.
+            // Irregular rows, without a final `|` one time in four.
             let lines: Vec<String> = (0..rows)
                 .map(|_| {
                     let n = 1 + next(cols);
@@ -1325,25 +1325,25 @@ mod tests {
             let width = grid[0].len();
             assert!(grid.iter().all(|row| row.len() == width), "case {case}: {grid:?}");
             let text = format_table(&grid, "");
-                        // Same number of cells on each row, whatever the content.
+            // Same number of cells on each row, whatever the content.
             for line in text.lines() {
                 assert_eq!(cells(line).len(), width, "case {case}: {line}");
             }
-                        // Read back, the written table gives the same cells, and the same text.
+            // Read back, the written table gives the same cells, and the same text.
             let (again, added) = table(&text);
             assert!(!added, "case {case}");
-                        // The dash line reads back at its written width; the rest identically.
+            // The dash line reads back at its written width; the rest identically.
             let data = |g: &[Vec<String>]| g.iter().enumerate().filter(|(i, _)| *i != 1).map(|(_, r)| r.clone()).collect::<Vec<_>>();
             assert_eq!(data(&again), data(&grid), "case {case}");
             assert_eq!(format_table(&again, ""), text, "case {case}");
-                        // Pasted from another table, it stays a grid of the same shape.
+            // Pasted from another table, it stays a grid of the same shape.
             let pasted = paste_grid(&text).unwrap();
             assert_eq!(pasted.len(), grid.len() - 1, "case {case}");
             assert!(pasted.iter().all(|row| row.len() == width), "case {case}");
         }
     }
 
-        /// A test table written as Markdown, read back as a grid.
+    /// A test table written as Markdown, read back as a grid.
     fn grid(text: &str) -> Vec<Vec<String>> {
         table(text).0
     }
@@ -1353,34 +1353,34 @@ mod tests {
         let t = grid("| Nom | Âge |\n| :-- | --: |\n| Léa | 31 |\n| Max | 7 |");
         let flat = |g: &[Vec<String>]| g.iter().map(|r| r.join("|")).collect::<Vec<_>>().join("/");
         assert_eq!(visible_rows(&t), 3);
-                // Insert: never before the header, never past the end.
+        // Insert: never before the header, never past the end.
         assert_eq!(flat(&insert_row(&t, 0)), "Nom|Âge/:--|--:/|/Léa|31/Max|7");
         assert_eq!(flat(&insert_row(&t, 2)), "Nom|Âge/:--|--:/Léa|31/|/Max|7");
         assert_eq!(flat(&insert_row(&t, 99)), "Nom|Âge/:--|--:/Léa|31/Max|7/|");
         assert_eq!(flat(&insert_col(&t, 1)), "Nom||Âge/:--|---|--:/Léa||31/Max||7");
         assert_eq!(flat(&insert_col(&t, 9)), "Nom|Âge|/:--|--:|---/Léa|31|/Max|7|");
-                // Delete: the header goes with its row, the next one becomes it; nothing left: the table goes.
+        // Delete: the header goes with its row, the next one becomes it; nothing left: the table goes.
         assert_eq!(flat(&delete_rows(&t, 2..3).unwrap()), "Nom|Âge/:--|--:/Léa|31");
         assert_eq!(flat(&delete_rows(&t, 0..1).unwrap()), "Léa|31/:--|--:/Max|7");
         assert_eq!(flat(&delete_rows(&t, 1..3).unwrap()), "Nom|Âge/:--|--:");
         assert_eq!(delete_rows(&t, 0..3), None);
         assert_eq!(flat(&delete_cols(&t, 0..1).unwrap()), "Âge/--:/31/7");
         assert_eq!(delete_cols(&t, 0..2), None);
-                // Move: alignment follows its column, the header goes to the row that takes its place.
+        // Move: alignment follows its column, the header goes to the row that takes its place.
         assert_eq!(flat(&move_col(&t, 0, 1)), "Âge|Nom/--:|:--/31|Léa/7|Max");
         assert_eq!(flat(&move_row(&t, 1, 2)), "Nom|Âge/:--|--:/Max|7/Léa|31");
         assert_eq!(flat(&move_row(&t, 2, 0)), "Max|7/:--|--:/Nom|Âge/Léa|31");
-                // Duplicate.
+        // Duplicate.
         assert_eq!(flat(&duplicate_row(&t, 1)), "Nom|Âge/:--|--:/Léa|31/Léa|31/Max|7");
         assert_eq!(flat(&duplicate_row(&t, 0)), "Nom|Âge/:--|--:/Nom|Âge/Léa|31/Max|7");
         assert_eq!(flat(&duplicate_col(&t, 1)), "Nom|Âge|Âge/:--|--:|--:/Léa|31|31/Max|7|7");
-                // Sort: the header stays, the sort is natural, empty cells stay at the end in both directions.
+        // Sort: the header stays, the sort is natural, empty cells stay at the end in both directions.
         let n = grid("| n |\n| - |\n| 10 |\n| |\n| 9 |\n| 2 |");
         assert_eq!(flat(&sort_rows(&n, 0, true)), "n/-/2/9/10/");
         assert_eq!(flat(&sort_rows(&n, 0, false)), "n/-/10/9/2/");
-                // Transpose: the first row becomes the header.
+        // Transpose: the first row becomes the header.
         assert_eq!(flat(&transpose(&t)), "Nom|Léa|Max/---|---|---/Âge|31|7");
-                // A single header, two body rows: everything stays a valid grid.
+        // A single header, two body rows: everything stays a valid grid.
         for g in [insert_row(&t, 1), insert_col(&t, 0), move_col(&t, 1, 0), transpose(&t)] {
             assert!(g.len() >= 2 && is_dashes(&g[1]) && g.iter().all(|r| r.len() == g[0].len()), "{g:?}");
         }
@@ -1401,7 +1401,7 @@ mod tests {
             for row in g.iter_mut().enumerate().filter(|(i, _)| *i != 1).map(|(_, r)| r) {
                 row.iter_mut().for_each(|c| *c = ["", "a", "b c", "10", "9"][next(5)].to_string());
             }
-                        // A random sequence of gestures: the grid stays rectangular, with its dashes, or disappears.
+            // A random sequence of gestures: the grid stays rectangular, with its dashes, or disappears.
             for step in 0..12 {
                 let (r, c) = (next(visible_rows(&g) + 1), next(g[0].len() + 1));
                 let done = match next(11) {
@@ -1420,7 +1420,7 @@ mod tests {
                 let Some(next_grid) = done else { break };
                 g = next_grid;
                 assert!(g.len() >= 2 && is_dashes(&g[1]) && g.iter().all(|row| row.len() == g[0].len() && !row.is_empty()), "case {case} geste {step}: {g:?}");
-                                // Written then read back, it does not change shape.
+                // Written then read back, it does not change shape.
                 let again = table(&format_table(&g, "")).0;
                 assert_eq!((again.len(), again[0].len()), (g.len(), g[0].len()), "case {case} geste {step}");
             }
@@ -1438,7 +1438,7 @@ mod tests {
         assert_eq!(paste_grid("a|b"), None);
         assert_eq!(paste_grid("a\tb\n\nc\t\n"), Some(vec![vec!["a".into(), "b".into()], vec!["c".into(), String::new()]]));
         assert_eq!(paste_grid("1\t2\r\n3\t4"), Some(vec![vec!["1".into(), "2".into()], vec!["3".into(), "4".into()]]));
-                // The dashes of a Markdown table are not data.
+        // The dashes of a Markdown table are not data.
         assert_eq!(paste_grid("| a | b |\n| :-- | --: |\n| c | d |").unwrap().len(), 2);
         assert_eq!(paste_grid("| a | b |").unwrap(), vec![vec!["a".to_string(), "b".to_string()]]);
         assert_eq!(paste_grid("a\t\"x|y\""), Some(vec![vec!["a".into(), "\"x\\|y\"".into()]]));
@@ -1480,9 +1480,9 @@ mod tests {
     fn pastes_tables_from_anywhere() {
         let md = "| a | b |\n|:--|--:|\n| longue | 2 |";
         assert_eq!(paste_table(md).unwrap(), "| a      | b   |\n| :----- | --: |\n| longue | 2   |");
-                // Cells from a web page or spreadsheet: the first row is the header.
+        // Cells from a web page or spreadsheet: the first row is the header.
         assert_eq!(paste_table("Nom\tÂge\nLéa\t31").unwrap(), "| Nom | Âge |\n| --- | --- |\n| Léa | 31  |");
-                // No columns, unequal columns, a single line or indented code: text.
+        // No columns, unequal columns, a single line or indented code: text.
         assert_eq!(paste_table("a\nb"), None);
         assert_eq!(paste_table("a\tb\nc"), None);
         assert_eq!(paste_table("a\tb"), None);
@@ -1492,14 +1492,14 @@ mod tests {
 
     #[test]
     fn aligns_by_display_width_and_stays_compact_when_wide() {
-                // An ideograph and an emoji take two columns.
+        // An ideograph and an emoji take two columns.
         let (rows, _) = table("| a | b |\n| 日本 | 😀 |");
         assert_eq!(format_table(&rows, ""), "| a    | b   |\n| ---- | --- |\n| 日本 | 😀  |");
-                // Too wide to stay aligned: a single space around each cell.
+        // Too wide to stay aligned: a single space around each cell.
         let long = "x".repeat(120);
         let (rows, _) = table(&format!("| a | b |\n| {long} | c |"));
         assert_eq!(format_table(&rows, ""), format!("| a | b |\n| --- | --- |\n| {long} | c |"));
-                // Rewritten, it no longer moves.
+        // Rewritten, it no longer moves.
         let once = format_table(&rows, "");
         assert_eq!(format_table(&table(&once).0, ""), once);
         let (rows, _) = table(&format!("| a | b |\n|:-:|--:|\n| {long} | c |"));
@@ -1514,18 +1514,18 @@ mod tests {
         assert_eq!(found("[ ] a [x] b [X]"), ["[ ]", "[x]", "[X]"]);
         assert_eq!(found("| [ ] | fait [x] | a |"), ["[ ]", "[x]"]);
         assert_eq!(found("|[ ]|"), ["[ ]"]);
-                // No link, no stuck word, no code, no escape, no other content.
+        // No link, no stuck word, no code, no escape, no other content.
         assert!(found("[[ ]] [x](lien) a[ ] [ ]b `[ ]` \\[ ] [y] [  ]").is_empty());
-                // The checkbox of a list task is the marker's, which is skipped.
+        // The checkbox of a list task is the marker's, which is skipped.
         assert_eq!(checkboxes("- [ ] a [ ] b", 6).len(), 1);
-                // A checked box is bold.
+        // A checked box is bold.
         let mut flags = vec![0u16; 7];
         inline("[x] [ ]", 0, &mut flags);
         assert!(flags[..3].iter().all(|f| f & (MARK | BOLD) == MARK | BOLD));
         assert!(flags[4..].iter().all(|f| f & MARK != 0 && f & BOLD == 0));
     }
 
-        /// The shortcuts that avoid classifying each line say the same as `classify` and `is_fence`.
+    /// The shortcuts that avoid classifying each line say the same as `classify` and `is_fence`.
     #[test]
     fn shortcuts_agree_with_the_line_by_line_scan() {
         let lines = [
