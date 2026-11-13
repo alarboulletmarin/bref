@@ -27,6 +27,7 @@ secondary-shift-pagedown|app::MoveTabRight|-
 alt-left|app::GoBack|-
 alt-right|app::GoForward|-
 secondary-shift-f|app::SearchVault|-
+secondary-,|app::OpenSettings|-
 secondary-=|app::ZoomIn|-
 secondary-+|app::ZoomIn|-
 secondary--|app::ZoomOut|-
