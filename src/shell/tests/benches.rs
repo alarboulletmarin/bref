@@ -385,6 +385,12 @@ fn bench_scale(cx: &mut TestAppContext) {
         cx.simulate_input("n");
         cx.run_until_parked();
         let letter = start.elapsed();
+        // A word no note holds: at each of its letters the text of every note is searched, the most
+        // a letter can ask for.
+        let start = Instant::now();
+        cx.simulate_input("zzyzx");
+        cx.run_until_parked();
+        let absent = start.elapsed() / 5;
         cx.simulate_keystrokes("escape");
         cx.run_until_parked();
         // A note written by another program: what the main thread spends on it (copy
@@ -402,16 +408,16 @@ fn bench_scale(cx: &mut TestAppContext) {
         cx.run_until_parked();
         let outside = copy + start.elapsed();
         let _ = synced;
-        for (what, took, ceiling) in [("scan", scan, OPENING), ("rescan", rescan, OPENING), ("fingerprint", fingerprint, OPENING), ("startup", startup, OPENING), ("open", open, OPENING), ("keystroke", typing, GESTURE), ("save", saved, OPENING), ("palette", palette, GESTURE), ("palette letter", letter, GESTURE), ("note written elsewhere", outside, OPENING)] {
+        for (what, took, ceiling) in [("scan", scan, OPENING), ("rescan", rescan, OPENING), ("fingerprint", fingerprint, OPENING), ("startup", startup, OPENING), ("open", open, OPENING), ("keystroke", typing, GESTURE), ("save", saved, OPENING), ("palette", palette, GESTURE), ("palette letter", letter, GESTURE), ("palette word", absent, GESTURE), ("note written elsewhere", outside, OPENING)] {
             within(&format!("{notes} notes, {what}"), took, ceiling);
         }
-        rows.push(format!("| {notes} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {memory} |", ms(scan), ms(rescan), ms(fingerprint), ms(startup), ms(open), ms(typing), ms(saved), ms(palette), ms(letter), ms(outside)));
+        rows.push(format!("| {notes} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {memory} |", ms(scan), ms(rescan), ms(fingerprint), ms(startup), ms(open), ms(typing), ms(saved), ms(palette), ms(letter), ms(absent), ms(outside)));
         // The window and its watcher go before the next vault.
         cx.update(|_, cx| cx.windows().iter().for_each(|w| { w.update(cx, |_, window, _| window.remove_window()).ok(); }));
         cx.run_until_parked();
     }
-    println!("\n| notes | scan (ms) | rescan (ms) | fingerprint (ms) | startup (ms) | open 5000 l. (ms) | keystroke 5000 l. (ms) | save 5000 l. (ms) | palette: open (ms) | palette: one letter (ms) | note written elsewhere, main thread (ms) | memory (MB) |");
-    println!("|---|---|---|---|---|---|---|---|---|---|---|---|");
+    println!("\n| notes | scan (ms) | rescan (ms) | fingerprint (ms) | startup (ms) | open 5000 l. (ms) | keystroke 5000 l. (ms) | save 5000 l. (ms) | palette: open (ms) | palette: one letter (ms) | palette: a letter of a word in no note (ms) | note written elsewhere, main thread (ms) | memory (MB) |");
+    println!("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
     rows.iter().for_each(|row| println!("{row}"));
 }
 
