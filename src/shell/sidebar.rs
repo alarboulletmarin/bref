@@ -498,9 +498,9 @@ impl Shell {
         )
     }
 
-    /// The width the rows of the panel's list have: the dock it is in, the whole window when it is alone.
-    fn list_room(&self) -> Pixels {
-        let (right, alone) = (self.dock_tools(true).contains(&self.nav.mode()), self.nav.panel() == Panel::Full);
+    /// The width the rows of a tool's list have: the dock it is in, the whole window when it is alone.
+    fn list_room(&self, mode: Mode) -> Pixels {
+        let (right, alone) = (self.dock_tools(true).contains(&mode), self.nav.panel() == Panel::Full);
         let width = match (right, alone) {
             (true, _) => self.right_width(),
             (_, true) => self.nav.total() - self.theme.px(RAIL),
@@ -510,22 +510,24 @@ impl Shell {
         width - px(16.)
     }
 
+    /// The rows `range` of the tool `mode`'s list.
     pub(super) fn render_rows(
         &mut self,
+        mode: Mode,
         range: Range<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<Stateful<Div>> {
         let t = self.theme;
         let focused = self.nav.focus().is_focused(window);
-        let tree = self.nav.mode() == Mode::Tree;
+        let tree = mode == Mode::Tree;
         let marked = &self.nav.marked();
         // Dragging a row of the multiple selection carries the whole batch.
         let lot = marked.iter().next().map(|any| self.targets(any)).unwrap_or_default();
-        let room = self.list_room();
+        let room = self.list_room(mode);
         range
             .filter_map(|ix| {
-                let row = self.nav.rows().get(ix)?;
+                let row = self.nav.rows_of(mode).get(ix)?;
                 let selected = match marked.is_empty() {
                     true => self.nav.sel().as_ref() == Some(&row.path),
                     false => marked.contains(&row.path),
@@ -548,7 +550,7 @@ impl Shell {
                     _ => detail,
                 };
                 // Under backlinks, the line of the note that carries the link.
-                let links = self.nav.mode() == Mode::Links;
+                let links = mode == Mode::Links;
                 let detail = match self.nav.anchor().as_ref().filter(|_| links) {
                     Some(target) => {
                         let note = |path: &Path| self.notes.iter().find(|n| n.path == path);
@@ -570,7 +572,7 @@ impl Shell {
                 };
                 let wide = links || closed.is_some();
                 let said = closed.map(|_| detail.clone());
-                let foldable = !matches!(self.nav.mode(), Mode::Recent | Mode::Links);
+                let foldable = !matches!(mode, Mode::Recent | Mode::Links);
                 let chevron = match row.dir {
                     Some(true) => "chevron-down.svg",
                     Some(false) => "chevron-right.svg",
@@ -1132,8 +1134,7 @@ impl Shell {
         let line = move || div().debug_selector(|| "tool-aim".into()).absolute().left_0().right_0().h(t.px(2.)).bg(t.accent);
         let mut sections = Vec::new();
         for (at, mode) in tools.into_iter().enumerate() {
-            self.nav.activate(mode);
-            let section = self.render_dock(right, stacked, mode == active, window, cx)
+            let section = self.render_dock(right, mode, stacked, mode == active, window, cx)
                 .when(aim == Some(at), |d| d.child(line().top_0()))
                 .when(aim == Some(count) && at + 1 == count, |d| d.child(line().bottom_0()))
                 .on_drag_move(cx.listener(move |this, e: &gpui::DragMoveEvent<docks::ToolDragged>, _, cx| {
@@ -1144,7 +1145,6 @@ impl Shell {
                 }));
             sections.push(section);
         }
-        self.nav.activate(active);
         // A sheet on the ground, like the note.
         crate::ui::widgets::sheet(t)
             .debug_selector(move || if right { "dock-right".into() } else { "nav-panel".into() })
@@ -1171,11 +1171,12 @@ impl Shell {
             }))
     }
 
-    /// Header and content of the tool whose view is in `Nav`, in the right dock or the left one;
-    /// `stacked` with others, `keys`: the one that takes the keys of the panel.
-    fn render_dock(&mut self, right: bool, stacked: bool, keys_here: bool, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
+    /// Header and content of the tool `mode`, in the right dock or the left one, drawn from its view
+    /// whether it is the active one or waits; `stacked` with others, `keys_here`: the one that takes the
+    /// keys of the panel.
+    fn render_dock(&mut self, right: bool, mode: Mode, stacked: bool, keys_here: bool, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
-        let (mode, panel) = (self.nav.mode(), self.nav.panel());
+        let panel = self.nav.panel();
         let shut = stacked && self.nav.folded().contains(&mode);
         let keys = |action: &dyn Action| crate::ui::keys::of(cx, action);
         let full = !right && panel == Panel::Full;
@@ -1303,7 +1304,7 @@ impl Shell {
         // A vault that cannot be read is not an empty one: whatever the mode, the panel says so, why and
         // where, and offers another vault rather than a note that could not be written.
         let unreadable = self.vault.as_ref().and_then(|root| self.unreadable.iter().find(|(dir, _)| dir == root).map(|(_, why)| (root.clone(), *why)));
-        let nothing = self.nav.rows().is_empty().then(|| {
+        let nothing = self.nav.rows_of(mode).is_empty().then(|| {
             if let Some((root, why)) = &unreadable {
                 return div().absolute().inset_0().flex().items_center().justify_center().px_4().text_center().text_size(t.font_body()).text_color(t.soft).child(
                     div()
@@ -1348,16 +1349,10 @@ impl Shell {
         });
         // Set again by the selected row if it is drawn.
         self.nav.sel_at().set(None);
-        // The rows are drawn later, at layout: they bring their dock's view back for that time.
-        let rows = cx.processor(move |this, range, window, cx| {
-            let was = this.nav.mode();
-            this.nav.activate(mode);
-            let rows = this.render_rows(range, window, cx);
-            this.nav.activate(was);
-            rows
-        });
-        let list = uniform_list(("nav-rows", mode as usize), self.nav.rows().len(), rows)
-            .track_scroll(self.nav.scroll().clone())
+        // The rows are drawn later, at layout, from their tool's view.
+        let rows = cx.processor(move |this, range, window, cx| this.render_rows(mode, range, window, cx));
+        let list = uniform_list(("nav-rows", mode as usize), self.nav.rows_of(mode).len(), rows)
+            .track_scroll(self.nav.scroll_of(mode).cloned().unwrap_or_default())
             .flex_1()
             .min_h_0()
             // Outside any row: a drop goes to the root, right-click targets the vault.

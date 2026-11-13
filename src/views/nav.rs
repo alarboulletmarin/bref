@@ -561,6 +561,22 @@ impl Nav {
         &self.scroll
     }
 
+    /// The rows of a tool's list, whether its view is the active one or waits.
+    pub fn rows_of(&self, mode: Mode) -> &[Row] {
+        match mode == self.mode {
+            true => &self.rows,
+            false => self.parked.get(&mode).map_or(&[], |view| &view.rows),
+        }
+    }
+
+    /// The scroll of a tool's list, whether its view is the active one or waits; none for a tool never shown.
+    pub fn scroll_of(&self, mode: Mode) -> Option<&UniformListScrollHandle> {
+        match mode == self.mode {
+            true => Some(&self.scroll),
+            false => self.parked.get(&mode).map(|view| &view.scroll),
+        }
+    }
+
     /// The selection comes on screen at the next frame.
     pub fn set_needs_reveal(&mut self, on: bool) {
         self.reveal = on;
