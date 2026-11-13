@@ -723,7 +723,7 @@ impl Shell {
                                 // A tag has only one entry: the list of its notes.
                                 window.focus(this.nav.focus());
                                 if this.vault.as_ref().is_some_and(|root| target.starts_with(root)) || tag_of(&target).is_some() {
-                                    this.show_menu(Menu { at: e.position, target: Some(target.clone()), ..Default::default() }, window, cx);
+                                    this.show_menu(Menu::on_entry(e.position, Some(target.clone())), window, cx);
                                 }
                                 cx.stop_propagation();
                                 cx.notify();
@@ -1380,7 +1380,7 @@ impl Shell {
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(|this, e: &MouseDownEvent, window, cx| {
-                        this.show_menu(Menu { at: e.position, ..Default::default() }, window, cx);
+                        this.show_menu(Menu::on_entry(e.position, None), window, cx);
                     }),
                 )
             });

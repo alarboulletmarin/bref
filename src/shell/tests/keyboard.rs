@@ -15,7 +15,7 @@ fn context_menus_walk_with_the_keys(cx: &mut TestAppContext) {
         s.open_note(&root.join("Beta.md"), cx);
     });
     cx.run_until_parked();
-    let menu = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.menu.as_ref().map(|m| (m.chosen, s.menu_groups(cx).concat().get(m.chosen.unwrap_or(0)).map(|e| e.0))));
+    let menu = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.menu.as_ref().map(|m| (m.chosen(), s.menu_groups(cx).concat().get(m.chosen().unwrap_or(0)).map(|e| e.0))));
     let focus_in_menu = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| shell.read(cx).menu_focus.is_focused(window));
 
     // The panel: the selected row's menu opens under it, on its first entry.
@@ -28,7 +28,7 @@ fn context_menus_walk_with_the_keys(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("shift-f10");
     assert_eq!(menu(cx), Some((Some(0), Some("Ouvrir"))));
     assert!(focus_in_menu(cx));
-    let (at, row) = shell.read_with(cx, |s, _| (s.menu.as_ref().unwrap().at, s.nav.sel_at().get().unwrap()));
+    let (at, row) = shell.read_with(cx, |s, _| (s.menu.as_ref().unwrap().at(), s.nav.sel_at().get().unwrap()));
     assert!(at.y >= row.bottom() && at.y < row.bottom() + px(2.) && at.x > row.left(), "under the row: {at:?} {row:?}");
     // Up from the first goes round to the last; Esc closes and the tree has the keys again.
     cx.simulate_keystrokes("up");

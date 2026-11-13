@@ -82,22 +82,99 @@ impl Row {
 /// Context menu: where it opens and the targeted row (`None`: the vault itself).
 #[derive(Default)]
 pub struct Menu {
-    pub at: Point<Pixels>,
-    pub target: Option<PathBuf>,
+    at: Point<Pixels>,
+    target: Option<PathBuf>,
     /// Right click in the note and not in the tree: the targeted link, if there is one.
-    pub text: Option<Option<Link>>,
+    text: Option<Option<Link>>,
     /// This right click in the note targets a comment.
-    pub commented: bool,
+    commented: bool,
     /// Opened by a block's handle: the block's gestures.
-    pub block: bool,
+    block: bool,
     /// Right click on a tab: what to close.
-    pub tab: Option<usize>,
+    tab: Option<usize>,
     /// Share/export menu, pinned to the document tab that opened it.
-    pub share: Option<usize>,
+    share: Option<usize>,
     /// The entry the arrow keys are on.
-    pub chosen: Option<usize>,
+    chosen: Option<usize>,
     /// What had the focus before it opened, to give it back.
-    pub back: Option<FocusHandle>,
+    back: Option<FocusHandle>,
+}
+
+impl Menu {
+    /// On a row of the panel, or on the panel itself (`None`: the vault).
+    pub fn on_entry(at: Point<Pixels>, target: Option<PathBuf>) -> Self {
+        Menu { at, target, ..Default::default() }
+    }
+
+    /// On a tab.
+    pub fn on_tab(at: Point<Pixels>, tab: usize) -> Self {
+        Menu { at, tab: Some(tab), ..Default::default() }
+    }
+
+    /// In the note: on `link` if there is one, on a comment if `commented`.
+    pub fn in_text(at: Point<Pixels>, link: Option<Link>, commented: bool) -> Self {
+        Menu { at, text: Some(link), commented, ..Default::default() }
+    }
+
+    /// By a block's handle.
+    pub fn on_block(at: Point<Pixels>) -> Self {
+        Menu { at, text: Some(None), block: true, ..Default::default() }
+    }
+
+    /// Share / Export, for the document of the tab `pane`.
+    pub fn share(at: Point<Pixels>, pane: usize) -> Self {
+        Menu { at, share: Some(pane), ..Default::default() }
+    }
+
+    /// Opened from the keyboard: the arrows start on the first entry.
+    pub fn by_keys(self) -> Self {
+        Menu { chosen: Some(0), ..self }
+    }
+
+    /// `back` takes the focus again when the menu closes.
+    pub fn with_back(self, back: Option<FocusHandle>) -> Self {
+        Menu { back, ..self }
+    }
+
+    pub fn at(&self) -> Point<Pixels> {
+        self.at
+    }
+
+    pub fn target(&self) -> Option<&PathBuf> {
+        self.target.as_ref()
+    }
+
+    pub fn text(&self) -> Option<&Option<Link>> {
+        self.text.as_ref()
+    }
+
+    pub fn commented(&self) -> bool {
+        self.commented
+    }
+
+    pub fn block(&self) -> bool {
+        self.block
+    }
+
+    pub fn tab(&self) -> Option<usize> {
+        self.tab
+    }
+
+    pub fn share_of(&self) -> Option<usize> {
+        self.share
+    }
+
+    pub fn chosen(&self) -> Option<usize> {
+        self.chosen
+    }
+
+    pub fn choose(&mut self, entry: Option<usize>) {
+        self.chosen = entry;
+    }
+
+    pub fn back(&self) -> Option<&FocusHandle> {
+        self.back.as_ref()
+    }
 }
 
 #[derive(Clone, Copy)]

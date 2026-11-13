@@ -180,7 +180,7 @@ fn block_handles(cx: &mut TestAppContext) {
     hover(cx, "Deux");
     let (grip, _) = handle(cx);
     cx.simulate_click(grip.center(), none);
-    assert!(shell.read_with(cx, |s, _| s.menu.as_ref().is_some_and(|m| m.block)));
+    assert!(shell.read_with(cx, |s, _| s.menu.as_ref().is_some_and(|m| m.block())));
     assert_eq!(shell.read_with(cx, |s, cx| s.pane().editor.read(cx).selected().to_string()), "Deux");
     shell.update_in(cx, |s, window, cx| s.menu_do(nav::Do::Block(editor::BlockOp::Turn(block::Turn::Heading(2))), None, window, cx));
     assert_eq!(text(cx), "# Titre\n\nUn\n\n## Deux\n\n- a\n    - sous\n- b\n");

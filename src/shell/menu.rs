@@ -23,14 +23,14 @@ impl Shell {
     /// Runs a context menu entry on `target` (`None`: the vault).
     pub(super) fn menu_do(&mut self, what: Do, target: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         let menu = self.menu.take();
-        let share = menu.as_ref().and_then(|m| m.share);
-        if let Some(back) = menu.as_ref().and_then(|menu| menu.back.as_ref()) {
+        let share = menu.as_ref().and_then(Menu::share_of);
+        if let Some(back) = menu.as_ref().and_then(Menu::back) {
             window.focus(back);
         }
         // Without a menu (from the palette), the icon grid opens near the top of the note.
-        let at = menu.as_ref().map_or(point(px(80.), px(80.)), |menu| menu.at);
-        let tab = menu.as_ref().and_then(|menu| menu.tab).filter(|tab| *tab < self.panes.len());
-        let link = menu.and_then(|menu| menu.text).flatten();
+        let at = menu.as_ref().map_or(point(px(80.), px(80.)), Menu::at);
+        let tab = menu.as_ref().and_then(Menu::tab).filter(|tab| *tab < self.panes.len());
+        let link = menu.as_ref().and_then(|menu| menu.text().cloned()).flatten();
         cx.notify();
         if let Do::Share(choice) = what {
             if let Some(pane) = share.filter(|p| self.share_choices(*p).contains(&choice)) {
@@ -266,15 +266,15 @@ impl Shell {
 
     /// Opens `menu`; it takes the keys until it closes.
     pub(super) fn show_menu(&mut self, menu: Menu, window: &mut Window, cx: &mut Context<Self>) {
-        let back = self.menu.take().and_then(|old| old.back).or_else(|| window.focused(cx));
-        self.menu = Some(Menu { back, ..menu });
+        let back = self.menu.take().and_then(|old| old.back().cloned()).or_else(|| window.focused(cx));
+        self.menu = Some(menu.with_back(back));
         window.focus(&self.menu_focus);
         cx.notify();
     }
 
     /// Closes the menu, if one is open, and gives the focus back to what had it.
     pub(super) fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(back) = self.menu.take().and_then(|menu| menu.back) {
+        if let Some(back) = self.menu.take().and_then(|menu| menu.back().cloned()) {
             window.focus(&back);
         }
         cx.notify();
@@ -286,7 +286,7 @@ impl Shell {
             let Some(target) = self.nav.sel().clone() else { return };
             let at = self.nav.sel_at().get().map_or(point(px(60.), px(60.)), |row| row.bottom_left() + point(px(24.), px(0.)));
             if self.vault.as_ref().is_some_and(|root| target.starts_with(root)) || tag_of(&target).is_some() {
-                self.show_menu(Menu { at, target: Some(target), chosen: Some(0), ..Default::default() }, window, cx);
+                self.show_menu(Menu::on_entry(at, Some(target)).by_keys(), window, cx);
             }
         } else if self.pane().editor.focus_handle(cx).is_focused(window) {
             self.pane().editor.clone().update(cx, |editor, cx| editor.menu_at_cursor(cx));
@@ -301,15 +301,15 @@ impl Shell {
             self.close_menu(window, cx);
             return true;
         }
-        let at = menu.chosen;
-        menu.chosen = match key {
+        let at = menu.chosen();
+        let chosen = match key {
             "down" => Some(at.map_or(0, |i| (i + 1) % n)),
             "up" => Some(at.map_or(n - 1, |i| (i + n - 1) % n)),
             "home" | "pageup" => Some(0),
             "end" | "pagedown" => Some(n - 1),
             "enter" | "space" => {
                 if let Some(what) = at.and_then(|i| entries.get(i)) {
-                    let target = menu.target.clone();
+                    let target = menu.target().cloned();
                     self.menu_do(*what, target, window, cx);
                 }
                 return true;
@@ -320,6 +320,7 @@ impl Shell {
             }
             _ => return false,
         };
+        menu.choose(chosen);
         cx.notify();
         true
     }
@@ -327,21 +328,21 @@ impl Shell {
     /// The entries of the open menu, by group; a line separates the groups.
     pub(super) fn menu_groups(&self, cx: &App) -> Vec<Vec<(&'static str, Do)>> {
         let Some(menu) = self.menu.as_ref() else { return Vec::new() };
-        if let Some(pane) = menu.share {
+        if let Some(pane) = menu.share_of() {
             return vec![self.share_choices(pane).into_iter().map(|choice| (choice.label(), Do::Share(choice))).collect()];
         }
-        let is_dir = menu.target.as_ref().is_none_or(|p| self.dirs.contains(p));
+        let is_dir = menu.target().is_none_or(|p| self.dirs.contains(p));
         let tree = self.nav.mode() == Mode::Tree;
-        let many = menu.target.as_ref().is_some_and(|p| self.nav.marked().contains(p)) && self.nav.marked().len() > 1;
+        let many = menu.target().is_some_and(|p| self.nav.marked().contains(p)) && self.nav.marked().len() > 1;
         // An entry that is the command itself takes its label from the command table; one that says what it does on this target (a tab, a row, a block) keeps a shorter one.
         use command_table::label;
         // Groups of entries; a line separates those that have any.
         let mut groups: Vec<Vec<(&'static str, Do)>> = vec![Vec::new(); 7];
-        if menu.tab.is_some() {
+        if menu.tab().is_some() {
             groups[0].push((tr("Close", "Fermer"), Do::CloseTab));
             groups[0].push((tr("Close other tabs", "Fermer les autres onglets"), Do::CloseOtherTabs));
             groups[0].push((tr("Close all tabs in this pane", "Fermer tous les onglets de ce volet"), Do::CloseTabsInPane));
-        } else if menu.block {
+        } else if menu.block() {
             // A block's handle: what it can become, move or duplicate it, copy it, delete it.
             use editor::BlockOp;
             groups[0].extend(BlockOp::ALL.into_iter().filter(|op| matches!(op, BlockOp::Turn(_))).map(|op| (op.label(), Do::Block(op))));
@@ -350,7 +351,7 @@ impl Shell {
             groups[2].push((label::<editor::Cut>(), Do::Cut));
             groups[2].push((label::<editor::Comment>(), Do::Comment));
             groups[3].push((BlockOp::Delete.label(), Do::Block(BlockOp::Delete)));
-        } else if let Some(link) = &menu.text {
+        } else if let Some(link) = menu.text() {
             let web = matches!(link, Some(Link::Url(_)));
             if link.is_some() {
                 groups[0].push((tr("Open the link", "Ouvrir le lien"), Do::OpenLink));
@@ -380,14 +381,14 @@ impl Shell {
                 groups[2].push((label::<editor::Highlight>(), Do::Highlight));
                 groups[2].push((label::<editor::InlineCode>(), Do::Code));
                 groups[2].push((if web { tr("Edit the link", "Modifier le lien") } else { tr("Make a link", "Faire un lien") }, Do::Link));
-                groups[2].push((if menu.commented { tr("Resolve the comment", "Résoudre le commentaire") } else { label::<editor::Comment>() }, Do::Comment));
+                groups[2].push((if menu.commented() { tr("Resolve the comment", "Résoudre le commentaire") } else { label::<editor::Comment>() }, Do::Comment));
                 // The targeted lines, from one kind of list to another.
                 groups[3].push((tr("Bulleted list", "Liste à puces"), Do::Bullets));
                 groups[3].push((tr("Numbered list", "Liste numérotée"), Do::Numbered));
                 groups[3].push((tr("Task list", "Liste de tâches"), Do::Tasks));
                 groups[3].push((tr("Plain text", "Texte simple"), Do::Plain));
             }
-        } else if menu.target.as_deref().and_then(tag_of).is_some() {
+        } else if menu.target().map(PathBuf::as_path).and_then(tag_of).is_some() {
             // A tag is neither a note nor a folder: only its notes can be listed.
             groups[0].push((tr("Show as a list", "Afficher en liste"), Do::List));
         } else {
@@ -407,7 +408,7 @@ impl Shell {
                 groups[2].push((tr("Copy the [[link]]", "Copier le [[lien]]"), Do::CopyLink));
             }
             groups[2].push((tr("Copy path", "Copier le chemin"), Do::CopyPath));
-            if menu.target.is_some() {
+            if menu.target().is_some() {
                 groups[2].push((tr("Copy relative path", "Copier le chemin relatif"), Do::CopyRelative));
             }
             if !many {
@@ -416,7 +417,7 @@ impl Shell {
             if is_dir && !many && tree {
                 groups[0].push((tr("Show as a list", "Afficher en liste"), Do::List));
             }
-            if menu.target.is_some() {
+            if menu.target().is_some() {
                 if !is_dir || many {
                     groups[3].push((tr("Duplicate", "Dupliquer"), Do::Duplicate));
                 }
@@ -437,9 +438,9 @@ impl Shell {
         let menu = self.menu.as_ref()?;
         let t = self.theme;
         let groups = self.menu_groups(cx);
-        let chosen = menu.chosen;
-        let at = menu.at;
-        let target = menu.target.clone();
+        let chosen = menu.chosen();
+        let at = menu.at();
+        let target = menu.target().cloned();
         let entry = |i: usize, (label, what): (&'static str, Do), cx: &mut Context<Self>| {
             let target = target.clone();
             let on = chosen == Some(i);
