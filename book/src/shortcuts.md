@@ -174,6 +174,7 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 
 | Keys | Action |
 |---|---|
+| `Ctrl+,` | Settings: every choice of the app, by section, in a tab |
 | `Ctrl+P › theme` | Theme, previewed as you browse |
 | `Ctrl+P › font` | Font of the app / of the code |
 | `Ctrl+P › page width` | Width of the text column: narrow, normal, wide, full |
