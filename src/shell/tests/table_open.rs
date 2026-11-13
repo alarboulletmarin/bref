@@ -167,7 +167,7 @@ fn an_input_method_composes_in_a_cell_and_in_the_palette(cx: &mut TestAppContext
     compose(cx, Some(1..2), "");
     assert_eq!((text(cx).as_deref(), marked(cx)), (Some("漢"), None));
 
-    cx.simulate_keystrokes("escape ctrl-p");
+    cx.simulate_keystrokes("escape secondary-p");
     let palette = shell.read_with(cx, |s, _| s.palette.clone().unwrap());
     let typed = |cx: &mut gpui::VisualTestContext| palette.read_with(cx, |p, _| p.typed_text().to_string());
     cx.update(|window, cx| palette.update(cx, |p, cx| p.replace_and_mark_text_in_range(None, "に", None, window, cx)));
