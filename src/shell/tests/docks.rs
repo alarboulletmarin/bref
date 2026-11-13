@@ -175,6 +175,15 @@ fn tools_stacked_folded_and_dragged(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     cx.simulate_mouse_up(below, MouseButton::Left, none);
     assert_eq!(tools(cx).0, [Mode::Tags, Mode::Graph, Mode::Tree]);
+    // Let go where nothing takes it: the drag is over, no line is left behind.
+    hold(cx, "tool-title-tags", below);
+    assert!(shell.read_with(cx, |s, _| s.tool_drag && s.tool_aim.is_some()));
+    let away = point(px(600.), px(700.));
+    cx.simulate_mouse_move(away, MouseButton::Left, none);
+    cx.simulate_mouse_up(away, MouseButton::Left, none);
+    cx.run_until_parked();
+    assert_eq!(shell.read_with(cx, |s, _| (s.tool_aim, s.tool_drag)), (None, false));
+    assert_eq!(tools(cx).0, [Mode::Tags, Mode::Graph, Mode::Tree]);
 
     // Restart: both stacks, in their order, the folded tool folded.
     let (again, cx2) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
