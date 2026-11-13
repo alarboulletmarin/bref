@@ -94,7 +94,6 @@ mod tests {
             aliases: Arc::from([]),
             mtime: SystemTime::UNIX_EPOCH,
             body: "".into(),
-            lower: "".into(),
         }
     }
 

@@ -133,8 +133,8 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
   mechanism when watching is not possible.
 - **Palette**: name matches first (substring, ranked by position, then subsequence; ties keep the
   most recently opened note first), then notes whose text contains every word, most recent first.
-  The whole text of the vault is kept in memory for that, as written and in lower case: it is
-  lowered once, when the vault is read, not each time the palette opens.
+  The whole text of the vault is kept in memory for that, once, as written: each word typed is
+  searched whatever its case (`rank::Words`), so no lowercase copy of the notes is kept.
 - **Navigation** (`views/nav.rs`, `shell/sidebar.rs`): the tree is rebuilt from the paths of the
   indexed notes, and only the visible rows are drawn.
 - **Graph** (`logic/graph.rs`, `views/graph.rs`): a force-directed layout computed off the UI thread when the links

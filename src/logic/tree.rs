@@ -132,7 +132,6 @@ mod tests {
             aliases: Default::default(),
             mtime: SystemTime::UNIX_EPOCH,
             body: "".into(),
-            lower: "".into(),
         };
         let notes = [note("b.md"), note("Z/x.md"), note("a/c/d.md"), note("a/B.md"), note("A.md")];
         let shown = |open: &[&str]| -> Vec<String> {

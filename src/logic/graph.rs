@@ -168,7 +168,6 @@ mod tests {
             aliases: Default::default(),
             mtime: SystemTime::UNIX_EPOCH,
             body: "".into(),
-            lower: "".into(),
         }
     }
 

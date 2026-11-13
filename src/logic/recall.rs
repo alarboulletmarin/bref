@@ -91,7 +91,6 @@ mod tests {
             aliases: Default::default(),
             mtime: now - DAY * age,
             body: "du texte".into(),
-            lower: "du texte".into(),
         }
     }
 

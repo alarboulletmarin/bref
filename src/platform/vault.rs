@@ -875,8 +875,7 @@ mod tests {
         let (notes, dirs, images) = scan(&root);
         assert_eq!((notes.len(), dirs), (2, vec![root.join("vide")]));
         // Each note keeps its text as is, and the same in lowercase for search.
-        assert!(notes.iter().all(|n| !n.body.is_empty() && *n.lower == n.body.to_lowercase()));
-        assert!(notes.iter().any(|n| n.lower != n.body));
+        assert!(notes.iter().all(|n| !n.body.is_empty()));
         assert_eq!(images, [root.join("vide/Photo.PNG")]);
         assert_eq!(clean_name(" ../a:b. "), Some("ab".into()));
         assert_eq!(clean_name(" . "), None);

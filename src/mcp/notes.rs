@@ -146,7 +146,7 @@ pub fn search_notes(vault: &Vault, args: &Value) -> Outcome {
     };
     let limit = arg_usize(args, "limit").unwrap_or(20).clamp(1, 50);
     let q = query.to_lowercase();
-    let words: Vec<&str> = q.split_whitespace().collect();
+    let words = rank::Words::of(&q);
     let mut scored = Vec::new();
     let mut named = vec![false; vault.notes.len()];
     for (i, note) in vault.notes.iter().enumerate() {
@@ -167,13 +167,12 @@ pub fn search_notes(vault: &Vault, args: &Value) -> Outcome {
         .map(|(_, i)| hit(vault, &vault.notes[i], "name", ""))
         .collect();
     if hits.len() < limit && q.chars().count() >= 2 {
-        let word = words.first().copied().unwrap_or(q.as_str());
         for (i, note) in vault.notes.iter().enumerate() {
             if named[i] || vault.is_template(note) || !kept(vault, &note.path, &note.tags, args) {
                 continue;
             }
-            if rank::contains_all(&note.lower, &words) {
-                hits.push(hit(vault, note, "text", &rank::snippet(&note.body, &note.lower, word)));
+            if words.all_in(&note.body) {
+                hits.push(hit(vault, note, "text", &words.snippet(&note.body)));
                 if hits.len() == limit {
                     break;
                 }
