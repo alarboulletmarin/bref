@@ -1157,7 +1157,7 @@ special
             .chain((0..rows).map(|i| format!("{},nom{},{}\n", (i * 7919) % rows, i, if i % 50 == 0 { String::new() } else { (i % 97).to_string() })))
             .collect();
         let mut t = table(&text, b',');
-        let timed = |what: &str, start: Instant| eprintln!("{what}: {:?}", start.elapsed());
+        let timed = |what: &str, start: Instant| within(what, start.elapsed());
         let start = Instant::now();
         t.insert_cols(1, 1, &[]);
         timed("insert a column in the middle", start);
@@ -1279,6 +1279,13 @@ special
             .map_or(0.0, |pages| pages * 4096.0 / 1_048_576.0)
     }
 
+    /// Ceiling of one pass over a big table in the measurements by hand: generous, so that only a hang or a
+    /// complexity blow-up fails, never the noise of the machine.
+    fn within(what: &str, took: std::time::Duration) {
+        println!("{what}: {took:?}");
+        assert!(took <= std::time::Duration::from_secs(60), "{what}: {took:?} is over a minute");
+    }
+
     #[test]
     #[ignore]
     fn scale() {
@@ -1294,6 +1301,7 @@ special
         let rss0 = rss_mb();
         let t0 = Instant::now();
         let mut t = Table::parse(s, b',');
+        within("parse", t0.elapsed());
         println!(
             "parse: {:?} ({} rows x {} columns), RSS {:.0} MB (+{:.0} MB)",
             t0.elapsed(),
@@ -1309,17 +1317,17 @@ special
         for r in (0..t.rows()).step_by(1000) {
             n += t.cell(r, 7).len() + t.cell(r, 3).len();
         }
-        println!("1000 cell reads: {:?} ({n})", t0.elapsed());
+        within(&format!("1000 cell reads ({n})"), t0.elapsed());
 
         let t0 = Instant::now();
         let snap = t.snapshot();
-        println!("snapshot: {:?}", t0.elapsed());
+        within("snapshot", t0.elapsed());
         t.set_cell(500_000, 1, "x,y".into());
         let t0 = Instant::now();
         let mut sink = io::sink();
         snap.write_to(&mut sink, Encoding::Utf8).unwrap();
         t.write_to(&mut sink, Encoding::Utf16Le).unwrap();
-        println!("writing UTF-8 + UTF-16 (to /dev/null): {:?}", t0.elapsed());
+        within("writing UTF-8 + UTF-16 (to /dev/null)", t0.elapsed());
     }
 
     #[test]
