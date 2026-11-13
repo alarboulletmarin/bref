@@ -29,7 +29,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     // keyboard does, and those of a link act on the targeted link.
     let view = cx.update(|window, _| window.viewport_size());
     cx.simulate_mouse_down(point(view.width / 2., view.height / 2.), MouseButton::Right, gpui::Modifiers::none());
-    assert!(shell.read_with(cx, |s, _| s.menu.as_ref().is_some_and(|m| m.text == Some(None))));
+    assert!(shell.read_with(cx, |s, _| s.menu.as_ref().is_some_and(|m| m.text() == Some(&None))));
     cx.simulate_keystrokes("escape");
     assert!(shell.read_with(cx, |s, _| s.menu.is_none()));
     cx.simulate_mouse_down(point(view.width / 2., view.height / 2.), MouseButton::Right, gpui::Modifiers::none());
@@ -40,7 +40,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) {
     assert!(text(cx).contains(" !") && text(cx).replace(" !", "") == "voir [la doc](https://a.b/c) ici");
     let link = Link::Url("https://a.b/c".into());
     shell.update_in(cx, |s, window, cx| {
-        s.menu = Some(nav::Menu { at: point(px(0.), px(0.)), target: None, text: Some(Some(link)), commented: false, block: false, ..Default::default() });
+        s.menu = Some(nav::Menu::in_text(point(px(0.), px(0.)), Some(link), false));
         s.menu_do(nav::Do::CopyAddress, None, window, cx)
     });
     assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("https://a.b/c"));

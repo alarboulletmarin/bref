@@ -71,7 +71,7 @@ fn the_palette_and_the_menu_keep_their_rows(cx: &mut TestAppContext) {
             // A context menu on a note: 30 px items, the whole menu in the window.
             let note = root.join("Liste.md");
             shell.update(cx, |s, cx| {
-                s.menu = Some(nav::Menu { at: point(px(width - 20.), px(500.)), target: Some(note.clone()), text: None, commented: false, block: false, ..Default::default() });
+                s.menu = Some(nav::Menu::on_entry(point(px(width - 20.), px(500.)), Some(note.clone())));
                 cx.notify();
             });
             settle(cx);

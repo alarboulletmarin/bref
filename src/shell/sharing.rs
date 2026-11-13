@@ -28,10 +28,8 @@ impl Shell {
         };
         let right = area.left() + area.size.width * (rect.x + rect.w);
         let bottom = area.top() + area.size.height * (rect.y + rect.h);
-        self.show_menu(Menu {
-            at: point((right - self.theme.px(290.)).max(px(8.)), (bottom - self.theme.px(190.)).max(px(8.))),
-            share: Some(self.active), chosen: Some(0), ..Default::default()
-        }, window, cx);
+        let at = point((right - self.theme.px(290.)).max(px(8.)), (bottom - self.theme.px(190.)).max(px(8.)));
+        self.show_menu(Menu::share(at, self.active).by_keys(), window, cx);
     }
 
     pub(super) fn share_document(&mut self, choice: Share, window: &mut Window, cx: &mut Context<Self>) {

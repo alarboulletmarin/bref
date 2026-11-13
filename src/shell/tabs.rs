@@ -221,7 +221,7 @@ impl Shell {
                 // Right click: what to close, this tab, the others or the whole pane.
                 .on_mouse_down(MouseButton::Right, cx.listener(move |this, e: &gpui::MouseDownEvent, window, cx| {
                     cx.stop_propagation();
-                    this.show_menu(nav::Menu { at: e.position, tab: Some(tab), ..Default::default() }, window, cx);
+                    this.show_menu(nav::Menu::on_tab(e.position, tab), window, cx);
                 }))
         });
         // The window buttons sit over the top right corner: the right pane's bar stops before them,

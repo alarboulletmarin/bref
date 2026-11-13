@@ -196,7 +196,7 @@ fn sharing_menu_fits_themes_and_narrow_windows(cx: &mut TestAppContext) {
             let trigger = cx.debug_bounds("copy-all").unwrap();
             cx.simulate_click(trigger.center(), gpui::Modifiers::none());
             settle(cx);
-            assert!(shell.read_with(cx, |s, _| s.menu.as_ref().is_some_and(|m| m.share.is_some())));
+            assert!(shell.read_with(cx, |s, _| s.menu.as_ref().is_some_and(|m| m.share_of().is_some())));
             let menu = cx.debug_bounds("menu").unwrap();
             assert!(menu.left() >= px(0.) && menu.right() <= px(width) + px(0.5), "{name} {width}: {menu:?}");
             assert!(menu.top() >= px(0.) && menu.bottom() <= px(720.));
