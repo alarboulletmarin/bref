@@ -134,6 +134,7 @@ fn a_saved_settings_tab_comes_back(cx: &mut TestAppContext) {
     cx2.run_until_parked();
     let tabs = again.read_with(cx2, |s, _| s.groups[0].tabs.iter().map(|&t| s.panes[t].settings()).collect::<Vec<_>>());
     assert_eq!(tabs, vec![false, true], "the note, then the settings");
+    assert!(again.read_with(cx2, |s, _| s.settings.find.is_some()), "restored with its search field");
 }
 
 #[gpui::test]

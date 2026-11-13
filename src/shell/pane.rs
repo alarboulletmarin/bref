@@ -886,7 +886,10 @@ impl Shell {
                 }
                 match tool_of(path) {
                     Some(tool) => self.pane_mut().set_tool(tool),
-                    None if path.as_os_str() == settings_page::TAB => self.pane_mut().set_settings(),
+                    None if path.as_os_str() == settings_page::TAB => {
+                        self.pane_mut().set_settings();
+                        self.prepare_settings(window, cx);
+                    }
                     None => self.open_note(path, cx),
                 }
                 opened.push(self.active);

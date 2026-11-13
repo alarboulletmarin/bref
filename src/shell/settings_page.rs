@@ -303,11 +303,25 @@ impl Shell {
             self.prefs = disk;
             self.restyle(window, cx);
         }
-        self.read_remote();
+        self.prepare_settings(window, cx);
         if let Some(section) = section {
             self.settings.section = section;
             self.settings.sel = None;
         }
+        let tab = match self.panes.iter().position(Pane::settings) {
+            Some(tab) => tab,
+            None => {
+                self.fresh_tab(window, cx);
+                self.pane_mut().set_settings();
+                self.active
+            }
+        };
+        self.focus_pane(tab, window, cx);
+    }
+
+    /// What the page needs before it is shown, opened or restored: its search field, and the address the vault syncs with.
+    pub(super) fn prepare_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.read_remote();
         if self.settings.find.is_none() {
             let find = cx.new(|cx| field::Field::new("", self.theme, cx).scrolling());
             cx.observe(&find, |_, _, cx| cx.notify()).detach();
@@ -329,15 +343,6 @@ impl Shell {
             .detach();
             self.settings.find = Some(find);
         }
-        let tab = match self.panes.iter().position(Pane::settings) {
-            Some(tab) => tab,
-            None => {
-                self.fresh_tab(window, cx);
-                self.pane_mut().set_settings();
-                self.active
-            }
-        };
-        self.focus_pane(tab, window, cx);
     }
 
     /// Reads the address the vault syncs with, once, off the drawing.
@@ -715,13 +720,10 @@ impl Shell {
             .rounded(t.large())
             .when(on, |d| d.bg(t.selection_idle()))
             .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_x_4()
-            .gap_y_2()
-            .child(text)
-            .children(control)
-            .children(below.map(|below| div().w_full().child(below)))
+            .flex_col()
+            .gap_2()
+            .child(div().w_full().flex().flex_wrap().items_center().gap_x_4().gap_y_2().child(text).children(control))
+            .children(below.map(|below| div().w_full().min_w_0().child(below)))
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.settings.sel = Some(row);
                 if !this.settings.find.as_ref().is_some_and(|find| find.focus_handle(cx).is_focused(window)) {
@@ -960,7 +962,7 @@ impl Shell {
                     this.set_prefs(|p| p.theme = name.to_string(), window, cx);
                 }))
         });
-        div().debug_selector(|| "settings-themes".into()).flex().flex_wrap().gap_2().children(cards)
+        div().debug_selector(|| "settings-themes".into()).w_full().flex().flex_wrap().gap_2().children(cards)
     }
 }
 
