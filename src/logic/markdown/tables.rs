@@ -23,14 +23,14 @@ pub fn bars(line: &str) -> Vec<usize> {
 /// Range of each cell's content in the line, without the surrounding spaces.
 pub fn cells(line: &str) -> Vec<Range<usize>> {
     let mut bars = bars(line);
-        // Without a final `|`, what follows the last one is still a cell.
+    // Without a final `|`, what follows the last one is still a cell.
     if bars.last().is_some_and(|&last| !line[last + 1..].trim().is_empty()) {
         bars.push(line.len());
     }
     bars.windows(2)
         .map(|pair| {
             let cell = &line[pair[0] + 1..pair[1]];
-                        // Empty cell: the cursor goes one space from the `|`.
+            // Empty cell: the cursor goes one space from the `|`.
             let lead = if cell.trim().is_empty() { cell.len().min(1) } else { indent_len(cell) };
             let start = pair[0] + 1 + lead;
             start..start + cell.trim().len()
@@ -72,7 +72,7 @@ pub fn paste_grid(text: &str) -> Option<Vec<Vec<String>>> {
     let rows: Vec<Vec<String>> = if markdown {
         let mut rows: Vec<Vec<String>> =
             lines.iter().map(|l| cells(l).into_iter().map(|r| l[r].to_string()).collect()).collect();
-                // Only the second line can be the dash line: `| - | - |` further down is data.
+        // Only the second line can be the dash line: `| - | - |` further down is data.
         if rows.get(1).is_some_and(|row| is_dashes(row)) {
             rows.remove(1);
         }
@@ -393,7 +393,7 @@ pub fn sort_rows(rows: &[Vec<String>], c: usize, ascending: bool) -> Vec<Vec<Str
     let blank = |row: &Vec<String>| row.get(c).is_none_or(|cell| cell.trim().is_empty());
     visible[1..].sort_by(|a, b| {
         let order = cell_order(a.get(c).map_or("", |s| s), b.get(c).map_or("", |s| s));
-                // Empty cells stay at the end in both directions.
+        // Empty cells stay at the end in both directions.
         match (blank(a), blank(b)) {
             (true, true) => std::cmp::Ordering::Equal,
             (true, false) => std::cmp::Ordering::Greater,
@@ -424,7 +424,7 @@ pub(super) const ALIGNED: usize = 100;
 
 /// The table written as Markdown, columns aligned as long as it fits in `ALIGNED`.
 pub fn format_table(rows: &[Vec<String>], indent: &str) -> String {
-        // The width of each cell, counted once.
+    // The width of each cell, counted once.
     let shown: Vec<Vec<usize>> = rows.iter().map(|row| row.iter().map(|cell| columns(cell)).collect()).collect();
     let cols = rows.first().map_or(0, Vec::len);
     let mut widths: Vec<usize> = (0..cols)
@@ -443,7 +443,7 @@ pub fn format_table(rows: &[Vec<String>], indent: &str) -> String {
         for (c, cell) in row.iter().enumerate() {
             text.push(' ');
             if i == 1 {
-                                // The alignment colons stay at the ends of the dashes.
+                // The alignment colons stay at the ends of the dashes.
                 let (left, right) = (cell.starts_with(':'), cell.len() > 1 && cell.ends_with(':'));
                 text.push_str(if left { ":" } else { "" });
                 text.extend(std::iter::repeat_n('-', widths[c].max(3) - left as usize - right as usize));

@@ -10,7 +10,7 @@ use unicode_segmentation::UnicodeSegmentation;
 pub fn find(text: &str, query: &str, case: bool, word: bool) -> Vec<Range<usize>> {
     let fold = |c: char| -> Vec<char> { if case { vec![c] } else { c.to_lowercase().collect() } };
     let query: Vec<char> = query.chars().flat_map(fold).collect();
-        // Length of the span that starts `rest` and equals the search, if there is one.
+    // Length of the span that starts `rest` and equals the search, if there is one.
     let matched = |rest: &str| -> Option<usize> {
         let mut k = 0;
         for (i, c) in rest.char_indices() {
@@ -176,11 +176,11 @@ pub fn counts(text: &str) -> (usize, usize) {
 /// counts add up.
 pub fn recount(old: &str, was: (usize, usize), new: &str) -> (usize, usize) {
     let (a, b) = (old.as_bytes(), new.as_bytes());
-        // By blocks first (a memory comparison), then byte by byte in the block that differs.
+    // By blocks first (a memory comparison), then byte by byte in the block that differs.
     const BLOCK: usize = 4096;
     let blocks = a.as_chunks::<BLOCK>().0.iter().zip(b.as_chunks::<BLOCK>().0).take_while(|(x, y)| x == y).count() * BLOCK;
     let same = blocks + a[blocks..].iter().zip(&b[blocks..]).take_while(|(x, y)| x == y).count();
-        // The common start stops after a line ending, the common end starts after another.
+    // The common start stops after a line ending, the common end starts after another.
     let head = a[..same].iter().rposition(|&c| c == b'\n').map_or(0, |i| i + 1);
     let (a, b) = (&a[head..], &b[head..]);
     let blocks = a.rchunks_exact(BLOCK).zip(b.rchunks_exact(BLOCK)).take_while(|(x, y)| x == y).count() * BLOCK;
@@ -268,21 +268,21 @@ mod tests {
         assert_eq!(counts(""), (0, 0));
         assert_eq!(counts("# Été\n\nl'idée, **déjà** 2 fois\n"), (5, 28));
         assert_eq!(counts("👨‍👩‍👧 ok"), (1, 4));
-                // Recounting only the changed lines gives the counts of the whole text.
+        // Recounting only the changed lines gives the counts of the whole text.
         let texts = ["", "a", "un mot\n", "un mot\ndeux\n", "un mot\r\ndeux\r\n", "un mot\ndeux mots\n", "un\n\ndeux\n", "été\nl'idée 👨‍👩‍👧\nfin", "un mot\ndeux\ntrois\n", "x\r", "x\r\n", "\n", "\n\n", "deux\n"];
         for old in texts {
             for new in texts {
                 assert_eq!(recount(old, counts(old), new), counts(new), "{old:?} -> {new:?}");
             }
         }
-                // A long text, compared by blocks: a keystroke at the start, in the middle, at the end, and a line removed.
+        // A long text, compared by blocks: a keystroke at the start, in the middle, at the end, and a line removed.
         let long: String = (0..2000).map(|i| format!("ligne {i} d'été\n")).collect();
         for at in [0, 7, long.len() / 2, long.len() - 1, long.len()] {
             let typed = format!("{}mot {}", &long[..at], &long[at..]);
             assert_eq!(recount(&long, counts(&long), &typed), counts(&typed), "keystroke at {at}");
             assert_eq!(recount(&typed, counts(&typed), &long), counts(&long), "indent at {at}");
         }
-                // Random edits (always the same): insert, delete, replace, anywhere.
+        // Random edits (always the same): insert, delete, replace, anywhere.
         let bits = ["a", " ", "\n", "\r\n", "\r", "é", "👨‍👩‍👧", "l'idée", "3.14", "mot mot\n", "", "\n\n"];
         let mut seed = 42u64;
         let mut next = |n: usize| {
@@ -313,7 +313,7 @@ mod tests {
         assert_eq!(l[1].1, Link::Tag("projet/x".into()));
         assert_eq!(l[2].1, Link::Url("https://a.b/c".into()));
         assert!(links("a#b et #123").is_empty());
-                // List page: front matter keys make the columns, in order of appearance.
+        // List page: front matter keys make the columns, in order of appearance.
         let (dune, emma) = ("---\nauteur: Herbert\nnote: 9\ntags: [sf, désert]\n---\n# Dune", "---\nnote: 10\nlu: oui\n---\n");
         assert_eq!(front_keys(dune), ["auteur", "note", "tags"]);
         let (keys, rows) = list_table(&[dune, emma, "# Sans en-tête"]);
@@ -321,7 +321,7 @@ mod tests {
         assert_eq!(rows, [vec!["Herbert", "9", "sf, désert", ""], vec!["", "10", "", "oui"], vec![""; 4]]);
         use std::cmp::Ordering::{Greater, Less};
         assert_eq!((cell_order("9", "10"), cell_order("b", "A"), cell_order("", "z"), cell_order("1,5", "1.25")), (Less, Greater, Greater, Greater));
-                // Replacements: the text as is, or a regular expression and its groups.
+        // Replacements: the text as is, or a regular expression and its groups.
         let put = |query: &str, with: &str, word, regex| replacements("Le chat, le chien.\nle rat", query, with, FindOptions { word, regex, ..Default::default() });
         assert_eq!(put("le", "un", true, false), [(0..2, "un".to_string()), (9..11, "un".into()), (19..21, "un".into())]);
         assert_eq!(put(r"le (\w+)", "$1 (le)", false, true), [(0..7, "chat (le)".to_string()), (9..17, "chien (le)".into()), (19..25, "rat (le)".into())]);
@@ -338,7 +338,7 @@ mod tests {
         let all = Swap { query: "le".into(), with: "un".into(), options: FindOptions { word: true, ..Default::default() } };
         assert_eq!(swap_except("Le chat, le chien.", &all, &[]), Some(("un chat, un chien.".into(), 2)));
         assert_eq!(swap_except("rien", &all, &[]), None);
-                // Comment names: by content, numbered when the first cells are alike, by position when empty.
+        // Comment names: by content, numbered when the first cells are alike, by position when empty.
         let grid = |rows: &[&[&str]]| rows.iter().map(|r| r.iter().map(|c| c.to_string()).collect::<Vec<_>>()).collect::<Vec<_>>();
         let rows = grid(&[&["Nom", "", "Âge"], &["---", "---", "---"], &["Léa", "", "1"], &["Léa", "", "2"], &["", "", ""]]);
         let (names, cols) = scopes(&rows);
@@ -360,7 +360,7 @@ mod tests {
             let line = format!("{}x", place.opening().trim_start_matches("{>>"));
             assert_eq!(Scope::parse(&line), Some((place.clone(), "x")), "{place}");
         }
-                // A line follows its row when it is renamed or moved up, goes with it when it is deleted, and the others stay.
+        // A line follows its row when it is renamed or moved up, goes with it when it is deleted, and the others stay.
         let old = (names.clone(), cols.clone());
         let after = grid(&[&["Nom", "", "Âge"], &["---", "---", "---"], &["Léa", "", "2"], &["", "", ""]]);
         let new = scopes(&after);
@@ -372,16 +372,16 @@ mod tests {
             [None, Some("{>>Row \"Léa\": b<<}".to_string()), Some(lines[2].to_string()), Some(lines[3].to_string()), Some(lines[4].to_string()), Some("  {>>Row 3: e<<}".to_string())]
         );
         assert_eq!(retarget(&lines, &old, &new, (&[None; 4], &[None; 3]), true), [None, None, None, None, Some(lines[4].to_string()), None]);
-                // Comments: the text, the comment, and where the whole starts; not in code.
+        // Comments: the text, the comment, and where the whole starts; not in code.
         let line = "un {==mot **fort**==}{>>à revoir<<} et {==deux==}{>><<} {==seul==}";
         assert_eq!(comments(line), [(3..36, 6..18, 24..33), (40..56, 43..47, 53..53)]);
         let note = format!("# T\n{line}\n```\n{line}\n```");
         let found: Vec<_> = all_comments(&note).into_iter().map(|n| (n.noted, n.said, n.at, n.inside)).collect();
         assert_eq!(found, [("mot **fort**", "à revoir", 7, 28), ("deux", "", 44, 57)]);
-                // A comment on its own has nothing commented, and a full one is not counted twice.
+        // A comment on its own has nothing commented, and a full one is not counted twice.
         assert_eq!(comments("a {>>seul<<} b {==x==}{>>y<<}"), [(2..12, 2..2, 5..9), (15..29, 18..19, 25..26)]);
         assert_eq!(comments("{>>pas fini"), []);
-                // Where a comment is: in a cell, a header, or a line under a table named by what it is about.
+        // Where a comment is: in a cell, a header, or a line under a table named by what it is about.
         let table = "| a | b |\n| - | - |\n| {==x==}{>>1<<} | y |\n| u | {==v==}{>>2<<} |\n\n{>>Row \"x\" (2): trois<<}\n\n{>>Column 2: quatre<<}\n\n{>>Table: cinq<<}\n\n{>>libre<<}";
         let scopes: Vec<_> = all_comments(table).into_iter().map(|n| (n.scope, n.said)).collect();
         let scopes: Vec<_> = scopes.into_iter().map(|(scope, said)| (scope.map(|s| s.to_string()), said)).collect();
@@ -398,11 +398,11 @@ mod tests {
         inline(line, 0, &mut flags);
         assert!(flags[3..6].iter().all(|f| *f == DIM) && flags[6] == 0 && flags[12] == BOLD);
         assert!(flags[18..24].iter().all(|f| *f == DIM) && flags[24..33].iter().all(|f| *f == DIM | ITALIC | QUIET) && flags[36] == 0);
-                // Dates after `@`. October 9, 2026 is a Friday.
+        // Dates after `@`. October 9, 2026 is a Friday.
         let today = (2026, 10, 9);
         assert_eq!((day_number((1970, 1, 1)), day_number((2000, 3, 1)), day_of(day_number((2024, 2, 29)))), (0, 11_017, (2024, 2, 29)));
         assert_eq!(day_of(day_number((2026, 12, 31)) + 1), (2027, 1, 1));
-                // October 2026 starts on a Thursday and has 31 days; February 2024 has 29.
+        // October 2026 starts on a Thursday and has 31 days; February 2024 has 29.
         assert_eq!((month(2026, 10, true), month(2026, 10, false), month(2024, 2, true)), ((3, 31), (4, 31), (3, 29)));
         assert_eq!((add_months((2026, 1, 31), 1), add_months((2026, 12, 5), 1), add_months((2026, 1, 5), -1)), ((2026, 2, 28), (2027, 1, 5), (2025, 12, 5)));
         let found = |q: &str| dates(q, today).into_iter().map(|(_, fr, date)| (fr, date)).collect::<Vec<_>>();
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(found("t").len(), 4);
         assert_eq!(found("2026-11-02"), [("", (2026, 11, 2))]);
         assert!(found("2026-02-30").is_empty() && found("2026-1-2").is_empty() && found("zz").is_empty());
-                // `[text](address)`: a single link, over its whole range; neither an image nor a path.
+        // `[text](address)`: a single link, over its whole range; neither an image nor a path.
         let l = links("lire [la doc](https://a.b/c#d) et ![img](https://a.b/i.png)");
         assert_eq!(l[0], (5..30, Link::Url("https://a.b/c#d".into())));
         assert_eq!(l[1], (41..58, Link::Url("https://a.b/i.png".into())));

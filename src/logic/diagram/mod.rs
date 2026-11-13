@@ -1195,10 +1195,6 @@ impl Diagram {
     }
 
     /// Drawing of an arrow: its stroke along its route, its heads, its middle.
-    // ponytail: the elbow route leaves by the chosen side and turns at a right angle,
-    // without going around shapes in its way; the attachment point is what
-    // lets it pass elsewhere. Search for a free path (A* on a
-    // grid) if dense diagrams call for it.
     pub fn trace(&self, link: &Link) -> Option<Trace> {
         self.trace_in(link, &OnceCell::new())
     }
@@ -1388,7 +1384,6 @@ impl Diagram {
 
     /// The same, from the drawing of the arrows when it is at hand.
     pub fn bounds_of(&self, traces: &[Option<Trace>]) -> Option<(f32, f32, f32, f32)> {
-        // A stick figure's text is written under it.
         let boxes = self.shapes.iter().map(|s| {
             if s.form == Form::Pin {
                 // Its name is outside the border, on whichever side that is.
@@ -1396,6 +1391,7 @@ impl Diagram {
                 let tall = LINE * s.text.split('\n').count() as f32 + 4.;
                 return (s.x - room, s.y - tall, s.x + s.w + room, s.y + s.h + tall);
             }
+            // A stick figure's text is written under it.
             let below = if s.form.label_below() { 4. + LINE * s.text.split('\n').count() as f32 } else { 0. };
             (s.x, s.y, s.x + s.w, s.y + s.h + below)
         });

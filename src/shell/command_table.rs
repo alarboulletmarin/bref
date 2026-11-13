@@ -968,7 +968,8 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<kanban::CardRemove>()
             .help(tr("Board: remove the card, or the column with its cards (undone with the board's undo)", "Tableau : retirer la carte, ou la colonne avec ses cartes (annulé par l'annulation du tableau)")).edit()
             .key_in("delete", ctx::BOARD),
-        // Escape in the note, when it has nothing to close: the right-click menu.
+        // Escape in the note, when the note has nothing to cancel: the failures said, the icon grid
+        // and the menu go.
         s::<editor::Cancel>()
             .does(|this, window, cx| {
                 this.dismiss_failures();

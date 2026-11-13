@@ -113,11 +113,11 @@ impl Board {
 /// What is being typed in the board.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Slot {
-        /// One more card at the bottom of this column.
+    /// One more card at the bottom of this column.
     New(usize),
     Card(usize, usize),
     Column(usize),
-        /// One more column.
+    /// One more column.
     NewColumn,
 }
 
@@ -148,12 +148,12 @@ pub fn card_text(text: &str, done: bool, t: Theme) -> Div {
 /// Card being held: the card itself, lifted, following the pointer from where it was grabbed.
 #[derive(Clone)]
 pub struct Dragged {
-        /// The board pane the card comes from: another board ignores it.
+    /// The board pane the card comes from: another board ignores it.
     pub pane: usize,
     pub from: (usize, usize),
     pub text: String,
     pub done: bool,
-        /// The card's width in its column.
+    /// The card's width in its column.
     pub width: Pixels,
     pub theme: Theme,
 }

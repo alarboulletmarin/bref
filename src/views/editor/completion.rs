@@ -36,7 +36,7 @@ pub(super) const COMMANDS: &[Command] = &[
 pub(super) enum Choice<'a> {
     Name(&'a str),
     Command(&'static Command),
-        /// Day offered after `@`: its English and French name, its date.
+    /// Day offered after `@`: its English and French name, its date.
     Date(&'static str, &'static str, crate::logic::dates::Date),
     /// In a formula: a function or a name, then a column (its letter and its header).
     Word(&'static Word),
@@ -46,8 +46,8 @@ pub(super) enum Choice<'a> {
 }
 
 impl Editor {
-        /// Corner of a floating panel of size `panel`: below the cursor, or
-        /// above if it does not fit.
+    /// Corner of a floating panel of size `panel`: below the cursor, or
+    /// above if it does not fit.
     pub(super) fn popup_at(&self, panel: Size<Pixels>) -> Option<Point<Pixels>> {
         let c = self.cursor();
         let row = &self.rows[self.row_at(c)?];
@@ -89,8 +89,8 @@ impl Editor {
         }
         let start = c - query.len();
         let query = query.to_lowercase();
-                // `![[` displays a file: the vault's images and diagrams are
-                // offered, by file name; `[[` offers notes.
+        // `![[` displays a file: the vault's images and diagrams are
+        // offered, by file name; `[[` offers notes.
         let embed = before[..open].ends_with('!');
         let mut items: Vec<&str> = match embed {
             true => self.vault.images.values().filter_map(|p| p.file_name()?.to_str()).collect(),
@@ -104,7 +104,7 @@ impl Editor {
         Some((start, items.into_iter().map(Choice::Name).collect()))
     }
 
-        /// The headings of `note` that contain `query`, or its block ids if `query` starts with `^`.
+    /// The headings of `note` that contain `query`, or its block ids if `query` starts with `^`.
     fn anchors(&self, note: &str, query: &str) -> Vec<Choice<'_>> {
         let text = self.vault.sources.get(&note.trim().to_lowercase()).and_then(|path| fs::read_to_string(path).ok()).unwrap_or_default();
         let wanted = query.to_lowercase();
@@ -116,8 +116,8 @@ impl Editor {
         found.into_iter().map(Choice::Anchor).collect()
     }
 
-        /// After a `/` at the start of a line or word, outside code: the commands whose
-        /// name starts with the query, then those whose label contains it.
+    /// After a `/` at the start of a line or word, outside code: the commands whose
+    /// name starts with the query, then those whose label contains it.
     pub(super) fn commands(&self, before: &str, c: usize, line: usize) -> Option<(usize, Vec<Choice<'_>>)> {
         let slash = before.rfind('/')?;
         let query = before[slash + 1..].to_lowercase();
@@ -133,8 +133,8 @@ impl Editor {
         Some((c - query.len(), items.into_iter().map(Choice::Command).collect()))
     }
 
-        /// After an `@` at the start of a line or word, outside code: the days the rest names
-        /// (`@demain`, `@lundi`, `@2026-10-09`). An address `name@domain` opens nothing.
+    /// After an `@` at the start of a line or word, outside code: the days the rest names
+    /// (`@demain`, `@lundi`, `@2026-10-09`). An address `name@domain` opens nothing.
     pub(super) fn days(&self, before: &str, c: usize, line: usize) -> Option<(usize, Vec<Choice<'_>>)> {
         let at = before.rfind('@')?;
         let query = &before[at + 1..];
@@ -161,7 +161,7 @@ impl Editor {
                     self.splice(end..end + 2, "", cx);
                 }
             }
-                        // The day becomes a link to its daily note, created when first opened.
+            // The day becomes a link to its daily note, created when first opened.
             Choice::Anchor(text) => {
                 let closed = self.content[c..].starts_with("]]");
                 self.edit(start..c, &format!("{text}]]"), cx);
@@ -191,8 +191,8 @@ impl Editor {
                     self.grid_typed.clear();
                     return true;
                 }
-                                // The front matter goes at the top of the note, wherever it is asked for; if it is already there,
-                                // the cursor goes to it. Either way it waits between the tag brackets.
+                // The front matter goes at the top of the note, wherever it is asked for; if it is already there,
+                // the cursor goes to it. Either way it waits between the tag brackets.
                 if name == "meta" {
                     self.edit(slash..c, "", cx);
                     if md::front_matter(&self.content) == 0 {
@@ -203,12 +203,12 @@ impl Editor {
                     self.move_to(at, cx);
                     return true;
                 }
-                                // Today's date is written where it is asked for.
+                // Today's date is written where it is asked for.
                 if name == "date" {
                     self.edit(slash..c, &crate::lang::date_name(crate::platform::clock::today()), cx);
                     return true;
                 }
-                                // A link goes in the sentence; everything else starts its own line.
+                // A link goes in the sentence; everything else starts its own line.
                 let line = self.line_range(c);
                 let inline = before.ends_with("[[") || self.content[line.start..slash].trim().is_empty();
                 let lead = if inline { "" } else { "\n" };

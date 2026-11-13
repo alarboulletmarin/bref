@@ -61,9 +61,9 @@ pub fn of(cx: &App, action: &dyn Action) -> String {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Why {
     Unreadable,
-        /// A single key, which types text.
+    /// A single key, which types text.
     Types,
-        /// Escape: the panel itself needs it.
+    /// Escape: the panel itself needs it.
     Panel,
 }
 
@@ -260,7 +260,7 @@ pub fn read(text: &str, defaults: &[Bind], open: &dyn Fn(&str) -> bool) -> (Chan
                 return Some((action, String::new()));
             }
             let keys = canon(keys).filter(|keys| refusal(keys).is_none())?;
-                        // Taken by another choice in the file, or by a binding that cannot change.
+            // Taken by another choice in the file, or by a binding that cannot change.
             let at = contexts(defaults, action);
             let crosses = |other: &str| contexts(defaults, other).iter().any(|a| at.iter().any(|b| meets(*a, *b)));
             let chosen = changes.iter().any(|(other, theirs)| other != action && *theirs == keys && crosses(other));
@@ -327,11 +327,11 @@ mod tests {
     fn filter_matches_keys_and_text() {
         let all = sample();
         assert_eq!(filter(all.clone(), "  "), all);
-                // The keys, ignoring case.
+        // The keys, ignoring case.
         assert_eq!(filter(all.clone(), "ctrl+p"), vec![("Notes", vec![Row::text("Ctrl+P", "Chercher, créer")])]);
-                // The text, without accents; a section with no line disappears.
+        // The text, without accents; a section with no line disappears.
         assert_eq!(filter(all.clone(), "selection"), vec![("Navigation", vec![Row::text("Ctrl+clic", "Sélection à étendre")])]);
-                // Each word must be there, keys and text together.
+        // Each word must be there, keys and text together.
         assert_eq!(filter(all.clone(), "ctrl graphe"), vec![("Navigation", vec![Row::text("Ctrl+G", "Graphe des notes")])]);
         assert!(filter(all, "zzz").is_empty());
     }
@@ -340,7 +340,7 @@ mod tests {
         Bind { keys: canon(keys).unwrap(), action, context }
     }
 
-        /// A small set of bindings: `Type` and `Close` cannot be changed.
+    /// A small set of bindings: `Type` and `Close` cannot be changed.
     fn base() -> Vec<Bind> {
         vec![
             b("secondary-p", "app::Palette", None),
@@ -372,7 +372,7 @@ mod tests {
         assert_eq!(canon("alt-F3").as_deref(), Some("alt-f3"));
         let other = if cfg!(target_os = "macos") { "ctrl-k" } else { "cmd-k" };
         assert_eq!(canon(other).as_deref(), Some(other), "a key other than `secondary` keeps its name");
-                // Unreadable: nothing, two keys, an unknown key name.
+        // Unreadable: nothing, two keys, an unknown key name.
         assert_eq!(canon(""), None);
         assert_eq!(canon("a-b"), None);
         assert_eq!(canon("ctrl-foo"), None);
@@ -399,9 +399,9 @@ mod tests {
     fn contexts_that_meet() {
         assert!(meets(None, Some("Editor")) && meets(Some("Sheet"), Some("Shell")));
         assert!(meets(Some("Nav"), Some("Nav")));
-                // A table's arrows and a diagram's never meet.
+        // A table's arrows and a diagram's never meet.
         assert!(!meets(Some("Sheet"), Some("Canvas")) && !meets(Some("Editor"), Some("Find")));
-                // A cell being edited receives the keys of a text line.
+        // A cell being edited receives the keys of a text line.
         assert!(meets(Some("Line"), Some("Sheet")) && meets(Some("Palette"), Some("Line")));
         // A diagram's text field is an input line too: its keys meet the canvas's own.
         assert!(meets(Some(context::LINE), Some(context::CANVAS)) && meets(Some(context::CANVAS), Some(context::LINE)));
@@ -417,26 +417,26 @@ mod tests {
         changes.insert("app::Help".into(), "f9".into());
         changes.insert("nav::Graph".into(), String::new());
         let now = effective(&base, &changes, &open);
-                // Both contexts follow, at the place the binding held (the order decides who wins).
+        // Both contexts follow, at the place the binding held (the order decides who wins).
         assert_eq!(of(&now, "editor::Find"), [("secondary-shift-g", Some("Editor")), ("secondary-shift-g", Some("Find"))]);
         assert_eq!(now.iter().position(|b| b.action == "editor::Find"), base.iter().position(|b| b.action == "editor::Find").map(|i| i - 2));
-                // Two default keys: only one after the choice.
+        // Two default keys: only one after the choice.
         assert_eq!(of(&now, "app::Help"), [("f9", None)]);
-                // No shortcut.
+        // No shortcut.
         assert!(of(&now, "nav::Graph").is_empty());
         assert_eq!(of(&now, "app::Palette"), [("secondary-p", None)]);
     }
 
     #[test]
     fn a_choice_wins_over_a_default() {
-                // A later version gives an action keys the user has already taken:
-                // their choice stays, the action arrives without a shortcut.
+        // A later version gives an action keys the user has already taken:
+        // their choice stays, the action arrives without a shortcut.
         let mut changes = Changes::new();
         changes.insert("nav::Graph".into(), "secondary-p".into());
         let now = effective(&base(), &changes, &open);
         assert_eq!(of(&now, "nav::Graph"), [("secondary-p", Some("Shell"))]);
         assert!(of(&now, "app::Palette").is_empty());
-                // In contexts that do not meet, both stay.
+        // In contexts that do not meet, both stay.
         let mut changes = Changes::new();
         changes.insert("sheet::Undo".into(), "secondary-d".into());
         let now = effective(&base(), &changes, &open);
@@ -468,15 +468,15 @@ mod tests {
     #[test]
     fn clash_names_who_has_the_keys() {
         let base = base();
-                // Free, or already one's own.
+        // Free, or already one's own.
         assert_eq!(clash(&base, &base, "app::Palette", "secondary-k"), None);
         assert_eq!(clash(&base, &base, "app::Palette", "secondary-p"), None);
-                // An everywhere action meets the editor's, and the reverse.
+        // An everywhere action meets the editor's, and the reverse.
         assert_eq!(clash(&base, &base, "app::Palette", "secondary-f"), Some("editor::Find"));
         assert_eq!(clash(&base, &base, "editor::Find", "secondary-g"), Some("nav::Graph"));
-                // Two views that do not meet.
+        // Two views that do not meet.
         assert_eq!(clash(&base, &base, "sheet::Undo", "secondary-d"), None);
-                // In its own context.
+        // In its own context.
         assert_eq!(clash(&base, &base, "editor::Find", "secondary-d"), Some("editor::Next"));
         assert_eq!(clash(&base, &base, "editor::Find", "enter"), Some("editor::Type"));
     }
@@ -490,10 +490,10 @@ mod tests {
         let text = write(&changes);
         assert_eq!(text, "app::Help=f9\nnav::Graph=\n");
         assert_eq!(read(&text, &base, &open), (changes.clone(), Vec::new()));
-                // A swap is allowed: each takes the other's keys.
+        // A swap is allowed: each takes the other's keys.
         let (swap, faults) = read("app::Palette=secondary-g\nnav::Graph=secondary-p\n", &base, &open);
         assert_eq!((swap.len(), faults.len()), (2, 0));
-                // Each faulty line is set aside and named, the others stay.
+        // Each faulty line is set aside and named, the others stay.
         let text = "# à la main\n\napp::Help=f9\nno::Such=f8\neditor::Type=f7\napp::Palette=ctrl-foo\nnav::Graph=a\nsans égal\neditor::Find=enter\nsheet::Undo=f9\n";
         let (kept, faults) = read(text, &base, &open);
         assert_eq!(kept, Changes::from([("app::Help".to_string(), "f9".to_string())]));
@@ -508,7 +508,7 @@ mod tests {
         let now = effective(&base(), &changes, &open);
         assert_eq!(shown(&now, "app::Help"), "F9");
         assert_eq!(shown(&now, "nav::Graph"), "");
-                // Two default keys, once each even when bound in two contexts.
+        // Two default keys, once each even when bound in two contexts.
         assert_eq!(shown(&base(), "app::Help"), format!("F1 / {}+/", MOD));
         assert_eq!(shown(&base(), "editor::Find"), format!("{}+F", MOD));
     }

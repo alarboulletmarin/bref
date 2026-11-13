@@ -13,16 +13,16 @@ use crate::{
 pub struct Card<'a> {
     pub text: &'a str,
     pub done: bool,
-        /// Its line in the note, line ending included.
+    /// Its line in the note, line ending included.
     pub line: Range<usize>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Column<'a> {
     pub title: &'a str,
-        /// The line of its heading, line ending included.
+    /// The line of its heading, line ending included.
     pub line: Range<usize>,
-        /// Where to put one more card: after the last one, or after the heading.
+    /// Where to put one more card: after the last one, or after the heading.
     pub end: usize,
     pub cards: Vec<Card<'a>>,
 }
@@ -106,7 +106,7 @@ pub fn move_card(text: &str, from: (usize, usize), to: (usize, usize)) -> Option
         moved.push_str(&text[block_end..]);
     } else {
         moved.push_str(&text[block_end..second]);
-                // The target column ends the file without a line ending: the card starts one.
+        // The target column ends the file without a line ending: the card starts one.
         if !moved.ends_with('\n') {
             moved.push('\n');
         }
@@ -139,7 +139,7 @@ pub fn retitle(text: &str, at: (usize, usize), card: &str) -> Option<String> {
     if card.trim().is_empty() {
         return Some(format!("{}{}", &text[..old.line.start], &text[old.line.end..]));
     }
-        // The card's text is a slice of the note: its place follows from it.
+    // The card's text is a slice of the note: its place follows from it.
     let start = old.text.as_ptr() as usize - text.as_ptr() as usize;
     Some(format!("{}{}{}", &text[..start], card.trim(), &text[start + old.text.len()..]))
 }
@@ -217,21 +217,21 @@ mod tests {
         let shape: Vec<(&str, Vec<(&str, bool)>)> = all.iter().map(|c| (c.title, c.cards.iter().map(|k| (k.text, k.done)).collect())).collect();
         assert_eq!(shape, [("À faire", vec![("Écrire", false), ("Relire", false)]), ("En cours", vec![]), ("Fait", vec![("Planifier", true)])]);
         let titles = |text: &str| columns(text).iter().map(|c| c.cards.iter().map(|k| k.text.to_string()).collect::<Vec<_>>()).collect::<Vec<_>>();
-                // Into an empty column, then at the end of the last one (the file has no line ending).
+        // Into an empty column, then at the end of the last one (the file has no line ending).
         let moved = move_card(BOARD, (0, 0), (1, usize::MAX)).unwrap();
         assert_eq!(titles(&moved), [vec!["Relire"], vec!["Écrire"], vec!["Planifier"]]);
         assert!(moved.contains("## En cours\n- [ ] Écrire\n    - [ ] un détail\n\n## Fait") && !moved.contains("    - [ ] un détail\n- [ ] Relire"));
         let moved = move_card(&moved, (1, 0), (2, usize::MAX)).unwrap();
         assert!(moved.ends_with("- [x] Planifier\n- [ ] Écrire\n    - [ ] un détail\n"));
-                // Before another card, upward as well as downward; onto itself, nothing.
+        // Before another card, upward as well as downward; onto itself, nothing.
         assert_eq!(titles(&move_card(BOARD, (2, 0), (0, 1)).unwrap()), [vec!["Écrire", "Planifier", "Relire"], vec![], vec![]]);
         assert_eq!(titles(&move_card(BOARD, (0, 0), (0, 2)).unwrap())[0], ["Relire", "Écrire"]);
         assert_eq!((move_card(BOARD, (0, 1), (0, 1)), move_card(BOARD, (0, 1), (0, 2)), move_card(BOARD, (5, 0), (0, 0))), (None, None, None));
-                // Check, uncheck, add.
+        // Check, uncheck, add.
         assert!(tick(BOARD, (0, 1)).unwrap().contains("- [x] Relire") && tick(BOARD, (2, 0)).unwrap().ends_with("- [ ] Planifier"));
         assert!(add_card(BOARD, 1, " Coder ").unwrap().contains("## En cours\n- [ ] Coder\n\n## Fait"));
         assert!(add_card(BOARD, 2, "Fêter").unwrap().ends_with("- [x] Planifier\n- [ ] Fêter\n"));
-                // Rewrite a card (emptied: it goes), rename a column, add one.
+        // Rewrite a card (emptied: it goes), rename a column, add one.
         assert!(retitle(BOARD, (0, 1), "Relire deux fois").unwrap().contains("- [ ] Relire deux fois\n\n## En cours"));
         assert!(retitle(BOARD, (2, 0), "Prévoir").unwrap().ends_with("- [x] Prévoir"));
         assert_eq!(titles(&retitle(BOARD, (0, 0), " ").unwrap())[0], ["Relire"]);
