@@ -309,8 +309,10 @@ mod tests {
         let renamed = moved_lines(text, Path::new("/v/a.csv"), Path::new("/v/new.csv")).unwrap();
         assert_eq!(renamed, "/v/dir/b.csv\t\t\t\t4\n/v/other.csv\t44\tUTF-8\t0\n/v/new.csv\t44\tUTF-8\t1\t9");
         // A folder moved: the tables inside follow, not a file whose name only starts the same.
+        // The new key is joined by the system, with its own separator (`\` on Windows).
         let moved = moved_lines(text, Path::new("/v/dir"), Path::new("/v/x/dir")).unwrap();
-        assert!(moved.contains("/v/x/dir/b.csv\t\t\t\t4") && !moved.contains("/v/dir/"));
+        let key = Path::new("/v/x/dir").join("b.csv");
+        assert!(moved.contains(&format!("{}\t\t\t\t4", key.display())) && !moved.contains("/v/dir/"), "{moved}");
         assert_eq!(moved_lines(text, Path::new("/v/d"), Path::new("/v/e")), None);
         assert_eq!(moved_lines("", Path::new("/v/a.csv"), Path::new("/v/b.csv")), None);
     }
