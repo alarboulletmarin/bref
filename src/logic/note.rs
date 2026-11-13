@@ -34,18 +34,11 @@ pub struct Note {
         /// Its other names (`aliases` key of the front matter), as written.
     pub aliases: Arc<[String]>,
     pub mtime: SystemTime,
-        /// Whole text of the note, for full-text search.
-        // ponytail: all the vault's text stays in memory, as is and lowercase (5,000 notes of 6 KB: 60 MB);
+        /// Whole text of the note, for full-text search: searched as written, whatever the case
+        /// (`rank::Words`), so it is kept once.
+        // ponytail: all the vault's text stays in memory (5,000 notes of 6 KB: 30 MB);
         // move to an on-disk index if much bigger vaults show up.
     pub body: Arc<str>,
-        /// The same in lowercase: search does not redo it each time the palette opens.
-    pub lower: Arc<str>,
-}
-
-/// The text in lowercase; the text itself if it already is, without a copy.
-pub fn lowered(text: &Arc<str>) -> Arc<str> {
-    let lower = text.to_lowercase();
-    if lower == **text { text.clone() } else { lower.into() }
 }
 
 impl Note {
@@ -62,13 +55,12 @@ impl Note {
         /// A note read from its text: the one way to build everything derived from it.
     pub fn from_text(name: String, path: PathBuf, mtime: SystemTime, text: Arc<str>, template: bool) -> Note {
         let (tags, links, aliases) = Note::index(&text, template);
-        Note { name, path, tags, links, aliases, mtime, lower: lowered(&text), body: text }
+        Note { name, path, tags, links, aliases, mtime, body: text }
     }
 
         /// Stores the note's new text with all that derives from it, and returns the old text.
     pub fn set_text(&mut self, text: Arc<str>, template: bool) -> Arc<str> {
         (self.tags, self.links, self.aliases) = Note::index(&text, template);
-        self.lower = lowered(&text);
         std::mem::replace(&mut self.body, text)
     }
 
@@ -92,7 +84,6 @@ mod tests {
     fn from_text_derives_everything() {
         let n = note(TEXT, false);
         assert_eq!((&n.tags[..], &n.links[..], &n.aliases[..]), (&["étiquette".to_string()][..], &[NoteKey::of("cible")][..], &["Pseudo".to_string()][..]));
-        assert_eq!(&*n.lower, TEXT.to_lowercase());
         // A template keeps the text and nothing derived from it; empty text is fine.
         let t = note(TEXT, true);
         assert!(t.tags.is_empty() && t.links.is_empty() && t.aliases.is_empty() && *t.body == *TEXT);
@@ -106,7 +97,7 @@ mod tests {
         let old = n.set_text(Arc::from("# A\nMOT\n"), false);
         assert_eq!(*old, *TEXT);
         assert!(n.tags.is_empty() && n.links.is_empty() && n.aliases.is_empty());
-        assert_eq!((&*n.body, &*n.lower), ("# A\nMOT\n", "# a\nmot\n"));
+        assert_eq!(&*n.body, "# A\nMOT\n");
         // The same note rewritten as a template drops its aliases, tags and links.
         n.set_text(Arc::from(TEXT), true);
         assert!(n.tags.is_empty() && n.links.is_empty() && n.aliases.is_empty());

@@ -16,7 +16,7 @@ use crate::{
     ui::line::{self, Line},
     ui::widgets::keycaps,
     logic::markdown::ListStyle,
-    logic::rank::{contains_all, fuzzy, snippet},
+    logic::rank::{Words, fuzzy},
     lang::{fold, tr},
 };
 
@@ -109,9 +109,8 @@ pub struct Entry {
     pub tags: Arc<[String]>,
     /// Whole days since the file was written; `None` when unknown.
     pub days: Option<u64>,
-    /// Text of the note, and the same in lowercase, for full-text search.
+    /// Text of the note, for full-text search.
     pub body: Arc<str>,
-    pub lower: Arc<str>,
 }
 
 pub enum PaletteEvent {
@@ -166,6 +165,8 @@ pub struct Palette {
     entries: Vec<Entry>,
     /// The name of each entry in lowercase, done once: the list is rebuilt on every keystroke.
     names: Vec<String>,
+    /// The words typed, as the notes' text is searched for them: kept for the excerpt of each row found.
+    words: Words,
     items: Vec<Item>,
     selected: usize,
     /// Input field: its label. No note is offered then.
@@ -235,6 +236,7 @@ impl Palette {
             focus: cx.focus_handle(),
             query: Line::new(query),
             names: entries.iter().map(|e| e.name.to_lowercase()).collect(),
+            words: Words::default(),
             entries,
             items: Vec::new(),
             selected: 0,
@@ -439,10 +441,10 @@ impl Palette {
             // After the names: the notes whose text contains all the words, most recent first.
             // A single letter would bring up nearly all of them.
             if !self.choices && q.chars().count() >= 2 {
-                let words: Vec<&str> = q.split_whitespace().collect();
+                self.words = Words::of(&q);
                 items.extend(
                     (0..self.entries.len())
-                        .filter(|&i| !named[i] && contains_all(&self.entries[i].lower, &words))
+                        .filter(|&i| !named[i] && self.words.all_in(&self.entries[i].body))
                         .take(8)
                         .map(Item::Text),
                 );
@@ -667,9 +669,7 @@ impl Render for Palette {
                 }
                 Item::Text(n) => {
                     let e = &self.entries[*n];
-                    let word = self.query.text.trim().to_lowercase();
-                    let word = word.split_whitespace().next().unwrap_or_default().to_string();
-                    (e.name.clone(), snippet(&e.body, &e.lower, &word))
+                    (e.name.clone(), self.words.snippet(&e.body))
                 }
                 Item::Create => (
                     format!("{} « {} »", tr("Create", "Créer"), self.query.text.trim()),

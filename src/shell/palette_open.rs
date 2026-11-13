@@ -107,7 +107,6 @@ impl Shell {
                 tags: n.tags.clone(),
                 days: now.duration_since(n.mtime).ok().map(|age| age.as_secs() / 86_400),
                 body: n.body.clone(),
-                lower: n.lower.clone(),
             })
             // The vault's other files (tables, images, diagrams) are also found by their name.
             .chain(self.images.iter().map(|path| Entry {
