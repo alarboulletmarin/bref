@@ -562,12 +562,13 @@ impl Nav {
     }
 
     /// The selection comes on screen at the next frame.
-    pub fn needs_reveal(&self) -> bool {
-        self.reveal
-    }
-
     pub fn set_needs_reveal(&mut self, on: bool) {
         self.reveal = on;
+    }
+
+    /// Whether the selection is to come on screen, which it does once.
+    pub fn take_reveal(&mut self) -> bool {
+        std::mem::take(&mut self.reveal)
     }
 
     pub fn native_bar(&self) -> bool {

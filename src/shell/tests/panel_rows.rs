@@ -177,3 +177,33 @@ fn a_file_keeps_its_extension_whole_when_its_name_is_cut(cx: &mut TestAppContext
         }
     }
 }
+
+/// The tree comes to the note opened once: scrolled away by hand afterwards, it stays where it was
+/// when anything else changes in the window.
+#[gpui::test]
+fn the_tree_scrolled_by_hand_stays_put(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "panel-scroll");
+    for i in 0..80 {
+        fs::write(root.join(format!("N{i:02}.md")), format!("# N{i:02}\n")).unwrap();
+    }
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    shell.update_in(cx, |s, window, cx| s.show_nav(Mode::Tree, false, window, cx));
+    cx.simulate_resize(size(px(1000.), px(500.)));
+    let top = |cx: &mut gpui::VisualTestContext| {
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+        // How far the list is scrolled down.
+        shell.read_with(cx, |s, _| -s.nav.scroll().0.borrow().base_handle.offset().y)
+    };
+    shell.update_in(cx, |s, window, cx| s.open(&root.join("N79.md"), window, cx));
+    assert!(top(cx) > px(0.), "the tree comes to the note opened");
+    // Back to the top by the wheel, over the panel.
+    let panel = bounds(cx, "nav-panel".into()).unwrap();
+    cx.simulate_event(gpui::ScrollWheelEvent { position: panel.center(), delta: gpui::ScrollDelta::Pixels(point(px(0.), px(10_000.))), ..Default::default() });
+    assert_eq!(top(cx), px(0.), "scrolled by hand");
+    // Something else changes: the tree is not brought back to the note.
+    shell.update(cx, |_, cx| cx.notify());
+    assert_eq!(top(cx), px(0.), "the tree stays where it was scrolled");
+}
