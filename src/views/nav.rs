@@ -760,7 +760,7 @@ impl Nav {
     }
 
     /// The first tool of the left dock: the panel's mode, as older files say it.
-    pub fn left_mode(&self) -> Mode {
+    fn left_mode(&self) -> Mode {
         self.left_shown.first().copied().unwrap_or(self.mode)
     }
 

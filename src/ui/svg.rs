@@ -15,9 +15,9 @@ use crate::ui::assets::Fonts;
 use usvg::roxmltree::{self, Node};
 
 /// Maximum side of an image sent to the GPU: 8,192 px work everywhere.
-pub const MAX_SIDE: f32 = 8192.;
+const MAX_SIDE: f32 = 8192.;
 /// Maximum number of pixels of an image: 16 million, i.e. 64 MB in memory.
-pub const MAX_PIXELS: f32 = 16e6;
+const MAX_PIXELS: f32 = 16e6;
 
 /// System fonts and the app's; a missing font (Helvetica, Arial on
 /// Linux…) is replaced by the app's text font, never by whichever comes first.

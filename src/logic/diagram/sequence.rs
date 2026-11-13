@@ -10,7 +10,7 @@ use super::*;
 /// messages, and below the last one.
 pub const HEAD: f32 = 36.;
 const FIRST: f32 = 36.;
-pub const STEP: f32 = 44.;
+const STEP: f32 = 44.;
 const TAIL: f32 = 44.;
 /// Half the size of the cross of a destroyed lifeline.
 const CROSS: f32 = 14.;
@@ -135,7 +135,7 @@ impl Diagram {
 
     /// The height of the message in place `rank`.
     #[cfg(test)]
-    pub fn rank_y(&self, rank: usize) -> f32 {
+    fn rank_y(&self, rank: usize) -> f32 {
         let layout = self.layout();
         layout.ys.get(rank).copied().unwrap_or_else(|| self.heads_end() + FIRST + STEP * rank as f32)
     }

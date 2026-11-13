@@ -5,7 +5,7 @@ use std::{env, path::Path};
 /// The commands to try, in order, to open a terminal in `dir` under the system
 /// `os` (`std::env::consts::OS`): the program and its arguments. `preferred` is the terminal
 /// the user names in `$TERMINAL`.
-pub fn terminals(os: &str, dir: &str, preferred: Option<&str>) -> Vec<(String, Vec<String>)> {
+fn terminals(os: &str, dir: &str, preferred: Option<&str>) -> Vec<(String, Vec<String>)> {
     let command = |program: &str, args: &[&str]| (program.to_string(), args.iter().map(|a| a.to_string()).collect());
     match os {
         "macos" => vec![command("open", &["-a", "Terminal", dir])],

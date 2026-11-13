@@ -111,7 +111,7 @@ fn cp1252_byte(c: char) -> Option<u8> {
     u8::try_from(0x80 + i).ok()
 }
 
-pub fn detect_encoding(bytes: &[u8]) -> Encoding {
+fn detect_encoding(bytes: &[u8]) -> Encoding {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         Encoding::Utf8Bom
     } else if bytes.starts_with(&[0xFF, 0xFE]) {
@@ -241,7 +241,7 @@ fn best_delimiter(text: &str, cands: &[u8], min_score: usize) -> Option<u8> {
     best.map(|b| b.2)
 }
 
-pub fn detect_delimiter(text: &str) -> u8 {
+fn detect_delimiter(text: &str) -> u8 {
     best_delimiter(text, &DELIMITERS, 1).unwrap_or(b',')
 }
 
@@ -251,7 +251,7 @@ fn is_numeric(s: &str) -> bool {
         && s.replace(',', ".").parse::<f64>().is_ok()
 }
 
-pub fn detect_header(table: &Table) -> bool {
+fn detect_header(table: &Table) -> bool {
     table.rows() >= 2 && !table.row(0).iter().any(|c| is_numeric(c))
 }
 

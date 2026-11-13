@@ -65,7 +65,7 @@ fn from_environment() -> PathBuf {
 
 /// The user's configuration folder, per platform. Read from the environment once; tests
 /// move it under a temporary folder (`isolate`).
-pub fn config_dir() -> PathBuf {
+fn config_dir() -> PathBuf {
     #[cfg(test)]
     return match isolated_root() {
         Some(root) => root.join(".config"),
