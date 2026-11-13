@@ -470,8 +470,9 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn replaces_the_app_from_a_disk_image() {
+        use crate::platform::scratch::TempDir;
         use std::fs;
-        let dir = std::env::temp_dir().join(format!("bref-update-test-{}", std::process::id()));
+        let dir = TempDir::new("update-test");
         let program = |root: &Path| root.join("Bref.app/Contents/MacOS/bref");
         let write = |root: &Path, text: &str| {
             fs::create_dir_all(program(root).parent().unwrap()).unwrap();
@@ -492,6 +493,5 @@ mod tests {
         fs::write(dir.join("bad.dmg"), "pas un disque").unwrap();
         assert!(replace_app(&dir.join("bad.dmg"), &installed).is_err());
         assert_eq!(fs::read_to_string(program(&dir.join("Applications"))).unwrap(), "nouvelle");
-        fs::remove_dir_all(&dir).unwrap();
     }
 }

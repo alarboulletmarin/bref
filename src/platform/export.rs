@@ -27,12 +27,12 @@ pub fn save(path: &Path, bytes: &[u8]) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::platform::scratch::TempDir;
     use super::*;
 
     #[test]
     fn copies_never_replace_an_occupied_name() {
-        let dir = std::env::temp_dir().join(format!("bref-export-test-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("export-test");
         let path = dir.join("copie été.md");
         save(&path, "é😀\nline".as_bytes()).unwrap();
         assert!(save(&path, b"replacement").is_err());
@@ -63,6 +63,5 @@ mod tests {
             assert_eq!(fs::read_to_string(&path).unwrap(), "é😀\nline");
         }
         assert!(fs::read_dir(&dir).unwrap().all(|p| !p.unwrap().file_name().to_string_lossy().starts_with(".bref-export-")));
-        fs::remove_dir_all(dir).unwrap();
     }
 }

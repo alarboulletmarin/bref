@@ -337,8 +337,7 @@ fn bench_scale(cx: &mut TestAppContext) {
     let ms = |d: Duration| format!("{:.1}", d.as_secs_f64() * 1000.);
     let mut rows = Vec::new();
     for notes in sizes {
-        let root = std::env::temp_dir().join(format!("bref-scale-{notes}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = TempDir::new(&format!("scale-{notes}"));
         synthetic_vault(&root, notes);
         let _config = isolated_config(&root);
         config::keep(config::File::Layout, "tree split 260 0");
@@ -428,7 +427,7 @@ fn bench_scale(cx: &mut TestAppContext) {
 fn bench(cx: &mut TestAppContext) {
     // Tests redo the whole layout after each reuse, to check it: not here, we measure.
     crate::views::editor::MEASURING.store(true, std::sync::atomic::Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("bref-bench-{}", std::process::id()));
+    let root = TempDir::new("bench");
     synthetic_vault(&root, 2000);
     let _config = isolated_config(&root);
     config::keep(config::File::Layout, "tree split 260 0");
@@ -600,7 +599,7 @@ fn hundred_tabs(cx: &mut TestAppContext) {
 #[ignore]
 fn motion_cost(cx: &mut TestAppContext) {
     crate::views::editor::MEASURING.store(true, std::sync::atomic::Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("bref-motion-{}", std::process::id()));
+    let root = TempDir::new("motion");
     synthetic_vault(&root, 5000);
     let _config = isolated_config(&root);
     config::keep(config::File::Layout, "tree split 260 0");
@@ -712,8 +711,7 @@ fn comments_frame(cx: &mut TestAppContext) {
 #[gpui::test]
 #[ignore]
 fn graph_frame(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-graph-frame-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
+    let root = TempDir::new("graph-frame");
     let notes = 5000;
     for i in 0..notes {
         let dir = root.join(format!("d{}", i % 40));
@@ -811,8 +809,7 @@ fn help_scroll(cx: &mut TestAppContext) {
 #[gpui::test]
 #[ignore]
 fn listing_frame(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-listing-frame-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
+    let root = TempDir::new("listing-frame");
     let dir = root.join("Mille");
     fs::create_dir_all(&dir).unwrap();
     for i in 0..1000 {
