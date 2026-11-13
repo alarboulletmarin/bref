@@ -512,7 +512,7 @@ impl Shell {
 
     /// The rows `range` of the tool `mode`'s list.
     pub(super) fn render_rows(
-        &mut self,
+        &self,
         mode: Mode,
         range: Range<usize>,
         window: &mut Window,
@@ -827,7 +827,7 @@ impl Shell {
 
 
     /// The rail, then the left dock and its separator if it is open.
-    pub(super) fn render_nav(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    pub(super) fn render_nav(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let panel = self.nav.panel();
         let unfolded = self.left_open();
@@ -1056,7 +1056,7 @@ impl Shell {
 
     /// The right dock, if it is open and the window leaves the note its room; while a tool's
     /// header is dragged and it is closed, a strip on the right edge to drop it there.
-    pub(super) fn render_right_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    pub(super) fn render_right_dock(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let t = self.theme;
         if !self.right_open() || self.right_width() <= px(0.) {
             if !self.tool_drag || self.nav.panel() == Panel::Full {
@@ -1123,7 +1123,7 @@ impl Shell {
 
     /// A dock: its tools one above the other, each under its header, the folded ones reduced to it;
     /// a header dragged over it shows by a line where it would land.
-    fn render_stack(&mut self, right: bool, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn render_stack(&self, right: bool, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
         let tools = self.dock_tools(right);
         let (count, stacked) = (tools.len(), tools.len() > 1);
@@ -1174,7 +1174,7 @@ impl Shell {
     /// Header and content of the tool `mode`, in the right dock or the left one, drawn from its view
     /// whether it is the active one or waits; `stacked` with others, `keys_here`: the one that takes the
     /// keys of the panel.
-    fn render_dock(&mut self, right: bool, mode: Mode, stacked: bool, keys_here: bool, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn render_dock(&self, right: bool, mode: Mode, stacked: bool, keys_here: bool, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
         let panel = self.nav.panel();
         let shut = stacked && self.nav.folded().contains(&mode);

@@ -395,7 +395,7 @@ impl Shell {
     }
 
     /// The panel in search mode: the search and its settings on top, the count, then the matches note by note.
-    pub(super) fn render_vault_find(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(super) fn render_vault_find(&self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let t = self.theme;
         // Created and searched again by `sync_docks`, before the frame.
         let Some(find) = self.vault_find.as_ref() else { return div().into_any_element() };
