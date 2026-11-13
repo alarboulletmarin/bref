@@ -123,6 +123,7 @@ fn show_at(file: &Path, path: &Path) -> Answer {
 
 #[cfg(test)]
 mod tests {
+    use crate::platform::scratch::TempDir;
     use super::*;
 
     /// A window that answers each request with `answer`, through a door in `dir`.
@@ -145,7 +146,7 @@ mod tests {
 
     #[test]
     fn the_window_answers_through_the_door() {
-        let dir = std::env::temp_dir().join(format!("bref-link-{}", std::process::id()));
+        let dir = TempDir::new("link");
         let file = window(&dir.join("a"), |path| if path.ends_with("Note é.md") { Ok(()) } else { Err(format!("no file {}", path.display())) });
         assert_eq!(show_at(&file, Path::new("/vault/Note é.md")), Ok(()));
         assert_eq!(show_at(&file, Path::new("/vault/Other.md")), Err("no file /vault/Other.md".into()));
@@ -181,6 +182,5 @@ mod tests {
             assert_eq!(show_at(&stale, Path::new("/x.md")), Err(NOT_OPEN.into()), "{bad:?}");
         }
         assert_ne!(secret(), secret());
-        fs::remove_dir_all(&dir).ok();
     }
 }

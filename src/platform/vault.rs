@@ -706,13 +706,12 @@ pub fn save(
 
 #[cfg(test)]
 mod tests {
+    use crate::platform::scratch::TempDir;
     use super::*;
-    use std::env;
 
     #[test]
     fn capture_appends_a_line_to_the_note_of_the_day() {
-        let root = std::env::temp_dir().join(format!("bref-capture-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = TempDir::new("capture");
         fs::create_dir_all(root.join("Journal")).unwrap();
         fs::create_dir_all(root.join(".trash")).unwrap();
         // No daily note: it is created at the root, titled with its name.
@@ -729,13 +728,11 @@ mod tests {
         assert_eq!(capture(&root, "2026-10-11", "une idée").unwrap(), filed);
         assert_eq!(fs::read_to_string(&filed).unwrap(), "# 2026-10-11\n\nsans fin de ligne\n- une idée\n");
         assert_eq!(fs::read_to_string(root.join(".trash/2026-10-11.md")).unwrap(), "jetée");
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_name_is_taken_whatever_its_case() {
-        let root = env::temp_dir().join(format!("bref-taken-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = TempDir::new("taken");
         fs::create_dir_all(root.join("Dossier")).unwrap();
         fs::write(root.join("Plan.md"), "# Plan\n\n").unwrap();
         assert_eq!(name_taken(&root, "plan.MD"), Some(root.join("Plan.md")));
@@ -751,14 +748,11 @@ mod tests {
         assert_eq!(title_rename(&path, "Autre", true), Some(root.join("Autre.md")));
         assert_eq!((title_rename(&path, "Autre", false), title_rename(&path, "Plan", true)), (None, None));
         assert_eq!(new_note_text("Plan"), "# Plan\n\n");
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn free_names_are_numbered_and_reserved() {
-        let root = env::temp_dir().join(format!("bref-free-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
+        let root = TempDir::new("free");
         assert_eq!(free_path(&root, "Note", "md"), root.join("Note.md"));
         // Reserved at once: the next asker gets the next number; case is ignored.
         let (first, _) = create_free(&root, "Note", "md").unwrap();
@@ -774,7 +768,6 @@ mod tests {
         assert!(save(&root, None, false, "# Idée\nencore").is_err());
         refuse_writes(&root.join("Idée 3.md"), false);
         assert!(!root.join("Idée 3.md").exists());
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -789,8 +782,7 @@ mod tests {
 
     #[test]
     fn saves_and_renames() {
-        let root = env::temp_dir().join(format!("bref-test-{}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
+        let root = TempDir::new("test");
         let a = save(&root, None, true, "# A\n").unwrap();
         assert_eq!(a, root.join("A.md"));
         // New note with the same title: no overwrite.
@@ -873,25 +865,22 @@ mod tests {
         assert_eq!(images, [root.join("vide/Photo.PNG")]);
         assert_eq!(clean_name(" ../a:b. "), Some("ab".into()));
         assert_eq!(clean_name(" . "), None);
-        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn keeps_icons_with_the_vault() {
-        let root = env::temp_dir().join(format!("bref-icons-{}", std::process::id()));
+        let root = TempDir::new("icons");
         fs::create_dir_all(root.join("Projets")).unwrap();
         assert!(load_icons(&root).is_empty());
         let icons = HashMap::from([(root.join("Projets"), "rocket".to_string()), (root.join("Projets/Idées.md"), "idea".to_string())]);
         save_icons(&root, &icons).unwrap();
         assert_eq!(fs::read_to_string(root.join(ICONS)).unwrap(), "idea\tProjets/Idées.md\nrocket\tProjets\n");
         assert_eq!(load_icons(&root), icons);
-        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn concurrent_trash_and_restore_of_folders_never_share_a_name() {
-        let root = env::temp_dir().join(format!("bref-race-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = TempDir::new("race");
         for i in 0..8 {
             fs::create_dir_all(root.join(format!("p{i}/Dossier"))).unwrap();
             fs::write(root.join(format!("p{i}/Dossier/n.md")), format!("note {i}")).unwrap();
@@ -926,12 +915,11 @@ mod tests {
         let before = fs::read_dir(&root).unwrap().count();
         assert!(restore(&root, &root.join("absent")).is_err());
         assert_eq!(fs::read_dir(&root).unwrap().count(), before);
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn restores_from_the_trash() {
-        let root = env::temp_dir().join(format!("bref-restore-{}", std::process::id()));
+        let root = TempDir::new("restore");
         fs::create_dir_all(root.join("Dossier")).unwrap();
         assert!(trashed(&root).is_empty());
         for (name, text) in [("A.md", "premier"), ("Dossier/b.md", "dedans")] {
@@ -950,7 +938,6 @@ mod tests {
         assert_eq!(fs::read_to_string(root.join("A 2.md")).unwrap(), "premier");
         assert_eq!(fs::read_to_string(root.join("Dossier/b.md")).unwrap(), "dedans");
         assert!(trashed(&root).is_empty());
-        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -975,8 +962,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn scan_survives_symlink_loops() {
-        let root = env::temp_dir().join(format!("bref-loop-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = TempDir::new("loop");
         fs::create_dir_all(root.join("a/b")).unwrap();
         fs::write(root.join("a/b/Note.md"), "# Note\n").unwrap();
         std::os::unix::fs::symlink(&root, root.join("a/b/loop")).unwrap();
@@ -986,7 +972,6 @@ mod tests {
         assert!(dirs.len() <= 3, "{dirs:?}");
         // The fingerprint, too, is computed without looping and does not move.
         assert_eq!(fingerprint(&root), fingerprint(&root));
-        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -1010,16 +995,9 @@ mod tests {
         assert!(!in_templates(root, Path::new("/autre/Templates/A.md")));
     }
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("bref-import-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     #[test]
     fn imports_files_and_folders_without_overwriting() {
-        let base = scratch("a");
+        let base = TempDir::new("import-a");
         let (vault, outside) = (base.join("coffre"), base.join("dehors"));
         fs::create_dir_all(&vault).unwrap();
         fs::create_dir_all(outside.join("Photos/été")).unwrap();
@@ -1053,12 +1031,11 @@ mod tests {
         assert_eq!(third[0].to, vault.join("rapport 3.pdf"));
         // No half copy is left behind.
         assert!(fs::read_dir(&vault).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().ends_with(".bref-part")));
-        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
     fn imports_refuse_what_cannot_be_copied() {
-        let base = scratch("b");
+        let base = TempDir::new("import-b");
         let vault = base.join("coffre");
         fs::create_dir_all(vault.join("Sous")).unwrap();
         fs::write(base.join("f.md"), "# f").unwrap();
@@ -1082,13 +1059,11 @@ mod tests {
         for name in ["a.md", "b", "c.exe", ".pdf"] {
             assert!(!is_attachment(Path::new(name)), "{name}");
         }
-        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
     fn watcher_reports_a_new_note() {
-        let root = env::temp_dir().join(format!("bref-watch-{}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
+        let root = TempDir::new("watch");
         let changed = Arc::new(Signal::default());
         let _watcher = watch(&root, changed.clone()).expect("the system must be able to watch a folder");
         // No simulated clock here: the system takes a few milliseconds (FSEvents, a bit more).
@@ -1100,15 +1075,13 @@ mod tests {
             seen = changed.take();
         }
         assert!(seen, "no event in 10 s");
-        fs::remove_dir_all(&root).unwrap();
     }
 
     /// A rescan reuses an unchanged note as is (no reparse), reads a changed one again, and a
     /// template keeps no tags, links or aliases either way.
     #[test]
     fn rescan_reuses_unchanged_notes() {
-        let root = std::env::temp_dir().join(format!("bref-reuse-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = TempDir::new("reuse");
         fs::create_dir_all(root.join("Templates")).unwrap();
         let text = "---\naliases: [Pseudo]\n---\n#etiquette [[Cible]]\n";
         fs::write(root.join("A.md"), text).unwrap();
@@ -1125,7 +1098,6 @@ mod tests {
         let known: Vec<Note> = first.iter().cloned().map(|mut n| { n.mtime = UNIX_EPOCH; n }).collect();
         let (reread, ..) = rescan_full(&root, &known);
         assert!(!Arc::ptr_eq(&a.body, &reread[by(&reread, "A")].body));
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// A folder that cannot be listed is reported, root or inner, with the reason; the rest is read as
@@ -1134,8 +1106,7 @@ mod tests {
     #[test]
     fn reports_unreadable_folders() {
         use std::os::unix::fs::PermissionsExt;
-        let root = std::env::temp_dir().join(format!("bref-unreadable-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = TempDir::new("unreadable");
         let deep = root.join("a/b/c/d");
         fs::create_dir_all(&deep).unwrap();
         fs::create_dir_all(root.join("Fermé/Dedans")).unwrap();
@@ -1173,6 +1144,5 @@ mod tests {
         let empty = root.join("vide");
         fs::create_dir(&empty).unwrap();
         assert!(rescan_full(&empty, &[]).3.is_empty());
-        fs::remove_dir_all(&root).unwrap();
     }
 }

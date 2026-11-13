@@ -91,6 +91,7 @@ fn spell_keys(keys: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::platform::scratch::TempDir;
     use super::*;
     use std::fs;
 
@@ -115,14 +116,12 @@ mod tests {
     #[test]
     #[ignore]
     fn gnome_shortcut_is_registered() {
-        let dir = std::env::temp_dir().join(format!("bref-gsettings-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("gsettings");
         // The child process `gsettings` reads these two variables: only the environment reaches it, so this
         // ignored test (run by hand, alone) keeps `set_var`.
         unsafe {
             std::env::set_var("GSETTINGS_BACKEND", "keyfile");
-            std::env::set_var("XDG_CONFIG_HOME", &dir);
+            std::env::set_var("XDG_CONFIG_HOME", &*dir);
         }
         assert_eq!(gnome_shortcut("/usr/bin/bref --capture"), Some(Shortcut::Bound("Super+Maj+N".into())));
         let saved = fs::read_to_string(dir.join("glib-2.0/settings/keyfile")).unwrap();
@@ -132,6 +131,5 @@ mod tests {
         assert_eq!(gnome_shortcut("/opt/bref --capture"), Some(Shortcut::Bound("Super+F9".into())));
         let saved = fs::read_to_string(dir.join("glib-2.0/settings/keyfile")).unwrap();
         assert!(saved.contains("command='/opt/bref --capture'") && saved.matches("bref-capture").count() == 2, "{saved}");
-        let _ = fs::remove_dir_all(&dir);
     }
 }

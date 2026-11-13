@@ -378,6 +378,7 @@ pub fn clone(url: &str, into: &Path) -> Result<(), Fail> {
 
 #[cfg(test)]
 mod tests {
+    use crate::platform::scratch::TempDir;
     use super::*;
     use std::fs;
 
@@ -421,15 +422,14 @@ mod tests {
 
     /// A server (bare repository) and two machines, in a throwaway folder.
     struct Lab {
-        base: PathBuf,
+        base: TempDir,
         a: PathBuf,
         b: PathBuf,
     }
 
     impl Lab {
         fn new(name: &str) -> Self {
-            let base = std::env::temp_dir().join(format!("bref-git-{name}-{}", std::process::id()));
-            let _ = fs::remove_dir_all(&base);
+            let base = TempDir::new(&format!("git-{name}"));
             let (remote, a, b) = (base.join("remote.git"), base.join("a"), base.join("b"));
             fs::create_dir_all(&remote).unwrap();
             fs::create_dir_all(&a).unwrap();
@@ -468,12 +468,6 @@ mod tests {
                 .collect();
             files.sort();
             files
-        }
-    }
-
-    impl Drop for Lab {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.base);
         }
     }
 

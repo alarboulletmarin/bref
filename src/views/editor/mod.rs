@@ -800,12 +800,13 @@ impl Editor {
 
 #[cfg(test)]
 mod tests {
+    use crate::platform::scratch::TempDir;
     use super::*;
 
     /// A vault image is reached through `..` (sibling folder); nothing leaves the vault.
     #[test]
     fn images_stay_inside_the_vault() {
-        let base = std::env::temp_dir().join(format!("bref-inside-{}", std::process::id()));
+        let base = TempDir::new("inside");
         let (vault, outside) = (base.join("vault"), base.join("outside.png"));
         fs::create_dir_all(vault.join("notes")).unwrap();
         fs::create_dir_all(vault.join("assets")).unwrap();
@@ -823,7 +824,6 @@ mod tests {
             std::os::unix::fs::symlink(&outside, vault.join("lien.png")).unwrap();
             assert!(!inside(&vault, &vault.join("lien.png")));
         }
-        fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

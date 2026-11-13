@@ -9,8 +9,7 @@ fn shows(cx: &mut gpui::VisualTestContext, action: &str) -> bool {
 
 #[gpui::test]
 fn the_palette_lists_the_table_s_commands(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("bref-palette-commands-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TempDir::new("palette-commands");
     let _config = isolated_config(&root);
     cx.update(bind_keys);
     cx.update(init_fonts);
@@ -40,5 +39,4 @@ fn the_palette_lists_the_table_s_commands(cx: &mut TestAppContext) {
         assert!(shows(cx, action), "{typed:?} does not offer {action}");
     }
     cx.simulate_keystrokes("escape");
-    fs::remove_dir_all(&root).unwrap();
 }

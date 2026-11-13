@@ -114,12 +114,12 @@ fn tar_header(out: &mut impl Write, name: &str, kind: u8, mode: u32, size: u64, 
 
 #[cfg(test)]
 mod tests {
+    use crate::platform::scratch::TempDir;
     use super::*;
-    use std::env;
 
     #[test]
     fn backs_up_the_vault() {
-        let base = env::temp_dir().join(format!("bref-backup-{}", std::process::id()));
+        let base = TempDir::new("backup");
         let (root, out) = (base.join("Mon coffre"), base.join("sauvegardes"));
         fs::create_dir_all(root.join(".trash")).unwrap();
         fs::create_dir_all(&out).unwrap();
@@ -139,6 +139,5 @@ mod tests {
         // Inside the vault, the archive would contain itself: refused, nothing is written.
         assert!(backup(&root, &root.join(".trash"), "2026-10-09").is_err());
         assert_eq!(fs::read_dir(root.join(".trash")).unwrap().count(), 1);
-        fs::remove_dir_all(&base).unwrap();
     }
 }

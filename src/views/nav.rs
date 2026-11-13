@@ -970,6 +970,7 @@ pub use crate::logic::rows::{ellipsize, share, split_ext};
 
 #[cfg(test)]
 mod tests {
+    use crate::platform::scratch::TempDir;
     use super::*;
     use std::fs;
 
@@ -1003,8 +1004,7 @@ mod tests {
 
     #[test]
     fn a_file_selected_in_the_tree_is_not_a_folder() {
-        let root = std::env::temp_dir().join(format!("bref-nav-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = TempDir::new("nav");
         fs::create_dir_all(root.join("Dossier.v2")).unwrap();
         for file in ["note.md", "schéma.svg", "photo.png", "table.csv", "sans extension", "Dossier.v2/dedans.md"] {
             fs::write(root.join(file), "").unwrap();
@@ -1019,6 +1019,5 @@ mod tests {
         // What is not there any more (removed outside) is looked for beside, never inside; the root of the disk is its own folder.
         assert_eq!(folder_of(&root.join("disparu.svg")), Some(root.clone()));
         assert_eq!(folder_of(Path::new("/")), Some(PathBuf::from("/")));
-        fs::remove_dir_all(&root).unwrap();
     }
 }
