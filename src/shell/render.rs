@@ -147,6 +147,16 @@ impl Render for Shell {
                     }
                 }),
             )
+            // A release ends any drag, once every listener has run (the drop first): its aims go with it,
+            // dropped where nothing takes it too.
+            .capture_any_mouse_up(cx.listener(|_, _, window, cx| {
+                if cx.has_active_drag() {
+                    cx.defer_in(window, |this, _, cx| {
+                        this.release_drag_aims(cx);
+                        cx.notify();
+                    });
+                }
+            }))
             // The mouse back and forward buttons.
             .on_mouse_down(
                 MouseButton::Navigate(gpui::NavigationDirection::Back),
