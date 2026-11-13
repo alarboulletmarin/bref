@@ -79,6 +79,9 @@ impl Shell {
             this.update(cx, |this, cx| {
                 this.syncing = false;
                 this.sync_broken = outcome.is_err();
+                if outcome.is_ok() {
+                    this.settings.synced = Some(time_name(clock()));
+                }
                 match outcome {
                     Err(e) => this.sync_failed(&e, cx),
                     Ok(()) if sent + received + conflicts == 0 => this.say(Tone::Done, tr("Already up to date", "Déjà à jour"), cx),
@@ -126,7 +129,10 @@ impl Shell {
             this.update(cx, |this, cx| {
                 this.syncing = false;
                 match done {
-                    Ok(()) => this.say(Tone::Done, tr("Vault connected: it syncs with this repository from now on", "Coffre relié : il se synchronise désormais avec ce dépôt"), cx),
+                    Ok(()) => {
+                        this.read_remote();
+                        this.say(Tone::Done, tr("Vault connected: it syncs with this repository from now on", "Coffre relié : il se synchronise désormais avec ce dépôt"), cx)
+                    }
                     Err(e) => this.say(Tone::Failed, format!("{} : {}", tr("Not connected", "Liaison impossible"), e.text()), cx),
                 }
             })

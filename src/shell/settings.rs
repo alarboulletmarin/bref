@@ -14,6 +14,9 @@ impl Shell {
         if let Some(palette) = &self.palette {
             palette.update(cx, |p, cx| p.set_theme(theme, cx));
         }
+        if let Some(find) = &self.settings.find {
+            find.update(cx, |f, cx| f.set_theme(theme, cx));
+        }
         cx.notify();
     }
 

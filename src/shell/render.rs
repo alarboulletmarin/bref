@@ -816,9 +816,15 @@ impl Shell {
         if tool.is_some() && self.pane().editor.focus_handle(cx).is_focused(window) {
             window.focus(&self.pane().zone);
         }
+        // The settings likewise: what had the keys over them (the palette of a font) gives them back to the page.
+        let settings = self.pane().settings();
+        if settings && self.pane().editor.focus_handle(cx).is_focused(window) {
+            window.focus(&self.settings.focus);
+        }
         // The views whose top room is empty: the strip can lie over it.
-        let free_top = tool.is_none() && self.pane().figure().is_none() && (listing.is_some() || board || matches!(file, None | Some((_, FileKind::Image))));
+        let free_top = tool.is_none() && !settings && self.pane().figure().is_none() && (listing.is_some() || board || matches!(file, None | Some((_, FileKind::Image))));
         let note = match file {
+            _ if settings => note.child(self.render_settings(window, cx)),
             _ if let Some(tool) = tool => note.flex().flex_col().child(match tool {
                 nav::Mode::Graph => div().flex_1().min_h_0().child(self.graph.clone()).into_any_element(),
                 _ => div().flex_1().min_h_0().pt(t.px(12.)).child(self.render_calendar(cx)).into_any_element(),

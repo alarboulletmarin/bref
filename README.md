@@ -23,7 +23,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **PDF to send.** A note saved as an A4 PDF from the palette, unsaved edits included: text you can search and copy, pictures, Mermaid diagrams and formulas drawn in. [How](book/src/writing.md#save-as-pdf)
 - **Local sharing.** Copy a whole note as Markdown or readable text, or save a separate copy. One Share / Export menu also offers SVG/PNG for diagrams and the existing table formats.
 - **Keyboard first.** One palette for notes and commands. Every shortcut is listed in the app (`F1`) and can be changed.
-- **Yours to dress.** 13 themes, IBM Plex built in, any installed font. Light and dark, English and French.
+- **Yours to dress.** 13 themes, IBM Plex built in, any installed font. Light and dark, English and French. Every setting in one tab: `Ctrl + ,`.
 
 ![Typing a note: the title grows, styles render, a table adds up its column](docs/screenshots/demo.gif)
 
@@ -80,7 +80,7 @@ The [user guide](book/src/introduction.md) covers everything. It is also publish
 | [CSV and TSV files](book/src/csv.md) | the grid |
 | [Files on disk](book/src/vault.md) | naming, front matter, backup, configuration files |
 | [Syncing a vault](book/src/sync.md) | git in one key, or a cloud folder |
-| [Settings and appearance](book/src/settings.md) | themes, fonts, page width, changing a shortcut |
+| [Settings and appearance](book/src/settings.md) | the settings tab (`Ctrl + ,`), themes, fonts, page width, changing a shortcut |
 | [Updates](book/src/updates.md) | how Bref updates itself, and what it sends |
 | [Keyboard shortcuts](book/src/shortcuts.md) | every shortcut, as the help panel lists them |
 | [Agents (MCP)](book/src/agents.md) | `bref mcp`: an agent reads, writes and draws in the vault |

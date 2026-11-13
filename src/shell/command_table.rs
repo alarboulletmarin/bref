@@ -535,6 +535,11 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<SetUpCapture>()
             .does(|this, _, cx| this.capture_shortcut(cx))
             .label(tr("Set up the quick capture shortcut", "Créer le raccourci de capture rapide")).icon("plus.svg").group(Vault),
+        s::<OpenSettings>()
+            .does(|this, window, cx| this.open_settings(None, window, cx))
+            .label(tr("Settings", "Réglages")).icon("gear.svg").group(App).pinned()
+            .help(tr("Settings: every choice of the app, by section, in a tab", "Réglages : tous les choix de l'app, par section, dans un onglet")).edit()
+            .key("secondary-,"),
         s::<ChooseTheme>()
             .does(|this, window, cx| {
                 this.choose_setting(Setting::Theme, window, cx)

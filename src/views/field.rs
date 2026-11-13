@@ -72,6 +72,19 @@ impl Field {
         cx.notify();
     }
 
+    /// Types `text` at the cursor, as the keyboard would (a key typed elsewhere, sent here).
+    pub fn insert(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.line.insert(text);
+        cx.emit(FieldEvent::Changed);
+        cx.notify();
+    }
+
+    /// Takes the colours of `theme` (chosen while the field is shown).
+    pub fn set_theme(&mut self, theme: Theme, cx: &mut Context<Self>) {
+        self.theme = theme;
+        cx.notify();
+    }
+
     /// How far a scrolling field has moved its text, for a test.
     #[cfg(test)]
     pub fn scrolled(&self) -> Pixels {

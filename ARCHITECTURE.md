@@ -55,7 +55,8 @@ each, all `impl Shell`:
 | `travel.rs` | back and forward |
 | `search.rs`, `templates.rs`, `tables.rs`, `diagrams.rs`, `board.rs`, `drops.rs`, `capture.rs`, `print.rs` | one feature each |
 | `sharing.rs` | the document-aware Share / Export menu, clipboard formats and save-copy dialog; pure text conversion in `logic/sharing.rs`, atomic no-replace copies in `platform/export.rs` |
-| `settings.rs`, `toasts.rs`, `updates.rs` | settings, status messages, new versions |
+| `settings.rs`, `toasts.rs`, `updates.rs` | settings (the palette's choice lists, restyling), status messages, new versions |
+| `settings_page.rs` | the settings tab (`Shown::Settings`, one at most, saved as `@settings`): its sections and rows (`Section`, `Row`), keys, search, and the agents' configuration to copy |
 | `render.rs` | drawing the window (a pure function of the state), and `sync_after_change`: what follows from a change (active pane, history, title, comments, window frame, docks) is settled there, from the shell's own `notify`, the panes' focus events and the window's bounds, never while drawing |
 
 A `Pane` is what **one tab** holds (a note, or a file in its place); `Shell::panes` lists every
@@ -67,7 +68,7 @@ new tab (a preview or an empty tab is used in place); `open_note` loads into the
 is for code that has already chosen it (restoring, the history).
 The active tab is `self.pane()` / `self.pane_mut()`; `each_pane` and `in_pane` reach the others.
 `Pane::shows_note` is the one test for "the note's own text is shown" (no file, no list page in its place).
-`Pane::shown` is one `Shown`: a page (`Base`: the note or a `FileView` in its place, plus an optional `Cover`: a list page or a figure, one at a time, over either) or a `Tool`, which shows nothing else. Read it with `file()`, `listing()`, `figure()`, `tool()`.
+`Pane::shown` is one `Shown`: a page (`Base`: the note or a `FileView` in its place, plus an optional `Cover`: a list page or a figure, one at a time, over either) or a `Tool`, which shows nothing else, or the `Settings` page. Read it with `file()`, `listing()`, `figure()`, `tool()`, `page()`, `settings()`.
 `Pane::displayed_path` identifies its current document, preferring `FileView` over the note kept
 underneath. The tree and graph use it; `Pane::path` stays the note's identity for editing and saving,
 and backlinks keep their own note anchor, separate from the displayed file and tree selection.

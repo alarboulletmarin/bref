@@ -26,5 +26,5 @@ The check is the only network request the app makes until you press **Update**. 
 
 ## Controls
 
-- **Check now**: type `check for updates now` in the palette. Bref answers that it is up to date, or shows the banner. This works even when the daily check is off.
-- **Stop or resume the daily check**: type `updates` in the palette. The choice is kept as `updates=off` in the [`settings` file](settings.md#the-settings-file), and the time of the last check in the `update` file, both in the [configuration folder](vault.md#configuration-files).
+- **Check now**: type `check for updates now` in the palette, or press **Check now** in **Updates & about** of the [settings tab](settings.md#the-settings-tab). Bref answers that it is up to date, or shows the banner. This works even when the daily check is off.
+- **Stop or resume the daily check**: the **Check for updates** switch of the settings tab, or `updates` in the palette. The choice is kept as `updates=off` in the [`settings` file](settings.md#the-settings-file), and the time of the last check in the `update` file, both in the [configuration folder](vault.md#configuration-files).

@@ -88,6 +88,8 @@ pub(super) struct Pane {
 pub(super) enum Shown {
     Page { base: Base, cover: Option<Cover> },
     Tool(Mode),
+    /// The settings page (`shell/settings_page.rs`): one tab at most in the window.
+    Settings,
 }
 
 /// What a page shows first: the note, or a file picked in the tree or the graph (`Shell::set_file`) in its place.
@@ -146,8 +148,23 @@ impl Pane {
     pub(super) fn tool(&self) -> Option<Mode> {
         match self.shown {
             Shown::Tool(mode) => Some(mode),
-            Shown::Page { .. } => None,
+            Shown::Page { .. } | Shown::Settings => None,
         }
+    }
+
+    /// The tab shows a page (a note, a file in its place, a cover over them): not a tool, not the settings.
+    pub(super) fn page(&self) -> bool {
+        matches!(self.shown, Shown::Page { .. })
+    }
+
+    /// The tab is the settings page.
+    pub(super) fn settings(&self) -> bool {
+        matches!(self.shown, Shown::Settings)
+    }
+
+    /// The tab becomes the settings page (it had nothing else to show).
+    pub(super) fn set_settings(&mut self) {
+        self.shown = Shown::Settings;
     }
 
     /// The file shown in place of the note.
@@ -242,7 +259,7 @@ impl Pane {
         match &self.shown {
             Shown::Page { base, cover } => matches!(base, Base::Note) && !matches!(cover, Some(Cover::Listing(_))),
             // A tool tab shows its panel, not the note: drops, templates and the note's lists leave it alone.
-            Shown::Tool(_) => false,
+            Shown::Tool(_) | Shown::Settings => false,
         }
     }
 
@@ -313,6 +330,10 @@ impl Shell {
     pub(super) fn focus_pane(&mut self, pane: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.active = pane.min(self.panes.len() - 1);
         self.show_active(cx);
+        if self.pane().settings() {
+            window.focus(&self.settings.focus);
+            return cx.notify();
+        }
         if let Some(figure) = self.pane().figure() {
             window.focus(&figure.focus_handle(cx));
             return cx.notify();
@@ -597,7 +618,7 @@ impl Shell {
     /// what opens next takes its place instead of a tab of its own, and an emptied note's file goes.
     pub(super) fn spare_tab(&self, cx: &App) -> bool {
         let pane = self.pane();
-        pane.tool().is_none() && (pane.preview || (pane.path.is_none() || pane.fresh) && pane.file().is_none() && pane.listing().is_none() && pane.editor.read(cx).text().is_empty())
+        pane.page() && (pane.preview || (pane.path.is_none() || pane.fresh) && pane.file().is_none() && pane.listing().is_none() && pane.editor.read(cx).text().is_empty())
     }
 
     /// A tab for what is about to open: the active one if it is spare, otherwise a new one.
@@ -830,7 +851,7 @@ impl Shell {
             .map(|(tabs, shown)| {
                 let want = tabs.get(shown).cloned();
                 // A file open twice (edited by hand) keeps its first tab: a note is open once.
-                let tabs: Vec<PathBuf> = tabs.into_iter().filter(|p| (p.is_file() && p.starts_with(root) || tool_of(p).is_some()) && seen.insert(p.clone())).collect();
+                let tabs: Vec<PathBuf> = tabs.into_iter().filter(|p| (p.is_file() && p.starts_with(root) || tool_of(p).is_some() || p.as_os_str() == settings_page::TAB) && seen.insert(p.clone())).collect();
                 let shown = want.and_then(|want| tabs.iter().position(|p| *p == want)).unwrap_or(0);
                 (tabs, shown)
             })
@@ -865,6 +886,7 @@ impl Shell {
                 }
                 match tool_of(path) {
                     Some(tool) => self.pane_mut().set_tool(tool),
+                    None if path.as_os_str() == settings_page::TAB => self.pane_mut().set_settings(),
                     None => self.open_note(path, cx),
                 }
                 opened.push(self.active);
@@ -889,9 +911,10 @@ impl Shell {
                 .iter()
                 .filter_map(|&tab| {
                     let pane = &self.panes[tab];
-                    // A tool's tab is written `@graph`, `@calendar`.
+                    // A tool's tab is written `@graph`, `@calendar`; the settings', `@settings`.
                     let path = match pane.tool() {
                         Some(tool) => format!("@{}", tool.name()),
+                        None if pane.settings() => settings_page::TAB.to_string(),
                         None => pane.displayed_path()?.display().to_string(),
                     };
                     Some(format!("{}{path}", if tab == group.shown { "*" } else { "" }))

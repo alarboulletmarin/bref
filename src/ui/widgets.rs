@@ -119,7 +119,6 @@ pub fn popover(t: Theme) -> Div {
 
 /// A pill, for a tab, a tag or a choice: text in `soft`, or, `on`, tinted with the accent (10 %). The caller
 /// adds the label, the size and the click.
-#[allow(dead_code)] // used by the views from step 3 of #91
 pub fn pill(t: Theme, on: bool) -> Div {
     div()
         .flex()
@@ -128,6 +127,73 @@ pub fn pill(t: Theme, on: bool) -> Div {
         .rounded(t.small())
         .text_color(if on { t.accent } else { t.soft })
         .when(on, |d| d.bg(t.pill_tint()))
+}
+
+/// One of a few choices side by side (2 to 4: page width, wide tables): a pill with a hairline ring, tinted
+/// with the accent when it is the one chosen. The caller adds the click.
+pub fn choice(id: impl Into<gpui::ElementId>, label: impl Into<SharedString>, on: bool, t: Theme) -> Stateful<Div> {
+    pill(t, on)
+        .id(id)
+        .h(t.px(26.))
+        .border_1()
+        .border_color(if on { t.accent.opacity(0.5) } else { t.border })
+        .cursor_pointer()
+        .text_size(t.font_small())
+        .when(!on, |d| d.hover(|s| s.bg(t.hover).text_color(t.text)))
+        .child(label.into())
+}
+
+/// An on/off switch: a track that takes the accent when on, its knob at that end. The caller adds the click.
+pub fn switch(id: impl Into<gpui::ElementId>, on: bool, t: Theme) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex_none()
+        .w(t.px(32.))
+        .h(t.px(18.))
+        .p(t.px(2.))
+        .rounded_full()
+        .flex()
+        .items_center()
+        .when(on, |d| d.justify_end())
+        .bg(if on { t.accent } else { t.border })
+        .cursor_pointer()
+        .hover(|s| s.opacity(0.85))
+        .child(div().size(t.px(14.)).rounded_full().bg(t.bg))
+}
+
+/// A card among several choices (a theme): large radius, a hairline ring of `border`, or of the accent and
+/// the open tint when it is the one chosen. The caller adds its contents and the click.
+pub fn card(id: impl Into<gpui::ElementId>, on: bool, t: Theme) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex_none()
+        .rounded(t.large())
+        .border_1()
+        .border_color(if on { t.accent } else { t.border })
+        .when(on, |d| d.bg(t.pill_tint()))
+        .cursor_pointer()
+        .when(!on, |d| d.hover(|s| s.bg(t.hover)))
+        .overflow_hidden()
+}
+
+/// A button that says what it does ("Open another…", "Copy"): small text in a hairline ring. The caller adds the click.
+pub fn text_button(id: impl Into<gpui::ElementId>, label: impl Into<SharedString>, t: Theme) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex_none()
+        .h(t.px(26.))
+        .px(t.px(10.))
+        .flex()
+        .items_center()
+        .rounded(t.small())
+        .border_1()
+        .border_color(t.border)
+        .cursor_pointer()
+        .text_size(t.font_small())
+        .text_color(t.text)
+        .hover(|s| s.bg(t.hover))
+        .active(|s| s.bg(t.pressed))
+        .child(label.into())
 }
 
 /// The tint of a commented passage: `pill_tint`, stronger for the one the caret is in, still under the selection's
