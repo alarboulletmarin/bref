@@ -32,6 +32,7 @@ mod canvas_text;
 mod current_file;
 mod panes;
 mod render_pure;
+#[cfg(unix)]
 mod paste_failure;
 mod tabs;
 mod save_close;
