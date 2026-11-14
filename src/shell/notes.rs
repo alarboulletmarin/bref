@@ -11,7 +11,7 @@ impl Shell {
     /// Copies the note; with `block`, only the code block the cursor is in,
     /// if there is one.
     pub(super) fn copy_all(&mut self, block: bool, cx: &mut Context<Self>) {
-        if self.pane().file().is_some() || !self.pane().page() || self.pane().listing().is_some() || self.pane().figure().is_some() { return; }
+        if self.pane().file().is_some() || !self.pane().page() || self.pane().listed() || self.pane().figure().is_some() { return; }
         let editor = self.pane().editor.read(cx);
         let code = editor.code_at_cursor().filter(|_| block);
         let text = code.unwrap_or(editor.text()).to_string();
@@ -38,14 +38,14 @@ impl Shell {
                 self.active = other;
                 if self.pane().path.as_deref() == Some(path) {
                     self.set_file(None, cx);
-                    self.pane_mut().take_listing();
+                    self.pane_mut().drop_pages();
                 }
                 self.grab = true;
                 cx.notify();
             }
             return false;
         }
-        self.pane_mut().take_listing();
+        self.pane_mut().drop_pages();
         // An attachment (PDF, video, archive…) opens in the system's application; the note stays.
         if vault::is_attachment(path) {
             // The test platform opens nothing: it records what it would have been asked.
@@ -197,7 +197,7 @@ impl Shell {
         if !self.leave(cx) {
             return;
         }
-        self.pane_mut().take_listing();
+        self.pane_mut().drop_pages();
         self.set_file(None, cx);
         self.pane_mut().path = None;
         self.pane_mut().origin = None;
@@ -309,17 +309,17 @@ impl Shell {
     /// Reloads the shown note from disk, rewritten outside the editor.
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
         if let Some(path) = self.pane().path.clone() {
-            // Reloading is not opening: a preview stays a preview, the list page stays shown.
+            // Reloading is not opening: a preview stays a preview, the list or health page stays shown.
             // Nor does it move the reader: an agent writing at the end leaves cursor and scroll
             // where they were.
-            let (preview, listing) = (self.pane_mut().preview, self.pane_mut().take_listing());
+            let (preview, page) = (self.pane_mut().preview, self.pane_mut().take_page());
             let (at, scroll) = self.pane().editor.read(cx).view();
             if self.load_note(&path, cx) {
                 self.pane().editor.update(cx, |e, cx| e.set_view(at, scroll, cx));
             }
             self.pane_mut().preview = preview;
-            if let Some(listing) = listing {
-                self.pane_mut().set_cover(Cover::Listing(listing));
+            if let Some(page) = page {
+                self.pane_mut().set_cover(page);
             }
         }
     }

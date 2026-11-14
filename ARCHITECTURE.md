@@ -54,6 +54,7 @@ each, all `impl Shell`:
 | `help.rs`, `keymap.rs` | the help panel; `keymap.rs`: the help's layout (sections, text rows) and the installation of the shortcuts; `command_table.rs`: the command table, one `CommandSpec` per action (typed: label, icon, group, help line, editable flag, default keys, and what the window does on the action), from which the palette's commands, `defaults`, the help's lines, the context menu's labels and the window's action handlers derive |
 | `travel.rs` | back and forward |
 | `search.rs`, `templates.rs`, `tables.rs`, `diagrams.rs`, `board.rs`, `drops.rs`, `capture.rs`, `print.rs` | one feature each |
+| `health.rs` | the vault health page (`Cover::Health`), shown in place of the note like a list page, opened by `VaultHealth` in the command table; scans off the UI thread with `logic/health.rs`, only while shown |
 | `sharing.rs` | the document-aware Share / Export menu, clipboard formats and save-copy dialog; pure text conversion in `logic/sharing.rs`, atomic no-replace copies in `platform/export.rs` |
 | `settings.rs`, `toasts.rs`, `updates.rs` | settings (the palette's choice lists, restyling), status messages, new versions |
 | `settings_page.rs` | the settings tab (`Shown::Settings`, one at most, saved as `@settings`): its sections and rows (`Section`, `Row`), keys, search, and the agents' configuration to copy |
@@ -107,6 +108,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | what a keystroke costs | `views/editor/layout.rs` (`plan` redoes only the damaged lines) then `paint.rs`; the test `layout_reuse_matches_full_layout` checks every reuse against a full layout |
 | the tree, recent notes, calendar | `views/nav.rs` (state), `shell/sidebar.rs` (drawing) |
 | the command palette | `views/palette.rs`, `shell/palette_open.rs` |
+| what the vault health page finds (broken links, orphans, conflict copies…) and its fixes | `logic/health.rs` (pure, unit-tested); the page: `shell/health.rs` |
 | the CSV/TSV grid | `views/sheet/` (`disk.rs` loading and saving, `edit.rs`, `clipboard.rs`, `mouse.rs`, `render.rs`) |
 | a shortcut | `shell/command_table.rs` (one `CommandSpec`: action, label, icon, group, help, editable, keys, handler), `shell/keymap.rs` (`help_sections` layout), `ui/keys.rs` (how keys are read and shown; `keys::context`: the key-context names) |
 | the test of a feature | `shell/tests/` (`end_to_end/` is one session, one file per chapter) |

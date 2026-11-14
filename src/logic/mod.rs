@@ -11,6 +11,7 @@ pub mod embed;
 pub mod files;
 pub mod formula;
 pub mod graph;
+pub mod health;
 pub mod history;
 pub mod import;
 pub mod kanban;

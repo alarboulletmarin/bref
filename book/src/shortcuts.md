@@ -34,6 +34,7 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `Ctrl+P › terminal` | Open a terminal in the vault |
 | `Ctrl+Shift+S` | Sync the vault with git: commit, receive, merge, send; a conflict keeps both versions as two notes |
 | `Ctrl+P › clone` | Clone a vault from a git address (also on the welcome screen) |
+| `Ctrl+P › health` | Vault health: broken links, orphans, unused pictures, empty notes, conflict copies, fixed in one click (nothing is deleted) |
 | A cloud folder | iCloud, Dropbox, Google Drive, Syncthing: put the vault there, nothing else; never a git repository inside one |
 | `Ctrl+Alt+E` | Share / Export: copy the whole note as Markdown or plain text, save a copy; SVG/PNG for diagrams, table formats |
 | `Ctrl+Shift+C` | Copy the code block, else the note |

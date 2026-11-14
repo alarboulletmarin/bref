@@ -182,6 +182,8 @@ pub struct Palette {
     lists: bool,
     /// A vault replacement can be undone.
     undo_swap: bool,
+    /// The command that wears a dot: something new to look at there (the health page's broken links).
+    dot: Option<&'static str>,
     /// The commands the view can do, the view's own first (the first `here`): the
     /// palette finds them by what they do, and offers the `here` ones without typing anything.
     commands: Vec<crate::logic::commands::Command>,
@@ -248,6 +250,7 @@ impl Palette {
             installable: None,
             lists: false,
             undo_swap: false,
+            dot: None,
             commands: Vec::new(),
             here: 0,
             commands_only: false,
@@ -273,6 +276,12 @@ impl Palette {
     pub fn with_commands(mut self, commands: Vec<crate::logic::commands::Command>, here: usize, context: &'static str) -> Self {
         (self.commands, self.here, self.context) = (commands, here, context);
         self.refresh();
+        self
+    }
+
+    /// The command `action` wears a dot: it has something new to show.
+    pub fn with_dot(mut self, action: Option<&'static str>) -> Self {
+        self.dot = action;
         self
     }
 
@@ -461,6 +470,10 @@ impl Palette {
         if q.is_empty() && self.context != "Note" {
             items.extend((0..self.here.min(self.commands.len()).min(6)).map(Item::Command));
         }
+        // A command whose name is what was typed (« santé ») comes before « Create »: Enter runs it,
+        // rather than making a note of its name.
+        let named: Vec<usize> = (0..self.commands.len()).filter(|&i| !self.commands[i].pinned && self.commands[i].named(&q)).take(3).collect();
+        items.extend(named.iter().map(|&i| Item::Command(i)));
         let exact = self.names.contains(&q);
         if !q.is_empty() && !q.starts_with('#') && !exact {
             items.push(Item::Create);
@@ -499,7 +512,7 @@ impl Palette {
         }
         // The app's commands, by what they do (the pinned ones are above already).
         if !q.is_empty() {
-            let found = (0..self.commands.len()).filter(|&i| !self.commands[i].pinned && command(&q, self.commands[i].label));
+            let found = (0..self.commands.len()).filter(|&i| !self.commands[i].pinned && !named.contains(&i) && (command(&q, self.commands[i].label) || command(&q, self.commands[i].also)));
             items.extend(found.take(8).map(Item::Command));
         }
         // The settings do not clutter the list until searched for.
@@ -592,6 +605,10 @@ impl Palette {
             .when(!on, |d| d.hover(|s| s.bg(t.hover)))
             .child(svg().path(c.icon).size(t.px(16.)).flex_none().text_color(if on { t.accent } else { t.soft }))
             .child(div().flex_1().min_w_0().truncate().child(c.label))
+            .when(self.dot == Some(c.action), |d| {
+                let action = c.action;
+                d.child(div().debug_selector(move || format!("command-dot-{action}")).flex_none().text_color(t.accent).child("●"))
+            })
             .child(keycaps(&c.keys, t, on).debug_selector({
                 let action = c.action;
                 move || format!("command-keys-{action}")
@@ -678,6 +695,7 @@ impl Render for Palette {
                 Item::Updates => (updates_label(self.updates.unwrap_or(true)).to_string(), String::new()),
                 Item::Check => (check_label().to_string(), String::new()),
                 &Item::Restyle(style) => (list_label(style).to_string(), String::new()),
+                &Item::Command(n) if self.dot == Some(self.commands[n].action) => (self.commands[n].label.to_string(), "●".to_string()),
                 &Item::Command(n) => (self.commands[n].label.to_string(), self.commands[n].keys.clone()),
                 &Item::Template(act) => (act.label().to_string(), String::new()),
                 Item::UndoSwap => (undo_swap_label().to_string(), String::new()),
@@ -728,7 +746,11 @@ impl Render for Palette {
                         div()
                             .truncate()
                             .when(!matches!(item, Item::Text(_)), |d| d.flex_none())
-                            .text_color(if i == self.selected { t.text } else { t.soft })
+                            .text_color(match item {
+                                &Item::Command(n) if self.dot == Some(self.commands[n].action) => t.accent,
+                                _ if i == self.selected => t.text,
+                                _ => t.soft,
+                            })
                             .text_size(t.font_small())
                             .child(detail),
                     )

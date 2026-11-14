@@ -37,6 +37,8 @@ pub(super) struct CommandSpec {
     pub editable: bool,
     /// The palette lists it even when nothing is typed.
     pub pinned: bool,
+    /// Its own names, that put it before « Create » in the palette (`Command::also`).
+    pub also: &'static str,
     pub keys: Vec<Key>,
     /// What the window does when the action arrives (none: a view handles it).
     handler: Option<Handler>,
@@ -58,6 +60,10 @@ impl CommandSpec {
     }
     fn help(mut self, help: &'static str) -> Self {
         self.help = Some(help);
+        self
+    }
+    fn also(mut self, words: &'static str) -> Self {
+        self.also = words;
         self
     }
     fn pinned(mut self) -> Self {
@@ -89,7 +95,7 @@ impl CommandSpec {
 }
 
 fn s<A: Action>() -> CommandSpec {
-    CommandSpec { action: A::name_for_type(), label: None, icon: "", group: None, help: None, editable: false, pinned: false, keys: Vec::new(), handler: None, bind: bind::<A> }
+    CommandSpec { action: A::name_for_type(), label: None, icon: "", group: None, help: None, editable: false, pinned: false, also: "", keys: Vec::new(), handler: None, bind: bind::<A> }
 }
 
 /// Every command, in the palette's order: group by group, then the actions it does not offer.
@@ -523,6 +529,10 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<RestoreTrash>()
             .does(|this, window, cx| this.open_trash(window, cx))
             .label(tr("Restore from the trash…", "Restaurer depuis la corbeille…")).icon("trash.svg").group(Vault),
+        s::<VaultHealth>()
+            .does(|this, window, cx| this.open_health(window, cx))
+            .label(tr("Vault health: broken links, orphans, leftovers", "Santé du coffre : liens cassés, orphelins, restes")).icon("heart.svg").group(Vault)
+            .also("health santé"),
         s::<BackupVault>()
             .does(|this, window, cx| this.choose_backup(window, cx))
             .label(tr("Back up the vault…", "Sauvegarder le coffre…")).icon("backup.svg").group(Vault),

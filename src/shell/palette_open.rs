@@ -119,12 +119,14 @@ impl Shell {
         let swap = !self.swapped.is_empty();
         let (commands, here) = self.palette_commands(window, cx);
         let context = self.here_group(cx).1;
+        let dot = self.health_dot().then(<crate::actions::VaultHealth as gpui::Action>::name_for_type);
         let palette = cx.new(|cx| {
             Palette::new(entries, query, theme, cx)
                 .with_root(root)
                 .with_updates(updates, installable)
                 .with_lists(lists)
                 .with_undo_swap(swap)
+                .with_dot(dot)
                 .with_commands(commands, here, context)
         });
         // A command chosen in the palette goes to what had input before it.
@@ -182,7 +184,7 @@ impl Shell {
             .filter(|spec| !matches!(spec.group, Some(Group::Block | Group::Table | Group::Diagram)) || spec.group == here)
             .filter_map(|spec| {
                 let keys = keys::of(cx, cx.build_action(spec.action, None).ok()?.as_ref());
-                Some(commands::Command { action: spec.action, label: spec.label?, icon: spec.icon, group: spec.group?, keys, pinned: spec.pinned })
+                Some(commands::Command { action: spec.action, label: spec.label?, icon: spec.icon, group: spec.group?, keys, pinned: spec.pinned, also: spec.also })
             })
             .collect();
         commands::arrange(list, here)

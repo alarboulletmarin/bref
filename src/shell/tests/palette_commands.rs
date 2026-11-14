@@ -24,6 +24,8 @@ fn the_palette_lists_the_table_s_commands(cx: &mut TestAppContext) {
         ("terminal", "app::OpenTerminal"),
         ("kanban", "app::NewBoard"),
         ("corbeille", "app::RestoreTrash"),
+        ("santé", "app::VaultHealth"),
+        ("health", "app::VaultHealth"),
         ("importer", "app::ImportDiagram"),
         ("cloner", "app::CloneVault"),
         ("capture", "app::SetUpCapture"),

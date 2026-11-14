@@ -5,6 +5,10 @@ use super::*;
 impl Shell {
     /// What is shown in place of the note; nothing for a new note not saved yet.
     pub(super) fn shown(&self) -> Option<Shown> {
+        // The health page is a tool, not a place: back and forward pass it by.
+        if self.pane().health().is_some() {
+            return None;
+        }
         match (self.pane().listing(), self.pane().file_path(), &self.pane().path) {
             (Some(listing), ..) => Some(Shown::List(listing.of().to_path_buf())),
             (None, Some(file), _) => Some(Shown::File(file.clone())),
