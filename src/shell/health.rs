@@ -113,14 +113,15 @@ impl Shell {
         let (notes, images, dirs) = (self.notes.clone(), self.images.clone(), self.dirs.clone());
         let scanned = root.clone();
         cx.spawn(async move |this, cx| {
-            let found = cx.background_executor().spawn(async move { scan(&scanned, &notes, &images, &dirs) }).await;
+            let (found, broken) = cx.background_executor().spawn(async move { scan(&scanned, &notes, &images, &dirs) }).await;
             this.update(cx, |this, cx| {
                 this.health_running = false;
                 if this.vault.as_ref() != Some(&root) {
                     return;
                 }
-                // Looking at the page is seeing its broken links: the palette's dot goes out.
-                this.health_seen = Some(found.iter().filter(|f| f.kind() == Kind::BrokenLink).count());
+                // Looking at the page is seeing its broken links: the palette's dot goes out. The count is
+                // `health_dot`'s own, taken on the same snapshot, so the two always compare like with like.
+                this.health_seen = Some(broken);
                 for pane in &mut this.panes {
                     if let Some(page) = pane.health_mut() {
                         page.found = Some(found.clone());
@@ -138,9 +139,7 @@ impl Shell {
     /// The first time it is asked, what is there is taken as seen.
     pub(super) fn health_dot(&mut self) -> bool {
         let Some(root) = self.vault.clone() else { return false };
-        let files: Vec<File> = self.images.iter().map(|path| File { path: path.clone(), bytes: 0, kind: kind_of(path) }).collect();
-        let template = |n: &Note| vault::in_templates(&root, &n.path);
-        let broken = health::broken_count(&health::Vault { notes: &self.notes, files: &files, dirs: &self.dirs, template: &template });
+        let broken = broken_count(&root, &self.notes, &self.images, &self.dirs);
         let seen = *self.health_seen.get_or_insert(broken);
         // Fewer than seen (fixed elsewhere): the next new one counts from there.
         self.health_seen = Some(seen.min(broken));
@@ -186,9 +185,13 @@ impl Shell {
     /// Relinks every broken link that has a single close name: each note once.
     fn fix_all(&mut self, cx: &mut Context<Self>) {
         let Some(found) = self.pane().health().and_then(|page| page.found.clone()) else { return };
-        let relinks = health::safe_relinks(&found);
-        let links: usize = relinks.iter().map(|(_, pairs)| pairs.len()).sum();
-        let notes = relinks.iter().filter(|(path, pairs)| self.fix_note(path, |text| health::apply_relinks(text, pairs), cx)).count();
+        // Only what was rewritten counts: a note that could not be changed adds nothing to the message.
+        let (mut links, mut notes) = (0, 0);
+        for (path, pairs) in health::safe_relinks(&found) {
+            if self.fix_note(&path, |text| health::apply_relinks(text, &pairs), cx) {
+                (links, notes) = (links + pairs.len(), notes + 1);
+            }
+        }
         self.graph_changed(cx);
         self.say(Tone::Done, format!("{} {links} · {} {notes}", tr("Links relinked:", "Liens corrigés :"), tr("notes rewritten:", "notes réécrites :")), cx);
     }
@@ -217,9 +220,17 @@ impl Shell {
             Fix::KeepCopy(original, copy) => {
                 self.trash(&root, &original, cx);
                 if !original.exists() {
+                    // The trash's « Undo » would put the original back where the copy now stands: the
+                    // name is taken, so it could only fail. Its message goes, and says where the original is.
+                    self.toasts.retain(|t| t.undo.as_ref().is_none_or(|(_, to)| *to != original));
                     self.flush(cx);
                     match vault::rename(&copy, &original) {
-                        Ok(()) => self.relocate(&copy, &original, true, cx),
+                        Ok(()) => {
+                            self.relocate(&copy, &original, true, cx);
+                            let name = original.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                            let said = tr("Copy kept; the original is in the trash, to restore under another name if needed:", "Copie gardée ; l'original est dans la corbeille, à restaurer sous un autre nom au besoin :");
+                            self.say(Tone::Done, format!("{said} « {name} »"), cx);
+                        }
                         Err(e) => self.fail(tr("Not renamed", "Renommage impossible"), &copy, e, cx),
                     }
                 }
@@ -408,25 +419,42 @@ impl Shell {
     }
 }
 
-/// What the scan needs to know of a file that is not a note.
-fn kind_of(path: &Path) -> FileKind {
-    if vault::is_image(path) {
+/// What the scan needs to know of a file that is not a note. A table, or an SVG that is a Bref diagram
+/// (`read`: its text is read to tell), is a document of its own, never unused.
+fn kind_of(path: &Path, read: bool) -> FileKind {
+    let diagram = || {
+        path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"))
+            && fs::read_to_string(path).is_ok_and(|text| Diagram::from_svg(&text).is_some() || Diagram::newer(&text))
+    };
+    if vault::is_table(path) || (read && diagram()) {
+        FileKind::Document
+    } else if vault::is_image(path) {
         FileKind::Picture
-    } else if vault::is_table(path) {
-        FileKind::Table
     } else {
         FileKind::Attachment
     }
 }
 
-/// The scan, as run off the UI thread: the sizes of the files are read here, the rest is the index.
-fn scan(root: &Path, notes: &[Note], images: &[PathBuf], dirs: &[PathBuf]) -> Vec<Finding> {
+/// The templates folder answers no link, as `wiki_dir` says.
+fn link_dirs(root: &Path, dirs: &[PathBuf]) -> Vec<PathBuf> {
+    dirs.iter().filter(|dir| !vault::in_templates(root, &dir.join("x"))).cloned().collect()
+}
+
+/// The broken links the palette's dot counts, from the index alone: no file is read.
+fn broken_count(root: &Path, notes: &[Note], images: &[PathBuf], dirs: &[PathBuf]) -> usize {
+    let files: Vec<File> = images.iter().map(|path| File { path: path.clone(), bytes: 0, kind: kind_of(path, false) }).collect();
+    let template = |n: &Note| vault::in_templates(root, &n.path);
+    health::broken_count(&health::Vault { notes, files: &files, dirs: &link_dirs(root, dirs), template: &template })
+}
+
+/// The scan, as run off the UI thread: the sizes of the files are read here, the rest is the index. With
+/// it, the dot's count of the same snapshot.
+fn scan(root: &Path, notes: &[Note], images: &[PathBuf], dirs: &[PathBuf]) -> (Vec<Finding>, usize) {
     let files: Vec<File> = images
         .iter()
-        .map(|path| File { path: path.clone(), bytes: fs::metadata(path).map_or(0, |m| m.len()), kind: kind_of(path) })
+        .map(|path| File { path: path.clone(), bytes: fs::metadata(path).map_or(0, |m| m.len()), kind: kind_of(path, true) })
         .collect();
-    // The templates folder answers no link, as `wiki_dir` says.
-    let dirs: Vec<PathBuf> = dirs.iter().filter(|dir| !vault::in_templates(root, &dir.join("x"))).cloned().collect();
     let template = |n: &Note| vault::in_templates(root, &n.path);
-    health::scan(&health::Vault { notes, files: &files, dirs: &dirs, template: &template })
+    let found = health::scan(&health::Vault { notes, files: &files, dirs: &link_dirs(root, dirs), template: &template });
+    (found, broken_count(root, notes, images, dirs))
 }

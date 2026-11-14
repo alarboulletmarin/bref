@@ -50,6 +50,18 @@ pub struct Command {
     pub group: Group,
     pub keys: String,
     pub pinned: bool,
+    /// Its own names, in both languages (`health santé`): it is found by them like by its label, and
+    /// typing one of them puts it before « Create ». Empty for most commands, which come after.
+    pub also: &'static str,
+}
+
+impl Command {
+    /// What was typed (three letters at least) starts one of its own names: the palette offers it before
+    /// « Create », so Enter runs it rather than making a note of that name.
+    pub fn named(&self, query: &str) -> bool {
+        let query = crate::lang::fold(query.trim());
+        query.chars().count() >= 3 && self.also.split_whitespace().any(|word| crate::lang::fold(word).starts_with(&query))
+    }
 }
 
 /// Commands sorted by group, the view's (`here`) first; within a group, the
@@ -113,7 +125,7 @@ mod tests {
     use super::*;
 
     fn command(action: &'static str, group: Group) -> Command {
-        Command { action, label: action, icon: "", group, keys: String::new(), pinned: false }
+        Command { action, label: action, icon: "", group, keys: String::new(), pinned: false, also: "" }
     }
 
     #[test]

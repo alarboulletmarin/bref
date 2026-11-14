@@ -470,6 +470,10 @@ impl Palette {
         if q.is_empty() && self.context != "Note" {
             items.extend((0..self.here.min(self.commands.len()).min(6)).map(Item::Command));
         }
+        // A command whose name is what was typed (« santé ») comes before « Create »: Enter runs it,
+        // rather than making a note of its name.
+        let named: Vec<usize> = (0..self.commands.len()).filter(|&i| !self.commands[i].pinned && self.commands[i].named(&q)).take(3).collect();
+        items.extend(named.iter().map(|&i| Item::Command(i)));
         let exact = self.names.contains(&q);
         if !q.is_empty() && !q.starts_with('#') && !exact {
             items.push(Item::Create);
@@ -508,7 +512,7 @@ impl Palette {
         }
         // The app's commands, by what they do (the pinned ones are above already).
         if !q.is_empty() {
-            let found = (0..self.commands.len()).filter(|&i| !self.commands[i].pinned && command(&q, self.commands[i].label));
+            let found = (0..self.commands.len()).filter(|&i| !self.commands[i].pinned && !named.contains(&i) && (command(&q, self.commands[i].label) || command(&q, self.commands[i].also)));
             items.extend(found.take(8).map(Item::Command));
         }
         // The settings do not clutter the list until searched for.
