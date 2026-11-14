@@ -166,7 +166,7 @@ Copies contain the document alone. Relative image paths, relative links, interna
 **Save the note as PDF…** in **Share / Export** or the command palette (`F10`, then `pdf`) asks where to save the note of the active tab, and writes an A4 PDF there, ready to send. No shortcut by default: one can be given in the shortcuts page (`F1`).
 
 - **What is printed**: the note as written now, unsaved edits included; the file of the note is not touched. The front matter is left out.
-- **The look**: the light theme on white paper, whatever the theme of the window. Titles in IBM Plex Serif, text in IBM Plex Sans, code in IBM Plex Mono, 20 mm margins, the page number at the bottom.
+- **The look**: the light theme on white paper, whatever the theme of the window. Titles in IBM Plex Serif, text and code in the fonts chosen in the [settings](settings.md), 20 mm margins, the page number at the bottom.
 - **The text stays text**: it can be searched, selected and copied in a PDF reader. Letters the app's fonts lack (Japanese, Korean, Hebrew…) are taken from the fonts of the system. Web links can be clicked; `[[links]]` are printed as their text.
 - **Pictures and figures**: PNG, JPEG and GIF pictures, SVG files, Bref diagrams, Mermaid diagrams and `$$` formulas are drawn in, shrunk to fit the page. An embedded section (`![[Note#Heading]]`) is printed under a bar, once (an embed inside it stays a link).
 - **Pages**: a line, a picture or a table row is never cut by a page break, and a heading always goes with the line after it. A long code line or a word longer than the page goes to the next line wherever it must. A table too wide for the page shares the width between its columns, and its cells wrap.

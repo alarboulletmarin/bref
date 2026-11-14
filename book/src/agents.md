@@ -162,7 +162,7 @@ npx @modelcontextprotocol/inspector /usr/bin/bref mcp
 
 Reading: the shape of the vault, a list, a search ranked like the palette, one note (a heading or a block), its links and its tags.
 
-Writing: create a note, replace a passage that occurs once, append, rename (links follow, unless another note still has the old name), move to the trash and bring back, the daily note, a comment on one passage.
+Writing: create a note, replace a passage that occurs once, append, rename (links follow, unless another note still has the old name; the result counts in `relink_errors` the notes whose links could not be rewritten), move to the trash and bring back, the daily note, a comment on one passage.
 
 Diagrams: the agent draws on the same canvas as you, with the same UML shapes: lifelines, calls, replies, `alt`, `opt` and `loop` fragments, classes with their compartments, inheritance, composition. You can then move and edit what it drew. It can also start from a template, turn a Mermaid class, sequence or state diagram into a canvas diagram, import Excalidraw or an uncompressed draw.io file, and render a PNG of what it drew to check it. A diagram file is written by Bref. A flowchart stays a Mermaid block in a note.
 

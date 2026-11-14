@@ -20,6 +20,10 @@ The font you picked is a variable font, which the text engine cannot embolden. [
 
 Either another note already has that name, or the file name did not match the first line to begin with, and that line is not a `# ` title you just added or changed. See [Names and renaming](vault.md#names-and-renaming).
 
+## A message says something could not be saved
+
+Bref never drops a failed write in silence. A message at the bottom names what was lost: the settings, the shortcuts or the layout of the panes (the configuration folder is read-only or full), a pasted picture (the vault folder cannot be written), or a note whose links could not follow a rename (it stays as it was: fix its links by hand). Check that the folder exists and can be written, then do it again.
+
 ## Changes made elsewhere show up late
 
 Bref is told by the system when the vault changes, and also looks at it every 30 seconds in case an event got lost. When the system cannot watch the folder, it looks every two seconds: on some network drives, or when Linux has run out of inotify watches. In that case, raise `fs.inotify.max_user_watches`.
