@@ -522,12 +522,10 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .key("secondary-o"),
         s::<NameVault>()
             .does(|this, window, cx| this.name_vault(window, cx))
-            .label(tr("Name this vault…", "Nommer ce coffre…")).icon("tree.svg").group(Vault)
-            .help(tr("Name this vault: a short name for the switcher", "Nommer ce coffre : un nom court pour la liste des coffres")).edit(),
+            .label(tr("Name this vault…", "Nommer ce coffre…")).icon("tree.svg").group(Vault),
         s::<ColorVault>()
             .does(|this, window, cx| this.color_vault(window, cx))
-            .label(tr("Colour of this vault…", "Couleur de ce coffre…")).icon("theme.svg").group(Vault)
-            .help(tr("Colour of this vault: a band at the top of the rail, to see at a glance where you write", "Couleur de ce coffre : une bande en haut du rail, pour voir d'un coup d'œil où vous écrivez")).edit(),
+            .label(tr("Colour of this vault…", "Couleur de ce coffre…")).icon("theme.svg").group(Vault),
         s::<RestoreTrash>()
             .does(|this, window, cx| this.open_trash(window, cx))
             .label(tr("Restore from the trash…", "Restaurer depuis la corbeille…")).icon("trash.svg").group(Vault),

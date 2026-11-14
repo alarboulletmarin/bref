@@ -769,7 +769,7 @@ impl Render for Palette {
                             .child(detail),
                     )
                 })
-                .children(age.map(|age| soft(div()).debug_selector(move || format!("palette-age-{i}")).flex_none().w(t.px(56.)).text_right().child(age)))
+                .children(age.map(|age| soft(div()).debug_selector(move || format!("palette-age-{i}")).flex_none().min_w(t.px(56.)).whitespace_nowrap().text_right().child(age)))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, _, cx| this.confirm(i, cx)),

@@ -78,6 +78,9 @@ fn several_vaults(cx: &mut TestAppContext) {
 
     // A short name and a colour: the band at the top of the rail shows it.
     assert!(cx.debug_bounds("vault-band").is_none());
+    // The band's room is there without a colour: the rail's buttons stay where they are when it appears.
+    let logo = cx.debug_bounds("nav-commands");
+    assert!(logo.is_some() && cx.debug_bounds("vault-band-slot").is_some());
     shell.update_in(cx, |s, window, cx| s.name_vault(window, cx));
     cx.simulate_input("Perso");
     cx.simulate_keystrokes("enter");
@@ -89,6 +92,7 @@ fn several_vaults(cx: &mut TestAppContext) {
     cx.update(|window, _| window.refresh());
     cx.run_until_parked();
     assert!(cx.debug_bounds("vault-band").is_some());
+    assert_eq!(cx.debug_bounds("nav-commands"), logo);
     // The list is on disk, name and colour included.
     let saved = read(&config::load(config::File::Vaults));
     assert_eq!(saved.iter().map(|k| (k.label(), k.color)).collect::<Vec<_>>(), [(work.clone(), None), ("Perso".to_string(), Some(1))]);

@@ -870,7 +870,7 @@ impl Shell {
             .items_center()
             .gap_1()
             // The open vault's colour, if it has one: always in sight, so as to know where one writes.
-            .children(band)
+            .child(band)
             // The app logo is the commands button, at the top of the rail on every system.
             .child(
                 div()

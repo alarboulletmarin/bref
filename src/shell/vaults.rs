@@ -157,7 +157,7 @@ impl Shell {
                 let gone = !here && !k.path.is_dir();
                 let notes = k.notes.map(|n| format!("{} {}", crate::lang::number(n), if n == 1 { "note" } else { "notes" }));
                 let said = match (here, gone) {
-                    (_, true) => tr("folder not found: Enter to find it", "dossier introuvable : Entrée pour le retrouver").to_string(),
+                    (_, true) => tr("not found: Enter to find it", "introuvable : Entrée").to_string(),
                     (true, _) => [Some(tr("open", "ouvert").to_string()), notes].into_iter().flatten().collect::<Vec<_>>().join(" · "),
                     _ => notes.unwrap_or_default(),
                 };
@@ -226,7 +226,7 @@ impl Shell {
             // Its recent notes and tabs were under the old folder: they follow.
             let text = config::load(config::File::Session(known.id));
             if !text.is_empty() {
-                let session = vaults::read_session(&text.replace(&old.display().to_string(), &root.display().to_string()));
+                let session = vaults::relocate(vaults::read_session(&text), &old, &root);
                 config::keep(config::File::Session(known.id), &vaults::write_session(&session));
             }
             self.save_vaults();
@@ -293,20 +293,19 @@ impl Shell {
     }
 
     /// The band at the top of the rail: the colour of the open vault, its name in a tooltip, the switcher on a
-    /// click. Nothing for a vault without a colour.
-    pub(super) fn vault_band(&self, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+    /// click. Its room is kept, empty, for a vault without a colour: the rail's buttons never move on a switch.
+    pub(super) fn vault_band(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
-        let known = self.known_vault()?;
-        let color = known.color?;
+        let slot = div().id("vault-band-slot").debug_selector(|| "vault-band-slot".into()).flex_none().w(t.px(22.)).h(t.px(4.)).mb_1();
+        let Some((known, color)) = self.known_vault().and_then(|k| Some((k, k.color?))) else {
+            return slot;
+        };
         let tip = crate::ui::widgets::tip(known.label(), keys::of(cx, &OpenVault), t);
-        Some(
+        slot.child(
             div()
                 .id("vault-band")
                 .debug_selector(|| "vault-band".into())
-                .flex_none()
-                .w(t.px(22.))
-                .h(t.px(4.))
-                .mb_1()
+                .size_full()
                 .rounded(t.small())
                 .bg(highlight_tint(color))
                 .cursor_pointer()
