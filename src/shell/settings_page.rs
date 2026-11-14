@@ -11,6 +11,9 @@ pub(super) const TAB: &str = "@settings";
 /// Under this width, the sections go above the settings as a row of pills instead of a column beside them.
 const NARROW: f32 = 560.;
 
+/// Under this width, a setting's control goes under its name and line instead of beside them.
+const STACK: f32 = 860.;
+
 /// The sections, in the order of the column on the left.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Section {
@@ -702,15 +705,18 @@ impl Shell {
         let t = self.theme;
         let key = row.key();
         let on = self.settings.sel == Some(row);
+        let width = self.settings.width.get();
+        let stack = width > px(0.) && width < t.px(STACK);
         let text = div()
             .flex_1()
-            .min_w(t.px(200.))
+            .min_w_0()
             .flex()
             .flex_col()
             .gap(t.px(2.))
             .child(div().text_color(t.text).child(row.name()))
-            .children(row.line().map(|line| div().text_size(t.font_small()).text_color(t.soft).child(line)));
+            .children(row.line().map(|line| div().debug_selector(move || format!("settings-line-{key}")).text_size(t.font_small()).text_color(t.soft).child(line)));
         let (control, below) = self.render_control(row, cx);
+        let control = control.map(|c| div().debug_selector(move || format!("settings-control-{key}")).flex().child(c));
         div()
             .id(gpui::SharedString::from(format!("settings-row-{key}")))
             .debug_selector(move || format!("settings-row-{key}"))
@@ -722,7 +728,16 @@ impl Shell {
             .flex()
             .flex_col()
             .gap_2()
-            .child(div().w_full().flex().flex_wrap().items_center().gap_x_4().gap_y_2().child(text).children(control))
+            // No flex_wrap here: gpui 0.2 paints a text with the lines of its last measure, and a wrapping
+            // row also measures it unbounded, so the line ran under the control on one long line.
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .map(|d| if stack { d.flex_col().gap_2() } else { d.items_center().gap_4() })
+                    .child(text)
+                    .children(control.map(|c| c.flex_none())),
+            )
             .children(below.map(|below| div().w_full().min_w_0().child(below)))
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.settings.sel = Some(row);

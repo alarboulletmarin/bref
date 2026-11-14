@@ -184,3 +184,28 @@ fn narrow_and_large_nothing_is_cut(cx: &mut TestAppContext) {
         assert_eq!(nav.bottom() <= content.top(), width < 500., "{width} px: sections above when narrow");
     }
 }
+
+/// A row's line never runs under its control: the control is beside the text or under it, at every
+/// width.
+#[gpui::test]
+fn a_line_never_runs_under_its_control(cx: &mut TestAppContext) {
+    let (_root, shell, cx, _config) = start(cx, "settings-overlap");
+    shell.update_in(cx, |s, window, cx| s.open_settings(None, window, cx));
+    for width in [360., 600., 790., 900., 1200., 1600.] {
+        cx.simulate_resize(gpui::size(px(width), px(700.)));
+        settle(cx);
+        for section in Section::ALL {
+            shell.update(cx, |s, cx| s.show_section(section, cx));
+            settle(cx);
+            for row in Row::ALL.into_iter().filter(|r| r.section() == section) {
+                let key = row.key();
+                let (Some(line), Some(control)) = (cx.debug_bounds(leak(format!("settings-line-{key}"))), cx.debug_bounds(leak(format!("settings-control-{key}")))) else { continue };
+                let row_box = cx.debug_bounds(leak(format!("settings-row-{key}"))).unwrap();
+                let beside = line.right() <= control.left() + px(0.5);
+                let under = line.bottom() <= control.top() + px(0.5);
+                assert!(beside || under, "{width} px: {row:?} line {line:?} runs under its control {control:?}");
+                assert!(line.right() <= row_box.right() + px(0.5), "{width} px: {row:?} line {line:?} leaves its row {row_box:?}");
+            }
+        }
+    }
+}
