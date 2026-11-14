@@ -34,8 +34,8 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `Shift+Delete` | In the vault switcher: take the vault off the list (its folder stays) |
 | `Alt+Up` | In the vault switcher: move the vault up |
 | `Alt+Down` | In the vault switcher: move the vault down |
-|  | Name this vault: a short name for the switcher |
-|  | Colour of this vault: a band at the top of the rail, to see at a glance where you write |
+| `Ctrl+P › name this vault` | Name this vault: a short name for the switcher |
+| `Ctrl+P › colour` | Colour of this vault: a band at the top of the rail, to see at a glance where you write |
 | `Ctrl+P › terminal` | Open a terminal in the vault |
 | `Ctrl+Shift+S` | Sync the vault with git: commit, receive, merge, send; a conflict keeps both versions as two notes |
 | `Ctrl+P › clone` | Clone a vault from a git address (also on the welcome screen) |
