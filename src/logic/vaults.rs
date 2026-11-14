@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 /// A vault of the list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Known {
-    /// Names its session file; never reused, so a vault found again under another path keeps its own.
+    /// Names its session file. A new vault takes one more than the highest id listed, so the id of a vault
+    /// taken off the list can come back; its session file was deleted with it, so nothing carries over.
     pub id: u32,
     pub path: PathBuf,
     /// The short name the user gave it; the folder's name otherwise.
@@ -114,6 +115,36 @@ pub fn write_session(session: &Session) -> String {
     text
 }
 
+/// The session of a vault whose folder moved from `old` to `new`: its recent notes and tabs under `old` now
+/// point under `new`. Only paths inside `old` change: `/v/Notes-archive` stays as it is when `/v/Notes` moves.
+pub fn relocate(session: Session, old: &Path, new: &Path) -> Session {
+    let moved = |path: &Path| path.strip_prefix(old).map_or_else(|_| path.to_path_buf(), |rest| new.join(rest));
+    let recent = session.recent.iter().map(|p| moved(p)).collect();
+    // The panes: a version line, then one line per pane, its tabs between tabulations, the shown one
+    // marked `*`, a tool written `@name`.
+    let mut panes = String::with_capacity(session.panes.len());
+    for (i, line) in session.panes.split_inclusive('\n').enumerate() {
+        let (body, end) = line.strip_suffix('\n').map_or((line, ""), |body| (body, "\n"));
+        if i == 0 {
+            panes.push_str(line);
+            continue;
+        }
+        let tabs: Vec<String> = body
+            .split('\t')
+            .map(|tab| {
+                let (mark, path) = tab.strip_prefix('*').map_or(("", tab), |path| ("*", path));
+                match path.starts_with('@') || path.is_empty() {
+                    true => tab.to_string(),
+                    false => format!("{mark}{}", moved(Path::new(path)).display()),
+                }
+            })
+            .collect();
+        panes.push_str(&tabs.join("\t"));
+        panes.push_str(end);
+    }
+    Session { panel: session.panel, recent, panes }
+}
+
 pub fn read_session(text: &str) -> Session {
     let mut session = Session::default();
     let mut lines = text.split_inclusive('\n');
@@ -186,6 +217,19 @@ mod tests {
     fn labels_by_name_then_folder() {
         assert_eq!(known(1, "/home/a/Notes perso").label(), "Notes perso");
         assert_eq!(Known { name: Some("Perso".into()), ..known(1, "/x") }.label(), "Perso");
+    }
+
+    #[test]
+    fn a_moved_vault_takes_its_paths_along_and_only_its_own() {
+        let session = Session {
+            panel: "tree".into(),
+            recent: vec!["/v/Notes/A.md".into(), "/v/Notes-archive/B.md".into()],
+            panes: "v3 row 0.5\n*/v/Notes/A.md\t/v/Notes-archive/B.md\n@graph\t*/v/Notes/sous/C.md\n".into(),
+        };
+        let moved = relocate(session, Path::new("/v/Notes"), Path::new("/w/Perso"));
+        assert_eq!(moved.recent, [PathBuf::from("/w/Perso/A.md"), PathBuf::from("/v/Notes-archive/B.md")]);
+        assert_eq!(moved.panes, "v3 row 0.5\n*/w/Perso/A.md\t/v/Notes-archive/B.md\n@graph\t*/w/Perso/sous/C.md\n");
+        assert_eq!(moved.panel, "tree");
     }
 
     #[test]
