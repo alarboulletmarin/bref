@@ -30,7 +30,12 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `Ctrl+P › template` | Insert a template at the cursor, or make a template of the open note |
 | `Ctrl+J` | Today's note: open it, or create it |
 | `Ctrl+P › capture` | Quick capture: sets up a shortcut of your desktop (Super+Shift+N on GNOME) that opens a one-line window anywhere; what you type goes to today's note |
-| `Ctrl+O` | Change vault |
+| `Ctrl+O` | Switch vault: the vaults opened before, each with its tabs, panes, panel and recent notes; or another folder |
+| `Shift+Delete` | In the vault switcher: take the vault off the list (its folder stays) |
+| `Alt+Up` | In the vault switcher: move the vault up |
+| `Alt+Down` | In the vault switcher: move the vault down |
+| `Ctrl+P › name this vault` | Name this vault: a short name for the switcher |
+| `Ctrl+P › colour` | Colour of this vault: a band at the top of the rail, to see at a glance where you write |
 | `Ctrl+P › terminal` | Open a terminal in the vault |
 | `Ctrl+Shift+S` | Sync the vault with git: commit, receive, merge, send; a conflict keeps both versions as two notes |
 | `Ctrl+P › clone` | Clone a vault from a git address (also on the welcome screen) |

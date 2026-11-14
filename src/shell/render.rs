@@ -484,7 +484,7 @@ impl Shell {
             body.drag_over::<gpui::ExternalPaths>(move |style, _, _, _| style.bg(t.selection))
                 .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
                     if let Some(dir) = paths.paths().iter().find(|p| p.is_dir()) {
-                        this.set_vault(dir.clone(), window, cx);
+                        this.switch_to(dir.clone(), window, cx);
                     }
                 }))
                 .flex()
@@ -525,6 +525,21 @@ impl Shell {
                             "Moved, renamed, or on a disk that is not plugged in? Open it again, or start another one.",
                             "Déplacé, renommé, ou sur un disque qui n'est pas branché ? Rouvrez-le, ou commencez-en un autre.",
                         )))
+                }))
+                // The other vaults Bref knows, still there: one click back to work.
+                .children(self.other_vaults().into_iter().take(6).enumerate().map(|(i, known)| {
+                    let path = known.path.clone();
+                    div()
+                        .id(("welcome-vault", i))
+                        .debug_selector(move || format!("welcome-vault-{i}"))
+                        .px_3()
+                        .py_1()
+                        .rounded(t.small())
+                        .cursor_pointer()
+                        .text_color(t.accent)
+                        .hover(|s| s.bg(t.hover))
+                        .child(format!("{} « {} »", tr("Open the vault", "Ouvrir le coffre"), known.label()))
+                        .on_click(cx.listener(move |this, _, window, cx| this.switch_to(path.clone(), window, cx)))
                 }))
                 // Shortest path first: a ready-made vault, in one click, without a picker
                 // window or a folder to create yourself.

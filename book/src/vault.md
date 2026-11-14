@@ -72,6 +72,28 @@ Bref has no terminal of its own.
 - **A missing or unreadable vault**: a vault that is no longer where the config left it is reported on the welcome page. A vault that cannot be read (no permission) says so in the panel, with the reason and the folder, instead of looking empty, and offers another vault. A folder inside it that cannot be read is marked « unreadable: » with the reason; the rest of the vault opens.
 - **Empty lists say so**: an empty tree, tag list or recent list, a note nothing links to, a palette search with no result (or with one letter, too little for the text search), a list page with no row, and a board with no column each show one soft line instead of a blank page.
 
+## Several vaults
+
+Work and personal notes, a shared vault and a private one, one vault per client: Bref remembers every vault it opens.
+
+- `Ctrl + O` lists them in the palette. The open one is marked with `●` and selected.
+- Each row shows how many notes the vault had and when you last used it. Type to filter.
+- `Enter` switches. The last row, **Open another folder…**, adds a vault with the folder dialog.
+- Each vault gets back what it had on screen: its tabs and panes, its panel, its recent notes, and back and forward.
+- Unsaved work stops the switch, as it stops closing the window. A git sync in progress must end first.
+
+In the list:
+
+- `Alt + Up` and `Alt + Down` move the selected vault.
+- `Shift + Delete` takes it off the list. Its folder is never touched; open it again to put it back.
+- A vault whose folder is gone (a drive not plugged in, a folder renamed) stays listed, faded. Press `Enter` on it and show Bref the folder: the vault keeps its name, colour, tabs and recent notes.
+
+In the palette, **Name this vault…** gives it a short name for the list, and **Colour of this vault…** gives it one of five colours. The colour shows as a thin band at the top of the rail, so you always know which vault you are writing in. Click the band to switch.
+
+If the vault of last time cannot be found when Bref starts, the welcome page offers the other vaults it knows.
+
+Two vaults side by side in one window, and searching across vaults, are not possible.
+
 ## Configuration files
 
 Bref keeps its own state in a configuration folder, outside the vault:
@@ -85,6 +107,8 @@ Bref keeps its own state in a configuration folder, outside the vault:
 | File | Holds |
 |---|---|
 | `config` | the vault, and the notes you opened, most recent first |
+| `vaults` | the [vaults you opened](#several-vaults), their names and colours, in your order |
+| `session-1`, `session-2`… | what each vault had on screen when you left it: its panel, recent notes, panes and tabs |
 | `layout` | the navigation panel and its docks |
 | `panes` | the panes and their tabs |
 | `settings` | the [appearance and other choices](settings.md#the-settings-file) |

@@ -46,6 +46,7 @@ each, all `impl Shell`:
 | `pane.rs` | the panes and their tabs, which one is active, the file a tab shows (`FileView`), splitting, moving a tab between panes, the saved layout; the panes are placed by the tree `logic/layout.rs` (`Node`, leaves = groups; `read_panes` reads the saved file), drawn by `render_layout` |
 | `tabs.rs` | the tab bar of a pane |
 | `notes.rs` | opening, previewing, creating, saving notes; links and wikilinks |
+| `vaults.rs` | several vaults: the switcher (`Ctrl+O`), each vault's session kept and brought back on a switch (`switch_to`), names, colours and the rail's band; the list and session formats are pure, in `logic/vaults.rs` |
 | `library.rs` | the vault: choosing, scanning, watching, icons, backup, trash |
 | `sync.rs` | git sync and cloning |
 | `sidebar.rs`, `files.rs`, `menu.rs`, `listing.rs` | the side panel, file operations, the context menu, list pages |
@@ -107,6 +108,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | what a keystroke costs | `views/editor/layout.rs` (`plan` redoes only the damaged lines) then `paint.rs`; the test `layout_reuse_matches_full_layout` checks every reuse against a full layout |
 | the tree, recent notes, calendar | `views/nav.rs` (state), `shell/sidebar.rs` (drawing) |
 | the command palette | `views/palette.rs`, `shell/palette_open.rs` |
+| the vaults Bref knows, and what each had on screen | `logic/vaults.rs` (formats), `platform/config.rs` (`File::Vaults`, `File::Session`: the `vaults` and `session-{id}` files), `shell/vaults.rs` |
 | the CSV/TSV grid | `views/sheet/` (`disk.rs` loading and saving, `edit.rs`, `clipboard.rs`, `mouse.rs`, `render.rs`) |
 | a shortcut | `shell/command_table.rs` (one `CommandSpec`: action, label, icon, group, help, editable, keys, handler), `shell/keymap.rs` (`help_sections` layout), `ui/keys.rs` (how keys are read and shown; `keys::context`: the key-context names) |
 | the test of a feature | `shell/tests/` (`end_to_end/` is one session, one file per chapter) |

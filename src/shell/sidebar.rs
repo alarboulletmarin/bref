@@ -844,6 +844,7 @@ impl Shell {
                 .when(on, |d| d.cursor_pointer().hover(|s| s.bg(t.hover)).active(|s| s.bg(t.pressed)))
                 .child(svg().path(icon).size(t.px(14.)).flex_none().text_color(if on { t.soft } else { t.dim }))
         };
+        let band = self.vault_band(cx);
         // The view in sight is a small sheet laid on the rail, its icon in the accent.
         let on_sheet = |b: Stateful<Div>, on: bool| b.rounded(t.large()).when(on, |d| d.bg(t.bg).shadow(t.lifted()));
         let shown: Vec<Mode> = Mode::ALL.into_iter().filter(|m| self.tool_shown(*m)).collect();
@@ -870,6 +871,8 @@ impl Shell {
             .flex_col()
             .items_center()
             .gap_1()
+            // The open vault's colour, if it has one: always in sight, so as to know where one writes.
+            .child(band)
             // The app logo is the commands button, at the top of the rail on every system.
             .child(
                 div()
@@ -1317,7 +1320,7 @@ impl Shell {
                                 .text_color(t.accent)
                                 .hover(|s| s.bg(t.hover))
                                 .child(tr("Open another vault…", "Ouvrir un autre coffre…"))
-                                .on_click(cx.listener(|this, _, window, cx| this.choose_vault(window, cx))),
+                                .on_click(cx.listener(|this, _, window, cx| this.open_vaults(window, cx))),
                         ),
                 );
             }

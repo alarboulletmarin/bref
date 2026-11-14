@@ -123,6 +123,9 @@ up|palette::Prev|Palette
 down|palette::Next|Palette
 enter|palette::Confirm|Palette
 secondary-enter|palette::ConfirmAside|Palette
+shift-delete|palette::RemoveChoice|Palette
+alt-up|palette::ChoiceUp|Palette
+alt-down|palette::ChoiceDown|Palette
 escape|palette::Dismiss|Palette
 backspace|editor::Backspace|Editor
 delete|editor::Delete|Editor

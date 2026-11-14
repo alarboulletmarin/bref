@@ -82,7 +82,7 @@ impl Setting {
     }
 }
 
-actions!(palette, [Prev, Next, Confirm, ConfirmAside, Dismiss]);
+actions!(palette, [Prev, Next, Confirm, ConfirmAside, Dismiss, RemoveChoice, ChoiceUp, ChoiceDown]);
 
 /// What templates allow: a note born from one, a template inserted, the open note saved as a template.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -111,6 +111,10 @@ pub struct Entry {
     pub days: Option<u64>,
     /// Text of the note, for full-text search.
     pub body: Arc<str>,
+    /// What a choice says beside its name, in place of its folder (the vault switcher: its notes).
+    pub said: String,
+    /// The choice is there but cannot be used as it is (a vault whose folder is gone): drawn faded.
+    pub faded: bool,
 }
 
 pub enum PaletteEvent {
@@ -129,6 +133,10 @@ pub enum PaletteEvent {
     CheckUpdate,
     /// Undoes the last vault-wide replacement.
     UndoSwap,
+    /// In a list that can be edited (the vault switcher): take the choice at this index off the list,
+    /// or move it one place up (`true`) or down.
+    Remove(usize),
+    Shift(usize, bool),
     /// Installs the new version.
     InstallUpdate,
     /// Text submitted in an input field, or choice submitted in a list.
@@ -182,6 +190,8 @@ pub struct Palette {
     lists: bool,
     /// A vault replacement can be undone.
     undo_swap: bool,
+    /// A choice list whose choices can be removed and moved (the vault switcher); the last one stays put.
+    editable: bool,
     /// The commands the view can do, the view's own first (the first `here`): the
     /// palette finds them by what they do, and offers the `here` ones without typing anything.
     commands: Vec<crate::logic::commands::Command>,
@@ -248,6 +258,7 @@ impl Palette {
             installable: None,
             lists: false,
             undo_swap: false,
+            editable: false,
             commands: Vec::new(),
             here: 0,
             commands_only: false,
@@ -322,6 +333,22 @@ impl Palette {
         this
     }
 
+    /// A choice list of full entries (name, what it says, age, faded), `current` preselected. With `editable`,
+    /// Shift+Delete takes a choice off and Alt+Up/Down move it, but for the last one, which is an action.
+    pub fn choose_entries(label: &str, entries: Vec<Entry>, current: usize, editable: bool, theme: Theme, cx: &mut Context<Self>) -> Self {
+        let mut this = Self { prompt: Some(label.into()), choices: true, editable, ..Self::new(entries, "", theme, cx) };
+        this.refresh();
+        this.selected = this.items.iter().position(|i| matches!(i, Item::Note(n) if *n == current)).unwrap_or(0);
+        this
+    }
+
+    /// The edit asked on the selected choice of an editable list, if it is not the last (the action).
+    fn edit_choice(&mut self, edit: impl Fn(usize) -> PaletteEvent, cx: &mut Context<Self>) {
+        if let Some(at) = self.chosen().filter(|at| self.editable && at + 1 < self.entries.len()) {
+            cx.emit(edit(at));
+        }
+    }
+
     /// Preselects the choice at index `index` (two choices can bear the same name).
     pub fn select(mut self, index: usize) -> Self {
         self.selected = index.min(self.items.len().saturating_sub(1));
@@ -385,6 +412,12 @@ impl Palette {
     #[cfg(test)]
     pub fn choice_at(&self, i: usize) -> Option<String> {
         self.items.get(i).and_then(|item| self.choice(item)).map(str::to_string)
+    }
+
+    /// The choice listed at `i` is drawn faded.
+    #[cfg(test)]
+    pub fn faded_at(&self, i: usize) -> bool {
+        matches!(self.items.get(i), Some(Item::Note(n)) if self.entries[*n].faded)
     }
 
     fn choice(&self, item: &Item) -> Option<&str> {
@@ -660,7 +693,9 @@ impl Render for Palette {
                 Item::Note(n) => {
                     let e = &self.entries[*n];
                     // Under `#tag`, the tags; otherwise the folder.
-                    let detail = if self.query.text.trim_start().starts_with('#') {
+                    let detail = if !e.said.is_empty() {
+                        e.said.clone()
+                    } else if self.query.text.trim_start().starts_with('#') {
                         e.tags.iter().take(4).map(|t| format!("#{t}")).collect::<Vec<_>>().join(" ")
                     } else {
                         self.folder_of(&e.path)
@@ -685,6 +720,7 @@ impl Render for Palette {
                 Item::Setting(setting) => (setting.label().to_string(), String::new()),
             };
             let note = matches!(item, Item::Note(_));
+            let faded = matches!(item, Item::Note(n) if self.entries[*n].faded);
             let age = match item {
                 Item::Note(n) => self.entries[*n].days.map(crate::lang::age),
                 _ => None,
@@ -713,7 +749,7 @@ impl Render for Palette {
                             .flex()
                             .items_center()
                             .gap(t.px(10.))
-                            .child(div().min_w_0().truncate().child(label.clone()))
+                            .child(div().min_w_0().truncate().when(faded, |d| d.text_color(t.soft)).child(label.clone()))
                             .child(soft(div()).debug_selector(move || format!("palette-folder-{i}")).truncate().flex_none().max_w(gpui::relative(0.4)).child(detail.clone())),
                     )
                 })
@@ -733,7 +769,7 @@ impl Render for Palette {
                             .child(detail),
                     )
                 })
-                .children(age.map(|age| soft(div()).debug_selector(move || format!("palette-age-{i}")).flex_none().w(t.px(56.)).text_right().child(age)))
+                .children(age.map(|age| soft(div()).debug_selector(move || format!("palette-age-{i}")).flex_none().min_w(t.px(56.)).whitespace_nowrap().text_right().child(age)))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, _, cx| this.confirm(i, cx)),
@@ -741,9 +777,16 @@ impl Render for Palette {
         });
 
         // The keys of the main palette, under the list; an input field and an empty list have none to show.
-        let footer = (self.prompt.is_none() && !self.items.is_empty()).then(|| {
+        let footer = ((self.prompt.is_none() || self.editable) && !self.items.is_empty()).then(|| {
             let hint = |keys: String, what: &'static str| div().flex().items_center().gap(t.px(6.)).child(keycaps(&keys, t, false)).child(what);
-            let hints = if self.commands_only {
+            let hints = if self.editable {
+                vec![
+                    hint(crate::ui::keys::of(cx, &Confirm), tr("switch", "changer")),
+                    hint(crate::ui::keys::of(cx, &RemoveChoice), tr("take off the list (the folder stays)", "retirer de la liste (le dossier reste)")),
+                    hint(crate::ui::keys::of(cx, &ChoiceUp), tr("move up", "monter")),
+                    hint(crate::ui::keys::of(cx, &ChoiceDown), tr("move down", "descendre")),
+                ]
+            } else if self.commands_only {
                 vec![hint(crate::ui::keys::of(cx, &Confirm), tr("run", "lancer"))]
             } else {
                 vec![
@@ -783,6 +826,9 @@ impl Render for Palette {
                 this.confirm(this.selected, cx)
             }))
             .on_action(cx.listener(|_, _: &Dismiss, _, cx| cx.emit(PaletteEvent::Dismiss)))
+            .on_action(cx.listener(|this, _: &RemoveChoice, _, cx| this.edit_choice(PaletteEvent::Remove, cx)))
+            .on_action(cx.listener(|this, _: &ChoiceUp, _, cx| this.edit_choice(|at| PaletteEvent::Shift(at, true), cx)))
+            .on_action(cx.listener(|this, _: &ChoiceDown, _, cx| this.edit_choice(|at| PaletteEvent::Shift(at, false), cx)))
             .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.emit(PaletteEvent::Dismiss)));
         line::keys(root, cx, |this| Some(&mut this.query), |this, cx| {
             this.refresh();
