@@ -22,8 +22,9 @@ pub enum FileKind {
     Picture,
     /// A PDF, a video, an archive…: unused when no note links it.
     Attachment,
-    /// A CSV or TSV table: a document of its own, never reported as unused.
-    Table,
+    /// A CSV or TSV table, or a Bref diagram (an SVG with its source): a document of its own,
+    /// opened from the tree, never reported as unused.
+    Document,
 }
 
 /// A file of the vault other than a note, with its size on disk.
@@ -433,12 +434,52 @@ pub fn is_empty(text: &str) -> bool {
     heading && lines.next().is_none()
 }
 
+/// The files a note points to with a plain Markdown link, `[text](folder/file.pdf)`, by their lowercase
+/// file name: the index keeps only wikilinks and displayed pictures. Web addresses, anchors and code
+/// blocks are left out.
+pub fn local_links(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut in_code = false;
+    for line in text[markdown::front_matter(text)..].lines() {
+        if markdown::is_fence(line) {
+            in_code = !in_code;
+            continue;
+        }
+        if in_code {
+            continue;
+        }
+        let mut rest = line;
+        while let Some(at) = rest.find("](") {
+            let after = &rest[at + 2..];
+            let Some(end) = after.find(')') else { break };
+            // `<path with spaces>` and `path "title"` keep only the path.
+            let inner = after[..end].trim();
+            let target = match inner.strip_prefix('<') {
+                Some(quoted) => quoted.split('>').next().unwrap_or(""),
+                None => inner.split(' ').next().unwrap_or(""),
+            };
+            let target = target.split(['#', '?']).next().unwrap_or("").replace("%20", " ");
+            let web = target.contains("://") || target.starts_with("mailto:");
+            if !target.is_empty() && !web {
+                let name = target.rsplit(['/', '\\']).next().unwrap_or(&target).to_lowercase();
+                if !name.is_empty() && !found.contains(&name) {
+                    found.push(name);
+                }
+            }
+            rest = &after[end..];
+        }
+    }
+    found
+}
+
 /// Pictures and attachments nothing links, and pictures over `HEAVY`.
 fn files(vault: &Vault, live: &[&Note]) -> Vec<Finding> {
-    let linked: HashSet<&str> = live.iter().flat_map(|n| n.links.iter().map(|link| link.as_str())).collect();
+    let mut linked: HashSet<String> = live.iter().flat_map(|n| n.links.iter().map(|link| link.as_str().to_string())).collect();
+    // A plain Markdown link to a file uses it too: only notes that point at a file are read.
+    linked.extend(live.iter().filter(|n| n.body.contains("](")).flat_map(|n| local_links(&n.body)));
     let mut found = Vec::new();
     for file in vault.files {
-        if file.kind != FileKind::Table && !linked.contains(file_key(&file.path).as_str()) {
+        if file.kind != FileKind::Document && !linked.contains(&file_key(&file.path)) {
             found.push(Finding::Unused { path: file.path.clone() });
         }
         if file.kind == FileKind::Picture && file.bytes > HEAVY {
@@ -480,9 +521,11 @@ fn orphans(vault: &Vault, live: &[&Note]) -> Vec<Finding> {
             }
         }
     }
+    // A conflict copy or an empty note is listed under its own kind already: not twice.
+    let elsewhere = |note: &Note| conflict_of(&note.name).is_some() || is_empty(&note.body);
     live.iter()
         .zip(linked)
-        .filter(|(note, linked)| !linked && !is_dated(&note.name))
+        .filter(|(note, linked)| !linked && !is_dated(&note.name) && !elsewhere(note))
         .map(|(note, _)| Finding::Orphan { note: note.path.clone() })
         .collect()
 }
@@ -624,16 +667,28 @@ mod tests {
 
     #[test]
     fn unused_and_heavy_files() {
-        let notes = [note("/v/Album.md", "# Album\n![](img/vue%20mer.png)\n![[plan.pdf]]\n")];
+        let notes = [
+            note("/v/Album.md", "# Album\n![](img/vue%20mer.png)\n![[plan.pdf]]\n"),
+            // A plain Markdown link uses its file too (the review's `rapport.pdf`).
+            note("/v/Bilan.md", "# Bilan\nVoir [le rapport](docs/Rapport.pdf \"titre\") et [le site](https://x.org/a.zip).\n"),
+        ];
         let files = [
             file("/v/img/vue mer.png", HEAVY + 1, FileKind::Picture),
             file("/v/img/oubliée.jpg", 10, FileKind::Picture),
             file("/v/plan.pdf", HEAVY * 10, FileKind::Attachment),
             file("/v/doc.zip", 1, FileKind::Attachment),
-            file("/v/budget.csv", 1, FileKind::Table),
+            file("/v/a.zip", 1, FileKind::Attachment),
+            file("/v/docs/rapport.pdf", 1, FileKind::Attachment),
+            file("/v/budget.csv", 1, FileKind::Document),
+            // A Bref diagram is a document of its own, like a table (the review's `Schéma.svg`).
+            file("/v/Schéma.svg", 1, FileKind::Document),
         ];
         let found = scan_of(&notes, &files, &[]);
-        assert_eq!(of(&found, Kind::Unused), [Finding::Unused { path: "/v/doc.zip".into() }, Finding::Unused { path: "/v/img/oubliée.jpg".into() }]);
+        // A web address is not a file of the vault: `a.zip` stays unused.
+        assert_eq!(
+            of(&found, Kind::Unused),
+            [Finding::Unused { path: "/v/a.zip".into() }, Finding::Unused { path: "/v/doc.zip".into() }, Finding::Unused { path: "/v/img/oubliée.jpg".into() }]
+        );
         // Only pictures are heavy: a video or a PDF is expected to be.
         assert_eq!(of(&found, Kind::Heavy), [Finding::Heavy { path: "/v/img/vue mer.png".into(), bytes: HEAVY + 1 }]);
     }
@@ -648,9 +703,18 @@ mod tests {
             note("/v/D.md", "# D\n[[surnom]] [[D]] [[nulle part]]\n"),
             note("/v/Seule.md", "# Seule\n[[Seule]]\n"),
             note("/v/2026-10-09.md", "# 2026-10-09\n"),
+            // Listed as empty and as a conflict copy already: not orphans as well.
+            note("/v/Vide.md", "# Vide\n"),
+            note("/v/B (conflict 2026-10-09 pc).md", "# B\nautre\n"),
         ];
         let files = [file("/v/c.png", 1, FileKind::Picture)];
         assert_eq!(of(&scan_of(&notes, &files, &[]), Kind::Orphan), [Finding::Orphan { note: "/v/Seule.md".into() }]);
+    }
+
+    #[test]
+    fn reads_the_files_of_plain_markdown_links() {
+        let text = "---\nlien: [x](front.pdf)\n---\n[a](Dossier/Mon%20Fichier.PDF) [b](<avec espaces.zip>) [c](c.txt#part)\n```\n[d](code.pdf)\n```\n[e](https://site.org/e.pdf) [f](mailto:a@b.c) ![g](img/g.png)\n";
+        assert_eq!(local_links(text), ["mon fichier.pdf", "avec espaces.zip", "c.txt", "g.png"]);
     }
 
     #[test]

@@ -188,7 +188,7 @@ impl Shell {
             .filter(|spec| !matches!(spec.group, Some(Group::Block | Group::Table | Group::Diagram)) || spec.group == here)
             .filter_map(|spec| {
                 let keys = keys::of(cx, cx.build_action(spec.action, None).ok()?.as_ref());
-                Some(commands::Command { action: spec.action, label: spec.label?, icon: spec.icon, group: spec.group?, keys, pinned: spec.pinned })
+                Some(commands::Command { action: spec.action, label: spec.label?, icon: spec.icon, group: spec.group?, keys, pinned: spec.pinned, also: spec.also })
             })
             .collect();
         commands::arrange(list, here)
