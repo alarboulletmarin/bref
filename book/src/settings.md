@@ -39,7 +39,7 @@ It opens as a tab of the active pane, like a note. Put it next to a note to try 
 
 ## Theme
 
-The cards of **Appearance** in the settings tab, the half-filled circle at the bottom of the rail, or `theme` in the palette.
+The cards of **Appearance** in the settings tab, or `theme` in the palette.
 
 - 13 themes: Bref Dark and Bref Light, Dracula, One Dark, Gruvbox (dark and light), Nord, Catppuccin (Mocha and Latte), Tokyo Night, Rosé Pine, Solarized (dark and light).
 - In the settings tab, each card shows the theme's page, text and accent. A click, or `Left` and `Right` on the row, applies it at once, the tab included.

@@ -16,7 +16,7 @@ A rail of icons stays on the left of the window. It opens a panel beside the not
 | Calendar | `Ctrl + Shift + J` | one month of daily notes, see [The calendar](daily-notes.md#the-calendar) |
 | Search | `Ctrl + Shift + F` | every match of a search in the vault, see [Search the vault](search.md#search-the-vault) |
 
-The rail also holds, at the top: the command palette, back and forward, the views, search and new note. At the bottom: the trash, the sync of a vault kept in git (it turns while it runs, and a red dot says the last one failed), backup, theme and help.
+The rail also holds, at the top: the command palette, back and forward, the views, search and new note. At the bottom: the trash, the sync of a vault kept in git (it turns while it runs, and a red dot says the last one failed) and the settings, which also lead to backup, theme and help.
 
 - **Fold**: press the key of the view on display, or click its icon. The panel folds back to the rail.
 - **Resize**: drag the line between the panel and the note. Dragged all the way left, the panel folds to its rail. All the way right, it takes the whole window. Double-click the line for the default width.

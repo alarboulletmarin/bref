@@ -853,7 +853,7 @@ fn rail_groups_keep_their_order_and_room(cx: &mut TestAppContext) {
     let (_shell, cx) = cx.add_window_view(|window, cx| Shell::new(Some(root.clone()), Vec::new(), window, cx));
     cx.run_until_parked();
     let order = [
-        "nav-commands", "nav-back", "nav-forward", "nav-tree", "nav-recent", "nav-graph", "nav-tags", "nav-links", "nav-calendar", "nav-find", "nav-search", "nav-new", "nav-trash", "nav-help",
+        "nav-commands", "nav-back", "nav-forward", "nav-tree", "nav-recent", "nav-graph", "nav-tags", "nav-links", "nav-calendar", "nav-find", "nav-search", "nav-new", "nav-trash", "nav-settings",
     ];
     for height in [900., 720., 480.] {
         cx.simulate_resize(size(px(860.), px(height)));
@@ -873,5 +873,6 @@ fn rail_groups_keep_their_order_and_room(cx: &mut TestAppContext) {
             assert!(gap(from, to) >= px(24.), "{from} and {to} are not set apart at {height}");
         }
         assert!(gap("nav-tree", "nav-recent") < px(8.), "views stay one list at {height}");
+        assert!(cx.debug_bounds("nav-help").is_none(), "help is reached from the settings page, not the rail");
     }
 }

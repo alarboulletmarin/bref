@@ -14,7 +14,7 @@ use crate::{
     ui::widgets::{button, tip},
     logic::dates::Date,
     logic::wiki,
-    views::palette::{Palette, PaletteEvent, Setting},
+    views::palette::{Palette, PaletteEvent},
     lang::tr,
     platform::vault,
     logic::note::Note,
@@ -943,7 +943,7 @@ impl Shell {
                     .on_click(cx.listener(|this, _, window, cx| this.new_note_here(window, cx))),
             ))
             .child(div().debug_selector(|| "rail-free".into()).flex_1().w_full().when(!self.nav.native_bar(), |d| d.map(crate::ui::widgets::drag_window)))
-            // Vault trash (what it holds, to take it back) and backup.
+            // Vault trash (what it holds, to take it back).
             .child(
                 button("nav-trash", "trash.svg", false, t)
                     .debug_selector(|| "nav-trash".into())
@@ -969,24 +969,10 @@ impl Shell {
                 d.child(sync)
             })
             .child(
-                button("nav-backup", "backup.svg", false, t)
-                    .tooltip(tip(tr("Back up the vault", "Sauvegarder le coffre"), String::new(), t))
-                    .on_click(cx.listener(|this, _, window, cx| this.choose_backup(window, cx))),
-            )
-            .child(button("nav-theme", "theme.svg", false, t).tooltip(tip(tr("Choose a theme…", "Choisir un thème…"), String::new(), t)).on_click(cx.listener(
-                |this, _, window, cx| this.choose_setting(Setting::Theme, window, cx),
-            )))
-            .child(
                 button("nav-settings", "gear.svg", self.pane().settings(), t)
                     .debug_selector(|| "nav-settings".into())
                     .tooltip(tip(tr("Settings", "Réglages"), keys(&crate::actions::OpenSettings), t))
                     .on_click(cx.listener(|this, _, window, cx| this.open_settings(None, window, cx))),
-            )
-            .child(
-                button("nav-help", "help.svg", false, t)
-                    .debug_selector(|| "nav-help".into())
-                    .tooltip(tip(tr("Shortcuts and help", "Raccourcis et aide"), keys(&crate::actions::ToggleHelp), t))
-                    .on_click(cx.listener(|this, _, window, cx| this.set_help(true, window, cx))),
             );
 
         let wrapper = div().h_full().flex().min_w_0();
