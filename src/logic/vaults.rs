@@ -228,7 +228,12 @@ mod tests {
         };
         let moved = relocate(session, Path::new("/v/Notes"), Path::new("/w/Perso"));
         assert_eq!(moved.recent, [PathBuf::from("/w/Perso/A.md"), PathBuf::from("/v/Notes-archive/B.md")]);
-        assert_eq!(moved.panes, "v3 row 0.5\n*/w/Perso/A.md\t/v/Notes-archive/B.md\n@graph\t*/w/Perso/sous/C.md\n");
+        // Moved paths are joined with the system's separator, as the vault's own paths are.
+        let new = |rest: &str| Path::new("/w/Perso").join(rest).display().to_string();
+        assert_eq!(
+            moved.panes,
+            format!("v3 row 0.5\n*{}\t/v/Notes-archive/B.md\n@graph\t*{}\n", new("A.md"), new("sous/C.md"))
+        );
         assert_eq!(moved.panel, "tree");
     }
 
