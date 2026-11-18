@@ -100,6 +100,7 @@ pub struct Theme {
     pub panel: Hsla,
     pub border: Hsla,
     /// The window's own background, a step darker than `bg` (see `ground_of`): the sheets (`bg`) lie on it.
+    /// Its alpha is the window's opacity (`Prefs::ground_alpha`), 1 when opaque: the desktop shows through it.
     pub ground: Hsla,
     /// Strings and numbers of a code block.
     pub string: Hsla,
@@ -153,6 +154,11 @@ impl Theme {
         let (_, colors) = THEMES.iter().find(|t| t.0 == prefs.theme).unwrap_or(system);
         let [bg, text, dim, accent, code_bg, panel, border] = colors.map(|c| Hsla::from(rgb(c)));
         let ground = ground_of(bg);
+        // What the ground looks like once translucent, over the brightest and the darkest desktop: what is written on
+        // it must read on both. Opaque, they are the ground itself and nothing changes.
+        let alpha = prefs.ground_alpha();
+        let seen = [hsla(0., 0., 1., 1.), hsla(0., 0., 0., 1.)].map(|desk| blend(ground, desk, alpha));
+        let grounds = [ground, seen[0], seen[1]];
         let (sans, mono) = crate::ui::assets::chosen_fonts(prefs);
         // The selection, as strong as the text over it allows.
         let share = (0..=15)
@@ -162,17 +168,19 @@ impl Theme {
         let picked = [bg, panel, blend(accent, bg, share), blend(accent, panel, share)];
         // Some themes' own text is under 4.5:1 on their code background or selected (Solarized).
         let text = picked.iter().chain([&code_bg, &ground]).fold(text, |c, b| legible(c, *b));
+        // Over the desktop, a little more: room for the secondary text (`soft`) to stay a step under it.
+        let text = seen.iter().fold(text, |c, b| reach(c, *b, 5.));
         // The faintest grey between text and background that still reads on the page, the panel and code.
         let soft = (0..=20)
             .map(|i| blend(text, bg, 0.5 + i as f32 * 0.025))
-            .find(|c| [bg, panel, code_bg, ground].iter().all(|b| contrast(*c, *b) >= 4.5))
+            .find(|c| [bg, panel, code_bg].iter().chain(&grounds).all(|b| contrast(*c, *b) >= 4.5))
             .unwrap_or(text);
         // Links and tags are written in the accent: it must read like text, selected too.
         // It also reads on the ground and in an open pill (10 % of itself over the page or the ground).
         // The pill takes its tint from the accent it holds, so it is read again from the accent made legible, until it settles.
         let accent_read = (0..4).fold(accent, |a, _| {
-            let pills = [blend(a, bg, 0.1), blend(a, ground, 0.1)];
-            picked.iter().chain([&ground]).chain(&pills).fold(a, |c, b| legible(c, *b))
+            let pills = [bg, ground, seen[0], seen[1]].map(|under| blend(a, under, 0.1));
+            picked.iter().chain(&grounds).chain(&pills).fold(a, |c, b| legible(c, *b))
         });
         // Strings and numbers take the accent shifted in hue, to match each theme without a palette of their own.
         let code = |by: f32| [bg, code_bg].iter().fold(Hsla { h: (accent_read.h + by).fract(), ..accent_read }, |c, b| legible(c, *b));
@@ -191,7 +199,7 @@ impl Theme {
             code_bg,
             panel,
             border,
-            ground,
+            ground: ground.opacity(alpha),
             size: prefs.size,
             ui: (prefs.size / 16.).clamp(0.85, 1.5),
             page: Page::of(&prefs.page),
@@ -591,6 +599,38 @@ mod tests {
             }
         }
         assert!(fails.is_empty(), "{}", fails.join("\n"));
+    }
+
+    /// At every opacity offered, down to the floor, over a white and over a black desktop, every theme's text still
+    /// reads on the ground, and its secondary text stays a step under the text. Just under the floor, some theme fails.
+    #[test]
+    fn a_translucent_ground_still_reads() {
+        // Percent by percent, as the settings page steps it (5 % at a time, kept to the hundredth).
+        let check = |percent: u32| {
+            let alpha = percent as f32 / 100.;
+            let mut fails = Vec::new();
+            for (name, _) in THEMES {
+                let t = Theme::of(&Prefs { theme: name.to_string(), background: "translucent".into(), opacity: alpha, ..Prefs::parse("") }, WindowAppearance::Light);
+                assert_eq!(t.ground.a, alpha, "{name}: the ground carries the opacity");
+                for desk in [hsla(0., 0., 1., 1.), hsla(0., 0., 0., 1.)] {
+                    let seen = blend(Hsla { a: 1., ..t.ground }, desk, alpha);
+                    let pill = blend(t.accent, seen, 0.1);
+                    for (what, fg, under) in [("text", t.text, seen), ("soft", t.soft, seen), ("accent", t.accent, seen), ("accent in a pill", t.accent, pill)] {
+                        if contrast(fg, under) < 4.5 {
+                            fails.push(format!("{name} at {percent} % over {}: {what} {:.2}", hex(desk), contrast(fg, under)));
+                        }
+                    }
+                }
+                if t.soft == t.text {
+                    fails.push(format!("{name} at {percent} %: no secondary text left"));
+                }
+            }
+            fails
+        };
+        let floor = (Prefs::FLOOR * 100.).round() as u32;
+        let fails: Vec<String> = (floor..=100).step_by(5).flat_map(check).collect();
+        assert!(fails.is_empty(), "{}", fails.join("\n"));
+        assert!(!check(floor - 5).is_empty(), "the floor could go lower");
     }
 
     #[test]

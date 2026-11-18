@@ -43,7 +43,7 @@ fn the_settings_are_a_tab_walked_by_keyboard(cx: &mut TestAppContext) {
     }
     assert_eq!(sel(&shell, cx), (Section::Editor, Some(Row::Page)), "past the last row of Appearance: Editor");
     cx.simulate_keystrokes("up");
-    assert_eq!(sel(&shell, cx), (Section::Appearance, Some(Row::Motion)));
+    assert_eq!(sel(&shell, cx), (Section::Appearance, Some(Row::Opacity)));
 
     // Tab goes through every section and comes back to the first; each one shows its rows.
     cx.simulate_keystrokes("tab");

@@ -236,6 +236,7 @@ impl Shell {
     ) -> Self {
         let prefs = Prefs::parse(&config::load(config::File::Settings));
         let theme = Theme::of(&prefs, window.appearance());
+        window.set_background_appearance(settings::backdrop(&prefs));
         let pane = Self::new_pane(theme, window, cx);
         cx.observe_window_appearance(window, |this, window, cx| this.restyle(window, cx)).detach();
         // Whatever the shell changes ends in a `notify`: the state that follows from it is settled

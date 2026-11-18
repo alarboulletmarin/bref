@@ -8,6 +8,7 @@ impl Shell {
     pub(super) fn restyle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let theme = Theme::of(&self.prefs, window.appearance());
         self.theme = theme;
+        window.set_background_appearance(backdrop(&self.prefs));
         for pane in &self.panes {
             pane.editor.update(cx, |e, cx| e.set_theme(theme, cx));
         }
@@ -102,4 +103,10 @@ impl Shell {
         self.keep(config::File::Settings, &self.prefs.to_text(), cx);
         self.restyle(window, cx);
     }
+}
+
+/// What the system draws behind the window: its blur when asked for, otherwise plain transparency, which the
+/// app's own frame needs anyway (its rounded corners and shadow); an opaque ground covers it.
+pub(super) fn backdrop(prefs: &Prefs) -> WindowBackgroundAppearance {
+    if prefs.blurred() { WindowBackgroundAppearance::Blurred } else { WindowBackgroundAppearance::Transparent }
 }

@@ -31,6 +31,19 @@ pub fn skip_absent_nvidia_driver() {
         unsafe { std::env::set_var("VK_LOADER_DRIVERS_DISABLE", "*nvidia*") };
     }
 }
+/// Whether the system blurs what is behind the window when asked: macOS and Windows do. On Linux, gpui asks
+/// only Wayland compositors with KDE's blur protocol; X11 compositors blur by their own rules, not on request.
+pub fn offers_blur() -> bool {
+    cfg!(any(target_os = "macos", windows))
+        || blurs_on_linux(std::env::var("WAYLAND_DISPLAY").ok().as_deref(), std::env::var("XDG_CURRENT_DESKTOP").ok().as_deref())
+}
+
+// ponytail: told by the desktop's name (KDE); a compositor that offers the protocol under another name is missed.
+// gpui 0.2.2 does not say whether it found the protocol; ask it once it does.
+fn blurs_on_linux(wayland: Option<&str>, desktop: Option<&str>) -> bool {
+    wayland.is_some_and(|w| !w.is_empty()) && desktop.is_some_and(|d| d.split(':').any(|d| d.eq_ignore_ascii_case("KDE")))
+}
+
 /// A process without a console window (the app has none on Windows: otherwise it flashes).
 pub fn command(program: impl AsRef<OsStr>) -> Command {
     #[allow(unused_mut)]
@@ -41,4 +54,18 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
         command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
     command
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_kde_on_wayland_blurs() {
+        assert!(blurs_on_linux(Some("wayland-0"), Some("KDE")));
+        assert!(blurs_on_linux(Some("wayland-0"), Some("ubuntu:KDE")));
+        for (wayland, desktop) in [(Some("wayland-0"), Some("GNOME")), (Some(""), Some("KDE")), (None, Some("KDE")), (Some("wayland-0"), None), (Some("wayland-0"), Some(""))] {
+            assert!(!blurs_on_linux(wayland, desktop), "{wayland:?} {desktop:?}");
+        }
+    }
 }

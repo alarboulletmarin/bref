@@ -63,6 +63,8 @@ pub(super) enum Row {
     Mono,
     Size,
     Motion,
+    Background,
+    Opacity,
     Page,
     Wide,
     Bar,
@@ -85,12 +87,14 @@ pub(super) enum Row {
 
 impl Row {
     /// Every row, section by section, in the order they are shown: Up and Down walk this list.
-    pub(super) const ALL: [Row; 23] = [
+    pub(super) const ALL: [Row; 25] = [
         Row::Theme,
         Row::Font,
         Row::Mono,
         Row::Size,
         Row::Motion,
+        Row::Background,
+        Row::Opacity,
         Row::Page,
         Row::Wide,
         Row::Bar,
@@ -113,7 +117,7 @@ impl Row {
 
     pub(super) fn section(self) -> Section {
         match self {
-            Row::Theme | Row::Font | Row::Mono | Row::Size | Row::Motion => Section::Appearance,
+            Row::Theme | Row::Font | Row::Mono | Row::Size | Row::Motion | Row::Background | Row::Opacity => Section::Appearance,
             Row::Page | Row::Wide | Row::Bar => Section::Editor,
             Row::Vault | Row::NewNotes | Row::Daily | Row::Trash | Row::Config => Section::Files,
             Row::Git | Row::Backup => Section::Sync,
@@ -130,6 +134,8 @@ impl Row {
             Row::Mono => tr("Code font", "Police du code"),
             Row::Size => tr("Text size", "Taille du texte"),
             Row::Motion => tr("Animations", "Animations"),
+            Row::Background => tr("Window background", "Fond de la fenêtre"),
+            Row::Opacity => tr("Opacity", "Opacité"),
             Row::Page => tr("Page width", "Largeur de page"),
             Row::Wide => tr("Wide tables", "Grands tableaux"),
             Row::Bar => tr("Formatting bar", "Barre de mise en forme"),
@@ -158,6 +164,8 @@ impl Row {
             Row::Font | Row::Mono => return None,
             Row::Size => tr("The panel, menus and help follow, from 85 % to 150 %.", "Le panneau, les menus et l'aide suivent, de 85 % à 150 %."),
             Row::Motion => tr("Short fades when the panel, the formatting bar or a folder opens. Off: everything is instant.", "Courts fondus à l'ouverture du panneau, de la barre de mise en forme ou d'un dossier. Désactivées : tout est instantané."),
+            Row::Background => tr("The desktop shows around the sheets; the note, the panels and the menus stay opaque.", "Le bureau se voit autour des feuilles ; la note, les panneaux et les menus restent opaques."),
+            Row::Opacity => tr("Of the window's background, when translucent or blurred: from 75 % to 100 %.", "Celle du fond de la fenêtre, translucide ou flouté : de 75 % à 100 %."),
             Row::Page => tr("How wide the column of text is.", "La largeur de la colonne de texte."),
             Row::Wide => tr("A table wider than the text: centered and wider, or kept in the column with a scroll.", "Un tableau plus large que le texte : centré et plus large, ou gardé dans la colonne avec un défilement."),
             Row::Bar => tr("The bar of styles under the note.", "La barre des styles sous la note."),
@@ -187,6 +195,8 @@ impl Row {
             Row::Mono => "mono",
             Row::Size => "size",
             Row::Motion => "motion",
+            Row::Background => "background",
+            Row::Opacity => "opacity",
             Row::Page => "page",
             Row::Wide => "wide",
             Row::Bar => "bar",
@@ -262,6 +272,18 @@ impl SettingsPage {
             width: Default::default(),
         }
     }
+}
+
+/// The window's backgrounds, as stored in `settings`, and their labels.
+const BACKGROUNDS: [(&str, fn() -> &'static str); 3] = [
+    ("opaque", || tr("Opaque", "Opaque")),
+    ("translucent", || tr("Translucent", "Translucide")),
+    ("blurred", || tr("Blurred", "Flouté")),
+];
+
+/// The background chosen, `opaque` when the setting is absent or unknown.
+fn background_key(prefs: &Prefs) -> &'static str {
+    BACKGROUNDS.iter().map(|b| b.0).find(|k| *k == prefs.background).unwrap_or("opaque")
 }
 
 /// The theme choices, in the order of the cards: the default (empty, follows the system), then each theme.
@@ -452,6 +474,11 @@ impl Shell {
                 self.set_prefs(|p| p.wide = wide, window, cx);
             }
             Row::Size => self.resize_text(Some(by as f32), window, cx),
+            Row::Background => {
+                let background = step(&BACKGROUNDS.map(|b| b.0), background_key(&self.prefs));
+                self.set_prefs(|p| p.background = background, window, cx);
+            }
+            Row::Opacity => self.set_prefs(|p| p.opacity += by as f32 * 0.05, window, cx),
             Row::Bar => self.set_prefs(|p| p.bar = if by > 0 { "on" } else { "off" }.into(), window, cx),
             Row::Motion => self.set_prefs(|p| p.motion = if by > 0 { "on" } else { "off" }.into(), window, cx),
             Row::Updates => {
@@ -491,6 +518,11 @@ impl Shell {
             Row::Updates => self.toggle_updates(cx),
             Row::Access => self.settings.read_only = !self.settings.read_only,
             Row::Size => self.resize_text(None, window, cx),
+            Row::Background => {
+                let background = next(&BACKGROUNDS.map(|b| b.0), background_key(&self.prefs));
+                self.set_prefs(|p| p.background = background, window, cx);
+            }
+            Row::Opacity => self.set_prefs(|p| p.opacity = Prefs::OPACITY, window, cx),
             Row::Font => self.choose_setting(Setting::Font, window, cx),
             Row::Mono => self.choose_setting(Setting::Mono, window, cx),
             Row::Vault => self.choose_vault(window, cx),
@@ -805,6 +837,27 @@ impl Shell {
                 )
             }
             Row::Motion => Some(flip(self.prefs.motion != "off", cx).into_any_element()),
+            Row::Background => Some(pick(BACKGROUNDS.map(|(k, label)| (k, label())).into(), background_key(&self.prefs), |p, v| p.background = v, cx).into_any_element()),
+            Row::Opacity => {
+                let opacity = self.prefs.opacity;
+                let step = |id: &'static str, label: &'static str, to: f32| {
+                    press(id, label).on_click(cx.listener(move |this, _, window, cx| {
+                        this.settings.sel = Some(Row::Opacity);
+                        this.set_prefs(|p| p.opacity = to, window, cx);
+                    }))
+                };
+                Some(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(step("less", "−", opacity - 0.05))
+                        .child(value(format!("{} %", (opacity * 100.).round())).min_w(t.px(48.)).text_center().debug_selector(|| "settings-opacity-value".into()))
+                        .child(step("more", "+", opacity + 0.05))
+                        .when(opacity != Prefs::OPACITY, |d| d.child(step("reset", tr("Default", "Par défaut"), Prefs::OPACITY)))
+                        .into_any_element(),
+                )
+            }
             Row::Bar => Some(flip(self.prefs.bar != "off", cx).into_any_element()),
             Row::Updates => Some(flip(self.prefs.updates, cx).into_any_element()),
             Row::Page => Some(pick(Page::ALL.map(|p| (p.key(), p.label())).into(), Page::of(&self.prefs.page).key(), |p, v| p.page = v, cx).into_any_element()),
@@ -922,6 +975,13 @@ impl Shell {
             Row::Vault => self.vault.as_ref().map(|root| value(root.display().to_string()).debug_selector(|| "settings-vault-path".into()).into_any_element()),
             Row::Config => Some(value(config::path(config::File::Settings).parent().map_or_else(String::new, |p| p.display().to_string())).into_any_element()),
             Row::Daily => Some(value(format!("{}.md", date_name(today()))).into_any_element()),
+            // gpui gives no answer when the system has no blur: what is known of the desktop says it.
+            Row::Background if self.prefs.blurred() && !crate::platform::offers_blur() => Some(
+                value(tr("This desktop blurs nothing behind apps: the background stays translucent.", "Ce bureau ne floute rien derrière les apps : le fond reste translucide.").into())
+                    .font_family(t.sans)
+                    .debug_selector(|| "settings-background-no-blur".into())
+                    .into_any_element(),
+            ),
             Row::Git => Some(
                 value(match (&self.settings.remote, self.sync_broken, &self.settings.synced) {
                     (None, ..) if self.vault.as_ref().is_some_and(|root| root.join(".git").exists()) => tr("A git repository, linked to no server yet", "Un dépôt git, relié à aucun serveur pour l'instant").to_string(),

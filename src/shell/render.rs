@@ -106,9 +106,10 @@ impl Render for Shell {
             .bg(t.ground)
             .text_color(t.text)
             .font_family(t.sans)
-            .when(framed, |d| {
-                d.rounded(crate::ui::theme::frame_radius()).border_1().border_color(t.border).shadow(crate::ui::theme::frame_shadow(SHADOW / 2.))
-            })
+            .when(framed, |d| d.rounded(crate::ui::theme::frame_radius()).border_1().border_color(t.border))
+            // The shadow lies under the whole window: through a translucent ground it would darken it, and the text
+            // on it is only checked over the desktop. The border alone marks the edge then.
+            .when(framed && t.ground.a == 1., |d| d.shadow(crate::ui::theme::frame_shadow(SHADOW / 2.)))
             .track_focus(&self.focus)
             // The commands of the window: each table entry that does something.
             .map(|d| command_table::register(d, cx))
