@@ -25,7 +25,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **PDF to send.** A note saved as an A4 PDF from the palette, unsaved edits included: text you can search and copy, pictures, Mermaid diagrams and formulas drawn in. [How](book/src/writing.md#save-as-pdf)
 - **Local sharing.** Copy a whole note as Markdown or readable text, or save a separate copy. One Share / Export menu also offers SVG/PNG for diagrams and the existing table formats.
 - **Keyboard first.** One palette for notes and commands. Every shortcut is listed in the app (`F1`) and can be changed.
-- **Yours to dress.** 13 themes, IBM Plex built in, any installed font. Light and dark, English and French. Every setting in one tab: `Ctrl + ,`.
+- **Yours to dress.** 13 themes, IBM Plex built in, any installed font. Light and dark, English and French. An opaque, translucent or blurred window. Every setting in one tab: `Ctrl + ,`.
 
 ![Typing a note: the title grows, styles render, a table adds up its column](docs/screenshots/demo.gif)
 

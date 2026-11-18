@@ -29,7 +29,7 @@ It opens as a tab of the active pane, like a note. Put it next to a note to try 
 
 ### What each section holds
 
-- **Appearance**: the theme, the font of the app and of the code, the text size, the animations.
+- **Appearance**: the theme, the font of the app and of the code, the text size, the animations, the window background and its opacity.
 - **Editor**: the page width, wide tables, the formatting bar.
 - **Files & links**: the vault (its folder, **Open another…**, **Clone…**), where new notes and daily notes go, the trash (**Restore…**), the [configuration folder](vault.md#configuration-files).
 - **Sync & backup**: git (the server the vault syncs with, the time of the last sync, **Sync now**, or **Connect…** for a vault not linked yet), and a backup of the whole vault. See [Syncing a vault](sync.md).
@@ -84,6 +84,16 @@ A small table keeps its own size, and nothing goes past the window.
 - **Formatting bar** (a switch in **Editor**), or `formatting bar` in the palette, shows or hides the [formatting bar](writing.md#the-formatting-bar) under the note.
 - **Animations** (a switch in **Appearance**), or `animations` in the palette, turns the short fades off. When on, the panel, the formatting bar and a folder of the tree fade in over about 0.13 s as they open. Nothing moves on typing, scrolling or the caret, and no fade delays a result. Hovers and closing are instant.
 
+## Window background
+
+**Window background** (in **Appearance**) lets the desktop show through the window:
+
+- **Opaque**, the default: nothing shows through.
+- **Translucent**: the ground of the window, the rail and the space between the sheets, lets the desktop through. The note, the panels, the palette and the menus stay opaque, so the text keeps its contrast.
+- **Blurred**: the same, and the system blurs what is behind. macOS, Windows and KDE Plasma (Wayland) do; GNOME and X11 blur nothing an app asks for, and the setting says so: the window stays translucent.
+
+**Opacity** sets how much of the ground stays, from 75 % to 100 % in steps of 5 % (90 % by default). The lowest step is where every theme's text still reads on the ground over a white or a black wallpaper; the secondary text and the links of a theme get a little darker or lighter to keep reading there. While the ground is translucent, the window drops its own shadow and keeps its border.
+
 ## Language
 
 French if the system language is French, English otherwise. Bref asks the system (Windows, macOS), or reads `LC_ALL`, `LC_MESSAGES` and `LANG` (Linux, or any system when started from a terminal).
@@ -101,6 +111,8 @@ These choices are kept in a file named `settings`, in the [configuration folder]
 | `wide` | `column`, `center` | Editor › **Wide tables** | `wide tables` |
 | `bar` | `on`, `off` | Editor › **Formatting bar** | `formatting bar` |
 | `motion` | `on`, `off` | Appearance › **Animations** | `animations` |
+| `background` | `opaque`, `translucent`, `blurred` | Appearance › **Window background** | |
+| `opacity` | from `0.75` to `1` (`0.9` when absent) | Appearance › **Opacity** | |
 | `updates` | `off` to stop the daily check | Updates & about › **Check for updates** | `updates`, see [Updates](updates.md) |
 
 ## Changing a shortcut
