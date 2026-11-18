@@ -9,7 +9,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     let text = |cx: &mut gpui::VisualTestContext| j.text(cx);
     // Tags: Ctrl+T lists the vault's tags; Right expands the first, Down
     // previews a note that carries it.
-    fs::write(root.join("Tagué.md"), "# Tagué\n\n#alpha\n").unwrap();
+    // Inline code is text: `#fantome` and the `#n` of `Closes #n` are no tags of the vault.
+    fs::write(root.join("Tagué.md"), "# Tagué\n\n#alpha `#fantome` et `Closes #n`\n").unwrap();
     watch(cx);
     cx.simulate_keystrokes("secondary-t down right down");
     cx.run_until_parked();
@@ -21,6 +22,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
         (s.notes.iter().filter(has).count(), s.notes.iter().filter(has).any(|n| Some(&n.path) == s.pane().path.as_ref()))
     });
     assert!(tagged > 0 && previewed);
+    assert!(shell.read_with(cx, |s, _| s.notes.iter().flat_map(|n| n.tags.iter()).all(|t| t != "fantome" && t != "n")));
     // A tag is not a file: Delete does nothing on it.
     cx.simulate_keystrokes("up delete");
     assert!(shell.read_with(cx, |s, _| s.palette.is_none() && !s.told(Tone::Failed, "")));
@@ -32,6 +34,8 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     fs::write(root.join("Cible.md"), "# Cible\n").unwrap();
     fs::write(root.join("Source A.md"), "# Source A\n\nvoir [[Cible|la cible]] ici\n").unwrap();
     fs::write(root.join("Source B.md"), "# Source B\n\n| a | [[cible]] |\n").unwrap();
+    // A link written in inline code is text: Source C does not lead to Cible.
+    fs::write(root.join("Source C.md"), "# Source C\n\nla syntaxe `[[Cible]]`\n").unwrap();
     j.settle(cx);
     shell.update(cx, |s, cx| s.open_note(&root.join("Cible.md"), cx));
     cx.simulate_keystrokes("secondary-l");
@@ -51,7 +55,7 @@ pub(super) fn run(j: &Journey, cx: &mut gpui::VisualTestContext) -> PathBuf {
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     assert!(shell.read_with(cx, |s, _| s.pane().path.as_deref() == Some(&*root.join("Source A.md"))) && rows(cx).is_empty());
-    for name in ["Cible.md", "Source A.md", "Source B.md"] {
+    for name in ["Cible.md", "Source A.md", "Source B.md", "Source C.md"] {
         fs::remove_file(root.join(name)).unwrap();
     }
 

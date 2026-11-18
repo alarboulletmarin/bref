@@ -23,6 +23,9 @@ The **Backlinks** view of the panel (`Ctrl + L`) lists the notes that link to th
 
 A `#tag` in the text, or a `tags` key in the front matter, tags a note.
 
+- A tag starts after a space or at the start of a line. Digits alone (`#123`) and a trailing `/` (`#72/`) are not part of a tag; `#area/sub` is a nested tag.
+- Inline code is text: a `#tag` or a `[[link]]` written between backticks tags nothing and links nowhere.
+
 - `#` in the palette lists the notes carrying a tag.
 - The **Tags** view of the panel (`Ctrl + T`) lists every tag of the vault with its number of notes.
 - `Ctrl + click` opens a tag of the text.

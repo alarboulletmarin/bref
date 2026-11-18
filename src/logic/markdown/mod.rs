@@ -165,12 +165,22 @@ pub fn web_link(rest: &str) -> Option<(Range<usize>, Range<usize>)> {
     ok.then_some((text, url))
 }
 
-/// Wikilinks, `[text](address)` links, URLs and tags of the line, with their byte range.
+/// Wikilinks, `[text](address)` links, URLs and tags of the line, with their byte range. Inline
+/// code holds none: it is text, as it is drawn (its spans are the ones `emphasis` marks).
 pub fn links(line: &str) -> Vec<(Range<usize>, Link)> {
     let b = line.as_bytes();
+    let mut code = Vec::new();
+    if line.contains('`') {
+        code = vec![0u16; b.len()];
+        emphasis(line, 0, &mut code);
+    }
     let mut out = Vec::new();
     let mut i = 0;
     while i < b.len() {
+        if code.get(i).is_some_and(|f| f & CODE != 0) {
+            i += 1;
+            continue;
+        }
         let rest = &line[i..];
         if rest.starts_with("[[")
             && let Some(e) = rest.find("]]")
@@ -204,6 +214,8 @@ pub fn links(line: &str) -> Vec<(Range<usize>, Link)> {
                 .take_while(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '/'))
                 .map(char::len_utf8)
                 .sum();
+            // A trailing `/` ends the sentence, not the tag: `#72/#73` names two issues, not tag `72/`.
+            let n = rest[1..1 + n].trim_end_matches('/').len();
             let tag = &rest[1..1 + n];
             if tag.chars().any(|c| !c.is_ascii_digit()) {
                 out.push((i..i + 1 + n, Link::Tag(tag.to_lowercase())));
@@ -996,6 +1008,23 @@ mod tests {
             assert!(found(none, false).is_empty(), "{none}");
         }
         assert_eq!(found("| #a | b #c |", true), ["#a", "#c"]);
+    }
+
+    #[test]
+    fn links_and_tags_in_inline_code_are_text() {
+        // What the index, the health page, the agents and Ctrl+click read: inline code holds no
+        // link and no tag, as it is drawn.
+        let shown = |line: &str| links(line).into_iter().map(|(r, _)| line[r].to_string()).collect::<Vec<_>>();
+        for none in ["porte `Closes #n` ici", "voir `[[Cible]]` ici", "`https://a.b`", "` #a `", "``#a``", "#72/", "#72/#73", "#/", "a `b #c` d `e"] {
+            assert!(shown(none).is_empty(), "{none}: {:?}", shown(none));
+        }
+        assert_eq!(shown("#vrai `#faux` #aussi [[Lien]] `[[Non]]`"), ["#vrai", "#aussi", "[[Lien]]"]);
+        // A code span that never closes is text: what follows its backtick stays a tag.
+        assert_eq!(shown("a ` #ouvert"), ["#ouvert"]);
+        // A trailing `/` is not part of the tag; a nested tag keeps its own.
+        assert_eq!(shown("#a/ #a/b #é/"), ["#a", "#a/b", "#é"]);
+        let (tags, wikis) = index("`#n` #vrai\n`[[Code]]` [[Cible]]\n#72/#73");
+        assert_eq!((tags, wikis), (vec!["vrai".to_string()], vec!["cible".to_string()]));
     }
 
     #[test]
