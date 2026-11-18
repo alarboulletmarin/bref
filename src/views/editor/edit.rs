@@ -89,6 +89,10 @@ impl Editor {
     /// the text is replaced, then the selection is `sel` (a collapsed one forgets which end was dragged).
     /// The caller pushes the undo step first, unless the rewrite belongs to the one before (a realigned table).
     pub(super) fn rewrite_block(&mut self, block: Range<usize>, new: &str, map: impl Fn(usize) -> usize, sel: Range<usize>, cx: &mut Context<Self>) {
+        // The preview card's reader shows a note; it never changes it.
+        if self.reader {
+            return;
+        }
         self.follow(map);
         self.damaged(&block);
         self.content.replace_range(block, new);
@@ -99,6 +103,9 @@ impl Editor {
 
     /// Replaces `range` with `text`, keeping the selection as well as possible.
     pub(super) fn splice(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
+        if self.reader {
+            return;
+        }
         self.push_undo(text.contains('\n') || text == " ");
         let scopes = self.scopes_before(&range, text);
         let map = |p: usize| {
@@ -167,6 +174,10 @@ impl Editor {
 
     /// Replaces `range` with `text` and puts the cursor right after.
     pub(super) fn edit(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
+        // The cursor would be put after a text that was not written.
+        if self.reader {
+            return;
+        }
         let end = range.start + text.len();
         self.splice(range, text, cx);
         self.sel = end..end;
@@ -174,6 +185,9 @@ impl Editor {
     }
 
     pub(super) fn renumber(&mut self, cx: &mut Context<Self>) {
+        if self.reader {
+            return;
+        }
         if let Some((text, cursor)) = md::renumber(&self.content, self.cursor()) {
             self.epoch += 1;
             self.content = text;
@@ -194,6 +208,9 @@ impl Editor {
     }
 
     fn restore(&mut self, redo: bool, cx: &mut Context<Self>) {
+        if self.reader {
+            return;
+        }
         let (from, to) = if redo {
             (&mut self.redo, &mut self.undo)
         } else {

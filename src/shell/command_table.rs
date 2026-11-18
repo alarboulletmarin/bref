@@ -332,6 +332,10 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .does(|this, _, cx| this.export_pdf(cx))
             .label(tr("Save the note as PDF…", "Enregistrer la note en PDF…")).icon("export.svg").group(Note)
             .help(tr("Save the note as PDF (A4, unsaved edits included); pictures, figures and embeds that cannot be printed are listed", "Enregistrer la note en PDF (A4, modifications non enregistrées comprises) ; les images, figures et incorporations impossibles à imprimer sont signalées")).edit(),
+        s::<PreviewLink>()
+            .does(|this, window, cx| this.peek_cursor(window, cx))
+            .label(tr("Preview link under the cursor", "Aperçu du lien sous le curseur")).icon("link.svg").group(Note)
+            .help(tr("Preview the note a link leads to, without opening it (or hold Ctrl over the link)", "Voir la note où mène un lien, sans l’ouvrir (ou garder Ctrl sur le lien)")).edit(),
         // The row menu's entries, from the palette, on the file of the active pane.
         s::<nav::OpenAside>()
             .does(|this, window, cx| this.file_do(nav::Do::OpenAside, window, cx))
@@ -603,7 +607,9 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .key("secondary-p"),
         s::<CloseHelp>()
             .does(|this, window, cx| {
-                if this.help.open {
+                if this.peek.is_some() {
+                    this.close_peek(window, cx)
+                } else if this.help.open {
                     this.set_help(false, window, cx)
                 } else if this.pane().zone.is_focused(window) && this.has_note(cx) {
                     // A pane that only shows an image: Escape goes back to its note.
@@ -897,7 +903,8 @@ pub(super) fn specs() -> Vec<CommandSpec> {
             .mac("cmd-shift-down", ctx::EDITOR),
         s::<editor::SelectAll>()
             .help(tr("Select all", "Tout sélectionner")).edit()
-            .key_in("secondary-a", ctx::EDITOR),
+            .key_in("secondary-a", ctx::EDITOR)
+            .key_in("secondary-a", ctx::READER),
         s::<editor::FindNext>()
             .help(tr("Search bar: next match (Enter too)", "Barre de recherche : passage suivant (Entrée aussi)")).edit()
             .key_in("f3", ctx::EDITOR)
@@ -956,7 +963,8 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<editor::Copy>()
             .label(tr("Copy", "Copier"))
             .help(tr("Copy", "Copier")).edit()
-            .key_in("secondary-c", ctx::EDITOR),
+            .key_in("secondary-c", ctx::EDITOR)
+            .key_in("secondary-c", ctx::READER),
         s::<editor::Cut>()
             .label(tr("Cut", "Couper"))
             .help(tr("Cut", "Couper")).edit()
@@ -993,10 +1001,11 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<kanban::CardRemove>()
             .help(tr("Board: remove the card, or the column with its cards (undone with the board's undo)", "Tableau : retirer la carte, ou la colonne avec ses cartes (annulé par l'annulation du tableau)")).edit()
             .key_in("delete", ctx::BOARD),
-        // Escape in the note, when the note has nothing to cancel: the failures said, the icon grid
-        // and the menu go.
+        // Escape in the note, when the note has nothing to cancel: the link's preview card, the failures said,
+        // the icon grid and the menu go.
         s::<editor::Cancel>()
             .does(|this, window, cx| {
+                this.close_peek(window, cx);
                 this.dismiss_failures();
                 this.close_icons(window, cx);
                 this.close_menu(window, cx);

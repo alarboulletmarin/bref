@@ -14,6 +14,8 @@ pub const MOD: &str = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" };
 pub mod context {
     pub const SHELL: &str = "Shell";
     pub const EDITOR: &str = "Editor";
+    /// The read-only editor of the link preview card: only copying and selecting reach it.
+    pub const READER: &str = "Reader";
     pub const FIND: &str = "Find";
     pub const NAV: &str = "Nav";
     pub const PALETTE: &str = "Palette";

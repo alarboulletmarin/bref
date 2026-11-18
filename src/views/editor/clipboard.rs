@@ -23,6 +23,10 @@ impl Editor {
     }
 
     pub(super) fn paste(&mut self, cx: &mut Context<Self>) {
+        // The preview card's reader takes nothing in: a pasted picture would be saved for nothing.
+        if self.reader {
+            return;
+        }
         let Some(item) = cx.read_from_clipboard() else {
             return;
         };

@@ -138,6 +138,30 @@ pub fn section(text: &str, anchor: &Anchor) -> Option<String> {
     (!shown.trim().is_empty()).then_some(shown)
 }
 
+/// How many lines of a note the preview card lays out at most.
+// ponytail: a fixed cut, the card scrolls to its end; lay out more as it scrolls if someone reads that far in a card.
+pub const PEEK_LINES: usize = 400;
+
+/// What the preview card shows of a note's `text`: the section `anchor` points at, or the whole note without its
+/// front matter and its title (the card's head says it), cut after `PEEK_LINES` lines. False when the heading
+/// or the block is not there: the whole note is shown instead.
+pub fn peek_text(text: &str, anchor: &Anchor) -> (String, bool) {
+    let (shown, found) = match section(text, anchor) {
+        Some(shown) => (shown, true),
+        None => (section(text, &Anchor::Whole).unwrap_or_default(), *anchor == Anchor::Whole),
+    };
+    let shown = match (anchor, found) {
+        (Anchor::Heading(_) | Anchor::Block(_), true) => shown,
+        _ => match shown.split_once('\n') {
+            Some((first, rest)) if first.starts_with("# ") => rest.trim_start_matches('\n').to_string(),
+            None if shown.starts_with("# ") => String::new(),
+            _ => shown,
+        },
+    };
+    let cut = shown.match_indices('\n').nth(PEEK_LINES - 1).map_or(shown.len(), |(i, _)| i);
+    (shown[..cut].to_string(), found)
+}
+
 /// The byte where the embed's target starts in `text`: the heading, the block, or the top of the note
 /// after its front matter. To open the note there.
 pub fn position(text: &str, anchor: &Anchor) -> Option<usize> {
@@ -168,6 +192,25 @@ pub fn rename_heading(text: &str, note: &str, old: &str, new: &str) -> (String, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_peek_shows_the_section_or_the_note_under_its_title() {
+        let note = "---\naliases: [N]\n---\n# Note\n\nIntro\n\n## Part\n\nIn part ^b1\n\n## Other\n";
+        let head = |h: &str| Anchor::Heading(h.into());
+        assert_eq!(peek_text(note, &Anchor::Whole), ("Intro\n\n## Part\n\nIn part ^b1\n\n## Other".into(), true));
+        assert_eq!(peek_text(note, &head("part")), ("## Part\n\nIn part ^b1".into(), true));
+        assert_eq!(peek_text(note, &Anchor::Block("b1".into())), ("In part".into(), true));
+        // A heading that is not there: the whole note, said missing.
+        assert_eq!(peek_text(note, &head("Gone")).1, false);
+        assert!(peek_text(note, &head("Gone")).0.starts_with("Intro"));
+        // Only a title, empty, no title at all.
+        assert_eq!(peek_text("# Only", &Anchor::Whole), (String::new(), true));
+        assert_eq!(peek_text("", &Anchor::Whole), (String::new(), true));
+        assert_eq!(peek_text("no title\nline", &Anchor::Whole).0, "no title\nline");
+        // A huge note is cut.
+        let huge = format!("# Big\n{}", "line\n".repeat(10_000));
+        assert_eq!(peek_text(&huge, &Anchor::Whole).0.lines().count(), PEEK_LINES);
+    }
 
     fn target(note: &str, anchor: Anchor) -> Option<Target> {
         Some(Target { note: note.into(), anchor })

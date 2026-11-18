@@ -25,6 +25,7 @@ mod keyboard;
 mod keycaps;
 mod layers;
 mod layout;
+mod link_preview;
 mod motion;
 mod background;
 mod settings_page;

@@ -547,6 +547,7 @@ impl Editor {
             self.drag_to(self.index_at(e.position), cx);
         }
         self.aim_hand(e.position, e.modifiers, cx);
+        self.aim_peek(e.position, e.modifiers, cx);
         if self.handles.drag.is_some() {
             if e.pressed_button != Some(MouseButton::Left) {
                 self.handles.drag = None;

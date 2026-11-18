@@ -66,6 +66,14 @@ pub(super) fn help_sections(bound: &[keys::Bind], changes: &keys::Changes) -> ke
                 k!(CopyAll),
                 k!(ExportPdf),
                 t(&format!("{MOD}+{click}"), tr("Open a [[link]], #tag or URL", "Ouvrir un [[lien]], #tag ou URL")),
+                t(
+                    &format!("{MOD} + {}", tr("pointer on a [[link]]", "pointeur sur un [[lien]]")),
+                    tr(
+                        "Preview the note in a card, from the heading or block it points at, without opening it; a picture, a diagram or a table shows its start; click its title to open it, « Create » when it does not exist; the card goes when the pointer leaves the link and the card, or with Escape. Also on a backlink of the panel",
+                        "Voir la note dans une carte, depuis le titre ou le bloc visé, sans l'ouvrir ; une image, un schéma ou un tableau montre son début ; un clic sur son titre l'ouvre, « Créer » si elle n'existe pas ; la carte part quand le pointeur quitte le lien et la carte, ou avec Échap. Aussi sur un rétrolien du panneau",
+                    ),
+                ),
+                k!(PreviewLink),
                 k!(ToggleHelp),
                 k!(Quit),
             ],

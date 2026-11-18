@@ -18,6 +18,7 @@ mod menu;
 mod notes;
 mod palette_open;
 mod pane;
+mod peek;
 mod print;
 mod render;
 mod search;
@@ -165,6 +166,10 @@ struct Shell {
     unreadable: vault::Unreadable,
     /// Tree context menu, if open.
     menu: Option<nav::Menu>,
+    /// The card that previews a linked note, under its link.
+    peek: Option<peek::Peek>,
+    /// Where each backlink row of the panel was drawn last: the zone that keeps its preview card open.
+    row_zones: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<PathBuf, Bounds<Pixels>>>>,
     /// The open menu has the keys: arrows, Enter, Escape.
     menu_focus: FocusHandle,
     /// Open notes, most recent first.
@@ -313,6 +318,8 @@ impl Shell {
             images: Vec::new(),
             unreadable: Vec::new(),
             menu: None,
+            peek: None,
+            row_zones: Default::default(),
             recent: Vec::new(),
             save_gen: 0,
             swapped: Vec::new(),

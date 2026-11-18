@@ -692,10 +692,18 @@ impl Shell {
                     false => (vec![path], name),
                 };
                 let selector = format!("nav-row-{}", row.name);
+                // A backlink, with `Ctrl`: the card previews its note beside the row. The row says where it is drawn.
+                let peeked = links.then(|| (target.clone(), self.row_zones.clone()));
                 Some(
                     div()
                         .id(ix)
                         .debug_selector(move || selector.clone())
+                        .when_some(peeked, |d, (note, zones)| {
+                            let at = note.clone();
+                            d.relative()
+                                .child(gpui::canvas(move |bounds, _, _| { zones.borrow_mut().insert(at, bounds); }, |_, _, _, _| {}).absolute().size_full())
+                                .on_mouse_move(cx.listener(move |this, e: &MouseMoveEvent, window, cx| this.peek_row(&note, e.modifiers, window, cx)))
+                        })
                         .w_full()
                         .h(t.px(ROW))
                         .px_2()

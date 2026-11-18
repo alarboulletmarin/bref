@@ -255,6 +255,20 @@ fn detect_header(table: &Table) -> bool {
     table.rows() >= 2 && !table.row(0).iter().any(|c| is_numeric(c))
 }
 
+/// The first `rows` rows of a CSV or TSV file as a Markdown table, its first `cols` columns: what the link
+/// preview shows of it. Only the start of the file is read.
+pub fn head_markdown(bytes: &[u8], rows: usize, cols: usize) -> String {
+    let format = detect(bytes);
+    let mut end = bytes.len().min(SAMPLE);
+    if format.encoding.is_utf16() {
+        end &= !1;
+    }
+    let table = Table::parse(decode(bytes[..end].to_vec(), format.encoding), format.delimiter);
+    // A record cut by the end of the sample is not shown.
+    let whole = if end < bytes.len() { table.rows().saturating_sub(1) } else { table.rows() };
+    table.text_range(0..rows.min(whole), 0..cols, Style::Markdown)
+}
+
 pub fn detect(bytes: &[u8]) -> Format {
     let encoding = detect_encoding(bytes);
     let mut end = bytes.len().min(SAMPLE);
@@ -896,6 +910,13 @@ fn is_code(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn previews_the_head_of_a_table_as_markdown() {
+        assert_eq!(head_markdown(b"a;b\n1;2\n3;4\n", 2, 9), "| a | b |\n| --- | --- |\n| 1 | 2 |");
+        assert_eq!(head_markdown(b"a,b,c\n1,2,3\n", 9, 2), "| a | b |\n| --- | --- |\n| 1 | 2 |");
+        assert_eq!(head_markdown(b"", 9, 9), "");
+    }
     use std::time::Instant;
 
     fn table(s: &str, d: u8) -> Table {

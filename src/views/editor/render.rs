@@ -59,7 +59,8 @@ impl Render for Editor {
         let el = div()
             .size_full()
             .relative()
-            .key_context(crate::ui::keys::context::EDITOR)
+            // The preview card's reader is bound apart: no key that edits reaches it.
+            .key_context(if self.reader { crate::ui::keys::context::READER } else { crate::ui::keys::context::EDITOR })
             .track_focus(&self.focus)
             .cursor(CursorStyle::IBeam);
         let el = motions!(el,
@@ -188,13 +189,17 @@ impl Render for Editor {
         .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
         .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
         .on_mouse_move(cx.listener(Self::mouse_move))
-        .on_modifiers_changed(cx.listener(|this, e: &gpui::ModifiersChangedEvent, _, cx| this.aim_hand(this.pointer, e.modifiers, cx)))
+        .on_modifiers_changed(cx.listener(|this, e: &gpui::ModifiersChangedEvent, _, cx| {
+            this.aim_hand(this.pointer, e.modifiers, cx);
+            this.aim_peek(this.pointer, e.modifiers, cx);
+        }))
         .on_scroll_wheel(cx.listener(Self::scroll))
-        .child(EditorElement(cx.entity()))
-        .child(band)
-        .child(counts)
-        .children(toggle)
-        .children(bar);
+        .child(EditorElement(cx.entity()));
+        // The preview card's reader is only the text: no counter, no formatting bar, no search.
+        if self.reader {
+            return div().size_full().relative().child(el);
+        }
+        let el = el.child(band).child(counts).children(toggle).children(bar);
         // The find bar beside the note, not inside it: typing a search never reaches the note's keys.
         div().size_full().relative().child(el).children(find_bar)
     }

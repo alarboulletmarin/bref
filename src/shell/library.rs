@@ -297,6 +297,7 @@ impl Shell {
     pub(super) fn graph_changed(&mut self, cx: &mut Context<Self>) {
         (self.graph_stale, self.health_stale) = (true, true);
         self.refresh_graph(cx);
+        self.refresh_peek(cx);
     }
 
     // The only places `self.notes` is written (the call to `index_changed` or `graph_changed`

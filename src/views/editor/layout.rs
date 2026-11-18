@@ -1476,7 +1476,9 @@ impl Editor {
                 }
             }
         }
-        let max_scroll = (self.top + self.total_y - bounds.size.height * 0.4).max(px(0.));
+        // A note scrolls until its end reaches the upper part of the page; the preview card, until its end shows.
+        let tail = if self.reader { bounds.size.height - TOP } else { bounds.size.height * 0.4 };
+        let max_scroll = (self.top + self.total_y - tail).max(px(0.));
         self.scroll_y = self.scroll_y.max(px(0.)).min(max_scroll);
         self.origin = point(
             bounds.left() + (bounds.size.width - self.width) / 2.,
@@ -1581,7 +1583,7 @@ impl Editor {
                 self.geos.push(Geo { start, frame, xs, ys, notes: marks.get(&start).cloned().unwrap_or_default() });
             }
         }
-        if self.readonly {
+        if self.readonly || self.reader {
             return;
         }
         let bars = self.tables.iter().flat_map(|(_, frame)| plus_bars(*frame));

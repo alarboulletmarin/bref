@@ -154,6 +154,7 @@ shift-end|editor::SelectEnd|Editor
 secondary-shift-home|editor::SelectDocStart|Editor
 secondary-shift-end|editor::SelectDocEnd|Editor
 secondary-a|editor::SelectAll|Editor
+secondary-a|editor::SelectAll|Reader
 secondary-f|editor::Find|Editor
 secondary-f|editor::Find|Find
 secondary-r|editor::FindReplace|Editor
@@ -200,6 +201,7 @@ secondary-k|editor::InsertLink|Editor
 secondary-d|editor::SelectNext|Editor
 secondary-shift-m|editor::Comment|Editor
 secondary-c|editor::Copy|Editor
+secondary-c|editor::Copy|Reader
 secondary-x|editor::Cut|Editor
 secondary-v|editor::Paste|Editor
 secondary-z|editor::Undo|Editor

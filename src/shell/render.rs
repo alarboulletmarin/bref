@@ -19,6 +19,7 @@ const STRIP: f32 = 40.;
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.peek_still(window, cx);
         let t = self.theme;
         let (client, framed) = self.frame_of(window);
         let pill = self.render_window_controls(window, cx);
@@ -115,6 +116,7 @@ impl Render for Shell {
             .map(|d| command_table::register(d, cx))
             // Panel separator: it follows the pointer as long as the button is held.
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
+                this.peek_pointer(e.position, window, cx);
                 // A border between panes, likewise.
                 if let Some((path, border)) = this.pane_drag.clone() {
                     match e.pressed_button == Some(MouseButton::Left) {
@@ -167,11 +169,15 @@ impl Render for Shell {
                 MouseButton::Navigate(gpui::NavigationDirection::Forward),
                 cx.listener(|this, _, window, cx| this.travel(true, window, cx)),
             )
+            // The preview card goes on a click or a scroll outside it (it hides what is under it from both).
+            .on_any_mouse_down(cx.listener(|this, _, window, cx| this.close_peek(window, cx)))
+            .on_scroll_wheel(cx.listener(|this, _, window, cx| this.close_peek(window, cx)))
             .key_context(crate::ui::keys::context::SHELL)
             .child(body)
             // Its own row under the panes, never over the note's footer (counter, formatting bar).
             .children(self.render_update_banner(cx))
             .when(client, |d| d.child(pill))
+            .children(self.render_peek(window, cx))
             .children(self.render_menu(window, cx))
             .children(self.render_icons(window, cx))
             .children(self.render_drop_chip(window.viewport_size()))
@@ -392,7 +398,7 @@ impl Shell {
     /// Whether the app draws the window's frame (title bar, rounded corners, shadow), and whether
     /// that frame has its margin (shadow, resize handle). On Linux the app provides them; on
     /// macOS and Windows, gpui announces `Server` and the system takes care of it.
-    fn frame_of(&self, window: &Window) -> (bool, bool) {
+    pub(super) fn frame_of(&self, window: &Window) -> (bool, bool) {
         let tiling = match window.window_decorations() {
             Decorations::Client { tiling } => Some(tiling),
             Decorations::Server => None,

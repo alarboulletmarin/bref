@@ -45,6 +45,8 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `Ctrl+Shift+C` | Copy the code block, else the note |
 |  | Save the note as PDF (A4, unsaved edits included); pictures, figures and embeds that cannot be printed are listed |
 | `Ctrl+click` | Open a \[\[link\]\], \#tag or URL |
+| `Ctrl + pointer on a [[link]]` | Preview the note in a card, from the heading or block it points at, without opening it; a picture, a diagram or a table shows its start; click its title to open it, « Create » when it does not exist; the card goes when the pointer leaves the link and the card, or with Escape. Also on a backlink of the panel |
+|  | Preview the note a link leads to, without opening it (or hold Ctrl over the link) |
 | `F1` / `Ctrl+/` | This help |
 | `Ctrl+Q` | Save and quit; stay open if saving fails |
 

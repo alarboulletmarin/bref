@@ -121,9 +121,10 @@ impl Element for EditorElement {
         cx: &mut App,
     ) {
         let resized = self.0.update(cx, |editor, cx| {
-            let before = editor.viewport.size.width;
+            let (width, tall) = (editor.viewport.size.width, editor.total_y);
             editor.layout(bounds, window, cx);
-            before != editor.viewport.size.width
+            // The preview card is as tall as its reader's text: the shell, which observes it, sizes it again.
+            width != editor.viewport.size.width || editor.reader && tall != editor.total_y
         });
         // The formatting bar's place follows the note's width: the next frame moves it. Asked for once this one
         // is drawn, since gpui forgets a view notified while it draws.
@@ -541,7 +542,7 @@ impl Editor {
                 window.paint_quad(fill(line, t.accent).corner_radii(px(1.)));
             }
         // The handle of the block under the pointer, and its "+".
-        if let Some((grip, plus)) = self.handle_bounds().filter(|_| !self.readonly) {
+        if let Some((grip, plus)) = self.handle_bounds().filter(|_| !self.readonly && !self.reader) {
             let on = |b: Bounds<Pixels>| b.contains(&self.pointer) || (self.handles.drag.is_some() && b == grip);
             for (spot, icon) in [(Some(grip), "grip.svg"), (plus, "plus.svg")] {
                 let Some(spot) = spot else { continue };

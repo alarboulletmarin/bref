@@ -440,6 +440,10 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let Some(pane) = self.panes.iter().position(|pane| pane.editor == *editor) else { return };
+        // Pointing at a link makes no pane the active one.
+        if let EditorEvent::Peek(asked) = event {
+            return self.open_peek(editor, pane, asked.clone(), false, window, cx);
+        }
         // A gesture made in a note (followed link, menu, replacement) applies to its pane;
         // typing, though, may come from elsewhere (a board card, a list cell).
         if !matches!(event, EditorEvent::Changed) {
@@ -447,6 +451,7 @@ impl Shell {
         }
         match event {
             EditorEvent::Changed => {
+                self.peek_typed(editor, window, cx);
                 self.in_pane(pane, |this| {
                     // The board key was just written into the text: stay there, the
                     // corner button shows the board when wanted.
@@ -468,15 +473,7 @@ impl Shell {
                 })
                 .detach();
             }
-            EditorEvent::Open(link) => self.follow(link, window, cx),
-            EditorEvent::OpenAside(link) => match link {
-                Link::Wiki(name) => match self.wiki_path(name) {
-                    Some(path) => self.open_aside(&path, window, cx),
-                    None => self.follow(link, window, cx),
-                },
-                _ => self.follow(link, window, cx),
-            },
-            EditorEvent::OpenAt(target, aside) => self.open_at(target, *aside, window, cx),
+            EditorEvent::Open(_) | EditorEvent::OpenAside(_) | EditorEvent::OpenAt(..) => self.follow_event(event, window, cx),
             EditorEvent::Swap(swap) => self.replace_in_vault(swap.clone(), window, cx),
             EditorEvent::Menu(at, link, commented, keys) => {
                 let menu = nav::Menu::in_text(*at, link.clone(), *commented);
@@ -488,6 +485,23 @@ impl Shell {
             // The diagram, formula or picture takes the note's place; Escape returns to it.
             EditorEvent::View(source) => self.show_figure(source.clone(), window, cx),
             EditorEvent::Failed(message) => self.say(Tone::Failed, message.clone(), cx),
+            EditorEvent::Peek(_) => {}
+        }
+    }
+
+    /// A link followed in a note or in the preview card: the note, aside with Shift, or at a heading.
+    pub(super) fn follow_event(&mut self, event: &EditorEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            EditorEvent::Open(link) => self.follow(link, window, cx),
+            EditorEvent::OpenAside(link) => match link {
+                Link::Wiki(name) => match self.wiki_path(name) {
+                    Some(path) => self.open_aside(&path, window, cx),
+                    None => self.follow(link, window, cx),
+                },
+                _ => self.follow(link, window, cx),
+            },
+            EditorEvent::OpenAt(target, aside) => self.open_at(target, *aside, window, cx),
+            _ => {}
         }
     }
 

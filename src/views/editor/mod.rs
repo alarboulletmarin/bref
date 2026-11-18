@@ -17,6 +17,7 @@ mod links;
 mod mouse;
 mod notes;
 mod paint;
+mod peek;
 mod render;
 mod style;
 mod table;
@@ -36,6 +37,7 @@ pub use layout::*;
 use mouse::*;
 pub use notes::*;
 use paint::*;
+pub use peek::*;
 pub use table::*;
 
 use std::{
@@ -260,6 +262,8 @@ pub enum EditorEvent {
     OpenAt(crate::logic::embed::Target, bool),
     /// Something the user asked for did not happen (a pasted picture that could not be saved): the shell tells them.
     Failed(String),
+    /// `Ctrl` over a wikilink: the card that previews what it points at.
+    Peek(Peek),
 }
 
 /// What the footer counter depends on: the text version and the selection.
@@ -356,6 +360,10 @@ pub struct Editor {
     reason: Option<Rc<str>>,
     /// This editor shows an embedded section: nothing in it can be edited, clicked or focused.
     readonly: bool,
+    /// This editor shows a linked note in the preview card: it scrolls and selects, nothing in it changes.
+    reader: bool,
+    /// The link whose card was asked for last, until the shell says the card went.
+    peeked: Option<Range<usize>>,
     /// The notes embedded in this one, and what is kept of them.
     embeds: Embeds,
     /// The handle under the pointer: (table start, handle).
@@ -502,6 +510,8 @@ impl Editor {
             marks: None,
             reason: None,
             readonly: false,
+            reader: false,
+            peeked: None,
             embeds: Embeds::default(),
             part_hover: None,
             pointer: Point::default(),
