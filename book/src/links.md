@@ -7,6 +7,10 @@
 - `[[Note|alias]]` shows another text. `[[Note#Heading]]` points at a heading.
 - `@` suggests days and links to the daily note of that day: `@today`, `@tomorrow`, `@yesterday`, a weekday (`@monday`: the next one, never today), or a date (`@2026-10-09`). French names work too (`@demain`, `@lundi`). An address such as `name@domain` suggests nothing.
 - `Ctrl + click` opens a link. `Ctrl + Shift + click` opens it in the pane beside.
+- `Ctrl` with the pointer on a link previews it without opening it: a card under the link shows the note's title and its first lines, drawn as in the note (tables, pictures, diagrams), and scrolls. `[[Note#Heading]]` shows from the heading, `[[Note#^id]]` the block. A link to a picture or a diagram shows it, a link to a CSV its first rows.
+  - Click the card's title to open the note there (`Shift + click`: in the pane beside). A link to a missing note says so and offers **Create**.
+  - The card goes when the pointer leaves both the link and the card, on a click elsewhere, a scroll, typing, or `Escape`. Releasing `Ctrl` keeps it, so you can select and copy its text; nothing in it can be changed. A link in the card opens; it never opens a card of its own.
+  - From the keyboard: **Preview link under the cursor** in the palette.
 - Each name in the `aliases` of a note's front matter is another name for it: suggested after `[[`, and followed by links, backlinks and the graph.
 
 When a note is renamed, the links to it follow. See [Renaming](vault.md#names-and-renaming).
@@ -18,6 +22,7 @@ The **Backlinks** view of the panel (`Ctrl + L`) lists the notes that link to th
 - Links written with an alias, and links inside tables, count.
 - Embeds count too, marked *embedded*.
 - The list follows the note you open, not the one you preview while moving through the list. So you can look at each linking note in turn.
+- `Ctrl` with the pointer on a row previews that note in a card, as for a link.
 
 ## Tags
 

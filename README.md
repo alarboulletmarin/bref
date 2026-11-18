@@ -16,7 +16,7 @@ A fast, minimal note-taking app. Notes are plain Markdown files in a folder you 
 - **Plain files.** One `.md` file per note, in an ordinary folder. Sync it with git, Syncthing or a cloud folder. An existing folder of Markdown notes works as is.
 - **Styled as you type.** Headings grow, bold and italics render, markers stay visible but dimmed. The file on disk stays plain Markdown.
 - **Tables that compute.** Cells wrap, `Tab` moves between them, pasting from a spreadsheet works, and `=sum(above)` adds up a column.
-- **Linked notes.** `[[Links]]`, backlinks, tags, embedded sections, a graph, and a calendar of daily notes. The tree follows the active file, including diagrams, pictures and tables.
+- **Linked notes.** `[[Links]]` with a preview card under `Ctrl`, backlinks, tags, embedded sections, a graph, and a calendar of daily notes. The tree follows the active file, including diagrams, pictures and tables.
 - **More than notes.** Kanban boards, list pages built from front matter, UML diagrams drawn by hand and saved as SVG, and a CSV grid that opens a million rows, its columns as wide as you want.
 - **Vault health.** Broken links, orphan notes, unused pictures, empty notes and sync conflict copies, found from the palette and fixed in a click. Nothing is deleted. [Guide](book/src/health.md)
 - **Several vaults.** `Ctrl+O` switches between the vaults you opened, each with its own tabs, panes and recent notes, and a colour so you know where you write. [Guide](book/src/vault.md#several-vaults)

@@ -45,6 +45,7 @@ each, all `impl Shell`:
 |---|---|
 | `pane.rs` | the panes and their tabs, which one is active, the file a tab shows (`FileView`), splitting, moving a tab between panes, the saved layout; the panes are placed by the tree `logic/layout.rs` (`Node`, leaves = groups; `read_panes` reads the saved file), drawn by `render_layout` |
 | `tabs.rs` | the tab bar of a pane |
+| `peek.rs` | the card that previews a linked note (`Ctrl` over a link or a backlink): its place, what it shows, when it goes; its text is drawn by a reader editor (`views/editor/peek.rs`) |
 | `notes.rs` | opening, previewing, creating, saving notes; links and wikilinks |
 | `vaults.rs` | several vaults: the switcher (`Ctrl+O`), each vault's session kept and brought back on a switch (`switch_to`), names, colours and the rail's band; the list and session formats are pure, in `logic/vaults.rs` |
 | `library.rs` | the vault: choosing, scanning, watching, icons, backup, trash |
