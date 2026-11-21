@@ -522,6 +522,11 @@ impl Shell {
     /// Opens the note of an embed or of a link to a heading, scrolled to what it points at: the heading,
     /// the block (a note comes back from there with Alt+Left, like after any link).
     pub(super) fn open_at(&mut self, target: &embed::Target, aside: bool, window: &mut Window, cx: &mut Context<Self>) {
+        // A file (`[[paper.pdf#page=4]]`): what follows `#` is no heading of a note, the file just opens.
+        // ponytail: a PDF opens on its first page; the page needs a viewer of our own.
+        if self.wiki_path(&target.note).is_none() && self.wiki_file(&target.note).is_some() {
+            return self.open_wiki(&target.note, window, cx);
+        }
         match (aside, self.wiki_path(&target.note)) {
             (true, Some(path)) => self.open_aside(&path, window, cx),
             _ => self.open_wiki(&target.note, window, cx),

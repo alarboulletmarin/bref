@@ -414,7 +414,7 @@ pub(super) fn specs() -> Vec<CommandSpec> {
         s::<SearchVault>()
             .does(|this, window, cx| this.open_vault_find(window, cx))
             .label(tr("Search the whole vault", "Chercher dans tout le coffre")).icon("find-text.svg").group(Go)
-            .help(tr("Search the text of the whole vault, in the panel: matches note by note, replace", "Chercher dans le texte de tout le coffre, dans le panneau : passages note par note, remplacer")).edit()
+            .help(tr("Search the text of the whole vault, in the panel: matches note by note, then in PDFs (with poppler); replace in the notes", "Chercher dans le texte de tout le coffre, dans le panneau : passages note par note, puis dans les PDF (avec poppler) ; remplacer dans les notes")).edit()
             .key("secondary-shift-f"),
         s::<nav::ShowTree>()
             .does(|this, window, cx| this.show_nav(Mode::Tree, false, window, cx))

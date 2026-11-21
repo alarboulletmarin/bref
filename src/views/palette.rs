@@ -385,6 +385,12 @@ impl Palette {
         self.items.iter().filter_map(|item| if let &Item::Command(n) = item { Some(self.commands[n].action) } else { None }).collect()
     }
 
+    /// The question it asks, if it asks one (a test reads the count of a replacement there).
+    #[cfg(test)]
+    pub fn question(&self) -> Option<&str> {
+        self.prompt.as_deref()
+    }
+
     /// What is typed.
     #[cfg(test)]
     pub fn typed_text(&self) -> &str {

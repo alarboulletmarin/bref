@@ -166,6 +166,8 @@ impl Shell {
         mut images: Vec<PathBuf>,
         cx: &mut Context<Self>,
     ) {
+        // A PDF may have come, gone or changed: the vault search compares them again.
+        self.pdfs.stale();
         // Same notes, same tags, links and aliases? Each reread note is compared with the one we had
         // under its path, without copying or sorting anything.
         let had: std::collections::HashMap<&Path, &Note> = self.notes.iter().map(|n| (n.path.as_path(), n)).collect();
@@ -184,6 +186,10 @@ impl Shell {
             // No name, tag or link changed, but the text may have: search and the health page follow it.
             self.replace_notes(notes, false);
             self.refresh_health(cx);
+        }
+        // A PDF rewritten in place changes no name: the vault search, if open, compares them again now.
+        if self.vault_find.is_some() {
+            self.vault_search(cx);
         }
         self.each_pane(|this| {
             // The shown table was rewritten elsewhere: it is reread if nothing is pending here.

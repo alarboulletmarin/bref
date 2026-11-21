@@ -21,6 +21,7 @@ pub mod merge;
 pub mod mermaid;
 pub mod markdown;
 pub mod note;
+pub mod pdftext;
 pub mod rank;
 pub mod search;
 pub mod wiki;
