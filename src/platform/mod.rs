@@ -7,6 +7,7 @@ pub mod export;
 pub mod git;
 pub mod link;
 pub mod pdf;
+pub mod pdftext;
 #[cfg(test)]
 pub mod scratch;
 pub mod shortcut;

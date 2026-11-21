@@ -19,6 +19,8 @@ pub(super) struct Group {
     name: String,
     body: Arc<str>,
     hits: Vec<Hit>,
+    /// A PDF: where each page of `body` starts. Its matches show their page, and are never replaced.
+    pages: Option<Arc<[usize]>>,
 }
 
 /// A row of the results: a note's header, or one of its matches.
@@ -26,6 +28,8 @@ pub(super) struct Group {
 enum Row {
     Note(usize),
     Hit(usize, usize),
+    /// The title over the PDFs, after the notes.
+    Pdfs,
 }
 
 pub(super) struct VaultFind {
@@ -69,6 +73,9 @@ impl VaultFind {
             if kept.is_empty() {
                 continue;
             }
+            if group.pages.is_some() && !rows.contains(&Row::Pdfs) {
+                rows.push(Row::Pdfs);
+            }
             rows.push(Row::Note(g));
             if !self.folded.contains(&group.path) {
                 rows.extend(kept.into_iter().map(|h| Row::Hit(g, h)));
@@ -81,6 +88,12 @@ impl VaultFind {
     fn counts(&self) -> (usize, usize) {
         let each = self.groups.iter().map(|group| self.kept(group).count()).filter(|&n| n > 0);
         each.fold((0, 0), |(hits, notes), n| (hits + n, notes + 1))
+    }
+
+    /// Matches and PDFs listed among the results.
+    fn pdf_counts(&self) -> (usize, usize) {
+        let each = self.groups.iter().filter(|group| group.pages.is_some()).map(|group| self.kept(group).count()).filter(|&n| n > 0);
+        each.fold((0, 0), |(hits, pdfs), n| (hits + n, pdfs + 1))
     }
 
     /// The bytes of the dismissed matches of a note: they stay as they are.
@@ -152,12 +165,14 @@ impl Shell {
         for note in &self.notes {
             (&note.path, Arc::as_ptr(&note.body) as *const u8 as usize, note.body.len()).hash(&mut hash);
         }
+        self.pdfs.version().hash(&mut hash);
         hash.finish()
     }
 
     /// Searches the notes in the background if the search or the notes changed; the results of the previous
     /// search stay until then.
     pub(super) fn vault_search(&mut self, cx: &mut Context<Self>) {
+        self.read_pdfs(cx);
         let seen = self.notes_seen();
         let Some(find) = &mut self.vault_find else { return };
         let swap = find.swap(cx);
@@ -174,12 +189,14 @@ impl Shell {
             (find.groups, find.busy) = (Vec::new(), None);
             return cx.notify();
         }
-        let mut notes: Vec<(PathBuf, String, Arc<str>)> = self.notes.iter().map(|note| (note.path.clone(), note.name.clone(), note.body.clone())).collect();
-        // Sorted in the background too: the keystroke only copies the list.
+        let mut notes: Vec<(PathBuf, String, Arc<str>, Option<Arc<[usize]>>)> = self.notes.iter().map(|note| (note.path.clone(), note.name.clone(), note.body.clone(), None)).collect();
+        let mut pdfs: Vec<_> = self.pdfs.docs().iter().map(|doc| (doc.path.clone(), doc.name.clone(), doc.body.clone(), Some(doc.pages.clone()))).collect();
+        // Sorted in the background too: the keystroke only copies the list. The PDFs come after the notes.
         let work = cx.background_executor().spawn(async move {
-            notes.sort_by_cached_key(|(path, name, _)| (name.to_lowercase(), path.clone()));
-            let found = notes.into_iter().map(|(path, name, body)| (crate::logic::search::hits(&body, &swap), path, name, body));
-            found.filter(|(hits, ..)| !hits.is_empty()).map(|(hits, path, name, body)| Group { path, name, body, hits }).collect::<Vec<_>>()
+            notes.sort_by_cached_key(|(path, name, ..)| (name.to_lowercase(), path.clone()));
+            pdfs.sort_by_cached_key(|(path, name, ..)| (name.to_lowercase(), path.clone()));
+            let found = notes.into_iter().chain(pdfs).map(|(path, name, body, pages)| (crate::logic::search::hits(&body, &swap), path, name, body, pages));
+            found.filter(|(hits, ..)| !hits.is_empty()).map(|(hits, path, name, body, pages)| Group { path, name, body, hits, pages }).collect::<Vec<_>>()
         });
         find.busy = Some(cx.spawn(async move |this, cx| {
             let groups = work.await;
@@ -214,6 +231,7 @@ impl Shell {
     fn vault_open(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
         let Some(find) = &mut self.vault_find else { return };
         match row {
+            Row::Pdfs => {}
             Row::Note(g) => {
                 let path = find.groups[g].path.clone();
                 if !find.folded.remove(&path) {
@@ -222,12 +240,16 @@ impl Shell {
                 cx.notify();
             }
             Row::Hit(g, h) => {
-                let (path, at, swap) = (find.groups[g].path.clone(), find.groups[g].hits[h].at.start, find.swap(cx));
+                let (path, at, swap, pdf) = (find.groups[g].path.clone(), find.groups[g].hits[h].at.start, find.swap(cx), find.groups[g].pages.is_some());
                 if !path.is_file() {
                     return self.say(Tone::Failed, format!("{} {}", tr("This note is no longer there:", "Cette note n'est plus là :"), vault::shown(&path)), cx);
                 }
                 self.open(&path, window, cx);
-                self.pane().editor.clone().update(cx, |editor, cx| editor.show_match(&swap, at, window, cx));
+                // A PDF opens in the system's application.
+                // ponytail: on its first page; opening it at the match's page needs a viewer of our own.
+                if !pdf {
+                    self.pane().editor.clone().update(cx, |editor, cx| editor.show_match(&swap, at, window, cx));
+                }
             }
         }
     }
@@ -275,10 +297,21 @@ impl Shell {
             .filter_map(|note| crate::logic::search::swap_except(&note.body, &swap, &skip(&note.path)).map(|(text, count)| (note.path.clone(), text, count)))
             .collect();
         let count: usize = found.iter().map(|(.., count)| count).sum();
+        // The PDFs are only read: their matches are counted (those the panel lists, when it shows this search),
+        // never replaced.
+        let in_pdfs: usize = panel.map_or_else(
+            || self.pdfs.docs().iter().map(|doc| crate::logic::search::hits(&doc.body, &swap).len()).sum(),
+            |find| find.pdf_counts().0,
+        );
+        let untouched = (in_pdfs > 0).then(|| format!("{in_pdfs} {}", tr("matches in PDFs are not replaced", "passages dans des PDF ne sont pas remplacés")));
         if count == 0 {
-            return self.say(Tone::Info, tr("Nothing to replace in the vault", "Rien à remplacer dans le coffre"), cx);
+            let nothing = tr("Nothing to replace in the vault", "Rien à remplacer dans le coffre");
+            return self.say(Tone::Info, untouched.map_or_else(|| nothing.to_string(), |untouched| format!("{nothing} · {untouched}")), cx);
         }
-        let title = format!("{} {count} · notes : {}", tr("Matches:", "Passages :"), found.len());
+        let mut title = format!("{} {count} · notes : {}", tr("Matches:", "Passages :"), found.len());
+        if let Some(untouched) = untouched {
+            title += &format!(" · {untouched}");
+        }
         let options = vec![tr("Replace them all", "Tout remplacer").to_string(), tr("Cancel", "Annuler").to_string()];
         let theme = self.theme;
         let palette = cx.new(|cx| Palette::choose(&title, options, "", theme, cx));
@@ -362,6 +395,23 @@ impl Shell {
         Some((find.query.read(cx).text().to_string(), hits, notes, find.rows().len(), find.sel))
     }
 
+    /// The rows of the vault search as listed, for a test: `note Name`, `hit 3` (its line), `hit p. 2` (its
+    /// page, in a PDF), `pdfs` (the title over the PDFs).
+    #[cfg(test)]
+    pub(super) fn vault_rows(&self) -> Vec<String> {
+        let Some(find) = &self.vault_find else { return Vec::new() };
+        (find.rows().into_iter())
+            .map(|row| match row {
+                Row::Pdfs => "pdfs".to_string(),
+                Row::Note(g) => format!("note {}", find.groups[g].name),
+                Row::Hit(g, h) => match &find.groups[g].pages {
+                    Some(pages) => format!("hit p. {}", crate::logic::pdftext::page_at(pages, find.groups[g].hits[h].at.start)),
+                    None => format!("hit {}", find.groups[g].hits[h].line),
+                },
+            })
+            .collect()
+    }
+
     /// The two fields of the vault search, for a test.
     #[cfg(test)]
     pub(super) fn vault_fields(&self) -> Option<(Entity<Field>, Entity<Field>)> {
@@ -406,19 +456,31 @@ impl Shell {
         };
         let flip = |option| cx.listener(move |this, _: &gpui::ClickEvent, _, cx| this.vault_flip(option, cx));
         let swap = find.swap(cx);
-        let (hits, notes) = find.counts();
+        let (hits, groups) = find.counts();
+        let (_, pdfs) = find.pdf_counts();
+        let notes = groups - pdfs;
+        let waiting = self.pdfs.waiting();
         let said = if swap.query.is_empty() {
             tr("Search the text of every note", "Chercher dans le texte de toutes les notes").to_string()
         } else if crate::logic::search::broken(&swap.query, swap.options) {
             tr("Invalid expression", "Expression invalide").to_string()
         } else if find.busy.is_some() && find.groups.is_empty() {
             tr("Searching…", "Recherche…").to_string()
+        } else if hits == 0 && waiting > 0 {
+            format!("{} {waiting}", tr("No results yet · PDFs to read:", "Aucun résultat pour l'instant · PDF à lire :"))
         } else if hits == 0 {
             tr("No results", "Aucun résultat").to_string()
         } else {
             let matches = crate::lang::plural(hits, ("match", "passage"), ("matches", "passages"));
             let in_notes = crate::lang::plural(notes, ("note", "note"), ("notes", "notes"));
-            format!("{hits} {matches} · {notes} {in_notes}")
+            let mut said = format!("{hits} {matches} · {notes} {in_notes}");
+            if pdfs > 0 {
+                said += &format!(" · {pdfs} PDF");
+            }
+            if waiting > 0 {
+                said += &format!(" · {} {waiting}", tr("to read:", "à lire :"));
+            }
+            said
         };
         let chevron = ui::widgets::button("vault-chevron", if find.replace { "chevron-down.svg" } else { "chevron-right.svg" }, false, t)
             .debug_selector(|| "vault-chevron".into())
@@ -505,13 +567,24 @@ impl Shell {
             let Some(&row) = rows.get(i) else { break };
             let chosen = i == find.sel;
             let element = match row {
+                Row::Pdfs => div()
+                    .id(("vault-pdfs", i))
+                    .debug_selector(move || format!("vault-row-{i}"))
+                    .h(t.px(nav::ROW))
+                    .px_1()
+                    .flex()
+                    .items_end()
+                    .text_size(t.font_small())
+                    .text_color(t.soft)
+                    .child(tr("In PDFs (read only)", "Dans les PDF (lecture seule)"))
+                    .into_any_element(),
                 Row::Note(g) => {
                     let group = &find.groups[g];
                     let path = group.path.clone();
                     ui::widgets::group_header(("vault-note", i), group.name.clone(), find.kept(group).count(), find.folded.contains(&group.path), t)
                         .debug_selector(move || format!("vault-row-{i}"))
                         .when(chosen, |d| d.bg(t.code_bg))
-                        .when(find.replace, |d| {
+                        .when(find.replace && group.pages.is_none(), |d| {
                             d.child(
                                 ui::widgets::button(("vault-note-replace", i), "replace-all.svg", false, t)
                                     .debug_selector(move || format!("vault-note-replace-{i}"))
@@ -547,7 +620,10 @@ impl Shell {
                         .text_size(t.px(12.5))
                         .hover(|s| s.bg(t.hover))
                         .when(chosen, |d| d.bg(t.code_bg))
-                        .child(div().flex_none().min_w(t.px(22.)).font_family(t.mono).text_size(t.px(11.)).text_color(t.soft).child(hit.line.to_string()))
+                        .child(div().flex_none().min_w(t.px(22.)).font_family(t.mono).text_size(t.px(11.)).text_color(t.soft).child(match &group.pages {
+                            Some(pages) => format!("{} {}", tr("p.", "p."), crate::logic::pdftext::page_at(pages, hit.at.start)),
+                            None => hit.line.to_string(),
+                        }))
                         .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_color(t.text).child(marked))
                         .child(
                             ui::widgets::button(("vault-dismiss", i), "close.svg", false, t)

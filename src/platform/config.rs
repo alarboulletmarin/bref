@@ -85,6 +85,33 @@ fn config_dir() -> PathBuf {
     }
 }
 
+fn cache_from_environment() -> PathBuf {
+    let var = |key: &str| env::var_os(key).map(PathBuf::from);
+    let dir = if cfg!(windows) {
+        var("LOCALAPPDATA")
+    } else if cfg!(target_os = "macos") {
+        var("HOME").map(|home| home.join("Library/Caches"))
+    } else {
+        var("XDG_CACHE_HOME").or_else(|| var("HOME").map(|home| home.join(".cache")))
+    };
+    dir.unwrap_or_default()
+}
+
+/// The app's cache folder (`bref` under the user's cache folder, per platform): what can be made again
+/// from the vault, never written in it. Tests move it under their temporary folder (`isolate`).
+pub fn cache_dir() -> PathBuf {
+    #[cfg(test)]
+    return match isolated_root() {
+        Some(root) => root.join(".cache").join(FOLDER),
+        None => cache_from_environment().join(FOLDER),
+    };
+    #[cfg(not(test))]
+    {
+        static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        DIR.get_or_init(|| cache_from_environment().join(FOLDER)).clone()
+    }
+}
+
 /// The user's home folder (`USERPROFILE` on Windows, `HOME` elsewhere).
 pub fn home() -> Option<PathBuf> {
     #[cfg(test)]

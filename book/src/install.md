@@ -128,6 +128,18 @@ sudo make install       # PREFIX=/usr/local by default, PREFIX=/usr for a system
 
 `make install` adds the `bref` command, an entry in your application menu, and its icon. `sudo make uninstall` removes them.
 
+## Searching inside PDFs
+
+The vault search also finds words inside the vault's PDFs when poppler's `pdftotext` is installed. Bref works without it; PDFs are then left out of the search.
+
+| System | Install |
+|---|---|
+| Arch Linux | `sudo pacman -S poppler` |
+| macOS | `brew install poppler` |
+| Ubuntu, Linux Mint, Debian | `sudo apt install poppler-utils` |
+| Fedora | `sudo dnf install poppler-utils` |
+| Windows | a Windows build of poppler, for example `scoop install poppler`, with its `bin` folder on the `PATH` |
+
 ## Upgrading
 
 On Arch (prebuilt package), macOS and Windows (installer), Bref [updates itself](updates.md): click **Update** in the banner. Otherwise:

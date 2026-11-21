@@ -55,6 +55,7 @@ each, all `impl Shell`:
 | `palette_open.rs` | every way the palette opens: notes, commands, outline, questions |
 | `help.rs`, `keymap.rs` | the help panel; `keymap.rs`: the help's layout (sections, text rows) and the installation of the shortcuts; `command_table.rs`: the command table, one `CommandSpec` per action (typed: label, icon, group, help line, editable flag, default keys, and what the window does on the action), from which the palette's commands, `defaults`, the help's lines, the context menu's labels and the window's action handlers derive |
 | `travel.rs` | back and forward |
+| `pdfs.rs` | the text of the vault's PDFs for the vault search: compared with the disk, then read one at a time in the background once the search is shown (`Pdfs`, `read_pdfs`); said once when poppler is missing |
 | `search.rs`, `templates.rs`, `tables.rs`, `diagrams.rs`, `board.rs`, `drops.rs`, `capture.rs`, `print.rs` | one feature each |
 | `health.rs` | the vault health page (`Cover::Health`), shown in place of the note like a list page, opened by `VaultHealth` in the command table; scans off the UI thread with `logic/health.rs`, only while shown |
 | `sharing.rs` | the document-aware Share / Export menu, clipboard formats and save-copy dialog; pure text conversion in `logic/sharing.rs`, atomic no-replace copies in `platform/export.rs` |
@@ -82,6 +83,7 @@ A view talks to the shell only through its events (`EditorEvent`, `SheetEvent`, 
 | To change… | Go to |
 |---|---|
 | how Markdown is read (headings, links, tags, styles) | `logic/markdown/` (`mod.rs`; `tables.rs` with the comment `Scope`, `lists.rs`, `front.rs`; `walk.rs`: the one walk over the lines outside code blocks, a stray ``` opens nothing; `wiki.rs`: `WikiLink` reads `target#anchor|alias`, `rewrite_wikilinks` is the one rewriter) |
+| the text of a PDF (pages from `pdftotext`'s form feeds, cache names) | `logic/pdftext.rs`; read and cached outside the vault by `platform/pdftext.rs` (`pdftotext`, a timeout, `config::cache_dir`) |
 | dates (day numbers, calendar months, the dates offered after `@`), find and replace, word counts | `logic/dates.rs`, `logic/search.rs` |
 | CSV/TSV parsing and writing | `logic/table.rs` |
 | zooming around a point, with each surface's limits (viewer, canvas, graph) | `logic/zoom.rs` (`zoom_at`, `wheel`, `Limits`) |

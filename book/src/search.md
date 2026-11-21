@@ -37,6 +37,20 @@
 - `↑` `↓` walk the list. `Enter` or a click opens the note on that match, with its search bar on the same search. `Esc` gives the keys back to the note.
 - The search runs in the background as you type. It follows the notes as they change, from outside the app too.
 
+## PDFs in the vault search
+
+The vault search also looks inside the vault's PDFs, with the same options.
+
+- PDF matches come after the notes, under **In PDFs (read only)**. Each shows its page (`p. 4`) instead of a line number.
+- `Enter` or a click opens the PDF in the system's application.
+- Each PDF is read once, in the background, the first time the vault search is shown. A PDF that changes is read again. The count line says how many are still to read.
+- The text is kept in Bref's cache folder, one file per PDF. Nothing is written in the vault.
+- It needs poppler's `pdftotext` (see [Install](install.md#searching-inside-pdfs)). Without it, Bref says so once, and the notes are still searched.
+- A scanned PDF with no text layer has no words to find.
+- A PDF that cannot be read in 20 seconds, or not at all, is left out until it changes.
+
+A link to a page, `[[Article.pdf#page=4]]`, opens the PDF.
+
 ## Replace in the vault
 
 From the vault search, `Ctrl + R` (or the chevron) shows the *Replace with* field. From the note's search bar, `Ctrl + Shift + Enter` does the same job.
@@ -46,5 +60,6 @@ From the vault search, `Ctrl + R` (or the chevron) shows the *Replace with* fiel
 - The button on a note's header replaces in that note only.
 - The cross at the end of a match sets it aside: it is neither listed nor replaced.
 - A note that cannot be written is reported; the others are replaced.
+- PDFs are never changed: the count says how many of their matches are left as they are.
 
 **Undo the replacement in the vault**, in the palette, puts every note back, except those changed since.

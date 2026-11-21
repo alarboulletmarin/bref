@@ -18,6 +18,7 @@ mod menu;
 mod notes;
 mod palette_open;
 mod pane;
+mod pdfs;
 mod peek;
 mod print;
 mod render;
@@ -180,6 +181,8 @@ struct Shell {
     swapped: Vec<(PathBuf, Arc<str>, String)>,
     /// The vault search of the panel, once opened.
     vault_find: Option<search::VaultFind>,
+    /// The text of the vault's PDFs, read for the vault search once it is shown.
+    pdfs: pdfs::Pdfs,
     /// Icons of the vault's notes, files and folders (see `vault::load_icons`).
     icons: std::collections::HashMap<PathBuf, String>,
     /// Icon picker grid, if open.
@@ -324,6 +327,7 @@ impl Shell {
             save_gen: 0,
             swapped: Vec::new(),
             vault_find: None,
+            pdfs: Default::default(),
             icons: Default::default(),
             icon_pick: None,
             comments_shut: false,
