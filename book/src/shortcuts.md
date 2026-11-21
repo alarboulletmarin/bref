@@ -15,7 +15,7 @@ Every line of the help panel (`F1`), with the default keys of Linux and Windows.
 | `F10` / `Ctrl+Shift+P` | Command palette: every command, found by what it does (also the first button of the rail, or \> in the palette) |
 | `Ctrl+F` | Find in the note |
 | `Ctrl+R` | Find and replace in the note |
-| `Ctrl+Shift+F` | Search the text of the whole vault, in the panel: matches note by note, replace |
+| `Ctrl+Shift+F` | Search the text of the whole vault, in the panel: matches note by note, then in PDFs (with poppler); replace in the notes |
 | `F3` | Search bar: next match (Enter too) |
 | `Shift+F3` / `Shift+Enter` | Search bar: previous match |
 | `Alt+C` | Search bar: match case |

@@ -8,7 +8,8 @@ url="https://github.com/alarboulletmarin/bref"
 license=('MIT')
 depends=('libxcb' 'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'vulkan-icd-loader' 'noto-fonts-emoji')
 makedepends=('cargo' 'fontconfig' 'freetype2')
-optdepends=('vulkan-driver: a Vulkan driver for your GPU is required to open the window')
+optdepends=('vulkan-driver: a Vulkan driver for your GPU is required to open the window'
+            'poppler: search the text of PDFs from the vault search')
 # The binary is stripped at build time: a -debug package would be empty, and its
 # file would clash between bref and bref-git.
 options=('!debug')
