@@ -66,6 +66,8 @@ pub enum Setting {
     Bar,
     /// Fades when something opens.
     Motion,
+    /// The accent over the theme's.
+    Accent,
 }
 
 impl Setting {
@@ -78,6 +80,7 @@ impl Setting {
             Setting::Wide => tr("Wide tables…", "Grands tableaux…"),
             Setting::Bar => tr("Formatting bar…", "Barre de mise en forme…"),
             Setting::Motion => tr("Animations…", "Animations…"),
+            Setting::Accent => tr("Accent colour…", "Couleur d'accent…"),
         }
     }
 }
@@ -549,7 +552,7 @@ impl Palette {
             items.extend(found.take(8).map(Item::Command));
         }
         // The settings do not clutter the list until searched for.
-        for setting in [Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar, Setting::Motion] {
+        for setting in [Setting::Font, Setting::Mono, Setting::Page, Setting::Wide, Setting::Bar, Setting::Motion, Setting::Accent] {
             if !q.is_empty() && command(&q, setting.label()) {
                 items.push(Item::Setting(setting));
             }

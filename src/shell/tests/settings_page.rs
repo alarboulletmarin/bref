@@ -209,3 +209,94 @@ fn a_line_never_runs_under_its_control(cx: &mut TestAppContext) {
         }
     }
 }
+
+/// The accent: a preset clicked, a hex typed (short form written back long), a word refused, Escape back to
+/// the kept one, a pale colour said to be shown darker, back to the theme's from the keys, and from the palette.
+#[gpui::test]
+fn an_accent_over_any_theme(cx: &mut TestAppContext) {
+    let (root, shell, cx, _config) = start(cx, "settings-accent");
+    fs::write(root.join("Alpha.md"), "# Alpha\n").unwrap();
+    shell.update(cx, |s, cx| s.rescan(&root, cx));
+    shell.update_in(cx, |s, window, cx| s.open(&root.join("Alpha.md"), window, cx));
+    shell.update_in(cx, |s, window, cx| {
+        s.prefs.theme = "Bref Light".into();
+        s.restyle(window, cx);
+        s.open_settings(Some(Section::Appearance), window, cx);
+    });
+    settle(cx);
+    let accent = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, _| s.prefs.accent.clone());
+    let typed = |cx: &mut gpui::VisualTestContext| shell.read_with(cx, |s, cx| s.settings.accent.as_ref().unwrap().read(cx).text().to_string());
+    let own = shell.read_with(cx, |s, _| s.theme.accent);
+    assert!(cx.debug_bounds("settings-accent-said").is_none(), "nothing to say with the theme's accent");
+
+    // A preset clicked: saved, applied at once, shown in the field.
+    let at = cx.debug_bounds("settings-accent-#0090ff").expect("the blue swatch").center();
+    cx.simulate_click(at, gpui::Modifiers::none());
+    settle(cx);
+    assert_eq!(accent(cx), "#0090ff");
+    assert!(config::load(config::File::Settings).contains("accent=#0090ff\n"));
+    let blue = shell.read_with(cx, |s, _| s.theme.accent);
+    assert!(blue != own && (blue.h - gpui::Hsla::from(gpui::rgb(0x0090ff)).h).abs() < 0.01, "links and tags in blue");
+    assert_eq!(typed(cx), "#0090ff");
+
+    // A short hex typed in the field: kept long, the keys back on the page.
+    let field = cx.debug_bounds("settings-accent-field").expect("the hex field").center();
+    cx.simulate_click(field, gpui::Modifiers::none());
+    shell.update(cx, |s, cx| s.settings.accent.as_ref().unwrap().update(cx, |f, cx| f.select_all(cx)));
+    cx.simulate_input("#f80");
+    assert!(cx.debug_bounds("settings-accent-typed").is_some(), "a swatch of what is typed");
+    cx.simulate_keystrokes("enter");
+    settle(cx);
+    assert_eq!((accent(cx), typed(cx)), ("#ff8800".to_string(), "#ff8800".to_string()));
+    assert!(config::load(config::File::Settings).contains("accent=#ff8800\n"));
+    assert!(cx.update(|window, cx| shell.read(cx).settings.focus.is_focused(window)), "Enter gives the keys back to the page");
+
+    // A word is no colour: refused and said, nothing saved; Escape puts the kept accent back.
+    cx.simulate_click(field, gpui::Modifiers::none());
+    shell.update(cx, |s, cx| s.settings.accent.as_ref().unwrap().update(cx, |f, cx| f.select_all(cx)));
+    cx.simulate_input("rouge");
+    cx.simulate_keystrokes("enter");
+    settle(cx);
+    assert_eq!(accent(cx), "#ff8800", "nothing saved");
+    assert!(shell.read_with(cx, |s, _| s.settings.accent_bad) && cx.debug_bounds("settings-accent-said").is_some(), "said in the row");
+    cx.simulate_keystrokes("escape");
+    settle(cx);
+    assert_eq!(typed(cx), "#ff8800");
+    assert!(!shell.read_with(cx, |s, _| s.settings.accent_bad));
+
+    // A pale yellow cannot be read on Bref Light as it is: shown darker, and the row says which.
+    cx.simulate_click(field, gpui::Modifiers::none());
+    shell.update(cx, |s, cx| s.settings.accent.as_ref().unwrap().update(cx, |f, cx| f.select_all(cx)));
+    cx.simulate_input("#ffff99");
+    cx.simulate_keystrokes("enter");
+    settle(cx);
+    let shown = shell.read_with(cx, |s, _| crate::ui::theme::hex(s.theme.accent));
+    assert_ne!(shown, "#ffff99");
+    assert!(cx.debug_bounds("settings-accent-said").is_some(), "the colour shown is said");
+
+    // From the keys: Enter goes to the next choice, the theme's own first when the accent is none of the presets.
+    shell.update(cx, |s, _| s.settings.sel = Some(Row::Accent));
+    cx.simulate_keystrokes("enter");
+    settle(cx);
+    assert_eq!(accent(cx), "", "back to the theme's");
+    assert!(!config::load(config::File::Settings).contains("accent="));
+    assert_eq!(shell.read_with(cx, |s, _| s.theme.accent), own);
+    cx.simulate_keystrokes("right");
+    assert_eq!(accent(cx), "#e5484d", "Right: the first preset");
+
+    // From the palette: browsing previews, Escape takes it back, Enter keeps it.
+    let choose = |cx: &mut gpui::VisualTestContext, keys: &str| {
+        shell.update_in(cx, |s, window, cx| s.choose_setting(Setting::Accent, window, cx));
+        cx.run_until_parked();
+        cx.simulate_keystrokes(keys);
+        cx.run_until_parked();
+    };
+    choose(cx, "up");
+    assert_eq!(accent(cx), "", "the theme's own, previewed");
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(accent(cx), "#e5484d", "Escape: the one before");
+    choose(cx, "up enter");
+    assert_eq!(accent(cx), "");
+    assert_eq!(shell.read_with(cx, |s, _| s.theme.accent), own);
+}

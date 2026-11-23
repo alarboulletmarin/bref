@@ -3,6 +3,8 @@
 //! stay: the page is the map, the palette the shortcut.
 
 use super::*;
+use crate::logic::prefs::{hex_color, write_hex};
+use crate::ui::theme::ACCENTS;
 use crate::ui::widgets::{self, card, choice, switch, text_button};
 
 /// How the settings tab is written in the saved pane layout (as `@graph` for a tool).
@@ -59,6 +61,7 @@ impl Section {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Row {
     Theme,
+    Accent,
     Font,
     Mono,
     Size,
@@ -87,8 +90,9 @@ pub(super) enum Row {
 
 impl Row {
     /// Every row, section by section, in the order they are shown: Up and Down walk this list.
-    pub(super) const ALL: [Row; 25] = [
+    pub(super) const ALL: [Row; 26] = [
         Row::Theme,
+        Row::Accent,
         Row::Font,
         Row::Mono,
         Row::Size,
@@ -117,7 +121,7 @@ impl Row {
 
     pub(super) fn section(self) -> Section {
         match self {
-            Row::Theme | Row::Font | Row::Mono | Row::Size | Row::Motion | Row::Background | Row::Opacity => Section::Appearance,
+            Row::Theme | Row::Accent | Row::Font | Row::Mono | Row::Size | Row::Motion | Row::Background | Row::Opacity => Section::Appearance,
             Row::Page | Row::Wide | Row::Bar => Section::Editor,
             Row::Vault | Row::NewNotes | Row::Daily | Row::Trash | Row::Config => Section::Files,
             Row::Git | Row::Backup => Section::Sync,
@@ -130,6 +134,7 @@ impl Row {
     pub(super) fn name(self) -> &'static str {
         match self {
             Row::Theme => tr("Theme", "Thème"),
+            Row::Accent => tr("Accent colour", "Couleur d'accent"),
             Row::Font => tr("App font", "Police de l'app"),
             Row::Mono => tr("Code font", "Police du code"),
             Row::Size => tr("Text size", "Taille du texte"),
@@ -161,6 +166,7 @@ impl Row {
     pub(super) fn line(self) -> Option<&'static str> {
         Some(match self {
             Row::Theme => tr("Default follows the system, light or dark.", "Par défaut suit le système, clair ou sombre."),
+            Row::Accent => tr("Links, tags, the selection and the pills, over any theme. Kept readable on each one.", "Liens, tags, sélection et pastilles, sur n'importe quel thème. Gardée lisible sur chacun."),
             Row::Font | Row::Mono => return None,
             Row::Size => tr("The panel, menus and help follow, from 85 % to 150 %.", "Le panneau, les menus et l'aide suivent, de 85 % à 150 %."),
             Row::Motion => tr("Short fades when the panel, the formatting bar or a folder opens. Off: everything is instant.", "Courts fondus à l'ouverture du panneau, de la barre de mise en forme ou d'un dossier. Désactivées : tout est instantané."),
@@ -191,6 +197,7 @@ impl Row {
     pub(super) fn key(self) -> &'static str {
         match self {
             Row::Theme => "theme",
+            Row::Accent => "accent",
             Row::Font => "font",
             Row::Mono => "mono",
             Row::Size => "size",
@@ -222,6 +229,7 @@ impl Row {
     fn matches(self, query: &str) -> bool {
         let values: Vec<&str> = match self {
             Row::Theme => THEMES.iter().map(|t| t.0).collect(),
+            Row::Accent => ACCENTS.iter().map(|a| a.1()).chain(["hex", "couleur", "color", "colour"]).collect(),
             Row::Page => Page::ALL.iter().map(|p| p.label()).collect(),
             Row::Wide => Wide::ALL.iter().map(|w| w.label()).collect(),
             Row::Server | Row::Client | Row::Claude => vec!["mcp", "json"],
@@ -238,6 +246,10 @@ pub(super) struct SettingsPage {
     /// Holds the keys while the page is shown and its search field does not.
     pub(super) focus: FocusHandle,
     pub(super) find: Option<Entity<field::Field>>,
+    /// Where an accent is typed as `#rrggbb`.
+    pub(super) accent: Option<Entity<field::Field>>,
+    /// What was typed there is no colour: the row says so, nothing is saved.
+    pub(super) accent_bad: bool,
     pub(super) section: Section,
     /// The row picked with the keyboard or a click.
     pub(super) sel: Option<Row>,
@@ -261,6 +273,8 @@ impl SettingsPage {
         SettingsPage {
             focus: cx.focus_handle(),
             find: None,
+            accent: None,
+            accent_bad: false,
             section: Section::Appearance,
             sel: None,
             reveal: false,
@@ -284,6 +298,11 @@ const BACKGROUNDS: [(&str, fn() -> &'static str); 3] = [
 /// The background chosen, `opaque` when the setting is absent or unknown.
 fn background_key(prefs: &Prefs) -> &'static str {
     BACKGROUNDS.iter().map(|b| b.0).find(|k| *k == prefs.background).unwrap_or("opaque")
+}
+
+/// The accent choices, in the order of the swatches: the theme's own (empty), then each preset as it is saved.
+fn accent_keys() -> Vec<String> {
+    std::iter::once(String::new()).chain(ACCENTS.iter().map(|a| write_hex(a.0))).collect()
 }
 
 /// The theme choices, in the order of the cards: the default (empty, follows the system), then each theme.
@@ -368,6 +387,38 @@ impl Shell {
             .detach();
             self.settings.find = Some(find);
         }
+        if self.settings.accent.is_none() {
+            let accent = cx.new(|cx| field::Field::new(&self.prefs.accent, self.theme, cx).scrolling());
+            cx.observe(&accent, |_, _, cx| cx.notify()).detach();
+            cx.subscribe_in(&accent, window, |this, accent, event: &field::FieldEvent, window, cx| match event {
+                // Enter: a colour is kept (written back long), anything else is refused and said.
+                field::FieldEvent::Done => {
+                    let typed = accent.read(cx).text().to_string();
+                    this.settings.sel = Some(Row::Accent);
+                    match hex_color(&typed) {
+                        Some(rgb) => {
+                            this.settings.accent_bad = false;
+                            this.set_prefs(|p| p.accent = write_hex(rgb), window, cx);
+                            accent.update(cx, |f, cx| f.set(&this.prefs.accent, cx));
+                            window.focus(&this.settings.focus);
+                        }
+                        None => this.settings.accent_bad = !typed.trim().is_empty(),
+                    }
+                    cx.notify();
+                }
+                // Escape: back to the accent kept, the keys back on the page.
+                field::FieldEvent::Cancel => {
+                    this.settings.accent_bad = false;
+                    let kept = this.prefs.accent.clone();
+                    accent.update(cx, |f, cx| f.set(&kept, cx));
+                    window.focus(&this.settings.focus);
+                    cx.notify();
+                }
+                field::FieldEvent::Changed => this.settings.accent_bad = false,
+            })
+            .detach();
+            self.settings.accent = Some(accent);
+        }
     }
 
     /// Reads the address the vault syncs with, once, off the drawing.
@@ -451,6 +502,16 @@ impl Shell {
         }
     }
 
+    /// Keeps `accent` (`#rrggbb`, empty: the theme's) and shows it in the field.
+    fn set_accent(&mut self, accent: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.accent_bad = false;
+        self.set_prefs(|p| p.accent = accent, window, cx);
+        if let Some(field) = &self.settings.accent {
+            let kept = self.prefs.accent.clone();
+            field.update(cx, |f, cx| f.set(&kept, cx));
+        }
+    }
+
     /// Left and Right on a row of choices: the one before or after (`by` = -1 or 1), without wrapping;
     /// on a switch, off or on. `false` when the row has no such choices.
     pub(super) fn settings_shift(&mut self, row: Row, by: isize, window: &mut Window, cx: &mut Context<Self>) -> bool {
@@ -462,6 +523,12 @@ impl Shell {
             Row::Theme => {
                 let theme = step(&theme_keys(), &self.prefs.theme);
                 self.set_prefs(|p| p.theme = theme, window, cx);
+            }
+            Row::Accent => {
+                let keys = accent_keys();
+                let at = keys.iter().position(|k| *k == self.prefs.accent).unwrap_or(0) as isize;
+                let accent = keys[(at + by).clamp(0, keys.len() as isize - 1) as usize].clone();
+                self.set_accent(accent, window, cx);
             }
             Row::Page => {
                 let keys = Page::ALL.map(|p| p.key());
@@ -504,6 +571,12 @@ impl Shell {
             Row::Theme => {
                 let theme = next(&theme_keys(), &self.prefs.theme);
                 self.set_prefs(|p| p.theme = theme, window, cx);
+            }
+            Row::Accent => {
+                let keys = accent_keys();
+                let at = keys.iter().position(|k| *k == self.prefs.accent).map_or(0, |at| (at + 1) % keys.len());
+                let accent = keys[at].clone();
+                self.set_accent(accent, window, cx);
             }
             Row::Page => {
                 let page = next(&Page::ALL.map(|p| p.key()), Page::of(&self.prefs.page).key());
@@ -661,7 +734,7 @@ impl Shell {
             if self.settings.sel == Some(row) {
                 reveal = Some(list.len());
             }
-            list.push(self.render_setting(row, cx).into_any_element());
+            list.push(self.render_setting(row, window, cx).into_any_element());
         }
         if rows.is_empty() {
             list.push(div().px_3().py_2().text_color(t.soft).child(tr("No setting matches.", "Aucun réglage ne correspond.")).into_any_element());
@@ -733,7 +806,7 @@ impl Shell {
     }
 
     /// One setting: its name and line on the left, its control on the right (under them when there is no room).
-    fn render_setting(&self, row: Row, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn render_setting(&self, row: Row, window: &Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
         let key = row.key();
         let on = self.settings.sel == Some(row);
@@ -747,7 +820,7 @@ impl Shell {
             .gap(t.px(2.))
             .child(div().text_color(t.text).child(row.name()))
             .children(row.line().map(|line| div().debug_selector(move || format!("settings-line-{key}")).text_size(t.font_small()).text_color(t.soft).child(line)));
-        let (control, below) = self.render_control(row, cx);
+        let (control, below) = self.render_control(row, window, cx);
         let control = control.map(|c| div().debug_selector(move || format!("settings-control-{key}")).flex().child(c));
         div()
             .id(gpui::SharedString::from(format!("settings-row-{key}")))
@@ -781,7 +854,7 @@ impl Shell {
     }
 
     /// The control of a row, beside its name, and what goes under it (the theme cards, a configuration).
-    fn render_control(&self, row: Row, cx: &mut Context<Self>) -> (Option<gpui::AnyElement>, Option<gpui::AnyElement>) {
+    fn render_control(&self, row: Row, window: &Window, cx: &mut Context<Self>) -> (Option<gpui::AnyElement>, Option<gpui::AnyElement>) {
         let t = self.theme;
         let key = row.key();
         let value = |text: String| div().font_family(t.mono).text_size(t.font_small()).text_color(t.soft).child(text);
@@ -814,6 +887,7 @@ impl Shell {
         let font_name = |chosen: &str, shown: &'static str| if chosen.is_empty() { format!("{shown} ({})", tr("default", "par défaut")) } else { chosen.to_string() };
         let control = match row {
             Row::Theme => None,
+            Row::Accent => Some(self.render_accents(cx).into_any_element()),
             Row::Font => Some(div().flex().items_center().gap_3().child(value(font_name(&self.prefs.font, t.sans))).child(press("change", tr("Change…", "Changer…")).on_click(cx.listener(|this, _, window, cx| this.settings_press(Row::Font, window, cx)))).into_any_element()),
             Row::Mono => Some(div().flex().items_center().gap_3().child(value(font_name(&self.prefs.mono, t.mono))).child(press("change", tr("Change…", "Changer…")).on_click(cx.listener(|this, _, window, cx| this.settings_press(Row::Mono, window, cx)))).into_any_element()),
             Row::Size => {
@@ -972,6 +1046,7 @@ impl Shell {
         };
         let below = match row {
             Row::Theme => Some(self.render_theme_cards(cx).into_any_element()),
+            Row::Accent => Some(self.render_accent_field(window, cx).into_any_element()),
             Row::Vault => self.vault.as_ref().map(|root| value(root.display().to_string()).debug_selector(|| "settings-vault-path".into()).into_any_element()),
             Row::Config => Some(value(config::path(config::File::Settings).parent().map_or_else(String::new, |p| p.display().to_string())).into_any_element()),
             Row::Daily => Some(value(format!("{}.md", date_name(today()))).into_any_element()),
@@ -998,6 +1073,72 @@ impl Shell {
             _ => None,
         };
         (control, below)
+    }
+
+    /// The accents: the theme's own as a pill, then a round swatch per preset; the one chosen has a ring.
+    fn render_accents(&self, cx: &mut Context<Self>) -> Div {
+        let t = self.theme;
+        let now = self.prefs.accent.clone();
+        let own = choice("settings-accent-theme", tr("Theme's", "Celle du thème"), now.is_empty(), t)
+            .debug_selector(|| "settings-accent-theme".into())
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.settings.sel = Some(Row::Accent);
+                this.set_accent(String::new(), window, cx);
+            }));
+        let swatches = ACCENTS.iter().map(|&(rgb, _)| {
+            let key = write_hex(rgb);
+            let on = key == now;
+            div()
+                .id(gpui::SharedString::from(format!("settings-accent-{key}")))
+                .debug_selector({
+                    let key = key.clone();
+                    move || format!("settings-accent-{key}")
+                })
+                .flex_none()
+                .size(t.px(26.))
+                .p(t.px(2.))
+                .rounded_full()
+                .border_2()
+                .border_color(if on { t.text } else { gpui::transparent_black() })
+                .cursor_pointer()
+                .child(div().size_full().rounded_full().bg(gpui::rgb(rgb)))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.settings.sel = Some(Row::Accent);
+                    this.set_accent(key.clone(), window, cx);
+                }))
+        });
+        div().flex().flex_wrap().items_center().gap_1().child(own).children(swatches)
+    }
+
+    /// Under the swatches: the field for any `#rrggbb`, with a swatch of what it holds, and one line when the
+    /// accent shown is not the one typed (made lighter or darker to read on this theme) or what is typed is no colour.
+    fn render_accent_field(&self, window: &Window, cx: &App) -> Div {
+        let t = self.theme;
+        let Some(field) = self.settings.accent.clone() else { return div() };
+        let (typing, typed) = (field.focus_handle(cx).is_focused(window), field.read(cx).text().to_string());
+        let dot = |c: gpui::Hsla| div().flex_none().size(t.px(14.)).rounded_full().bg(c).border_1().border_color(t.border);
+        let frame = widgets::field_frame("settings-accent-field", field, typing, typed.is_empty(), "#rrggbb", t).flex_none().w(t.px(120.));
+        let said = match (self.settings.accent_bad, self.prefs.accent_rgb()) {
+            (true, _) => Some(tr("Not a colour: type #rrggbb or #rgb.", "Pas une couleur : tapez #rrggbb ou #rgb.").to_string()),
+            (false, Some(_)) if crate::ui::theme::hex(t.accent) != self.prefs.accent => Some(format!(
+                "{} {}{}",
+                tr("Shown as", "Affichée en"),
+                crate::ui::theme::hex(t.accent),
+                tr(", so that links and tags read on this theme.", ", pour que liens et tags se lisent sur ce thème.")
+            )),
+            _ => None,
+        };
+        div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .child(frame)
+            .when_some(hex_color(&typed), |d, rgb| d.child(dot(gpui::rgb(rgb).into()).debug_selector(|| "settings-accent-typed".into())))
+            .when(self.prefs.accent_rgb().is_some() && said.is_some() && !self.settings.accent_bad, |d| d.child(dot(t.accent)))
+            .children(said.map(|said| {
+                div().debug_selector(|| "settings-accent-said".into()).text_size(t.font_small()).text_color(t.soft).child(said)
+            }))
     }
 
     /// The themes as cards that show their colours: the page, its text and its accent; the default shows
