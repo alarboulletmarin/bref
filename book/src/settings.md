@@ -18,18 +18,18 @@ It opens as a tab of the active pane, like a note. Put it next to a note to try 
 |---|---|
 | `Up` / `Down` | the previous or next setting; past the last one of a section, into the next section |
 | `Tab` / `Shift + Tab` | the next or previous section; from the search field, back to the settings |
-| `Left` / `Right` | the previous or next choice: theme, page width, wide tables, text size; off or on for a switch |
+| `Left` / `Right` | the previous or next choice: theme, accent, page width, wide tables, text size; off or on for a switch |
 | `Enter` / `Space` | change it: the next choice, the other side of a switch, or what its button does |
 | a letter | starts a search |
 | `Esc` | clears the search, then closes the tab |
 
-**The palette commands stay.** `theme`, `font`, `page width`, `wide tables`, `formatting bar`, `animations` and `updates` still work: the tab is the map, the palette the shortcut. `theme` in the palette still previews each theme as you move through the list.
+**The palette commands stay.** `theme`, `accent colour`, `font`, `page width`, `wide tables`, `formatting bar`, `animations` and `updates` still work: the tab is the map, the palette the shortcut. `theme` and `accent colour` in the palette still preview each choice as you move through the list.
 
 **Edited by hand.** If you change the `settings` file while Bref runs, opening the tab again (`Ctrl + ,`) reads it and applies it.
 
 ### What each section holds
 
-- **Appearance**: the theme, the font of the app and of the code, the text size, the animations, the window background and its opacity.
+- **Appearance**: the theme, the accent colour, the font of the app and of the code, the text size, the animations, the window background and its opacity.
 - **Editor**: the page width, wide tables, the formatting bar.
 - **Files & links**: the vault (its folder, **Open another…**, **Clone…**), where new notes and daily notes go, the trash (**Restore…**), the [configuration folder](vault.md#configuration-files).
 - **Sync & backup**: git (the server the vault syncs with, the time of the last sync, **Sync now**, or **Connect…** for a vault not linked yet), and a backup of the whole vault. See [Syncing a vault](sync.md).
@@ -46,6 +46,17 @@ The cards of **Appearance** in the settings tab, or `theme` in the palette.
 - In the palette, each theme is applied as you move through the list, so you see it before choosing. `Enter` keeps it, `Esc` goes back to the one you had.
 - `Default` follows the light or dark setting of your system, with Bref Light or Bref Dark.
 - In every theme, links, secondary text and the titles of colored panels are adjusted to a contrast of at least 4.5:1 (WCAG AA).
+
+### Accent colour
+
+Links, tags, the selection, the pills, the active pane's ring and the colours of code all come from the theme's accent. **Accent colour** (in **Appearance**), or `accent colour` in the palette, puts one of your own over any theme.
+
+- **Theme's**: the accent each theme comes with. The default.
+- **Eight swatches**: red, orange, yellow, green, teal, blue, purple and pink. A click, or `Left` and `Right` on the row, applies one at once.
+- **Any colour**: type it in the field under the swatches, as `#rrggbb` or `#rgb`, then `Enter`. A swatch beside the field shows what you typed. Something that is not a colour (`red`, `#12`) is refused, and the row says so. `Esc` puts the kept colour back.
+- **One accent for every theme**: it stays when you change the theme.
+- **Kept readable**: each theme makes the accent reach 4.5:1 on its page, as it does for its own. So the colour shown can be a little lighter or darker than the one you typed (a pale yellow on Bref Light). The row then shows both, and says why. When the selection, an open row and a commented passage would look alike, Bref uses the nearest shade of the same hue that tells them apart.
+- The colours of diagrams, highlights and callouts are their own, and do not change with the accent.
 
 **The look.** The window is a warm ground, a little darker than the page in every theme. The note, the panel and the right dock lie on it as rounded sheets, eight pixels apart. Page titles are in a serif, while note titles follow your font.
 
@@ -110,6 +121,7 @@ These choices are kept in a file named `settings`, in the [configuration folder]
 | `page` | `narrow`, `normal`, `wide`, `full` | Editor › **Page width** | `page width` |
 | `wide` | `column`, `center` | Editor › **Wide tables** | `wide tables` |
 | `bar` | `on`, `off` | Editor › **Formatting bar** | `formatting bar` |
+| `accent` | `#rrggbb` (absent: the theme's own) | Appearance › **Accent colour** | `accent colour` |
 | `motion` | `on`, `off` | Appearance › **Animations** | `animations` |
 | `background` | `opaque`, `translucent`, `blurred` | Appearance › **Window background** | |
 | `opacity` | from `0.75` to `1` (`0.9` when absent) | Appearance › **Opacity** | |

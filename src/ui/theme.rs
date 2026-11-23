@@ -146,13 +146,58 @@ pub const THEMES: &[(&str, [u32; 7])] = &[
     ("Gruvbox Light", [0xfbf1c7, 0x3c3836, 0x928374, 0xb57614, 0xf2e5bc, 0xf9f5d7, 0xd5c4a1]),
 ];
 
+/// The accents offered over any theme ("Accent" setting): eight hues spread around the wheel, each mid-light so
+/// that the theme's legibility rules move it little on a light or a dark page. (`0xrrggbb`, its name.)
+pub const ACCENTS: [(u32, fn() -> &'static str); 8] = [
+    (0xe5484d, || tr("Red", "Rouge")),
+    (0xf76b15, || tr("Orange", "Orange")),
+    (0xe2a336, || tr("Yellow", "Jaune")),
+    (0x30a46c, || tr("Green", "Vert")),
+    (0x12a594, || tr("Teal", "Sarcelle")),
+    (0x0090ff, || tr("Blue", "Bleu")),
+    (0x8e4ec6, || tr("Purple", "Violet")),
+    (0xd6409f, || tr("Pink", "Rose")),
+];
+
 impl Theme {
-    /// The chosen theme; failing that, Bref's one matching the system appearance.
+    /// The chosen theme; failing that, Bref's one matching the system appearance. With an accent of the user's
+    /// own, the nearest lightness of its hue that keeps the tints of the theme apart (`Theme::distinct`).
     pub fn of(prefs: &Prefs, appearance: WindowAppearance) -> Self {
+        let Some(typed) = prefs.accent_rgb().map(|c| Hsla::from(rgb(c))) else {
+            return Self::with(prefs, appearance, None);
+        };
+        // 0, +2 %, −2 %, +4 %… of lightness: the closest that works wins. A hue opposite the page's (orange on
+        // Solarized Dark's teal) blends toward the same grey at any lightness: then a little less vivid, same hue.
+        // The typed one when nothing works.
+        let near = |l: f32| (0..=100).map(move |i| l + if i % 2 == 0 { 1. } else { -1. } * ((i + 1) / 2) as f32 * 0.02);
+        [1., 0.8, 0.6]
+            .into_iter()
+            .flat_map(|soft| near(typed.l).filter(|l| (0.0..=1.0).contains(l)).map(move |l| Hsla { l, s: typed.s * soft, ..typed }))
+            .map(|c| Self::with(prefs, appearance, Some(c)))
+            .find(Self::distinct)
+            .unwrap_or_else(|| Self::with(prefs, appearance, Some(typed)))
+    }
+
+    /// The tints drawn from the accent tell apart on the page: the open row on the sheet, the selection from the
+    /// open row, the commented passage under the caret from the others. The themes' own accents all do; a
+    /// typed one may not, since these are shares of one colour.
+    fn distinct(&self) -> bool {
+        let over = |c: Hsla| blend(Hsla { a: 1., ..c }, self.bg, c.a);
+        let (open, picked) = (over(self.pill_tint()), over(self.selection));
+        let active = over(crate::ui::widgets::passage_tint(*self, true));
+        contrast(open, self.bg) >= 1.03 && contrast(picked, open) >= 1.02 && contrast(active, open) >= 1.03 && contrast(active, picked) >= 1.02
+    }
+
+    /// The theme with `custom` in place of its accent.
+    fn with(prefs: &Prefs, appearance: WindowAppearance, custom: Option<Hsla>) -> Self {
         let dark = matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark);
         let system = &THEMES[if dark { 0 } else { 1 }];
         let (_, colors) = THEMES.iter().find(|t| t.0 == prefs.theme).unwrap_or(system);
         let [bg, text, dim, accent, code_bg, panel, border] = colors.map(|c| Hsla::from(rgb(c)));
+        // An accent of the user's own replaces the theme's before anything is drawn from it. One close to the page
+        // (a pale yellow on a light theme) is first taken to 3:1 on it, as a line that must be seen: the selection
+        // and the open pill are tinted with it and would not show otherwise. The rest is the theme's own rules.
+        let accent = custom.map_or(accent, |c| reach(c, bg, 3.));
         let ground = ground_of(bg);
         // What the ground looks like once translucent, over the brightest and the darkest desktop: what is written on
         // it must read on both. Opaque, they are the ground itself and nothing changes.
@@ -183,7 +228,9 @@ impl Theme {
             picked.iter().chain(&grounds).chain(&pills).fold(a, |c, b| legible(c, *b))
         });
         // Strings and numbers take the accent shifted in hue, to match each theme without a palette of their own.
-        let code = |by: f32| [bg, code_bg].iter().fold(Hsla { h: (accent_read.h + by).fract(), ..accent_read }, |c, b| legible(c, *b));
+        // A grey accent has no hue to shift: the code takes some colour so that strings and numbers still differ.
+        let hued = Hsla { s: if accent_read.s < 0.15 { 0.5 } else { accent_read.s }, ..accent_read };
+        let code = |by: f32| [bg, code_bg].iter().fold(Hsla { h: (hued.h + by).fract(), ..hued }, |c, b| legible(c, *b));
         Self {
             bg,
             text,
@@ -404,6 +451,40 @@ mod tests {
     use super::*;
     use gpui::WindowAppearance;
 
+    /// Accents that push the rules to their limits: very pale, very dark, white, black, grey (no hue), pure red.
+    const EXTREMES: [&str; 6] = ["#ffff99", "#111111", "#ffffff", "#000000", "#808080", "#ff0000"];
+
+    /// Every theme with its own accent, then with each preset and each extreme accent over it: (what, prefs).
+    fn looks() -> Vec<(String, Prefs)> {
+        let accents = std::iter::once(String::new()).chain(ACCENTS.iter().map(|a| crate::logic::prefs::write_hex(a.0))).chain(EXTREMES.map(String::from));
+        let accents: Vec<String> = accents.collect();
+        THEMES
+            .iter()
+            .flat_map(|(name, _)| accents.iter().map(move |accent| (format!("{name} {accent}").trim().to_string(), Prefs::parse(&format!("theme={name}\naccent={accent}\n")))))
+            .collect()
+    }
+
+    /// A custom accent takes the place of the theme's, and the theme's own comes back when it is cleared.
+    #[test]
+    fn a_custom_accent_replaces_the_themes() {
+        let look = |text: &str| Theme::of(&Prefs::parse(text), WindowAppearance::Light);
+        let own = look("theme=Nord\n");
+        let blue = look("theme=Nord\naccent=#0090ff\n");
+        assert_ne!(own.accent, blue.accent);
+        assert!((blue.accent.h - Hsla::from(rgb(0x0090ff)).h).abs() < 0.01, "the hue typed is kept");
+        assert!(look("theme=Nord\naccent=#gggggg\n") == own, "a broken value is the theme's accent");
+        // The same accent survives a theme change, and each theme makes it read on its page.
+        for name in ["Bref Light", "Bref Dark", "Gruvbox Light"] {
+            let t = look(&format!("theme={name}\naccent=#0090ff\n"));
+            assert!((t.accent.h - blue.accent.h).abs() < 0.01 && contrast(t.accent, t.bg) >= 4.5, "{name}");
+        }
+        // A grey accent: strings and numbers still differ from the text and from each other.
+        for (name, _) in THEMES {
+            let t = look(&format!("theme={name}\naccent=#808080\n"));
+            assert!(t.string != t.text && t.number != t.text && t.string != t.number, "{name}");
+        }
+    }
+
     /// A font change is a theme change: views compare themes to know whether to redraw.
     #[test]
     fn fonts_are_part_of_the_theme() {
@@ -416,8 +497,8 @@ mod tests {
     /// callout read: at least 4.5:1 (WCAG AA).
     #[test]
     fn every_theme_reads() {
-        for (name, _) in THEMES {
-            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+        for (name, prefs) in looks() {
+            let t = Theme::of(&prefs, WindowAppearance::Light);
             // The window is cut into zones by `bg` and `panel` alone, with no line between them.
             assert!(contrast(t.bg, t.panel) >= 1.03, "{name}: bg and panel too close to tell the zones apart");
             assert!(contrast(t.soft, t.bg) >= 4.5 && contrast(t.soft, t.panel) >= 4.5, "{name}: soft");
@@ -443,9 +524,9 @@ mod tests {
     #[test]
     fn board_columns_stand_out() {
         let mut fails = Vec::new();
-        for (name, _) in THEMES {
+        for (name, prefs) in looks() {
             for look in [WindowAppearance::Light, WindowAppearance::Dark] {
-                let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), look);
+                let t = Theme::of(&prefs, look);
                 // A card is a `bg` sheet on the column: its edge is the column's own contrast. The check
                 // box's mark (drawn in `bg`) reads on its `accent` fill.
                 let (page, mark) = (contrast(t.code_bg, t.bg), contrast(t.bg, t.accent));
@@ -467,8 +548,8 @@ mod tests {
     #[test]
     fn every_pair_reads() {
         let mut fails = Vec::new();
-        for (name, _) in THEMES {
-            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+        for (name, prefs) in looks() {
+            let t = Theme::of(&prefs, WindowAppearance::Light);
             let (picked, picked_panel) = (over(t.selection, t.bg), over(t.selection, t.panel));
             let mut pairs = vec![
                 // Secondary text, and content that steps back (front matter, addresses, comments) in a code block too.
@@ -525,8 +606,8 @@ mod tests {
     #[test]
     fn hover_and_pressed_show() {
         let mut fails = Vec::new();
-        for (name, _) in THEMES {
-            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+        for (name, prefs) in looks() {
+            let t = Theme::of(&prefs, WindowAppearance::Light);
             let picked = over(t.selection, t.panel);
             for (what, under) in [("bg", t.bg), ("panel", t.panel), ("code", t.code_bg), ("selection", picked)] {
                 let (hover, pressed) = (over(t.hover, under), over(t.pressed, under));
@@ -546,8 +627,8 @@ mod tests {
     #[test]
     fn the_open_row_differs_from_the_selection() {
         let mut fails = Vec::new();
-        for (name, _) in THEMES {
-            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+        for (name, prefs) in looks() {
+            let t = Theme::of(&prefs, WindowAppearance::Light);
             let (open, picked) = (over(t.pill_tint(), t.bg), over(t.selection, t.bg));
             if contrast(open, t.bg) < 1.03 {
                 fails.push(format!("{name}: the open row does not show on the sheet ({:.3})", contrast(open, t.bg)));
@@ -563,8 +644,8 @@ mod tests {
     #[test]
     fn commented_passages_differ_from_the_selection() {
         let mut fails = Vec::new();
-        for (name, _) in THEMES {
-            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+        for (name, prefs) in looks() {
+            let t = Theme::of(&prefs, WindowAppearance::Light);
             let tint = |on| over(crate::ui::widgets::passage_tint(t, on), t.bg);
             let (quiet, active, picked) = (tint(false), tint(true), over(t.selection, t.bg));
             let ratios = [("quiet/sheet", contrast(quiet, t.bg), 1.03), ("active/quiet", contrast(active, quiet), 1.03), ("active/selection", contrast(active, picked), 1.02)];
@@ -586,8 +667,8 @@ mod tests {
     #[test]
     fn the_ground_shows_the_sheet_and_carries_text() {
         let mut fails = Vec::new();
-        for (name, _) in THEMES {
-            let t = Theme::of(&Prefs::parse(&format!("theme={name}\n")), WindowAppearance::Light);
+        for (name, prefs) in looks() {
+            let t = Theme::of(&prefs, WindowAppearance::Light);
             let line = format!("{name}: ground {} sheet {}", hex(t.ground), hex(t.bg));
             if contrast(t.ground, t.bg) < 1.03 {
                 fails.push(format!("{line}: the sheet does not show on the ground ({:.3})", contrast(t.ground, t.bg)));
@@ -609,8 +690,8 @@ mod tests {
         let check = |percent: u32| {
             let alpha = percent as f32 / 100.;
             let mut fails = Vec::new();
-            for (name, _) in THEMES {
-                let t = Theme::of(&Prefs { theme: name.to_string(), background: "translucent".into(), opacity: alpha, ..Prefs::parse("") }, WindowAppearance::Light);
+            for (name, prefs) in looks() {
+                let t = Theme::of(&Prefs { background: "translucent".into(), opacity: alpha, ..prefs }, WindowAppearance::Light);
                 assert_eq!(t.ground.a, alpha, "{name}: the ground carries the opacity");
                 for desk in [hsla(0., 0., 1., 1.), hsla(0., 0., 0., 1.)] {
                     let seen = blend(Hsla { a: 1., ..t.ground }, desk, alpha);

@@ -22,6 +22,8 @@ pub struct Prefs {
     /// at `opacity`; anything else keeps it opaque.
     pub background: String,
     pub opacity: f32,
+    /// The accent over the theme's, as `#rrggbb`; empty: the theme's own.
+    pub accent: String,
 }
 
 impl Prefs {
@@ -33,7 +35,7 @@ impl Prefs {
 
     pub fn parse(text: &str) -> Self {
         let mut prefs =
-            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true, page: String::new(), wide: String::new(), bar: String::new(), motion: String::new(), background: String::new(), opacity: Self::OPACITY };
+            Self { theme: String::new(), font: String::new(), mono: String::new(), size: Self::SIZE, updates: true, page: String::new(), wide: String::new(), bar: String::new(), motion: String::new(), background: String::new(), opacity: Self::OPACITY, accent: String::new() };
         for (key, value) in text.lines().filter_map(|line| line.split_once('=')) {
             match key {
                 "theme" => prefs.theme = value.into(),
@@ -47,6 +49,8 @@ impl Prefs {
                 "motion" => prefs.motion = value.into(),
                 "background" => prefs.background = value.into(),
                 "opacity" => prefs.opacity = value.parse().ok().filter(|o: &f32| o.is_finite()).unwrap_or(Self::OPACITY),
+                // A line that is no colour keeps the theme's accent.
+                "accent" => prefs.accent = hex_color(value).map_or_else(String::new, write_hex),
                 _ => {}
             }
         }
@@ -62,7 +66,7 @@ impl Prefs {
         if !self.updates {
             text.push_str("updates=off\n");
         }
-        for (key, value) in [("page", &self.page), ("wide", &self.wide), ("bar", &self.bar), ("motion", &self.motion), ("background", &self.background)] {
+        for (key, value) in [("page", &self.page), ("wide", &self.wide), ("bar", &self.bar), ("motion", &self.motion), ("background", &self.background), ("accent", &self.accent)] {
             if !value.is_empty() {
                 text.push_str(&format!("{key}={value}\n"));
             }
@@ -82,6 +86,32 @@ impl Prefs {
     pub fn blurred(&self) -> bool {
         self.background == "blurred"
     }
+
+    /// The accent chosen over the theme's, as `0xrrggbb`; `None`: the theme's own.
+    pub fn accent_rgb(&self) -> Option<u32> {
+        hex_color(&self.accent)
+    }
+}
+
+/// A colour typed as `#rrggbb` or `#rgb` (the `#` may be left out, any case), as `0xrrggbb`; anything else
+/// (`red`, `#12`, `#gggggg`) is `None`.
+pub fn hex_color(text: &str) -> Option<u32> {
+    let digits = text.trim();
+    let digits = digits.strip_prefix('#').unwrap_or(digits);
+    if !digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    match digits.len() {
+        6 => u32::from_str_radix(digits, 16).ok(),
+        // Each digit doubled: `#f80` is `#ff8800`.
+        3 => u32::from_str_radix(&digits.chars().flat_map(|c| [c, c]).collect::<String>(), 16).ok(),
+        _ => None,
+    }
+}
+
+/// `0xrrggbb` written as the settings file keeps it: `#rrggbb`, lowercase.
+pub fn write_hex(rgb: u32) -> String {
+    format!("#{:06x}", rgb & 0xff_ffff)
 }
 
 #[cfg(test)]
@@ -118,5 +148,27 @@ mod tests {
         assert_eq!(Prefs::parse(&still.to_text()), still);
         assert!(!prefs.to_text().contains("motion="));
         assert!(!prefs.to_text().contains("page=") && !prefs.to_text().contains("wide="));
+    }
+
+    #[test]
+    fn reads_and_writes_the_accent() {
+        // Absent until chosen: the theme's own.
+        let none = Prefs::parse("theme=Nord\n");
+        assert_eq!((none.accent.as_str(), none.accent_rgb()), ("", None));
+        assert!(!none.to_text().contains("accent"));
+        // Six digits or three, with or without `#`, any case: written back long and lowercase.
+        for (typed, kept) in [("#3E63DD", "#3e63dd"), ("3e63dd", "#3e63dd"), ("#f80", "#ff8800"), (" #ABC ", "#aabbcc"), ("#000000", "#000000")] {
+            let prefs = Prefs::parse(&format!("accent={typed}\n"));
+            assert_eq!(prefs.accent, kept, "{typed}");
+            assert!(prefs.to_text().contains(&format!("accent={kept}\n")));
+            assert_eq!(Prefs::parse(&prefs.to_text()), prefs);
+        }
+        assert_eq!(Prefs::parse("accent=#ff8800").accent_rgb(), Some(0xff8800));
+        // What is no colour is refused, and a broken line keeps the theme's accent.
+        for bad in ["#12", "red", "#gggggg", "#1234567", "#", "", "##123456", "#12 345"] {
+            assert_eq!(hex_color(bad), None, "{bad}");
+            assert_eq!(Prefs::parse(&format!("accent={bad}\n")).accent, "", "{bad}");
+        }
+        assert_eq!((write_hex(0xabc), write_hex(0x1ff_ffff)), ("#000abc".to_string(), "#ffffff".to_string()));
     }
 }

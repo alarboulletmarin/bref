@@ -1,6 +1,7 @@
 //! Settings: theme, fonts, text size and the other choices of the palette.
 
 use crate::platform::config;
+use crate::{logic::prefs::write_hex, ui::theme::ACCENTS};
 use super::*;
 
 impl Shell {
@@ -18,6 +19,9 @@ impl Shell {
         if let Some(find) = &self.settings.find {
             find.update(cx, |f, cx| f.set_theme(theme, cx));
         }
+        if let Some(accent) = &self.settings.accent {
+            accent.update(cx, |f, cx| f.set_theme(theme, cx));
+        }
         cx.notify();
     }
 
@@ -30,7 +34,14 @@ impl Shell {
         // The theme's default is not one of the list: it follows the system, light or dark.
         let default = match setting {
             Setting::Theme => tr("Default: Bref, light or dark like the system", "Par défaut : Bref, clair ou sombre comme le système"),
+            Setting::Accent => tr("The theme's own", "Celle du thème"),
             _ => tr("Default", "Par défaut"),
+        };
+        // The accents: the presets by name, and the one typed in the settings, as it is written, when it is none of them.
+        let accents: Vec<(String, String)> = {
+            let presets = ACCENTS.iter().map(|(rgb, name)| (name().to_string(), write_hex(*rgb)));
+            let typed = Some(self.prefs.accent.clone()).filter(|a| !a.is_empty() && !ACCENTS.iter().any(|p| write_hex(p.0) == *a));
+            presets.chain(typed.map(|a| (a.clone(), a))).collect()
         };
         // Page width and big tables: a short fixed list, without "Default"; the
         // choice is stored under its key, its labels follow the language.
@@ -47,6 +58,10 @@ impl Shell {
             (Setting::Bar, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), if self.prefs.bar == "off" { list[1].1 } else { list[0].1 }),
             (Setting::Motion, Some(list)) => (list.iter().map(|o| o.1.to_string()).collect(), if self.prefs.motion == "off" { list[1].1 } else { list[0].1 }),
             (Setting::Theme, _) => (THEMES.iter().map(|t| t.0.to_string()).collect(), &self.prefs.theme),
+            (Setting::Accent, _) => (
+                accents.iter().map(|a| a.0.clone()).collect(),
+                accents.iter().find(|a| a.1 == self.prefs.accent).map_or("", |a| a.0.as_str()),
+            ),
             _ => (
                 FAMILIES.get().into_iter().flatten().map(|f| f.to_string()).collect(),
                 if setting == Setting::Font { &self.prefs.font } else { &self.prefs.mono },
@@ -79,6 +94,7 @@ impl Shell {
                         Setting::Wide => this.prefs.wide = key,
                         Setting::Bar => this.prefs.bar = key,
                         Setting::Motion => this.prefs.motion = key,
+                        Setting::Accent => this.prefs.accent = accents.iter().find(|a| a.0 == value).map_or_else(String::new, |a| a.1.clone()),
                     }
                 }
                 _ => this.prefs = before.clone(),
